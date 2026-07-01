@@ -62,10 +62,10 @@ describe('v2 settings panels', () => {
     expect(screen.getByText('Show hidden files')).toBeTruthy();
   });
 
-  it('SystemSettings renders HTML viewer group with Allow form submissions toggle', () => {
+  it('SystemSettings HTML viewer group does not have Allow form submissions toggle (removed in #360)', () => {
     renderWithProviders(<SystemSettings />);
     expect(screen.getByText('HTML viewer')).toBeTruthy();
-    expect(screen.getByText('Allow form submissions')).toBeTruthy();
+    expect(screen.queryByText('Allow form submissions')).toBeNull();
   });
 
   it('SystemSettings renders HTML viewer group with Allow scripts (unsafe) toggle', () => {

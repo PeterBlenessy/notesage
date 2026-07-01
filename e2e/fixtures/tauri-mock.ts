@@ -6,7 +6,17 @@
  * commands and allows per-test overrides.
  */
 import type { Page } from '@playwright/test';
-import { SAMPLE_FILE_TREE, SAMPLE_FILES, SAMPLE_PROJECT_PATH } from './sample-data';
+import {
+  SAMPLE_FILE_TREE,
+  SAMPLE_FILES,
+  SAMPLE_PROJECT_PATH,
+  SAMPLE_TAGS,
+  SAMPLE_TAG_OCCURRENCES,
+  SAMPLE_MENTIONS,
+  SAMPLE_MENTION_OCCURRENCES,
+  SAMPLE_RESEARCH,
+  SAMPLE_FILENAME_RESULTS,
+} from './sample-data';
 
 export interface TauriMockOptions {
   /** Override default command handlers. Key = command name, value = return value or function body string. */
@@ -37,8 +47,19 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
 
   const overrides = options.overrides ?? {};
 
+  // Document-index sample data, passed into the page context so the index
+  // handlers below can return realistic shapes for the command-bar modes.
+  const indexData = {
+    tags: SAMPLE_TAGS,
+    tagOccurrences: SAMPLE_TAG_OCCURRENCES,
+    mentions: SAMPLE_MENTIONS,
+    mentionOccurrences: SAMPLE_MENTION_OCCURRENCES,
+    research: SAMPLE_RESEARCH,
+    filenames: SAMPLE_FILENAME_RESULTS,
+  };
+
   await page.addInitScript(
-    ({ fileTree, fileContents, overrides, projectPath }) => {
+    ({ fileTree, fileContents, overrides, projectPath, indexData }) => {
       // ---------------------------------------------------------------------------
       // Callback registry — implements transformCallback for @tauri-apps/api
       // ---------------------------------------------------------------------------
@@ -147,12 +168,20 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
         get_sync_settings: () => ({ version: 1, icloudEnabled: false, syncQuickNotes: false, syncedProjects: [] }),
         read_sync_settings: () => ({ version: 1, icloudEnabled: false, syncQuickNotes: false, syncedProjects: [] }),
 
+        // Automations
+        list_automations: () => [],
+        set_automations_enabled: () => null,
+        reload_automation_schedule: () => null,
+
         // Git
         git_status: () => ({ branch: 'main', files: [], is_repo: false }),
         git_branch_list: () => [],
 
         // Document index
         index_init: () => null,
+        // Legacy mock entries (command names the app does NOT actually invoke).
+        // Kept so existing callers don't regress; the real commands below are
+        // what TagMode/ReferenceMode/ResearchMode/FileMode call.
         index_query_tags: () => [],
         index_query_mentions: () => [],
         index_query_headings: () => [],
@@ -161,6 +190,74 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
         index_reindex_directory: () => null,
         index_tasks: () => [],
         index_goals: () => [],
+
+        // ---- Real document-index commands (the ones the app invokes) ----
+        // `index_tags` → IndexedTag[] `{ tag, file_count }`, file_count desc.
+        // Optional `query` substring-filters the tag name (mirrors Rust).
+        index_tags: (args) => {
+          const q = ((args?.query as string | null) ?? '').trim().toLowerCase();
+          const rows = indexData.tags;
+          return q ? rows.filter((r) => r.tag.toLowerCase().includes(q)) : rows;
+        },
+        // `index_tag_occurrences` → IndexTagOccurrence[]
+        // `{ path, file_name, context_before, context_after }`, keyed by `tag`.
+        index_tag_occurrences: (args) => {
+          const tag = (args?.tag as string) ?? '';
+          return indexData.tagOccurrences[tag] ?? [];
+        },
+        // `index_mentions` → IndexedMention[] `{ mention, file_count }`.
+        index_mentions: (args) => {
+          const q = ((args?.query as string | null) ?? '').trim().toLowerCase();
+          const rows = indexData.mentions;
+          return q
+            ? rows.filter((r) => r.mention.toLowerCase().includes(q))
+            : rows;
+        },
+        // `index_mention_occurrences` → IndexTagOccurrence[], keyed by `mention`.
+        index_mention_occurrences: (args) => {
+          const mention = (args?.mention as string) ?? '';
+          return indexData.mentionOccurrences[mention] ?? [];
+        },
+        // `index_search_research` → IndexResearchResult[]. Substring-filters
+        // title/snippet/tags by `query`; `tag` exact-matches a tag if present.
+        index_search_research: (args) => {
+          const q = ((args?.query as string | null) ?? '').trim().toLowerCase();
+          const tag = ((args?.tag as string | null) ?? '').trim().toLowerCase();
+          let rows = indexData.research;
+          if (q) {
+            rows = rows.filter(
+              (r) =>
+                r.title.toLowerCase().includes(q) ||
+                r.snippet.toLowerCase().includes(q) ||
+                r.tags.some((t) => t.toLowerCase().includes(q)),
+            );
+          }
+          if (tag) {
+            rows = rows.filter((r) =>
+              r.tags.some((t) => t.toLowerCase() === tag),
+            );
+          }
+          return rows;
+        },
+        // `index_search_filenames` → IndexFilenameSearchResult[]
+        // `{ path, file_name, parent_dir, project_root }`. Substring-filters
+        // the basename by the required `query`.
+        index_search_filenames: (args) => {
+          const q = ((args?.query as string) ?? '').trim().toLowerCase();
+          const rows = indexData.filenames;
+          return q
+            ? rows.filter((r) => r.file_name.toLowerCase().includes(q))
+            : rows;
+        },
+
+        // ---- Link-graph commands (OKF wiki-navigation) ----
+        // Default empty so the Relations panel self-hides; a spec can supply
+        // non-empty relations via `overrides` (e.g. { get_backlinks: [...],
+        // get_outlinks: [...] }) to exercise the panel.
+        get_backlinks: () => [],
+        get_outlinks: () => [],
+        get_broken_links: () => [],
+        resolve_wikilink: () => [],
 
         // Actions
         scan_actions: () => [],
@@ -246,7 +343,7 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
         }
       };
     },
-    { fileTree, fileContents, overrides, projectPath: SAMPLE_PROJECT_PATH },
+    { fileTree, fileContents, overrides, projectPath: SAMPLE_PROJECT_PATH, indexData },
   );
 }
 

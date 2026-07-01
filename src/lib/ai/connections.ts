@@ -18,19 +18,22 @@ export type ConnectionProvider =
   | 'google'             // Agent-managed subscription (Gemini CLI via ACP)
   | 'ollama'             // Local, no auth
   | 'openai_compatible'  // Any OpenAI-compatible API (vLLM, LiteLLM, Together AI, Groq)
-  | 'local_ai';          // Bundled local inference (llama-server)
+  | 'local_ai'           // Bundled local inference (llama-server)
+  | 'custom_acp';        // User-supplied ACP agent binary (spawned via the same ACP pipeline as managed agents)
 
 // --- Credentials ---
 
 export type ConnectionCredentials =
   | { type: 'api_key'; key?: string; credentialStored?: boolean }
-  // `envVars` stores credentials collected by the generic ACP EnvVar auth flow
-  // (`AuthMethod::EnvVar` with `unstable_auth_methods`). The flow writes values
-  // keyed by the var names the agent advertises (e.g. `GEMINI_API_KEY`), and
-  // `acp_agent_spawn` injects them into the child process environment. Kept as
-  // the storage layer because it's the minimal shape needed to round-trip ACP
-  // EnvVar auth — audit conclusion for PRD 2026-04-18-acp-protocol-tail #11.
-  | { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string> }  // e.g., "claude-agent-acp"
+  // `envVars` holds credentials collected by the generic ACP EnvVar auth flow
+  // (`AuthMethod::EnvVar` with `unstable_auth_methods`), keyed by the var names
+  // the agent advertises (e.g. `GEMINI_API_KEY`). Values are SESSION-ONLY: the
+  // store writes each one to the OS keychain (`notesage:<id>:env:<KEY>`) and the
+  // persist partialize strips them, so only `envVarKeys` (the non-secret names)
+  // reach localStorage. At spawn time `acp_agent_spawn` resolves the values from
+  // the keychain by `connection_id` + key name (keychain wins over any in-memory
+  // fallback passed over IPC — same precedence as `resolve_api_key`).
+  | { type: 'agent_managed'; agentBinary: string; agentArgs?: string[]; envVars?: Record<string, string>; envVarKeys?: string[] }  // e.g., "claude-agent-acp"
   | { type: 'local'; url: string }
   | { type: 'local_bundled' };    // No credentials — bundled llama-server
 
@@ -74,6 +77,11 @@ export const PROVIDER_CAPABILITIES: Record<ConnectionProvider, Partial<Record<Au
   local_ai: {
     local_bundled: ['interactive', 'agent_tasks', 'inline_completion'],
   },
+  // Custom agents speak ACP over stdio — same auth model as the managed
+  // agent_managed providers. No inline_completion: ACP has no FIM surface.
+  custom_acp: {
+    agent_managed: ['interactive', 'agent_tasks'],
+  },
 };
 
 /** Resolve capabilities for a given provider + auth method */
@@ -92,6 +100,11 @@ export interface ConnectionConfig {
   baseUrl?: string;            // Custom API endpoint override
   /** @deprecated Use acpDefaults.thinkingEffort instead. Kept for migration. */
   reasoningEffort?: ReasoningEffort;
+  // custom_acp only. Secrets never go here — they stay in `credentials.envVars`
+  // (the existing keychain-backed EnvVar flow); config is plain persisted state.
+  binaryPath?: string;            // Absolute path to the agent binary
+  binaryArgs?: string[];          // Launch args (e.g. ["acp"])
+  localAgentPreset?: 'goose';  // Marks preset-managed connections (Local Agent setup flow)
 }
 
 // --- ACP Capabilities (discovered at connection registration) ---
@@ -194,8 +207,9 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     capabilities: ['interactive', 'agent_tasks'],
     agentBinary: 'claude-agent-acp',
     installMeta: {
-      githubRepo: 'anthropics/claude-agent-acp',
+      githubRepo: 'agentclientprotocol/claude-agent-acp',
       manualCommand: 'npm install -g @agentclientprotocol/claude-agent-acp',
+      requiresNodeRuntime: true,
       allowedDomains: ['api.anthropic.com', 'github.com', '*.githubusercontent.com'],
     },
   },
@@ -216,6 +230,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'agentclientprotocol/codex-acp',
       manualCommand: 'npm install -g @agentclientprotocol/codex-acp',
+      requiresNodeRuntime: true,
       allowedDomains: ['api.openai.com', 'chatgpt.com', '*.chatgpt.com', 'github.com', '*.githubusercontent.com'],
     },
   },
@@ -237,6 +252,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'github/copilot-cli',
       manualCommand: 'npm install -g @github/copilot',
+      requiresNodeRuntime: true,
       allowedDomains: ['api.github.com', 'copilot-proxy.githubusercontent.com', '*.githubcopilot.com', 'github.com', '*.githubusercontent.com'],
     },
   },
@@ -250,6 +266,7 @@ export const PROVIDER_OPTIONS: ProviderOption[] = [
     installMeta: {
       githubRepo: 'github/copilot-language-server-release',
       manualCommand: 'npm install -g @github/copilot-language-server',
+      requiresNodeRuntime: true,
       allowedDomains: ['api.github.com', 'copilot-proxy.githubusercontent.com', '*.githubcopilot.com', 'github.com', '*.githubusercontent.com'],
     },
   },
@@ -406,6 +423,6 @@ export const ROUTING_SLOT_LABELS: Record<AICapability, { label: string; descript
   },
   agent_tasks: {
     label: 'Agent Tasks',
-    description: 'Delegated multi-step work with file changes',
+    description: 'Delegated multi-step work with file changes and agent steps in automation runs',
   },
 };

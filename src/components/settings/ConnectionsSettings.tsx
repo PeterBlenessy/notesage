@@ -1,8 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
-import { stopAcpAgent } from '@/hooks/useAIOperations';
-import { probeAcpCapabilities } from '@/lib/ai/acp-agent-state';
+import { stopAllAcpAgents } from '@/hooks/useAIOperations';
+import { probeAcpCapabilities, isLocalAgentPreset } from '@/lib/ai/acp-agent-state';
 import { log } from '@/lib/logger';
 import { toast } from 'sonner';
 import { ConnectionCard } from './ConnectionCard';
@@ -23,12 +23,14 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from '@/components/ui/popover';
-import { Plus, Check, Eye, EyeOff, RefreshCw } from 'lucide-react';
+import { Plus, Check, Eye, EyeOff, RefreshCw, ShieldCheck } from 'lucide-react';
+import { useLocalAIStore } from '@/stores/local-ai-store';
 import { cn } from '@/lib/utils';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { ConnectionConfigDialog } from './ConnectionConfigDialog';
 import { ConnectCopilotLsp } from './ConnectCopilotLsp';
 import { ConnectAgent } from './ConnectAgent';
+import { ConnectCustomAgent } from './ConnectCustomAgent';
 import type { Connection, ProviderOption } from '@/lib/ai/connections';
 import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
@@ -36,7 +38,8 @@ import { invoke } from '@tauri-apps/api/core';
 type AddFlowState =
   | { step: 'pick' }
   | { step: 'configure'; option: ProviderOption }
-  | { step: 'connecting'; option: ProviderOption };
+  | { step: 'connecting'; option: ProviderOption }
+  | { step: 'custom' };
 
 export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (tab: string) => void } = {}) {
   const connections = useConnectionsStore((s) => s.connections);
@@ -54,6 +57,16 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const popoverOpenedAt = useRef(0);
+  // Tracks the deferred popover-open timer so it can be cleared on unmount
+  // (review Low #5 — avoids a setState after unmount if the dialog closes
+  // within the 100 ms delay window).
+  const customAgentTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (customAgentTimerRef.current) clearTimeout(customAgentTimerRef.current);
+    },
+    [],
+  );
   const [inputValue, setInputValue] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -127,6 +140,35 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
     });
     autoAssign(connectionId);
   }, [addConnection, autoAssign]);
+
+  const openLocalAgentSetup = useLocalAIStore((s) => s.setLocalAgentSetupDialogOpen);
+  // Whether the Local Agent preset is already set up (#19 shows ready state).
+  const localAgentReady = connections.some(
+    (c) => c.provider === 'custom_acp' && c.config?.localAgentPreset === 'goose',
+  );
+  const handlePickLocalAgent = useCallback(() => {
+    openLocalAgentSetup(true);
+  }, [openLocalAgentSetup]);
+
+  const handlePickCustomAgent = useCallback(() => {
+    setFlow({ step: 'custom' });
+    // Delay popover open so it doesn't race with the dropdown close animation
+    if (customAgentTimerRef.current) clearTimeout(customAgentTimerRef.current);
+    customAgentTimerRef.current = setTimeout(() => {
+      setPopoverOpen(true);
+      popoverOpenedAt.current = Date.now();
+    }, 100);
+  }, []);
+
+  // `registerCustomAcpConnection` already persisted the connection (probe-first);
+  // this callback only routes it and closes the flow.
+  const handleCustomAgentConnected = useCallback(
+    (connectionId: string) => {
+      autoAssign(connectionId);
+      resetFlow();
+    },
+    [autoAssign, resetFlow]
+  );
 
   const handlePickProvider = useCallback((option: ProviderOption) => {
     // Local AI: connect immediately (binary is always bundled as sidecar)
@@ -239,10 +281,21 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   const handleDisconnect = useCallback(
     (connection: Connection) => {
       if (connection.authMethod === 'agent_managed') {
-        stopAcpAgent();
+        // Removing a connection invalidates every per-conversation agent that
+        // used it — stop the whole registry (task #2). They respawn on next send.
+        stopAllAcpAgents();
       }
       clearRoutingForConnection(connection.id);
       removeConnection(connection.id);
+      // Removing the Local Agent preset MUST reset its setup state machine.
+      // `localAgentSetup.stage` is persisted, so without this the prior
+      // `stage: 'ready'` survives the removal — re-opening the setup dialog then
+      // shows the completed/"Done" state (which only closes, never re-running
+      // the `configuring` stage that creates the connection), so the agent can
+      // never be re-added after removal.
+      if (isLocalAgentPreset(connection)) {
+        useLocalAIStore.getState().resetLocalAgentSetup();
+      }
     },
     [clearRoutingForConnection, removeConnection]
   );
@@ -275,6 +328,62 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
               </DropdownMenuTrigger>
             </PopoverAnchor>
             <DropdownMenuContent align="end" className="w-96">
+              {/* "Local" group at the top — on-device options, no account
+                  needed. Order: Local Agent (recommended, task #19), then Local
+                  AI (bundled), then Ollama. */}
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                  Local
+                </DropdownMenuLabel>
+                <DropdownMenuItem
+                  className="relative flex items-start gap-2.5 py-2 cursor-pointer"
+                  onSelect={handlePickLocalAgent}
+                >
+                  <ShieldCheck
+                    className="w-5 h-5 mt-0.5 shrink-0 text-[var(--color-accent-primary)]"
+                    strokeWidth={1.5}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium block truncate">Local Agent</span>
+                    <span className="text-xs text-muted-foreground block truncate">
+                      {localAgentReady
+                        ? 'Private on-device agent — set up'
+                        : 'Private AI — the model runs on your device, no API keys'}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground block truncate">
+                      Powered by Goose, an open-source agent from the Agentic AI Foundation (AAIF)
+                    </span>
+                  </div>
+                  {localAgentReady && (
+                    <Check className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                  )}
+                </DropdownMenuItem>
+                {/* Local AI (local_bundled) before Ollama (local). */}
+                {PROVIDER_OPTIONS
+                  .filter((o) => o.authMethod === 'local' || o.authMethod === 'local_bundled')
+                  .sort((a, b) => (a.authMethod === 'local_bundled' ? 0 : 1) - (b.authMethod === 'local_bundled' ? 0 : 1))
+                  .map((option) => {
+                    const alreadyConnected = connectedLabels.has(option.label);
+                    return (
+                      <DropdownMenuItem
+                        key={`${option.provider}-${option.authMethod}-${option.label}`}
+                        className={`relative flex items-start gap-2.5 py-1.5 ${alreadyConnected ? 'opacity-50' : 'cursor-pointer'}`}
+                        disabled={alreadyConnected}
+                        onSelect={() => handlePickProvider(option)}
+                      >
+                        <ProviderLogo provider={option.provider} className="w-5 h-5 mt-0.5 shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium block truncate">{option.label}</span>
+                          <span className="text-xs text-muted-foreground block truncate">{option.description}</span>
+                        </div>
+                        {alreadyConnected && (
+                          <Check className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                        )}
+                      </DropdownMenuItem>
+                    );
+                  })}
+              </DropdownMenuGroup>
+              <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
                   Subscription
@@ -338,28 +447,23 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Local
+                  Custom
                 </DropdownMenuLabel>
-                {PROVIDER_OPTIONS.filter((o) => o.authMethod === 'local' || o.authMethod === 'local_bundled').map((option) => {
-                  const alreadyConnected = connectedLabels.has(option.label);
-                  return (
-                    <DropdownMenuItem
-                      key={`${option.provider}-${option.authMethod}-${option.label}`}
-                      className={`relative flex items-start gap-2.5 py-1.5 ${alreadyConnected ? 'opacity-50' : 'cursor-pointer'}`}
-                      disabled={alreadyConnected}
-                      onSelect={() => handlePickProvider(option)}
-                    >
-                      <ProviderLogo provider={option.provider} className="w-5 h-5 mt-0.5 shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <span className="text-sm font-medium block truncate">{option.label}</span>
-                        <span className="text-xs text-muted-foreground block truncate">{option.description}</span>
-                      </div>
-                      {alreadyConnected && (
-                        <Check className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
-                      )}
-                    </DropdownMenuItem>
-                  );
-                })}
+                {/* Custom agents deliberately have no PROVIDER_OPTIONS entry —
+                    managed install/update/allowlist surfaces must never match
+                    them (locked by useAcpLifecycle.custom-agent.test.ts). */}
+                <DropdownMenuItem
+                  className="relative flex items-start gap-2.5 py-1.5 cursor-pointer"
+                  onSelect={handlePickCustomAgent}
+                >
+                  <ProviderLogo provider="custom_acp" className="w-5 h-5 mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <span className="text-sm font-medium block truncate">Custom Agent</span>
+                    <span className="text-xs text-muted-foreground block truncate">
+                      Bring your own ACP-compatible agent binary
+                    </span>
+                  </div>
+                </DropdownMenuItem>
               </DropdownMenuGroup>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -394,6 +498,12 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                 option={flow.option}
                 onBack={handleBack}
                 onConnected={handleAgentConnected}
+              />
+            )}
+            {flow.step === 'custom' && (
+              <ConnectCustomAgent
+                onBack={handleBack}
+                onConnected={handleCustomAgentConnected}
               />
             )}
           </PopoverContent>
@@ -608,13 +718,14 @@ function ConfigureForm({
                 onClick={onToggleShow}
                 tabIndex={-1}
               >
-                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                {showKey ? <EyeOff className="h-4 w-4" strokeWidth={1.5} /> : <Eye className="h-4 w-4" strokeWidth={1.5} />}
               </Button>
             )}
           </div>
           <Button onClick={onSave} size="sm" disabled={!canSave}>
             <Check
-              className={`h-4 w-4 mr-1 transition-colors ${savedFlash ? 'text-green-500' : ''}`}
+              className={`h-4 w-4 mr-1 transition-colors ${savedFlash ? 'text-[var(--color-accent-primary)]' : ''}`}
+              strokeWidth={1.5}
             />
             Save
           </Button>

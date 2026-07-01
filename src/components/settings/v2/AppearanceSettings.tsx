@@ -19,6 +19,7 @@ import { SettingsRow } from './SettingsRow';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { useSettingsStore } from '@/stores/settings-store';
+import { track, trackSettingToggle } from '@/lib/telemetry';
 import type { AccentName } from '@/lib/accent';
 import type { QuietChromeTargets } from '@/lib/quiet-chrome-presets';
 import { cn } from '@/lib/utils';
@@ -77,6 +78,8 @@ const QUIET_CHROME_OVERRIDE_ROWS: ReadonlyArray<{
 }> = [
   { key: 'toolbar', label: 'Toolbar' },
   { key: 'status', label: 'Status bar' },
+  { key: 'titlebar', label: 'Title bar' },
+  { key: 'cmdbar', label: 'Command bar (minimized)' },
   { key: 'sidebar', label: 'Sidebar' },
   { key: 'orb', label: 'Agent orb' },
 ];
@@ -163,6 +166,8 @@ export function AppearanceSettings() {
   const setQuietChromeTransparent = useSettingsStore(
     (s) => s.setQuietChromeTransparent,
   );
+  const showTitleBar = useSettingsStore((s) => s.showTitleBar);
+  const setShowTitleBar = useSettingsStore((s) => s.setShowTitleBar);
   const setQuietChromePreset = useSettingsStore((s) => s.setQuietChromePreset);
   const setQuietChromeOverride = useSettingsStore((s) => s.setQuietChromeOverride);
   const sidebarRecentCap = useSettingsStore((s) => s.sidebarRecentCap);
@@ -188,10 +193,6 @@ export function AppearanceSettings() {
   // Show advanced quiet-chrome switches whenever the preset is "custom".
   const showQuietChromeAdvanced = quietChromePreset === 'custom';
 
-  // ── Layout (formerly in Advanced > Experimental) ─────────────────────
-  const uiPreview = useSettingsStore((s) => s.uiPreview);
-  const setUiPreview = useSettingsStore((s) => s.setUiPreview);
-
   // ── Render ────────────────────────────────────────────────────────────
 
   return (
@@ -201,24 +202,6 @@ export function AppearanceSettings() {
           shows which panel is active. The tagline lives there as a
           column-header tooltip if we ever need it. Removing the hero
           tightens the panel meaningfully and matches the comp. */}
-
-      {/* ── Layout ────────────────────────────────────────────────── */}
-      <SettingsGroup label="Layout">
-        <SettingsRow
-          label="Quiet Composer"
-          description="The new layout. Floating command bar, ambient agent orb, full-height sidebar. Toggle off to return to the classic layout."
-          htmlFor="appearance-ui-preview"
-          control={
-            <Switch
-              id="appearance-ui-preview"
-              checked={uiPreview === 'quiet-composer'}
-              onCheckedChange={(checked) =>
-                setUiPreview(checked ? 'quiet-composer' : 'legacy')
-              }
-            />
-          }
-        />
-      </SettingsGroup>
 
       {/* ── Theme ────────────────────────────────────────────────── */}
       <SettingsGroup label="Theme">
@@ -239,7 +222,7 @@ export function AppearanceSettings() {
                 ariaLabel: o.label,
               }))}
               value={theme}
-              onChange={setTheme}
+              onChange={(v) => { setTheme(v); track("setting_changed", { setting: "theme", value: v }); }}
             />
           }
         />
@@ -265,7 +248,7 @@ export function AppearanceSettings() {
                 ariaLabel: o.label,
               }))}
               value={accent}
-              onChange={setAccent}
+              onChange={(v) => { setAccent(v); track("setting_changed", { setting: "accent", value: v }); }}
               columns={4}
             />
           }
@@ -417,7 +400,7 @@ export function AppearanceSettings() {
                 ariaLabel: o.label,
               }))}
               value={quietChromePreset === 'custom' ? 'default' : quietChromePreset}
-              onChange={setQuietChromePreset}
+              onChange={(v) => { setQuietChromePreset(v); track("setting_changed", { setting: "quiet_preset", value: v }); }}
             />
           }
           controlSublabel={
@@ -444,6 +427,23 @@ export function AppearanceSettings() {
               );
             })
           : null}
+
+        {/* Show/hide the document title bar (name + dirty dot + close ×).
+           *  Off by default — the filename also lives in the sidebar and
+           *  status bar, and window dragging is handled by the sidebar, so
+           *  hiding it reclaims vertical space for the document. */}
+        <SettingsRow
+          label="Show title bar"
+          description="Show the document name, unsaved-changes dot, and close button at the top of the editor. Off reclaims the vertical space (the filename still shows in the sidebar and status bar)."
+          htmlFor="appearance-show-title-bar"
+          control={
+            <Switch
+              id="appearance-show-title-bar"
+              checked={showTitleBar}
+              onCheckedChange={(v) => { setShowTitleBar(v); trackSettingToggle("title_bar", v); }}
+            />
+          }
+        />
 
         {/* #132 — translucent chrome + editor flow-under. Default off
            *  so existing users see no change. When on, the title bar

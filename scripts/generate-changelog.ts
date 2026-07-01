@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, existsSync } from 'fs';
 import { join, basename } from 'path';
+import { pathToFileURL } from 'url';
 
 interface ReleaseEntry {
   version: string;
@@ -10,6 +11,12 @@ interface ReleaseEntry {
     fixes?: string[];
     improvements?: string[];
   };
+  // Verbatim merged-PR dump from the history file's "## Under the hood"
+  // section. Populated ONLY for prerelease (alpha) entries so the alpha
+  // changelog feed shows what landed in each auto-cut. Stable entries never
+  // carry it — `main()` filters prereleases out of the stable feed, and
+  // `parseReleaseFile` only attaches it when the version has a `-` segment.
+  underTheHood?: string[];
 }
 
 interface Changelog {
@@ -18,7 +25,14 @@ interface Changelog {
 
 const HISTORY_DIR = join(import.meta.dirname, '..', 'docs', 'history');
 const OUTPUT_DIR = join(import.meta.dirname, '..', 'public');
-const OUTPUT_FILE = join(OUTPUT_DIR, 'changelog.json');
+// `changelog.json` is the stable-channel feed — entries whose version has no
+// `-` prerelease segment. `changelog-alpha.json` is the alpha-channel feed —
+// every entry including the alpha line. The naming convention follows the
+// release-asset/bundled-file/fetch-URL story: unmarked = stable default,
+// `-alpha` suffix = the variant. See `useChangelog.ts` for the channel-aware
+// URL picker.
+const STABLE_OUTPUT_FILE = join(OUTPUT_DIR, 'changelog.json');
+const ALPHA_OUTPUT_FILE = join(OUTPUT_DIR, 'changelog-alpha.json');
 
 function parseVersion(filename: string): string | null {
   // Accepts stable (`0.43.0`) and pre-release (`0.44.0-alpha.0`) suffixes.
@@ -26,7 +40,28 @@ function parseVersion(filename: string): string | null {
   return match ? match[1] : null;
 }
 
-function parseReleaseFile(filepath: string): ReleaseEntry | null {
+/**
+ * Extract the bullet list from the "## Under the hood" section.
+ *
+ * The section also carries a descriptive lead paragraph ("Auto-generated dump
+ * of merged Tier-A/B PRs…") which is intentionally dropped — only `- ` list
+ * items (the merged-PR lines) are returned.
+ */
+export function parseUnderTheHood(content: string): string[] {
+  const match = content.match(/##\s+Under the hood\s*\n([\s\S]*?)(?=\n## |$)/);
+  if (!match) return [];
+
+  const items: string[] = [];
+  for (const line of match[1].split('\n')) {
+    const itemMatch = line.match(/^- (.+)/);
+    if (itemMatch) {
+      items.push(itemMatch[1].trim());
+    }
+  }
+  return items;
+}
+
+export function parseReleaseFile(filepath: string): ReleaseEntry | null {
   const content = readFileSync(filepath, 'utf-8');
   const filename = basename(filepath);
   const version = parseVersion(filename);
@@ -36,8 +71,9 @@ function parseReleaseFile(filepath: string): ReleaseEntry | null {
   const dateMatch = content.match(/\*\*Date:\*\*\s*([\d-]+)/);
   const date = dateMatch ? dateMatch[1] : '';
 
-  // Extract previous version
-  const prevMatch = content.match(/\*\*Previous version:\*\*\s*([\d.]+)/);
+  // Extract previous version — include any `-alpha.N` prerelease suffix (the
+  // old `[\d.]+` stopped at the `-`, so every alpha reported `0.46.0`).
+  const prevMatch = content.match(/\*\*Previous version:\*\*\s*([\d.]+(?:-[\w.]+)?)/);
   const previousVersion = prevMatch ? prevMatch[1] : '';
 
   // Parse sections
@@ -64,12 +100,22 @@ function parseReleaseFile(filepath: string): ReleaseEntry | null {
     }
   }
 
-  // Skip releases with no sections
-  if (!sections.features && !sections.fixes && !sections.improvements) {
+  // Prerelease (alpha) entries surface the verbatim merged-PR dump so the
+  // alpha changelog shows what made the cut. Stable entries never do — the
+  // `/release` flow rewrites that detail into curated prose.
+  const isPrerelease = version.includes('-');
+  const uth = isPrerelease ? parseUnderTheHood(content) : [];
+  const underTheHood = uth.length > 0 ? uth : undefined;
+
+  // Skip releases with nothing to show. For alphas, an "Under the hood" dump
+  // counts as content even when the curated sections are empty — otherwise
+  // auto-cut alphas (which have no curated sections yet) would vanish from the
+  // feed entirely.
+  if (!sections.features && !sections.fixes && !sections.improvements && !underTheHood) {
     return null;
   }
 
-  return { version, date, previousVersion, sections };
+  return { version, date, previousVersion, sections, underTheHood };
 }
 
 /**
@@ -130,6 +176,66 @@ function splitSemver(v: string): [[number, number, number], string | null] {
   return [[parts[0] ?? 0, parts[1] ?? 0, parts[2] ?? 0], pre];
 }
 
+
+// Patterns that are forbidden in user-facing bullets (Features / Improvements / Fixes).
+// Each entry is [regex, human-readable label].
+// The linter is warn-only: exit code stays 0 so the linter guides the writer
+// without blocking releases. See `.claude/skills/release/SKILL.md` §"User-facing
+// copy vs Under the hood" for the rationale and before/after examples.
+const FORBIDDEN_BULLET_PATTERNS: [RegExp, string][] = [
+  [/\d+\.\d+\.\d+/, 'version triple (e.g. 11.14.0)'],
+  [/Dependabot/i, 'Dependabot reference'],
+  [/transitive/i, '"transitive" distribution mechanic'],
+  [/Cargo\.lock/i, 'Cargo.lock reference'],
+  [/\bcrate\b/i, '"crate" internal term'],
+];
+
+/**
+ * Warn-only linter for user-facing release bullets.
+ *
+ * Scans Features / Improvements / Fixes bullets in all parsed releases and
+ * prints a console.warn for each bullet that matches a forbidden pattern.
+ * Always returns void — callers must NOT exit(1) based on this output.
+ */
+function lintUserFacingBullets(releases: ReleaseEntry[]): void {
+  let warningCount = 0;
+
+  for (const release of releases) {
+    const sectionEntries = Object.entries(release.sections) as [
+      keyof ReleaseEntry['sections'],
+      string[] | undefined,
+    ][];
+
+    for (const [sectionName, bullets] of sectionEntries) {
+      if (!bullets) continue;
+
+      for (const bullet of bullets) {
+        for (const [pattern, label] of FORBIDDEN_BULLET_PATTERNS) {
+          if (pattern.test(bullet)) {
+            console.warn(
+              `[changelog-linter] v${release.version} › ${sectionName} › forbidden pattern (${label}): "${bullet}"`,
+            );
+            warningCount++;
+            break; // one warning per bullet is enough
+          }
+        }
+      }
+    }
+  }
+
+  if (warningCount > 0) {
+    console.warn(
+      `[changelog-linter] ${warningCount} user-facing bullet(s) contain forbidden patterns.`,
+    );
+    console.warn(
+      `[changelog-linter] Move developer-facing detail to ## Under the hood.`,
+    );
+    console.warn(
+      `[changelog-linter] See .claude/skills/release/SKILL.md §"User-facing copy vs Under the hood" for examples.`,
+    );
+  }
+}
+
 function main() {
   const files = readdirSync(HISTORY_DIR).filter(
     (f) => f.match(/^\d+-release-v[\d.]+(?:-[\w.]+)?\.md$/),
@@ -147,14 +253,30 @@ function main() {
   // Sort newest first
   releases.sort((a, b) => compareVersions(a.version, b.version));
 
-  const changelog: Changelog = { releases };
+  // Warn-only linter: flag user-facing bullets that contain forbidden patterns.
+  lintUserFacingBullets(releases);
+
+  // Alpha feed = every release. Stable feed = entries without a prerelease
+  // segment. The `-` test mirrors how `isPrereleaseVersion()` classifies
+  // updates in `useAutoUpdate.ts` — same source of truth across the codebase.
+  const alphaChangelog: Changelog = { releases };
+  const stableChangelog: Changelog = {
+    releases: releases.filter((r) => !r.version.includes('-')),
+  };
 
   if (!existsSync(OUTPUT_DIR)) {
     mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
-  writeFileSync(OUTPUT_FILE, JSON.stringify(changelog, null, 2) + '\n');
-  console.log(`Generated changelog.json with ${releases.length} releases`);
+  writeFileSync(STABLE_OUTPUT_FILE, JSON.stringify(stableChangelog, null, 2) + '\n');
+  writeFileSync(ALPHA_OUTPUT_FILE, JSON.stringify(alphaChangelog, null, 2) + '\n');
+  console.log(
+    `Generated changelog.json (${stableChangelog.releases.length} stable) + changelog-alpha.json (${alphaChangelog.releases.length} total)`,
+  );
 }
 
-main();
+// Run only when executed directly (via `tsx scripts/generate-changelog.ts`),
+// not when imported by unit tests for the pure parse helpers above.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

@@ -23,6 +23,7 @@ import {
 import { resetUnresponsiveTimer } from '@/hooks/useAcpLifecycle';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 import { updateCurrentMode, updateConfigOptionValue, updateUsage, setAvailableCommands } from '@/lib/ai/acp-agent-state';
+import { runRunning, runAwaitingPermission, runIdle } from '@/lib/ai/session-run';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -48,26 +49,29 @@ interface ChatListenerDeps {
    */
   connectionId?: string | null;
   activeProjectRoot?: string | null;
-  // Chat store actions
-  updateMessage: (id: number, content: string) => void;
+  // Chat store actions. The streaming-write methods carry an optional trailing
+  // `convId` so a background session's deltas target the conversation that OWNS
+  // the message rather than the foreground one (task #3); these mirror the
+  // chat-store action signatures. `updateMessage` keeps its `citations` slot.
+  updateMessage: (id: number, content: string, citations?: import('@/lib/ai/types').Citation[], convId?: string | null) => void;
   addMessage: (msg: ChatMessage) => void;
   setActiveTool: (tool: string | null) => void;
-  addActivity: (messageId: number, activity: AgentActivity) => void;
-  completeLastActivity: (messageId: number) => void;
-  completeAllActivities: (messageId: number) => void;
+  addActivity: (messageId: number, activity: AgentActivity, convId?: string | null) => void;
+  completeLastActivity: (messageId: number, convId?: string | null) => void;
+  completeAllActivities: (messageId: number, convId?: string | null) => void;
   /**
    * Patch `approvalMode` on the most recent activity on this message. Called
    * from the permission handler once we know whether the tool was auto-approved,
    * user-approved, or denied — keeps the activity panel badge accurate.
    */
-  setLastActivityApprovalMode: (messageId: number, mode: ActivityApprovalMode) => void;
+  setLastActivityApprovalMode: (messageId: number, mode: ActivityApprovalMode, convId?: string | null) => void;
   // Segment actions (dual-write for chronological rendering)
-  appendTextSegment: (messageId: number, text: string) => void;
-  appendThinkingSegment: (messageId: number, text: string) => void;
-  pushSegment: (messageId: number, segment: Segment) => void;
-  updateSegment: (messageId: number, index: number, patch: Partial<Segment>) => void;
-  updateOrPushPlanSegment: (messageId: number, entries: import('@/lib/ai/types').PlanEntry[]) => void;
-  finalizeSegments: (messageId: number) => void;
+  appendTextSegment: (messageId: number, text: string, convId?: string | null) => void;
+  appendThinkingSegment: (messageId: number, text: string, convId?: string | null) => void;
+  pushSegment: (messageId: number, segment: Segment, convId?: string | null) => void;
+  updateSegment: (messageId: number, index: number, patch: Partial<Segment>, convId?: string | null) => void;
+  updateOrPushPlanSegment: (messageId: number, entries: import('@/lib/ai/types').PlanEntry[], convId?: string | null) => void;
+  finalizeSegments: (messageId: number, convId?: string | null) => void;
 }
 
 export interface AcpChatListeners {
@@ -89,11 +93,21 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
   // FIFO queue of pending tool_call segment indices — handles parallel tool calls
   // (agents like Claude Code may send multiple tool_calls before any tool_results)
   const pendingToolCallIndices: number[] = [];
+  // Conversation that owns this session — every store write below addresses it
+  // explicitly so a background ACP session's deltas land on its own conversation,
+  // not whatever is foregrounded (task #3). `null` → `updateConv` falls back to
+  // the active conversation (legacy single-session behavior).
+  const cid = deps.conversationId;
 
   const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
     if (event.payload.instanceId !== deps.instanceId) return;
     // Reset unresponsiveness timer — agent is still alive
     resetUnresponsiveTimer();
+    // Any session activity means the agent is working again — if it had been
+    // blocked on a permission decision, flip the run back to `running` (task #4).
+    // The guard inside `runRunning` makes this a no-op unless that transition
+    // actually applies, so it's cheap to call per event.
+    runRunning(cid);
     // Clear any "unresponsive" banner — agent is alive
     if (useAgentStatusStore.getState().status === 'unresponsive') {
       useAgentStatusStore.getState().clearStatus();
@@ -103,11 +117,12 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
     // Narrow to the single-object form here; tool_call_update handles the array form below.
     const chunkContent = Array.isArray(update.content) ? undefined : update.content;
 
-    // ACP `unstable_message_id` (forward-compat): persist agent-side message IDs when emitted.
-    // On `agent_message_chunk`, the schema carries `messageId` (assistant's own ID) and may
-    // echo the outbound `user_message_id` the client provided on `PromptRequest.message_id`.
-    // No user-visible effect in v1 — this is future-proofing for features that reference
-    // specific messages by stable protocol ID.
+    // Persist the agent-assigned message ID when emitted. On `agent_message_chunk`,
+    // `messageId` (ContentChunk.message_id, stable in ACP 0.13.6) groups the chunks
+    // of one assistant message — all chunks of the same message share it; a change
+    // signals a new message. It is NOT an echo of a client-supplied UUID (the old
+    // PromptRequest.message_id design was removed). No user-visible effect in v1 —
+    // future-proofing for features that reference messages by stable protocol ID.
     if (update.sessionUpdate === 'agent_message_chunk') {
       const assistantAcpId = typeof update.messageId === 'string' && update.messageId
         ? update.messageId
@@ -115,16 +130,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
           ? update.message_id
           : undefined;
       if (assistantAcpId) {
-        useChatStore.getState().setMessageAcpId(deps.assistantMessageId, assistantAcpId);
-      }
-      const echoedUserAcpId = typeof update.userMessageId === 'string' && update.userMessageId
-        ? update.userMessageId
-        : typeof update.user_message_id === 'string' && update.user_message_id
-          ? update.user_message_id
-          : undefined;
-      if (echoedUserAcpId) {
-        // The user message has `timestamp = assistantMessageId - 1` per acpSendChatMessage.
-        useChatStore.getState().setMessageAcpId(deps.assistantMessageId - 1, echoedUserAcpId);
+        useChatStore.getState().setMessageAcpId(deps.assistantMessageId, assistantAcpId, cid);
       }
     }
 
@@ -134,8 +140,8 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       chunkContent.text
     ) {
       streamedContent += chunkContent.text;
-      deps.updateMessage(deps.assistantMessageId, streamedContent);
-      deps.appendTextSegment(deps.assistantMessageId, chunkContent.text);
+      deps.updateMessage(deps.assistantMessageId, streamedContent, undefined, cid);
+      deps.appendTextSegment(deps.assistantMessageId, chunkContent.text, cid);
     } else if (
       update.sessionUpdate === 'agent_message_chunk' &&
       chunkContent?.type === 'resource_link' &&
@@ -146,8 +152,8 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       const markdown = formatResourceLinkAsMarkdown(chunkContent);
       if (markdown) {
         streamedContent += markdown;
-        deps.updateMessage(deps.assistantMessageId, streamedContent);
-        deps.appendTextSegment(deps.assistantMessageId, markdown);
+        deps.updateMessage(deps.assistantMessageId, streamedContent, undefined, cid);
+        deps.appendTextSegment(deps.assistantMessageId, markdown, cid);
       }
     } else if (
       update.sessionUpdate === 'agent_message_chunk' &&
@@ -159,13 +165,13 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         data: chunkContent.data,
         mimeType: chunkContent.mimeType || 'image/png',
         timestamp: Date.now(),
-      });
+      }, cid);
     } else if (
       update.sessionUpdate === 'agent_thought_chunk' &&
       chunkContent?.type === 'text' &&
       chunkContent.text
     ) {
-      deps.appendThinkingSegment(deps.assistantMessageId, chunkContent.text);
+      deps.appendThinkingSegment(deps.assistantMessageId, chunkContent.text, cid);
     } else if (update.sessionUpdate === 'tool_call') {
       const toolLabel = formatAcpToolName(update.kind, update.title);
       deps.setActiveTool(toolLabel);
@@ -180,12 +186,19 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         status: 'running',
         timestamp: Date.now(),
         approvalMode: 'auto',
-      });
+      }, cid);
       // Segment: push tool call with descriptive label
       const parsedArgs = parseRawInput(update.rawInput);
       const segmentLabel = formatToolLabel(update.kind || 'unknown', parsedArgs, update.title);
+      // Locate the message in THIS listener's own conversation, not the foreground
+      // one. Under concurrent sessions (task #2) a background agent's tool_call must
+      // compute its pending-segment index against its own conversation; reading
+      // `activeConversationId` here would index into whichever chat the user is
+      // currently watching and cross-wire the segment. Fall back to the active
+      // conversation only when this listener has no bound id (legacy callers).
+      const ownerConvId = cid ?? useChatStore.getState().activeConversationId;
       const conv = useChatStore.getState().conversations
-        .find(c => c.id === useChatStore.getState().activeConversationId);
+        .find(c => c.id === ownerConvId);
       const msg = conv?.messages.find(m => m.timestamp === deps.assistantMessageId);
       pendingToolCallIndices.push(msg?.segments?.length ?? 0);
       deps.pushSegment(deps.assistantMessageId, {
@@ -203,7 +216,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         })(),
         status: 'running',
         timestamp: Date.now(),
-      } as ToolCallSegment);
+      } as ToolCallSegment, cid);
     } else if (update.sessionUpdate === 'tool_call_update') {
       deps.setActiveTool(formatAcpToolName(update.kind, update.title));
       // Patch the corresponding tool_call segment with richer data
@@ -232,12 +245,12 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
           patch.content = normalizeToolCallContent(update.content);
         }
         if (Object.keys(patch).length > 0) {
-          deps.updateSegment(deps.assistantMessageId, lastToolIdx, patch);
+          deps.updateSegment(deps.assistantMessageId, lastToolIdx, patch, cid);
         }
       }
     } else if (update.sessionUpdate === 'tool_result') {
       deps.setActiveTool(null);
-      deps.completeLastActivity(deps.assistantMessageId);
+      deps.completeLastActivity(deps.assistantMessageId, cid);
       // Segment: push result and mark the preceding tool_call as done
       deps.pushSegment(deps.assistantMessageId, {
         type: 'tool_result',
@@ -246,16 +259,16 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
           : undefined,
         collapsed: true,
         timestamp: Date.now(),
-      } as ToolResultSegment);
+      } as ToolResultSegment, cid);
       // Mark the oldest pending tool_call as done (FIFO — handles parallel tool calls)
       const doneIndex = pendingToolCallIndices.shift();
       if (doneIndex !== undefined && doneIndex >= 0) {
-        deps.updateSegment(deps.assistantMessageId, doneIndex, { status: 'done' });
+        deps.updateSegment(deps.assistantMessageId, doneIndex, { status: 'done' }, cid);
       }
     } else if (update.sessionUpdate === 'agent_turn_complete') {
       deps.setActiveTool(null);
-      deps.completeAllActivities(deps.assistantMessageId);
-      deps.finalizeSegments(deps.assistantMessageId);
+      deps.completeAllActivities(deps.assistantMessageId, cid);
+      deps.finalizeSegments(deps.assistantMessageId, cid);
     } else if (update.sessionUpdate === 'session_info_update' && update.title) {
       // Agent-generated conversation title — override auto-generated title
       if (deps.conversationId) {
@@ -263,7 +276,11 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       }
     } else if (update.sessionUpdate === 'current_mode_update' && (update.currentModeId || update.current_mode_id)) {
       // Agent-initiated mode change (camelCase from ACP schema)
-      updateCurrentMode(String(update.currentModeId ?? update.current_mode_id));
+      const nextModeId = String(update.currentModeId ?? update.current_mode_id);
+      updateCurrentMode(nextModeId);
+      // Persist so a later restore re-applies the latest actual mode (keeps the
+      // conversation's agentModeId in sync with agent self-changes).
+      useChatStore.getState().setConversationMode(nextModeId);
     } else if (update.sessionUpdate === 'config_option_update' && (update.configId || update.config_id)) {
       // Agent-initiated config option change (camelCase from ACP schema)
       const configId = String(update.configId ?? update.config_id);
@@ -276,7 +293,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         priority: (['high', 'medium', 'low'].includes(String(e.priority)) ? String(e.priority) : 'medium') as 'high' | 'medium' | 'low',
         status: (['pending', 'in_progress', 'completed'].includes(String(e.status)) ? String(e.status) : 'pending') as 'pending' | 'in_progress' | 'completed',
       }));
-      deps.updateOrPushPlanSegment(deps.assistantMessageId, entries);
+      deps.updateOrPushPlanSegment(deps.assistantMessageId, entries, cid);
     } else if (update.sessionUpdate === 'usage_update') {
       // Token usage and cost tracking — ACP UsageUpdate fields: used, size, cost: { amount, currency }
       const contextUsed = typeof update.used === 'number' ? update.used : 0;
@@ -332,7 +349,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
     if (!filterResult.allowed) {
       const scopeLabel = deps.pathFilterRoots.length > 0 ? deps.pathFilterRoots.join(', ') : '(no project selected)';
       log.info('ai', `Chat tool call denied: ${toolInfo.title} targets ${filterResult.deniedPath} outside scope ${scopeLabel}`);
-      deps.setLastActivityApprovalMode(deps.assistantMessageId, 'denied');
+      deps.setLastActivityApprovalMode(deps.assistantMessageId, 'denied', cid);
       invoke('acp_permission_respond', { instanceId: deps.instanceId, requestId: payload.requestId, optionId: null }).catch(() => {}); // Expected: fire-and-forget deny
       return;
     }
@@ -362,7 +379,11 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       // Flip the activity's approvalMode from optimistic 'auto' to 'user' — the
       // user is being prompted. (If they later deny, the tool result/error
       // conveys that outcome; the 'user' badge reflects "user had to approve".)
-      deps.setLastActivityApprovalMode(deps.assistantMessageId, 'user');
+      deps.setLastActivityApprovalMode(deps.assistantMessageId, 'user', cid);
+      // Run is blocked on the user's decision — drives the orb "needs you" pulse
+      // (#13) and the foreground-aware auto-deny timeout (#7). The next session
+      // update flips it back to `running` via `runRunning` above (task #4).
+      runAwaitingPermission(cid, payload.requestId);
 
       const options = Array.isArray(rawOptions)
         ? rawOptions.map((o) => {
@@ -385,6 +406,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         toolInput: truncateDetail(toolInfo.input, 200),
         options,
         timestamp: Date.now(),
+        conversationId: cid,
       });
     }
   });
@@ -412,18 +434,24 @@ export function buildAcpChatCleanup(
   listeners: AcpChatListeners,
   instanceId: string,
   assistantMessageId: number,
-  cleanupRef: React.MutableRefObject<(() => void) | null>,
+  // Remove this cleanup from the owner's registry so a re-entrant or external
+  // trigger can't run it twice (review #3 — was a single `cleanupRef`; now a
+  // per-conversation map, so the closure deregisters itself by key).
+  clearSelf: () => void,
   setLoading: (loading: boolean) => void,
   setActiveTool: (tool: string | null) => void,
-  finalizeSegments: (messageId: number) => void,
-  setMessageInterrupted: (messageId: number) => void,
-): () => void {
+  finalizeSegments: (messageId: number, convId?: string | null) => void,
+  setMessageInterrupted: (messageId: number, convId?: string | null) => void,
+  // Conversation that owns the message, so a background session's cleanup
+  // finalizes/interrupts its OWN message, not the foreground one (task #3).
+  conversationId: string | null = null,
+): (cancelled?: boolean) => void {
   let cleaned = false;
   return (cancelled?: boolean) => {
     if (cleaned) return;
     cleaned = true;
-    // Null the ref first to prevent re-entrant calls
-    cleanupRef.current = null;
+    // Deregister first to prevent re-entrant calls
+    clearSelf();
     listeners.unlisten();
     listeners.unlistenPermission();
     // Deny any pending permission requests for this agent and clear from store
@@ -439,12 +467,15 @@ export function buildAcpChatCleanup(
     }
     usePermissionStore.getState().clearRequestsForInstance(instanceId);
     // Finalize segments so running spinners stop
-    finalizeSegments(assistantMessageId);
+    finalizeSegments(assistantMessageId, conversationId);
     // Mark as interrupted if this was a user-initiated cancel
     if (cancelled) {
-      setMessageInterrupted(assistantMessageId);
+      setMessageInterrupted(assistantMessageId, conversationId);
     }
     setLoading(false);
     setActiveTool(null);
+    // Turn ended (completed or cancelled) — clear the run. Error paths in
+    // useAcpLifecycle override this with `runError` afterwards (task #4).
+    runIdle(conversationId);
   };
 }

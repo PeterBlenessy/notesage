@@ -43,10 +43,9 @@ function basename(path: string): string {
 }
 
 /**
- * Minimalistic action pill matching the legacy chat-footer style — a
- * compact `h-7` button with subtle hover ring, optional leading icon,
- * and compact text label. Opens a popover, fires an action, or shows
- * state.
+ * Minimalistic action pill — a compact `h-7` button with subtle hover
+ * ring, optional leading icon, and compact text label. Opens a popover,
+ * fires an action, or shows state.
  */
 function ActionPill({
   icon: Icon,
@@ -502,8 +501,8 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
             )}
           </div>
 
-          {/* Action row — three minimalistic pills matching the chat
-              footer style (h-7, transparent border, subtle hover). */}
+          {/* Action row — three minimalistic pills matching the command-bar
+              pill style (h-7, transparent border, subtle hover). */}
           <div className="flex items-center gap-1.5 flex-wrap">
             <ActionPill
               icon={Cloud}

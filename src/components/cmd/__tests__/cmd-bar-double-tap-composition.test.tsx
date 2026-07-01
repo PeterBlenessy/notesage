@@ -23,7 +23,20 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { act } from 'react';
 import { renderWithProviders } from '@/test/component-harness';
 import FloatingCommandBar from '@/components/cmd/FloatingCommandBar';
-import { useDoubleTapCmd } from '@/hooks/useDoubleTapCmd';
+import { useGlobalShortcuts } from '@/hooks/useGlobalShortcuts';
+import type { ShortcutCallbacks } from '@/hooks/shortcuts/shortcutActions';
+
+const STUB_CALLBACKS: ShortcutCallbacks = {
+  onFindOpen: () => {},
+  onFindReplaceOpen: () => {},
+  onOutlineOpen: () => {},
+  onSettingsOpen: () => {},
+  onExportOpen: () => {},
+  onNewProject: () => {},
+  onNewNote: () => {},
+  onOpenFolder: () => {},
+  onShortcutsOpen: () => {},
+};
 
 // ---------------------------------------------------------------------------
 // Mocks — only enough to let the real bar + real double-tap hook coexist.
@@ -129,7 +142,7 @@ vi.mock('@/hooks/useChatSwitchPrompts', () => ({
 // bus connects end-to-end. `data-cmd-bar` is always on a fixed element
 // portal-mounted to document.body; tests read from there.
 function Harness({ pinned = false }: { pinned?: boolean } = {}) {
-  useDoubleTapCmd();
+  useGlobalShortcuts(STUB_CALLBACKS);
   return <FloatingCommandBar isPinned={pinned} />;
 }
 

@@ -16,8 +16,8 @@ Projects, file tree, iCloud sync, git integration, and external change detection
 - Hard per-project lock on which AI provider can access the project. Soft `ai.provider` override is still supported as an advisory default; `aiLock` is hard enforcement.
 - Set from Settings > Project > "AI Provider Lock" section — pick a connection, optionally add a reason, confirm. Unlock from the same panel.
 - Enforced at every send path: new chat message, resend, edit, comment delegation, inline actions (ACP and direct-API bubble menu). A mismatch raises a `ProjectLockViolation` toast; the wrong-provider API is never called.
-- Chat footer multi-select refuses to mix projects with conflicting locks. A locked project drives the effective connection automatically — the provider picker becomes read-only with a Lock icon.
-- Visual affordances: padlock overlay on the project folder in the sidebar (tooltip lists the locked provider); clickable Lock icon in the chat footer opens an "explain lock" modal when any selected project is locked.
+- Command bar multi-select refuses to mix projects with conflicting locks. A locked project drives the effective connection automatically — the provider picker becomes read-only with a Lock icon.
+- Visual affordances: padlock overlay on the project folder in the sidebar (tooltip lists the locked provider); clickable Lock icon in the command bar opens an "explain lock" modal when any selected project is locked.
 
 **Project goals:**
 
@@ -25,11 +25,11 @@ Projects, file tree, iCloud sync, git integration, and external change detection
 - Goal templates: OKR, Simple Checklist, SMART Goals, Milestone Tracker
 - Goals discovery by scanning for `type: goal` frontmatter
 - AI context injection — goals included in chat system prompt
-- Multi-select project selector in chat footer
+- Multi-select project selector in command bar
 
 **Chat project isolation:**
 
-Every AI feature scopes to the chat footer's selected projects (plus the `~/Notesage` library root). The selection is the source of truth for:
+Every AI feature scopes to the command bar's selected projects (plus the `~/Notesage` library root). The selection is the source of truth for:
 
 - ACP Seatbelt sandbox writable paths and kernel read deny-by-default allow-list
 - Direct-API tool executor — `read_file`, `list_directory`, `write_file`, and implicit-FS tools refuse out-of-scope paths
@@ -44,12 +44,9 @@ Every AI feature scopes to the chat footer's selected projects (plus the `~/Note
 
 **Cross-project mode:** opt-in setting (Settings > Advanced) that exposes all workspace folders to the agent — a compact warning pill in the composer context row flags it when enabled. Default off. This is the escape hatch for multi-project refactors; it disables the isolation guarantee.
 
-## Sidebar Surfaces
+## Sidebar Surface
 
-The workspace tree is exposed through two different shells. Both read from the same `workspace-store` (explorer folders, projects, notes tree) — only the chrome differs.
-
-- **Classic Layout** (`src/components/Layout.tsx`, default): the recursive `Sidebar` (`src/components/sidebar/Sidebar.tsx`) renders the full file tree inline (`FileTree.tsx` + `FileTreeItem.tsx`) with expand/collapse, file icons, drag-to-reorder, the right-click context menu, and inline rename. Cmd+Shift+L toggles visibility.
-- **Quiet Composer Layout** (`src/components/QuietLayout.tsx`, gated behind `settings.uiPreview === "quiet-composer"`): the sidebar is the flat `QuietSidebar` (`src/components/sidebar/quiet/QuietSidebar.tsx`) showing five stacked sections — Pinned, Projects, Recent, Tags, Mentions — instead of the recursive tree. Sections are read-only entry points with type-to-filter (printable keys narrow the list, Esc clears, Backspace deletes). The full hierarchical workspace tree is reached on demand via the `TreeOverlay` (`src/components/sidebar/quiet/TreeOverlay.tsx`), a focus-trapped slide-in panel triggered by `⌘⇧E` with its own search box, keyboard navigation (arrows, Home/End, Enter/Space, Esc), and per-session expansion state. The Tags and Mentions sections each self-hide when their cap slider is dragged to `0` — the slider is the visibility control (`settings.sidebarTagsCap` / `settings.sidebarMentionsCap`, clamped to `[0, 15]`).
+The workspace tree is exposed through the flat `QuietSidebar` (`src/components/sidebar/quiet/QuietSidebar.tsx`) inside QuietLayout, backed by `workspace-store` (explorer folders, projects, notes tree). Six stacked sections — Pinned, Projects, Folders, Recent, Tags, Mentions — instead of a recursive tree. Sections are read-only entry points with type-to-filter (printable keys narrow the list, Esc clears, Backspace deletes). Deeper subtrees are reached on demand via the in-sidebar inline `→`-expand on a focused project/folder row (expands multiple levels, with a nested continuous indent guide per open folder) — the `TreeOverlay` slide-in panel was removed in sidebar-simplification task #20, and `⌘⇧E` now opens the Export dialog. The open document is highlighted in the tree (accent icon + medium name). The **Pinned** section hides entirely when nothing is pinned, and the workspace header stays pinned while only the section list scrolls. The sidebar is **resizable** via a right-edge drag handle (persisted as `settings.sidebarWidth`, clamp `[200, 500]`, default 252, drives `--quiet-sidebar-width`). The Tags and Mentions sections each self-hide when their cap slider is dragged to `0` — the slider is the visibility control (`settings.sidebarTagsCap` / `settings.sidebarMentionsCap`, clamped to `[0, 15]`).
 
 ## Notesage Library & iCloud Sync
 
@@ -139,13 +136,9 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 
 | File | Purpose |
 | --- | --- |
-| `src/components/sidebar/Sidebar.tsx` | Main sidebar container (Classic Layout) |
-| `src/components/sidebar/FileTree.tsx` | File/folder tree |
-| `src/components/sidebar/FileTreeItem.tsx` | Individual tree node |
-| `src/components/sidebar/quiet/QuietSidebar.tsx` | Flat-section sidebar (Quiet Composer Layout) |
-| `src/components/sidebar/quiet/TreeOverlay.tsx` | Slide-in workspace tree (⌘⇧E, Quiet Composer Layout) |
-| `src/components/NewProjectDialog.tsx` | New project creation |
-| `src/components/NewNoteDialog.tsx` | New note creation |
+| `src/components/sidebar/quiet/QuietSidebar.tsx` | Flat-section sidebar (Pinned / Projects / Folders / Recent / Tags / Mentions) |
+| `src/components/sidebar/quiet/FolderPeek.tsx` | Inline `→`-expand one-level peek on a focused project/folder row |
+| `src/components/sidebar/FileTreeItem.tsx` | Individual tree node (used inside the inline peek) |
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |
 | `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler (routes by `externalChangeDiffReview`) |
 | `src/hooks/useFileRenameSync.ts` | Rename sync: open-tab path rewrites, Save-Now toast, path-keyed sidecar migration |
@@ -158,7 +151,7 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 | `src/stores/external-change-store.ts` | Pending external changes |
 | `src/lib/ai/project-lock.ts` | `ProjectLockViolation` + lock lookup utilities |
 | `src/lib/ai/uri-scope.ts` | `isUriInScope` for LSP doc sync / completion gate / active-tab attach |
-| `src/components/chat/ExplainLockDialog.tsx` | Chat footer "provider locked by project" modal |
+| `src/components/chat/ExplainLockDialog.tsx` | Command bar "provider locked by project" modal |
 | `src/components/settings/LockProjectDialog.tsx` | Settings > Project lock-creation dialog |
 | `src-tauri/src/commands/file.rs` | File operations |
 | `src-tauri/src/commands/git.rs` | Git operations |

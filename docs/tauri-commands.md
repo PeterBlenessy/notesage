@@ -656,6 +656,8 @@ pub async fn ai_chat_stream(
     ollama_url: Option<String>,
     web_search_enabled: Option<bool>,
     tools: Option<Vec<ToolDefinition>>,
+    response_format: Option<serde_json::Value>,
+    stream_id: Option<String>,
 ) -> Result<(), String>
 ```
 
@@ -668,13 +670,15 @@ pub async fn ai_chat_stream(
 - `ollama_url`: Ollama server URL (None for Anthropic/OpenAI)
 - `web_search_enabled`: Enable server-side web search (Anthropic/OpenAI only, ignored for Ollama)
 - `tools`: Optional array of tool definitions for client-side tool calling
+- `response_format`: Optional OpenAI-style structured-output envelope, e.g. `{ "type": "json_schema", "json_schema": { "name": "...", "schema": {...}, "strict": true } }`. Forwarded verbatim to `local_bundled` (llama-server converts the schema to GBNF — invalid tokens get `-inf` logits, so output is guaranteed to satisfy the schema) and `openai_compatible`. Unwrapped to Ollama's bare-schema `format` field by `ollama_response_format`. Ignored for `anthropic` / `openai` (the OpenAI Responses API uses a different envelope and Anthropic has no equivalent). Not sent together with `tools` for `local_bundled`: llama-server treats them as mutually exclusive grammar sources, and the tool autoparser already constrains tool-call output via the model's Jinja template. Frontend callers should use the `generateStructured()` helper in `src/lib/ai/structured.ts` rather than building the envelope by hand.
+- `stream_id`: Optional per-request correlation id. When present, every event below is emitted on the **suffixed** name `<event>:<stream_id>` (e.g. `ai-stream-chunk:6f2c…`) instead of the bare global name. Each frontend caller (`useDirectApiChat`, `generateStructured`, `useAgentTaskOperations`) generates a unique id and listens only on its own suffixed channel, so concurrent generations can't cross-contaminate the global event bus (a structured/intent call firing during a chat stream, two background agent tasks, etc.). Omitted/empty → legacy global names. Backend mirror: `stream_event(base, stream_id)` in `ai_streaming.rs`; frontend mirror: `streamEvent()` in `src/lib/ai/stream-events.ts`.
 
 **Returns:**
 
 - `Ok(())`: Stream completed successfully (content delivered via events)
 - `Err(String)`: Error message if streaming fails
 
-**Events emitted:**
+**Events emitted** (each suffixed with `:<stream_id>` when a `stream_id` is supplied — see the `stream_id` parameter above):
 
 - `ai-stream-chunk` (String): Text delta to append
 - `ai-stream-thinking-chunk` (String): Thinking/reasoning delta (for Ollama thinking models). Emitted when the model produces reasoning traces — either via native `message.thinking` field (`think: true`) or via tag-based parsing (`<think>...</think>` and similar tags detected from the model template at runtime)
@@ -693,6 +697,35 @@ Before streaming, the Ollama backend calls `/api/show` to detect thinking suppor
 4. Otherwise → no tag parsing, all content emitted as `ai-stream-chunk`
 
 This avoids hardcoding model-specific tag patterns and follows the same detection strategy as Ollama itself (`thinking/template.go` → `InferTags()`).
+
+### ai_chat_stream_cancel
+
+Aborts an in-flight `ai_chat_stream` by its `stream_id`.
+
+```rust
+#[tauri::command]
+pub async fn ai_chat_stream_cancel(
+    stream_id: String,
+    stream_state: tauri::State<'_, AiStreamState>,
+) -> Result<(), String>
+```
+
+**Parameters:**
+
+- `stream_id`: The correlation id passed to the original `ai_chat_stream` call.
+
+**Returns:**
+
+- `Ok(())`: Best-effort and idempotent — returns `Ok` even when the stream already finished or the id is unknown.
+
+**Behavior:** `AiStreamState` keeps a registry of in-flight streams keyed by `stream_id`, each holding a `tokio::sync::Notify`. `ai_chat_stream` races its provider future against `notify.notified()` via `tokio::select!`; cancelling fires the notify, the select drops the streaming future, and the underlying reqwest byte-stream is dropped — closing the connection so the provider stops generating (and billing). No `ai-stream-done` is emitted on cancel (the frontend tears its listeners down itself). This replaces the previous "cancel" that only removed frontend listeners while the backend kept streaming (audit C2).
+
+**Frontend usage:**
+
+```typescript
+// useDirectApiChat.cancelDirectChat — best-effort, fire-and-forget:
+await invoke('ai_chat_stream_cancel', { streamId }).catch(() => {});
+```
 
 ### AIRequest Struct
 
@@ -1140,13 +1173,13 @@ const results = await tauriApi.searchResearch(
 );
 ```
 
-## Voice Transcription Operations
+## Meeting Recording & Transcription Operations
 
 Located in `src-tauri/src/commands/transcription.rs`
 
 ### start_recording
 
-Starts audio capture from the specified source. Spawns a dedicated recording thread (cpal `Stream` is `!Send`). Audio is captured at the device's native sample rate and channel count.
+Starts microphone capture, streaming samples to a WAV file in the recordings inbox (`~/Notesage/Recordings/Recording <YYYY-MM-DD HH-MM-SS>/audio.wav`). A single capture-owner thread owns the `cpal` stream (which is `!Send`) and the WAV writer; only one recording may be active at a time. Emits `recording-level` events while capturing. Capture can be paused/resumed (`pause_recording` / `resume_recording`) without tearing down the stream — paused samples are discarded, so the recorded length is pause-aware.
 
 ```rust
 #[tauri::command]
@@ -1159,49 +1192,53 @@ pub async fn start_recording(
 
 **Parameters:**
 
-- `source`: Audio source — `"microphone"` (only supported value currently)
+- `source`: Audio source — `"microphone"` (only supported value; `"system"`/`"both"` are not yet implemented)
 
 **Returns:**
 
-- `Ok(())`: Recording started
-- `Err(String)`: Error if already recording or device unavailable
+- `Ok(())`: Recording started (WAV file created)
+- `Err(String)`: Error if already recording or no microphone available
 
 ### stop_recording
 
-Stops audio capture, resamples the buffer to 16kHz mono, and returns metadata about the recording.
+Stops capture and **awaits full teardown** — the capture thread drops the `cpal` stream and finalizes the WAV file before this returns, so a rapid stop→start can never overlap two CoreAudio streams (the root cause of the old dictation hang, #264). Returns the finalized WAV path plus capture metadata.
 
 ```rust
 #[tauri::command]
 pub async fn stop_recording(
     state: State<'_, TranscriptionState>,
-) -> Result<AudioBufferInfo, String>
+) -> Result<RecordingResult, String>
 ```
 
 **Returns:**
 
-- `Ok(AudioBufferInfo)`: Recording metadata (duration, sample count, sample rate, source)
+- `Ok(RecordingResult)`: Finalized WAV path + metadata (`rms`/`peak` let the frontend warn on silence)
 - `Err(String)`: Error if not currently recording
 
-**AudioBufferInfo struct:**
+**RecordingResult struct** (serializes with snake_case field names):
 
 ```rust
-pub struct AudioBufferInfo {
+pub struct RecordingResult {
+    pub path: String,
     pub duration_secs: f64,
-    pub sample_count: usize,
     pub sample_rate: u32,
     pub source: String,
+    pub rms: f32,
+    pub peak: f32,
 }
 ```
 
-### transcribe
+### transcribe_file
 
-Runs Whisper transcription on the last recorded audio buffer. Emits `transcription-progress` events during processing.
+Transcribes a finalized audio file in a single whole-file Whisper pass (no real-time chunking — quality over latency). Reads the WAV at `path`, resamples to 16kHz mono, and returns ordered timestamped segments. Emits `transcription-progress` events carrying `jobId` so concurrent jobs can be told apart.
 
 ```rust
 #[tauri::command]
-pub async fn transcribe(
+pub async fn transcribe_file(
     app: AppHandle,
     state: State<'_, TranscriptionState>,
+    job_id: String,
+    path: String,
     model: String,
     language: Option<String>,
 ) -> Result<TranscriptionResult, String>
@@ -1209,65 +1246,36 @@ pub async fn transcribe(
 
 **Parameters:**
 
+- `job_id`: Caller-generated id echoed back in progress events (`jobId` over IPC)
+- `path`: Absolute path to the finalized WAV (from `stop_recording`)
 - `model`: Whisper model size — `"tiny"`, `"base"`, `"small"`, `"medium"`, or `"large-v3"`
 - `language`: Optional language code (e.g., `"en"`, `"sv"`, `"fr"`). `None` for auto-detection.
 
 **Returns:**
 
 - `Ok(TranscriptionResult)`: Segments with timestamps, duration, and detected language
-- `Err(String)`: Error if no audio buffer or model not found
+- `Err(String)`: Error if the file cannot be read or the model is not found
 
 **Events emitted:**
 
-- `transcription-progress` (`{ percent: number, segment?: string }`): Progress updates during transcription
+- `transcription-progress` (`{ jobId: string, percent: number, segment?: string }`): Progress updates during transcription
 
-**TranscriptionResult struct:**
+**TranscriptionResult struct** (serializes with snake_case field names):
 
 ```rust
 pub struct TranscriptionResult {
-    pub segments: Vec<TranscriptionSegment>,
+    pub segments: Vec<TranscriptSegment>,
     pub duration_secs: f64,
     pub language: String,
 }
 
-pub struct TranscriptionSegment {
+pub struct TranscriptSegment {
     pub start: f64,
     pub end: f64,
     pub text: String,
-    pub speaker: Option<String>,
+    pub speaker_id: Option<String>,   // reserved for future diarization; None in v1
+    pub speaker_name: Option<String>, // reserved for future naming pass; None in v1
 }
-```
-
-### start_dictation
-
-Starts live dictation — captures audio in ~3-second chunks, transcribes each chunk through Whisper, and streams results as events. Includes silence detection, hallucination filtering, and consecutive duplicate removal.
-
-```rust
-#[tauri::command]
-pub async fn start_dictation(
-    app: AppHandle,
-    state: State<'_, TranscriptionState>,
-    language: Option<String>,
-) -> Result<(), String>
-```
-
-**Parameters:**
-
-- `language`: Optional language code for Whisper. `None` for auto-detection.
-
-**Events emitted:**
-
-- `dictation-result` (`{ text: string, is_final: boolean, error?: string }`): Transcribed text chunks. `is_final: true` signals dictation has ended.
-
-### stop_dictation
-
-Stops an active dictation session.
-
-```rust
-#[tauri::command]
-pub async fn stop_dictation(
-    state: State<'_, TranscriptionState>,
-) -> Result<(), String>
 ```
 
 ### list_whisper_models
@@ -1366,18 +1374,15 @@ listen<{ model: string; percent: number }>('model-download-progress', (event) =>
 // Cancel a download
 await tauriApi.cancelModelDownload('small');
 
-// Record and transcribe
+// Record a meeting, then transcribe the finalized file as a background job
 await tauriApi.startRecording('microphone');
-// ... user speaks ...
-const info = await tauriApi.stopRecording();
-const result = await tauriApi.transcribe('small', 'en');
-
-// Live dictation
-await tauriApi.startDictation('en');
-listen<{ text: string; is_final: boolean }>('dictation-result', (event) => {
-  if (event.payload.text) insertText(event.payload.text);
+// ... meeting happens ...
+const rec = await tauriApi.stopRecording();   // { path, duration_secs, ... }
+const jobId = crypto.randomUUID();
+listen<{ jobId: string; percent: number }>('transcription-progress', (event) => {
+  if (event.payload.jobId === jobId) updateProgress(event.payload.percent);
 });
-await tauriApi.stopDictation();
+const result = await tauriApi.transcribeFile(jobId, rec.path, 'small', 'en');
 ```
 
 ### TranscriptionState (Managed State)
@@ -1385,9 +1390,8 @@ await tauriApi.stopDictation();
 ```rust
 pub struct TranscriptionState {
     models_dir: PathBuf,
-    recording: Mutex<Option<RecordingHandle>>,
-    last_recording_buffer: Mutex<Option<(Vec<f32>, String, u32)>>,
-    dictation_cancel: Mutex<Option<Arc<AtomicBool>>>,
+    recordings_dir: PathBuf,
+    capture: Mutex<Option<CaptureOwner>>,
     download_cancels: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 ```
@@ -1395,10 +1399,131 @@ pub struct TranscriptionState {
 **Fields:**
 
 - `models_dir`: Path to `~/.notesage/whisper-models/`
-- `recording`: Active recording handle (stop signal, buffer, thread)
-- `last_recording_buffer`: Audio data from last recording (samples, source, sample rate)
-- `dictation_cancel`: Cancel signal for active dictation session
+- `recordings_dir`: Path to `~/Notesage/Recordings/` (the recording-bundle inbox)
+- `capture`: The single active capture owner (`cpal` stream + WAV writer + stop signal + join handle); `Some` only while a recording is in progress. Taking it out of the mutex enforces one stream at a time and is the synchronization point for the awaited teardown
 - `download_cancels`: Per-model cancel signals for concurrent downloads
+
+## MCP Operations
+
+Located in `src-tauri/src/commands/mcp.rs` and `mcp_oauth.rs`. See `docs/features/ai-workflows.md` for the feature overview.
+
+| Command | Signature (abridged) | Purpose |
+| --- | --- | --- |
+| `mcp_start_server` | `(config: McpServerConfig) -> McpServerInfo` | Connect (stdio spawn or http) → `initialize` → discover tools; register in `McpState`. Resolves secret env refs from the keychain at spawn. |
+| `mcp_validate_server` | `(config) -> McpValidationResult` | Dry run (connect → handshake → `tools/list` → stop) without registering. Returns `{ ok, tools, server_info, error, error_kind, stderr_tail }`; `error_kind` ∈ `binary_not_found \| spawn_failed \| init_failed \| timeout`. |
+| `mcp_stop_server` / `mcp_restart_server` | `(server_id)` | Lifecycle. http servers have no child process. |
+| `mcp_list_tools` / `mcp_call_tool` | `(server_id, …)` | Tools from a running server. |
+| `mcp_get_server_status` | `() -> Vec<McpServerInfo>` | Snapshot of all servers. |
+| `mcp_catalog_list` | `() -> Vec<McpCatalogItem>` | Curated catalog manifest (embedded `mcp-catalog.json`). |
+| `mcp_discover_configs` / `mcp_import_configs` / `mcp_save_config` / `mcp_check_import_sources` | — | Read/import/write `mcp.json`; import sources (Claude Desktop, Cursor, VS Code). |
+| `mcp_oauth_authorize` | `(server_id, server_url, scope?) -> OAuthStatus` | Full browser OAuth: discovery (RFC 9728→8414) → DCR (RFC 7591) → PKCE → loopback callback → token exchange → keychain store. |
+| `mcp_oauth_status` | `(server_id) -> OAuthStatus` | `{ authorized, expires_at }` — never returns token material. |
+| `mcp_oauth_logout` | `(server_id)` | Clear stored tokens. |
+
+**`McpEnvValue`** (env value in `McpServerConfig`/`McpServerInfo`/`McpConfigEntry`): a bare JSON string is inline plaintext; `{ "secret": true }` is a keychain reference (value at `notesage:mcp:<server_id>:<KEY>`, resolved only at spawn).
+
+**Deep link:** `notesage://mcp/install?...` (scheme via `tauri-plugin-deep-link`) opens the validate-first Add dialog pre-filled — parsed by `src/lib/mcp/deeplink.ts`, surfaced by `McpDeepLinkInstaller`.
+
+## Alpha Update Operations
+
+Located in `src-tauri/src/commands/alpha_update.rs`
+
+The app ships on an alpha pre-release channel. Tauri's `tauri-plugin-updater` `check()` JS API has no per-call `url` override, so the alpha channel is driven from Rust via `UpdaterBuilder::endpoints(...)` against a runtime-supplied endpoint. The pubkey from `tauri.conf.json` still verifies manifest signatures regardless of which endpoint produced them.
+
+### alpha_check
+
+Checks the alpha-channel update endpoint and, if an update is available, inserts the `Update` into Tauri's resource table so the frontend can wrap it (`new Update(metadata)`) and call `.downloadAndInstall(...)` — which routes back to the plugin's stock signature-verified `download` / `install` handlers via the returned `rid`.
+
+```rust
+#[tauri::command]
+pub async fn alpha_check<R: Runtime>(
+    webview: Webview<R>,
+    url: String,
+) -> Result<Option<AlphaUpdateMetadata>, String>
+```
+
+**Parameters:**
+
+- `webview`: Tauri webview handle (injected automatically)
+- `url`: The alpha update manifest endpoint URL
+
+**Returns:**
+
+- `Ok(Some(AlphaUpdateMetadata))`: An update is available
+- `Ok(None)`: Already up to date
+- `Err(String)`: Invalid URL, updater config/build failure, or check failure
+
+**AlphaUpdateMetadata struct** (serializes with camelCase field names):
+
+```rust
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AlphaUpdateMetadata {
+    rid: ResourceId,            // resource-table handle for `new Update(metadata)`
+    current_version: String,
+    version: String,
+    date: Option<String>,       // RFC3339
+    body: Option<String>,
+    raw_json: serde_json::Value,
+}
+```
+
+**Frontend usage:**
+
+```typescript
+import { invoke } from '@tauri-apps/api/core';
+import { Update } from '@tauri-apps/plugin-updater';
+
+const metadata = await invoke<AlphaUpdateMetadata | null>('alpha_check', {
+  url: ALPHA_UPDATE_ENDPOINT,
+});
+if (metadata) {
+  const update = new Update(metadata);
+  await update.downloadAndInstall();
+}
+```
+
+## Preview Operations
+
+Located in `src-tauri/src/commands/preview.rs`
+
+Backs the large-file instant-load pipeline (`docs/prds/2026-05-03-large-file-instant-load.md`). Renders a markdown file to an HTML body fragment so the frontend can show an instant preview inside a `.ProseMirror` wrapper before the Tiptap editor finishes hydrating.
+
+### render_markdown_preview
+
+Reads a markdown file, strips leading YAML frontmatter (mirroring `src/lib/frontmatter.ts:parseFrontmatter`), and runs the comrak pipeline (`crate::export::markdown_to_html`) to produce an HTML body fragment.
+
+```rust
+#[tauri::command]
+pub async fn render_markdown_preview(
+    path: String,
+    project_root: Option<String>,
+    theme: String,
+) -> Result<String, String>
+```
+
+**Parameters:**
+
+- `path`: Absolute path to the markdown file
+- `project_root`: Optional project root path for resolving relative resources
+- `theme`: `"light"` or `"dark"` — controls syntax-highlighting theme
+
+**Returns:**
+
+- `Ok(String)`: HTML body fragment
+- `Err(String)`: Error message if the file cannot be read
+
+**Notes:** Embedded SVGs (drawings/charts) are intentionally not resolved here — they render as syntax-highlighted code blocks during the brief preview window and are replaced by their real node-views once the editor hydrates, keeping first-paint within the latency budget.
+
+**Frontend usage:**
+
+```typescript
+const bodyHtml = await invoke<string>('render_markdown_preview', {
+  path: '/path/to/large-note.md',
+  projectRoot: null,
+  theme: 'light',
+});
+```
 
 ## Error Handling
 
@@ -1423,9 +1548,9 @@ try {
 ## Security Considerations
 
 - **All file paths are absolute**: Frontend must never construct paths from user input without validation
-- **API keys in OS keychain**: Keys stored in macOS Keychain via `keyring` crate, never in localStorage. Backend resolves keys from keychain using `connection_id` — keys never transit through IPC or appear in frontend console
-- **No direct filesystem access**: Frontend cannot read/write files directly, must use Tauri commands
-- **Permission boundaries**: Tauri enforces filesystem permissions, commands cannot access files outside allowed directories
+- **API keys in OS keychain**: Keys stored in macOS Keychain via `keyring` crate, never in localStorage. Backend resolves keys from keychain using `connection_id` — `resolve_api_key` consults the keychain FIRST (authoritative) and only falls back to an explicit `api_key` IPC parameter when no keychain entry exists, so a key passed over IPC can never shadow the keychain-resolved key
+- **No direct filesystem access via plugins**: The renderer never imports `@tauri-apps/plugin-fs` (no `fs:allow-*` capability is granted) — all file I/O goes through the vetted Rust commands in `commands/file.rs`
+- **Renderer is trusted; file commands do NOT self-validate paths**: `read_file`/`write_file`/`delete_path` operate in the main (unsandboxed) process on whatever absolute path the renderer passes — they do NOT restrict to a workspace root. The boundary against a *renderer compromise* is the live-window CSP + the XSS-hardening of every HTML sink, not per-command allow-listing. Per-scope path gating exists only at the AI/agent call sites (`tool-executor.ts`, Copilot LSP, Seatbelt writable paths). The one runtime FS-scope widener, `allow_asset_dir`, IS validated (`validate_asset_dir` rejects `/`, `$HOME` & ancestors, `..`, and sensitive subtrees)
 
 ## IPC Performance
 

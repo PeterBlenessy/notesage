@@ -34,20 +34,9 @@ Bump the version, generate a changelog, and create a release history entry.
 
 6. **Create a release history entry** at `docs/history/NNN-release-vX.Y.Z.md`.
 
-   **CRITICAL — tone for the three user-facing sections.** The `Features`, `Fixes`, and `Improvements` sections are extracted by `scripts/generate-changelog.ts` into `public/changelog.json`, which is shipped to end users as the in-app "What's new". Write those bullets for a non-technical user scrolling through versions. Any other `###` heading (like `Under the hood`) is **not** extracted — put task numbers, file paths, commit hashes, and implementation jargon there.
+   **CRITICAL — tone for the three user-facing sections.** The `Features`, `Fixes`, and `Improvements` sections are extracted by `scripts/generate-changelog.ts` into `public/changelog.json` and shipped to end users as the in-app "What's new". Write those bullets for a non-technical user. The full rules — what's forbidden, the required bullet shape, before/after examples, the spot-check, and the alpha exception where `## Under the hood` IS surfaced — live in §"User-facing copy vs Under the hood" below. Read that section before writing the entry; it is the single authoritative spot for the copy guidance.
 
    **Before writing,** open the two most recent prior `docs/history/*.md` files and match their tone. Describe what the user will notice or can now do, not what file changed or which subsystem moved.
-
-   **Avoid in Features / Fixes / Improvements bullets:**
-   - Task numbers (`#12`, `#23`, etc.) — internal
-   - File paths (`useAIContext.ts`, `ChatFooter.tsx`) — internal
-   - Commit hashes, store names, type names, migration versions — internal
-   - Architecture jargon (`ScopedApproval triples`, `LCA walk`, `$HOME deny-by-default`, `Bucket C`) — opaque to users
-
-   **Prefer:**
-   - Verb-first user-visible behavior (`Lock a project to a specific AI provider…`, `Resend an older message…`)
-   - Where something lives, named by its menu path (`Settings → Privacy → Approvals`, `Settings → Advanced`)
-   - Concrete consequences (`No more stale prompts from an agent that's been restarted`, `Filenames from unselected projects no longer appear in the model's context`)
 
    Template:
 
@@ -82,7 +71,7 @@ Bump the version, generate a changelog, and create a release history entry.
    - N files changed across M commits (+/- line counts if notable)
    ```
 
-   **Spot-check before confirming:** read each bullet in Features / Fixes / Improvements and ask "would a non-technical user understand this?" If no, rewrite. If the bullet requires a task number or file path to make sense, move it to `Under the hood`.
+   Before confirming, apply the spot-check from §"User-facing copy vs Under the hood".
 
 7. **Update `docs/history/README.md`** with the new entry. The one-line summary there should also read as user-visible — the same tone rules apply.
 
@@ -121,6 +110,57 @@ After the user commits, tags, and pushes a release tag, **always** monitor the G
 4. If the workflow **succeeds**, confirm to the user that the release was built and published.
 
 This monitoring should run in the background so it does not block other work.
+
+
+## User-facing copy vs Under the hood
+
+The `### Features`, `### Improvements`, and `### Fixes` sections in every release history file are extracted by `scripts/generate-changelog.ts` and shipped to end users as the in-app "What's new" feed. A non-technical user scrolling through versions must be able to understand every bullet in those three sections without knowing what a crate, Dependabot alert, classDef, or IPC is.
+
+### Alpha exception — `## Under the hood` IS surfaced for prereleases
+
+For **stable** releases (no `-` in the version), `## Under the hood` is private — never extracted, never shown to users. This is where you put task numbers, file paths, and jargon.
+
+For **alpha** releases (prerelease versions like `0.46.0-alpha.5`), `## Under the hood` IS surfaced, in two places:
+
+- `scripts/generate-changelog.ts` attaches its bullet list to the entry as `underTheHood[]`, which the in-app Changelog renders as an "Under the hood" section (alpha channel only — the stable feed strips prerelease entries entirely).
+- `release.yml` includes the `## Under the hood` section in the GitHub Release body for prerelease tags.
+
+This is deliberate: alpha testers want to see exactly which merged PRs made each auto-cut, and `aw-alpha-cut` writes those PRs into `## Under the hood` verbatim. **When you promote an alpha to stable via this skill, you still must rewrite that dump into curated user-facing prose** — the stable release notes never carry the raw PR list.
+
+### Forbidden in user-facing bullets (Features / Improvements / Fixes)
+
+Any bullet that contains the following is wrong and must be moved to `## Under the hood`:
+
+- **Version number triples** — `11.14.0 → 11.15.0`, `rand 0.8.5`, `mermaid@11.15.0`. Users do not care which version number a dependency is at; they care whether something broke.
+- **Crate / package / library names** — `rand`, `mermaid`, `tiptap`, `comrak`, `docx-rs`. Internal software names are opaque noise.
+- **Alert identifiers** — `Dependabot alert #57`, `classDef HTML injection`, `GHSA-xxxx`. These mean nothing to a user.
+- **Distribution mechanics** — `transitive`, `Cargo.lock`, `lockfile`, `cargo update`. Nobody outside the team knows what transitive means in this context.
+- **Internal terms** — `Rust crate`, `IPC Origin Confusion`, `custom loggers`, `ScopedApproval triples`, `LCA walk`, `Bucket C`. Architecture jargon.
+- **File paths and commit hashes** — `useAIContext.ts`, `ChatFooter.tsx`, `a1b2c3d`. Internal pointers.
+
+### Required bullet shape
+
+Lead with what the user can **do differently** or what got **safer / faster / clearer**. Optionally add where to find it (Settings path, menu name). Put everything else in `## Under the hood`.
+
+> **Format:** `<User-observable outcome> [— <optional location>]`
+
+### Before / After examples
+
+**Security-fix bullet**
+
+- ❌ Before: `Fixed classDef HTML injection in mermaid 11.14.0 → 11.15.0 (Dependabot alert #57, transitive via tiptap)`
+- ✅ After: `Fixed a potential content-injection vulnerability in diagram rendering — no action required`
+
+**Dependency-bump bullet**
+
+- ❌ Before: `Updated rand crate 0.8.5 → 0.9.0 (transitive Cargo.lock update)`
+- ✅ After: `Improved startup reliability on Apple Silicon (internal dependency update)` — or omit entirely if it has no user-observable effect
+
+### Spot-check rule
+
+Read each Features / Improvements / Fixes bullet aloud and ask: _"Would a non-technical user understand this?"_ If the answer requires knowing what a crate, Dependabot, transitive, or classDef is — move the bullet to `## Under the hood`.
+
+The `scripts/generate-changelog.ts` linter will print a console warning for bullets that match known forbidden patterns (version triples, `Dependabot`, `transitive`). The linter is warn-only (exit code 0) — it guides the writer but does not block releases.
 
 ## Important Notes
 

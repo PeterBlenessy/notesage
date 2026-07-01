@@ -1,30 +1,25 @@
-import { memo, useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { memo, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Loader2, GitBranch } from 'lucide-react';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
 import { useChatStore, selectMessages, selectAllMessages, selectPendingProjectSwitch, selectPendingAgentSwitch, selectSegments, getSessionIdForLeaf } from '@/stores/chat-store';
 import { getChildren } from '@/lib/chat-tree';
-import { acpAgent } from '@/lib/ai/acp-agent-state';
+import { getAcpAgent } from '@/lib/ai/acp-agent-state';
 import { hasSessionCapability } from '@/lib/ai/acp-utils';
 import { tauriApi } from '@/lib/tauri';
-import { useConnectionsStore } from '@/stores/connections-store';
-import { useRoutingStore } from '@/stores/routing-store';
-import { useProjectMetadataStore } from '@/stores/project-metadata-store';
+import { LocalAgentSetupPrompt } from './LocalAgentSetupPrompt';
 import { usePermissionStore } from '@/stores/permission-store';
-import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import type { ChatMessage as ChatMessageType } from '@/lib/ai/types';
 import { ChatMessage } from './ChatMessage';
 import { LocalAISetupCard } from './LocalAISetupCard';
 import { PermissionCard } from './PermissionCard';
-import { DomainApprovalCard, type DomainApprovalRequest } from './DomainApprovalCard';
 import { ToolCallPermissionCard } from './ToolCallPermissionCard';
 import { AgentStatusBanner } from './AgentStatusBanner';
-import { useToolPermissionStore } from '@/stores/tool-permission-store';
+import { useToolPermissionStore, selectForegroundPending } from '@/stores/tool-permission-store';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 import { getRetryCallback, getKeepWaitingCallback } from '@/hooks/useAcpLifecycle';
+import { useForegroundLoading } from '@/hooks/useSessionManager';
 import { ProjectSwitchCard } from './ProjectSwitchCard';
 import { AgentSwitchCard } from './AgentSwitchCard';
 import { ContextDivider } from './ContextDivider';
@@ -40,13 +35,13 @@ interface ChatMessageListProps {
   onSend: (content: string, attachments?: import('@/lib/ai/types').ImageAttachment[]) => void;
   selectedProjectPaths: string[];
   /**
-   * Resend signature takes the full `ChatMessageType` so the ChatPanel can read
+   * Resend signature takes the full `ChatMessageType` so the host can read
    * `message.connectionId` to gate cross-provider resends on the confirmation
    * dialog (#10 in project-data-isolation).
    */
   onResend?: (message: ChatMessageType) => void;
   /**
-   * Edit signature mirrors resend: the full `ChatMessageType` so ChatPanel can
+   * Edit signature mirrors resend: the full `ChatMessageType` so the host can
    * capture `message.connectionId` in the edit context and detect provider
    * mismatches at send time.
    */
@@ -55,7 +50,9 @@ interface ChatMessageListProps {
 }
 
 export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedProjectPaths, onResend, onEdit, onPrefill }: ChatMessageListProps) {
-  const isLoading = useChatStore((s) => s.isLoading);
+  // Foreground-conversation loading (task #4) — the list renders the watched
+  // conversation, so it reflects that conversation's run, not the global flag.
+  const isLoading = useForegroundLoading();
   const activeTool = useChatStore((s) => s.activeTool);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const branchFromMessage = useChatStore((s) => s.branchFromMessage);
@@ -65,7 +62,9 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
   const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
   const segments = useChatStore(selectSegments);
   const permissionRequests = usePermissionStore((s) => s.requests);
-  const toolPermission = useToolPermissionStore((s) => s.pending);
+  // Only the foreground conversation's pending request renders here (review #4);
+  // background conversations surface theirs in their history row instead.
+  const toolPermission = useToolPermissionStore(selectForegroundPending(activeConversationId));
 
   // Detect if the user is at a branch point (last visible message has children in the full tree)
   const branchPointInfo = useMemo(() => {
@@ -77,18 +76,6 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
     return { messageId: lastMsg.id, branchCount: children.length + 1 }; // +1 for the new branch being created
   }, [messages, allMessages]);
 
-  const [domainRequests, setDomainRequests] = useState<DomainApprovalRequest[]>([]);
-
-  // Resolve effective connection for domain auto-approval
-  const singleProjectPath = selectedProjectPaths.length === 1 ? selectedProjectPaths[0] : null;
-  const singleMetadata = useProjectMetadataStore((s) => singleProjectPath ? s.metadataMap[singleProjectPath] ?? null : null);
-  const projectProviderOverride = singleMetadata?.ai.provider ?? null;
-  const interactiveConnection = useRoutingStore((s) => s.getConnectionForUseCase('interactive'));
-  const allConnections = useConnectionsStore((s) => s.connections);
-  const projectOverrideConnection = projectProviderOverride
-    ? allConnections.find((c) => c.id === projectProviderOverride) ?? null
-    : null;
-  const effectiveConnection = projectOverrideConnection ?? interactiveConnection;
 
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
@@ -133,45 +120,11 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
     wasLoadingRef.current = isLoading;
   }, [isLoading, scrollToEnd]);
 
-  // Listen for network domain approval requests from the proxy
-  useEffect(() => {
-    const unlisten = listen<{
-      instanceId: string;
-      agentId: string;
-      domain: string;
-      port: number;
-      requestId: string;
-    }>('network-domain-request', (event) => {
-      const { instanceId, agentId, domain, port, requestId } = event.payload;
-
-      const connId = effectiveConnection?.id;
-      if (connId) {
-        const provOpt = PROVIDER_OPTIONS.find(
-          (o) => o.agentBinary === agentId
-        );
-        const builtIn = provOpt?.installMeta?.allowedDomains ?? [];
-        const permStore = usePermissionStore.getState();
-        if (permStore.isDomainAllowed(connId, domain, builtIn, null)) {
-          invoke('network_domain_respond', {
-            instanceId,
-            requestId,
-            decision: 'allow_once',
-          }).catch((err) => log.warn('ai', 'Failed to auto-approve domain', err));
-          return;
-        }
-      }
-
-      setDomainRequests((prev) => [
-        ...prev,
-        { instanceId, agentId, domain, port, requestId, connectionId: connId ?? '' },
-      ]);
-    });
-    return () => { unlisten.then((fn) => fn()); };
-  }, [effectiveConnection?.id]);
-
-  const handleDomainResolved = (requestId: string) => {
-    setDomainRequests((prev) => prev.filter((r) => r.requestId !== requestId));
-  };
+  // Network-domain approvals are owned by the always-mounted
+  // `useNetworkDomainApprovals` hook (App root) + `DomainApprovalStack`
+  // (QuietLayout). They used to live here, but `ChatMessageList` unmounts when
+  // the command bar collapses, which silently dropped the proxy's
+  // `network-domain-request` listener and wedged sandboxed agents.
 
   // Stable callbacks for ChatMessage — prevent inline arrow functions from breaking React.memo
   const handleResend = useCallback((msg: ChatMessageType) => {
@@ -201,6 +154,8 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
     const branchPoint = conv?.messages.find((m) => m.timestamp === timestamp);
     const isLeafBranch = !!(conv && branchPoint?.id && branchPoint.id === conv.activeLeafId);
 
+    // The active conversation's ACP agent (registry keyed by conversation id, task #2).
+    const acpAgent = getAcpAgent(state.activeConversationId ?? undefined);
     let forkedSessionId: string | undefined;
     if (isLeafBranch && acpAgent?.capabilities && hasSessionCapability(acpAgent.capabilities, 'fork')) {
       const currentSessionId = conv ? getSessionIdForLeaf(conv, conv.activeLeafId) : undefined;
@@ -248,6 +203,9 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
                 </Button>
               ))}
             </div>
+            {/* Local Agent setup entry (task #18) — only when no AI connection
+                exists yet. Opens the agent setup dialog (#17). */}
+            <LocalAgentSetupPrompt />
             <p className="mt-3 text-[10px] text-muted-foreground">
               Type <kbd className="px-1 py-px rounded bg-muted font-mono text-[10px]">/</kbd> for skills, <kbd className="px-1 py-px rounded bg-muted font-mono text-[10px]">@</kbd> for agents
             </p>
@@ -355,17 +313,13 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
             onRetry={() => { getRetryCallback()?.(); }}
             onCancel={() => useAgentStatusStore.getState().clearStatus()}
           />
-          {(permissionRequests.length > 0 || domainRequests.length > 0 || toolPermission) && (
+          {/* Network-domain approval cards moved to the always-mounted
+              `DomainApprovalStack` (QuietLayout) — see `useNetworkDomainApprovals`.
+              Hosting them here meant they vanished with the collapsed bar. */}
+          {(permissionRequests.length > 0 || toolPermission) && (
             <div className="flex flex-col gap-2 mt-2">
               {permissionRequests.map((req) => (
                 <PermissionCard key={req.id} request={req} />
-              ))}
-              {domainRequests.map((req) => (
-                <DomainApprovalCard
-                  key={req.requestId}
-                  request={req}
-                  onResolved={handleDomainResolved}
-                />
               ))}
               {toolPermission && (
                 <ToolCallPermissionCard key={toolPermission.id} request={toolPermission} />

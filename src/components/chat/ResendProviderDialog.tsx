@@ -55,7 +55,7 @@ export interface ResendProviderDialogProps {
  *
  * Default option is "original" — matches the connectionId recorded on the
  * message. `aiLock` on the current project constrains which options are
- * enabled; see `ChatPanel.tsx` for the resolution logic.
+ * enabled; see `FloatingCommandBar.tsx` for the resolution logic.
  */
 export function ResendProviderDialog({
   open,

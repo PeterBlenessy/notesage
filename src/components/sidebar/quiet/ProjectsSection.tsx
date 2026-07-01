@@ -5,7 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
 } from "react";
 import { Folder, FileText, Plus } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
@@ -14,46 +14,45 @@ import { Button } from "@/components/ui/button";
 import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { useProjectMetadataStore } from "@/stores/project-metadata-store";
-import { resolveFolderIcon } from "@/lib/folder-icon";
-// useTreeOverlayStore was removed by sidebar-simplification task #20.
-import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
 import { tauriApi, type FileEntry } from "@/lib/tauri";
-import { cn } from "@/lib/utils";
 import { FolderPeek, derivePeekChildren, type PeekChildren } from "./FolderPeek";
 import { FilePreview, isPreviewable } from "./FilePreview";
 import { subscribeToSidebarEvents } from "@/lib/sidebar-events";
-import { dispatchFocusEditor } from "@/lib/editor-events";
-import { beginFileDrag } from "./file-drag";
-import {
-  SIDEBAR_ENTER_RENAME_MODE_EVENT,
-  SidebarContextMenu,
-} from "@/components/sidebar/quiet/SidebarContextMenu";
+import { SidebarContextMenu } from "@/components/sidebar/quiet/SidebarContextMenu";
 import { SidebarInlineEdit } from "@/components/sidebar/quiet/SidebarInlineEdit";
-import { SidebarRowIndicators } from "@/components/sidebar/quiet/SidebarRowIndicators";
-import {
-  basename as pathBasename,
-  resolveRenamePath,
-  validateCreateBasename,
-  validateRenameBasename,
-} from "@/components/sidebar/quiet/rename-utils";
+import { validateCreateBasename } from "@/components/sidebar/quiet/rename-utils";
 import {
   isContextMenuKey,
   openContextMenuOnElement,
 } from "@/components/sidebar/quiet/useSidebarItemShortcuts";
-import { announce } from "@/components/sidebar/quiet/aria-announcer";
+import {
+  isSystemFolderName,
+  countMarkdownFiles,
+  buildProjectNameValidator,
+  CHILD_GUIDE_OFFSET,
+  insertChildRows,
+  projectBasename,
+  type RowDescriptor,
+} from "./project-section-utils";
+import { ProjectRow } from "./ProjectRow";
+import { ChildRow } from "./ChildRow";
+import { useProjectInlineEdit } from "./useProjectInlineEdit";
+
+// ---------------------------------------------------------------------------
+// Re-exports for backward compatibility with existing tests / callers
+// ---------------------------------------------------------------------------
+export { isSystemFolderName, countMarkdownFiles, buildProjectNameValidator };
+export type { RowDescriptor };
 
 /**
  * ProjectsSection (quiet variant) — flat list of projects with `.md` file
  * counts plus keyboard-driven one-level inline expansion (task #37).
  *
- * Distinct from `src/components/sidebar/ProjectsSection.tsx` — that file
- * powers the legacy expandable sidebar and is untouched by this task. The
- * quiet-composer sidebar is wired to `workspace-store.projects`.
+ * The sidebar is wired to `workspace-store.projects`.
  *
  * Accessibility: the list is a real ARIA tree (`role="tree"`) with
  * `treeitem` rows. Arrow keys walk visible rows (siblings + expanded
@@ -73,45 +72,6 @@ export interface ProjectsSectionProps {
    * Task #43 — sidebar type-to-filter. Empty / undefined = no filter.
    */
   filter?: string;
-}
-
-/**
- * Recursively counts the number of `.md` files in a file tree. Directories
- * and non-markdown files are skipped. The counter dives into `children` on
- * every directory, so nested folders are included in the total.
- *
- * Exported for unit testing.
- */
-/**
- * Issue #89 — any dotfile folder must never be renamed via the UI.
- *
- * Renaming `.notesage` corrupts the project (loses metadata, comments,
- * drawings, charts). The same risk applies to other tool dirs (`.claude`,
- * `.git`, `.vscode`, `.cursor`, `.codex`, `.github`, etc.) and to user
- * dotfiles whose tools may not survive being renamed (`.env`, `.gitignore`,
- * `.npmrc`, …). The only safe rule is: any leading-dot name is a no-op for
- * UI rename. Power users who genuinely want to rename a dotfile can do it
- * outside Notesage; the cost of accidental corruption inside the app is
- * much higher than the cost of bouncing them to the terminal.
- *
- * Exported for unit tests.
- */
-export function isSystemFolderName(name: string): boolean {
-  return name.startsWith(".");
-}
-
-export function countMarkdownFiles(tree: FileEntry[]): number {
-  let count = 0;
-  for (const entry of tree) {
-    if (entry.is_directory) {
-      if (entry.children && entry.children.length > 0) {
-        count += countMarkdownFiles(entry.children);
-      }
-    } else if (entry.name.toLowerCase().endsWith(".md")) {
-      count += 1;
-    }
-  }
-  return count;
 }
 
 /**
@@ -135,11 +95,6 @@ function findEntryToOpen(
   tree: FileEntry[],
   recentFiles: ReadonlyArray<{ path: string; lastAccessedAt?: number }>,
 ): FileEntry | null {
-  // 1) Most-recently-accessed file under this project. The list is
-  // already sorted by `lastAccessedAt` desc when populated, so the
-  // first match wins. We still walk the tree to confirm the file is
-  // physically present (avoids opening a stale MRU pointing at a
-  // deleted file).
   const projectPrefix = projectPath.endsWith("/")
     ? projectPath
     : projectPath + "/";
@@ -162,14 +117,12 @@ function findEntryToOpen(
     if (match) return match;
   }
 
-  // 2) README at top level.
   for (const entry of tree) {
     if (!entry.is_directory && entry.name.toLowerCase() === "readme.md") {
       return entry;
     }
   }
 
-  // 3) First markdown anywhere.
   const firstMarkdown = (entries: FileEntry[]): FileEntry | null => {
     for (const entry of entries) {
       if (!entry.is_directory) {
@@ -184,92 +137,6 @@ function findEntryToOpen(
     return null;
   };
   return firstMarkdown(tree);
-}
-
-/** Derives the project's display name from the absolute path (basename). */
-function projectBasename(path: string): string {
-  const parts = path.split("/").filter(Boolean);
-  return parts[parts.length - 1] ?? path;
-}
-
-/**
- * Build a `validate` callback for the inline project-create input.
- *
- * Rejects:
- *   - Slashes — projects are always a single folder directly under the
- *     Notesage library root. Nested paths are not supported from this UI.
- *   - Names beginning with `.` — dot-prefixed folders are treated as hidden
- *     metadata directories elsewhere in the app.
- *   - Names that collide (case-sensitively, by basename) with an already
- *     open project.
- *
- * Empty inputs return `null` — SidebarInlineEdit auto-cancels those before
- * this function is consulted.
- */
-export function buildProjectNameValidator(
-  existingBasenames: Set<string>,
-): (input: string) => string | null {
-  return (input: string) => {
-    const trimmed = input.trim();
-    if (trimmed.length === 0) return null;
-    if (trimmed.includes("/")) return "Name cannot contain slashes";
-    if (trimmed.startsWith(".")) return "Name cannot start with a dot";
-    if (existingBasenames.has(trimmed)) return "Project already exists";
-    return null;
-  };
-}
-
-/**
- * Recursively inserts child entry rows beneath an already-expanded subfolder
- * row. Dirs-before-files ordering mirrors derivePeekChildren. Used by the
- * `rows` useMemo to support multi-level inline expand (#158).
- */
-function insertChildRows(
-  list: RowDescriptor[],
-  entries: FileEntry[],
-  project: WorkspaceProject,
-  expandedChildPaths: Set<string>,
-  showHiddenFiles: boolean,
-): void {
-  const visible = entries.filter((e) => showHiddenFiles || !e.hidden);
-  const dirs = visible.filter((e) => e.is_directory);
-  const files = visible.filter((e) => !e.is_directory);
-  for (const dir of dirs) {
-    list.push({
-      id: `${project.path}::${dir.path}`,
-      kind: "child",
-      project,
-      entry: dir,
-    });
-    if (expandedChildPaths.has(dir.path)) {
-      insertChildRows(list, dir.children ?? [], project, expandedChildPaths, showHiddenFiles);
-    }
-  }
-  for (const file of files) {
-    list.push({
-      id: `${project.path}::${file.path}`,
-      kind: "child",
-      project,
-      entry: file,
-    });
-  }
-}
-
-/**
- * Flat row representation used by the keyboard navigator. Each rendered
- * row — project or expanded child — corresponds to one `RowDescriptor`,
- * letting ArrowUp / ArrowDown walk the visible sequence without caring
- * about the nested DOM structure.
- */
-interface RowDescriptor {
-  id: string;
-  kind: "project" | "child";
-  /** For `project`: the project itself. For `child`: its parent project. */
-  project: WorkspaceProject;
-  /** Only set for `kind: "child"` — the immediate child entry. */
-  entry?: FileEntry;
-  /** Overflow hint marker id, without an interactive entry. */
-  overflow?: { kind: "folder" | "file"; count: number };
 }
 
 /**
@@ -288,13 +155,6 @@ async function openFileEntry(entry: FileEntry): Promise<void> {
   try {
     const fileType = getFileType(entry.name);
     if (fileType === "image" || isBinaryFileType(fileType)) {
-      // Image / PDF / DOCX / EPUB — read as bytes and cache via
-      // `setBinaryData` (live-test 2026-04-26). The viewer components
-      // (PdfViewer, EpubViewer, DocxViewer, PptxViewer) read from the
-      // binary cache by path; without the cache write, they render
-      // "no PDF data available" because the bytes never made it into
-      // the lookup table. Image viewers use `convertFileSrc` and
-      // don't need the cache, but the call is cheap.
       if (isBinaryFileType(fileType)) {
         const bytes = await tauriApi.readBinaryFile(entry.path);
         setBinaryData(entry.path, new Uint8Array(bytes));
@@ -330,15 +190,8 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
     const tab = s.openDocuments.find((t) => t.id === id);
     return tab?.filePath ?? null;
   });
-  // Live-test 2026-04-28 finding #4 — Settings > System > "Show hidden
-  // files" must propagate into every `derivePeekChildren` call below
-  // (inline expanded rows + ArrowRight navigation + active-row child
-  // detection) so the toggle is not a no-op.
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
 
-  // Filter projects by basename (case-insensitive substring). Expanded
-  // children of a matching parent are preserved — we filter the project
-  // list only, not the nested trees.
   const projects = useMemo(
     () =>
       filter
@@ -351,244 +204,22 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
     [allProjects, filter],
   );
 
-  // Each project's inline-expanded state is independent — this set tracks
-  // absolute project paths that the user has expanded via ArrowRight.
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
-  // Live-test 2026-04-28 finding #2 — when the user clicks a "+N more"
-  // overflow row, we add the project path to this set so the next
-  // re-derive uses the unbounded variant of `derivePeekChildren`.
-  // Per-project (not global) so a heavy project doesn't blow up
-  // sibling sections. Ephemeral — resets on full unmount, same as
-  // expandedPaths.
-  const [showAllPaths, setShowAllPaths] = useState<Set<string>>(new Set());
-  // Multi-level inline expand (#158) — tracks which child subfolder paths are
-  // expanded. Ephemeral, resets on unmount alongside expandedPaths.
   const [expandedChildPaths, setExpandedChildPaths] = useState<Set<string>>(new Set());
 
-  // Task #40 — inline rename for child rows (files + folders after #62).
-  // Issue #89 extends this to project roots via a separate state slot.
-  const [renamingPath, setRenamingPath] = useState<string | null>(null);
-  // Issue #89 — rename state for project-root rows (separate from child rows
-  // so ProjectRow can render its own SidebarInlineEdit overlay).
-  const [renamingProjectPath, setRenamingProjectPath] = useState<string | null>(null);
   const { renamePath, createFile, createFolder, openFile } = useFileOperations();
 
-  // Task #41 — inline create note. The pending signal comes from either the
-  // `⌘N` handler in `QuietLayout` or the per-row `+` button below. The
-  // owning project (`parentDir` equals project.path OR starts with
-  // `project.path + "/"`) is auto-expanded so the inline input appears as
-  // the first row in its child tree.
-  const pendingCreate = useQuietSidebarStore((s) => s.pendingCreate);
-  const setPendingCreate = useQuietSidebarStore((s) => s.setPendingCreate);
-
-  // Task #42 — inline create project. Flag driven by `⌘⇧N` in QuietLayout
-  // or the section-header `+` button. When set, we render a
-  // SidebarInlineEdit row at the very top of the projects list (above
-  // any existing rows) that creates a new empty folder under the Notesage
-  // library root and registers it via workspace-store.addProject.
-  const pendingCreateProject = useQuietSidebarStore(
-    (s) => s.pendingCreateProject,
-  );
-  const setPendingCreateProject = useQuietSidebarStore(
-    (s) => s.setPendingCreateProject,
-  );
-
-  const pendingCreateProjectPath = useMemo(() => {
-    if (!pendingCreate) return null;
-    for (const p of projects) {
-      if (
-        pendingCreate.parentDir === p.path ||
-        pendingCreate.parentDir.startsWith(p.path + "/")
-      ) {
-        return p.path;
-      }
-    }
-    return null;
-  }, [pendingCreate, projects]);
-
-  // Auto-expand the owning project when a pending create is set for it.
-  useEffect(() => {
-    if (!pendingCreateProjectPath) return;
-    setExpandedPaths((prev) => {
-      if (prev.has(pendingCreateProjectPath)) return prev;
-      const next = new Set(prev);
-      next.add(pendingCreateProjectPath);
-      return next;
-    });
-  }, [pendingCreateProjectPath]);
-
-  const handleCreateCommit = useCallback(
-    async (parentDir: string, trimmedName: string) => {
-      const fileName = trimmedName.includes(".")
-        ? trimmedName
-        : `${trimmedName}.md`;
-      const filePath = `${parentDir}/${fileName}`;
-      // Clear pending state up front so a slow createFile doesn't leave the
-      // input hanging in the DOM. If creation fails we surface the toast
-      // and the user re-triggers from scratch.
-      setPendingCreate(null);
-      try {
-        await createFile(parentDir, fileName);
-        await openFile(filePath, fileName);
-        // After the new file opens, hand keyboard focus to the editor.
-        // Without this, focus falls to body when SidebarInlineEdit
-        // unmounts (the input disappears mid-flow because we cleared
-        // `pendingCreate` above) — and the user has to click into
-        // the editor to start typing. PRD-less bug fix tracked in
-        // `docs/tasks/2026-04-28-quiet-composer-phase2-keyboard-blockers-tasks.md`
-        // task #6.
-        dispatchFocusEditor();
-        toast.success(`Created ${fileName}`);
-      } catch (error) {
-        toast.error(`Failed to create: ${error}`);
-      }
-    },
-    [createFile, openFile, setPendingCreate],
-  );
-
-  const handleCreateCancel = useCallback(() => {
-    setPendingCreate(null);
-  }, [setPendingCreate]);
-
-  /** Handler for the per-row `+` button. Sets pending state at the project
-   *  root (not at the active tab's parent — that's what `⌘N` is for). */
-  const handleAddToProject = useCallback(
-    (projectPath: string) => {
-      setPendingCreate({ parentDir: projectPath });
-    },
-    [setPendingCreate],
-  );
-
-  // Task #42 — inline create project. The set of existing project
-  // basenames is used by the validator to reject duplicates before we
-  // hit the filesystem. Derived from `allProjects` (pre-filter) so the
-  // duplicate check doesn't miss projects the user has filtered out.
-  const existingProjectBasenames = useMemo(() => {
-    const set = new Set<string>();
-    for (const p of allProjects) {
-      set.add(projectBasename(p.path));
-    }
-    return set;
-  }, [allProjects]);
-
-  const validateProjectName = useMemo(
-    () => buildProjectNameValidator(existingProjectBasenames),
-    [existingProjectBasenames],
-  );
-
-  const handleCreateProjectCommit = useCallback(
-    async (trimmedName: string) => {
-      // Resolve the Notesage library root. After `useAppLifecycle.reloadTrees`,
-      // `notesRootPath` is an expanded absolute path. Before that, it still
-      // carries a leading `~` — we bail rather than feed a non-absolute path
-      // to `create_directory`.
-      const libraryRoot = useSettingsStore.getState().notesRootPath;
-      if (!libraryRoot || libraryRoot.startsWith("~")) {
-        toast.error("Notesage library is not ready yet — try again in a moment");
-        setPendingCreateProject(false);
-        return;
-      }
-
-      const projectPath = `${libraryRoot}/${trimmedName}`;
-
-      // Clear the pending flag up front so a slow create doesn't leave the
-      // input hanging in the DOM. Toast reports any failure; the user can
-      // retrigger from scratch.
-      setPendingCreateProject(false);
-
-      try {
-        await createFolder(libraryRoot, trimmedName);
-        // Phase 1: projects start empty — no templates, no goal files,
-        // no iCloud migration. The freshly-created directory is empty, so
-        // the tree snapshot is predictable; we still fetch it via the same
-        // command the rest of the app uses for consistency.
-        let tree: FileEntry[] = [];
-        try {
-          tree = await tauriApi.listDirectory(projectPath, false);
-        } catch {
-          // Expected: on some filesystems (iCloud, permission-restricted
-          // mounts) a freshly-created directory may briefly not list. An
-          // empty tree is still a valid initial state — the watcher will
-          // refresh it on the next event.
-        }
-        useWorkspaceStore.getState().addProject(projectPath, tree);
-        toast.success(`Created project ${trimmedName}`);
-      } catch (error) {
-        toast.error(`Failed to create project: ${error}`);
-      }
-    },
-    [createFolder, setPendingCreateProject],
-  );
-
-  const handleCreateProjectCancel = useCallback(() => {
-    setPendingCreateProject(false);
-  }, [setPendingCreateProject]);
-
-  const startRename = useCallback((path: string) => {
-    setRenamingPath(path);
-  }, []);
-  const cancelRename = useCallback(() => setRenamingPath(null), []);
-  const commitRename = useCallback(
-    async (oldPath: string, newBasename: string, isDirectory?: boolean) => {
-      setRenamingPath(null);
-      const oldName = pathBasename(oldPath);
-      if (newBasename === oldName) return;
-      const newPath = resolveRenamePath(oldPath, newBasename, isDirectory);
-      try {
-        await renamePath(oldPath, newPath);
-        toast.success(`Renamed to ${pathBasename(newPath)}`);
-      } catch (error) {
-        toast.error(`Failed to rename: ${error}`);
-      }
-    },
-    [renamePath],
-  );
-
-  // Issue #89 — project-root rename handlers. Uses a separate state slot so
-  // the project row renders its own SidebarInlineEdit overlay independently
-  // of child-row rename state.
-  const cancelProjectRename = useCallback(
-    () => setRenamingProjectPath(null),
-    [],
-  );
-  const commitProjectRename = useCallback(
-    async (oldPath: string, newBasename: string) => {
-      setRenamingProjectPath(null);
-      const oldName = pathBasename(oldPath);
-      if (newBasename === oldName) return;
-      // Projects are directories — resolveRenamePath with isDirectory=true
-      // gives us parent/newBasename without any extension magic.
-      const newPath = resolveRenamePath(oldPath, newBasename, true);
-      try {
-        await renamePath(oldPath, newPath);
-        useWorkspaceStore.getState().updateProjectPath(oldPath, newPath, []);
-        toast.success(`Renamed to ${pathBasename(newPath)}`);
-      } catch (error) {
-        toast.error(`Failed to rename: ${error}`);
-      }
-    },
-    [renamePath],
-  );
-
-  // Roving tabindex: only one row is focusable at a time. `focusedRowId`
-  // stays in sync with the DOM via the keydown handlers, and unrelated
-  // clicks / pointer focus also update it so Tab returning to the section
-  // lands on the row the user last touched.
+  // Roving tabindex
   const [focusedRowId, setFocusedRowId] = useState<string | null>(null);
-
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
 
   // Build the flat ordered row list from the projects + expansion state.
-  // Each child entry gets a stable `id` of `${projectPath}::${entry.path}`
-  // so refs / focus keys survive re-renders as long as the underlying
-  // FileTree object identity is stable.
   const rows = useMemo<RowDescriptor[]>(() => {
     const list: RowDescriptor[] = [];
     for (const project of projects) {
       list.push({ id: project.path, kind: "project", project });
       if (expandedPaths.has(project.path)) {
         const children = derivePeekChildren(project.fileTree, {
-          unbounded: showAllPaths.has(project.path),
           showHidden: showHiddenFiles,
         });
         for (const folder of children.folders) {
@@ -597,20 +228,11 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
             kind: "child",
             project,
             entry: folder,
+            depth: 1,
           });
-          // Multi-level inline expand (#158): if this child dir is expanded,
-          // recursively insert its children beneath it.
           if (expandedChildPaths.has(folder.path)) {
-            insertChildRows(list, folder.children ?? [], project, expandedChildPaths, showHiddenFiles);
+            insertChildRows(list, folder.children ?? [], project, expandedChildPaths, showHiddenFiles, 2);
           }
-        }
-        if (children.folderOverflow > 0) {
-          list.push({
-            id: `${project.path}::__folder-overflow__`,
-            kind: "child",
-            project,
-            overflow: { kind: "folder", count: children.folderOverflow },
-          });
         }
         for (const file of children.files) {
           list.push({
@@ -618,20 +240,53 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
             kind: "child",
             project,
             entry: file,
-          });
-        }
-        if (children.fileOverflow > 0) {
-          list.push({
-            id: `${project.path}::__file-overflow__`,
-            kind: "child",
-            project,
-            overflow: { kind: "file", count: children.fileOverflow },
+            depth: 1,
           });
         }
       }
     }
     return list;
-  }, [projects, expandedPaths, expandedChildPaths, showAllPaths, showHiddenFiles]);
+  }, [projects, expandedPaths, expandedChildPaths, showHiddenFiles]);
+
+  // Collect visible child paths for the SIDEBAR_ENTER_RENAME_MODE_EVENT filter.
+  const visibleChildPaths = useMemo(() => {
+    const paths = new Set<string>();
+    for (const row of rows) {
+      if (row.kind === "child" && row.entry) {
+        paths.add(row.entry.path);
+      }
+    }
+    return paths;
+  }, [rows]);
+
+  // ── Inline edit / rename hook ──────────────────────────────────────────────
+  const {
+    renamingPath,
+    renamingProjectPath,
+    startRename,
+    cancelRename,
+    commitRename,
+    startProjectRename,
+    cancelProjectRename,
+    commitProjectRename,
+    pendingCreate,
+    pendingCreateProjectPath,
+    handleCreateCommit,
+    handleCreateCancel,
+    handleAddToProject,
+    pendingCreateProject,
+    validateProjectName,
+    handleCreateProjectCommit,
+    handleCreateProjectCancel,
+  } = useProjectInlineEdit({
+    projects,
+    visibleChildPaths,
+    setExpandedPaths,
+    renamePath,
+    createFile,
+    createFolder,
+    openFile,
+  });
 
   const focusRow = useCallback((rowId: string) => {
     const el = rowRefs.current.get(rowId);
@@ -642,32 +297,19 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
   }, []);
 
   // Sidebar-simplification task #5 — listen for `expand-path` events on
-  // the shared `sidebar-events` bus. Foundation for task #6 (FolderPeek
-  // folder-clicks dispatch this instead of opening TreeOverlay) and the
-  // future Folders section. When the event names a project we own, we
-  // expand it AND focus the first-level row matching `targetPath`. If
-  // `targetPath` doesn't resolve to a direct child today (e.g. the user
-  // clicked a deeply-nested grandchild), we expand the project and let
-  // the user navigate the rest from the keyboard — the multi-level
-  // walk lands with TreeOverlay deletion (#20).
+  // the shared `sidebar-events` bus.
   useEffect(() => {
     const ourProjects = new Set(projects.map((p) => p.path));
     const unsubscribe = subscribeToSidebarEvents((event) => {
       if (event.type !== "expand-path") return;
       if (!ourProjects.has(event.projectPath)) return;
-      // Expand the project root.
       setExpandedPaths((prev) => {
         if (prev.has(event.projectPath)) return prev;
         const updated = new Set(prev);
         updated.add(event.projectPath);
         return updated;
       });
-      // Defer focus until the next paint so the newly-rendered child
-      // row exists in the DOM and `rowRefs.current` has its element.
       requestAnimationFrame(() => {
-        // First try the exact target path (direct child). Falls back to
-        // the project root — the user is at least near where they
-        // wanted to be and can arrow-down into the children.
         const el = rowRefs.current.get(event.targetPath);
         if (el) {
           setFocusedRowId(event.targetPath);
@@ -684,48 +326,8 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
     return unsubscribe;
   }, [projects]);
 
-  // Collect every currently-visible child path (files AND folders) so the
-  // event listener can decide whether it owns this rename request. Project
-  // roots and overflow markers are intentionally excluded.
-  const visibleChildPaths = useMemo(() => {
-    const paths = new Set<string>();
-    for (const row of rows) {
-      if (row.kind === "child" && row.entry) {
-        paths.add(row.entry.path);
-      }
-    }
-    return paths;
-  }, [rows]);
-
-  // Rename context-menu event. Activate on any visible child path (files or
-  // folders); project roots and system/dotfile folders are skipped.
-  useEffect(() => {
-    function handleRenameEvent(event: Event) {
-      const detail = (event as CustomEvent<{ filePath: string }>).detail;
-      if (!detail?.filePath) return;
-      if (!visibleChildPaths.has(detail.filePath)) return;
-      // Issue #89 — block rename for any dotfile folder.
-      const name = pathBasename(detail.filePath);
-      if (isSystemFolderName(name)) return;
-      setRenamingPath(detail.filePath);
-    }
-    window.addEventListener(
-      SIDEBAR_ENTER_RENAME_MODE_EVENT,
-      handleRenameEvent,
-    );
-    return () => {
-      window.removeEventListener(
-        SIDEBAR_ENTER_RENAME_MODE_EVENT,
-        handleRenameEvent,
-      );
-    };
-  }, [visibleChildPaths]);
-
   const openProject = useCallback(async (project: WorkspaceProject) => {
     if (project.fileTree.length === 0) return;
-    // Pull recents fresh on click so MRU is current — avoids a stale
-    // closure if the user opened a file via another path right before
-    // clicking the project.
     const recentFiles = useEditorStore.getState().recentFiles;
     const entry = findEntryToOpen(project.path, project.fileTree, recentFiles);
     if (!entry) return;
@@ -761,20 +363,11 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
 
   const handleProjectKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>, project: WorkspaceProject) => {
-      // Issue #89 — F2 on a project-root row enters rename mode.
       if (event.key === "F2") {
         event.preventDefault();
-        setRenamingProjectPath(project.path);
+        startProjectRename(project.path);
         return;
       }
-      // #80 — keyboard context-menu gesture (Menu key / Shift+F10 / ⌘⇧,).
-      // Synthesises a contextmenu event on the focused row so the project's
-      // SidebarContextMenu opens from the keyboard. Currently no
-      // SidebarContextMenu is mounted on the project row itself (only on
-      // child file rows), so this is wired forward-compatibly: the synthetic
-      // event bubbles, and any future ContextMenuTrigger on the project
-      // level will pick it up. Today it's a no-op for projects but matches
-      // the gesture across all sections.
       if (isContextMenuKey(event)) {
         event.preventDefault();
         event.stopPropagation();
@@ -785,14 +378,6 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
       const isExpanded = expandedPaths.has(project.path);
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        // Skip the expand toggle entirely for empty projects — there
-        // would be no children to render or focus. Without this guard
-        // the project appears expanded (`aria-expanded="true"` and
-        // open-folder glyph) but has no visible body, which is a
-        // confusing dead-end for keyboard users (sidebar
-        // simplification task #3 polish). `derivePeekChildren` returns
-        // a `PeekChildren` object (folders + files + isEmpty), NOT a
-        // flat array — use the `isEmpty` flag.
         const children = derivePeekChildren(project.fileTree, {
           showHidden: showHiddenFiles,
         });
@@ -801,7 +386,6 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
           toggleExpanded(project.path, true);
           return;
         }
-        // Already expanded → focus the first child.
         const firstChild = firstChildRowId(project.path, children);
         if (firstChild) focusRow(firstChild);
         return;
@@ -827,10 +411,6 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
       }
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        // Live-test 2026-04-28 finding #1 — Enter on a project row
-        // also toggles inline-expand (matches click). README opens
-        // via right-click "Open" or by expanding then activating
-        // the README.md child row.
         const isExpanded = expandedPaths.has(project.path);
         toggleExpanded(project.path, !isExpanded);
       }
@@ -840,10 +420,6 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
 
   const handleChildKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>, row: RowDescriptor) => {
-      // #80 — keyboard context-menu gesture on a child row (file or folder).
-      // Files have a SidebarContextMenu wrapper in this section's children
-      // hierarchy so the synthetic event opens the menu; folders do not yet
-      // (out of scope), but the dispatch is harmless for them.
       if (isContextMenuKey(event)) {
         event.preventDefault();
         event.stopPropagation();
@@ -851,7 +427,6 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
         if (el) openContextMenuOnElement(el);
         return;
       }
-      // ArrowRight on a child directory: expand it (#158).
       if (event.key === "ArrowRight" && row.entry?.is_directory) {
         event.preventDefault();
         if (!expandedChildPaths.has(row.entry.path)) {
@@ -865,7 +440,6 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
       }
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        // If this is an expanded child directory, collapse it (#158).
         if (row.entry?.is_directory && expandedChildPaths.has(row.entry.path)) {
           setExpandedChildPaths((prev) => {
             const next = new Set(prev);
@@ -895,7 +469,6 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
         event.preventDefault();
         if (!row.entry) return;
         if (row.entry.is_directory) {
-          // Toggle inline expand for child directories (#158).
           setExpandedChildPaths((prev) => {
             const next = new Set(prev);
             if (prev.has(row.entry!.path)) next.delete(row.entry!.path);
@@ -910,9 +483,96 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
     [rows, focusRow, expandedChildPaths],
   );
 
-  // openTreeOverlayForProject was removed by sidebar-simplification
-  // task #20. Child-folder activation now opens a future inline-
-  // expand walk (deferred — see FoldersSection for the same pattern).
+  // Recursive child renderer — each expanded folder renders its children in a
+  // nested <ul> whose left border IS the indent guide, so every level's line is
+  // continuous and each open subfolder gets its own line centred under its icon
+  // (CHILD_GUIDE_OFFSET). No staircase. The flat `rows` list is kept only for
+  // keyboard navigation order.
+  const renderChildLevel = (
+    project: WorkspaceProject,
+    entries: FileEntry[],
+    level: number,
+  ): ReactNode => {
+    const peek = derivePeekChildren(entries, { showHidden: showHiddenFiles });
+    const ordered = [...peek.folders, ...peek.files];
+    if (ordered.length === 0) return null;
+    return (
+      <ul
+        role="group"
+        className="flex flex-col m-0 list-none border-l border-border/70 pl-2"
+        style={{ marginLeft: CHILD_GUIDE_OFFSET }}
+      >
+        {ordered.map((entry) => {
+          const id = `${project.path}::${entry.path}`;
+          const isChildExpanded =
+            entry.is_directory && expandedChildPaths.has(entry.path);
+          const row: RowDescriptor = {
+            id,
+            kind: "child",
+            project,
+            entry,
+            depth: level,
+          };
+          const childRow = (
+            <ChildRow
+              row={row}
+              level={level}
+              isActive={entry.path === activeTabPath}
+              isFocused={focusedRowId === id}
+              hasFocusWithin={focusedRowId !== null}
+              isRenaming={renamingPath === entry.path}
+              isExpanded={entry.is_directory ? isChildExpanded : undefined}
+              onActivate={() => {
+                if (entry.is_directory) {
+                  setExpandedChildPaths((prev) => {
+                    const next = new Set(prev);
+                    if (prev.has(entry.path)) next.delete(entry.path);
+                    else next.add(entry.path);
+                    return next;
+                  });
+                  return;
+                }
+                void openFileEntry(entry);
+              }}
+              onKeyDown={(e) => handleChildKeyDown(e, row)}
+              onFocus={() => setFocusedRowId(id)}
+              onStartRename={startRename}
+              onCommitRename={commitRename}
+              onCancelRename={cancelRename}
+              registerRef={(el) => rowRefs.current.set(id, el)}
+            />
+          );
+          const ctx = (
+            <SidebarContextMenu
+              filePath={entry.path}
+              kind={entry.is_directory ? "folder" : "file"}
+            >
+              <div>{childRow}</div>
+            </SidebarContextMenu>
+          );
+          let inner: ReactNode;
+          if (entry.is_directory) {
+            inner = (
+              <FolderPeek projectPath={entry.path} fileTree={entry.children ?? []}>
+                {ctx}
+              </FolderPeek>
+            );
+          } else if (isPreviewable(entry.path)) {
+            inner = <FilePreview filePath={entry.path}>{ctx}</FilePreview>;
+          } else {
+            inner = <div>{ctx}</div>;
+          }
+          return (
+            <li key={id} className="m-0 p-0">
+              {inner}
+              {isChildExpanded &&
+                renderChildLevel(project, entry.children ?? [], level + 1)}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  };
 
   return (
     <section
@@ -923,17 +583,6 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
         <h2 className="text-xs font-medium tracking-wider uppercase text-muted-foreground">
           Folders
         </h2>
-        {/*
-          `tabIndex={-1}` excludes the `+` from the natural Tab order
-          (audit 2026-04-27 finding #11). The button is `opacity-0` by
-          default and only appears on hover/focus-within, so leaving it
-          Tab-focusable causes a "phantom + appears" effect — Tab from a
-          project row jumps to the (previously invisible) `+` of the
-          Projects section header, and the user can't tell whether
-          focus is on a folder or on the `+`. Keyboard users reach the
-          create flow via ⌘⇧N (documented in the shortcuts dialog);
-          mouse users keep the hover-reveal `+`.
-        */}
         <Button
           type="button"
           variant="ghost"
@@ -987,31 +636,11 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                   projectPath={project.path}
                   fileTree={project.fileTree}
                 >
-                  {/* Live-test 2026-04-25: project rows were dropping
-                      to the OS browser context menu on right-click —
-                      they hadn't been wrapped in `SidebarContextMenu`
-                      (the comment at #80 about being "wired forward-
-                      compatibly" never got fulfilled). Wrap the row so
-                      right-click opens our menu with the full project-
-                      kind action set. */}
                   <SidebarContextMenu
                     filePath={project.path}
                     kind="project"
                     onOpen={() => void openProject(project)}
                   >
-                    {/* Live-test 2026-04-25 (#140): the previous wrapping
-                        attempt put `<ProjectRow />` directly under
-                        `<ContextMenuTrigger asChild>`. Radix's Slot uses
-                        cloneElement to inject `onContextMenu` and a ref
-                        onto the child element — but `ProjectRow` is a
-                        function component that destructures only its
-                        explicit props, so the injected handler / ref were
-                        silently dropped and the OS native context menu
-                        kept appearing. Wrapping with a passthrough <div>
-                        makes the immediate Slot target a raw DOM element
-                        so the prop injection lands. The wrapper has no
-                        styling — `<li>` is `m-0 p-0` and the row's own
-                        height/padding is unchanged. */}
                     <div>
                       <ProjectRow
                         project={project}
@@ -1020,21 +649,12 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                         isFocused={focusedRowId === project.path}
                         hasFocusWithin={focusedRowId !== null}
                         isRenaming={renamingProjectPath === project.path}
-                        // Live-test 2026-04-28 finding #1 — clicking
-                        // a project row now toggles inline-expand
-                        // instead of opening the README. README is
-                        // still reachable via right-click → "Open"
-                        // (which calls openProject through the
-                        // SidebarContextMenu) or by expanding +
-                        // clicking the README.md child row. Matches
-                        // standard tree-view behavior + the new
-                        // FoldersSection.
                         onOpen={() => toggleExpanded(project.path, !isExpanded)}
                         onKeyDown={(e) => handleProjectKeyDown(e, project)}
                         onFocus={() => setFocusedRowId(project.path)}
                         onAddNote={() => handleAddToProject(project.path)}
                         onStartRename={() =>
-                          setRenamingProjectPath(project.path)
+                          startProjectRename(project.path)
                         }
                         onCommitRename={(value) =>
                           void commitProjectRename(project.path, value)
@@ -1048,151 +668,45 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                   </SidebarContextMenu>
                 </FolderPeek>
                 {(children || isPendingCreateHere) && (
-                  <ul
-                    role="group"
-                    className="flex flex-col m-0 p-0 list-none pl-4"
-                  >
+                  <>
                     {isPendingCreateHere && pendingCreate && (
-                      <li
-                        className="m-0 p-0"
-                        data-pending-create="true"
-                        data-pending-create-parent={pendingCreate.parentDir}
+                      // Inline create-note row in its own guided <ul> so it
+                      // lines up with the children below.
+                      <ul
+                        role="group"
+                        className="flex flex-col m-0 list-none border-l border-border/70 pl-2"
+                        style={{ marginLeft: CHILD_GUIDE_OFFSET }}
                       >
-                        <div className="h-7 px-2 flex items-center gap-2">
-                          <FileText
-                            className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
-                            strokeWidth={1.5}
-                            aria-hidden="true"
-                          />
-                          <SidebarInlineEdit
-                            mode="create"
-                            placeholder="note.md"
-                            validate={validateCreateBasename}
-                            onCommit={(value) =>
-                              void handleCreateCommit(
-                                pendingCreate.parentDir,
-                                value,
-                              )
-                            }
-                            onCancel={handleCreateCancel}
-                            className="flex-1 min-w-0"
-                          />
-                        </div>
-                      </li>
+                        <li
+                          className="m-0 p-0"
+                          data-pending-create="true"
+                          data-pending-create-parent={pendingCreate.parentDir}
+                        >
+                          <div className="h-7 px-2 flex items-center gap-2">
+                            <FileText
+                              className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
+                              strokeWidth={1.5}
+                              aria-hidden="true"
+                            />
+                            <SidebarInlineEdit
+                              mode="create"
+                              placeholder="note.md"
+                              validate={validateCreateBasename}
+                              onCommit={(value) =>
+                                void handleCreateCommit(
+                                  pendingCreate.parentDir,
+                                  value,
+                                )
+                              }
+                              onCancel={handleCreateCancel}
+                              className="flex-1 min-w-0"
+                            />
+                          </div>
+                        </li>
+                      </ul>
                     )}
-                    {rows
-                      .filter(
-                        (r) =>
-                          r.kind === "child" && r.project.path === project.path,
-                      )
-                      .map((row) => {
-                        const childRow = (
-                          <ChildRow
-                            key={row.id}
-                            row={row}
-                            isFocused={focusedRowId === row.id}
-                            hasFocusWithin={focusedRowId !== null}
-                            isRenaming={
-                              !!row.entry && renamingPath === row.entry.path
-                            }
-                            isExpanded={
-                              row.entry?.is_directory
-                                ? expandedChildPaths.has(row.entry.path)
-                                : undefined
-                            }
-                            onActivate={() => {
-                              // Live-test 2026-04-28 finding #2 —
-                              // overflow rows ("+N more…") flip the
-                              // per-project showAll flag so the next
-                              // re-derive uses the unbounded variant
-                              // of derivePeekChildren and renders
-                              // every child.
-                              if (row.overflow) {
-                                setShowAllPaths((prev) => {
-                                  const updated = new Set(prev);
-                                  updated.add(project.path);
-                                  return updated;
-                                });
-                                return;
-                              }
-                              if (!row.entry) return;
-                              if (row.entry.is_directory) {
-                                // Toggle inline expand for child directories (#158).
-                                setExpandedChildPaths((prev) => {
-                                  const next = new Set(prev);
-                                  if (prev.has(row.entry!.path)) next.delete(row.entry!.path);
-                                  else next.add(row.entry!.path);
-                                  return next;
-                                });
-                                return;
-                              }
-                              void openFileEntry(row.entry);
-                            }}
-                            onKeyDown={(e) => handleChildKeyDown(e, row)}
-                            onFocus={() => setFocusedRowId(row.id)}
-                            onStartRename={startRename}
-                            onCommitRename={commitRename}
-                            onCancelRename={cancelRename}
-                            registerRef={(el) =>
-                              rowRefs.current.set(row.id, el)
-                            }
-                          />
-                        );
-                        // Live-test 2026-04-25 (#140): wrapping the
-                        // ChildRow function component directly under
-                        // `<SidebarContextMenu>` (which uses
-                        // `<ContextMenuTrigger asChild>`) silently dropped
-                        // Radix's injected `onContextMenu` / ref because
-                        // the row only destructures its own props. The OS
-                        // native menu appeared on right-click. The
-                        // passthrough <div> wrapper exposes a raw DOM
-                        // element to Radix's Slot so the prop injection
-                        // lands; the row's own layout is unchanged.
-                        if (!row.entry) return childRow;
-                        // Live-test 2026-04-28 finding #3 — expanded
-                        // child rows now get the same hover treatment
-                        // the project root has: FolderPeek for child
-                        // folders (one-level preview from the already-
-                        // loaded recursive tree), FilePreview for
-                        // previewable file extensions. Non-previewable
-                        // files (binary, unknown ext) fall through with
-                        // no popover, same as today.
-                        //
-                        // Wrap order matches the project-row chain:
-                        // FolderPeek/FilePreview OUTSIDE,
-                        // SidebarContextMenu INSIDE → the trigger Slot
-                        // sees a real <div>. Reversing the order breaks
-                        // right-click on the row (the function-component
-                        // wrapper drops the injected onContextMenu).
-                        const ctx = (
-                          <SidebarContextMenu
-                            filePath={row.entry.path}
-                            kind={row.entry.is_directory ? "folder" : "file"}
-                          >
-                            <div>{childRow}</div>
-                          </SidebarContextMenu>
-                        );
-                        if (row.entry.is_directory) {
-                          return (
-                            <FolderPeek
-                              key={row.id}
-                              projectPath={row.entry.path}
-                              fileTree={row.entry.children ?? []}
-                            >
-                              {ctx}
-                            </FolderPeek>
-                          );
-                        }
-                        if (isPreviewable(row.entry.path)) {
-                          return (
-                            <FilePreview key={row.id} filePath={row.entry.path}>
-                              {ctx}
-                            </FilePreview>
-                          );
-                        }
-                        return <div key={row.id}>{ctx}</div>;
-                      })}
-                  </ul>
+                    {children && renderChildLevel(project, project.fileTree, 2)}
+                  </>
                 )}
               </li>
             );
@@ -1205,8 +719,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
 
 /**
  * First-focusable child row ID for a given project. Returns the first
- * folder, falling back to the first file, and finally to the overflow
- * placeholder if that's all that's visible.
+ * folder, falling back to the first file.
  */
 function firstChildRowId(
   projectPath: string,
@@ -1216,408 +729,5 @@ function firstChildRowId(
   if (firstFolder) return `${projectPath}::${firstFolder.path}`;
   const firstFile = children.files[0];
   if (firstFile) return `${projectPath}::${firstFile.path}`;
-  if (children.folderOverflow > 0) {
-    return `${projectPath}::__folder-overflow__`;
-  }
-  if (children.fileOverflow > 0) {
-    return `${projectPath}::__file-overflow__`;
-  }
   return null;
-}
-
-// ---------------------------------------------------------------------------
-// Row components
-// ---------------------------------------------------------------------------
-
-interface ProjectRowProps {
-  project: WorkspaceProject;
-  isActive: boolean;
-  isExpanded: boolean;
-  isFocused: boolean;
-  hasFocusWithin: boolean;
-  isRenaming: boolean;
-  onOpen: () => void;
-  onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
-  onFocus: () => void;
-  onAddNote: () => void;
-  onStartRename: () => void;
-  onCommitRename: (value: string) => void;
-  onCancelRename: () => void;
-  registerRef: (el: HTMLDivElement | null) => void;
-}
-
-function ProjectRow({
-  project,
-  isActive,
-  isExpanded,
-  isFocused,
-  hasFocusWithin,
-  isRenaming,
-  onOpen,
-  onKeyDown,
-  onFocus,
-  onAddNote,
-  onStartRename,
-  onCommitRename,
-  onCancelRename,
-  registerRef,
-}: ProjectRowProps) {
-  const name = useMemo(() => projectBasename(project.path), [project.path]);
-  const hasTree = project.fileTree.length > 0;
-  const fileCount = useMemo(
-    () => (hasTree ? countMarkdownFiles(project.fileTree) : null),
-    [project.fileTree, hasTree],
-  );
-  const ariaLabel =
-    fileCount === null
-      ? `Open project ${name}`
-      : `Open project ${name} (${fileCount} file${fileCount === 1 ? "" : "s"})`;
-
-  // Read custom appearance (icon + color) from project metadata so the
-  // user-picked customization actually surfaces on the row. Without this
-  // the FolderAppearancePicker stores values that nothing reads.
-  const appearance = useProjectMetadataStore(
-    (s) => s.getMetadata(project.path)?.appearance,
-  );
-  const { icon: ProjectIcon, color: projectIconColor } = resolveFolderIcon({
-    type: 'standard',
-    expanded: isExpanded,
-    name,
-    appearance,
-  });
-
-  // Roving tabindex — before any focus lands in the tree, the first item
-  // should still be reachable via Tab, so default to tabIndex 0 when the
-  // section has no focused row yet.
-  const tabIndex = isFocused || !hasFocusWithin ? 0 : -1;
-
-  const handleRowClick = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (event.detail === 2) {
-      event.preventDefault();
-      event.stopPropagation();
-      onStartRename();
-      return;
-    }
-    onOpen();
-  };
-
-  return (
-    <div
-      ref={registerRef}
-      role="treeitem"
-      aria-level={1}
-      aria-expanded={isExpanded}
-      aria-selected={isFocused ? "true" : undefined}
-      aria-label={ariaLabel}
-      aria-current={isActive ? "true" : undefined}
-      data-active={isActive ? "true" : undefined}
-      data-row-type="project"
-      data-renaming={isRenaming ? "true" : undefined}
-      tabIndex={tabIndex}
-      onClick={isRenaming ? undefined : handleRowClick}
-      onKeyDown={isRenaming ? undefined : onKeyDown}
-      onFocus={onFocus}
-      className={cn(
-        "group/row h-7 px-2 flex items-center gap-2 rounded-sm text-[13px]",
-        "text-foreground/90 transition-colors duration-150",
-        !isRenaming && "hover:bg-muted/50 cursor-pointer",
-        "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
-        // Active row uses a neutral muted background (live-test
-        // 2026-04-26). Accent is preserved on the folder icon below.
-        isActive && !isRenaming && "bg-muted text-foreground font-medium",
-      )}
-    >
-      {/*
-        Folder ↔ FolderOpen swap is the discoverability cue for the
-        inline-expand affordance (sidebar-simplification task #3). A
-        sighted keyboard user has no way to know `→` will expand the
-        project without it; the open-folder glyph also confirms the
-        expand state matches the user's mental model after they hit
-        `→` or click the row. `aria-expanded` already tells screen
-        readers; this is the visual mirror.
-      */}
-      <ProjectIcon
-        className={cn(
-          "h-3.5 w-3.5 shrink-0",
-          // When a custom color is applied, drop the muted greyscale class
-          // so the user-picked color isn't overridden by the muted fill.
-          projectIconColor
-            ? undefined
-            : isActive
-              ? "text-[var(--color-accent-primary)]"
-              : "text-muted-foreground/70",
-        )}
-        style={projectIconColor ? { color: projectIconColor } : undefined}
-        strokeWidth={1.5}
-        aria-hidden="true"
-      />
-
-      {isRenaming ? (
-        <SidebarInlineEdit
-          mode="rename"
-          initialValue={name}
-          validate={validateRenameBasename}
-          onCommit={onCommitRename}
-          onCancel={onCancelRename}
-          className="flex-1 min-w-0"
-        />
-      ) : (
-        <>
-          <span className="truncate min-w-0 flex-1">{name}</span>
-          {/* #129 — per-project visual state. Surfaces the AI-lock padlock,
-             *  the aggregate git "●" glyph when any file inside the project
-             *  has changes, and the pending-external-change dot. */}
-          <SidebarRowIndicators path={project.path} kind="project" />
-          {/* Live-test 2026-04-25 — alignment, take 2. The number stays
-           *  RIGHT-ALIGNED at the row's right padding edge (matching the
-           *  Pinned/Recent time hints, which use `ml-auto` to anchor to
-           *  the same edge). The hover `+` button overlays the slot at
-           *  the same right edge — the button is 24×24 so its centre sits
-           *  12 px in from the right edge, exactly matching the section-
-           *  header `+` centre. Slot height bumped to h-6 (24 px) so the
-           *  button's hover highlight is no longer clipped by an h-5 slot
-           *  bound. `min-w-6` keeps the slot at least button-wide while
-           *  letting wider numbers (3+ digits) push the slot out without
-           *  pushing the button glyph off-centre. */}
-          <span
-            className="relative inline-flex h-6 min-w-6 items-center justify-end shrink-0"
-            aria-hidden={fileCount === null ? undefined : "false"}
-          >
-            {/* Live-test 2026-04-28 finding #5 — count stays visible during
-                keyboard focus. The hover-hide stays so the per-row `+`
-                button (mouse-hover-only since the audit-#11 follow-up)
-                doesn't visually overlap the count when revealed. */}
-            {fileCount !== null && (
-              <span className="text-xs text-muted-foreground tabular-nums opacity-100 group-hover/row:opacity-0 transition-opacity duration-150">
-                {fileCount}
-              </span>
-            )}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              aria-label={`New note in ${name}`}
-              tabIndex={-1}
-              onClick={(event) => {
-                event.stopPropagation();
-                onAddNote();
-              }}
-              // Anchor the button to the slot's top-right. The button is
-              // 24×24 (size-icon-xs) and the slot is h-6 (24 px), so it
-              // fills the vertical space exactly — no clipping. Right edge
-              // = slot right = row right - px-2 (8 px), so its centre lines
-              // up with the section-header `+` centre (row right - 20 px).
-              //
-              // Visibility = mouse-hover ONLY. We dropped
-              // `group-focus-within/row:opacity-100` and
-              // `focus-visible:opacity-100` (audit 2026-04-27 finding #11
-              // follow-up): the `+` is a discoverability affordance for
-              // mouse users, and showing it inside the keyboard focus ring
-              // cluttered the focused row. Keyboard users reach "new note
-              // in <project>" via the right-click context menu or `⌘N`
-              // while a project row is focused.
-              className="absolute right-0 top-0 opacity-0 group-hover/row:opacity-100 transition-opacity duration-150"
-            >
-              <Plus strokeWidth={1.5} />
-            </Button>
-          </span>
-        </>
-      )}
-    </div>
-  );
-}
-
-interface ChildRowProps {
-  row: RowDescriptor;
-  isFocused: boolean;
-  hasFocusWithin: boolean;
-  /** Whether this child directory is currently expanded inline (#158). */
-  isExpanded?: boolean;
-  isRenaming: boolean;
-  onActivate: () => void;
-  onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
-  onFocus: () => void;
-  onStartRename: (path: string) => void;
-  onCommitRename: (oldPath: string, newBasename: string, isDirectory?: boolean) => void;
-  onCancelRename: () => void;
-  registerRef: (el: HTMLDivElement | null) => void;
-}
-
-function ChildRow({
-  row,
-  isFocused,
-  hasFocusWithin,
-  isExpanded,
-  isRenaming,
-  onActivate,
-  onKeyDown,
-  onFocus,
-  onStartRename,
-  onCommitRename,
-  onCancelRename,
-  registerRef,
-}: ChildRowProps) {
-  // Roving tabindex — child rows only participate in focus order once the
-  // user has entered the tree. Otherwise they stay out of the Tab sequence.
-  const tabIndex = isFocused ? 0 : -1;
-  const internalRef = useRef<HTMLDivElement | null>(null);
-  const setRef = (el: HTMLDivElement | null) => {
-    internalRef.current = el;
-    registerRef(el);
-  };
-
-  // Restore focus to the row when rename mode ends.
-  const wasRenamingRef = useRef(false);
-  useEffect(() => {
-    if (wasRenamingRef.current && !isRenaming) {
-      internalRef.current?.focus();
-    }
-    wasRenamingRef.current = isRenaming;
-  }, [isRenaming]);
-
-  // #80 — announce the rename transition to screen readers via aria-live.
-  // Mirrors PinnedRow / RecentRow exactly so every section produces the same
-  // SR output ("Renaming <filename>") on F2 / double-click / context-menu
-  // entry into rename mode.
-  const prevRenamingRef = useRef(false);
-  useEffect(() => {
-    if (isRenaming && !prevRenamingRef.current && row.entry) {
-      announce(`Renaming ${row.entry.name}`);
-    }
-    prevRenamingRef.current = isRenaming;
-  }, [isRenaming, row.entry]);
-
-  if (row.overflow) {
-    // Live-test 2026-04-28 finding #2 — overflow rows are now
-    // clickable. Activating expands the project to show every child
-    // (the parent flips its `showAllPaths` flag and re-derives via
-    // `derivePeekChildren(..., { unbounded: true })`).
-    const label = `Show ${row.overflow.count} more ${row.overflow.kind}${row.overflow.count === 1 ? "" : "s"}`;
-    return (
-      <div
-        ref={setRef}
-        role="treeitem"
-        aria-level={2}
-        aria-label={label}
-        data-row-type="child-overflow"
-        tabIndex={hasFocusWithin ? tabIndex : -1}
-        onClick={onActivate}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onActivate();
-            return;
-          }
-          onKeyDown?.(e);
-        }}
-        onFocus={onFocus}
-        className={cn(
-          "h-6 px-2 flex items-center text-xs text-muted-foreground cursor-pointer",
-          "hover:text-foreground hover:underline underline-offset-2 transition-colors",
-          "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
-        )}
-      >
-        +{row.overflow.count} more…
-      </div>
-    );
-  }
-
-  const entry = row.entry;
-  if (!entry) return null;
-
-  const Icon = entry.is_directory ? Folder : FileText;
-  const ariaLabel = entry.is_directory
-    ? `Open folder ${entry.name}`
-    : `Open file ${entry.name}`;
-  // File children are draggable into the Pinned section (#44). Folders are
-  // not — only file paths can be pinned in Phase 1. Projects themselves
-  // (row.kind === "project") stay non-draggable too.
-  const draggable = !entry.is_directory;
-  // Issue #89 — any dotfile folder must never enter rename mode.
-  const isSystemFolder = entry.is_directory && isSystemFolderName(entry.name);
-  // F2 rename — files only (folders excluded per task #40).
-  // Double-click rename — files AND non-system folders (task #62, #89).
-  const renameableViaKeyboard = !entry.is_directory;
-  const renameableViaDoubleClick = !isSystemFolder;
-
-  // Chain rename-aware handling with the parent's navigation handler.
-  const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    if (renameableViaKeyboard && event.key === "F2") {
-      event.preventDefault();
-      onStartRename(entry.path);
-      return;
-    }
-    onKeyDown(event);
-  };
-
-  const handleRowClick = (event: ReactMouseEvent<HTMLDivElement>) => {
-    if (event.detail === 2) {
-      event.preventDefault();
-      event.stopPropagation();
-      if (renameableViaDoubleClick) {
-        onStartRename(entry.path);
-      }
-      return;
-    }
-    onActivate();
-  };
-
-  return (
-    <div
-      ref={setRef}
-      role="treeitem"
-      aria-level={2}
-      aria-expanded={entry.is_directory ? (isExpanded ?? false) : undefined}
-      aria-selected={isFocused ? "true" : undefined}
-      aria-label={ariaLabel}
-      data-row-type="child"
-      data-row-kind={entry.is_directory ? "folder" : "file"}
-      data-renaming={isRenaming ? "true" : undefined}
-      tabIndex={hasFocusWithin ? tabIndex : -1}
-      draggable={draggable && !isRenaming}
-      onClick={isRenaming ? undefined : handleRowClick}
-      onKeyDown={isRenaming ? undefined : handleRowKeyDown}
-      onFocus={onFocus}
-      onDragStart={
-        draggable && !isRenaming
-          ? (e) => {
-              beginFileDrag(e, entry.path);
-            }
-          : undefined
-      }
-      className={cn(
-        "h-7 px-2 flex items-center gap-2 rounded-sm text-[13px]",
-        "text-foreground/90 transition-colors duration-150",
-        !isRenaming && "hover:bg-muted/50 cursor-pointer",
-        "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
-      )}
-    >
-      <Icon
-        className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
-        strokeWidth={1.5}
-        aria-hidden="true"
-      />
-      {isRenaming ? (
-        <SidebarInlineEdit
-          mode="rename"
-          initialValue={entry.name}
-          validate={validateRenameBasename}
-          onCommit={(value) => onCommitRename(entry.path, value, entry.is_directory)}
-          onCancel={onCancelRename}
-          className="flex-1 min-w-0"
-        />
-      ) : (
-        <>
-          <span className="truncate min-w-0 flex-1">{entry.name}</span>
-          {/* #129 — per-row visual state. File rows surface git status +
-             *  external-change; folder rows only surface the aggregate
-             *  "●" when the folder contains changes. */}
-          <SidebarRowIndicators
-            path={entry.path}
-            kind={entry.is_directory ? "folder" : "file"}
-          />
-        </>
-      )}
-    </div>
-  );
 }

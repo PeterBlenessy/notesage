@@ -1,14 +1,12 @@
 // @vitest-environment jsdom
 
 /**
- * Composition tests for #121 — ⌘⇧A routes to AgentOrb under Quiet Composer
- * and to the legacy activity-strip callback under Legacy.
+ * Composition tests for #121 — ⌘⇧A routes to AgentOrb.
  *
- * Under Quiet Composer there is no activity strip — the AgentOrb IS the
- * agent panel. ⌘⇧A emits `{ type: 'toggle' }` on the agent-orb-events bus;
- * AgentOrb subscribes and flips its popover `open` state. Under Legacy, the
- * chord must keep calling the `onToggleActivityStrip` callback so the
- * classic ActivityStrip sidebar continues to work.
+ * AgentOrb is the only agent panel surface (Classic ActivityStrip was
+ * removed in #325). ⌘⇧A emits `{ type: 'toggle' }` on the
+ * agent-orb-events bus; AgentOrb subscribes and flips its popover `open`
+ * state.
  *
  * Radix popovers are tricky to introspect in jsdom (portals, pointer APIs).
  * The production component exposes `data-orb-open` on the trigger button
@@ -23,7 +21,7 @@ import {
   renderWithProviders,
   screen,
 } from '@/test/component-harness';
-import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
+import { useGlobalShortcuts } from '@/hooks/useGlobalShortcuts';
 
 // ---------------------------------------------------------------------------
 // Radix polyfills for jsdom (copied from AgentOrb.test.tsx — same reason).
@@ -72,27 +70,16 @@ vi.mock('@/hooks/useReducedMotion', () => ({
   useReducedMotion: () => false,
 }));
 
-let mockUiPreview: 'legacy' | 'quiet-composer' = 'quiet-composer';
 let mockCmdBarPinned = false;
-let mockChatPanelOpen = false;
 
 vi.mock('@/stores/settings-store', () => {
   const state = {
-    get uiPreview() {
-      return mockUiPreview;
-    },
     get cmdBarPinned() {
       return mockCmdBarPinned;
-    },
-    get chatPanelOpen() {
-      return mockChatPanelOpen;
     },
     sidebarPinned: false,
     theme: 'light' as const,
     setCmdBarPinned: vi.fn(),
-    setChatPanelOpen: vi.fn((next: boolean) => {
-      mockChatPanelOpen = next;
-    }),
     setSidebarPinned: vi.fn(),
     setTheme: vi.fn(),
   };
@@ -151,11 +138,8 @@ import { AgentOrb } from '../AgentOrb';
 
 function makeCallbacks() {
   return {
-    onPaletteOpen: vi.fn(),
     onFindOpen: vi.fn(),
     onFindReplaceOpen: vi.fn(),
-    onToggleFocusMode: vi.fn(),
-    onExitFocusMode: vi.fn(),
     onOutlineOpen: vi.fn(),
     onSettingsOpen: vi.fn(),
     onExportOpen: vi.fn(),
@@ -163,15 +147,12 @@ function makeCallbacks() {
     onNewNote: vi.fn(),
     onOpenFolder: vi.fn(),
     onShortcutsOpen: vi.fn(),
-    onToggleActivityStrip: vi.fn(),
     onToggleRecording: vi.fn(),
-    onOpenActions: vi.fn(),
-    focusMode: false,
   };
 }
 
 function Harness({ callbacks }: { callbacks: ReturnType<typeof makeCallbacks> }) {
-  useKeyboardShortcuts(callbacks);
+  useGlobalShortcuts(callbacks);
   return <AgentOrb />;
 }
 
@@ -184,9 +165,7 @@ function dispatchKey(init: KeyboardEventInit) {
 }
 
 beforeEach(() => {
-  mockUiPreview = 'quiet-composer';
   mockCmdBarPinned = false;
-  mockChatPanelOpen = false;
   mockEditorState.openDocuments = [];
   mockEditorState.activeTabId = null;
   document.body.innerHTML = '';
@@ -207,27 +186,6 @@ describe('#121 ⌘⇧A under Quiet Composer', () => {
     // Second press — close.
     dispatchKey({ key: 'a', metaKey: true, shiftKey: true });
     expect(orb.getAttribute('data-orb-open')).toBe('false');
-
-    // Legacy callback must NOT fire under quiet-composer.
-    expect(callbacks.onToggleActivityStrip).not.toHaveBeenCalled();
   });
 });
 
-describe('#121 ⌘⇧A under Legacy', () => {
-  it('calls onToggleActivityStrip and does NOT toggle the orb popover', () => {
-    mockUiPreview = 'legacy';
-    const callbacks = makeCallbacks();
-    renderWithProviders(<Harness callbacks={callbacks} />);
-
-    const orb = screen.getByTestId('agent-orb');
-    expect(orb.getAttribute('data-orb-open')).toBe('false');
-
-    dispatchKey({ key: 'a', metaKey: true, shiftKey: true });
-
-    // Legacy callback fires.
-    expect(callbacks.onToggleActivityStrip).toHaveBeenCalledTimes(1);
-    // Orb popover must NOT have toggled — the legacy path does not emit on
-    // the agent-orb bus.
-    expect(orb.getAttribute('data-orb-open')).toBe('false');
-  });
-});

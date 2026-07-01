@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for the main window",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
@@ -13,14 +15,22 @@
     {
       "identifier": "http:default",
       "allow": [
-        { "url": "https://github.com/PeterBlenessy/notesage/**" },
-        { "url": "https://release-assets.githubusercontent.com/**" }
+        {
+          "url": "https://github.com/PeterBlenessy/notesage/**"
+        },
+        {
+          "url": "https://release-assets.githubusercontent.com/**"
+        }
       ]
     },
     "notification:default",
     "notification:allow-is-permission-granted",
     "notification:allow-request-permission",
     "notification:allow-notify",
-    "autostart:default"
+    "autostart:default",
+    "deep-link:default",
+    "sentry:default",
+    "aptabase:allow-track-event",
+    "clipboard-manager:allow-read-text"
   ]
 }

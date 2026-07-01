@@ -2,7 +2,9 @@ import { ConnectionsSettings } from '@/components/settings/ConnectionsSettings';
 import { UseCaseRoutingSettings } from '@/components/settings/UseCaseRoutingSettings';
 import { ApprovalsSettings as LegacyApprovalsSettings } from '@/components/settings/ApprovalsSettings';
 import { Switch } from '@/components/ui/switch';
+import { Slider } from '@/components/ui/slider';
 import { useSettingsStore } from '@/stores/settings-store';
+import { trackSettingToggle } from '@/lib/telemetry';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsHint } from './SettingsHint';
 import { SettingsRow } from './SettingsRow';
@@ -29,6 +31,10 @@ export function AISettings() {
   const setCrossProjectMode = useSettingsStore((s) => s.setCrossProjectMode);
   const showAgentModePicker = useSettingsStore((s) => s.showAgentModePicker);
   const setShowAgentModePicker = useSettingsStore((s) => s.setShowAgentModePicker);
+  const maxConcurrentSessions = useSettingsStore((s) => s.maxConcurrentSessions);
+  const setMaxConcurrentSessions = useSettingsStore((s) => s.setMaxConcurrentSessions);
+  const notifyPermissionRequest = useSettingsStore((s) => s.notifyPermissionRequest);
+  const setNotifyPermissionRequest = useSettingsStore((s) => s.setNotifyPermissionRequest);
 
   return (
     <div data-slot="ai-settings">
@@ -55,9 +61,30 @@ export function AISettings() {
         <UseCaseRoutingSettings />
       </SettingsGroup>
 
+      {/* ----------------------------------------------------------------
+          Permission scopes — a section heading that collects the four
+          access/isolation groups (Tool Calling, Project Scope, Network
+          Sandbox, Persisted Approvals) under a label matching the
+          codebase vocabulary (*Scope types, getChatSandboxScope, etc.).
+          "privacy" is kept as a search synonym so users who remember the
+          old label can still find these controls.
+          ---------------------------------------------------------------- */}
+      <div data-section="permission-scopes">
+        <h3 className="text-[11px] font-semibold tracking-wider uppercase text-foreground mb-1">
+          Permission scopes
+        </h3>
+        <p className="text-[12px] text-muted-foreground mb-4 leading-relaxed">
+          What AI agents may access and do — tool-calling permissions, project
+          isolation, network reach, and persisted approvals. Maps to the
+          <code className="mx-1 text-[11px] font-mono">*Scope</code>types used
+          throughout the codebase.
+        </p>
+      </div>
+
       <SettingsGroup
         label="Tool Calling"
         description="How Notesage invokes tools on your behalf during AI chat."
+        searchKeywords={['privacy']}
       >
         <SettingsRow
           label="Enable tool calling"
@@ -67,7 +94,7 @@ export function AISettings() {
             <Switch
               id="ai-tool-calling-enabled"
               checked={toolCallingEnabled}
-              onCheckedChange={setToolCallingEnabled}
+              onCheckedChange={(v) => { setToolCallingEnabled(v); trackSettingToggle("tool_calling", v); }}
               aria-label="Enable tool calling"
             />
           }
@@ -80,7 +107,7 @@ export function AISettings() {
             <Switch
               id="ai-require-all-confirmations"
               checked={requireAllToolConfirmations}
-              onCheckedChange={setRequireAllToolConfirmations}
+              onCheckedChange={(v) => { setRequireAllToolConfirmations(v); trackSettingToggle("require_all_tool_confirmations", v); }}
               aria-label="Require confirmation for every tool call"
             />
           }
@@ -90,6 +117,7 @@ export function AISettings() {
       <SettingsGroup
         label="Project Scope"
         description="How AI features see your projects."
+        searchKeywords={['privacy']}
       >
         <SettingsRow
           label="Cross-project mode"
@@ -101,8 +129,8 @@ export function AISettings() {
               </span>{' '}
               to the AI agent — disables project isolation. Only enable for
               power-user workflows that explicitly need multi-project
-              visibility. A persistent banner appears in the chat panel while
-              this is on.
+              visibility. A persistent banner appears in the command bar
+              while this is on.
             </>
           }
           htmlFor="cross-project-mode"
@@ -110,19 +138,56 @@ export function AISettings() {
             <Switch
               id="cross-project-mode"
               checked={crossProjectMode}
-              onCheckedChange={setCrossProjectMode}
+              onCheckedChange={(v) => { setCrossProjectMode(v); trackSettingToggle("cross_project", v); }}
             />
           }
         />
         <SettingsRow
           label="Show agent mode picker"
-          description="Show a mode picker in the chat footer for agents that support permission modes — Read Only, Agent, Full Access, Plan. When off, the agent's default mode is used."
+          description="Show a permission-mode picker in the command bar for agents that support modes. When off, the agent's default mode is used."
           htmlFor="show-agent-mode-picker"
           control={
             <Switch
               id="show-agent-mode-picker"
               checked={showAgentModePicker}
-              onCheckedChange={setShowAgentModePicker}
+              onCheckedChange={(v) => { setShowAgentModePicker(v); trackSettingToggle("agent_mode_picker", v); }}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="Sessions"
+        description="Running multiple AI conversations at once."
+        searchKeywords={['concurrent', 'queue', 'multitask', 'parallel']}
+      >
+        <SettingsRow
+          label="Max concurrent sessions"
+          description="How many AI conversations can run at the same time. Further sends wait in a queue and start automatically as sessions finish. Lower this if your machine struggles with several agents at once."
+          control={
+            <div className="w-[180px]">
+              <Slider
+                value={[maxConcurrentSessions]}
+                onValueChange={([v]) => setMaxConcurrentSessions(v)}
+                min={3}
+                max={5}
+                step={1}
+                aria-label="Max concurrent sessions"
+              />
+            </div>
+          }
+          controlSublabel={String(maxConcurrentSessions)}
+        />
+        <SettingsRow
+          label="Notify on background permission requests"
+          description="Show a desktop notification when a session you're not currently watching needs your approval to continue."
+          htmlFor="notify-permission-request"
+          control={
+            <Switch
+              id="notify-permission-request"
+              checked={notifyPermissionRequest}
+              onCheckedChange={setNotifyPermissionRequest}
+              aria-label="Notify on background permission requests"
             />
           }
         />

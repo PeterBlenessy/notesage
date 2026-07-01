@@ -78,7 +78,6 @@ function resetStores() {
   });
   useRecordingStore.setState({
     isRecording: false,
-    isDictating: false,
   });
 }
 

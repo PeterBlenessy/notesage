@@ -19,6 +19,13 @@ import { Markdown } from "tiptap-markdown";
 
 import { PasteHandler, pasteAsPlainText, extractImageFromDataTransfer } from "../paste-handler";
 
+// ⌘⇧V reads the clipboard via the Tauri clipboard-manager plugin (Rust-side,
+// no WebKit paste-permission menu). Mock the plugin's `readText`.
+const readTextMock = vi.fn<() => Promise<string | null>>();
+vi.mock("@tauri-apps/plugin-clipboard-manager", () => ({
+  readText: () => readTextMock(),
+}));
+
 const editors: Editor[] = [];
 
 afterEach(() => {
@@ -42,23 +49,18 @@ function createEditor(content = "<p></p>"): Editor {
 
 beforeEach(() => {
   vi.unstubAllGlobals();
+  readTextMock.mockReset();
 });
 
 describe("pasteAsPlainText", () => {
   it("inserts clipboard text as literal — `~apple~` does NOT render as <sub>", async () => {
     const editor = createEditor("<p></p>");
-    const readText = vi.fn(() =>
-        Promise.resolve("/Users/peter/com~apple~CloudDocs/file.md"),
-      );
-    vi.stubGlobal("navigator", {
-      ...navigator,
-      clipboard: { readText },
-    });
+    readTextMock.mockResolvedValue("/Users/peter/com~apple~CloudDocs/file.md");
 
     const handled = await pasteAsPlainText(editor);
 
     expect(handled).toBe(true);
-    expect(readText).toHaveBeenCalledOnce();
+    expect(readTextMock).toHaveBeenCalledOnce();
     // Literal text in document — no subscript / sup / em / strong marks.
     const html = editor.getHTML();
     expect(html).toContain("/Users/peter/com~apple~CloudDocs/file.md");
@@ -70,14 +72,7 @@ describe("pasteAsPlainText", () => {
 
   it("inserts prose with markdown punctuation as literal text", async () => {
     const editor = createEditor("<p></p>");
-    vi.stubGlobal("navigator", {
-      ...navigator,
-      clipboard: {
-        readText: vi.fn(() =>
-          Promise.resolve("Try `npm install` or run *the* _foo_ ~bar~"),
-        ),
-      },
-    });
+    readTextMock.mockResolvedValue("Try `npm install` or run *the* _foo_ ~bar~");
 
     await pasteAsPlainText(editor);
 
@@ -88,9 +83,9 @@ describe("pasteAsPlainText", () => {
     expect(html).not.toContain("<strong>");
   });
 
-  it("returns false when navigator.clipboard.readText is unavailable", async () => {
+  it("returns false when the clipboard read throws (no Tauri / denied)", async () => {
     const editor = createEditor("<p>existing</p>");
-    vi.stubGlobal("navigator", { ...navigator, clipboard: undefined });
+    readTextMock.mockRejectedValue(new Error("clipboard unavailable"));
 
     const handled = await pasteAsPlainText(editor);
 
@@ -99,31 +94,9 @@ describe("pasteAsPlainText", () => {
     expect(editor.getHTML()).toBe("<p>existing</p>");
   });
 
-  it("returns false when clipboard read rejects (permission denied)", async () => {
-    const editor = createEditor("<p>existing</p>");
-    vi.stubGlobal("navigator", {
-      ...navigator,
-      clipboard: {
-        readText: vi.fn(() =>
-          Promise.reject(new DOMException("Denied", "NotAllowedError")),
-        ),
-      },
-    });
-
-    const handled = await pasteAsPlainText(editor);
-
-    expect(handled).toBe(false);
-    expect(editor.getHTML()).toBe("<p>existing</p>");
-  });
-
   it("claims the keystroke even when clipboard is empty (returns true, no insert)", async () => {
     const editor = createEditor("<p>existing</p>");
-    vi.stubGlobal("navigator", {
-      ...navigator,
-      clipboard: {
-        readText: vi.fn(() => Promise.resolve("")),
-      },
-    });
+    readTextMock.mockResolvedValue("");
 
     const handled = await pasteAsPlainText(editor);
 
@@ -133,16 +106,21 @@ describe("pasteAsPlainText", () => {
     expect(editor.getHTML()).toBe("<p>existing</p>");
   });
 
+  it("treats a null clipboard payload as empty (returns true, no insert)", async () => {
+    const editor = createEditor("<p>existing</p>");
+    readTextMock.mockResolvedValue(null);
+
+    const handled = await pasteAsPlainText(editor);
+
+    expect(handled).toBe(true);
+    expect(editor.getHTML()).toBe("<p>existing</p>");
+  });
+
   it("inserts at the current selection, not an old one", async () => {
     const editor = createEditor("<p>hello world</p>");
     // Move cursor between "hello" and " world"
     editor.commands.setTextSelection(6);
-    vi.stubGlobal("navigator", {
-      ...navigator,
-      clipboard: {
-        readText: vi.fn(() => Promise.resolve("INSERT")),
-      },
-    });
+    readTextMock.mockResolvedValue("INSERT");
 
     await pasteAsPlainText(editor);
 

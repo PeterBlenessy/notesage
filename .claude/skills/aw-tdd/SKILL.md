@@ -16,6 +16,12 @@ Implement a single issue end-to-end following the red-green-refactor cycle. The 
 - The codebase (already checked out)
 - `pnpm test`, `pnpm typecheck`, `pnpm lint` available
 
+## Step 0 — Load accumulated rules (mandatory; before anything else)
+
+Read `.claude/feedback/INDEX.md` then read every `feedback_*.md` whose row lists this skill (or `all`) in `aw_applies_to`. These are corrections from past interactive sessions; they override conflicting guidance in this SKILL.md when they conflict. Skipping this step is the single biggest cause of avoidable AW failures.
+
+For `aw_applies: with-modification` rules, read "user" as the issue or PR thread you're working on — the rule's `aw_note` frontmatter explains the modification.
+
 ## Pre-flight
 
 0. **Check for a PR already in flight.** Before anything else: `gh pr list --search "resolves #$ISSUE_NUMBER OR fixes #$ISSUE_NUMBER OR closes #$ISSUE_NUMBER" --state open --json number,url`. If any open PR referencing this issue is found, exit silently — a concurrent run has already claimed the issue. Do not rely solely on the `review` label: GitHub label writes have latency, and two concurrent triggers can both pass the label check before either has written to the API.
@@ -54,6 +60,8 @@ Implement a single issue end-to-end following the red-green-refactor cycle. The 
 
 4. **Read the relevant files.** The subtask body lists `Files likely to change:` — read each, plus their tests, plus 1–2 levels of imports/callers.
 
+   **Before opening any single file, grep for parallel implementations.** Per `feedback_search_all_renderers`: run `grep -rn` for every UI element, function, store action, or component the issue mentions, across `src/` (or the project's source root). Single-file fixes that miss a parallel implementation are the most common cause of `aw-review` resets. Projects often carry parallel implementations transiently — two layout shells during a migration, two settings dialogs while one is being deprecated, a legacy plus a new sidebar tree. If the grep returns more than one renderer of the same concern, list every match in the PR body's `## Decisions made` and either fix all of them or explicitly defer the others with a rationale. Do not silently fix one and ship.
+
 4.5. **Apply propose-don't-punt.** Look for prior agent guidance:
 
    - Issue body's `## Assumptions` section (set by `aw-refine`) — these are committed assumptions; honour them unless overridden by a comment.
@@ -61,6 +69,8 @@ Implement a single issue end-to-end following the red-green-refactor cycle. The 
    - Slice rationale comment's `## Proposed answers` section (set by `aw-slice`) — these are authoritative; implement against them.
 
    Carry every assumption, proposed answer, or implementation-time decision forward into the PR body's `## Decisions made` section so reviewers see what was chosen and can override at PR review (or by comment, which `aw-feedback` routes back). Never block waiting for human input mid-implementation; pick a defensible choice and document it.
+
+   **Escape hatch — tangled-issue circuit breaker.** Per `feedback_no_partial_fixes`: if the issue surfaces THREE OR MORE interrelated sub-decisions that propose-don't-punt can't resolve confidently (each choice constrains the next; getting any one wrong cascades), STOP. Do NOT proceed with a defensible-guess implementation — a partial fix to a tangled issue is worse than no fix because it creates a PR the reviewer cannot evaluate. Instead: post the tangled-issue comment template (below), flip the issue to `hitl` (remove `tdd` + `afk`), and exit. The operator unwinds the tangle by clarifying the issue body or splitting into peer issues, then re-flips to `tdd + afk` for retry.
 
 ## Lifecycle labels
 
@@ -82,6 +92,8 @@ Update the subtask issue's labels at three points:
    - **Exception for additive changes:** if a listed test covers an *existing, unchanged* code path (e.g. a regression guard verifying 'file behaviour still works when the new flag is false'), it is expected to be green before implementation. Continue as long as at least one test covering the *new* behaviour is red.
    - Otherwise: the test is wrong (it's testing something already true) or the bug is not real — post a comment explaining, fail the workflow, do NOT proceed to green
 
+5. **Security / isolation carve-out — red MUST prove the leak is real.** Per `feedback_red_team_tdd`: if the issue is a security, isolation, sandboxing, permission, or privacy concern, the red test must demonstrate the LEAK before the fix. Write the attack: a test that simulates the unauthorized read, the cross-boundary call, the bypassed permission — and confirm it currently SUCCEEDS (i.e., the test asserts the leak is observable, and the assertion passes against unmodified code). Only then write the fix and flip the assertion. Tests that assert "the gate correctly denies X" without first proving "X was previously not denied" are worthless as regression locks — the gate may have already existed. If you can't make the attack succeed against current code, the bug is not real or the test is wrong; escalate via `hitl`, do NOT proceed to green.
+
 ### Green
 
 1. Write the minimum implementation to make the tests pass. Do not add features not required by the tests.
@@ -99,9 +111,13 @@ Update the subtask issue's labels at three points:
 1. **Red tests were red:** verified before green phase. No PR opens if green-from-start.
 2. **Red tests are green after implementation:** verified after green phase.
 3. **Full test suite passes:** `pnpm test` — all existing tests still green.
+
+   **Pre-existing failures count.** Per `feedback_fix_all_test_failures` and `feedback_fix_ci_always`: a failure that existed on `main` before this branch is still a failure on this branch — CI runs the same suite and will fail identically. Either fix the failure as part of this PR (a one-line side commit on this branch is fine) OR, if the failure is genuinely environmental (CI runner image regression, third-party stack outage), follow the bounded-retry escape hatch in `feedback_fix_all_test_failures`: up to 3 fix attempts, then post a diagnostic comment and label `needs-human` rather than pushing red. Do NOT loosen the failing assertion, the tolerance, or the timeout to make red turn green — that anti-pattern was explicitly called out.
+
 4. **Typecheck passes:** `pnpm typecheck`.
 5. **Lint passes** (if the repo has a lint script): check `package.json` for `lint`. Skip if absent.
-6. **No unrelated changes:** `git diff --stat` — should only touch the files listed in the subtask body (plus their tests). If unexpected files are modified, abort.
+6. **Outcome check (post-implementation).** Per `feedback_outcome_shaped_criteria` and `feedback_code_review_mandatory_gate`: re-read the issue body's first paragraph (the operator's stated outcome) AND every comment posted since the latest `refined` marker. List every behaviour the diff changes. For each, identify the user-observable scenario it should affect and either (a) **run** a test that exercises that scenario end-to-end and confirms the outcome, or (b) describe in the PR body's `## Decisions made` why no automated scenario can be run and what manual verification was performed. **Asking the question is not the same as running it** — an agent that reads the issue and shrugs passes the gate trivially; running the scenario is the actual gate. If the criteria pass literally but the outcome misses, the criteria were wrong; flip the issue back to `refine` with a comment surfacing the mismatch rather than shipping the literal-but-wrong implementation.
+7. **No unrelated changes:** `git diff --stat` — should only touch the files listed in the subtask body (plus their tests). If unexpected files are modified, abort.
 
 ## Branch + PR
 
@@ -190,6 +206,20 @@ Reset back to `tdd + afk`. Cron will not auto-retry — investigate and either:
 `Depends on: <#blocker>` is not yet closed. Will retry when it closes.
 ```
 
+**Tangled-issue circuit breaker (from Pre-flight step 4.5):**
+
+```
+> *Escalating to human — issue surfaces 3+ tangled sub-decisions per `feedback_no_partial_fixes`.*
+
+Stopping before implementation. The propose-don't-punt heuristic isn't safe to apply here because each of the following decisions constrains the others, and getting one wrong cascades:
+
+- <sub-decision 1> — <why it's tangled with the others>
+- <sub-decision 2> — <why it's tangled with the others>
+- <sub-decision 3> — <why it's tangled with the others>
+
+A partial fix would create a PR that can't be reviewed cleanly. Flipping to `hitl` for the operator to either clarify the issue body or split into peer issues with the tangle resolved upfront. Re-flip to `tdd + afk` to retry.
+```
+
 ## PR body template
 
 The first line MUST be a GitHub auto-close line — `Fixes #<issue-number>` for `bug` issues, `Resolves #<issue-number>` for `enhancement` / `chore` issues. Without it the linked issue will not close on merge.
@@ -247,4 +277,43 @@ The first line MUST be a GitHub auto-close line — `Fixes #<issue-number>` for 
 
 - Pick from `tdd` + `afk` + `refined` + category (sub-issues created by `aw-slice`).
 - The retrospective workflow runs after merge — do not write retro entries from here.
-- If a subtask is too large to fit one PR (>500 lines diff, >5 files), it was sliced wrong. Post a comment recommending a re-slice rather than implementing partially.
+- If a subtask is too large to fit one PR (>500 lines diff OR >15 files — the same budget `aw-slice` uses), it was sliced wrong. Post a comment recommending a re-slice rather than implementing partially.
+
+## Most-relevant feedback rules for this skill
+
+When context budget is tight, prioritise loading these rules from
+`.claude/feedback/` (the full set is in `.claude/feedback/INDEX.md`).
+
+<!-- BEGIN auto-generated by scripts/gen-feedback-index.py — do not hand-edit -->
+
+**Universal (load for every skill):**
+
+- `.claude/feedback/feedback_delete_old_skills.md` — Never ask the user to run commands or do mechanical steps — just do them yourself
+- `.claude/feedback/feedback_generic_voice.md` — Never name the operator, contributors, or individuals when writing rules, READMEs, skill prompts, or commit messages intended to live in the repo. The text must be copy-pasteable to another repo without rewording.
+- `.claude/feedback/feedback_write_feedback_to_repo.md` — When saving a memory in a project that has `.claude/feedback/`, behavioural-correction rules (anything that should change future behaviour on the same task class) MUST go in the repo so they're visible to AW agents and travel with the project. Local `~/.claude/projects/<project-slug>/memory/` is only for project-state memories (in-flight work, branch state, scratch notes).
+
+**Specific to `aw-tdd`:**
+
+- `.claude/feedback/feedback_add_tests.md` — When verifying bug fixes with test cases, add them as proper vitest tests in the project instead of running ad-hoc scripts
+- `.claude/feedback/feedback_branch_protection_ci_required.md` — main branch has protection rules — CI must pass before any PR can merge; never try to merge without waiting for checks
+- `.claude/feedback/feedback_check_before_workarounds.md` — When a feature gap forces a choice between two options, surface the choice to the user — don't pick a workaround silently. The "obvious safe default" often isn't what the user wants. *(modification: AW flips to `hitl` label + posts a comment with the choice instead of asking interactively.)*
+- `.claude/feedback/feedback_fix_all_test_failures.md` — Never dismiss local test failures as "pre-existing on main" — CI uses the same suite and will fail. Fix every failure that surfaces locally, regardless of cause.
+- `.claude/feedback/feedback_full_coverage.md` — When implementing a feature, cover ALL touch points completely. Never leave known gaps as "follow-ups" unless the user explicitly says so.
+- `.claude/feedback/feedback_functional_parity_vs_visual_parity.md` — When wrapping existing functionality in a new UI shell, functional parity and visual parity are distinct gates — both mandatory, neither substitutes for the other.
+- `.claude/feedback/feedback_manage_branch_yourself.md` — When the work belongs on a specific branch, the agent must check / switch / create the branch via git, not tell the user to do it
+- `.claude/feedback/feedback_mark_prd_done.md` — When completing tasks, mark them done in BOTH the task breakdown file AND the PRD — headings and checkboxes
+- `.claude/feedback/feedback_no_at_in_claude_md.md` — Never use @ prefix for large reference docs in CLAUDE.md — @ causes auto-loading into every conversation context regardless of relevance *(modification: Applies as-is when aw-tdd edits CLAUDE.md (rare). Does not apply to AW skill files (which are not @-loaded).)*
+- `.claude/feedback/feedback_no_partial_fixes.md` — Don't rush partial fixes after identifying an issue as architecturally complex — do proper analysis first
+- `.claude/feedback/feedback_outcome_shaped_criteria.md` — When a task's acceptance criteria name a file, line, function, or hook to modify, treat that as a *suggested* implementation — not the goal. The goal is the user-observable outcome. Verify the outcome before declaring done, even when the literal criteria are satisfied.
+- `.claude/feedback/feedback_perf_store_selectors.md` — Never use destructured useStore() — always use individual selectors. Debounce editor serialization.
+- `.claude/feedback/feedback_red_team_tdd.md` — Drive security/isolation work from failing attack tests — write the attack, confirm it succeeds (leak is real), flip the assertion, land the fix, keep the test as a regression lock
+- `.claude/feedback/feedback_reduce_rust_weight.md` — Project has too much Rust complexity. Prefer browser/frontend solutions over Rust backends when the browser can do the job.
+- `.claude/feedback/feedback_search_all_renderers.md` — When a visual bug appears in a UI element, grep the whole codebase for every renderer of that element before assuming one file is "the" implementation. Especially in apps with multiple layout shells.
+- `.claude/feedback/feedback_survey_shadcn_first.md` — Notesage's design system says "use shadcn first." When the user asks whether a shadcn component fits, the right answer is a structured survey of every relevant primitive (CommandItem, DropdownMenuRadioItem, DropdownMenuCheckboxItem, SelectItem, etc.), not "no, only X exists, build custom." Surveying first prevents recommending tailor-made components when shadcn already covers the pattern.
+- `.claude/feedback/feedback_task_done_format.md` — Use checkmark emoji in task title to mark done, never use checkbox syntax
+- `.claude/feedback/feedback_task_status_marks.md` — In tasks files, mark a task 🚧 when work is kicked off (by me or a sub-agent), flip to ✅ when the work lands — both via git apply --cached to bypass the formatter.
+- `.claude/feedback/feedback_test_before_promising.md` — When a UI component doesn't work as expected, research and fix it instead of falling back to inferior alternatives
+- `.claude/feedback/feedback_verify_prod_dev.md` — Always verify changes work in BOTH production builds and dev mode before saying they're safe *(modification: AW can't run prod builds — modified rule: avoid changes that obviously break the prod path (e.g., dev-only imports, `import.meta.env.DEV` gates without a prod fallback).)*
+- `.claude/feedback/feedback_wysiwyg_exports.md` — Export styling must come from the editor, not template pickers. Templates are for document creation, not export.
+
+<!-- END auto-generated -->

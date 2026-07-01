@@ -17,6 +17,11 @@ pub struct NetworkSandboxConfig {
     pub proxy_addr: String,
     /// Proxy port (for Seatbelt localhost allow rule)
     pub proxy_port: u16,
+    /// Extra localhost ports the agent may reach DIRECTLY (bypassing the proxy).
+    /// Used for local loopback services that need no domain filtering — e.g. the
+    /// bundled llama-server port for the Local Agent (Goose) preset. Empty for
+    /// ordinary agents, so kernel network deny still confines them to the proxy.
+    pub extra_localhost_ports: Vec<u16>,
 }
 
 /// A running proxy instance for a single agent
@@ -176,6 +181,8 @@ impl NetworkProxyState {
         Ok(NetworkSandboxConfig {
             proxy_addr: addr.to_string(),
             proxy_port: addr.port(),
+            // Caller (acp_agent_spawn) populates this for preset connections.
+            extra_localhost_ports: Vec::new(),
         })
     }
 
@@ -326,10 +333,32 @@ async fn handle_plain_http(
     target_url: &str,
     shared: &SharedProxyState,
 ) -> Result<(), String> {
-    // Extract host from Host header or URL
+    // Derive the host:port from the request-target, and use that SAME value for
+    // both the allowlist check and the upstream connection (audit security M3).
+    // Previously the allowlist check used the Host header while the upstream
+    // connection was built from the request-line URL — so a forged
+    // `GET http://attacker.com/ HTTP/1.1` with `Host: api.anthropic.com` passed
+    // the allowlist on the header yet connected upstream to attacker.com. Now
+    // the request-target is authoritative, and a Host header that disagrees is
+    // rejected outright.
     let request_str = String::from_utf8_lossy(initial_data);
-    let domain = extract_host_from_request(&request_str, target_url)?;
-    let port = 80u16;
+    let (domain, port) = if let Some(after) = target_url.strip_prefix("http://") {
+        split_url_authority(after, 80)
+    } else {
+        // Origin-form target with no scheme — fall back to the Host header.
+        match host_from_header(&request_str) {
+            Some(h) => (h, 80u16),
+            None => return Err("Cannot determine host from request".to_string()),
+        }
+    };
+
+    if let Some(hdr_host) = host_from_header(&request_str) {
+        if !hdr_host.eq_ignore_ascii_case(&domain) {
+            log::info!(target: "notesage::network_proxy", "HTTP host confusion: request-target {} vs Host {} — DENIED (agent: {})", domain, hdr_host, shared.agent_id);
+            send_response(&mut client, 403, "Proxy Denied — Host header does not match request target").await;
+            return Ok(());
+        }
+    }
 
     log::debug!(target: "notesage::network_proxy", "HTTP {}:{} (agent: {})", domain, port, shared.agent_id);
 
@@ -339,18 +368,8 @@ async fn handle_plain_http(
         return Ok(());
     }
 
-    // Parse the URL to get host:port for upstream connection
-    let upstream_addr = if target_url.starts_with("http://") {
-        let without_scheme = &target_url[7..];
-        let host_part = without_scheme.split('/').next().unwrap_or(&domain);
-        if host_part.contains(':') {
-            host_part.to_string()
-        } else {
-            format!("{}:80", host_part)
-        }
-    } else {
-        format!("{}:80", domain)
-    };
+    // Connect upstream to the SAME host:port that was just validated.
+    let upstream_addr = format!("{}:{}", domain, port);
 
     let mut upstream = TcpStream::connect(&upstream_addr)
         .await
@@ -541,23 +560,29 @@ fn parse_host_port(target: &str) -> Result<(String, u16), String> {
     }
 }
 
-fn extract_host_from_request(request: &str, url: &str) -> Result<String, String> {
-    // Try Host header first
+/// Host (port stripped) from the first `Host:` header, if present.
+fn host_from_header(request: &str) -> Option<String> {
     for line in request.lines() {
-        if line.to_lowercase().starts_with("host:") {
+        if line.len() >= 5 && line[..5].eq_ignore_ascii_case("host:") {
             let host = line[5..].trim();
-            // Strip port if present
-            return Ok(host.split(':').next().unwrap_or(host).to_string());
+            let h = host.split(':').next().unwrap_or(host).trim();
+            if !h.is_empty() {
+                return Some(h.to_string());
+            }
         }
     }
+    None
+}
 
-    // Fall back to URL parsing
-    if url.starts_with("http://") {
-        let without_scheme = &url[7..];
-        let host_part = without_scheme.split('/').next().unwrap_or("");
-        Ok(host_part.split(':').next().unwrap_or(host_part).to_string())
-    } else {
-        Err("Cannot determine host from request".to_string())
+/// Split the part of an `http://` URL after the scheme into (host, port).
+/// `api.example.com/foo` → ("api.example.com", 80); `h:8080/x` → ("h", 8080).
+/// The host (not the Host header) is the authoritative allowlist + connect
+/// target so the two can never diverge (audit security M3).
+fn split_url_authority(after_scheme: &str, default_port: u16) -> (String, u16) {
+    let authority = after_scheme.split('/').next().unwrap_or(after_scheme);
+    match authority.rsplit_once(':') {
+        Some((host, port)) => (host.to_string(), port.parse().unwrap_or(default_port)),
+        None => (authority.to_string(), default_port),
     }
 }
 
@@ -744,6 +769,46 @@ mod tests {
         let (host, port) = parse_host_port("example.com").unwrap();
         assert_eq!(host, "example.com");
         assert_eq!(port, 443);
+    }
+
+    #[test]
+    fn test_split_url_authority() {
+        assert_eq!(
+            split_url_authority("api.example.com/v1/x", 80),
+            ("api.example.com".to_string(), 80)
+        );
+        assert_eq!(
+            split_url_authority("h.example.com:8080/path", 80),
+            ("h.example.com".to_string(), 8080)
+        );
+        assert_eq!(
+            split_url_authority("bare.example.com", 80),
+            ("bare.example.com".to_string(), 80)
+        );
+    }
+
+    #[test]
+    fn test_host_from_header() {
+        let req = "GET / HTTP/1.1\r\nHost: api.anthropic.com\r\nAccept: */*\r\n\r\n";
+        assert_eq!(host_from_header(req).as_deref(), Some("api.anthropic.com"));
+        // Port stripped, case-insensitive header name.
+        let req2 = "GET / HTTP/1.1\r\nhOsT: example.com:8080\r\n\r\n";
+        assert_eq!(host_from_header(req2).as_deref(), Some("example.com"));
+        // No Host header.
+        assert_eq!(host_from_header("GET / HTTP/1.1\r\n\r\n"), None);
+    }
+
+    #[test]
+    fn test_host_confusion_detectable() {
+        // Regression guard for security M3: the request-target host and a
+        // disagreeing Host header must be distinguishable so the proxy can
+        // reject the mismatch (the actual reject lives in handle_plain_http).
+        let (target_host, _) = split_url_authority("attacker.com/path", 80);
+        let header_host = host_from_header(
+            "GET http://attacker.com/path HTTP/1.1\r\nHost: api.anthropic.com\r\n\r\n",
+        )
+        .unwrap();
+        assert_ne!(target_host.to_ascii_lowercase(), header_host.to_ascii_lowercase());
     }
 
     #[test]

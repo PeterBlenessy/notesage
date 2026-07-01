@@ -87,11 +87,12 @@ async function simulateRestart(
   await waitForPersist();
 }
 
-const DEFAULTS = { tasks: [], isManuallyHidden: false };
+const DEFAULTS = { tasks: [] };
 
 function makeTask(overrides: Partial<Omit<AgentTask, 'activities' | 'startedAt'>> = {}): Omit<AgentTask, 'activities' | 'startedAt'> {
   return {
     id: overrides.id ?? `task-${Math.random().toString(36).slice(2, 8)}`,
+    kind: overrides.kind ?? 'agent',
     type: overrides.type ?? 'comment',
     label: overrides.label ?? 'Test task',
     status: overrides.status ?? 'running',
@@ -538,6 +539,30 @@ describe('persistence — partialize', () => {
     const task1 = parsed.state.tasks.find((t: AgentTask) => t.id === 'task-1');
     expect(task1.finalOutput).toBe('Final answer');
   });
+
+  it('excludes recording items from persisted state but keeps transcription + agent tasks', async () => {
+    vi.useRealTimers();
+
+    // Live recording capture — never resumable, must not survive a restart.
+    useActivityStore.getState().addRecordingItem({ id: 'rec-1', label: 'Recording' });
+    // Transcription job + agent task — must stay persisted.
+    useActivityStore
+      .getState()
+      .addTranscriptionJob({ id: 'trx-1', label: 'Transcribing', audioPath: '/tmp/a.wav' });
+    useActivityStore.getState().addTask(makeTask({ id: 'agent-1', status: 'running' }));
+
+    await waitForPersist();
+
+    const raw = localStorageMock.getItem('notesage-activity');
+    expect(raw).toBeTruthy();
+    const parsed = JSON.parse(raw!);
+    const ids = parsed.state.tasks.map((t: AgentTask) => t.id);
+
+    expect(ids).not.toContain('rec-1');
+    expect(ids).toContain('trx-1');
+    expect(ids).toContain('agent-1');
+    expect(parsed.state.tasks.some((t: AgentTask) => t.kind === 'recording')).toBe(false);
+  });
 });
 
 // ===========================================================================
@@ -591,6 +616,7 @@ describe('persistence — rehydration', () => {
       tasks: [
         {
           id: 'old-task',
+          kind: 'agent' as const,
           type: 'comment' as const,
           label: 'Old',
           status: 'done' as const,
@@ -600,6 +626,7 @@ describe('persistence — rehydration', () => {
         },
         {
           id: 'recent-task',
+          kind: 'agent' as const,
           type: 'comment' as const,
           label: 'Recent',
           status: 'done' as const,
@@ -651,15 +678,238 @@ describe('persistence — rehydration', () => {
 });
 
 // ===========================================================================
-// setManuallyHidden
+// kind discriminator — defaulting + new lifecycle kinds
 // ===========================================================================
 
-describe('setManuallyHidden', () => {
-  it('toggles the isManuallyHidden flag', () => {
-    expect(useActivityStore.getState().isManuallyHidden).toBe(false);
-    useActivityStore.getState().setManuallyHidden(true);
-    expect(useActivityStore.getState().isManuallyHidden).toBe(true);
-    useActivityStore.getState().setManuallyHidden(false);
-    expect(useActivityStore.getState().isManuallyHidden).toBe(false);
+describe('kind discriminator', () => {
+  it("addTask defaults kind to 'agent' when omitted", () => {
+    useActivityStore.getState().addTask(makeTask({ id: 'agent-1' }));
+    expect(useActivityStore.getState().tasks[0].kind).toBe('agent');
+  });
+
+  it('addTask preserves an explicitly-passed kind', () => {
+    useActivityStore.getState().addTask({ ...makeTask({ id: 'k-1' }), kind: 'transcription' });
+    expect(useActivityStore.getState().tasks[0].kind).toBe('transcription');
+  });
+
+  it('keeps existing agent-task behavior byte-identical (activities, prepend, prune)', () => {
+    useActivityStore.getState().addTask(makeTask({ id: 'a', status: 'running' }));
+    useActivityStore.getState().addTask(makeTask({ id: 'b', status: 'running' }));
+    const tasks = useActivityStore.getState().tasks;
+    expect(tasks[0].id).toBe('b');
+    expect(tasks[1].id).toBe('a');
+    expect(tasks[0].activities).toEqual([]);
+    expect(tasks[0].kind).toBe('agent');
+    // agent tasks carry none of the transcription/recording optional fields
+    expect(tasks[0].progress).toBeUndefined();
+    expect(tasks[0].audioPath).toBeUndefined();
+    expect(tasks[0].recordingStartedAt).toBeUndefined();
   });
 });
+
+// ===========================================================================
+// transcription job lifecycle
+// ===========================================================================
+
+describe('transcription jobs', () => {
+  it('addTranscriptionJob creates a running transcription with audioPath + progress 0', () => {
+    vi.setSystemTime(new Date('2026-05-30T14:00:00Z'));
+    useActivityStore.getState().addTranscriptionJob({
+      id: 'tx-1',
+      label: 'Meeting 2026-05-30',
+      audioPath: '/Users/me/Notesage/Recordings/m1/audio.wav',
+      documentId: 'doc-1',
+    });
+
+    const task = useActivityStore.getState().tasks[0];
+    expect(task.kind).toBe('transcription');
+    expect(task.status).toBe('running');
+    expect(task.audioPath).toBe('/Users/me/Notesage/Recordings/m1/audio.wav');
+    expect(task.documentId).toBe('doc-1');
+    expect(task.progress).toBe(0);
+    expect(task.activities).toEqual([]);
+    expect(task.startedAt).toBe(Date.now());
+    expect(task.transcriptPath).toBeUndefined();
+  });
+
+  it('setTranscriptionProgress updates progress and clamps to 0–100', () => {
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 42);
+    expect(useActivityStore.getState().tasks[0].progress).toBe(42);
+
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 150);
+    expect(useActivityStore.getState().tasks[0].progress).toBe(100);
+
+    useActivityStore.getState().setTranscriptionProgress('tx-1', -5);
+    expect(useActivityStore.getState().tasks[0].progress).toBe(0);
+  });
+
+  it('setTranscriptionDone marks done, sets transcriptPath, progress 100, completedAt', () => {
+    vi.setSystemTime(new Date('2026-05-30T14:05:00Z'));
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+    useActivityStore.getState().setTranscriptionProgress('tx-1', 60);
+
+    useActivityStore.getState().setTranscriptionDone('tx-1', '/Recordings/m1/transcript.md');
+
+    const task = useActivityStore.getState().tasks[0];
+    expect(task.status).toBe('done');
+    expect(task.progress).toBe(100);
+    expect(task.transcriptPath).toBe('/Recordings/m1/transcript.md');
+    expect(task.completedAt).toBe(Date.now());
+  });
+
+  it('setTranscriptionError marks the job as error with completedAt', () => {
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+    useActivityStore.getState().setTranscriptionError('tx-1');
+
+    const task = useActivityStore.getState().tasks[0];
+    expect(task.status).toBe('error');
+    expect(task.completedAt).toBeDefined();
+  });
+
+  it('round-trips a transcription job through persist (partialize + rehydrate)', async () => {
+    vi.useRealTimers();
+
+    useActivityStore.getState().addTranscriptionJob({
+      id: 'tx-1',
+      label: 'Meeting',
+      audioPath: '/a.wav',
+    });
+    useActivityStore.getState().setTranscriptionDone('tx-1', '/t.md');
+
+    await waitForPersist();
+    await simulateRestart(DEFAULTS);
+
+    const task = useActivityStore.getState().tasks.find((t) => t.id === 'tx-1');
+    expect(task?.kind).toBe('transcription');
+    expect(task?.status).toBe('done');
+    expect(task?.audioPath).toBe('/a.wav');
+    expect(task?.transcriptPath).toBe('/t.md');
+    expect(task?.progress).toBe(100);
+  });
+});
+
+// ===========================================================================
+// recording item lifecycle
+// ===========================================================================
+
+describe('recording items', () => {
+  it('addRecordingItem creates a running recording with recordingStartedAt', () => {
+    vi.setSystemTime(new Date('2026-05-30T14:00:00Z'));
+    useActivityStore.getState().addRecordingItem({ id: 'rec-1', label: 'Recording' });
+
+    const task = useActivityStore.getState().tasks[0];
+    expect(task.kind).toBe('recording');
+    expect(task.status).toBe('running');
+    expect(task.recordingStartedAt).toBe(Date.now());
+  });
+
+  it('addRecordingItem honors an explicit recordingStartedAt', () => {
+    useActivityStore.getState().addRecordingItem({ id: 'rec-1', label: 'r', recordingStartedAt: 12345 });
+    expect(useActivityStore.getState().tasks[0].recordingStartedAt).toBe(12345);
+  });
+
+  it('removeRecordingItem removes only the matching recording item', () => {
+    useActivityStore.getState().addTask(makeTask({ id: 'agent-1' }));
+    useActivityStore.getState().addRecordingItem({ id: 'rec-1', label: 'r' });
+
+    useActivityStore.getState().removeRecordingItem('rec-1');
+
+    const tasks = useActivityStore.getState().tasks;
+    expect(tasks.find((t) => t.id === 'rec-1')).toBeUndefined();
+    expect(tasks.find((t) => t.id === 'agent-1')).toBeDefined();
+  });
+
+  it('removeRecordingItem does not remove an agent task with the same id', () => {
+    useActivityStore.getState().addTask(makeTask({ id: 'shared' }));
+    useActivityStore.getState().removeRecordingItem('shared');
+    expect(useActivityStore.getState().tasks.find((t) => t.id === 'shared')).toBeDefined();
+  });
+});
+
+// ===========================================================================
+// v1 → v2 migration — backfill kind: 'agent'
+// ===========================================================================
+
+describe('v1 → v2 migration', () => {
+  it("backfills kind: 'agent' on rehydrate for tasks missing it", async () => {
+    vi.useRealTimers();
+
+    // Hand-craft a v1 persisted blob (version 1, tasks without `kind`).
+    const v1Blob = {
+      state: {
+        tasks: [
+          {
+            id: 'legacy-1',
+            type: 'comment',
+            label: 'Legacy task',
+            status: 'done',
+            activities: [],
+            startedAt: Date.now() - 1000,
+            completedAt: Date.now() - 500,
+          },
+          {
+            id: 'legacy-2',
+            type: 'chat',
+            label: 'Another legacy',
+            status: 'done',
+            activities: [],
+            startedAt: Date.now() - 1000,
+            completedAt: Date.now() - 500,
+          },
+        ],
+      },
+      version: 1,
+    };
+    // Reset in-memory state first, THEN write the v1 blob — a setState after
+    // this point would persist a fresh v2 envelope and clobber the blob.
+    useActivityStore.setState(DEFAULTS);
+    await waitForPersist();
+    localStorageMock.setItem('notesage-activity', JSON.stringify(v1Blob));
+    await useActivityStore.persist.rehydrate();
+    await waitForPersist();
+
+    const tasks = useActivityStore.getState().tasks;
+    expect(tasks.find((t) => t.id === 'legacy-1')?.kind).toBe('agent');
+    expect(tasks.find((t) => t.id === 'legacy-2')?.kind).toBe('agent');
+  });
+
+  it('leaves an explicit kind untouched during migration', async () => {
+    vi.useRealTimers();
+
+    const blob = {
+      state: {
+        tasks: [
+          {
+            id: 'tx-legacy',
+            kind: 'transcription',
+            type: 'workflow',
+            label: 'Transcription',
+            status: 'done',
+            audioPath: '/a.wav',
+            transcriptPath: '/t.md',
+            progress: 100,
+            activities: [],
+            startedAt: Date.now() - 1000,
+            completedAt: Date.now() - 500,
+          },
+        ],
+      },
+      version: 1,
+    };
+    useActivityStore.setState(DEFAULTS);
+    await waitForPersist();
+    localStorageMock.setItem('notesage-activity', JSON.stringify(blob));
+    await useActivityStore.persist.rehydrate();
+    await waitForPersist();
+
+    const task = useActivityStore.getState().tasks.find((t) => t.id === 'tx-legacy');
+    expect(task?.kind).toBe('transcription');
+    expect(task?.transcriptPath).toBe('/t.md');
+  });
+});
+
+// `setManuallyHidden` describe deleted with Classic Layout removal (#325).
+// The flag was ActivityStrip's hide state; ActivityStrip is gone and the
+// AgentOrb popover open/closed state lives in the agent-orb-events bus.

@@ -73,6 +73,8 @@ vi.mock('@/lib/ai/acp-agent-state', () => ({
   stopAcpAgent: vi.fn(),
   acpAgent: null,
   ensureAcpAgent: vi.fn(),
+  isLocalAgentPreset: (conn: { provider?: string; config?: { localAgentPreset?: string } } | null) =>
+    conn?.provider === 'custom_acp' && conn?.config?.localAgentPreset === 'goose',
 }));
 
 vi.mock('@/lib/ai/acp-utils', () => ({

@@ -1,5 +1,5 @@
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 use super::file_scanner::is_indexable;
 use super::{db, get_db_for_path, reindex_file_in_db, IndexState};
@@ -82,25 +82,58 @@ pub fn process_reindex_queue(app: &AppHandle) {
         return;
     }
 
-    let global = state.global_db.lock();
-    let projects = state.project_dbs.lock();
+    // Collect link-graph work to run AFTER the content-DB locks are released —
+    // `index_links_for_file` locks `project_dbs` to compute scope roots, so
+    // doing it inside this loop (which already holds that lock) would deadlock
+    // on the non-reentrant parking_lot mutex.
+    let mut link_updates: Vec<String> = Vec::new();
+    let mut link_deletes: Vec<String> = Vec::new();
 
-    for entry in entries {
-        // Apply circuit breaker — skip files being reindexed too rapidly
-        if entry.kind != FileChangeKind::Delete && state.is_reindex_throttled(&entry.path) {
-            continue;
-        }
+    {
+        let global = state.global_db.lock();
+        let projects = state.project_dbs.lock();
 
-        if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &entry.path) {
-            if entry.kind == FileChangeKind::Delete {
-                let _ = db::remove_file(conn, &entry.path);
-            } else if is_indexable(&entry.path) {
-                let _ = reindex_file_in_db(conn, &entry.path, project_path.as_deref());
+        for entry in entries {
+            // Apply circuit breaker — skip files being reindexed too rapidly
+            if entry.kind != FileChangeKind::Delete && state.is_reindex_throttled(&entry.path) {
+                continue;
+            }
+
+            if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &entry.path) {
+                if entry.kind == FileChangeKind::Delete {
+                    let _ = db::remove_file(conn, &entry.path);
+                    link_deletes.push(entry.path.clone());
+                } else if is_indexable(&entry.path) {
+                    let _ = reindex_file_in_db(conn, &entry.path, project_path.as_deref());
+                    link_updates.push(entry.path.clone());
+                }
             }
         }
     }
 
+    // Link-graph reconciliation (scope-gated inside each call — explorer paths
+    // are no-ops, ADR 0003). Collect every path whose link edges/meta were
+    // touched so the frontend can refresh anything derived from `links.db`
+    // (the RelationsPanel via `useDocumentRelations`, the wiki-link unresolved
+    // decoration) without busy-polling. This is the single, authoritative
+    // "links settled" signal and fires for ALL write paths — self-write saves
+    // (which are filtered out of `file-changed-batch`) AND external/tool writes
+    // alike, only AFTER the reindex has actually landed.
+    let mut affected: Vec<String> = Vec::new();
+    for path in link_deletes {
+        state.remove_links_for_file(&path);
+        affected.push(path);
+    }
+    for path in link_updates {
+        state.index_links_for_file(&path);
+        affected.push(path);
+    }
+
     *state.processing.lock() = false;
+
+    if !affected.is_empty() {
+        let _ = app.emit("links-reindexed", affected);
+    }
 }
 
 #[cfg(test)]

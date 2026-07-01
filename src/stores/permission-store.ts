@@ -12,6 +12,12 @@ export interface PermissionRequest {
   toolInput: string;
   options: { optionId: string; kind: string; name: string }[];
   timestamp: number;
+  /**
+   * Conversation that owns this request (task #6). Lets the UI attribute the
+   * request to its session and drive the foreground-aware auto-deny timeout
+   * (task #7). `null`/absent for legacy callers (treated as foreground).
+   */
+  conversationId?: string | null;
 }
 
 export type PermissionTier = 'none' | 'session' | 'always';
@@ -31,6 +37,31 @@ export interface ScopedApproval {
   projectRoot: string | null;
   /** ms since epoch; used for the Settings > Privacy > Approvals review UI. */
   grantedAt: number;
+  /**
+   * SHA-256 of the approved script body, for skill-script approvals only
+   * (security audit HIGH #2). When set, the approval is content-pinned: a
+   * later query carrying a different hash does NOT match, so a rewritten
+   * script body re-prompts instead of silently running under the old "allow
+   * always". `null`/absent = unpinned (legacy grants, or non-skill approvals).
+   */
+  contentHash?: string | null;
+}
+
+/**
+ * Content-pinned arm record for an automation (Task #8). An automation with a
+ * write/script step is only run when the stored `hash` matches its current
+ * definition hash — editing the automation changes the hash, so it auto-disarms.
+ */
+export interface AutomationArmRecord {
+  /** SHA-256 of the automation's security-relevant definition. */
+  hash: string;
+  /** ms since epoch — for the Settings/Approvals review UI. */
+  armedAt: number;
+  /** Write scope shown in the arm dialog (project root / library + doc paths). */
+  scope: string[];
+  /** SHA-256 of each skill step's script body, keyed `skill/script` — a rewritten
+   *  script disarms the automation even if its YAML is unchanged (Task #9). */
+  scriptHashes?: Record<string, string>;
 }
 
 interface PermissionState {
@@ -64,6 +95,9 @@ interface PermissionState {
 
   /** Direct-API tool names always allowed (persisted), scoped by connection + project. */
   toolCallAlways: ScopedApproval[];
+
+  /** Per-automation arm records, keyed by `sourcePath` (persisted). Task #8. */
+  automationArm: Record<string, AutomationArmRecord>;
 
   /**
    * Transient: set by the v1→v2 persist migration, indicating how many legacy
@@ -122,21 +156,34 @@ interface PermissionStore extends PermissionState {
     projectRoot: string | null,
   ) => PermissionTier;
 
-  /** Check if a skill is allowed to execute scripts under a given scope. */
+  /**
+   * Check if a skill is allowed to execute scripts under a given scope.
+   *
+   * When `contentHash` is supplied, an `always` grant only matches if it was
+   * pinned to that exact script body (security audit HIGH #2) — a grant with no
+   * pinned hash, or a different hash, does NOT auto-allow, forcing a re-prompt.
+   * Omitting `contentHash` preserves the legacy scope-only behaviour.
+   */
   isSkillScriptAllowed: (
     skillName: string,
     connectionId: string | null,
     projectRoot: string | null,
+    contentHash?: string,
   ) => PermissionTier;
 
   /** Allow a skill to run scripts for this session. */
   allowSkillScriptSession: (skillName: string) => void;
 
-  /** Always allow a skill to run scripts (persisted) for a given scope. */
+  /**
+   * Always allow a skill to run scripts (persisted) for a given scope,
+   * optionally content-pinned to `contentHash` (the SHA-256 of the approved
+   * script). Re-granting the same scope replaces any prior hash.
+   */
   allowSkillScriptAlways: (
     skillName: string,
     connectionId: string | null,
     projectRoot: string | null,
+    contentHash?: string,
   ) => void;
 
   /** Remove a skill from the persistent always-allow list (strict triple match). */
@@ -215,6 +262,17 @@ interface PermissionStore extends PermissionState {
     connectionId: string | null,
     projectRoot: string | null,
   ) => PermissionTier;
+
+  /** Arm an automation: content-pin its definition hash + write scope + skill-script SHAs. */
+  armAutomation: (
+    sourcePath: string,
+    hash: string,
+    scope: string[],
+    scriptHashes?: Record<string, string>,
+  ) => void;
+  /** Remove an automation's arm record. */
+  disarmAutomation: (sourcePath: string) => void;
+  getAutomationArm: (sourcePath: string) => AutomationArmRecord | undefined;
 }
 
 /**
@@ -237,6 +295,25 @@ function matchesScope(
     return false;
   }
   return true;
+}
+
+/**
+ * Skill-script matcher: scope must match AND, when a `contentHash` is supplied
+ * by the caller, the stored entry must be pinned to that exact hash. An
+ * unpinned entry (`contentHash` null/absent) does NOT satisfy a hashed query —
+ * that's the content-pin enforcement (security audit HIGH #2). When the caller
+ * omits `contentHash`, hashing is ignored (legacy scope-only behaviour).
+ */
+function matchesSkillScope(
+  entry: ScopedApproval,
+  skillName: string,
+  connectionId: string | null,
+  projectRoot: string | null,
+  contentHash: string | undefined,
+): boolean {
+  if (!matchesScope(entry, skillName, connectionId, projectRoot)) return false;
+  if (contentHash === undefined) return true;
+  return entry.contentHash != null && entry.contentHash === contentHash;
 }
 
 function hasExactTriple(
@@ -344,6 +421,7 @@ export function _migrateLegacyState(persistedState: unknown, version: number): P
     domainAlwaysAllowed: newDomains,
     toolCallSession: new Set<string>(),
     toolCallAlways,
+    automationArm: {},
     _pendingLegacyToastCount: legacyCount > 0 ? legacyCount : undefined,
   };
   return next;
@@ -361,6 +439,7 @@ export const usePermissionStore = create<PermissionStore>()(
       domainAlwaysAllowed: {},
       toolCallSession: new Set<string>(),
       toolCallAlways: [],
+      automationArm: {},
 
       addRequest: (request) =>
         set((state) => ({
@@ -438,11 +517,11 @@ export const usePermissionStore = create<PermissionStore>()(
         return 'none';
       },
 
-      isSkillScriptAllowed: (skillName, connectionId, projectRoot) => {
+      isSkillScriptAllowed: (skillName, connectionId, projectRoot, contentHash) => {
         const state = get();
         if (
           state.skillScriptAlways.some((a) =>
-            matchesScope(a, skillName, connectionId, projectRoot),
+            matchesSkillScope(a, skillName, connectionId, projectRoot, contentHash),
           )
         ) {
           return 'always';
@@ -458,18 +537,23 @@ export const usePermissionStore = create<PermissionStore>()(
           return { skillScriptSession: next };
         }),
 
-      allowSkillScriptAlways: (skillName, connectionId, projectRoot) =>
+      allowSkillScriptAlways: (skillName, connectionId, projectRoot, contentHash) =>
         set((state) => {
-          if (hasExactTriple(state.skillScriptAlways, skillName, connectionId, projectRoot)) {
-            return state;
-          }
+          // Re-granting the same scope replaces any prior entry so the pinned
+          // hash is updated (and a re-grant after a legitimate edit re-pins).
           const entry: ScopedApproval = {
             toolName: skillName,
             connectionId,
             projectRoot,
             grantedAt: Date.now(),
+            contentHash: contentHash ?? null,
           };
-          return { skillScriptAlways: [...state.skillScriptAlways, entry] };
+          return {
+            skillScriptAlways: [
+              ...filterExactTriple(state.skillScriptAlways, skillName, connectionId, projectRoot),
+              entry,
+            ],
+          };
         }),
 
       removeSkillScriptAlways: (skillName, connectionId, projectRoot) =>
@@ -625,6 +709,24 @@ export const usePermissionStore = create<PermissionStore>()(
           ),
         })),
 
+      armAutomation: (sourcePath, hash, scope, scriptHashes) =>
+        set((state) => ({
+          automationArm: {
+            ...state.automationArm,
+            [sourcePath]: { hash, armedAt: Date.now(), scope, scriptHashes },
+          },
+        })),
+
+      disarmAutomation: (sourcePath) =>
+        set((state) => {
+          if (!state.automationArm[sourcePath]) return state;
+          const next = { ...state.automationArm };
+          delete next[sourcePath];
+          return { automationArm: next };
+        }),
+
+      getAutomationArm: (sourcePath) => get().automationArm[sourcePath],
+
       isToolAllowed: (toolName, connectionId, projectRoot) => {
         const state = get();
         if (state.isToolAutoAllowed(toolName)) return 'always';
@@ -650,7 +752,22 @@ export const usePermissionStore = create<PermissionStore>()(
         skillScriptAlways: state.skillScriptAlways,
         domainAlwaysAllowed: state.domainAlwaysAllowed,
         toolCallAlways: state.toolCallAlways,
+        automationArm: state.automationArm,
       }),
     },
   ),
 );
+
+// ---------------------------------------------------------------------------
+// Pure selectors (task #6)
+// ---------------------------------------------------------------------------
+
+/** ACP permission requests owned by a given conversation. A request with no
+ *  `conversationId` (legacy) matches nothing here — callers that need the
+ *  unattributed ones read `requests` directly. */
+export function pendingForConversation(
+  state: Pick<PermissionState, 'requests'>,
+  conversationId: string,
+): PermissionRequest[] {
+  return state.requests.filter((r) => r.conversationId === conversationId);
+}

@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import type { AIProviderType } from './ai/types';
 import type { BackendTypographyPresets } from './typography-presets';
 import type { AcpListResult, AcpSessionResult } from './ai/acp-utils';
+import type { AcpMcpServerInput } from './ai/acp-mcp';
+import type { AutomationFile, AutomationValidation } from './automations/types';
 
 export interface FileEntry {
   name: string;
@@ -47,6 +49,54 @@ export interface PptxTemplateInfo {
   scope: string;  // "builtin" | "global" | "project"
   path: string;
   date_added: string;
+}
+
+/**
+ * Result of `local_agent_write_config` — the Goose env pointing at the live
+ * bundled llama-server (provider + host + model) plus the XDG isolation paths
+ * and the respawn-trigger key (`<port>:<modelId>`). Goose is configured purely
+ * via env vars — no config file is written. See `src-tauri/.../local_agent.rs`.
+ */
+export interface LocalAgentConfig {
+  configPath: string;
+  /** Env vars (Goose provider + XDG isolation paths) the spawn must inject to
+   *  point Goose at the bundled server and isolate its config tree. The only
+   *  key is a dummy the local server ignores — never real secrets. */
+  env: Record<string, string>;
+  /** `<port>:<modelId>` — changes when the server port or active model changes. */
+  configKey: string;
+  /** The bundled server port the config points at (for the Seatbelt allow). */
+  port: number;
+  modelId: string;
+}
+
+/** Stage the smoke test reached. `done` = success; otherwise the failed stage. */
+export type SmokeStage = 'health' | 'spawn' | 'session' | 'prompt' | 'done';
+
+/** Result of `acp_agent_smoke_test` — see `src-tauri/.../acp.rs`. */
+export interface SmokeTestReport {
+  ok: boolean;
+  stage: SmokeStage;
+  error?: string;
+  elapsedMs: number;
+}
+
+/** Params for `acpAgentSmokeTest` — mirrors the spawn surface plus the bundled
+ *  server health gate (`requireLocalServer`). */
+export interface SmokeTestParams {
+  agentBinary: string;
+  agentArgs?: string[] | null;
+  workingDirectory: string;
+  envVars?: Record<string, string> | null;
+  connectionId?: string | null;
+  envVarKeys?: string[] | null;
+  sandboxEnabled?: boolean | null;
+  sandboxPaths?: string[] | null;
+  networkSandboxEnabled?: boolean | null;
+  networkAllowedDomains?: string[] | null;
+  kernelNetworkDeny?: boolean | null;
+  extraLocalhostPorts?: number[] | null;
+  requireLocalServer?: boolean | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -229,6 +279,52 @@ export interface IndexStats {
   indexed_at: number;
 }
 
+// ---------------------------------------------------------------------------
+// Link graph (OKF wiki-navigation) — `links.db` query results.
+//
+// IMPORTANT: every field below is SNAKE_CASE on purpose — the Rust IPC structs
+// in `src-tauri/src/index/links.rs` (`BacklinkGroup`, `LinkRow`, `WikiTarget`)
+// serialize snake_case to match the rest of the `index::*` command surface.
+// Do NOT camelCase these — the wire shape must match the backend exactly.
+// ---------------------------------------------------------------------------
+
+/** One occurrence of a backlink: a single edge from a source document. */
+export interface BacklinkOccurrence {
+  link_text: string;
+  context: string;
+}
+
+/** Backlinks ("Linked from") grouped by their source document (ADR 0006). */
+export interface BacklinkGroup {
+  source_path: string;
+  source_title: string | null;
+  source_type: string | null;
+  source_description: string | null;
+  occurrences: BacklinkOccurrence[];
+}
+
+/** One outgoing ("Links to") link row, enriched with the target's frontmatter. */
+export interface LinkRow {
+  source_path: string;
+  target_path: string;
+  link_text: string;
+  context: string;
+  is_internal: boolean;
+  /** `true` when the target resolves to a known in-scope file. */
+  resolved: boolean;
+  target_title: string | null;
+  target_type: string | null;
+  target_description: string | null;
+}
+
+/** A wikilink resolution candidate (filename + title match, ADR 0002). */
+export interface WikiTarget {
+  path: string;
+  title: string | null;
+  doc_type: string | null;
+  description: string | null;
+}
+
 export type ActionSourceType = 'task' | 'comment' | 'agent' | 'goal';
 export type ActionStatus = 'open' | 'done' | 'delegated' | 'pending' | 'running' | 'completed' | 'error';
 
@@ -283,22 +379,41 @@ export interface AcpSpawnResult {
 // Transcription types
 // ---------------------------------------------------------------------------
 
-export interface TranscriptionSegment {
+/**
+ * A timestamped transcript segment from the whole-file transcription command
+ * (`transcribe_file`). Mirrors the Rust `TranscriptSegment` struct in
+ * `src-tauri/src/commands/transcription.rs`. That struct has no
+ * `#[serde(rename_all)]` attribute, so the JSON keys are the verbatim
+ * snake_case Rust field names. `speaker_id` / `speaker_name` are reserved for a
+ * future diarization + naming pass and are always `null` in v1.
+ */
+export interface TranscriptSegment {
   start: number;
   end: number;
   text: string;
-  speaker?: string;
+  speaker_id: string | null;
+  speaker_name: string | null;
 }
 
-export interface TranscriptionResultData {
-  segments: TranscriptionSegment[];
+/**
+ * Result of `transcribe_file` — ordered timestamped segments for a whole audio
+ * file. Mirrors the Rust `TranscriptionResult` struct (no serde rename, so the
+ * `duration_secs` key is snake_case).
+ */
+export interface TranscriptionResult {
+  segments: TranscriptSegment[];
   duration_secs: number;
   language: string;
 }
 
-export interface AudioBufferInfo {
+/**
+ * Result of `stop_recording` — the finalized WAV path plus signal metadata for
+ * the frontend's silence-detection warning. Mirrors the Rust `RecordingResult`
+ * struct (no serde rename, so `duration_secs` / `sample_rate` are snake_case).
+ */
+export interface RecordingResult {
+  path: string;
   duration_secs: number;
-  sample_count: number;
   sample_rate: number;
   source: string;
   rms: number;
@@ -436,6 +551,51 @@ export interface ModelMetadata {
 export interface SystemMemoryInfo {
   total_bytes: number;
   available_bytes: number;
+}
+
+// ---------------------------------------------------------------------------
+// Hardware-aware model recommendation types
+// (mirror src-tauri/src/commands/model_fit/types.rs)
+// ---------------------------------------------------------------------------
+
+export interface HardwareProfile {
+  total_ram_bytes: number;
+  available_ram_bytes: number;
+  chip_name: string;
+  bandwidth_gbs: number;
+  is_unified: boolean;
+  backend: string; // "metal" | "cpu"
+}
+
+export interface GgufCapabilities {
+  architecture: string | null;
+  context_length: number | null;
+  has_fim_tokens: boolean;
+  has_tool_template: boolean;
+  has_thinking: boolean;
+  gguf_version: number;
+  truncated: boolean;
+}
+
+export interface ModelFitInput {
+  id: string;
+  file_size_bytes: number;
+  params_b: number;
+  active_params_b?: number | null;
+  quant: string;
+}
+
+export type Fit = 'fits' | 'tight' | 'wont-fit';
+export type Speed = 'fast' | 'ok' | 'sluggish' | 'unusable';
+
+export interface ModelFitResult {
+  id: string;
+  est_ram_bytes: number;
+  fit: Fit;
+  est_tok_per_sec: number;
+  speed: Speed;
+  runnable: boolean;
+  reasons: string[];
 }
 
 export interface LocalServerStatus {
@@ -586,6 +746,13 @@ export const tauriApi = {
 
   async gitWorktreeList(repoPath: string): Promise<WorktreeInfo[]> {
     return await invoke<WorktreeInfo[]>("git_worktree_list", { repoPath });
+  },
+
+  // Grant the WebView asset-protocol read access to a user-opened workspace
+  // root (replaces the removed blanket `$HOME/**` static asset scope — security
+  // H1). Called for every root in `useStartWatchers`.
+  async allowAssetDir(path: string): Promise<void> {
+    await invoke("allow_asset_dir", { path });
   },
 
   // Filesystem watcher operations
@@ -745,6 +912,16 @@ export const tauriApi = {
     networkSandboxEnabled?: boolean | null,
     networkAllowedDomains?: string[] | null,
     kernelNetworkDeny?: boolean | null,
+    /** Connection id + env-var names for keychain secret resolution at spawn
+     *  (`notesage:<connectionId>:env:<KEY>`). Values never transit IPC here. */
+    connectionId?: string | null,
+    envVarKeys?: string[] | null,
+    /** Inline env passed to the spawned agent (e.g. the Local Agent preset's
+     *  generated Goose env). Keychain-resolved values still win backend-side. */
+    envVars?: Record<string, string> | null,
+    /** Extra localhost ports to allow through the kernel network sandbox
+     *  alongside the proxy port (e.g. the bundled llama-server port, #9). */
+    extraLocalhostPorts?: number[] | null,
   ): Promise<AcpSpawnResult> {
     return await invoke<AcpSpawnResult>("acp_agent_spawn", {
       agentBinary,
@@ -756,6 +933,10 @@ export const tauriApi = {
       networkSandboxEnabled: networkSandboxEnabled ?? null,
       networkAllowedDomains: networkAllowedDomains ?? null,
       kernelNetworkDeny: kernelNetworkDeny ?? null,
+      connectionId: connectionId ?? null,
+      envVarKeys: envVarKeys ?? null,
+      envVars: envVars ?? null,
+      extraLocalhostPorts: extraLocalhostPorts ?? null,
     });
   },
 
@@ -767,12 +948,65 @@ export const tauriApi = {
     await invoke("acp_agent_authenticate", { instanceId });
   },
 
-  async acpSessionNew(instanceId: string, workingDirectory: string): Promise<AcpSessionResult> {
-    return await invoke<AcpSessionResult>("acp_session_new", { instanceId, workingDirectory });
+  /**
+   * Regenerate the Local Agent (Goose) env from the LIVE bundled llama-server
+   * state and return the provider/isolation env + respawn trigger key. Used
+   * by `ensureAcpAgent` for `localAgentPreset` connections (tasks #8/#10).
+   * Rejects when the bundled server is not running / has no active model.
+   */
+  async localAgentWriteConfig(): Promise<LocalAgentConfig> {
+    return await invoke<LocalAgentConfig>("local_agent_write_config");
   },
 
-  async acpSessionLoad(instanceId: string, sessionId: string, workingDirectory: string): Promise<AcpSessionResult> {
-    return await invoke<AcpSessionResult>("acp_session_load", { instanceId, sessionId, workingDirectory });
+  /**
+   * Bounded end-to-end verification of an ACP agent (health → spawn → session →
+   * one prompt → teardown). Always resolves to a `SmokeTestReport` (never throws
+   * for stage failures) so callers can branch on `ok` + `stage` (tasks #12/#13/#16).
+   */
+  async acpAgentSmokeTest(params: SmokeTestParams): Promise<SmokeTestReport> {
+    return await invoke<SmokeTestReport>("acp_agent_smoke_test", {
+      agentBinary: params.agentBinary,
+      agentArgs: params.agentArgs ?? null,
+      workingDirectory: params.workingDirectory,
+      envVars: params.envVars ?? null,
+      connectionId: params.connectionId ?? null,
+      envVarKeys: params.envVarKeys ?? null,
+      sandboxEnabled: params.sandboxEnabled ?? null,
+      sandboxPaths: params.sandboxPaths ?? null,
+      networkSandboxEnabled: params.networkSandboxEnabled ?? null,
+      networkAllowedDomains: params.networkAllowedDomains ?? null,
+      kernelNetworkDeny: params.kernelNetworkDeny ?? null,
+      extraLocalhostPorts: params.extraLocalhostPorts ?? null,
+      requireLocalServer: params.requireLocalServer ?? null,
+    });
+  },
+
+  async acpSessionNew(
+    instanceId: string,
+    workingDirectory: string,
+    /** MCP servers to attach to the session (task #11). Omit for no MCP. */
+    mcpServers?: AcpMcpServerInput[] | null,
+  ): Promise<AcpSessionResult> {
+    return await invoke<AcpSessionResult>("acp_session_new", {
+      instanceId,
+      workingDirectory,
+      mcpServers: mcpServers ?? null,
+    });
+  },
+
+  async acpSessionLoad(
+    instanceId: string,
+    sessionId: string,
+    workingDirectory: string,
+    /** MCP servers for the reloaded session (task #11). Omit for no MCP. */
+    mcpServers?: AcpMcpServerInput[] | null,
+  ): Promise<AcpSessionResult> {
+    return await invoke<AcpSessionResult>("acp_session_load", {
+      instanceId,
+      sessionId,
+      workingDirectory,
+      mcpServers: mcpServers ?? null,
+    });
   },
 
   async acpSessionClose(instanceId: string, sessionId: string): Promise<void> {
@@ -800,14 +1034,12 @@ export const tauriApi = {
     sessionId: string,
     content: string,
     images?: Array<{ data: string; mime_type: string }>,
-    messageId?: string,
   ): Promise<void> {
     await invoke("acp_session_prompt", {
       instanceId,
       sessionId,
       content,
       images: images ?? null,
-      messageId: messageId ?? null,
     });
   },
 
@@ -825,10 +1057,6 @@ export const tauriApi = {
 
   async acpSessionSetConfigOption(instanceId: string, sessionId: string, optionId: string, valueId: string): Promise<void> {
     await invoke("acp_session_set_config_option", { instanceId, sessionId, optionId, valueId });
-  },
-
-  async acpSessionSetModel(instanceId: string, sessionId: string, modelId: string): Promise<void> {
-    await invoke("acp_session_set_model", { instanceId, sessionId, modelId });
   },
 
   async acpPermissionRespond(instanceId: string, requestId: string, optionId: string | null): Promise<void> {
@@ -1041,6 +1269,70 @@ export const tauriApi = {
     return await invoke<IndexStats>("index_stats", { projectPath: projectPath ?? null });
   },
 
+  // --- Link graph (OKF wiki-navigation, ADR 0002–0007) ---
+  // All four query the standalone `links.db`, not the content index.
+
+  /** Backlinks ("Linked from") for `path`, grouped by source document. */
+  async getBacklinks(path: string): Promise<BacklinkGroup[]> {
+    return await invoke<BacklinkGroup[]>("get_backlinks", { path });
+  },
+
+  /** Outgoing ("Links to") links from `path`, enriched with target frontmatter. */
+  async getOutlinks(path: string): Promise<LinkRow[]> {
+    return await invoke<LinkRow[]>("get_outlinks", { path });
+  },
+
+  /** Broken / dangling internal links across `scope` (empty = all). */
+  async getBrokenLinks(scope: string[]): Promise<LinkRow[]> {
+    return await invoke<LinkRow[]>("get_broken_links", { scope });
+  },
+
+  /**
+   * Resolve a wikilink `query` against the link store (filename + title,
+   * workspace-global). The main consumer is the `[[` authoring extension
+   * (#11), but the binding lands here with the rest of the link graph.
+   */
+  async resolveWikilink(query: string, limit?: number): Promise<WikiTarget[]> {
+    return await invoke<WikiTarget[]>("resolve_wikilink", {
+      query,
+      limit: limit ?? null,
+    });
+  },
+
+  // Automations
+  async listAutomations(baseDirs: string[]): Promise<AutomationFile[]> {
+    return await invoke<AutomationFile[]>("list_automations", { baseDirs });
+  },
+
+  async saveAutomation(path: string, yaml: string): Promise<void> {
+    await invoke("save_automation", { path, yaml });
+  },
+
+  async deleteAutomation(path: string): Promise<void> {
+    await invoke("delete_automation", { path });
+  },
+
+  async validateAutomation(yaml: string): Promise<AutomationValidation> {
+    return await invoke<AutomationValidation>("validate_automation", { yaml });
+  },
+
+  /** Resolve a document-step write path within `base`, rejecting absolute paths
+   *  and `..` traversal. Rejects (throws) if the path would escape the scope. */
+  async resolveAutomationWritePath(base: string, relPath: string): Promise<string> {
+    return await invoke<string>("resolve_automation_write_path", { base, relPath });
+  },
+
+  /** Master enable flag — also gates the scheduler tick loop. */
+  async setAutomationsEnabled(enabled: boolean): Promise<void> {
+    await invoke("set_automations_enabled", { enabled });
+  },
+
+  /** Rebuild the active schedule from disk; the first call per launch also
+   *  emits `automations-missed` for the catch-up chooser. Returns the count. */
+  async reloadAutomationSchedule(baseDirs: string[]): Promise<number> {
+    return await invoke<number>("reload_automation_schedule", { baseDirs });
+  },
+
   // Skill & agent operations
   async discoverSkills(baseDirs: string[]): Promise<SkillEntry[]> {
     return await invoke<SkillEntry[]>("discover_skills", { baseDirs });
@@ -1061,8 +1353,17 @@ export const tauriApi = {
     workingDir: string | null;
     env: Record<string, string> | null;
     timeoutMs: number | null;
+    /** SHA-256 of the approved script body — backend refuses to run a script
+     *  whose content has changed since approval (security audit HIGH #2). */
+    expectedHash?: string | null;
   }): Promise<ScriptResult> {
     return await invoke<ScriptResult>("execute_skill_script", options);
+  },
+
+  /** SHA-256 (hex) of a skill script, used to content-pin "allow always"
+   *  approvals to the exact bytes the user approved. */
+  async hashSkillScript(skillPath: string, script: string): Promise<string> {
+    return await invoke<string>("hash_skill_script", { skillPath, script });
   },
 
   async discoverAgents(baseDirs: string[]): Promise<AgentEntry[]> {
@@ -1090,20 +1391,31 @@ export const tauriApi = {
     await invoke("start_recording", { source });
   },
 
-  async stopRecording(): Promise<AudioBufferInfo> {
-    return await invoke<AudioBufferInfo>("stop_recording");
+  /** Pause the live capture — samples are discarded while the stream stays alive. */
+  async pauseRecording(): Promise<void> {
+    await invoke("pause_recording");
   },
 
-  async transcribe(model: string, language?: string): Promise<TranscriptionResultData> {
-    return await invoke<TranscriptionResultData>("transcribe", { model, language: language ?? null });
+  /** Resume a paused capture. */
+  async resumeRecording(): Promise<void> {
+    await invoke("resume_recording");
   },
 
-  async startDictation(language?: string, model?: string): Promise<void> {
-    await invoke("start_dictation", { language: language ?? null, model: model ?? null });
+  async stopRecording(): Promise<RecordingResult> {
+    return await invoke<RecordingResult>("stop_recording");
   },
 
-  async stopDictation(): Promise<void> {
-    await invoke("stop_dictation");
+  /**
+   * Transcribe a finalized audio file in a single whole-file Whisper pass.
+   * Emits `transcription-progress` events keyed by `jobId`.
+   */
+  async transcribeFile(jobId: string, path: string, model: string, language?: string): Promise<TranscriptionResult> {
+    return await invoke<TranscriptionResult>("transcribe_file", {
+      jobId,
+      path,
+      model,
+      language: language ?? null,
+    });
   },
 
   async listWhisperModels(): Promise<WhisperModelInfo[]> {
@@ -1199,6 +1511,29 @@ export const tauriApi = {
     return await invoke<LocalServerStatus>("get_local_server_status");
   },
 
+  // Dedicated FIM (`/infill`) server — runs alongside the main chat server
+  // without `--jinja` so tool calling on chat AND fast native FIM on
+  // completions can coexist. See item #8 in `docs/features/ai-providers.md`.
+  async startCompletionServer(
+    modelId: string,
+    contextLength?: number,
+    gpuLayers?: number,
+  ): Promise<number> {
+    return await invoke<number>("start_completion_server", {
+      modelId,
+      contextLength: contextLength ?? null,
+      gpuLayers: gpuLayers ?? null,
+    });
+  },
+
+  async stopCompletionServer(): Promise<void> {
+    await invoke("stop_completion_server");
+  },
+
+  async getCompletionServerStatus(): Promise<LocalServerStatus> {
+    return await invoke<LocalServerStatus>("get_completion_server_status");
+  },
+
   async checkLlamaServerAvailable(): Promise<BinaryStatus> {
     return await invoke<BinaryStatus>("check_llama_server_available");
   },
@@ -1252,5 +1587,31 @@ export const tauriApi = {
 
   copilotLspDidOpen(uri: string, content: string, version: number) {
     return invoke<void>('copilot_lsp_did_open', { uri, content, version });
+  },
+
+  // --- Hardware-aware model recommendation ---
+  detectHardwareProfile(): Promise<HardwareProfile> {
+    return invoke<HardwareProfile>('detect_hardware_profile');
+  },
+
+  readGgufCapabilities(
+    resolveUrl: string | null,
+    localPath: string | null,
+  ): Promise<GgufCapabilities> {
+    return invoke<GgufCapabilities>('read_gguf_capabilities', { resolveUrl, localPath });
+  },
+
+  estimateModelFit(
+    candidates: ModelFitInput[],
+    profile: HardwareProfile,
+    planningCtx: number,
+  ): Promise<ModelFitResult[]> {
+    return invoke<ModelFitResult[]>('estimate_model_fit', { candidates, profile, planningCtx });
+  },
+
+  // Current RSS (bytes) of the running bundled chat server — used by the
+  // Phase 2 runtime calibration loop to track peak RAM during a generation.
+  getLocalServerRss(): Promise<number> {
+    return invoke<number>('get_local_server_rss');
   },
 };

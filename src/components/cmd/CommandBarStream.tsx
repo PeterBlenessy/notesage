@@ -10,17 +10,16 @@ import type { ChatMessage as ChatMessageType } from "@/lib/ai/types";
  * Consolidation note (2026-04-24 / supersedes #127 + #130 + #116 stream gap):
  * this component used to roll its own message loop + render a subset of
  * per-message affordances + switch cards. The #113 functional-parity audit
- * catalogued ten features missing relative to the legacy `ChatMessageList`:
+ * catalogued ten features missing relative to `ChatMessageList`:
  * QuickReplies, ContextDivider, BranchSwitcher, empty-state onboarding,
  * LocalAISetupCard, per-message Edit / Resend / Retry / Branch, edit-mode
  * banner, Permission / Domain / ToolCall / AgentStatus cards, streaming
  * indicator.
  *
- * Rather than re-implement each in the Quiet Composer surface, the command
- * bar now renders the same `<ChatMessageList />` the legacy ChatPanel uses —
- * identical pattern to AgentOrb wrapping `<AgentPanel />`. Single source of
- * truth for chat rendering across both shells; every future chat feature
- * lands in one place.
+ * The command bar renders `<ChatMessageList />` directly — identical
+ * pattern to `AgentOrb` wrapping `<AgentPanel />`. Single source of
+ * truth for chat rendering; every future chat feature lands in one
+ * place.
  *
  * Height: the wrapper uses `flex flex-1 min-h-0` and inherits its cap
  * from the enclosing FloatingCommandBar — floating mode sets the bar to
@@ -46,9 +45,9 @@ interface CommandBarStreamProps {
 }
 
 function CommandBarStream({ onSend, onResend, onEdit, onPrefill }: CommandBarStreamProps) {
-  // Scope the list to the active conversation's selected projects — same
-  // read the classic ChatPanel uses to drive sandbox-scope / domain
-  // auto-approval decisions inside the list.
+  // Scope the list to the active conversation's selected projects —
+  // drives sandbox-scope / domain auto-approval decisions inside the
+  // list.
   const selectedProjectPaths = useChatStore(selectProjectPaths);
 
   return (

@@ -1,7 +1,8 @@
-import { Suspense, lazy } from "react";
+import { Suspense, lazy, useState, useCallback, useEffect } from "react";
 import { PlainTextViewer } from "./viewers/PlainTextViewer";
-import { StatusBar } from "./StatusBar";
+import { SidebarStatusBar } from "./StatusBar";
 import { toast } from "sonner";
+import { isHtmlViewerFile } from "@/lib/codemirror-languages";
 
 // Lazy-load heavy viewers — their libraries (pdfjs-dist, docx-preview, foliate-js)
 // are only fetched when the user actually opens that file type.
@@ -30,17 +31,18 @@ interface EditorViewerContainerProps {
   updateTabContent?: (tabId: string, content: string, isDirty: boolean) => void;
   /** Save file to disk (for code file editing) */
   saveFile?: (filePath: string, content: string, tabId: string) => Promise<boolean>;
-  /**
-   * Which StatusBar variant to mount below the viewer. Defaults to
-   * `"full"` (legacy) so callers outside QuietLayout get the
-   * unchanged behaviour. QuietLayout passes `"quiet"` so viewers
-   * (PDF, EPUB, DOCX, code, plain-text) render the same minimal
-   * status strip as the markdown editor.
-   */
-  statusBarVariant?: "full" | "quiet";
 }
 
-export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShortcutsOpen, onOpenActions, updateTabContent, saveFile, statusBarVariant = "full" }: EditorViewerContainerProps) {
+export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShortcutsOpen, onOpenActions, updateTabContent, saveFile }: EditorViewerContainerProps) {
+  const isHtml = isHtmlViewerFile(activeTab.fileName);
+  const [htmlSourceMode, setHtmlSourceMode] = useState(false);
+  const toggleHtmlSourceMode = useCallback(() => setHtmlSourceMode((v) => !v), []);
+
+  // Reset source mode when the active tab changes so it doesn't leak across files.
+  useEffect(() => {
+    setHtmlSourceMode(false);
+  }, [activeTab.id]);
+
   let viewer: React.ReactNode = null;
   switch (activeTab.fileType) {
     case "image":
@@ -99,6 +101,8 @@ export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShor
               ? (content: string) => { saveFile(activeTab.filePath, content, activeTab.id); }
               : undefined
           }
+          sourceMode={isHtml ? htmlSourceMode : undefined}
+          onToggleSourceMode={isHtml ? toggleHtmlSourceMode : undefined}
         />
       );
       break;
@@ -112,11 +116,12 @@ export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShor
         </Suspense>
       </div>
       {!focusMode && (
-        <StatusBar
+        <SidebarStatusBar
           editor={null}
-          variant={statusBarVariant}
           onShortcutsOpen={onShortcutsOpen}
           onOpenActions={onOpenActions}
+          viewMode={isHtml ? (htmlSourceMode ? "source" : "wysiwyg") : undefined}
+          onToggleViewMode={isHtml ? toggleHtmlSourceMode : undefined}
         />
       )}
     </div>

@@ -1,0 +1,123 @@
+name: Real-App Performance Tracking (post-merge)
+
+# Post-merge only — never runs on pull_request events so it cannot block PR merges.
+# Captures real WKWebView render cost, Tauri IPC round-trip latency, and
+# native window startup timing that synthetic unit benchmarks cannot measure.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  perf-e2e:
+    name: Real-App Performance Benchmarks
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Set whisper.cpp build flags
+        run: |
+          echo "CMAKE_C_FLAGS=-march=armv8.2-a+dotprod+fp16" >> $GITHUB_ENV
+          echo "CMAKE_CXX_FLAGS=-march=armv8.2-a+dotprod+fp16" >> $GITHUB_ENV
+
+      - name: Create sidecar placeholder
+        run: |
+          mkdir -p src-tauri/binaries/lib
+          touch src-tauri/binaries/llama-server-aarch64-apple-darwin
+          chmod +x src-tauri/binaries/llama-server-aarch64-apple-darwin
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Cache tauri-webdriver binary
+        id: cache-tauri-webdriver
+        uses: actions/cache@v5
+        with:
+          path: ~/.cargo/bin/tauri-webdriver
+          key: ${{ runner.os }}-tauri-webdriver-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install tauri-webdriver
+        if: steps.cache-tauri-webdriver.outputs.cache-hit != 'true'
+        run: cargo install tauri-webdriver
+
+      - name: Run real-app performance benchmarks
+        # continue-on-error keeps the artifact upload step from being skipped
+        # when a test fails or measurements exceed informal thresholds.
+        # Slow perf measurements are data, not build failures.
+        continue-on-error: true
+        run: |
+          # Run only the performance spec via the existing real-E2E infrastructure.
+          # The script handles: app start → tauri-webdriver bridge → wdio → cleanup.
+          bash -c '
+            set -euo pipefail
+            pkill -f "tauri-webdriver" 2>/dev/null || true
+            lsof -ti:1420,4444,4445 2>/dev/null | xargs kill 2>/dev/null || true
+            sleep 2
+
+            pnpm tauri:test > /tmp/notesage-perf-tauri.log 2>&1 &
+            TAURI_PID=$!
+            trap "kill $TAURI_PID 2>/dev/null; pkill -f tauri-webdriver 2>/dev/null; lsof -ti:1420 2>/dev/null | xargs kill 2>/dev/null; exit" EXIT INT TERM
+
+            echo "Waiting for WebDriver plugin (port 4445)..."
+            for i in $(seq 1 300); do
+              if curl -sf "http://localhost:4445/status" > /dev/null 2>&1; then
+                echo "Plugin ready after ${i}s"
+                break
+              fi
+              sleep 2
+            done
+
+            tauri-webdriver > /tmp/notesage-perf-driver.log 2>&1 &
+
+            echo "Waiting for tauri-webdriver (port 4444)..."
+            for i in $(seq 1 15); do
+              if curl -sf "http://localhost:4444/status" > /dev/null 2>&1; then
+                echo "Driver ready"
+                break
+              fi
+              sleep 1
+            done
+
+            pnpm wdio run wdio.conf.ts --spec ./e2e-real/tests/performance.test.ts
+          '
+
+      - name: Upload performance results
+        if: always()
+        # TODO: bump to actions/upload-artifact@v5 when available on Node 24 — https://github.com/actions/upload-artifact/releases
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-e2e-results-${{ github.sha }}
+          path: perf-results.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Upload app and driver logs on failure
+        if: always()
+        # TODO: bump to actions/upload-artifact@v5 when available on Node 24 — https://github.com/actions/upload-artifact/releases
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-e2e-logs-${{ github.sha }}
+          path: |
+            /tmp/notesage-perf-tauri.log
+            /tmp/notesage-perf-driver.log
+          retention-days: 14
+          if-no-files-found: ignore

@@ -65,15 +65,28 @@ vi.mock('@/lib/tauri-storage', () => {
   };
 });
 
+// `buildIsAlpha()` reads the Vite-injected `__APP_VERSION__`, which isn't defined
+// under vitest. Mock it so tests can drive the build-derived telemetry default
+// (alpha build → on) deterministically. `isPrereleaseVersion` stays real.
+const buildChannel = vi.hoisted(() => ({ isAlpha: false }));
+vi.mock('@/lib/version', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/version')>();
+  return { ...actual, buildIsAlpha: () => buildChannel.isAlpha };
+});
+
 // ---------------------------------------------------------------------------
 // Imports
 // ---------------------------------------------------------------------------
 
 import {
   useSettingsStore,
-  shouldShowPreviewInvitation,
-  PREVIEW_INVITATION_REAPPEAR_MS,
+  selectEffectiveTelemetryUsage,
+  selectEffectiveTelemetryCrash,
+  RELATIONS_PANEL_DEFAULT_HEIGHT,
+  RELATIONS_PANEL_MIN_HEIGHT,
+  RELATIONS_PANEL_MAX_HEIGHT,
 } from '../settings-store';
+import { invoke } from '@tauri-apps/api/core';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -122,8 +135,7 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   marginRight: 2.54,
   sidebarOpen: true,
   sidebarPinned: true,
-  sidebarWidth: 280,
-  chatPanelOpen: false,
+  sidebarWidth: 252,
   notesRootPath: '~/Notesage',
   gitEnabled: false,
   personasMigrated: false,
@@ -154,7 +166,6 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
   lastExportFormat: 'pdf',
   lastPptxTemplate: 'simple',
   searchProvider: 'duckduckgo',
-  uiPreview: 'legacy',
   accent: 'default',
   cmdBarPinned: false,
   cmdBarPinnedWidth: 400,
@@ -166,12 +177,12 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
     docHead: true,
     sidebar: false,
     orb: false,
+    titlebar: false,
+    cmdbar: false,
   },
   sidebarRecentCap: 5,
   sidebarTagsCap: 5,
   sidebarMentionsCap: 5,
-  previewInvitationShownAt: null,
-  previewInvitationDismissedAt: null,
 };
 
 // ---------------------------------------------------------------------------
@@ -208,8 +219,7 @@ describe('initial state defaults', () => {
     expect(s.marginRight).toBe(2.54);
     expect(s.sidebarOpen).toBe(true);
     expect(s.sidebarPinned).toBe(true);
-    expect(s.sidebarWidth).toBe(280);
-    expect(s.chatPanelOpen).toBe(false);
+    expect(s.sidebarWidth).toBe(252);
     expect(s.notesRootPath).toBe('~/Notesage');
     expect(s.gitEnabled).toBe(false);
     expect(s.personasMigrated).toBe(false);
@@ -339,11 +349,6 @@ describe('boolean setters', () => {
     expect(useSettingsStore.getState().sidebarPinned).toBe(false);
   });
 
-  it('setChatPanelOpen', () => {
-    useSettingsStore.getState().setChatPanelOpen(true);
-    expect(useSettingsStore.getState().chatPanelOpen).toBe(true);
-  });
-
   it('setGitEnabled', () => {
     useSettingsStore.getState().setGitEnabled(true);
     expect(useSettingsStore.getState().gitEnabled).toBe(true);
@@ -409,6 +414,16 @@ describe('boolean setters', () => {
   it('setAutoCheckUpdates', () => {
     useSettingsStore.getState().setAutoCheckUpdates(false);
     expect(useSettingsStore.getState().autoCheckUpdates).toBe(false);
+  });
+
+  it('linkPreviewRemoteImages defaults to false (privacy by default) and can be toggled', () => {
+    // Security audit MEDIUM: remote link-preview images are off by default so
+    // opening an agent-authored `[!link]` card does not fire an outbound beacon.
+    expect(useSettingsStore.getState().linkPreviewRemoteImages).toBe(false);
+    useSettingsStore.getState().setLinkPreviewRemoteImages(true);
+    expect(useSettingsStore.getState().linkPreviewRemoteImages).toBe(true);
+    useSettingsStore.getState().setLinkPreviewRemoteImages(false);
+    expect(useSettingsStore.getState().linkPreviewRemoteImages).toBe(false);
   });
 
   it('setLastExportIncludeToC', () => {
@@ -551,6 +566,36 @@ describe('number setters', () => {
 // Sidebar width clamping
 // ===========================================================================
 
+describe('setMaxConcurrentSessions clamping (task #8)', () => {
+  it('defaults to 4', () => {
+    expect(useSettingsStore.getState().maxConcurrentSessions).toBe(4);
+  });
+  it('accepts values within [3, 5]', () => {
+    useSettingsStore.getState().setMaxConcurrentSessions(5);
+    expect(useSettingsStore.getState().maxConcurrentSessions).toBe(5);
+  });
+  it('clamps below the minimum (3)', () => {
+    useSettingsStore.getState().setMaxConcurrentSessions(1);
+    expect(useSettingsStore.getState().maxConcurrentSessions).toBe(3);
+  });
+  it('clamps above the maximum (5)', () => {
+    useSettingsStore.getState().setMaxConcurrentSessions(99);
+    expect(useSettingsStore.getState().maxConcurrentSessions).toBe(5);
+  });
+  it('rounds fractional values', () => {
+    useSettingsStore.getState().setMaxConcurrentSessions(4.6);
+    expect(useSettingsStore.getState().maxConcurrentSessions).toBe(5);
+  });
+});
+
+describe('setNotifyPermissionRequest (task #8)', () => {
+  it('defaults to true and toggles', () => {
+    expect(useSettingsStore.getState().notifyPermissionRequest).toBe(true);
+    useSettingsStore.getState().setNotifyPermissionRequest(false);
+    expect(useSettingsStore.getState().notifyPermissionRequest).toBe(false);
+  });
+});
+
 describe('setSidebarWidth clamping', () => {
   it('sets width within valid range', () => {
     useSettingsStore.getState().setSidebarWidth(300);
@@ -562,9 +607,9 @@ describe('setSidebarWidth clamping', () => {
     expect(useSettingsStore.getState().sidebarWidth).toBe(200);
   });
 
-  it('clamps width above maximum (400) to 400', () => {
+  it('clamps width above maximum (500) to 500', () => {
     useSettingsStore.getState().setSidebarWidth(600);
-    expect(useSettingsStore.getState().sidebarWidth).toBe(400);
+    expect(useSettingsStore.getState().sidebarWidth).toBe(500);
   });
 
   it('rounds fractional values', () => {
@@ -1045,39 +1090,12 @@ describe('v1 → v2 migration (softMode → contrastLevel)', () => {
 });
 
 // ===========================================================================
-// uiPreview flag (Phase 1 of Quiet Composer rollout — task #1)
+// v18 → v19 migration (Classic layout removal — drop deleted fields)
 // ===========================================================================
 
-describe('uiPreview flag', () => {
-  it('defaults to "legacy" on a fresh install', () => {
-    useSettingsStore.setState(SETTINGS_DEFAULTS);
-    expect(useSettingsStore.getState().uiPreview).toBe('legacy');
-  });
-
-  it('setUiPreview flips between "legacy" and "quiet-composer"', () => {
-    useSettingsStore.setState(SETTINGS_DEFAULTS);
-    expect(useSettingsStore.getState().uiPreview).toBe('legacy');
-
-    useSettingsStore.getState().setUiPreview('quiet-composer');
-    expect(useSettingsStore.getState().uiPreview).toBe('quiet-composer');
-
-    useSettingsStore.getState().setUiPreview('legacy');
-    expect(useSettingsStore.getState().uiPreview).toBe('legacy');
-  });
-
-  it('persists across a simulated restart', async () => {
-    useSettingsStore.getState().setUiPreview('quiet-composer');
-    await waitForPersist();
-
-    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
-
-    expect(useSettingsStore.getState().uiPreview).toBe('quiet-composer');
-  });
-
-  it('v3 → v5 migration: adds uiPreview: "legacy" (and accent: "default") to a state that lacks them', async () => {
-    // Existing user upgrade: persisted at version 3, no uiPreview/accent fields.
-    // Migration chain runs both <4 (uiPreview) and <5 (accent) branches.
-    const v3State = {
+describe('v18 → v19 migration (Classic layout removal)', () => {
+  it('strips uiPreview, chatPanelOpen, previewInvitation*, revertInvitation* from persisted state', async () => {
+    const v18State = {
       state: {
         theme: 'dark',
         contrastLevel: 50,
@@ -1087,35 +1105,42 @@ describe('uiPreview flag', () => {
         sidebarOpen: true,
         sidebarPinned: true,
         sidebarWidth: 280,
-        chatPanelOpen: false,
+        chatPanelOpen: true,
         notesRootPath: '~/Notesage',
         gitEnabled: false,
         logLevel: 'warn',
         printLayout: false,
+        uiPreview: 'quiet-composer',
+        accent: 'default',
+        previewInvitationShownAt: 1234567890,
+        previewInvitationDismissedAt: 1234567899,
+        revertInvitationShownAt: 1234567890,
+        revertInvitationDismissedAt: 1234567899,
       },
-      version: 3,
+      version: 18,
     };
-    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v3State));
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v18State));
 
     await useSettingsStore.persist.rehydrate();
     await waitForPersist();
 
+    // Pre-existing kept fields survive untouched.
     const s = useSettingsStore.getState();
-    expect(s.uiPreview).toBe('legacy');
-    // Pre-existing fields survive untouched.
     expect(s.theme).toBe('dark');
     expect(s.contrastLevel).toBe(50);
+    expect(s.accent).toBe('default');
 
-    // The persisted JSON should reflect the bumped version and both new fields,
-    // so the migration doesn't re-run on the next launch. The chain runs all
-    // the way to the current version, so subsequent migrations (#28's
-    // cmdBarPinned defaults) also apply.
+    // The persisted JSON is at v19 with the deleted fields gone.
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
-    expect(parsed.state.uiPreview).toBe('legacy');
-    expect(parsed.state.accent).toBe('default');
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
+    expect(parsed.state.uiPreview).toBeUndefined();
+    expect(parsed.state.chatPanelOpen).toBeUndefined();
+    expect(parsed.state.previewInvitationShownAt).toBeUndefined();
+    expect(parsed.state.previewInvitationDismissedAt).toBeUndefined();
+    expect(parsed.state.revertInvitationShownAt).toBeUndefined();
+    expect(parsed.state.revertInvitationDismissedAt).toBeUndefined();
   });
 });
 
@@ -1255,7 +1280,7 @@ describe('v5 → v6 migration (cmdBarPinned + cmdBarPinnedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.cmdBarPinned).toBe(false);
     expect(parsed.state.cmdBarPinnedWidth).toBe(400);
   });
@@ -1394,6 +1419,8 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
       docHead: true,
       sidebar: false,
       orb: false,
+      titlebar: false,
+      cmdbar: false,
     });
 
     // Persisted JSON should reflect bumped version and new fields so the
@@ -1401,7 +1428,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBe(24);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -1466,6 +1493,8 @@ describe('quiet-chrome setters', () => {
       docHead: true,
       sidebar: true,
       orb: true,
+      titlebar: true,
+      cmdbar: true,
     });
 
     setQuietChromePreset('relaxed');
@@ -1477,6 +1506,8 @@ describe('quiet-chrome setters', () => {
       docHead: false,
       sidebar: false,
       orb: false,
+      titlebar: false,
+      cmdbar: false,
     });
   });
 
@@ -1720,7 +1751,7 @@ describe('v7 → v8 migration (sidebar composition)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.sidebarRecentCap).toBe(5);
     expect(parsed.state.sidebarTagsCap).toBe(5);
     // Hidden field stripped by v11 → v12 migration.
@@ -1776,258 +1807,6 @@ describe('v7 → v8 migration (sidebar composition)', () => {
   });
 });
 
-// ===========================================================================
-// Preview invitation banner — fields, setters, helper, migration
-// (ui-refresh task #97)
-// ===========================================================================
-
-describe('preview invitation — defaults', () => {
-  beforeEach(() => {
-    useSettingsStore.setState(SETTINGS_DEFAULTS);
-  });
-
-  it('previewInvitationShownAt defaults to null', () => {
-    expect(useSettingsStore.getState().previewInvitationShownAt).toBeNull();
-  });
-
-  it('previewInvitationDismissedAt defaults to null', () => {
-    expect(useSettingsStore.getState().previewInvitationDismissedAt).toBeNull();
-  });
-});
-
-describe('markPreviewInvitationShown / dismissPreviewInvitation', () => {
-  beforeEach(() => {
-    useSettingsStore.setState(SETTINGS_DEFAULTS);
-  });
-
-  it('markPreviewInvitationShown sets a timestamp', () => {
-    const before = Date.now();
-    useSettingsStore.getState().markPreviewInvitationShown();
-    const after = Date.now();
-
-    const t = useSettingsStore.getState().previewInvitationShownAt;
-    expect(typeof t).toBe('number');
-    expect(t!).toBeGreaterThanOrEqual(before);
-    expect(t!).toBeLessThanOrEqual(after);
-  });
-
-  it('dismissPreviewInvitation sets a timestamp', () => {
-    const before = Date.now();
-    useSettingsStore.getState().dismissPreviewInvitation();
-    const after = Date.now();
-
-    const t = useSettingsStore.getState().previewInvitationDismissedAt;
-    expect(typeof t).toBe('number');
-    expect(t!).toBeGreaterThanOrEqual(before);
-    expect(t!).toBeLessThanOrEqual(after);
-  });
-});
-
-describe('shouldShowPreviewInvitation — pure helper', () => {
-  const now = 1_000_000_000_000; // arbitrary fixed clock
-
-  it('returns false when user is already on quiet-composer', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'quiet-composer',
-          previewInvitationShownAt: null,
-          previewInvitationDismissedAt: null,
-        },
-        now,
-      ),
-    ).toBe(false);
-  });
-
-  it('returns true when never shown and on legacy', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: null,
-          previewInvitationDismissedAt: null,
-        },
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it('returns true when shown but never dismissed (sticky until user acts)', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: now - 1_000,
-          previewInvitationDismissedAt: null,
-        },
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it('returns false when dismissed less than 30 days ago', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: now - 1_000,
-          previewInvitationDismissedAt: now - 1_000,
-        },
-        now,
-      ),
-    ).toBe(false);
-  });
-
-  it('returns true when dismissed exactly 30 days ago', () => {
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: now - PREVIEW_INVITATION_REAPPEAR_MS - 1,
-          previewInvitationDismissedAt: now - PREVIEW_INVITATION_REAPPEAR_MS,
-        },
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it('returns true when dismissed > 30 days ago', () => {
-    const longAgo = now - PREVIEW_INVITATION_REAPPEAR_MS - 10_000;
-    expect(
-      shouldShowPreviewInvitation(
-        {
-          uiPreview: 'legacy',
-          previewInvitationShownAt: longAgo,
-          previewInvitationDismissedAt: longAgo,
-        },
-        now,
-      ),
-    ).toBe(true);
-  });
-
-  it('PREVIEW_INVITATION_REAPPEAR_MS is 30 days', () => {
-    expect(PREVIEW_INVITATION_REAPPEAR_MS).toBe(30 * 24 * 60 * 60 * 1000);
-  });
-});
-
-describe('preview invitation — persistence round-trip', () => {
-  it('persists shownAt and dismissedAt across restart', async () => {
-    const shown = Date.now() - 1000;
-    const dismissed = Date.now();
-    useSettingsStore.setState({
-      previewInvitationShownAt: shown,
-      previewInvitationDismissedAt: dismissed,
-    });
-    await waitForPersist();
-
-    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
-
-    const s = useSettingsStore.getState();
-    expect(s.previewInvitationShownAt).toBe(shown);
-    expect(s.previewInvitationDismissedAt).toBe(dismissed);
-  });
-});
-
-describe('v8 → v9 migration (preview invitation timestamps)', () => {
-  it('adds previewInvitationShownAt: null and previewInvitationDismissedAt: null to a v8 state lacking them', async () => {
-    const v8State = {
-      state: {
-        theme: 'dark',
-        showFloatingToolbar: true,
-        toolbarVisible: true,
-        contentWidth: 'auto',
-        sidebarOpen: true,
-        sidebarPinned: true,
-        sidebarWidth: 280,
-        chatPanelOpen: false,
-        notesRootPath: '~/Notesage',
-        gitEnabled: false,
-        logLevel: 'warn',
-        contrastLevel: 0,
-        printLayout: false,
-        uiPreview: 'legacy',
-        accent: 'default',
-        cmdBarPinned: false,
-        cmdBarPinnedWidth: 400,
-        quietChromePreset: 'default',
-        quietChromeOverrides: {
-          toolbar: true,
-          status: true,
-          docHead: true,
-          sidebar: false,
-          orb: false,
-        },
-        sidebarRecentCap: 5,
-        sidebarTagsCap: 5,
-        sidebarTagsHidden: false,
-      },
-      version: 8,
-    };
-    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v8State));
-
-    await useSettingsStore.persist.rehydrate();
-    await waitForPersist();
-
-    const s = useSettingsStore.getState();
-    expect(s.previewInvitationShownAt).toBeNull();
-    expect(s.previewInvitationDismissedAt).toBeNull();
-
-    const raw = localStorageMock.getItem(STORAGE_KEY);
-    expect(raw).toBeTruthy();
-    const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
-    expect(parsed.state.previewInvitationShownAt).toBeNull();
-    expect(parsed.state.previewInvitationDismissedAt).toBeNull();
-  });
-
-  it('preserves existing preview invitation timestamps when present (idempotent)', async () => {
-    const shown = 1_700_000_000_000;
-    const dismissed = 1_700_000_500_000;
-    const v9State = {
-      state: {
-        theme: 'dark',
-        showFloatingToolbar: true,
-        toolbarVisible: true,
-        contentWidth: 'auto',
-        sidebarOpen: true,
-        sidebarPinned: true,
-        sidebarWidth: 280,
-        chatPanelOpen: false,
-        notesRootPath: '~/Notesage',
-        gitEnabled: false,
-        logLevel: 'warn',
-        contrastLevel: 0,
-        printLayout: false,
-        uiPreview: 'legacy',
-        accent: 'default',
-        cmdBarPinned: false,
-        cmdBarPinnedWidth: 400,
-        quietChromePreset: 'default',
-        quietChromeOverrides: {
-          toolbar: true,
-          status: true,
-          docHead: true,
-          sidebar: false,
-          orb: false,
-        },
-        sidebarRecentCap: 5,
-        sidebarTagsCap: 5,
-        sidebarTagsHidden: false,
-        previewInvitationShownAt: shown,
-        previewInvitationDismissedAt: dismissed,
-      },
-      version: 9,
-    };
-    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v9State));
-
-    await useSettingsStore.persist.rehydrate();
-    await waitForPersist();
-
-    const s = useSettingsStore.getState();
-    expect(s.previewInvitationShownAt).toBe(shown);
-    expect(s.previewInvitationDismissedAt).toBe(dismissed);
-  });
-});
 
 describe('v9 → v10 migration (cmdBarExpandedWidth)', () => {
   it('adds cmdBarExpandedWidth: 640 to a v9 state lacking it', async () => {
@@ -2077,7 +1856,7 @@ describe('v9 → v10 migration (cmdBarExpandedWidth)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.cmdBarExpandedWidth).toBe(640);
   });
 
@@ -2148,7 +1927,7 @@ describe('v10 → v11 migration (sidebar Mentions composition)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.sidebarMentionsCap).toBe(5);
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2270,7 +2049,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.sidebarTagsCap).toBe(0);
     expect(parsed.state.sidebarTagsHidden).toBeUndefined();
   });
@@ -2292,7 +2071,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.sidebarMentionsCap).toBe(0);
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2318,7 +2097,7 @@ describe('v11 → v12 migration (drop Hidden booleans)', () => {
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
     expect(parsed.state.sidebarTagsHidden).toBeUndefined();
     expect(parsed.state.sidebarMentionsHidden).toBeUndefined();
   });
@@ -2452,7 +2231,7 @@ describe('v14 migration: releaseChannel', () => {
     expect(useSettingsStore.getState().releaseChannel).toBe('alpha');
   });
 
-  it('bumps persisted version to 16 after migration', async () => {
+  it('bumps persisted version to 18 after migration', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV13State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2460,15 +2239,16 @@ describe('v14 migration: releaseChannel', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
   });
 });
 
 // ===========================================================================
 // v15 migration — htmlViewerAllowForms defaults to false on upgrade
+// (field subsequently deleted in v20 — see v20 migration tests below)
 // ===========================================================================
 
-describe('v15 migration: htmlViewerAllowForms', () => {
+describe('v15 migration: htmlViewerAllowForms (field removed in v20)', () => {
   function buildV14State(overrides: Record<string, unknown> = {}): string {
     const state = {
       theme: 'system',
@@ -2480,25 +2260,17 @@ describe('v15 migration: htmlViewerAllowForms', () => {
     return JSON.stringify({ state, version: 14 });
   }
 
-  it('migrates v14 state without htmlViewerAllowForms to false', async () => {
+  it('migrates v14 state and htmlViewerAllowForms is absent after v20 deletes it', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV14State());
 
     await useSettingsStore.persist.rehydrate();
     await waitForPersist();
 
-    expect(useSettingsStore.getState().htmlViewerAllowForms).toBe(false);
+    // v20 migration deletes the key — it should not be present on the store
+    expect((useSettingsStore.getState() as unknown as Record<string, unknown>).htmlViewerAllowForms).toBeUndefined();
   });
 
-  it('preserves existing htmlViewerAllowForms when already present', async () => {
-    localStorageMock.setItem(STORAGE_KEY, buildV14State({ htmlViewerAllowForms: true }));
-
-    await useSettingsStore.persist.rehydrate();
-    await waitForPersist();
-
-    expect(useSettingsStore.getState().htmlViewerAllowForms).toBe(true);
-  });
-
-  it('bumps persisted version to 16 after migration', async () => {
+  it('bumps persisted version to 20 after all migrations', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV14State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2506,7 +2278,61 @@ describe('v15 migration: htmlViewerAllowForms', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
+  });
+});
+
+// ===========================================================================
+// v20 migration — htmlViewerAllowForms key deleted (#360)
+// ===========================================================================
+
+describe('v20 migration: htmlViewerAllowForms deletion', () => {
+  function buildV19State(overrides: Record<string, unknown> = {}): string {
+    const state = {
+      theme: 'system',
+      logLevel: 'warn',
+      autoCheckUpdates: true,
+      releaseChannel: 'stable',
+      htmlViewerAllowForms: false,
+      htmlViewerAllowScripts: false,
+      htmlViewerBlockExternalResources: false,
+      ...overrides,
+    };
+    return JSON.stringify({ state, version: 19 });
+  }
+
+  it('deletes htmlViewerAllowForms from persisted state', async () => {
+    localStorageMock.setItem(STORAGE_KEY, buildV19State({ htmlViewerAllowForms: true }));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(raw!);
+    expect(parsed.state.htmlViewerAllowForms).toBeUndefined();
+  });
+
+  it('bumps persisted version forward', async () => {
+    localStorageMock.setItem(STORAGE_KEY, buildV19State());
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(raw!);
+    // Latest persist version — re-bumped to 21 by the quiet-chrome
+    // titlebar/cmdbar extension (2026-05-28). Whatever the current version
+    // is, an older state should rehydrate up to it in one pass.
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
+  });
+
+  it('preserves unrelated settings during migration', async () => {
+    localStorageMock.setItem(STORAGE_KEY, buildV19State({ htmlViewerAllowScripts: true }));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    expect(useSettingsStore.getState().htmlViewerAllowScripts).toBe(true);
   });
 });
 
@@ -2545,7 +2371,7 @@ describe('v16 migration: htmlViewerAllowScripts', () => {
     expect(useSettingsStore.getState().htmlViewerAllowScripts).toBe(true);
   });
 
-  it('bumps persisted version to 16 after migration', async () => {
+  it('bumps persisted version to 18 after migration', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV15State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2553,7 +2379,7 @@ describe('v16 migration: htmlViewerAllowScripts', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
   });
 });
 
@@ -2604,7 +2430,7 @@ describe('v17 migration: htmlViewerBlockExternalResources', () => {
     expect(useSettingsStore.getState().htmlViewerBlockExternalResources).toBe(true);
   });
 
-  it('bumps persisted version to 17 after migration', async () => {
+  it('bumps persisted version forward after migration', async () => {
     localStorageMock.setItem(STORAGE_KEY, buildV16State());
 
     await useSettingsStore.persist.rehydrate();
@@ -2612,6 +2438,220 @@ describe('v17 migration: htmlViewerBlockExternalResources', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(17);
+    // Re-bumped to 21 by the quiet-chrome extension (2026-05-28). Asserting
+    // ≥ 20 so future bumps don't churn this test for free.
+    expect(parsed.version).toBeGreaterThanOrEqual(20);
+  });
+});
+
+// ===========================================================================
+// v21 migration — quiet-chrome titlebar/cmdbar backfill (2026-05-28)
+// ===========================================================================
+//
+// The 2026-05-28 quiet-chrome extension added `titlebar` and `cmdbar` keys
+// to `QuietChromeTargets`. Users on a named preset see no impact (the preset
+// table bakes the new keys in), but Custom-mode users with persisted
+// overrides need the new keys backfilled or the Advanced switches in
+// Settings would render an undefined checkbox state.
+
+describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
+  function buildV20State(overridesPatch: Record<string, unknown> = {}): string {
+    const state = {
+      theme: 'system',
+      logLevel: 'warn',
+      autoCheckUpdates: true,
+      releaseChannel: 'stable',
+      htmlViewerAllowScripts: false,
+      htmlViewerBlockExternalResources: false,
+      quietChromePreset: 'custom',
+      quietChromeOverrides: {
+        toolbar: true,
+        status: true,
+        docHead: true,
+        sidebar: true,
+        orb: false,
+        // Intentionally missing titlebar + cmdbar — the v20 shape.
+        ...overridesPatch,
+      },
+    };
+    return JSON.stringify({ state, version: 20 });
+  }
+
+  it('backfills titlebar=false and cmdbar=false on a v20 Custom-mode state', async () => {
+    localStorageMock.setItem(STORAGE_KEY, buildV20State());
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.quietChromeOverrides.titlebar).toBe(false);
+    expect(s.quietChromeOverrides.cmdbar).toBe(false);
+    // Existing overrides are preserved verbatim.
+    expect(s.quietChromeOverrides.sidebar).toBe(true);
+    expect(s.quietChromeOverrides.orb).toBe(false);
+  });
+
+  it('does not overwrite an explicit titlebar/cmdbar value already in the persisted state', async () => {
+    // A user could already have these keys (e.g. they downgraded once and
+    // re-upgraded). The migration must be idempotent.
+    localStorageMock.setItem(
+      STORAGE_KEY,
+      buildV20State({ titlebar: true, cmdbar: true }),
+    );
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.quietChromeOverrides.titlebar).toBe(true);
+    expect(s.quietChromeOverrides.cmdbar).toBe(true);
+  });
+
+  it('bumps persisted version to the latest after migration', async () => {
+    localStorageMock.setItem(STORAGE_KEY, buildV20State());
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBe(24);
+  });
+
+  it('v22 migration backfills linkPreviewRemoteImages=false (privacy by default)', async () => {
+    // A persisted v21 state lacking the new flag must rehydrate with it OFF.
+    localStorageMock.setItem(STORAGE_KEY, buildV20State());
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    expect(useSettingsStore.getState().linkPreviewRemoteImages).toBe(false);
+  });
+});
+
+// ===========================================================================
+// Telemetry consent (tri-state fields + effective selectors + Rust sync)
+// ===========================================================================
+
+describe('telemetry consent', () => {
+  // `buildAlpha` simulates running an alpha vs stable BUILD (the real signal is
+  // `buildIsAlpha()`, mocked at the top of this file). Telemetry defaults key on
+  // the build, not the update channel.
+  function resetTelemetry(buildAlpha = false) {
+    buildChannel.isAlpha = buildAlpha;
+    useSettingsStore.setState({
+      ...SETTINGS_DEFAULTS,
+      telemetryUsageEnabled: null,
+      telemetryCrashEnabled: null,
+      telemetryNoticeSeen: false,
+    } as Record<string, unknown>);
+  }
+
+  afterEach(() => {
+    buildChannel.isAlpha = false;
+  });
+
+  it('defaults: tri-state null, notice unseen', () => {
+    resetTelemetry();
+    const s = useSettingsStore.getState();
+    expect(s.telemetryUsageEnabled).toBeNull();
+    expect(s.telemetryCrashEnabled).toBeNull();
+    expect(s.telemetryNoticeSeen).toBe(false);
+  });
+
+  it('effective default follows the BUILD when not overridden', () => {
+    resetTelemetry(false); // stable build → off
+    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
+    expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(false);
+
+    resetTelemetry(true); // alpha build → on
+    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(true);
+    expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
+  });
+
+  it('alpha-build default is ON even when the update channel is stable', () => {
+    // The whole point of keying on the build: a user running an alpha build who
+    // never switched the update channel (releaseChannel stays 'stable') still
+    // defaults on. This is the case the channel-derived model missed.
+    resetTelemetry(true);
+    useSettingsStore.setState({ releaseChannel: 'stable' } as Record<string, unknown>);
+    expect(useSettingsStore.getState().releaseChannel).toBe('stable');
+    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(true);
+    expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
+  });
+
+  it('explicit override wins over the build default', () => {
+    resetTelemetry(true); // alpha build → default on
+    useSettingsStore.getState().setTelemetryUsageEnabled(false);
+    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
+
+    resetTelemetry(false); // stable build → default off
+    useSettingsStore.getState().setTelemetryCrashEnabled(true);
+    expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
+  });
+
+  it('release channel does NOT affect telemetry defaults or re-sync Rust', () => {
+    resetTelemetry(false); // stable build → off
+    vi.mocked(invoke).mockClear();
+    useSettingsStore.getState().setReleaseChannel('alpha');
+    // Switching the update channel must not flip telemetry...
+    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
+    // ...and must not push a consent change to Rust.
+    expect(invoke).not.toHaveBeenCalledWith('telemetry_apply_consent', expect.anything());
+  });
+
+  it('syncs effective consent to Rust via telemetry_apply_consent on toggle', () => {
+    resetTelemetry(false); // stable build
+    vi.mocked(invoke).mockClear();
+
+    // Explicitly enabling usage → usage true, crash still build default (false).
+    useSettingsStore.getState().setTelemetryUsageEnabled(true);
+    expect(invoke).toHaveBeenCalledWith('telemetry_apply_consent', {
+      usage: true,
+      crash: false,
+    });
+  });
+
+  it('toggle sync reflects the build default for the untouched stream', () => {
+    resetTelemetry(true); // alpha build → both default on
+    vi.mocked(invoke).mockClear();
+
+    // Explicitly disabling crash → crash false, usage still build default (true).
+    useSettingsStore.getState().setTelemetryCrashEnabled(false);
+    expect(invoke).toHaveBeenCalledWith('telemetry_apply_consent', {
+      usage: true,
+      crash: false,
+    });
+  });
+});
+
+describe('relationsPanelHeight (OKF wiki-navigation)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState(SETTINGS_DEFAULTS);
+  });
+
+  it('defaults to the mid-band fraction', () => {
+    expect(useSettingsStore.getState().relationsPanelHeight).toBe(
+      RELATIONS_PANEL_DEFAULT_HEIGHT,
+    );
+  });
+
+  it('sets an in-band fraction verbatim', () => {
+    useSettingsStore.getState().setRelationsPanelHeight(0.55);
+    expect(useSettingsStore.getState().relationsPanelHeight).toBe(0.55);
+  });
+
+  it('clamps below the minimum (e.g. repeated keyboard down-arrows)', () => {
+    useSettingsStore.getState().setRelationsPanelHeight(0.1);
+    expect(useSettingsStore.getState().relationsPanelHeight).toBe(
+      RELATIONS_PANEL_MIN_HEIGHT,
+    );
+  });
+
+  it('clamps above the maximum (e.g. repeated keyboard up-arrows)', () => {
+    useSettingsStore.getState().setRelationsPanelHeight(0.95);
+    expect(useSettingsStore.getState().relationsPanelHeight).toBe(
+      RELATIONS_PANEL_MAX_HEIGHT,
+    );
   });
 });

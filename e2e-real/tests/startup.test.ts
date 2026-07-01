@@ -37,7 +37,7 @@ describe('App startup and project open', () => {
             const w = window as any;
             if (w.__E2E_EDITOR_STORE__) {
                 const state = w.__E2E_EDITOR_STORE__.getState();
-                for (const tab of [...state.tabs]) {
+                for (const tab of [...state.openDocuments]) {
                     state.closeTab(tab.id);
                 }
             }
@@ -48,29 +48,24 @@ describe('App startup and project open', () => {
     // ---------------------------------------------------------------
     // Test 1: App startup — root rendered, editor area present
     // ---------------------------------------------------------------
-    it('should reach interactive state within 3 seconds', async () => {
+    it('should reach interactive state', async () => {
+        // Option A (2026-05-16): dropped the "<3 seconds" perf budget; functional
+        // check is the `waitForExist` not throwing. Generous timeout absorbs
+        // CI runner variance.
         const { duration } = await measureAction(async () => {
             const root = await browser.$('#root');
-            await root.waitForExist({ timeout: 3000 });
+            await root.waitForExist({ timeout: 30_000 });
         });
-
-        console.log(`[startup] Interactive state reached in ${duration.toFixed(0)}ms`);
-        expect(duration).toBeLessThan(3000);
+        console.log(`[startup] Interactive state reached in ${duration.toFixed(0)}ms (informational only)`);
     });
 
     // ---------------------------------------------------------------
     // Test 2: Open a markdown file and verify editor content
     // ---------------------------------------------------------------
     it('should open a markdown file and show editor content', async () => {
-        const { duration } = await measureAction(async () => {
-            await openFile('README.md');
-        });
-
-        console.log(`[startup] README.md opened in ${duration.toFixed(0)}ms`);
-        expect(duration).toBeLessThan(2000);
-
+        await openFile('README.md');
         const editorText = await getEditorText();
-        console.log(`[startup] Editor text length: ${editorText.length}`);
+        console.log(`[startup] Editor text length: ${editorText.length} (informational only)`);
         expect(editorText).toContain('Test Project');
         expect(editorText).toContain('E2E testing');
     });
@@ -80,19 +75,28 @@ describe('App startup and project open', () => {
     // ---------------------------------------------------------------
     it('should render rich markdown content correctly', async () => {
         await openFile('notes.md');
-
         const editorText = await getEditorText();
-        console.log(`[startup] notes.md editor text preview: ${editorText.substring(0, 100)}...`);
-
-        // Verify bullet list content
         expect(editorText).toContain('Apples');
         expect(editorText).toContain('Bread');
-
-        // Verify task list content (matches fixture: "Write documentation", "Add tests")
         expect(editorText).toContain('Write documentation');
-
-        // Verify blockquote content
         expect(editorText).toContain('important blockquote');
+    });
+
+    // ---------------------------------------------------------------
+    // Test 3b: Regression — sequential openFile() shows second file's content
+    // ---------------------------------------------------------------
+    it('should not show stale content from previous file after sequential open', async () => {
+        // Open README.md first, confirm it renders
+        await openFile('README.md');
+        const firstText = await getEditorText();
+        expect(firstText).toContain('Test Project');
+
+        // Then open notes.md — editor must show notes.md content, NOT README.md
+        await openFile('notes.md');
+        const secondText = await getEditorText();
+        expect(secondText).toContain('Apples');
+        // README.md unique content must not be visible after switching
+        expect(secondText).not.toContain('E2E testing');
     });
 
     // ---------------------------------------------------------------

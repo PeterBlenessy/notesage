@@ -12,7 +12,68 @@ export type McpConfigSource =
   | 'cursor'
   | 'vscode';
 
+/**
+ * Collapse an MCP config source to the low-cardinality telemetry `ItemSource`
+ * (`bundled | user | project`). Project-scoped servers report `project`; every
+ * other source (global Notesage config, imported external configs) is `user`.
+ * Pure — no PII.
+ */
+export function mcpSourceToItemSource(
+  source: McpConfigSource,
+): 'user' | 'project' {
+  return source === 'notesage-project' ? 'project' : 'user';
+}
+
 export type McpServerStatus = 'stopped' | 'starting' | 'running' | 'error';
+
+/** Transport an MCP server speaks. `http` (remote) is added by later tasks. */
+export type McpTransport = 'stdio' | 'http';
+
+/**
+ * An MCP env var value as stored in `mcp.json`. A bare string is an inline
+ * plaintext value; `{ secret: true }` is a reference to a value kept in the OS
+ * keychain (under `notesage:mcp:<serverId>:<KEY>`). Secret values never appear
+ * in this shape — only the reference does.
+ */
+export type McpEnvValue = string | { secret: boolean };
+
+/** True when an env value is a keychain secret reference rather than plaintext. */
+export function isSecretEnvValue(v: McpEnvValue): v is { secret: boolean } {
+  return typeof v === 'object' && v !== null && 'secret' in v;
+}
+
+/** Keychain service name for an MCP server's secret env var. */
+export function mcpSecretService(serverId: string, key: string): string {
+  return `notesage:mcp:${serverId}:${key}`;
+}
+
+/** A required env var / secret a catalog server needs (rendered in the Add form). */
+export interface McpCatalogRequiredEnv {
+  key: string;
+  label: string;
+  secret: boolean;
+  help_url?: string | null;
+}
+
+/**
+ * One curated catalog entry — a template the "Add" flow pre-fills. Mirrors the
+ * Rust `McpCatalogItem` from `mcp_catalog_list`. The catalog ships empty for now
+ * (PRD 2026-06-03); populate `src-tauri/mcp-catalog.json` to surface entries.
+ */
+export interface McpCatalogItem {
+  id: string;
+  name: string;
+  description: string;
+  category?: string | null;
+  homepage?: string | null;
+  /** True for curated entries from a trusted source (drives the "Official" badge). */
+  official?: boolean;
+  transport: McpTransport;
+  url?: string | null;
+  command?: string | null;
+  args: string[];
+  required_env: McpCatalogRequiredEnv[];
+}
 
 export interface McpToolInfo {
   name: string;
@@ -26,12 +87,16 @@ export interface McpServerEntry {
   name: string;
   command: string;
   args: string[];
-  env: Record<string, string>;
+  env: Record<string, McpEnvValue>;
   source: McpConfigSource;
   enabled: boolean;
   status: McpServerStatus;
   error?: string;
   tools: McpToolInfo[];
+  /** Transport this server speaks. Missing/`stdio` for local command servers. */
+  transport?: McpTransport;
+  /** Endpoint URL for `http` (remote) servers. Absent for stdio. */
+  url?: string | null;
   /**
    * Project root this server was discovered under. `null` (or missing) means
    * the server is global — either from `~/.notesage/mcp.json` or imported from

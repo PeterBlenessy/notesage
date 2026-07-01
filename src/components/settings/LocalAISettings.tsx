@@ -4,7 +4,13 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { tauriApi } from '@/lib/tauri';
 import type { LocalModelInfo } from '@/lib/tauri';
 import { useModelMetadata } from '@/hooks/useModelMetadata';
+import { useModelFit } from '@/hooks/useModelFit';
+import { useModelFitMeasurementStore } from '@/stores/model-fit-measurement-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { Switch } from '@/components/ui/switch';
+import { compareByVerdict } from '@/lib/ai/model-fit';
 import { AddCustomModelDialog } from './AddCustomModelDialog';
+import { CompletionServerSection } from './CompletionServerSection';
 import { ModelCard } from './ModelCard';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,23 +33,6 @@ type ModelSort = 'name' | 'size' | 'ram';
 function formatBytes(bytes: number): string {
   if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`;
   return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
-}
-
-function getRamTier(totalBytes: number): string {
-  const gb = totalBytes / 1_000_000_000;
-  if (gb <= 8) return '8gb';
-  if (gb <= 16) return '16gb';
-  if (gb <= 32) return '32gb';
-  return '64gb';
-}
-
-function getDefaultModelId(ramTier: string): string {
-  switch (ramTier) {
-    case '8gb': return 'qwen3-1.7b';
-    case '16gb': return 'qwen3-4b';
-    case '32gb': return 'qwen3-8b';
-    default: return 'qwen3-14b';
-  }
 }
 
 const CATEGORY_TABS: { value: ModelCategory; label: string }[] = [
@@ -92,6 +81,15 @@ export function LocalAISettings() {
   const [healthChecking, setHealthChecking] = useState(false);
   const [sortBy, setSortBy] = useState<ModelSort>('ram');
 
+  // Hardware-aware model-fit verdicts. The hook populates the store maps below;
+  // we subscribe to them reactively so cards re-render as results arrive.
+  const { capsLoading, hostSpeedScale } = useModelFit(models);
+  const fitById = useLocalAIStore((s) => s.fitById);
+  const capsById = useLocalAIStore((s) => s.capsById);
+  const measurements = useModelFitMeasurementStore((s) => s.measurements);
+  const offerCalibrationShare = useSettingsStore((s) => s.offerCalibrationShare);
+  const setOfferCalibrationShare = useSettingsStore((s) => s.setOfferCalibrationShare);
+
   useEffect(() => {
     refreshModels();
     checkBinary();
@@ -101,29 +99,28 @@ export function LocalAISettings() {
   }, [refreshModels, checkBinary]);
 
   const activeModel = models.find((m) => m.id === activeModelId);
-  const totalMemGB = systemMemory ? (systemMemory.total_bytes / 1_000_000_000).toFixed(0) : '?';
   const hasDownloadedModels = models.some((m) => m.downloaded);
 
-  // RAM-based recommendations
-  const ramTier = systemMemory ? getRamTier(systemMemory.total_bytes) : null;
-  const defaultModelId = ramTier ? getDefaultModelId(ramTier) : null;
-
   const sortModels = (list: LocalModelInfo[]) => {
-    return [...list].sort((a, b) => {
+    const byPreference = (a: LocalModelInfo, b: LocalModelInfo) => {
       switch (sortBy) {
         case 'name': return a.name.localeCompare(b.name);
         case 'size': return a.size_bytes - b.size_bytes;
         case 'ram': return a.ram_required_bytes - b.ram_required_bytes;
       }
+    };
+    return [...list].sort((a, b) => {
+      // Runnable models first, unrunnable pushed below; the user's chosen sort
+      // is the tiebreaker within each partition. compareByVerdict gives the
+      // runnable-first ordering (and tok/s desc, harmless as a tiebreaker).
+      const byVerdict = compareByVerdict(
+        { fit: fitById[a.id] },
+        { fit: fitById[b.id] }
+      );
+      if (byVerdict !== 0) return byVerdict;
+      return byPreference(a, b);
     });
   };
-
-  const recommendedModels = useMemo(() => {
-    if (!ramTier) return [];
-    return sortModels(
-      models.filter((m) => m.recommended_for?.includes(ramTier))
-    );
-  }, [models, ramTier, sortBy]);
 
   const filteredModels = useMemo(() => {
     let filtered: LocalModelInfo[];
@@ -138,7 +135,8 @@ export function LocalAISettings() {
     const hiddenSet = new Set(hiddenModelIds);
     filtered = filtered.filter((m) => !hiddenSet.has(m.id) || m.downloaded);
     return sortModels(filtered);
-  }, [models, categoryFilter, sortBy, hiddenModelIds]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [models, categoryFilter, sortBy, hiddenModelIds, fitById]);
 
   // Batch-fetch metadata for all models when settings panel mounts
   const modelIds = useMemo(() => models.map((m) => ({ id: m.id })), [models]);
@@ -211,9 +209,13 @@ export function LocalAISettings() {
       key={model.id}
       model={model}
       isActive={model.id === activeModelId}
-      isRecommendedDefault={model.id === defaultModelId}
       download={downloads[model.id]}
       metadata={metadataMap[model.id]}
+      fit={fitById[model.id]}
+      caps={capsById[model.id]}
+      capsLoading={capsLoading}
+      measurement={measurements[model.id]}
+      hostScale={hostSpeedScale}
       onSetActive={() => handleSetActive(model.id)}
       onDownload={() => downloadModel(model.id)}
       onCancelDownload={() => cancelDownload(model.id)}
@@ -395,26 +397,32 @@ export function LocalAISettings() {
           </DropdownMenu>
         </div>
 
-        {/* Recommended models section */}
-        {recommendedModels.length > 0 && categoryFilter === 'all' && sortBy === 'ram' && (
-          <div className="space-y-2">
-            <p className="text-xs text-muted-foreground">
-              Recommended for your Mac ({totalMemGB} GB):
-            </p>
-            <TooltipProvider delayDuration={300}>
-              {recommendedModels.map(renderModelCard)}
-            </TooltipProvider>
-          </div>
-        )}
-
-        {/* All models */}
+        {/* All models — sorted runnable-first (computed verdict), unrunnable
+            disabled and pushed below. No hand-authored RAM-tier filtering. */}
         <div className="space-y-2">
-          {categoryFilter === 'all' && sortBy === 'ram' && recommendedModels.length > 0 && (
-            <p className="text-xs text-muted-foreground pt-2">All models:</p>
-          )}
           <TooltipProvider delayDuration={300}>
             {filteredModels.map(renderModelCard)}
           </TooltipProvider>
+        </div>
+
+        {/* Dedicated FIM completion server (item #8 — `--jinja`/FIM conflict) */}
+        <CompletionServerSection />
+
+        {/* Opt-in community calibration share (Phase 2) */}
+        <div className="flex items-start justify-between gap-3 pt-1">
+          <div className="min-w-0">
+            <p className="text-xs font-medium">Offer to share calibration data</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+              After you've run a few local models, Notesage can offer to share their
+              measured speed on your Mac to help improve recommendations. Nothing is
+              ever sent automatically — you review and submit it yourself.
+            </p>
+          </div>
+          <Switch
+            checked={offerCalibrationShare}
+            onCheckedChange={setOfferCalibrationShare}
+            aria-label="Offer to share calibration data"
+          />
         </div>
 
         <div className="flex items-center gap-1.5">

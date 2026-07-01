@@ -3,7 +3,7 @@ import type { Editor } from "@tiptap/react";
 import { Settings2 } from "lucide-react";
 import { TableToolbarContent } from "../TableToolbar";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 
@@ -37,7 +37,9 @@ export function TableToolsPopover({ editor }: { editor: Editor }) {
         className="w-auto p-0 rounded-lg border border-border bg-popover shadow-lg backdrop-blur-sm"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <TableToolbarContent editor={editor} onClose={() => setOpen(false)} />
+        <TooltipProvider delayDuration={300}>
+          <TableToolbarContent editor={editor} onClose={() => setOpen(false)} />
+        </TooltipProvider>
       </PopoverContent>
     </Popover>
   );

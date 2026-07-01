@@ -14,9 +14,9 @@ import {
 import { ChatHistoryView } from "@/components/chat/ChatHistoryView";
 import { ContextPill } from "@/components/chat/ContextPill";
 import { useChatContext } from "@/hooks/useChatContext";
-import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { FILE_DRAG_MIME } from "@/components/sidebar/quiet/file-drag";
 import { useAIOperations } from "@/hooks/useAIOperations";
+import { useForegroundLoading } from "@/hooks/useSessionManager";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { toast } from "sonner";
@@ -28,8 +28,6 @@ import {
   Hash,
   ImagePlus,
   MessageSquare,
-  Mic,
-  MicOff,
   Plus,
   Square,
   User,
@@ -56,8 +54,7 @@ import {
   unregisterSendImageHandler,
 } from "@/lib/ai/vision";
 // AttachmentStrip is no longer used here — chips render inline next
-// to the textarea (live-test 2026-04-25). The shared `AttachmentStrip`
-// stays in the legacy ChatInput.
+// to the textarea (live-test 2026-04-25).
 import {
   ResendProviderDialog,
   type ResendProviderChoice,
@@ -67,7 +64,8 @@ import {
   expandSkillPrefix,
   interpretAgentPrefix,
 } from "@/lib/ai/chat-expansion";
-import { subscribeToCmdBarEvents } from "@/lib/cmd-bar-events";
+import { subscribeToCmdBarEvents, emitCmdBarEvent } from "@/lib/cmd-bar-events";
+import { useCmdBarSummonStore } from "@/stores/cmd-bar-summon-store";
 import { MODES } from "@/components/cmd/prefix-modes";
 import CommandBarContext from "@/components/cmd/CommandBarContext";
 import {
@@ -264,19 +262,21 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const reducedMotion = useReducedMotion();
 
-  // Send wiring (#23). We reuse the existing `sendChatMessage` from
-  // `useAIOperations` — the same entry point `ChatPanel` calls — so all
-  // routing (direct API / ACP / Copilot LSP / local), provider lock checks,
-  // segment isolation, and downstream streaming come "for free".
+  // Send wiring (#23). Uses `sendChatMessage` from `useAIOperations` so
+  // all routing (direct API / ACP / Copilot LSP / local), provider lock
+  // checks, segment isolation, and downstream streaming come "for free".
   const messagesForSend = useChatStore(selectMessages);
   const { sendChatMessage, cancelChat } = useAIOperations();
-  const isLoading = useChatStore((s) => s.isLoading);
+  // Per-conversation loading: the bar reflects the WATCHED conversation's run
+  // state, not the global flag — so switching to an idle chat while another
+  // streams in the background shows the right send/stop affordance (task #4).
+  const isLoading = useForegroundLoading();
 
-  // Parity with legacy ChatFooter (live-test 2026-04-26 audit gap #10) —
-  // input + send must be disabled while either an AgentSwitchCard or a
-  // pending-project-switch prompt is awaiting the user's choice. Without
-  // this, users can keep typing/sending mid-prompt, which races the
-  // resolver and may cause messages to land on the wrong segment.
+  // Live-test 2026-04-26 audit gap #10 — input + send must be disabled
+  // while either an AgentSwitchCard or a pending-project-switch prompt
+  // is awaiting the user's choice. Without this, users can keep
+  // typing/sending mid-prompt, which races the resolver and may cause
+  // messages to land on the wrong segment.
   const pendingProjectSwitch = useChatStore(selectPendingProjectSwitch);
   const pendingAgentSwitch = useChatStore(selectPendingAgentSwitch);
   const switchPending =
@@ -284,16 +284,16 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
 
   // Live-test 2026-04-26 audit gap #1 — mount the shared switch-prompt
   // hook so changing provider or project selection mid-conversation
-  // raises the AgentSwitchCard / pending-project-switch prompt the
-  // same way the legacy `ChatPanel` does. Without this, Quiet Composer
-  // silently sent messages to the new provider with full prior history.
+  // raises the AgentSwitchCard / pending-project-switch prompt.
+  // Without this, the bar would silently send messages to the new
+  // provider with full prior history.
   useChatSwitchPrompts();
 
   // #118 — chatView toggles the expanded bar between its usual chat
   // stream and a past-conversation list. The clock icon in
   // `CommandBarContext` fires `toggle-history` on the bus; the
   // subscription below flips this state. Selecting a conversation from
-  // the list returns to chat mode (same UX as legacy `ChatPanel`).
+  // the list returns to chat mode.
   const [chatView, setChatView] = useState<"chat" | "history">("chat");
   const setActiveConversation = useChatStore((s) => s.setActiveConversation);
   const selectedProjectPaths = useChatStore(selectProjectPaths);
@@ -305,12 +305,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     [setActiveConversation],
   );
 
-  // #134 — context chips + explicit-attach offer. Mirrors the legacy
-  // ChatInput's render: auto-attached files appear as ContextPill rows
-  // above the input; when the active tab sits outside the selected
-  // project scope, an "Add this file to chat" affordance lets the user
-  // opt in. The hook is shared with ChatInput; reading it here keeps
-  // the UX consistent across shells.
+  // #134 — context chips + explicit-attach offer. Auto-attached files
+  // appear as ContextPill rows above the input; when the active tab
+  // sits outside the selected project scope, an "Add this file to
+  // chat" affordance lets the user opt in.
   const {
     contextItems,
     dismissItem,
@@ -318,35 +316,13 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     attachExplicit,
   } = useChatContext();
 
-  // #133 — dictation. The hook tries Web Speech first and falls back
-  // to whisper-rs in WKWebView. `finalText` accumulates as transcription
-  // completes; `interimText` is the live "still hearing you" preview
-  // shown as a placeholder while dictating. Mirrors the legacy
-  // `ChatInput` wiring exactly.
-  const {
-    startDictation,
-    stopDictation,
-    isDictating,
-    interimText,
-    finalText,
-  } = useSpeechRecognition();
-  const handleMicToggle = useCallback(async () => {
-    if (isDictating) await stopDictation();
-    else await startDictation();
-  }, [isDictating, startDictation, stopDictation]);
-
-  // Append `finalText` to the composer input as the dictation engine
-  // finalises each chunk. Same append shape ChatInput uses (a single
-  // space separator so the user can keep typing in between).
-  useEffect(() => {
-    if (!finalText) return;
-    setInputValue((prev) => (prev ? `${prev} ${finalText}` : finalText));
-  }, [finalText]);
+  // Voice input was removed from the command bar with the voice-subsystem
+  // rewrite (PRD 2026-05-30-meeting-recording). The composer has no
+  // microphone affordance — meeting recording lives on the StatusTray mic.
 
   // #127 parity — connection + routing state for the cross-provider
-  // resend/edit dialog. Mirrors the logic ChatPanel uses (minus the
-  // per-project `ai.provider` override layer; a follow-up can extract
-  // that into a shared hook if needed).
+  // resend/edit dialog (minus the per-project `ai.provider` override
+  // layer; a follow-up can extract that into a shared hook if needed).
   const interactiveConnection = useRoutingStore((s) =>
     s.getConnectionForUseCase("interactive"),
   );
@@ -376,7 +352,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // #126 parity — image attachments. Paste, drag-drop, and the file
   // picker all dump ImageAttachments into this state; `handleSend` then
   // hands them to `sendChatMessage` where the Rust backend serializes
-  // them per-provider. Cleared on successful send. The legacy
+  // them per-provider. Cleared on successful send. The shared
   // `AttachmentStrip` component handles thumbnail rendering (see the
   // render block below the input).
   const [pendingAttachments, setPendingAttachments] = useState<
@@ -399,9 +375,8 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
 
   // #126 parity — subscribe to the vision event bus so editor "Add to
   // chat" actions and sidebar drops route their images into the
-  // composer. Legacy `ChatInput` owns the same subscription; we mirror
-  // it here so the Quiet shell gets the same behaviour. Mounted once
-  // per bar instance — the bus rejects duplicate registrations.
+  // composer. Mounted once per bar instance — the bus rejects
+  // duplicate registrations.
   useEffect(() => {
     registerSendImageHandler((attachment) => {
       addImageAttachment(attachment);
@@ -459,8 +434,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
 
   // #127 parity — cross-provider resend/edit dialog state. Opens when
   // the message's recorded connectionId differs from the active
-  // `interactiveConnection`. ChatPanel owns the same state machine for
-  // the legacy surface.
+  // `interactiveConnection`.
   interface ResendDialogState {
     mode: "resend" | "edit";
     content: string;
@@ -519,7 +493,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
     // but we never tear down the bar itself.
     if (isPinned) return;
     setExpanded(false);
-    setInputValue("");
+    // Preserve the typed draft across collapse (Esc, blur, opening Settings, and
+    // the X close button) so reopening restores what the user was writing — only
+    // an actual send clears it. The prefix MODE is still reset; if the draft
+    // begins with a prefix char it re-engages on the next keystroke.
     setActivePrefix(null);
     // Reset the typed-prefix dismissal suppression so the next time the
     // bar expands, the picker is willing to open again on the next `/`.
@@ -544,6 +521,37 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // collapsed the handler is a no-op and the Esc keydown keeps propagating
   // to the editor / popover / focus-mode chain (the hook intentionally
   // does not preventDefault on Esc).
+  // Durable summon path: the App-root dispatcher (`useGlobalShortcuts`) writes
+  // keyboard summons (⌘K, ⌘⇧F, ⌘1–4, ⌘⇧P, double-⌘) to `cmd-bar-summon-store`
+  // rather than the transient bus. Because the intent lives in durable state, a
+  // bar that crashes (ErrorBoundary) and remounts reads the pending summon and
+  // re-applies it via the same bus `focus` handler below — the summon survives
+  // the crash (the old bus-only path dropped it whenever the single subscriber
+  // was unmounted). We translate to the bus here so all the seeding logic stays
+  // in one place.
+  const pendingSummon = useCmdBarSummonStore((s) => s.pending);
+  const consumeSummon = useCmdBarSummonStore((s) => s.consume);
+  useEffect(() => {
+    if (!pendingSummon) return;
+    emitCmdBarEvent({
+      type: "focus",
+      prefix: pendingSummon.prefix,
+      drilldown: pendingSummon.drilldown,
+    });
+    consumeSummon();
+  }, [pendingSummon, consumeSummon]);
+
+  // #114 — Subscribe to the `cmd-bar-events` bus so non-keyboard surfaces
+  // (sidebar rows, toolbar buttons) and the durable summon effect above can
+  // drive the bar's state.
+  //
+  // focus events: expand the bar; if the intent carries a prefix character,
+  // prefill the input and pre-arm the active-prefix state so the mode picker
+  // opens on the same tick.
+  //
+  // dismiss events: if the bar is expanded, collapse; if already collapsed the
+  // handler is a no-op and the Esc keydown keeps propagating to the editor /
+  // popover / focus-mode chain (the dispatcher does not preventDefault on Esc).
   useEffect(() => {
     return subscribeToCmdBarEvents((event) => {
       if (event.type === 'focus') {
@@ -692,14 +700,6 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         collapse();
       }
 
-      if (event.type === 'toggle-pin') {
-        // #121 — ⌘⇧C pressed while the bar is expanded AND pinned. Flip the
-        // pin off so the user returns to the floating overlay. The chord's
-        // emit site in `useKeyboardShortcuts` already validated the state,
-        // so we can setCmdBarPinned(false) unconditionally here.
-        useSettingsStore.getState().setCmdBarPinned(false);
-      }
-
       if (event.type === 'toggle-history') {
         // #118 — Clock icon in the context row (and ⌘⇧H when wired)
         // flips the stream area between the chat view and the past-
@@ -714,8 +714,13 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         // both the pin guard in `collapse()` and the multi-stage prefix
         // semantics in `dismiss`. The trigger is responsible for
         // unpinning before firing; this just tears the bar down.
+        //
+        // The X is the MOUSE equivalent of Esc-to-collapse, so it must
+        // PRESERVE the typed draft exactly like `collapse()` does —
+        // reopening restores what the user was writing. Only an actual send
+        // clears the input. (Earlier this wiped the draft, which read as a
+        // bug: closing then reopening lost the prompt.)
         setExpanded(false);
-        setInputValue("");
         setActivePrefix(null);
         setActiveVerb(null);
         dismissedPrefixRef.current = null;
@@ -781,12 +786,12 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   );
 
   // Live-test 2026-04-25 #151 — auto-resize the cmd-bar textarea so it
-  // grows with multi-line content (matches the legacy ChatInput pattern).
+  // grows with multi-line content.
   // Caps at 160 px (~6 lines) so the bar can't push past the doc area;
   // beyond that the textarea scrolls internally. Called from
   // `handleInputChange` AND from a `useEffect` on `inputValue` so
-  // programmatic value changes (prefix replacement, dictation append)
-  // resize the textarea too.
+  // programmatic value changes (e.g. prefix replacement) resize the
+  // textarea too.
   const autoResize = useCallback(() => {
     const el = inputRef.current;
     if (!el) return;
@@ -832,7 +837,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // `useAIOperations.sendChatMessage` pipeline. We REUSE this hook rather
   // than rebuild the streaming flow so the composer inherits provider
   // routing, project lock enforcement, segment isolation, and downstream
-  // streaming behaviour from `ChatPanel`.
+  // streaming behaviour.
   //
   // Chip handling for v1 is pragmatic: when the message has chips, we
   // prepend a tiny `[refs: …]` block so the references reach the model as
@@ -859,11 +864,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         : "";
     const rawContent = `${refsBlock}${trimmed}`;
 
-    // #126 parity — `@agent-name` / `/skill-name` expansion at send time.
-    // ChatPanel.doSend does the same pipeline via the shared helpers in
-    // `src/lib/ai/chat-expansion.ts`. Skipping these would send the
-    // literal prefix as model input, losing the agent swap + skill-body
-    // injection the user expects.
+    // #126 parity — `@agent-name` / `/skill-name` expansion at send time
+    // via the shared helpers in `src/lib/ai/chat-expansion.ts`. Skipping
+    // these would send the literal prefix as model input, losing the
+    // agent swap + skill-body injection the user expects.
     const agentResult = interpretAgentPrefix(rawContent, interactiveConnection);
     if (agentResult.skipSend) {
       // Only a bare `@agent-name` was typed — active agent has been
@@ -891,8 +895,8 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         originalConnectionId: editContext.originalConnectionId,
         currentConnectionId: interactiveConnection?.id ?? null,
       });
-      // Leave editContext in place — the dialog's confirm path clears it
-      // via `doSend` (same semantics as ChatPanel).
+      // Leave editContext in place — the dialog's confirm path clears
+      // it via `doSend`.
       return;
     }
 
@@ -914,9 +918,9 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
       sendOpts.displayContent = rawContent;
       sendOpts.skillName = skillResult.skillName;
     }
-    // #126 parity — image attachments reach the provider via the same
-    // `attachments` opt ChatPanel uses. Cleared optimistically alongside
-    // the input / chips.
+    // #126 parity — image attachments reach the provider via the
+    // `attachments` opt. Cleared optimistically alongside the input /
+    // chips.
     if (pendingAttachments.length > 0) {
       sendOpts.attachments = pendingAttachments;
       setPendingAttachments([]);
@@ -991,8 +995,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
 
   // Resend a user message — same-provider path deletes + re-sends. On
   // cross-provider mismatch we open `ResendProviderDialog` so the user
-  // can pick which connection receives the resend. Mirrors
-  // `ChatPanel.handleResend` for #127 parity.
+  // can pick which connection receives the resend (#127 parity).
   const handleStreamResend = useCallback(
     (message: ChatMessageType) => {
       const currentId = interactiveConnection?.id ?? null;
@@ -1040,7 +1043,7 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   const clearEditContext = useCallback(() => setEditContext(null), []);
 
   // #127 parity — dialog confirm/cancel + memoized options for the
-  // `ResendProviderDialog` render. Mirrors ChatPanel's handlers.
+  // `ResendProviderDialog` render.
   const handleResendDialogConfirm = useCallback(
     (choice: ResendProviderChoice) => {
       const dialog = resendDialog;
@@ -1506,14 +1509,23 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
         // shadcn Popover (StatusTray, etc.) already uses full
         // opacity — the bar now matches.
         "border border-border shadow-lg",
-        // Live-test 2026-04-26 — match the title bar / status bar feel by
-        // letting the collapsed pill go translucent when the user has
-        // turned on `quietChromeTransparent` (Settings > Appearance).
-        // Expanded and pinned modes stay opaque (full `bg-popover`) so
-        // chat stream content reads cleanly on top. Tokens mirror
-        // `TitleBar.tsx`: `bg-background/40` + `backdrop-blur-xl`.
+        // Aligned with the editor pill toolbar (`Toolbar.tsx`'s
+        // `isPill` branch) so the two floating chrome elements read as
+        // one family. Opaque `bg-popover` by default; translucent
+        // `bg-popover/70 backdrop-blur-[14px]` when the operator has
+        // opted into `quietChromeTransparent`. Earlier this branch
+        // used `bg-background/40 backdrop-blur-xl` (mirroring TitleBar)
+        // but `/40` over a contrasting document (white-bg PDF in dark
+        // mode) let too much underlying lightness through, breaking
+        // legibility — operator-reported. `/70` over `bg-popover`
+        // (slightly lighter than canvas in dark mode per design system
+        // elevation cue) reads cleanly against either light or dark
+        // documents in either theme.
+        //
+        // Expanded and pinned modes still stay opaque (full `bg-popover`)
+        // so chat stream content reads cleanly on top.
         !effectiveExpanded && !isPinned && quietChromeTransparent
-          ? "bg-background/40 backdrop-blur-xl"
+          ? "bg-popover/70 backdrop-blur-[14px]"
           : "bg-popover backdrop-blur-md",
       )}
     >
@@ -1579,9 +1591,6 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           onDismissContext={dismissItem}
           explicitAttachOffer={explicitAttachOffer}
           onAttachExplicit={attachExplicit}
-          isDictating={isDictating}
-          interimText={interimText}
-          onMicToggle={handleMicToggle}
         />
       ) : (
         <CompactContent onActivate={expand} />
@@ -1733,10 +1742,10 @@ function PinnedResizeHandle() {
       onKeyDown={onKeyDown}
       data-cmd-bar-resize-handle
       className={cn(
-        // Hair-thin 1px strip on the left edge — matches the legacy
-        // `ResizableHandle` rhythm (`w-px`, hover highlight, generous
-        // pseudo-element hit target). Thinner-at-rest + brighter-on-hover
-        // is the look the user requested (live-test 2026-04-26).
+        // Hair-thin 1px strip on the left edge: `w-px`, hover highlight,
+        // generous pseudo-element hit target. Thinner-at-rest +
+        // brighter-on-hover is the look the user requested
+        // (live-test 2026-04-26).
         "absolute left-0 top-0 h-full w-px cursor-col-resize",
         // Invisible at rest (the bar's own border carries the edge);
         // distinctly visible on hover/focus.
@@ -1866,10 +1875,9 @@ function ExpandedResizeHandle({ side }: { side: "left" | "right" }) {
       data-cmd-bar-resize-handle
       data-cmd-bar-resize-side={side}
       className={cn(
-        // Hair-thin 1px strip on the chosen edge — matches the legacy
-        // `ResizableHandle` rhythm (`w-px`, hover highlight, 16px
-        // pseudo-element hit target). Thinner-at-rest + brighter-on-hover
-        // (live-test 2026-04-26).
+        // Hair-thin 1px strip on the chosen edge: `w-px`, hover
+        // highlight, 16px pseudo-element hit target. Thinner-at-rest +
+        // brighter-on-hover (live-test 2026-04-26).
         "absolute top-0 h-full w-px cursor-col-resize",
         side === "right" ? "right-0" : "left-0",
         "bg-transparent hover:bg-muted-foreground transition-colors",
@@ -2118,7 +2126,7 @@ interface ExpandedContentProps {
   isLoading: boolean;
   /** True while either an AgentSwitchCard or pending-project-switch
    *  prompt is awaiting the user's choice. Disables the textarea +
-   *  send button (parity with legacy ChatFooter). */
+   *  send button. */
   switchPending: boolean;
   pendingProjectSwitch: boolean;
   pendingAgentSwitch: boolean;
@@ -2140,12 +2148,6 @@ interface ExpandedContentProps {
   explicitAttachOffer: import("@/hooks/useChatContext").ExplicitAttachOffer | null;
   /** #134 — accept the explicit-attach offer. */
   onAttachExplicit: (path: string, label: string) => void;
-  /** #133 — dictation active state (drives Mic vs MicOff icon). */
-  isDictating: boolean;
-  /** #133 — live transcription preview shown as the input placeholder. */
-  interimText: string;
-  /** #133 — toggle dictation. */
-  onMicToggle: () => void;
 }
 
 function ExpandedContent({
@@ -2194,9 +2196,6 @@ function ExpandedContent({
   onDismissContext,
   explicitAttachOffer,
   onAttachExplicit,
-  isDictating,
-  interimText,
-  onMicToggle,
 }: ExpandedContentProps) {
   return (
     <div className="flex h-full flex-col">
@@ -2216,10 +2215,9 @@ function ExpandedContent({
       {activePrefix ? null : <CommandBarContext chatView={chatView} />}
 
       {activePrefix ? null : chatView === "history" ? (
-        // #118 — Past-conversation list. Reuses the legacy
-        // `ChatHistoryView` so selection behaviour + per-conversation
-        // metadata (date, title, message count, branch count) matches
-        // the classic shell. Selecting a conversation flips back to
+        // #118 — Past-conversation list via `ChatHistoryView` — selection
+        // behaviour and per-conversation metadata (date, title, message
+        // count, branch count). Selecting a conversation flips back to
         // chat view via `onSelectConversation`.
         <div className="flex flex-1 flex-col min-h-0">
           <ChatHistoryView
@@ -2322,8 +2320,8 @@ function ExpandedContent({
           this border-t boundary, which made it visually a sibling of
           the bar's chrome instead of part of the input area. Moving
           it inside the same border-t container groups attachments +
-          input + send button as one block — same pattern the legacy
-          ChatInput uses (AttachmentStrip → textarea → send).
+          input + send button as one block (AttachmentStrip → textarea
+          → send).
 
           Paste / drag-drop handlers stay on this OUTER container so
           dropping anywhere in the attachments-or-input area attaches
@@ -2572,38 +2570,11 @@ function ExpandedContent({
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
-          <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={onMicToggle}
-                  aria-label={isDictating ? "Stop dictation" : "Start dictation"}
-                  className={cn(
-                    "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-                    "transition-colors",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                    isDictating
-                      ? "text-destructive animate-pulse"
-                      : "text-muted-foreground hover:text-foreground hover:bg-muted",
-                  )}
-                >
-                  {isDictating ? (
-                    <MicOff className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  ) : (
-                    <Mic className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  )}
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs max-w-[220px]">
-                {isDictating ? "Stop dictation" : "Start dictation"}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
           <textarea
             ref={inputRef}
             rows={1}
             role="combobox"
+            aria-label="Chat and command input"
             aria-haspopup="listbox"
             aria-expanded={Boolean(activePrefix)}
             aria-autocomplete="list"
@@ -2620,9 +2591,7 @@ function ExpandedContent({
                 ? "Resolve project context change first…"
                 : pendingAgentSwitch
                   ? "Resolve provider change first…"
-                  : isDictating && interimText
-                    ? interimText
-                    : "Ask, search, or type / for skills…"
+                  : "Ask, search, or type / for skills…"
             }
             className={cn(
               "flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground",
@@ -2641,9 +2610,13 @@ function ExpandedContent({
                     aria-label="Stop generation"
                     className={cn(
                       "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
-                      "bg-destructive/10 text-destructive hover:bg-destructive/20",
+                      // Neutral, not destructive: `text-foreground` is near-black in
+                      // light mode and near-white in dark mode (stopping a stream is
+                      // not an error/danger action). Subtle muted fill keeps the
+                      // affordance shape the red version had.
+                      "bg-muted text-foreground hover:bg-muted/70",
                       "transition-colors",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                     )}
                   >
                     <Square className="h-3 w-3 fill-current" strokeWidth={1.5} />

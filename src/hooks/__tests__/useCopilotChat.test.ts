@@ -4,10 +4,10 @@
  * Unit tests for `useCopilotChat`.
  *
  * Focused on Track 1 Critical leak #15 (project data isolation):
- *   The Copilot LSP `workingDir` must reflect the chat footer's project
+ *   The Copilot LSP `workingDir` must reflect the command bar's project
  *   selection (`selectedProjectPaths[0]`), NOT the first workspace folder
  *   (`projects[0].path`). The leak lets an agent scoped to Project B on
- *   the footer silently boot against Project A's workspace folder.
+ *   the command bar silently boot against Project A's workspace folder.
  *
  * These tests were authored alongside the fix (red-team TDD).
  */
@@ -103,7 +103,7 @@ describe('useCopilotChat — Track 1 leak #15 workingDir isolation', () => {
   it('starts LSP with selectedProjectPaths[0], NOT projects[0].path', async () => {
     const conn = makeCopilotLspConnection();
 
-    // Workspace has two projects, footer is scoped to the SECOND one.
+    // Workspace has two projects, command bar is scoped to the SECOND one.
     useWorkspaceStore.setState({
       projects: [
         { path: '/workspace/project-A', fileTree: [] },
@@ -152,7 +152,7 @@ describe('useCopilotChat — Track 1 leak #15 workingDir isolation', () => {
     expect(copilotLspStartSpy).toHaveBeenCalledWith('/workspace/project-A');
   });
 
-  it('re-invokes copilotLspStart with the new selection when footer selection changes', async () => {
+  it('re-invokes copilotLspStart with the new selection when command bar selection changes', async () => {
     const conn = makeCopilotLspConnection();
     useWorkspaceStore.setState({
       projects: [
@@ -179,7 +179,7 @@ describe('useCopilotChat — Track 1 leak #15 workingDir isolation', () => {
 
     copilotLspStartSpy.mockClear();
 
-    // Switch the chat footer to Project B.
+    // Switch the command bar to Project B.
     act(() => {
       useChatStore.setState((state) => ({
         conversations: state.conversations.map((c) =>
@@ -209,7 +209,7 @@ describe('useCopilotChat — Track 1 leak #15 workingDir isolation', () => {
 //
 // Regression lock: the LSP's `copilot/context-request` event asks the client
 // for the "currently editing" document. If the active tab lies outside the
-// chat footer's project scope, returning its content leaks data from an
+// command bar's project scope, returning its content leaks data from an
 // unrelated project to GitHub. The handler must return an empty context
 // (null) in that case.
 //

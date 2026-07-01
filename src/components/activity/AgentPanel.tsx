@@ -1,10 +1,17 @@
+import { useMemo } from 'react';
 import { Bot } from 'lucide-react';
 import { useActivityStore, type AgentTask } from '@/stores/activity-store';
+import { useSessionRunStore, selectUnwatchedRunning } from '@/stores/session-run-store';
+import { useChatStore, selectConversationTitle } from '@/stores/chat-store';
+import { SessionStatusBadge } from '@/components/cmd/SessionStatusBadge';
 import { ActivityTaskCard } from './ActivityTaskCard';
 
 interface AgentPanelProps {
   onCancelTask?: (taskId: string) => void;
   onClickTask?: (task: AgentTask) => void;
+  /** Foreground an unwatched session (task #14) — brings it into the command
+   *  bar and closes the orb popover. */
+  onSelectSession?: (conversationId: string) => void;
 }
 
 /**
@@ -17,9 +24,29 @@ interface AgentPanelProps {
  * by the shadcn `Popover` (Radix UI) wrapping this component in
  * `AgentOrb.tsx` — this component is intentionally unaware of open state.
  */
-export function AgentPanel({ onCancelTask, onClickTask }: AgentPanelProps) {
+export function AgentPanel({ onCancelTask, onClickTask, onSelectSession }: AgentPanelProps) {
   const tasks = useActivityStore((s) => s.tasks);
   const removeTask = useActivityStore((s) => s.removeTask);
+
+  // Unwatched chat sessions (task #14) — running/awaiting sessions the user
+  // isn't currently watching. Subscribe to the raw store slices and derive the
+  // list with useMemo: `selectUnwatchedRunning` builds a fresh array each call,
+  // so subscribing to it directly would re-render on every store tick (and loop).
+  const runs = useSessionRunStore((s) => s.runs);
+  const foregroundConversationId = useSessionRunStore((s) => s.foregroundConversationId);
+  const conversations = useChatStore((s) => s.conversations);
+  const sessions = useMemo(
+    () =>
+      selectUnwatchedRunning({ runs, foregroundConversationId }).sort(
+        (a, b) =>
+          (a.status === 'awaiting_permission' ? 0 : 1) -
+          (b.status === 'awaiting_permission' ? 0 : 1),
+      ),
+    [runs, foregroundConversationId],
+  );
+  const titleFor = (id: string) => selectConversationTitle({ conversations }, id);
+
+  const isEmpty = tasks.length === 0 && sessions.length === 0;
 
   return (
     <div
@@ -33,13 +60,13 @@ export function AgentPanel({ onCancelTask, onClickTask }: AgentPanelProps) {
           id="agent-panel-heading"
           className="text-xs font-medium text-foreground whitespace-nowrap"
         >
-          Agent Tasks
+          Activity
         </span>
       </div>
 
-      {/* Task list or empty state */}
+      {/* Session list + task list, or empty state */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden thin-scrollbar">
-        {tasks.length === 0 ? (
+        {isEmpty ? (
           <div
             data-testid="agent-panel-empty"
             className="flex flex-col items-center justify-center px-4 py-8 text-center gap-2"
@@ -50,24 +77,54 @@ export function AgentPanel({ onCancelTask, onClickTask }: AgentPanelProps) {
               aria-hidden="true"
             />
             <span className="text-xs text-muted-foreground">
-              No agent tasks yet
+              Nothing happening yet
             </span>
             <span className="text-xs text-muted-foreground/60">
-              Open Chat (Cmd+Shift+C) to get started
+              Agent tasks, recordings, and transcriptions show up here
             </span>
           </div>
         ) : (
-          <div className="divide-y divide-border">
-            {tasks.map((task) => (
-              <ActivityTaskCard
-                key={task.id}
-                task={task}
-                onCancel={onCancelTask}
-                onRemove={removeTask}
-                onClick={onClickTask}
-              />
-            ))}
-          </div>
+          <>
+            {/* Unwatched chat sessions (task #14). Click foregrounds the
+                session in the command bar. */}
+            {sessions.length > 0 && (
+              <div data-testid="agent-panel-sessions" className="divide-y divide-border border-b border-border">
+                <div className="px-3 py-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Sessions
+                </div>
+                {sessions.map((run) => (
+                  <button
+                    key={run.conversationId}
+                    type="button"
+                    data-testid="agent-panel-session-row"
+                    onClick={() => onSelectSession?.(run.conversationId)}
+                    className="flex w-full items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-accent/50"
+                  >
+                    <SessionStatusBadge conversationId={run.conversationId} />
+                    <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
+                      {titleFor(run.conversationId)}
+                    </span>
+                    <span className="shrink-0 text-[10px] text-muted-foreground">
+                      {run.status === 'awaiting_permission' ? 'Needs you' : 'Running'}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {tasks.length > 0 && (
+              <div className="divide-y divide-border">
+                {tasks.map((task) => (
+                  <ActivityTaskCard
+                    key={task.id}
+                    task={task}
+                    onCancel={onCancelTask}
+                    onRemove={removeTask}
+                    onClick={onClickTask}
+                  />
+                ))}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -19,7 +19,11 @@ Config: `vitest.perf.config.ts` | Baseline: `docs/performance-baseline.md`
 
 ## What's Covered
 
-| Suite | Measures | Budget range |
+`src/perf/*.perf.test.{ts,tsx}` is the authoritative list — `pnpm test:perf` runs
+every suite there (currently markdown, markdown-worker, decorations, stores, cmdbar,
+orb, status-tray, sidebar-filter). A few representative suites:
+
+| Suite (illustrative) | Measures | Budget range |
 |---|---|---|
 | `markdown.perf.test.ts` | Parse + serialize at 1KB / 10KB / 50KB / 100KB | 34–364ms / 1–15ms |
 | `decorations.perf.test.ts` | Search + tag decoration rebuilds | < 2ms |

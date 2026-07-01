@@ -1,8 +1,10 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { Clock, GitBranch, MessageSquare } from 'lucide-react';
-import { useChatStore, type Conversation } from '@/stores/chat-store';
+import { Clock, GitBranch } from 'lucide-react';
+import { useChatStore, DEFAULT_CONVERSATION_TITLE, type Conversation } from '@/stores/chat-store';
 import { getLeaves } from '@/lib/chat-tree';
 import { formatRelativeTime } from '@/components/editor/CommentThread';
+import { HistoryRowLeadingIcon } from './SessionStatusBadge';
+import { InlineHistoryPermission } from './InlineHistoryPermission';
 
 export interface CommandBarHistoryProps {
   /**
@@ -17,7 +19,7 @@ export interface CommandBarHistoryProps {
    */
   onDismiss?: () => void;
   /**
-   * The chat footer's selected project paths. When non-empty, only
+   * The command bar's selected project paths. When non-empty, only
    * conversations whose `projectPaths` overlap the selection are shown.
    * Empty selection shows everything.
    */
@@ -153,8 +155,13 @@ export const CommandBarHistory = memo(function CommandBarHistory({
             const provider = getProviderLabel(conv);
             const isHighlighted = index === highlight;
             return (
+              // Wrap so the awaiting-permission inline card (task #10) can expand
+              // BELOW the clickable row button (interactive controls can't nest
+              // inside a <button>). `InlineHistoryPermission` renders null unless
+              // this conversation has a pending request, so normal rows are
+              // visually unchanged.
+              <div key={conv.id}>
               <button
-                key={conv.id}
                 ref={(el) => {
                   rowRefs.current[index] = el;
                 }}
@@ -167,16 +174,13 @@ export const CommandBarHistory = memo(function CommandBarHistory({
                   isHighlighted ? 'bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]' : 'hover:bg-accent/50'
                 }`}
               >
-                <MessageSquare
-                  className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
-                  strokeWidth={1.5}
-                />
+                <HistoryRowLeadingIcon conversationId={conv.id} />
                 <div className="min-w-0 flex-1">
                   <p
                     data-testid="cmd-history-row-title"
                     className="truncate text-sm font-medium"
                   >
-                    {conv.title || 'New Chat'}
+                    {conv.title || DEFAULT_CONVERSATION_TITLE}
                   </p>
                   <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                     <span
@@ -203,6 +207,8 @@ export const CommandBarHistory = memo(function CommandBarHistory({
                   </div>
                 </div>
               </button>
+              <InlineHistoryPermission conversationId={conv.id} />
+              </div>
             );
           })}
         </div>

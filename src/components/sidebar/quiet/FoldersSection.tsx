@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type KeyboardEvent,
+  type ReactNode,
 } from "react";
 import { FileText } from "lucide-react";
 import { resolveFolderIcon } from "@/lib/folder-icon";
@@ -16,6 +17,7 @@ import { useFolderAppearanceStore } from "@/stores/folder-appearance-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { type FileEntry } from "@/lib/tauri";
 import { FolderPeek, derivePeekChildren } from "./FolderPeek";
+import { CHILD_GUIDE_OFFSET } from "./project-section-utils";
 import { FilePreview, isPreviewable } from "./FilePreview";
 import { SidebarRowIndicators } from "./SidebarRowIndicators";
 import {
@@ -81,13 +83,14 @@ interface FoldersSectionProps {
 }
 
 interface FolderRowDescriptor {
-  kind: "folder" | "child" | "overflow";
-  id: string; // = path or synthetic key for overflow
+  kind: "folder" | "child";
+  id: string; // = path
   folder: ExplorerFolder;
   /** For child rows: the underlying FileEntry. */
   entry?: FileEntry;
-  /** For overflow rows: how many more items + which kind. */
-  overflow?: { kind: "folder" | "file"; count: number };
+  /** Nesting depth for child rows (1 = direct child of the folder). Drives the
+   *  per-level indent + guide line so deeper rows are visually distinguishable. */
+  depth?: number;
 }
 
 function folderBasename(path: string): string {
@@ -107,18 +110,19 @@ function insertChildEntries(
   folder: ExplorerFolder,
   expandedChildPaths: Set<string>,
   showHiddenFiles: boolean,
+  depth: number,
 ): void {
   const visible = entries.filter((e) => showHiddenFiles || !e.hidden);
   const dirs = visible.filter((e) => e.is_directory);
   const files = visible.filter((e) => !e.is_directory);
   for (const dir of dirs) {
-    list.push({ kind: "child", id: dir.path, folder, entry: dir });
+    list.push({ kind: "child", id: dir.path, folder, entry: dir, depth });
     if (expandedChildPaths.has(dir.path)) {
-      insertChildEntries(list, dir.children ?? [], folder, expandedChildPaths, showHiddenFiles);
+      insertChildEntries(list, dir.children ?? [], folder, expandedChildPaths, showHiddenFiles, depth + 1);
     }
   }
   for (const file of files) {
-    list.push({ kind: "child", id: file.path, folder, entry: file });
+    list.push({ kind: "child", id: file.path, folder, entry: file, depth });
   }
 }
 
@@ -139,10 +143,6 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
   // Ephemeral (not persisted) — survives section re-render but resets
   // on full unmount.
   const [expandedPaths, setExpandedPaths] = useState<Set<string>>(new Set());
-  // Live-test 2026-04-28 finding #2 — when "+N more" is clicked,
-  // the folder path is added here so the next derive uses the
-  // unbounded variant.
-  const [showAllPaths, setShowAllPaths] = useState<Set<string>>(new Set());
   // Multi-level inline expand (#158) — tracks which child subfolder paths are
   // expanded. Ephemeral, resets on unmount alongside expandedPaths.
   const [expandedChildPaths, setExpandedChildPaths] = useState<Set<string>>(new Set());
@@ -230,7 +230,6 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
       list.push({ kind: "folder", id: folder.path, folder });
       if (expandedPaths.has(folder.path)) {
         const peek = derivePeekChildren(folder.fileTree, {
-          unbounded: showAllPaths.has(folder.path),
           showHidden: showHiddenFiles,
         });
         for (const dir of peek.folders) {
@@ -239,20 +238,13 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
             id: dir.path,
             folder,
             entry: dir,
+            depth: 1,
           });
           // Multi-level inline expand (#158): if this child dir is expanded,
           // recursively insert its children beneath it.
           if (expandedChildPaths.has(dir.path)) {
-            insertChildEntries(list, dir.children ?? [], folder, expandedChildPaths, showHiddenFiles);
+            insertChildEntries(list, dir.children ?? [], folder, expandedChildPaths, showHiddenFiles, 2);
           }
-        }
-        if (peek.folderOverflow > 0) {
-          list.push({
-            kind: "overflow",
-            id: `${folder.path}::__folder-overflow__`,
-            folder,
-            overflow: { kind: "folder", count: peek.folderOverflow },
-          });
         }
         for (const file of peek.files) {
           list.push({
@@ -260,20 +252,13 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
             id: file.path,
             folder,
             entry: file,
-          });
-        }
-        if (peek.fileOverflow > 0) {
-          list.push({
-            kind: "overflow",
-            id: `${folder.path}::__file-overflow__`,
-            folder,
-            overflow: { kind: "file", count: peek.fileOverflow },
+            depth: 1,
           });
         }
       }
     }
     return list;
-  }, [filteredFolders, expandedPaths, expandedChildPaths, showAllPaths, showHiddenFiles]);
+  }, [filteredFolders, expandedPaths, expandedChildPaths, showHiddenFiles]);
 
   const toggleExpanded = useCallback((path: string, next: boolean) => {
     setExpandedPaths((prev) => {
@@ -401,6 +386,86 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
     },
     [removeExplorerFolder],
   );
+
+  // Recursive child renderer — each expanded folder renders its children in a
+  // nested <ul> whose left border IS the indent guide. Nesting makes every
+  // level's guide continuous (no staircase) and gives each open subfolder its
+  // own line, centred under that folder's icon (CHILD_GUIDE_OFFSET). The flat
+  // `rows` list above is kept only for keyboard navigation order.
+  const renderChildLevel = (
+    folder: ExplorerFolder,
+    entries: FileEntry[],
+    level: number,
+  ): ReactNode => {
+    const peek = derivePeekChildren(entries, { showHidden: showHiddenFiles });
+    const ordered = [...peek.folders, ...peek.files];
+    if (ordered.length === 0) return null;
+    return (
+      <ul
+        role="group"
+        className="m-0 list-none border-l border-border/70 pl-2"
+        style={{ marginLeft: CHILD_GUIDE_OFFSET }}
+      >
+        {ordered.map((entry) => {
+          const isChildExpanded =
+            entry.is_directory && expandedChildPaths.has(entry.path);
+          const row: FolderRowDescriptor = {
+            kind: "child",
+            id: entry.path,
+            folder,
+            entry,
+            depth: level,
+          };
+          const childRow = (
+            <ChildRow
+              row={row}
+              level={level}
+              isActive={entry.path === activeTabPath}
+              isFocused={focusedRowId === entry.path}
+              hasFocusWithin={focusedRowId !== null}
+              isExpanded={entry.is_directory ? isChildExpanded : undefined}
+              registerRef={(el) => registerRef(entry.path, el)}
+              onKeyDown={(e) => handleChildKeyDown(e, row)}
+              onFocus={() => setFocusedRowId(entry.path)}
+              onActivate={() => {
+                if (entry.is_directory) {
+                  setExpandedChildPaths((prev) => {
+                    const next = new Set(prev);
+                    if (prev.has(entry.path)) next.delete(entry.path);
+                    else next.add(entry.path);
+                    return next;
+                  });
+                  return;
+                }
+                void openFileEntry(entry.path, entry.name);
+              }}
+            />
+          );
+          let wrapped: ReactNode = childRow;
+          if (entry.is_directory) {
+            wrapped = (
+              <FolderPeek projectPath={entry.path} fileTree={entry.children ?? []}>
+                <div>{childRow}</div>
+              </FolderPeek>
+            );
+          } else if (isPreviewable(entry.path)) {
+            wrapped = (
+              <FilePreview filePath={entry.path}>
+                <div>{childRow}</div>
+              </FilePreview>
+            );
+          }
+          return (
+            <li key={entry.path} className="m-0 p-0">
+              {wrapped}
+              {isChildExpanded &&
+                renderChildLevel(folder, entry.children ?? [], level + 1)}
+            </li>
+          );
+        })}
+      </ul>
+    );
+  };
 
   // Sidebar-simplification locked-in decision (2026-04-27): no cap, no
   // slider, no settings UI. The section disappears when there are no
@@ -581,88 +646,7 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
                   />
                 </PopoverContent>
               </Popover>
-              {isExpanded && (
-                <ul role="group" className="m-0 p-0 list-none pl-4">
-                  {rows
-                    .filter(
-                      (r) =>
-                        (r.kind === "child" || r.kind === "overflow") &&
-                        r.folder.path === folder.path,
-                    )
-                    .map((row) => (
-                      <li key={row.id} className="m-0 p-0">
-                        {row.kind === "overflow" && row.overflow ? (
-                          <OverflowRow
-                            count={row.overflow.count}
-                            kind={row.overflow.kind}
-                            isFocused={focusedRowId === row.id}
-                            hasFocusWithin={focusedRowId !== null}
-                            registerRef={(el) => registerRef(row.id, el)}
-                            onActivate={() =>
-                              setShowAllPaths((prev) => {
-                                const updated = new Set(prev);
-                                updated.add(folder.path);
-                                return updated;
-                              })
-                            }
-                            onKeyDown={(e) => handleChildKeyDown(e, row)}
-                            onFocus={() => setFocusedRowId(row.id)}
-                          />
-                        ) : (() => {
-                          const childRow = (
-                            <ChildRow
-                              row={row}
-                              isFocused={focusedRowId === row.id}
-                              hasFocusWithin={focusedRowId !== null}
-                              isExpanded={row.entry?.is_directory ? expandedChildPaths.has(row.entry.path) : undefined}
-                              registerRef={(el) => registerRef(row.id, el)}
-                              onKeyDown={(e) => handleChildKeyDown(e, row)}
-                              onFocus={() => setFocusedRowId(row.id)}
-                              onActivate={() => {
-                                if (row.entry?.is_directory) {
-                                  // Toggle inline expand for child directories (#158).
-                                  setExpandedChildPaths((prev) => {
-                                    const next = new Set(prev);
-                                    if (prev.has(row.entry!.path)) next.delete(row.entry!.path);
-                                    else next.add(row.entry!.path);
-                                    return next;
-                                  });
-                                  return;
-                                }
-                                if (row.entry) void openFileEntry(row.entry.path, row.entry.name);
-                              }}
-                            />
-                          );
-                          // Live-test 2026-04-28 finding #3 — same hover
-                          // treatment ProjectsSection child rows get:
-                          // FolderPeek for folders (one level into the
-                          // already-loaded recursive tree), FilePreview
-                          // for previewable file extensions. Other files
-                          // render bare.
-                          if (!row.entry) return childRow;
-                          if (row.entry.is_directory) {
-                            return (
-                              <FolderPeek
-                                projectPath={row.entry.path}
-                                fileTree={row.entry.children ?? []}
-                              >
-                                <div>{childRow}</div>
-                              </FolderPeek>
-                            );
-                          }
-                          if (isPreviewable(row.entry.path)) {
-                            return (
-                              <FilePreview filePath={row.entry.path}>
-                                <div>{childRow}</div>
-                              </FilePreview>
-                            );
-                          }
-                          return childRow;
-                        })()}
-                      </li>
-                    ))}
-                </ul>
-              )}
+              {isExpanded && renderChildLevel(folder, folder.fileTree, 2)}
             </li>
           );
         })}
@@ -763,64 +747,16 @@ function FolderRow({
   );
 }
 
-interface OverflowRowProps {
-  count: number;
-  kind: "folder" | "file";
-  isFocused: boolean;
-  hasFocusWithin: boolean;
-  registerRef: (el: HTMLElement | null) => void;
-  onActivate: () => void;
-  onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
-  onFocus: () => void;
-}
-
-function OverflowRow({
-  count,
-  kind,
-  isFocused,
-  hasFocusWithin,
-  registerRef,
-  onActivate,
-  onKeyDown,
-  onFocus,
-}: OverflowRowProps) {
-  const label = `Show ${count} more ${kind}${count === 1 ? "" : "s"}`;
-  const tabIndex = isFocused || !hasFocusWithin ? 0 : -1;
-  return (
-    <div
-      ref={registerRef}
-      role="treeitem"
-      aria-level={2}
-      aria-label={label}
-      data-row-type="folder-overflow"
-      tabIndex={tabIndex}
-      onClick={onActivate}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onActivate();
-          return;
-        }
-        onKeyDown(e);
-      }}
-      onFocus={onFocus}
-      className={cn(
-        "h-6 px-2 flex items-center text-xs text-muted-foreground cursor-pointer",
-        "hover:text-foreground hover:underline underline-offset-2 transition-colors",
-        "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
-      )}
-    >
-      +{count} more…
-    </div>
-  );
-}
-
 interface ChildRowProps {
   row: FolderRowDescriptor;
   isFocused: boolean;
   hasFocusWithin: boolean;
   /** Whether this child directory is currently expanded inline (#158). */
   isExpanded?: boolean;
+  /** True when this row's file is the active document — highlights the icon. */
+  isActive?: boolean;
+  /** ARIA tree level (folder = 1, direct child = 2, …). */
+  level?: number;
   registerRef: (el: HTMLElement | null) => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   onFocus: () => void;
@@ -832,6 +768,8 @@ function ChildRow({
   isFocused,
   hasFocusWithin,
   isExpanded,
+  isActive,
+  level,
   registerRef,
   onKeyDown,
   onFocus,
@@ -852,11 +790,13 @@ function ChildRow({
     <div
       ref={registerRef}
       role="treeitem"
-      aria-level={2}
+      aria-level={level ?? 2}
       aria-expanded={row.entry.is_directory ? (isExpanded ?? false) : undefined}
       aria-selected={isFocused ? "true" : undefined}
+      aria-current={isActive ? "page" : undefined}
       aria-label={ariaLabel}
       data-row-type="child"
+      data-active={isActive ? "true" : undefined}
       tabIndex={tabIndex}
       onClick={onActivate}
       onKeyDown={onKeyDown}
@@ -865,11 +805,18 @@ function ChildRow({
         "h-7 px-2 flex items-center gap-2 rounded-sm cursor-pointer text-[13px]",
         "text-foreground/90 transition-colors duration-150",
         "hover:bg-muted/50",
+        // Active document — icon gets the accent + the name goes solid/medium.
+        isActive && "text-foreground font-medium",
         "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
       )}
     >
       <Icon
-        className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
+        className={cn(
+          "h-3.5 w-3.5 shrink-0",
+          isActive
+            ? "text-[var(--color-accent-primary)]"
+            : "text-muted-foreground/70",
+        )}
         strokeWidth={1.5}
         aria-hidden="true"
       />

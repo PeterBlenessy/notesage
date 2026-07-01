@@ -23,7 +23,7 @@ export async function ensureCleanState(): Promise<void> {
         // Close all open tabs
         if (w.__E2E_EDITOR_STORE__) {
             const state = w.__E2E_EDITOR_STORE__.getState();
-            for (const tab of [...state.tabs]) {
+            for (const tab of [...state.openDocuments]) {
                 state.closeTab(tab.id);
             }
         }
@@ -43,7 +43,7 @@ export async function ensureCleanState(): Promise<void> {
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 const w = window as any;
                 if (w.__E2E_EDITOR_STORE__) {
-                    return w.__E2E_EDITOR_STORE__.getState().tabs.length;
+                    return w.__E2E_EDITOR_STORE__.getState().openDocuments.length;
                 }
                 return 0;
             });

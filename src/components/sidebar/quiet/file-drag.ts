@@ -11,8 +11,7 @@ import type { DragEvent as ReactDragEvent } from "react";
 
 /**
  * Custom MIME type used for all file-row drags in the sidebar. The suffix
- * `notesage-file` makes the purpose obvious in devtools; the `application/`
- * prefix matches the TabBar convention already in use elsewhere.
+ * `notesage-file` makes the purpose obvious in devtools.
  */
 export const FILE_DRAG_MIME = "application/x-notesage-file";
 

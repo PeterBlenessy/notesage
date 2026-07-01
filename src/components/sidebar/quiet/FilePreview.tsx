@@ -8,6 +8,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import { useSettingsStore } from "@/stores/settings-store";
 import { tauriApi } from "@/lib/tauri";
@@ -585,7 +591,16 @@ export function FilePreview({
             an oversized title that duplicates the filename. */}
         <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border/60">
           <div className="min-w-0 flex-1 flex flex-col leading-tight">
-            <span className="text-sm font-medium truncate">{name}</span>
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="text-sm font-medium truncate">{name}</span>
+                </TooltipTrigger>
+                <TooltipContent side="top">
+                  {name}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             {state.status === "ready" && state.title ? (
               <span
                 className="text-[11px] text-muted-foreground truncate"
@@ -648,7 +663,7 @@ export function FilePreview({
             )
           )}
         </div>
-        {/* No footer — mockup-L had a "Click to open · ⌘click for new
+        {/* No bottom bar — mockup-L had a "Click to open · ⌘click for new
             tab" hint, but live-test feedback 2026-04-24 said it's
             noise. Click + ⌘-click are the expected verbs for any file
             row and don't need an inline legend. */}

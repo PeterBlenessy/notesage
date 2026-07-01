@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { setMockInvokeHandler, emitMockEvent } from '@/test/tauri-mock';
 import '@/test/tauri-mock';
+import { streamEvent } from '@/lib/ai/stream-events';
 import { renderHook, act } from '@testing-library/react';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -20,6 +21,7 @@ import {
   type TaskMeta,
   type TaskActivityEvent,
 } from '@/hooks/useAgentTaskOperations';
+import { getAcpAgent, getAllAcpAgents, TASK_AGENT_KEY } from '@/lib/ai/acp-agent-state';
 
 // ---------------------------------------------------------------------------
 // Mock modules
@@ -155,7 +157,7 @@ function resetStores() {
     },
   });
   useConnectionsStore.setState({ connections: [] });
-  useActivityStore.setState({ tasks: [], isManuallyHidden: false });
+  useActivityStore.setState({ tasks: [] });
   useChatStore.setState({ conversations: [], activeConversationId: null });
   useProjectMetadataStore.setState({ metadataMap: {} });
   usePermissionStore.setState({
@@ -264,9 +266,15 @@ function registerAcpHandlers(options?: {
  * Register direct API invoke handlers. Returns a deferred for `ai_chat_stream`
  * so tests can control when the stream call completes (keeping listeners alive).
  */
+// The direct-API task path generates a unique per-request streamId and
+// emits/listens on `<event>:<streamId>`. Capture it so test-body emits target
+// the matching channel.
+let lastStreamId = '';
+const sidOf = (args: unknown): string => String((args as { streamId?: string })?.streamId ?? '');
+
 function registerDirectApiHandlers(): { streamDeferred: Deferred } {
   const streamDeferred = createDeferred();
-  setMockInvokeHandler('ai_chat_stream', () => streamDeferred.promise);
+  setMockInvokeHandler('ai_chat_stream', (args) => { lastStreamId = sidOf(args); return streamDeferred.promise; });
   setMockInvokeHandler('get_home_dir', () => '/Users/test');
   return { streamDeferred };
 }
@@ -577,8 +585,8 @@ describe('useAgentTaskOperations', () => {
 
       // Emit stream chunks (listeners are alive because streamDeferred hasn't resolved)
       await act(async () => {
-        emitMockEvent('ai-stream-chunk', 'Hello ');
-        emitMockEvent('ai-stream-chunk', 'World');
+        emitMockEvent(streamEvent('ai-stream-chunk', lastStreamId), 'Hello ');
+        emitMockEvent(streamEvent('ai-stream-chunk', lastStreamId), 'World');
       });
 
       expect(chunks).toEqual(['Hello ', 'World']);
@@ -609,8 +617,8 @@ describe('useAgentTaskOperations', () => {
       });
 
       await act(async () => {
-        emitMockEvent('ai-stream-chunk', 'Response text');
-        emitMockEvent('ai-stream-done', null);
+        emitMockEvent(streamEvent('ai-stream-chunk', lastStreamId), 'Response text');
+        emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null);
       });
 
       expect(completedOutput).toBe('Response text');
@@ -661,7 +669,7 @@ describe('useAgentTaskOperations', () => {
       });
 
       await act(async () => {
-        emitMockEvent('ai-stream-done', null);
+        emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null);
       });
 
       expect(completedOutput).toBe('');
@@ -1327,7 +1335,7 @@ describe('useAgentTaskOperations', () => {
 
       // Complete the task via stream done
       await act(async () => {
-        emitMockEvent('ai-stream-done', null);
+        emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null);
       });
 
       let cancelled: boolean | undefined;
@@ -1488,7 +1496,7 @@ describe('useAgentTaskOperations', () => {
 
       // Emit a chunk while stream is alive
       await act(async () => {
-        emitMockEvent('ai-stream-chunk', 'before');
+        emitMockEvent(streamEvent('ai-stream-chunk', lastStreamId), 'before');
       });
       expect(chunks).toContain('before');
 
@@ -1500,7 +1508,7 @@ describe('useAgentTaskOperations', () => {
 
       // After cleanup, new chunks should not reach the callback
       await act(async () => {
-        emitMockEvent('ai-stream-chunk', 'late chunk');
+        emitMockEvent(streamEvent('ai-stream-chunk', lastStreamId), 'late chunk');
       });
 
       expect(chunks).not.toContain('late chunk');
@@ -1530,7 +1538,7 @@ describe('useAgentTaskOperations', () => {
 
       // Post-cancel chunks should not reach callback
       await act(async () => {
-        emitMockEvent('ai-stream-chunk', 'late chunk');
+        emitMockEvent(streamEvent('ai-stream-chunk', lastStreamId), 'late chunk');
       });
 
       expect(chunks).not.toContain('late chunk');
@@ -1550,7 +1558,8 @@ describe('useAgentTaskOperations', () => {
       const deferred1 = createDeferred();
       const deferred2 = createDeferred();
       let callCount = 0;
-      setMockInvokeHandler('ai_chat_stream', () => {
+      setMockInvokeHandler('ai_chat_stream', (args) => {
+        lastStreamId = sidOf(args);
         callCount++;
         return callCount === 1 ? deferred1.promise : deferred2.promise;
       });
@@ -1650,6 +1659,31 @@ describe('useAgentTaskOperations', () => {
       await expect(
         ensureTaskAgent(conn, '/project', undefined, 4),
       ).rejects.toThrow('Task agent spawn failed after multiple retries.');
+    });
+  });
+
+  // ---- registry fold (task #2) ----
+
+  describe('delegation agent is registry-backed', () => {
+    it('ensureTaskAgent registers under TASK_AGENT_KEY and stopTaskAgent clears it', async () => {
+      stopTaskAgent();
+      expect(getAcpAgent(TASK_AGENT_KEY)).toBeNull();
+
+      const conn = makeAgentConnection();
+      registerAcpHandlers();
+
+      const instanceId = await ensureTaskAgent(conn, '/project');
+
+      // Folded into the shared registry (no standalone `taskAgent` singleton).
+      const entry = getAcpAgent(TASK_AGENT_KEY);
+      expect(entry).not.toBeNull();
+      expect(entry!.instanceId).toBe(instanceId);
+      expect(entry!.connectionId).toBe(conn.id);
+      // Visible to the shared teardown set alongside chat agents.
+      expect(getAllAcpAgents().some((a) => a.instanceId === instanceId)).toBe(true);
+
+      stopTaskAgent();
+      expect(getAcpAgent(TASK_AGENT_KEY)).toBeNull();
     });
   });
 

@@ -213,4 +213,62 @@ describe('restoreOrCreateAcpSession', () => {
       expect(newSpy).toHaveBeenCalledOnce();
     });
   });
+
+  describe('MCP pass-through (task #11)', () => {
+    const mcpServers = [
+      { id: 'fs', name: 'Filesystem', transport: 'stdio' as const, command: '/bin/mcp', args: [], env: {}, url: null },
+    ];
+
+    it('forwards mcpServers to session/new', async () => {
+      const newSpy = vi.fn((_args?: Record<string, unknown>) => makeSession('fresh'));
+      setMockInvokeHandler('acp_session_new', newSpy);
+
+      await restoreOrCreateAcpSession({
+        instanceId: 'inst-1',
+        cwd: '/tmp',
+        storedSessionId: undefined,
+        capabilities: caps.none(),
+        mcpServers,
+      });
+
+      expect(newSpy).toHaveBeenCalledOnce();
+      expect(newSpy.mock.calls[0][0]).toMatchObject({ mcpServers });
+    });
+
+    it('forwards mcpServers to session/load', async () => {
+      setMockInvokeHandler('acp_session_resume', () => {
+        throw new Error('resume failed');
+      });
+      const loadSpy = vi.fn((_args?: Record<string, unknown>) => makeSession('loaded'));
+      setMockInvokeHandler('acp_session_load', loadSpy);
+
+      await restoreOrCreateAcpSession({
+        instanceId: 'inst-1',
+        cwd: '/tmp',
+        storedSessionId: 'sess-X',
+        capabilities: caps.loadAndResume(),
+        mcpServers,
+      });
+
+      expect(loadSpy).toHaveBeenCalledOnce();
+      expect(loadSpy.mock.calls[0][0]).toMatchObject({ mcpServers });
+    });
+
+    it('does NOT forward mcpServers to session/resume (live takeover keeps its servers)', async () => {
+      const resumeSpy = vi.fn((_args?: Record<string, unknown>) => makeSession('resumed'));
+      setMockInvokeHandler('acp_session_resume', resumeSpy);
+
+      await restoreOrCreateAcpSession({
+        instanceId: 'inst-1',
+        cwd: '/tmp',
+        storedSessionId: 'sess-Y',
+        capabilities: caps.resumeOnly(),
+        mcpServers,
+      });
+
+      expect(resumeSpy).toHaveBeenCalledOnce();
+      // resume payload has no mcpServers key.
+      expect(resumeSpy.mock.calls[0][0]).not.toHaveProperty('mcpServers');
+    });
+  });
 });

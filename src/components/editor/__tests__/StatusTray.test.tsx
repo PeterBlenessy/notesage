@@ -74,7 +74,6 @@ function resetStores() {
   });
   useRecordingStore.setState({
     isRecording: false,
-    isDictating: false,
   });
 }
 
@@ -277,8 +276,8 @@ describe('StatusTray — task #53', () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
-  it('does not render the legacy "N words · M min read" footer', () => {
-    // Live-test 2026-04-26 — the word-count + reading-time footer was
+  it('does not render the legacy "N words · M min read" strip', () => {
+    // Live-test 2026-04-26 — the word-count + reading-time strip was
     // dropped from the popover (the word count is already shown in the
     // status-bar row itself; duplicating it here was visual noise).
     renderWithProviders(<TrayHost open={true} onOpenChange={() => {}} />);
@@ -562,11 +561,15 @@ describe('StatusTray — task #53', () => {
   // Local AI status dot — colour reflects server state
   // -------------------------------------------------------------------------
   //
-  // User feedback: "local ai dot should be green when running, orange when
-  // starting up". The dot lives in the Session group's `LocalAIStatusRow`.
-  // We assert via the `data-server-status` data attribute AND the class-list
-  // so the test survives Tailwind class ordering tweaks while still
-  // pinning the semantic colour mapping.
+  // Chromatic status palette (#415): these are semantic status indicators (a
+  // traffic-light for the local inference server), so they use status colours —
+  // green=running, amber=starting (pulse), red=error, muted=stopped. The dot
+  // here MUST match the always-visible quiet status strip dot byte-for-byte;
+  // both render from the shared `local-ai-dot` helper. We assert via the
+  // `data-server-status` data attribute AND the class-list so the test survives
+  // Tailwind class ordering tweaks while still pinning the semantic mapping. The
+  // transitional (starting) pulse is gated on reduced motion — jsdom's
+  // matchMedia mock returns false (motion allowed), so the class is present.
 
   function renderTrayWithStatus(status: 'stopped' | 'starting' | 'running' | 'error') {
     addConnection({
@@ -582,13 +585,14 @@ describe('StatusTray — task #53', () => {
     ) as HTMLElement | null;
   }
 
-  it('Local AI dot is neutral (idle) when the server is stopped', () => {
+  it('Local AI dot is faint muted (idle) when the server is stopped', () => {
     const dot = renderTrayWithStatus('stopped');
     expect(dot).toBeTruthy();
     expect(dot?.getAttribute('data-server-status')).toBe('stopped');
     expect(dot?.className).toContain('bg-muted-foreground/30');
     expect(dot?.className).not.toContain('bg-green');
     expect(dot?.className).not.toContain('bg-amber');
+    expect(dot?.className).not.toContain('bg-red');
     expect(dot?.className).not.toContain('animate-pulse');
   });
 
@@ -717,6 +721,37 @@ describe('StatusTray — task #53', () => {
     });
 
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('does not autofocus a control on open (mic tooltip would auto-show) (#bug)', async () => {
+    const editor = createMockEditor() as unknown as Editor;
+    function Harness() {
+      const [open, setOpen] = React.useState(false);
+      return (
+        <div>
+          <button data-testid="opener" onClick={() => setOpen(true)}>
+            open
+          </button>
+          <TrayHost open={open} onOpenChange={setOpen} editor={editor} />
+        </div>
+      );
+    }
+
+    renderWithProviders(<Harness />);
+    const opener = document.querySelector('[data-testid="opener"]') as HTMLElement;
+    await act(async () => {
+      fireEvent.click(opener);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+
+    // Radix's default autofocus is prevented, so focus must NOT land on the
+    // recording MicButton (whose focus-triggered tooltip would otherwise stick
+    // open on every popover open).
+    const micButton = document
+      .querySelector('[aria-label="Editor tools"]')
+      ?.querySelector('button');
+    expect(micButton).toBeTruthy();
+    expect(document.activeElement).not.toBe(micButton);
   });
 
   // -------------------------------------------------------------------------

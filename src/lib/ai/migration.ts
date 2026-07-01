@@ -52,13 +52,17 @@ export function migrateV1AISettings(): void {
 
   console.log(`[migration] Migrating v1 AI settings: ${ai.provider} → v2 connection`);
 
-  const connectionId = connections.addConnection({
-    provider,
-    authMethod,
-    status: 'connected',
-    label,
-    credentials,
-  });
+  const connectionId = connections.addConnection(
+    {
+      provider,
+      authMethod,
+      status: 'connected',
+      label,
+      credentials,
+    },
+    // One-time v1→v2 port — not a new user action, so don't emit telemetry.
+    { silent: true },
+  );
 
   routing.autoAssign(connectionId);
 

@@ -5,6 +5,8 @@
       "id": "open-command-palette",
       "label": "Open command palette",
       "display": "⌘K",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "k", "code": "KeyK", "mod": true, "shiftKey": false, "altKey": false }
       ]
@@ -13,6 +15,8 @@
       "id": "open-tasks",
       "label": "Open tasks",
       "display": "⌘!",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "1", "code": "Digit1", "mod": true, "shiftKey": false, "altKey": false },
         { "key": "!", "code": "Digit1", "mod": true, "shiftKey": true, "altKey": false }
@@ -22,6 +26,8 @@
       "id": "open-mentions",
       "label": "Open mentions / references",
       "display": "⌘@",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "2", "code": "Digit2", "mod": true, "shiftKey": false, "altKey": false },
         { "key": "@", "code": "Digit2", "mod": true, "shiftKey": true, "altKey": false }
@@ -31,6 +37,8 @@
       "id": "open-tags",
       "label": "Open tags",
       "display": "⌘#",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "3", "code": "Digit3", "mod": true, "shiftKey": false, "altKey": false },
         { "key": "#", "code": "Digit3", "mod": true, "shiftKey": true, "altKey": false }
@@ -40,6 +48,8 @@
       "id": "open-research",
       "label": "Open research",
       "display": "⌘?",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "4", "code": "Digit4", "mod": true, "shiftKey": false, "altKey": false },
         { "key": "?", "code": "Digit4", "mod": true, "shiftKey": true, "altKey": false }
@@ -49,6 +59,8 @@
       "id": "open-commands-palette",
       "label": "Open commands palette",
       "display": "⌘⇧P",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "p", "code": "KeyP", "mod": true, "shiftKey": true, "altKey": false }
       ]
@@ -57,6 +69,8 @@
       "id": "find-replace",
       "label": "Find and replace",
       "display": "⌘⇧H",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "h", "code": "KeyH", "mod": true, "shiftKey": true, "altKey": false }
       ]
@@ -65,6 +79,8 @@
       "id": "find-files",
       "label": "Find files",
       "display": "⌘⇧F",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "f", "code": "KeyF", "mod": true, "shiftKey": true, "altKey": false }
       ]
@@ -73,6 +89,8 @@
       "id": "find-in-document",
       "label": "Find in document",
       "display": "⌘F",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "f", "code": "KeyF", "mod": true, "shiftKey": false, "altKey": false }
       ]
@@ -81,6 +99,8 @@
       "id": "close-active-document",
       "label": "Close active document",
       "display": "⌘W",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "w", "code": "KeyW", "mod": true, "shiftKey": false, "altKey": false }
       ]
@@ -89,6 +109,9 @@
       "id": "toggle-focus-mode",
       "label": "Toggle focus mode",
       "display": "⌘.",
+      "scope": "global",
+      "phase": "capture",
+      "firesWhileTyping": true,
       "chords": [
         { "key": ".", "code": "Period", "mod": true, "shiftKey": false, "altKey": false }
       ]
@@ -97,6 +120,8 @@
       "id": "export-document",
       "label": "Export document",
       "display": "⌘⇧E",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "e", "code": "KeyE", "mod": true, "shiftKey": true, "altKey": false }
       ]
@@ -105,6 +130,8 @@
       "id": "open-document-outline",
       "label": "Open document outline",
       "display": "⌘⇧O",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "o", "code": "KeyO", "mod": true, "shiftKey": true, "altKey": false }
       ]
@@ -113,6 +140,8 @@
       "id": "toggle-sidebar",
       "label": "Toggle sidebar",
       "display": "⌘⇧L",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "l", "code": "KeyL", "mod": true, "shiftKey": true, "altKey": false }
       ]
@@ -121,22 +150,18 @@
       "id": "toggle-activity-agent",
       "label": "Toggle activity / agent panel",
       "display": "⌘⇧A",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "a", "code": "KeyA", "mod": true, "shiftKey": true, "altKey": false }
-      ]
-    },
-    {
-      "id": "toggle-chat-panel",
-      "label": "Toggle chat panel",
-      "display": "⌘⇧C",
-      "chords": [
-        { "key": "c", "code": "KeyC", "mod": true, "shiftKey": true, "altKey": false }
       ]
     },
     {
       "id": "toggle-recording",
       "label": "Toggle recording",
       "display": "⌘⇧R",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "r", "code": "KeyR", "mod": true, "shiftKey": true, "altKey": false }
       ]
@@ -145,6 +170,8 @@
       "id": "keyboard-shortcuts",
       "label": "Show keyboard shortcuts",
       "display": "⌘⇧K",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "k", "code": "KeyK", "mod": true, "shiftKey": true, "altKey": false }
       ]
@@ -153,6 +180,8 @@
       "id": "open-settings",
       "label": "Open settings",
       "display": "⌘,",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": ",", "code": "Comma", "mod": true, "shiftKey": false, "altKey": false }
       ]
@@ -161,6 +190,8 @@
       "id": "toggle-theme",
       "label": "Toggle theme",
       "display": "⌘T",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "t", "code": "KeyT", "mod": true, "shiftKey": false, "altKey": false }
       ]
@@ -169,6 +200,9 @@
       "id": "new-note",
       "label": "New note",
       "display": "⌘N",
+      "scope": "global",
+      "phase": "capture",
+      "firesWhileTyping": false,
       "chords": [
         { "key": "n", "code": "KeyN", "mod": true, "shiftKey": false, "altKey": false }
       ]
@@ -177,6 +211,9 @@
       "id": "new-project",
       "label": "New project",
       "display": "⌘⇧N",
+      "scope": "global",
+      "phase": "capture",
+      "firesWhileTyping": false,
       "chords": [
         { "key": "n", "code": "KeyN", "mod": true, "shiftKey": true, "altKey": false }
       ]
@@ -185,6 +222,8 @@
       "id": "open-folder",
       "label": "Open folder",
       "display": "⌘O",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "o", "code": "KeyO", "mod": true, "shiftKey": false, "altKey": false }
       ]
@@ -193,6 +232,8 @@
       "id": "cycle-recent-next",
       "label": "Next recent document",
       "display": "⌃Tab",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "Tab", "code": "Tab", "ctrlKey": true, "metaKey": false, "shiftKey": false, "altKey": false }
       ]
@@ -201,6 +242,8 @@
       "id": "cycle-recent-previous",
       "label": "Previous recent document",
       "display": "⌃⇧Tab",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "Tab", "code": "Tab", "ctrlKey": true, "metaKey": false, "shiftKey": true, "altKey": false }
       ]
@@ -208,23 +251,61 @@
     {
       "id": "copy-document-path",
       "label": "Copy document path",
-      "display": "⌘⌥C",
+      "display": "⌘⌥P",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
-        { "code": "KeyC", "mod": true, "altKey": true, "shiftKey": false }
+        { "code": "KeyP", "mod": true, "altKey": true, "shiftKey": false }
       ]
     },
     {
       "id": "reveal-in-finder",
       "label": "Reveal in Finder",
       "display": "⌘⌥R",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "code": "KeyR", "mod": true, "altKey": true, "shiftKey": false }
+      ]
+    },
+    {
+      "id": "zoom-in",
+      "label": "Increase text zoom",
+      "display": "⌘+",
+      "scope": "global",
+      "firesWhileTyping": true,
+      "chords": [
+        { "key": "+", "mod": true, "altKey": false },
+        { "key": "=", "mod": true, "altKey": false }
+      ]
+    },
+    {
+      "id": "zoom-out",
+      "label": "Decrease text zoom",
+      "display": "⌘-",
+      "scope": "global",
+      "firesWhileTyping": true,
+      "chords": [
+        { "key": "-", "mod": true, "shiftKey": false, "altKey": false }
+      ]
+    },
+    {
+      "id": "zoom-reset",
+      "label": "Reset text zoom",
+      "display": "⌘0",
+      "scope": "global",
+      "firesWhileTyping": true,
+      "chords": [
+        { "key": "0", "mod": true, "shiftKey": false, "altKey": false }
       ]
     },
     {
       "id": "exit-focus-mode",
       "label": "Exit focus mode",
       "display": "Esc",
+      "scope": "global",
+      "phase": "capture",
+      "firesWhileTyping": true,
       "chords": [
         { "key": "Escape", "code": "Escape" }
       ]
@@ -233,6 +314,8 @@
       "id": "open-devtools",
       "label": "Open Tauri devtools",
       "display": "⌘⌥I",
+      "scope": "global",
+      "firesWhileTyping": true,
       "chords": [
         { "code": "KeyI", "mod": true, "altKey": true, "shiftKey": false }
       ]

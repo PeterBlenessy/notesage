@@ -91,7 +91,7 @@ describe('StatusTray — popover anchors to click coordinates', () => {
   });
 
   it('clicking at (clientX, clientY) makes anchor.getBoundingClientRect return that point', () => {
-    renderWithProviders(<StatusBar editor={null} variant="quiet" />);
+    renderWithProviders(<StatusBar editor={null} />);
     const strip = document.querySelector('[data-quiet-status]') as HTMLElement;
     expect(strip).toBeTruthy();
 
@@ -113,7 +113,7 @@ describe('StatusTray — popover anchors to click coordinates', () => {
   });
 
   it('a second click at a different position updates the anchor for the next open', () => {
-    renderWithProviders(<StatusBar editor={null} variant="quiet" />);
+    renderWithProviders(<StatusBar editor={null} />);
     const strip = document.querySelector('[data-quiet-status]') as HTMLElement;
 
     act(() => {
@@ -135,7 +135,7 @@ describe('StatusTray — popover anchors to click coordinates', () => {
   });
 
   it('keyboard activation (Enter) falls back to the strip rect, not the stale click rect', () => {
-    renderWithProviders(<StatusBar editor={null} variant="quiet" />);
+    renderWithProviders(<StatusBar editor={null} />);
     const strip = document.querySelector('[data-quiet-status]') as HTMLElement;
 
     // Stub the strip's own rect so we can tell the fallback branch was

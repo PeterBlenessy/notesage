@@ -334,7 +334,8 @@
     "supports_thinking": false,
     "supports_vision": false,
     "multilingual": false,
-    "recommended_for": ["32gb"]
+    "recommended_for": ["32gb"],
+    "draft_model_id": "qwen2.5-coder-1.5b"
   },
   {
     "id": "deepseek-r1-distill-7b",
@@ -360,7 +361,8 @@
     "thinking_tags": { "open": "<think>", "close": "</think>" },
     "supports_vision": false,
     "multilingual": false,
-    "recommended_for": ["32gb"]
+    "recommended_for": ["32gb"],
+    "draft_model_id": "deepseek-r1-distill-1.5b"
   },
   {
     "id": "qwen3-8b",
@@ -386,7 +388,8 @@
     "thinking_tags": { "open": "<think>", "close": "</think>" },
     "supports_vision": false,
     "multilingual": true,
-    "recommended_for": ["32gb"]
+    "recommended_for": ["32gb"],
+    "draft_model_id": "qwen3-1.7b"
   },
   {
     "id": "llama-3.1-8b",
@@ -466,7 +469,8 @@
     "thinking_tags": { "open": "<think>", "close": "</think>" },
     "supports_vision": false,
     "multilingual": false,
-    "recommended_for": ["64gb"]
+    "recommended_for": ["64gb"],
+    "draft_model_id": "deepseek-r1-distill-1.5b"
   },
   {
     "id": "qwen3-14b",
@@ -492,6 +496,7 @@
     "thinking_tags": { "open": "<think>", "close": "</think>" },
     "supports_vision": false,
     "multilingual": true,
-    "recommended_for": ["64gb"]
+    "recommended_for": ["64gb"],
+    "draft_model_id": "qwen3-1.7b"
   }
 ]

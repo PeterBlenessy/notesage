@@ -6,16 +6,37 @@ import {
 import { toast } from "sonner";
 import { useSettingsStore } from "@/stores/settings-store";
 
-type NotificationType = "agent_completion" | "agent_error" | "external_change";
+type NotificationType =
+  | "agent_completion"
+  | "agent_error"
+  | "external_change"
+  | "automation_failure";
 
 const TYPE_TO_SETTING: Record<NotificationType, keyof Pick<
   ReturnType<typeof useSettingsStore.getState>,
-  "notifyAgentCompletion" | "notifyExternalChanges"
+  "notifyAgentCompletion" | "notifyExternalChanges" | "notifyAutomationFailure"
 >> = {
   agent_completion: "notifyAgentCompletion",
   agent_error: "notifyAgentCompletion",
   external_change: "notifyExternalChanges",
+  automation_failure: "notifyAutomationFailure",
 };
+
+/** Permission check + send, with silent degradation. Setting-agnostic. */
+async function deliverNotification(title: string, body: string): Promise<void> {
+  try {
+    let granted = await isPermissionGranted();
+    if (!granted) {
+      const result = await requestPermission();
+      granted = result === "granted";
+    }
+    if (!granted) return;
+
+    sendNotification({ title, body });
+  } catch {
+    // Notification not supported or permission denied — silent degradation
+  }
+}
 
 /**
  * Send a desktop notification if the corresponding setting is enabled.
@@ -27,18 +48,48 @@ export async function notify(
   body: string
 ): Promise<void> {
   const settingKey = TYPE_TO_SETTING[type];
+  if (!useSettingsStore.getState()[settingKey]) return;
+  await deliverNotification(title, body);
+}
+
+/**
+ * A user-authored automation `notify` step — always fires (subject to OS
+ * permission), since it's explicit user intent, not a gated diagnostic.
+ */
+export async function notifyAutomation(title: string, body: string): Promise<void> {
+  await deliverNotification(title, body);
+}
+
+/**
+ * Desktop notification for a BACKGROUNDED chat session (PRD
+ * `2026-06-14-command-bar-session-multitasking`, task #15) — a session the user
+ * isn't currently watching that needs a permission decision or has completed.
+ * Gated on the matching setting (`notifyPermissionRequest` /
+ * `notifyAgentCompletion`). The `conversationId` rides along in `extra` so the
+ * notification-click handler (registered in `useSessionManager`) can foreground
+ * the right session.
+ */
+export async function notifyBackgroundSession(
+  kind: "permission" | "completion",
+  title: string,
+  body: string,
+  conversationId: string,
+): Promise<void> {
   const settings = useSettingsStore.getState();
-  if (!settings[settingKey]) return;
+  const enabled =
+    kind === "permission"
+      ? settings.notifyPermissionRequest
+      : settings.notifyAgentCompletion;
+  if (!enabled) return;
 
   try {
     let granted = await isPermissionGranted();
     if (!granted) {
-      const result = await requestPermission();
-      granted = result === "granted";
+      granted = (await requestPermission()) === "granted";
     }
     if (!granted) return;
 
-    sendNotification({ title, body });
+    sendNotification({ title, body, extra: { conversationId } });
   } catch {
     // Notification not supported or permission denied — silent degradation
   }
@@ -106,6 +157,38 @@ export function toastExternalReload(filePath: string): void {
   toast.info(`${fileName} reloaded from disk`, {
     id: `external-change:${filePath}`,
     duration: 3000,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Telemetry first-run / channel-switch notice
+// ---------------------------------------------------------------------------
+
+export interface TelemetryNoticeToastOptions {
+  /** Invoked when the user clicks "Open settings". */
+  onOpenSettings: () => void;
+}
+
+/**
+ * Non-blocking notice shown once when the app starts on (or switches to) the
+ * alpha channel, telling the user telemetry is on by default and how to opt out.
+ * Uses a stable id so a startup notice and a channel-switch toast collapse into
+ * one rather than stacking.
+ */
+export function toastTelemetryNotice(options: TelemetryNoticeToastOptions): void {
+  // Short title + secondary description reads better in a banner than the full
+  // single-sentence disclosure; the elaborating clause goes in `description`.
+  toast.info("Alpha builds share anonymous usage + crash reports by default.", {
+    id: "telemetry-notice",
+    // Privacy-relevant notice with an action — give the user time to read it,
+    // and a close button so it doesn't vanish before they decide.
+    duration: 15000,
+    closeButton: true,
+    description: "No document content, file contents, or AI prompts are ever sent.",
+    action: {
+      label: "Open settings",
+      onClick: options.onOpenSettings,
+    },
   });
 }
 

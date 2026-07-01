@@ -6,6 +6,7 @@ import { ProviderLogo } from '@/components/ProviderLogo';
 import { BranchSwitcher } from './BranchSwitcher';
 import { ReconnectCard } from './ReconnectCard';
 import { useChatStore } from '@/stores/chat-store';
+import { useForegroundLoading } from '@/hooks/useSessionManager';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -245,10 +246,20 @@ function AttachmentThumbnails({ message }: { message: ChatMessageType }) {
               <button
                 className="block rounded-md overflow-hidden border border-border hover:border-foreground/30 transition-colors duration-150 cursor-pointer"
                 onClick={() => {
+                  // Build the preview window via DOM APIs rather than a
+                  // string-interpolated document.write — `mimeType`/`data` are
+                  // app-controlled today, but constructing the element avoids
+                  // any attribute-context breakout if that ever changes
+                  // (security audit LOW).
                   const win = window.open('', '_blank');
                   if (win) {
-                    win.document.write(`<img src="data:${att.mimeType};base64,${att.data}" style="max-width:100%;height:auto" />`);
                     win.document.title = att.name ?? 'Image';
+                    const img = win.document.createElement('img');
+                    img.src = `data:${att.mimeType};base64,${att.data}`;
+                    img.alt = att.name ?? 'Image';
+                    img.style.maxWidth = '100%';
+                    img.style.height = 'auto';
+                    win.document.body.appendChild(img);
                   }
                 }}
                 aria-label={att.name ?? 'View attached image full size'}
@@ -633,7 +644,9 @@ interface ChatMessageProps {
 
 export const ChatMessage = memo(function ChatMessage({ message, isLast = false, branchCount, onBranch, onResend, onEdit, onRetry }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
-  const isLoading = useChatStore((s) => s.isLoading);
+  // Foreground-conversation loading (task #4) — the message renders inside the
+  // watched conversation, so its streaming affordances reflect that run.
+  const isLoading = useForegroundLoading();
   const deleteMessage = useChatStore((s) => s.deleteMessage);
 
   // Auto-expand thinking while streaming, collapse after completion. User toggle overrides.
@@ -735,7 +748,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isLast = false, 
               <div className="mt-1 max-h-60 overflow-y-auto thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5 italic">
                 <MarkdownContent content={message.thinking!} className="text-xs text-muted-foreground" />
                 {isActivelyStreaming && isThinkingOnly && (
-                  <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
+                  <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse motion-reduce:animate-none bg-muted-foreground" />
                 )}
               </div>
             )}
@@ -761,15 +774,15 @@ export const ChatMessage = memo(function ChatMessage({ message, isLast = false, 
           <SegmentRenderer segments={message.segments!} isActivelyStreaming={isActivelyStreaming} />
         ) : isStreaming ? (
           <div className="flex items-center gap-1.5 py-1">
-            <div className="h-1.5 w-1.5 rounded-full animate-pulse bg-muted-foreground" />
-            <div className="h-1.5 w-1.5 rounded-full animate-pulse [animation-delay:150ms] bg-muted-foreground" />
-            <div className="h-1.5 w-1.5 rounded-full animate-pulse [animation-delay:300ms] bg-muted-foreground" />
+            <div className="h-1.5 w-1.5 rounded-full animate-pulse motion-reduce:animate-none bg-muted-foreground" />
+            <div className="h-1.5 w-1.5 rounded-full animate-pulse motion-reduce:animate-none [animation-delay:150ms] bg-muted-foreground" />
+            <div className="h-1.5 w-1.5 rounded-full animate-pulse motion-reduce:animate-none [animation-delay:300ms] bg-muted-foreground" />
           </div>
         ) : (
           <div>
             <MarkdownContent content={message.content} className="text-sm" />
             {isActivelyStreaming && (
-              <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse bg-muted-foreground" />
+              <span className="inline-block w-1.5 h-3.5 ml-0.5 rounded-sm animate-pulse motion-reduce:animate-none bg-muted-foreground" />
             )}
           </div>
         )}

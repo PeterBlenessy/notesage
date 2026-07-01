@@ -1,0 +1,373 @@
+name: AW — Alpha Cut (periodic)
+
+# Cuts a new alpha tag when conditions are met:
+#   - At least one non-release PR has merged to main since the last alpha tag.
+#     Tier is NOT considered: the alpha is just `main` HEAD, so it ships every
+#     merged PR regardless of label. Deciding what may merge (tier A/B may
+#     merge when green; tier C waits) is a *pipeline* concern, upstream of and
+#     separate from this cutter.
+#   - main's CURRENT Real-E2E state is green: the most recent completed Tests
+#     run on main (within the last 24h) has a green `Real Tauri E2E Tests`
+#     job. A main that was red but has since been FIXED (latest run green)
+#     cuts fine; a currently-red / flaky-red main is refused. (The release PR
+#     re-runs Real-E2E as the real merge gate; this is the early filter.)
+#
+# When there's nothing to do (no new PRs, or main not green) the run is a
+# clean no-op success — it does NOT fail, so routine cron ticks don't email.
+#
+# Cadence: every 6 hours via cron. Also dispatchable manually.
+#
+# When all conditions hold, this workflow:
+#   1. Computes the next alpha version (bumps the prerelease counter).
+#   2. Generates a new history file at `docs/history/NNN-release-vX.Y.Z-alpha.M.md`
+#      from the PRs merged since the previous alpha tag.
+#   3. Bumps `package.json` and regenerates `public/changelog-alpha.json`.
+#   4. Commits + tags + pushes. The existing `release.yml` workflow picks
+#      up the new tag and builds/publishes the alpha.
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'   # every 6 hours
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry-run (compute next version + history file, do not commit/tag)"
+        required: false
+        default: "false"
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write          # commit + tag + push
+  pull-requests: write     # open auto-merge PR for the release commit
+
+concurrency:
+  group: aw-alpha-cut-${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || 'cut' }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    # Cron + manual dispatch only. The pull_request:closed event triggers tag-after-merge below.
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    outputs:
+      should_cut: ${{ steps.check.outputs.should_cut }}
+      next_version: ${{ steps.check.outputs.next_version }}
+      next_history_number: ${{ steps.check.outputs.next_history_number }}
+      pr_numbers: ${{ steps.check.outputs.pr_numbers }}
+      previous_tag: ${{ steps.check.outputs.previous_tag }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0    # need full history for `git describe` and PR enumeration
+
+      - name: Determine whether to cut a new alpha
+        id: check
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -euo pipefail
+
+          # 1. Last alpha tag.
+          previous_tag=$(git tag --list 'v*-alpha.*' --sort=-v:refname | head -1 || echo "")
+          if [[ -z "$previous_tag" ]]; then
+            echo "No previous alpha tag found — would need to bootstrap. Skipping."
+            echo "should_cut=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
+          echo "Previous alpha: $previous_tag"
+
+          # 2. Gate: did ANY non-release PR merge since the last alpha?
+          #
+          # The alpha build is just `main` HEAD, so it already contains every
+          # merged PR regardless of tier — so the only question is "has main
+          # moved since the last alpha?". We enumerate merged PR numbers
+          # straight from the git range (the same source the history step
+          # uses), so nothing is missed and there's no tier-search / label-lag
+          # race to get wrong.
+          #
+          # Release PRs ("chore: release v*" / auto-cut) are excluded — they
+          # are infra artifacts of a previous cut. Without this, a cut's own
+          # release PR would re-trigger a cut forever.
+          mapfile -t MERGED_PRS < <(
+            git log "${previous_tag}..HEAD" --format='%s %b' \
+              | grep -oE '#[0-9]+' | tr -d '#' | sort -un
+          )
+
+          pr_numbers=""
+          if [ ${#MERGED_PRS[@]} -gt 0 ]; then
+            for pr in "${MERGED_PRS[@]}"; do
+              [ -z "$pr" ] && continue
+              title=$(gh pr view "$pr" --json title --jq .title 2>/dev/null) || continue
+              case "$title" in
+                chore*release*|*auto-cut*) continue;;
+              esac
+              pr_numbers="${pr_numbers:+$pr_numbers,}$pr"
+            done
+          fi
+
+          if [[ -z "$pr_numbers" ]]; then
+            echo "No new PRs merged since $previous_tag — nothing to ship."
+            echo "should_cut=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "PRs to ship: $pr_numbers"
+          echo "pr_numbers=$pr_numbers" >> "$GITHUB_OUTPUT"
+
+          # 3. Is main's CURRENT Real-E2E state green?
+          #
+          # Gate on the *latest* completed Tests run on main (within a 24h
+          # freshness window), NOT "any green run in the window". A main that
+          # was red but has since been FIXED (latest run green) cuts fine; a
+          # currently-red / flaky-red main is refused. The release PR re-runs
+          # Real-E2E as the real merge gate, so this is just the early filter.
+          one_day_ago=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
+            || date -u -v-1d +%Y-%m-%dT%H:%M:%SZ)
+          latest_run=$(gh api "repos/${{ github.repository }}/actions/workflows/test.yml/runs?branch=main&status=completed&per_page=20" \
+            --jq '[.workflow_runs[] | select(.updated_at > "'"$one_day_ago"'")] | sort_by(.updated_at) | last | .id // empty')
+          if [[ -z "$latest_run" ]]; then
+            echo "No completed Tests run on main within 24h — refusing to cut (stale)."
+            echo "should_cut=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          real_conclusion=$(gh api "repos/${{ github.repository }}/actions/runs/$latest_run/jobs" \
+            --jq '.jobs[] | select(.name == "Real Tauri E2E Tests") | .conclusion' || echo "")
+          if [[ "$real_conclusion" != "success" ]]; then
+            echo "Latest Real-E2E on main (run $latest_run) is '${real_conclusion:-missing}', not green — refusing to cut."
+            echo "should_cut=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "Latest Real-E2E on main is green (run $latest_run)."
+
+          # 4. Compute next alpha version.
+          # previous_tag format: vX.Y.Z-alpha.M
+          version=${previous_tag#v}
+          base=${version%-alpha.*}
+          counter=${version#*-alpha.}
+
+          # If the stable tag for this base already exists (e.g. v0.45.0 is
+          # released but the last alpha was v0.45.0-alpha.5), bump the minor
+          # version and start a new alpha series. Alphas are always for the
+          # next feature release, never for patch releases.
+          if git tag --list "v${base}" | grep -q .; then
+            IFS='.' read -r major minor patch <<< "$base"
+            base="${major}.$(( minor + 1 )).0"
+            next_version="${base}-alpha.1"
+            echo "Stable v${version%-alpha.*} exists — starting new series: v$next_version"
+          else
+            next_counter=$(( counter + 1 ))
+            next_version="${base}-alpha.${next_counter}"
+          fi
+          echo "Next alpha: v$next_version"
+          echo "next_version=$next_version" >> "$GITHUB_OUTPUT"
+
+          # 5. Next history file number.
+          last_num=$(ls docs/history/ | grep -oE '^[0-9]+' | sort -n | tail -1)
+          next_num=$(printf "%03d" $((10#$last_num + 1)))
+          echo "Next history file: $next_num-release-v$next_version.md"
+          echo "next_history_number=$next_num" >> "$GITHUB_OUTPUT"
+
+          echo "should_cut=true" >> "$GITHUB_OUTPUT"
+
+  cut:
+    needs: preflight
+    if: needs.preflight.outputs.should_cut == 'true' && inputs.dry_run != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.WORKFLOW_PAT }}
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v5
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump package.json
+        env:
+          NEXT_VERSION: ${{ needs.preflight.outputs.next_version }}
+        run: |
+          set -euo pipefail
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = process.env.NEXT_VERSION;
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+          grep '"version"' package.json | head -1
+
+      - name: Generate history file from merged PRs
+        env:
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+          PREVIOUS_TAG: ${{ needs.preflight.outputs.previous_tag }}
+          NEXT_VERSION: ${{ needs.preflight.outputs.next_version }}
+          NEXT_NUMBER: ${{ needs.preflight.outputs.next_history_number }}
+        run: |
+          set -euo pipefail
+
+          DATE=$(date -u +%Y-%m-%d)
+          FILE="docs/history/${NEXT_NUMBER}-release-v${NEXT_VERSION}.md"
+
+          # Enumerate EVERY PR merged since the previous tag — squash commits
+          # ("title (#N)") and merge commits ("Merge pull request #N") alike.
+          # The old approach used a tier-label-filtered `gh pr list`, which
+          # silently dropped untiered PRs (alpha.14 lost the whole MCP overhaul).
+          # Sourcing from the git range guarantees nothing is missed.
+          mapfile -t ALL_PRS < <(
+            git log "${PREVIOUS_TAG}..HEAD" --format='%s %b' \
+              | grep -oE '#[0-9]+' | tr -d '#' | sort -un
+          )
+
+          feat=(); fix=(); imp=(); hood=()
+          for pr in "${ALL_PRS[@]}"; do
+            title=$(gh pr view "$pr" --json title --jq .title 2>/dev/null) || continue
+            [ -z "$title" ] && continue
+            # Skip the release PR itself.
+            case "$title" in chore*release*|*auto-cut*) continue;; esac
+            line="- ${title} (#${pr})"
+            # Classify by conventional-commit type so user-facing work lands in
+            # the right section instead of all being dumped "under the hood".
+            case "$title" in
+              feat*)            feat+=("$line");;
+              fix*)             fix+=("$line");;
+              perf*|refactor*)  imp+=("$line");;
+              *)                hood+=("$line");;
+            esac
+          done
+
+          {
+            echo "# Release v${NEXT_VERSION}"
+            echo ""
+            echo "**Date:** ${DATE}"
+            echo "**Previous version:** ${PREVIOUS_TAG#v}"
+            echo "**Channel:** Alpha"
+            echo ""
+            echo "Auto-cut by \`aw-alpha-cut\`. Sections below are auto-classified from merged PRs; refine the prose before promoting to stable."
+            echo ""
+            echo "## Changes"
+            echo ""
+            if [ ${#feat[@]} -eq 0 ] && [ ${#fix[@]} -eq 0 ] && [ ${#imp[@]} -eq 0 ]; then
+              echo "_No user-visible changes._"
+              echo ""
+            else
+              if [ ${#feat[@]} -gt 0 ]; then echo "### Features"; printf '%s\n' "${feat[@]}"; echo ""; fi
+              if [ ${#fix[@]}  -gt 0 ]; then echo "### Fixes";    printf '%s\n' "${fix[@]}";  echo ""; fi
+              if [ ${#imp[@]}  -gt 0 ]; then echo "### Improvements"; printf '%s\n' "${imp[@]}"; echo ""; fi
+            fi
+            echo "## Under the hood"
+            echo ""
+            echo "Auto-generated from merged PRs + commits since \`${PREVIOUS_TAG}\`. Alpha builds list commit-level detail for technical users."
+            echo ""
+            if [ ${#hood[@]} -gt 0 ]; then printf '%s\n' "${hood[@]}"; fi
+            # Commit-level detail (alpha channel targets technical users). These
+            # `- ` lines are also surfaced in the in-app changelog's "Under the
+            # hood" list by scripts/generate-changelog.ts.
+            git log "${PREVIOUS_TAG}..HEAD" --no-merges --format='- %s' \
+              | grep -viE 'chore: release|auto-cut|Generate history|Regenerate changelog|Update history README' \
+              || true
+          } > "$FILE"
+
+          cat "$FILE"
+
+      - name: Update history README
+        env:
+          NEXT_VERSION: ${{ needs.preflight.outputs.next_version }}
+          NEXT_NUMBER: ${{ needs.preflight.outputs.next_history_number }}
+        run: |
+          set -euo pipefail
+          line="| ${NEXT_NUMBER} | [Release v${NEXT_VERSION}](${NEXT_NUMBER}-release-v${NEXT_VERSION}.md) | Auto-cut alpha by \`aw-alpha-cut\`. See merged PRs for details. |"
+          echo "$line" >> docs/history/README.md
+
+      - name: Regenerate changelog
+        run: pnpm install --frozen-lockfile && pnpm generate-changelog
+        env:
+          # pnpm may try to read tarballs; ensure we have access
+          NPM_CONFIG_USERCONFIG: /dev/null
+
+      - name: Commit on release branch and open auto-merge PR
+        env:
+          NEXT_VERSION: ${{ needs.preflight.outputs.next_version }}
+          PR_NUMBERS: ${{ needs.preflight.outputs.pr_numbers }}
+          GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
+        run: |
+          set -euo pipefail
+
+          # Branch protection on main requires 4 status checks to have passed
+          # on the commit being pushed, so we can't push directly. Open an
+          # auto-merge PR instead — the PR runs the same Tests workflow, and
+          # auto-merge fires once the 4 checks are green. The tag-after-merge
+          # job (in this same workflow file) tags + pushes the tag once the
+          # PR's merge commit lands on main.
+          BRANCH="release/v${NEXT_VERSION}"
+          git checkout -b "$BRANCH"
+          git add package.json docs/history/ public/
+          git commit -m "chore: release v${NEXT_VERSION} (auto-cut by aw-alpha-cut)"
+          git push -u origin "$BRANCH"
+
+          # PR body: one bullet per Tier-A/B PR that earned this alpha cut.
+          {
+            echo "Auto-cut by \`aw-alpha-cut\`. The history file at \`docs/history/${{ needs.preflight.outputs.next_history_number }}-release-v${NEXT_VERSION}.md\` lists the merged PRs."
+            echo ""
+            echo "## PRs included"
+            echo ""
+            IFS=',' read -ra PRS <<< "$PR_NUMBERS"
+            for pr in "${PRS[@]}"; do
+              echo "- #${pr}"
+            done
+            echo ""
+            echo "Auto-merge enabled. Once the 4 required status checks pass, this merges to main, and the \`tag-after-merge\` job in \`aw-alpha-cut.yml\` tags + pushes \`v${NEXT_VERSION}\`. \`release.yml\` then builds and publishes."
+          } > /tmp/pr-body.md
+
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore: release v${NEXT_VERSION}" \
+            --body-file /tmp/pr-body.md \
+            --label "tier:A"
+
+          gh pr merge "$BRANCH" --auto --merge
+
+          echo "Opened auto-merge PR for v${NEXT_VERSION} on branch $BRANCH."
+
+  tag-after-merge:
+    # Fires when a release/v* PR opened by the cut job merges to main.
+    # Tags the merge commit and pushes the tag, which triggers release.yml.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      startsWith(github.event.pull_request.head.ref, 'release/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.WORKFLOW_PAT }}
+          ref: main
+          fetch-depth: 1
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Tag merge commit and push
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          # Branch was `release/v${NEXT_VERSION}` — strip the prefix to get the tag.
+          TAG="${BRANCH#release/}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Tagged and pushed $TAG. release.yml will pick it up and publish."

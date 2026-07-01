@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { invoke } from '@tauri-apps/api/core';
 import { log } from '@/lib/logger';
+import { track, providerKind } from '@/lib/telemetry';
 
 import type {
   Connection,
@@ -17,14 +18,20 @@ import { getCapabilities } from '@/lib/ai/connections';
 interface ConnectionsStore {
   connections: Connection[];
 
-  addConnection: (conn: {
-    provider: ConnectionProvider;
-    authMethod: AuthMethod;
-    status: ConnectionStatus;
-    label: string;
-    credentials: ConnectionCredentials;
-    config?: ConnectionConfig;
-  }) => string; // returns ID
+  addConnection: (
+    conn: {
+      provider: ConnectionProvider;
+      authMethod: AuthMethod;
+      status: ConnectionStatus;
+      label: string;
+      credentials: ConnectionCredentials;
+      config?: ConnectionConfig;
+    },
+    /** `silent: true` suppresses the `connection_added` telemetry event — used
+     * by the one-time v1→v2 migration so ported connections aren't counted as
+     * new user actions. */
+    opts?: { silent?: boolean },
+  ) => string; // returns ID
   updateConnection: (id: string, updates: Partial<Omit<Connection, 'id' | 'createdAt'>>) => void;
   removeConnection: (id: string) => void;
   getConnection: (id: string) => Connection | undefined;
@@ -32,12 +39,39 @@ interface ConnectionsStore {
   getConnectionsByCapability: (capability: AICapability) => Connection[];
 }
 
+/** Write each env-var value to the OS keychain (`notesage:<id>:env:<KEY>`) and
+ *  record the var names on the credentials. Values are kept in memory for the
+ *  session; `partialize` strips them from the persisted shape. */
+function storeEnvVarsInKeychain(
+  id: string,
+  credentials: Extract<ConnectionCredentials, { type: 'agent_managed' }>,
+): ConnectionCredentials {
+  const envVars = credentials.envVars ?? {};
+  for (const [key, value] of Object.entries(envVars)) {
+    if (!value) continue;
+    invoke('store_credential', { service: `notesage:${id}:env:${key}`, key: value })
+      .catch((e) => log.error('connections', 'Failed to store env credential in keychain', { id, key, error: String(e) }));
+  }
+  return { ...credentials, envVarKeys: Object.keys(envVars) };
+}
+
+/** Persisted shape of a connection: secrets never reach localStorage.
+ *  Tolerates partial shapes (test fixtures, mid-migration state) — only a
+ *  well-formed agent_managed credential block is rewritten. */
+function stripSecretsForPersist(c: Connection): Connection {
+  if (c.credentials?.type === 'agent_managed' && c.credentials.envVars) {
+    const { envVars, ...rest } = c.credentials;
+    return { ...c, credentials: { ...rest, envVarKeys: rest.envVarKeys ?? Object.keys(envVars) } };
+  }
+  return c;
+}
+
 export const useConnectionsStore = create<ConnectionsStore>()(
   persist(
     (set, get) => ({
       connections: [],
 
-      addConnection: (conn) => {
+      addConnection: (conn, opts) => {
         const id = `conn-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         const capabilities = getCapabilities(conn.provider, conn.authMethod);
 
@@ -48,6 +82,15 @@ export const useConnectionsStore = create<ConnectionsStore>()(
           credentials = { type: 'api_key', credentialStored: true };
           invoke('store_credential', { service: `notesage:${id}`, key })
             .catch((e) => log.error('connections', 'Failed to store credential in keychain', { id, error: String(e) }));
+        }
+        // For agent_managed credentials with env vars (ACP EnvVar auth), store each
+        // value in the keychain. The values stay on the in-memory connection for the
+        // current session (avoids racing the async keychain write at first spawn) but
+        // are stripped from the persisted shape by `partialize` — only the var NAMES
+        // (`envVarKeys`) reach localStorage. Spawns after a restart resolve values
+        // from the keychain via `connection_id` + key name in `acp_agent_spawn`.
+        if (credentials.type === 'agent_managed' && credentials.envVars && Object.keys(credentials.envVars).length > 0) {
+          credentials = storeEnvVarsInKeychain(id, credentials);
         }
 
         const connection: Connection = {
@@ -62,13 +105,23 @@ export const useConnectionsStore = create<ConnectionsStore>()(
           connections: [...state.connections, connection],
         }));
         log.info('connections', 'Connection added', { id, provider: conn.provider, authMethod: conn.authMethod, capabilities });
+        if (!opts?.silent) {
+          track('connection_added', { provider_kind: providerKind(conn.provider, conn.authMethod) });
+        }
         return id;
       },
 
       updateConnection: (id, updates) => {
+        // Re-auth flows may hand us fresh env-var values — route them through the
+        // keychain exactly like addConnection does.
+        let patched = updates;
+        const creds = updates.credentials;
+        if (creds && creds.type === 'agent_managed' && creds.envVars && Object.keys(creds.envVars).length > 0) {
+          patched = { ...updates, credentials: storeEnvVarsInKeychain(id, creds) };
+        }
         set((state) => ({
           connections: state.connections.map((c) =>
-            c.id === id ? { ...c, ...updates } : c
+            c.id === id ? { ...c, ...patched } : c
           ),
         }));
         log.debug('connections', 'Connection updated', { id, fields: Object.keys(updates) });
@@ -79,9 +132,16 @@ export const useConnectionsStore = create<ConnectionsStore>()(
         set((state) => ({
           connections: state.connections.filter((c) => c.id !== id),
         }));
-        // Clean up keychain entry
+        // Clean up keychain entries (api_key + any env-var secrets)
         invoke('delete_credential', { service: `notesage:${id}` })
           .catch((e) => log.error('connections', 'Failed to delete credential from keychain', { id, error: String(e) }));
+        if (conn?.credentials?.type === 'agent_managed') {
+          const keys = conn.credentials.envVarKeys ?? Object.keys(conn.credentials.envVars ?? {});
+          for (const key of keys) {
+            invoke('delete_credential', { service: `notesage:${id}:env:${key}` })
+              .catch((e) => log.error('connections', 'Failed to delete env credential from keychain', { id, key, error: String(e) }));
+          }
+        }
         log.info('connections', 'Connection removed', { id, provider: conn?.provider });
       },
 
@@ -96,8 +156,29 @@ export const useConnectionsStore = create<ConnectionsStore>()(
     }),
     {
       name: 'notesage-connections',
+      partialize: (state) => ({
+        ...state,
+        connections: state.connections.map(stripSecretsForPersist),
+      }),
       onRehydrateStorage: () => (state) => {
         if (!state) return;
+
+        // Migrate legacy plaintext env vars (persisted before the keychain-backed
+        // EnvVar flow) into the OS keychain. The values stay on the in-memory
+        // connection for this session; the next persist strips them via partialize.
+        const needsEnvMigration = state.connections.some(
+          (c) => c.credentials?.type === 'agent_managed' && c.credentials.envVars && Object.keys(c.credentials.envVars).length > 0
+        );
+        if (needsEnvMigration) {
+          const migrated = state.connections.map((c) => {
+            if (c.credentials?.type === 'agent_managed' && c.credentials.envVars && Object.keys(c.credentials.envVars).length > 0) {
+              return { ...c, credentials: storeEnvVarsInKeychain(c.id, c.credentials) };
+            }
+            return c;
+          });
+          useConnectionsStore.setState({ connections: migrated });
+          log.info('connections', 'Migrated agent env vars from localStorage to keychain');
+        }
         // Validate openai_compatible connections have required config.baseUrl
         let changed = false;
         const validated = state.connections.map((c) => {

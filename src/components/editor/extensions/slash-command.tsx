@@ -4,6 +4,7 @@ import type { EditorState } from "@tiptap/pm/state";
 import type { DecorationSet } from "@tiptap/pm/view";
 import { ReactRenderer } from "@tiptap/react";
 import Suggestion from "@tiptap/suggestion";
+import { track } from "@/lib/telemetry";
 import type { SuggestionProps, SuggestionKeyDownProps } from "@tiptap/suggestion";
 import tippy, { type Instance } from "tippy.js";
 import {
@@ -157,6 +158,7 @@ const commands: CommandItem[] = [
     icon: CodeSquare,
     command: ({ editor, range }) => {
       editor.chain().focus().deleteRange(range).toggleCodeBlock().run();
+      track("block_inserted", { kind: "code_block" });
     },
   },
   {

@@ -46,7 +46,9 @@ import { Extension, type Editor } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { getPasteRules } from "@/lib/editor/paste-rules";
 import { saveImageSidecar, mimeToExt } from "@/lib/image-sidecar";
+import { track } from "@/lib/telemetry";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { readText } from "@tauri-apps/plugin-clipboard-manager";
 
 /** Image MIME types that the handler will intercept from the clipboard. */
 const SUPPORTED_IMAGE_TYPES = new Set([
@@ -133,6 +135,7 @@ async function handleImageFile(
 
   // Insert via the editor command so ProseMirror history works correctly.
   editor.chain().focus().setImage({ src: filePath, alt: altText }).run();
+  track("block_inserted", { kind: "image" });
 
   // Preload the image via the asset protocol so the browser caches it.
   void convertFileSrc(filePath);
@@ -185,12 +188,14 @@ export const PasteHandlerPluginKey = new PluginKey("paste-handler");
  * without simulating the full editor-keyboard pipeline.
  */
 export async function pasteAsPlainText(editor: Editor): Promise<boolean> {
-  if (typeof navigator === "undefined" || !navigator.clipboard?.readText) {
-    return false;
-  }
+  // Read via the Tauri clipboard-manager plugin (Rust-side) rather than
+  // `navigator.clipboard.readText()`. A programmatic web clipboard read shows
+  // WKWebView's native "paste" permission affordance — the menu the user saw.
+  // The plugin reads the OS clipboard directly with no WebKit prompt, so
+  // ⌘⇧V pastes immediately.
   let text: string;
   try {
-    text = await navigator.clipboard.readText();
+    text = (await readText()) ?? "";
   } catch {
     return false;
   }

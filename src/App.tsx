@@ -1,32 +1,28 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { CommandPalette } from "@/components/CommandPalette";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
-import type { SettingsTab } from "@/components/settings/SettingsDialog";
-import { NewNoteDialog } from "@/components/NewNoteDialog";
-import { NewProjectDialog } from "@/components/NewProjectDialog";
+import { emitAgentOrbEvent } from "@/lib/agent-orb-events";
 import { UpdateDialog } from "@/components/UpdateDialog";
-import { Layout } from "@/components/Layout";
+import { CalibrationShareDialog } from "@/components/settings/CalibrationShareDialog";
+import { QuietLayout } from "@/components/QuietLayout";
+import { McpDeepLinkInstaller } from "@/components/settings/McpDeepLinkInstaller";
+import { MissedRunsDialog } from "@/components/automations/MissedRunsDialog";
+import { LocalAgentSetupDialog } from "@/components/settings/LocalAgentSetupDialog";
 
 // Lazy-load dialogs — these are hidden by default and only shown on demand.
-const SettingsDialog = lazy(() => import("@/components/settings/SettingsDialog").then(m => ({ default: m.SettingsDialog })));
-// Quiet Composer variant — mounted when `uiPreview === 'quiet-composer'`.
-// Same `open` / `initialTab` contract; wraps the v2 panels in the new
-// `SettingsShell` chrome (Mockup E).
 const SettingsDialogV2 = lazy(() => import("@/components/settings/v2/SettingsDialogV2").then(m => ({ default: m.SettingsDialogV2 })));
 const ProjectSettingsDialog = lazy(() => import("@/components/settings/ProjectSettingsDialog").then(m => ({ default: m.ProjectSettingsDialog })));
-const KeyboardShortcutsDialog = lazy(() => import("@/components/KeyboardShortcutsDialog").then(m => ({ default: m.KeyboardShortcutsDialog })));
-// Quiet Composer variant (#137) — same catalogue, v2 visual style.
 const KeyboardShortcutsDialogV2 = lazy(() => import("@/components/KeyboardShortcutsDialogV2").then(m => ({ default: m.KeyboardShortcutsDialogV2 })));
 const ActionsDialog = lazy(() => import("@/components/actions/ActionsDialog").then(m => ({ default: m.ActionsDialog })));
-// #128 — Sidebar-driven commit dialog. Same `CommitDialog` component
-// used by the legacy `ProjectItem`; lazy-loaded here so the classic
-// path is unaffected.
+// #128 — Sidebar-driven commit dialog. Lazy-loaded here so the
+// affordance is only instantiated when the sidebar context menu
+// actually fires `SIDEBAR_COMMIT_FILE_EVENT`.
 const SidebarCommitDialog = lazy(() => import("@/components/git/CommitDialog").then(m => ({ default: m.CommitDialog })));
 import { useActionScanner } from "@/hooks/useActionScanner";
 import { useAutoUpdate } from "@/hooks/useAutoUpdate";
-import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useGlobalShortcuts } from "@/hooks/useGlobalShortcuts";
+import { initBuildChannel } from "@/lib/build-channel";
 import { useProjectMetadata } from "@/hooks/useProjectMetadata";
 import { useActiveProject } from "@/hooks/useActiveProject";
 import { useFileOperations } from "@/hooks/useFileOperations";
@@ -34,48 +30,34 @@ import { useStartWatchers } from "@/hooks/useStartWatchers";
 import { useSkillDiscovery } from "@/hooks/useSkillOperations";
 import { useWindowTitle } from "@/hooks/useWindowTitle";
 import { useMcpDiscovery } from "@/hooks/useMcpOperations";
+import { useAutomationDiscovery } from "@/hooks/useAutomationDiscovery";
+import { useAutomationRunner } from "@/hooks/useAutomationRunner";
 import { useLocalAI } from "@/hooks/useLocalAI";
 import { useSandboxViolations } from "@/hooks/useSandboxViolations";
 import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
 import { useActivityNavigation } from "@/hooks/useActivityNavigation";
 import { useAppLifecycle } from "@/hooks/useAppLifecycle";
+import { useSessionManager } from "@/hooks/useSessionManager";
+import { useNetworkDomainApprovals } from "@/hooks/useNetworkDomainApprovals";
 import { useTrayEvents } from "@/hooks/useTrayEvents";
 import { useTraySync } from "@/hooks/useTraySync";
 import { useApprovalMigrationToast } from "@/hooks/useApprovalMigrationToast";
 import { useFileRenameSync } from "@/hooks/useFileRenameSync";
 import { useRecentDocumentCycle } from "@/hooks/useRecentDocumentCycle";
+import { useTranscriptionJob } from "@/hooks/useTranscriptionJob";
+import { useModelFitCapture } from "@/hooks/useModelFitCapture";
+import { useCalibrationSharePrompt } from "@/hooks/useCalibrationSharePrompt";
 import { useAccent } from "@/hooks/useAccent";
-import { useSettingsStore, type UiPreview } from "@/stores/settings-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useActivityStore } from "@/stores/activity-store";
 import { useCommentStore, clearPartialReply } from "@/stores/comment-store";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { tauriApi } from "@/lib/tauri";
-import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { log } from "@/lib/logger";
-import type { PaletteMode } from "@/lib/command-palette";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-
-/**
- * Preview gate (#69/#70).
- *
- * In the legacy shell the NewNoteDialog and NewProjectDialog components are
- * mounted and opened by handlers such as `handleNewNote` / `handleNewProject`
- * plus the `useKeyboardShortcuts` ⌘N / ⌘⇧N bindings. Under the quiet-composer
- * preview, inline-create rows in the QuietSidebar replace these dialogs
- * entirely — `QuietLayout` intercepts ⌘N / ⌘⇧N at capture phase with
- * `stopImmediatePropagation` and routes to `quiet-sidebar-store`
- * (tasks #41 / #42).
- *
- * The dialog files remain in the repo until Phase 3 full deletion. We keep
- * the legacy code path intact — this helper simply gates the render/open
- * call sites so the dialogs never mount while the quiet preview is active.
- */
-export function shouldRenderLegacyNewDialogs(uiPreview: UiPreview): boolean {
-  return uiPreview !== "quiet-composer";
-}
 
 /**
  * Close every open Radix popover / context menu / dropdown by dispatching
@@ -100,27 +82,18 @@ function openSettingsAndCloseMenus(setOpen: (open: boolean) => void): void {
 }
 
 function App() {
-  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
-  const [commandPaletteInitialMode, setCommandPaletteInitialMode] = useState<PaletteMode>("default");
-  const [commandPaletteDrilldown, setCommandPaletteDrilldown] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab | undefined>(undefined);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);
   const [projectSettingsOpen, setProjectSettingsOpen] = useState(false);
   const [projectSettingsPath, setProjectSettingsPath] = useState("");
-  const [newNoteOpen, setNewNoteOpen] = useState(false);
-  const [newNoteParentPath, setNewNoteParentPath] = useState("");
-  const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const [focusMode, setFocusMode] = useState(false);
   const [outlineOpen, setOutlineOpen] = useState(false);
-  const [focusHintVisible, setFocusHintVisible] = useState(false);
   const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [actionsDialogOpen, setActionsDialogOpen] = useState(false);
-  // #128 — global commit dialog state for Quiet Composer's sidebar
-  // context menu. The classic shell still owns its own per-project
-  // commit state inside `ProjectItem`; this App-level dialog is an
-  // additional mount path driven by `SIDEBAR_COMMIT_FILE_EVENT`.
+  // #128 — global commit dialog state for the Quiet Composer sidebar
+  // context menu. Driven by `SIDEBAR_COMMIT_FILE_EVENT` from the
+  // sidebar's commit affordance.
   const [commitDialogState, setCommitDialogState] = useState<{
     projectPath: string;
   } | null>(null);
@@ -166,34 +139,53 @@ function App() {
   useSkillDiscovery();
   // #105 — keep the OS window title in sync with the active tab
   // (e.g. "On Craft.md — Notesage"). Falls back to "Notesage" when no
-  // document is active. Shared across Classic + Quiet Composer.
+  // document is active.
   useWindowTitle();
   useMcpDiscovery();
+  useAutomationDiscovery();
+  useAutomationRunner();
   useLocalAI();
   useSandboxViolations();
   useActionScanner();
   useTraySync();
   useApprovalMigrationToast();
   useRecentDocumentCycle();
+  // Meeting recording — background transcription orchestrator (PRD
+  // 2026-05-30-meeting-recording, task #10). Listens for the decoupled
+  // `notesage:start-transcription` event fired when a capture finishes and
+  // drives the whole-file transcription → note-render → bundle-write pipeline.
+  // A hook defined but not mounted never runs (see "Startup Hooks in App.tsx").
+  useTranscriptionJob();
   // Live-test 2026-04-25 #144 — without this mount the accent radio in
   // Settings > Appearance writes to settings-store but the DOM never
   // gets the `.accent-orange` / `.accent-blue` / `.accent-system`
   // class on `<html>`, so `--accent` stays unset and the chosen accent
   // never actually applies. The hook owns the class swap effect.
   useAccent();
+  // Phase 2 runtime calibration: records real local-model decode tok/s + peak
+  // RAM from each local generation (on-device only, nothing transmitted).
+  useModelFitCapture();
+  // Opt-in community-share prompt — opens a reviewable GitHub submission once
+  // enough models have been measured. Never sends anything itself.
+  const calibrationShare = useCalibrationSharePrompt();
 
   // Consolidated startup effects and event listeners
-  const onOpenPalette = useCallback((mode: PaletteMode, drilldown: string) => {
-    setCommandPaletteDrilldown(drilldown);
-    setCommandPaletteInitialMode(mode);
-    setCommandPaletteOpen(true);
-  }, []);
-  useAppLifecycle({ onOpenPalette });
+  useAppLifecycle();
 
-  // Activity strip — cancel handler and navigation
+  // Cross-conversation session run-state owner (task #4) — keeps the orb /
+  // history / foreground-loading reading per-session status independently of
+  // the command-bar view. Must stay mounted here at the App root.
+  useSessionManager();
+
+  // Network-domain approvals — MUST stay mounted at the App root, not inside the
+  // command-bar stream (which unmounts when the bar is collapsed). Otherwise a
+  // sandboxed agent's telemetry/unknown-domain requests hit no handler and block
+  // for the proxy's 30s timeout, wedging the agent ("AI not responding").
+  useNetworkDomainApprovals();
+
+  // Activity panel — cancel handler and navigation (forwarded to QuietLayout/AgentPanel)
   const { cancelTask } = useAgentTaskOperations();
   const { handleClickTask } = useActivityNavigation();
-  const isManuallyHidden = useActivityStore((s) => s.isManuallyHidden);
 
   const handleCancelTask = useCallback(
     async (taskId: string) => {
@@ -224,22 +216,8 @@ function App() {
     [cancelTask]
   );
 
-  const stripExpanded = !isManuallyHidden && !focusMode;
-
   const { openFile, openFileAtTag, openFileAtText, refreshFileTree } = useFileOperations();
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
-  // Preview gate — `uiPreview` is read once and reused by multiple render
-  // sites:
-  //  - `renderLegacyNewDialogs` (#69/#70): gates <NewNoteDialog> /
-  //    <NewProjectDialog> so the legacy modal stack is absent in
-  //    quiet-composer mode (inline creation handles ⌘N / ⌘⇧N via
-  //    QuietLayout).
-  //  - `<CommandPalette />` (#74): the Quiet Composer preview absorbs the
-  //    palette into the FloatingCommandBar's `>` mode (#17), so the
-  //    legacy palette does not mount in that preview. State and handlers
-  //    remain wired up — we gate the render site, not the business logic.
-  const uiPreview = useSettingsStore((s) => s.uiPreview);
-  const renderLegacyNewDialogs = shouldRenderLegacyNewDialogs(uiPreview);
 
   // Tray menu event handlers
   const handleTrayOpenFile = useCallback((path: string) => {
@@ -247,9 +225,20 @@ function App() {
     openFile(path, name);
   }, [openFile]);
   useTrayEvents({
-    onNewNote: useCallback(() => setNewNoteOpen(true), []),
-    onQuickNote: useCallback(() => setNewNoteOpen(true), []),
-    onOpenActions: useCallback(() => setActionsDialogOpen(true), []),
+    onNewNote: useCallback(() => {
+      const ws = useWorkspaceStore.getState();
+      const settings = useSettingsStore.getState();
+      const target = ws.projects.length > 0
+        ? ws.projects[0].path
+        : settings.notesRootPath;
+      if (target) useQuietSidebarStore.getState().setPendingCreate({ parentDir: target });
+    }, []),
+    onQuickNote: useCallback(() => {
+      const settings = useSettingsStore.getState();
+      const target = settings.notesRootPath;
+      if (target) useQuietSidebarStore.getState().setPendingCreate({ parentDir: target });
+    }, []),
+    onOpenActions: useCallback(() => emitCmdBarEvent({ type: "focus", prefix: "!" }), []),
     onOpenFile: handleTrayOpenFile,
   });
 
@@ -349,15 +338,6 @@ function App() {
     }
   }, [openFile]);
 
-  const handleOpenFileAtTag = useCallback(async (filePath: string, fileName: string, symbol: string, occurrenceInFile: number) => {
-    try {
-      await openFileAtTag(filePath, fileName, symbol, occurrenceInFile);
-    } catch (error) {
-      log.error("lifecycle", "Failed to open file at tag", error);
-      toast.error(`Failed to open file: ${error}`);
-    }
-  }, [openFileAtTag]);
-
   const handleBrowseForProject = useCallback(async () => {
     try {
       const folderPath = await tauriApi.openFolderDialog();
@@ -443,87 +423,26 @@ function App() {
     };
   }, [handleMakeProject]);
 
-  const handleNoteCreated = useCallback(async (filePath: string, fileName: string) => {
-    try {
-      await tauriApi.createFile(filePath);
-      const ws = useWorkspaceStore.getState();
-      for (const project of ws.projects) {
-        if (filePath.startsWith(project.path + "/")) {
-          const tree = await tauriApi.listDirectory(project.path, useSettingsStore.getState().showHiddenFiles);
-          ws.updateProjectTree(project.path, tree);
-          break;
-        }
-      }
-      for (const folder of ws.explorerFolders) {
-        if (filePath.startsWith(folder.path + "/")) {
-          const tree = await tauriApi.listDirectory(folder.path, useSettingsStore.getState().showHiddenFiles);
-          ws.updateExplorerTree(folder.path, tree);
-          break;
-        }
-      }
-      const settings = useSettingsStore.getState();
-      const notesRoot = settings.notesRootPath;
-      const icloudPath = settings.icloudNotesagePath;
-      if (
-        (notesRoot && filePath.startsWith(notesRoot)) ||
-        (icloudPath && filePath.startsWith(icloudPath))
-      ) {
-        await refreshNotesTree();
-      }
-      const content = await tauriApi.readFile(filePath);
-      useEditorStore.getState().openTab(filePath, fileName, content);
-    } catch (err) {
-      log.error("lifecycle", "Failed to create note", err);
-      toast.error(`Failed to create note: ${err}`);
-    }
-  }, []);
-
   const handleNewNote = useCallback((parentPath?: string) => {
-    // Resolve target parent directory. Used by both branches.
     let target = parentPath;
     if (!target) {
-      const activeProject = activeProjectPath;
-      if (activeProject) {
-        target = activeProject;
+      if (activeProjectPath) {
+        target = activeProjectPath;
       } else {
         const ws = useWorkspaceStore.getState();
         if (ws.projects.length > 0) {
           target = ws.projects[0].path;
         } else {
-          // Quick Notes target = the user's notes root. If the notes root
-          // happens to live under iCloud Drive, Quick Notes are synced; if
-          // not, they're local. Either way, the path is `notesRootPath`.
           target = useSettingsStore.getState().notesRootPath;
         }
       }
     }
     if (!target) return;
-
-    // Sidebar-simplification task #19 — under Quiet Composer, the
-    // legacy NewNoteDialog isn't mounted (preview gate #69) but the
-    // tray menu's "New Note" still routes here. Route it to the
-    // inline-create row in QuietSidebar so the tray flow actually
-    // produces a file. The chord ⌘N is preempted by QuietLayout's
-    // capture-phase listener that does the same thing — this handler
-    // covers the tray-driven path that doesn't go through the keymap.
-    // Once the inline-create row commits, the file lands in Recent
-    // automatically via openTab → recentFiles update.
-    if (!shouldRenderLegacyNewDialogs(useSettingsStore.getState().uiPreview)) {
-      useQuietSidebarStore.getState().setPendingCreate({ parentDir: target });
-      return;
-    }
-
-    setNewNoteParentPath(target);
-    setNewNoteOpen(true);
+    useQuietSidebarStore.getState().setPendingCreate({ parentDir: target });
   }, [activeProjectPath]);
 
   const handleNewProject = useCallback(() => {
-    // Preview gate (#70). Same rationale as handleNewNote — QuietLayout
-    // owns ⌘⇧N under the quiet-composer preview.
-    if (!shouldRenderLegacyNewDialogs(useSettingsStore.getState().uiPreview)) {
-      return;
-    }
-    setNewProjectOpen(true);
+    useQuietSidebarStore.getState().setPendingCreateProject(true);
   }, []);
 
   const handleExportFile = useCallback(async (filePath: string, fileName: string, format?: 'pdf' | 'docx' | 'pptx' | 'html') => {
@@ -604,7 +523,7 @@ function App() {
   // Listen for global "open settings" event (used by toast actions, etc.)
   useEffect(() => {
     const handler = (e: Event) => {
-      const detail = (e as CustomEvent<{ tab?: SettingsTab }>).detail;
+      const detail = (e as CustomEvent<{ tab?: string }>).detail;
       if (detail?.tab) setSettingsInitialTab(detail.tab);
       openSettingsAndCloseMenus(setSettingsOpen);
     };
@@ -615,8 +534,8 @@ function App() {
   // Listen for `>` palette command-bar dispatch (live-test 2026-04-26).
   // FloatingCommandBar emits `notesage:palette-command` with a stable
   // `commandId` from `PALETTE_COMMANDS`; we map ids to the same callbacks
-  // already plumbed through `useKeyboardShortcuts` so legacy chord and
-  // palette pick run identical code paths.
+  // plumbed through `useKeyboardShortcuts` so the chord and the palette
+  // pick run identical code paths.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<{ commandId?: string }>).detail;
@@ -645,18 +564,10 @@ function App() {
         case "open-settings":
           openSettingsAndCloseMenus(setSettingsOpen);
           break;
-        case "toggle-focus-mode":
-          setFocusMode((prev) => !prev);
-          break;
-        case "toggle-chat-panel":
-          // Quiet Composer: the cmd bar IS the chat. We just closed it
-          // after the pick — re-open via the bus `focus` event so the
-          // user lands in the composer (matches "toggle on" intent).
-          emitCmdBarEvent({ type: "focus" });
-          break;
-        case "toggle-agent-panel":
-          // Quiet Composer's AgentOrb popover has no programmatic open
-          // path yet. No-op for now — the chord (⌘⇧A) still works.
+        case "toggle-agent-orb":
+          // Same bus the ⌘⇧A chord uses — AgentOrb's popover toggles
+          // its open state when this event fires.
+          emitAgentOrbEvent({ type: "toggle" });
           break;
         case "document-outline":
           setOutlineOpen(true);
@@ -676,9 +587,8 @@ function App() {
 
   // Listen for `notesage:open-file` events dispatched by FloatingCommandBar
   // pickers (`?` research, `!` task, and the upcoming `#`/`@` drilldowns).
-  // App-level listener routes to `openFile` from `useFileOperations` —
-  // matches the legacy palette's `handleOpenResearchFile` / `handleOpenFile`
-  // call sites without plumbing the hook through QuietLayout.
+  // App-level listener routes to `openFile` from `useFileOperations`
+  // without plumbing the hook through QuietLayout.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (
@@ -702,8 +612,7 @@ function App() {
 
   // Listen for `notesage:open-file-at-tag` events dispatched by the
   // FloatingCommandBar's `#` tag and `@` mention pickers. Routes to
-  // `openFileAtTag` (same code path the legacy CommandPalette uses for
-  // its tag/mention drilldown selection).
+  // `openFileAtTag` to perform the tag/mention drilldown selection.
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (
@@ -727,32 +636,19 @@ function App() {
       window.removeEventListener("notesage:open-file-at-tag", handler);
   }, [openFileAtTag]);
 
-  // Show and auto-fade focus mode hint
-  useEffect(() => {
-    if (focusMode) {
-      setFocusHintVisible(true);
-      const timer = setTimeout(() => setFocusHintVisible(false), 2000);
-      return () => clearTimeout(timer);
-    } else {
-      setFocusHintVisible(false);
-    }
-  }, [focusMode]);
 
-  const openPalette = useCallback((mode: PaletteMode = "default") => {
-    setCommandPaletteInitialMode(mode);
-    setCommandPaletteOpen(true);
+  // Resolve the build channel once so devtools (⌘⌥I) gates correctly.
+  useEffect(() => {
+    void initBuildChannel();
   }, []);
 
-  useKeyboardShortcuts({
-    onPaletteOpen: openPalette,
+  useGlobalShortcuts({
     onFindOpen: () => {
       window.dispatchEvent(new CustomEvent("notesage:find-open"));
     },
     onFindReplaceOpen: () => {
       window.dispatchEvent(new CustomEvent("notesage:find-replace-open"));
     },
-    onToggleFocusMode: () => setFocusMode((prev) => !prev),
-    onExitFocusMode: () => setFocusMode(false),
     onOutlineOpen: () => setOutlineOpen(true),
     onSettingsOpen: () => openSettingsAndCloseMenus(setSettingsOpen),
     onExportOpen: () => setExportOpen(true),
@@ -760,32 +656,16 @@ function App() {
     onNewNote: handleNewNote,
     onOpenFolder: handleOpenFolder,
     onShortcutsOpen: () => setShortcutsOpen(true),
-    onToggleActivityStrip: () => {
-      const store = useActivityStore.getState();
-      store.setManuallyHidden(!store.isManuallyHidden);
-    },
     onToggleRecording: () => {
       window.dispatchEvent(new CustomEvent("notesage:toggle-recording"));
     },
-    onOpenActions: () => {
-      // Same uiPreview branch as the StatusTray Actions row (live-
-      // test 2026-04-28 finding #6) so ⌘1 / ⌘! routes consistently
-      // to the cmd bar's `!`-mode under Quiet Composer.
-      if (useSettingsStore.getState().uiPreview === "quiet-composer") {
-        emitCmdBarEvent({ type: "focus", prefix: "!" });
-      } else {
-        setActionsDialogOpen(true);
-      }
-    },
-    focusMode,
   });
 
   return (
     <ThemeProvider>
       <div className="flex h-screen w-screen overflow-hidden">
-        <Layout
-          focusMode={focusMode}
-          stripExpanded={stripExpanded}
+        <QuietLayout
+          stripExpanded={false}
           onNewNote={handleNewNote}
           onNewProject={handleNewProject}
           onOpenFolder={handleOpenFolder}
@@ -795,22 +675,8 @@ function App() {
           onExportOpenChange={setExportOpen}
           outlineOpen={outlineOpen}
           onOutlineOpenChange={setOutlineOpen}
-          updateAvailable={!!updateState.updateInfo}
-          updateVersion={updateState.updateInfo?.version ?? null}
-          onUpdateClick={() => setUpdateDialogOpen(true)}
           onShortcutsOpen={() => setShortcutsOpen(true)}
-          onOpenActions={() => {
-            // Live-test 2026-04-28 finding #6 — under Quiet Composer
-            // the StatusTray's Actions row + ⌘1 chord both want to
-            // route to the cmd bar's `!`-mode (TaskMode), not the
-            // legacy ActionsDialog. Same uiPreview branching pattern
-            // as the in-document tag/mention click fix (audit #1).
-            if (useSettingsStore.getState().uiPreview === "quiet-composer") {
-              emitCmdBarEvent({ type: "focus", prefix: "!" });
-            } else {
-              setActionsDialogOpen(true);
-            }
-          }}
+          onOpenActions={() => emitCmdBarEvent({ type: "focus", prefix: "!" })}
           onOpenSettings={() => openSettingsAndCloseMenus(setSettingsOpen)}
           onBrowseForProject={handleBrowseForProject}
           onOpenProjectSettings={handleOpenProjectSettings}
@@ -820,54 +686,18 @@ function App() {
           onClickTask={handleClickTask}
         />
 
-        {/* Focus mode hint overlay */}
-        {focusMode && (
-          <div
-            className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none transition-opacity duration-500 ${focusHintVisible ? "opacity-100" : "opacity-0"}`}
-          >
-            <div className="px-3 py-1.5 rounded-md text-xs bg-popover text-popover-foreground border border-border shadow-md">
-              Press <kbd className="font-mono font-semibold">Esc</kbd> to exit focus mode
-            </div>
-          </div>
-        )}
-
         <Suspense fallback={null}>
-          {/*
-            #131/#4 live-test fix — the legacy `SettingsDialog` is the
-            only dialog mounted in the app until the v2 shell landed,
-            but `SettingsDialogV2` was never wired. Quiet Composer users
-            opening Settings saw the legacy chrome (which some of them
-            reported as "disabled" because of a visual-style drift).
-            Mount the right dialog for the active shell: v2 under the
-            Quiet Composer preview, legacy otherwise. Both respect the
-            same `settingsOpen` / `initialTab` state so the App-level
-            entry points don't have to branch.
-          */}
-          {uiPreview === "quiet-composer" ? (
-            <SettingsDialogV2
-              open={settingsOpen}
-              onOpenChange={(open) => {
-                setSettingsOpen(open);
-                if (!open) setSettingsInitialTab(undefined);
-              }}
-              initialActiveItem={settingsInitialTab}
-              updateState={updateState}
-              onCheckForUpdate={checkForUpdate}
-              onOpenUpdateDialog={() => setUpdateDialogOpen(true)}
-            />
-          ) : (
-          <SettingsDialog
+          <SettingsDialogV2
             open={settingsOpen}
             onOpenChange={(open) => {
               setSettingsOpen(open);
               if (!open) setSettingsInitialTab(undefined);
             }}
-            initialTab={settingsInitialTab}
+            initialActiveItem={settingsInitialTab}
             updateState={updateState}
             onCheckForUpdate={checkForUpdate}
             onOpenUpdateDialog={() => setUpdateDialogOpen(true)}
           />
-          )}
           {projectSettingsPath && (
             <ProjectSettingsDialog
               open={projectSettingsOpen}
@@ -882,58 +712,6 @@ function App() {
             />
           )}
         </Suspense>
-        {/*
-          Preview gate (#74). Legacy CommandPalette is absorbed into the
-          FloatingCommandBar's `>` mode in the Quiet Composer preview, so
-          the component is not mounted when `uiPreview === "quiet-composer"`.
-          Handlers and state above remain intact so the legacy path is
-          unchanged; only the render site is gated. Phase 3 will delete
-          the component entirely.
-        */}
-        {uiPreview !== "quiet-composer" && (
-          <CommandPalette
-            open={commandPaletteOpen}
-            onOpenChange={(open) => {
-              setCommandPaletteOpen(open);
-              if (!open) {
-                setCommandPaletteInitialMode("default");
-                setCommandPaletteDrilldown("");
-              }
-            }}
-            initialMode={commandPaletteInitialMode}
-            drilldownName={commandPaletteDrilldown || undefined}
-            onOpenFileAtSymbol={handleOpenFileAtTag}
-            onNewNote={() => handleNewNote()}
-            onNewProject={handleNewProject}
-            onOpenFolder={handleOpenFolder}
-            onOpenSettings={() => openSettingsAndCloseMenus(setSettingsOpen)}
-            onExportPdf={() => setExportOpen(true)}
-            onToggleFocusMode={() => setFocusMode((prev) => !prev)}
-            onOpenActions={() => setActionsDialogOpen(true)}
-          />
-        )}
-        {/*
-         * Preview gate (#69/#70).
-         * Legacy path mounts these dialogs; quiet-composer uses inline-create
-         * rows in QuietSidebar, driven by QuietLayout's capture-phase ⌘N / ⌘⇧N
-         * listeners (tasks #41 / #42). The dialog files stay in the repo until
-         * Phase 3 full deletion — see `shouldRenderLegacyNewDialogs` above.
-         */}
-        {renderLegacyNewDialogs && (
-          <NewNoteDialog
-            open={newNoteOpen}
-            onOpenChange={setNewNoteOpen}
-            parentPath={newNoteParentPath}
-            onCreated={handleNoteCreated}
-          />
-        )}
-        {renderLegacyNewDialogs && (
-          <NewProjectDialog
-            open={newProjectOpen}
-            onOpenChange={setNewProjectOpen}
-            onCreated={handleOpenProject}
-          />
-        )}
         <UpdateDialog
           open={updateDialogOpen}
           onOpenChange={setUpdateDialogOpen}
@@ -944,32 +722,21 @@ function App() {
           onRestartNow={restartNow}
           onDismiss={dismissUpdate}
         />
+        <CalibrationShareDialog
+          open={calibrationShare.open}
+          onOpenChange={calibrationShare.setOpen}
+        />
         <Suspense fallback={null}>
-          {/*
-            #137 — pick the dialog variant per active shell. Same
-            `shortcutsOpen` state drives both; the v2 variant restyles
-            the chrome (wider dialog, larger type, card-surface groups)
-            so it feels consistent with SettingsDialogV2. The legacy
-            dialog stays until Phase 2 deletes the legacy layout.
-          */}
-          {uiPreview === "quiet-composer" ? (
-            <KeyboardShortcutsDialogV2
-              open={shortcutsOpen}
-              onOpenChange={setShortcutsOpen}
-            />
-          ) : (
-            <KeyboardShortcutsDialog
-              open={shortcutsOpen}
-              onOpenChange={setShortcutsOpen}
-            />
-          )}
+          <KeyboardShortcutsDialogV2
+            open={shortcutsOpen}
+            onOpenChange={setShortcutsOpen}
+          />
         </Suspense>
         {/*
-          #128 — Global commit dialog for the Quiet Composer sidebar's
-          "Commit…" menu item. Mounted here so it survives sidebar row
-          unmount / re-render cycles. Legacy `ProjectItem` keeps its own
-          commit dialog (different project context); this one is driven
-          exclusively by the `sidebar:commit-file` CustomEvent.
+          #128 — Global commit dialog for the sidebar's "Commit…" menu
+          item. Mounted at the App root so it survives sidebar row
+          unmount / re-render cycles. Driven exclusively by the
+          `sidebar:commit-file` CustomEvent.
         */}
         {commitDialogState && (
           <Suspense fallback={null}>
@@ -1030,6 +797,9 @@ function App() {
         />
         </Suspense>
       </div>
+      <McpDeepLinkInstaller />
+      <LocalAgentSetupDialog />
+      <MissedRunsDialog />
       <Toaster position="bottom-right" />
     </ThemeProvider>
   );

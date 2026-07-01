@@ -36,6 +36,7 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | LocalImage | `local-image.ts` | Node Extension | Extends Tiptap Image to resolve local file paths via Tauri asset protocol |
 | MentionHighlight | `mention-highlight.ts` | Plugin + Decoration | Decorates `@mention` patterns as styled badge pills |
 | MentionSuggestion | `mention-suggestion.tsx` | Suggestion | Mention autocomplete popup triggered by `@` with cross-file search |
+| WikiLink | `wiki-link.tsx` | Suggestion + Plugin + Decoration | `[[` autocomplete (workspace-global, resolves via `resolve_wikilink`) that inserts a STANDARD relative-path link mark — no `[[ ]]` node is ever persisted, so the markdown round-trip is unchanged (ADR 0001). Dangling targets serialize to a slug in the current dir and get a non-serializing `wikilink-unresolved` inline decoration + create-on-click (ADR 0007) |
 | PageBreaks | `page-breaks.ts` | Plugin + Decoration | Print Layout mode: three widget decorations per page boundary (`page-top-margin` with header zone, `page-gap` separator, `page-bottom-margin` with footer zone). Header/footer zones are clickable for inline editing via React portal. Reads layout state from Zustand stores directly. |
 | TableMarkdown | `table-markdown.ts` | Utility | Custom table markdown serializer for GFM round-tripping |
 | ThemedHighlight | `themed-highlight.ts` | Mark Extension | Extends Tiptap Highlight with semantic color names for light/dark mode |
@@ -54,12 +55,10 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | Mermaid | `mermaid.ts` | Node Extension + ReactNodeViewRenderer | Mermaid diagram blocks with live rendering, `` ```mermaid `` fenced code block markdown |
 | PageBreakNode | `page-break-node.ts` | Node Extension | Explicit page break node for Print Layout mode |
 | TableColumnTypes | `table-column-types.ts` | Plugin | Column type inference and locale-aware formatting (number, currency, percentage, date) |
-| TableFormatting | `table-formatting.ts` | Plugin | Table cell formatting decorations (alignment, number formatting) |
 | TypographyOverrides | `typography-overrides.ts` | Plugin | Custom typography rules (smart quotes, em dashes, ellipsis) |
 | TrailingNode | `trailing-node.ts` | Plugin (appendTransaction) | Ensures an empty paragraph at end of document for click-below-last-block UX |
 | DecorationFactory | `decoration-factory.ts` | Utility | Shared `createDecorationPlugin()` factory reducing boilerplate in decoration extensions |
 | ~~ItemAnnotation~~ | `item-annotation.ts` | ~~Plugin + Decoration~~ | ~~Emoji annotations on list items (deferred — needs unified gutter design)~~ |
-| ~~DragHandle~~ | `drag-handle.ts` | ~~Plugin + DOM~~ | ~~Block drag handles (deferred — needs unified gutter design)~~ |
 
 ## Decoration System
 

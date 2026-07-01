@@ -7,19 +7,15 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 /**
- * Keyboard Shortcuts dialog — Quiet Composer variant (task #137).
+ * Keyboard Shortcuts dialog (task #137).
  *
- * Same shortcut catalogue as the legacy `KeyboardShortcutsDialog`; only
- * the chrome changes to match the v2 settings aesthetic:
- *   - Generous 28 px dialog padding (vs 20 px in legacy).
+ * Chrome matches the v2 settings aesthetic:
+ *   - Generous 28 px dialog padding.
  *   - Sans-serif 24 px semibold title (matches the per-panel headers in
  *     `SettingsDialogV2`).
  *   - Shortcut groups render as `SettingsGroup`-styled cards (label in
  *     muted uppercase, content on a card surface with subtle border).
  *   - Wider (560 px) so the `Kbd` combos don't wrap.
- *
- * Mounted in App.tsx alongside the legacy dialog; `uiPreview` decides
- * which one opens.
  */
 
 interface ShortcutEntry {

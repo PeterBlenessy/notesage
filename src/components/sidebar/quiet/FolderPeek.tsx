@@ -32,6 +32,12 @@ import {
   subscribeToOpenContextMenus,
   subscribeToForceCloseAllPeeks,
 } from "@/lib/sidebar-context-menu-state";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 /**
  * Hover-triggered popover that previews one level of a project's contents.
@@ -60,7 +66,7 @@ export interface FolderPeekProps {
   /** The trigger element — typically the project row. */
   children: ReactNode;
   // Sidebar-simplification task #6 — `onOpenTreeOverlay` was removed.
-  // Folder-clicks and the footer "Expand in sidebar" link now dispatch
+  // Folder-clicks and the bottom "Expand in sidebar" link now dispatch
   // `notesage:sidebar-expand-path` on the shared `sidebar-events` bus
   // (handled by ProjectsSection). TreeOverlay deletion lands in #20.
 }
@@ -72,9 +78,6 @@ export interface FolderPeekProps {
 const HOVER_DELAY_MS = 500;
 const CLOSE_GRACE_MS = 150;
 
-const MAX_FOLDERS = 8;
-const MAX_FILES = 6;
-
 /** Last path segment (basename). */
 function projectBasename(path: string): string {
   const parts = path.split("/").filter(Boolean);
@@ -84,39 +87,30 @@ function projectBasename(path: string): string {
 /**
  * Children derivation output — the one-level preview that both the hover
  * popover and the inline keyboard expansion (#37) render. Folders come
- * first, files second, each sorted alphabetically (case-insensitive) and
- * capped. Overflow counts surface as "+N more…" hints in both surfaces.
+ * first, files second, each sorted alphabetically (case-insensitive). ALL
+ * children are listed — there is no cap / "+N more" truncation.
  */
 export interface PeekChildren {
   folders: FileEntry[];
   files: FileEntry[];
-  folderOverflow: number;
-  fileOverflow: number;
   isEmpty: boolean;
 }
 
 /**
  * Pure helper shared by `FolderPeek` (hover popover) and
- * `ProjectsSection` (inline keyboard expansion for task #37). `.DS_Store`
+ * `ProjectsSection` / `FoldersSection` (inline expansion). `.DS_Store`
  * is always dropped; dotfiles are dropped unless `showHidden` is true
- * (Settings > System > "Show hidden files"). Caps are applied after
- * sorting so the visible slice is always the alphabetical head.
+ * (Settings > System > "Show hidden files"). Every remaining child is
+ * returned, sorted dirs-before-files then alphabetically — no cap.
  */
 export function derivePeekChildren(
   tree: FileEntry[],
   /**
-   * Live-test 2026-04-28 finding #2 — when the user clicks "+N more"
-   * on an overflow row, callers re-derive with `unbounded: true` so
-   * every child renders (no cap, no overflow markers). Default keeps
-   * the historical 8-folder / 6-file slice the hover popover was
-   * built around.
-   *
-   * Live-test 2026-04-28 finding #4 — `showHidden` reflects the
-   * Settings > System > "Show hidden files" toggle. The Rust listing
-   * still flags dotfiles via `entry.hidden`, so the UI must opt in to
-   * keep them; otherwise the toggle is a no-op in the Quiet sidebar.
+   * `showHidden` reflects the Settings > System > "Show hidden files"
+   * toggle. The Rust listing flags dotfiles via `entry.hidden`, so the UI
+   * must opt in to keep them; otherwise the toggle is a no-op here.
    */
-  options: { unbounded?: boolean; showHidden?: boolean } = {},
+  options: { showHidden?: boolean } = {},
 ): PeekChildren {
   const folders: FileEntry[] = [];
   const files: FileEntry[] = [];
@@ -130,16 +124,10 @@ export function derivePeekChildren(
     a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
   folders.sort(byName);
   files.sort(byName);
-  const folderCap = options.unbounded ? folders.length : MAX_FOLDERS;
-  const fileCap = options.unbounded ? files.length : MAX_FILES;
-  const visibleFolders = folders.slice(0, folderCap);
-  const visibleFiles = files.slice(0, fileCap);
   return {
-    folders: visibleFolders,
-    files: visibleFiles,
-    folderOverflow: Math.max(0, folders.length - visibleFolders.length),
-    fileOverflow: Math.max(0, files.length - visibleFiles.length),
-    isEmpty: visibleFolders.length === 0 && visibleFiles.length === 0,
+    folders,
+    files,
+    isEmpty: folders.length === 0 && files.length === 0,
   };
 }
 
@@ -174,12 +162,6 @@ export function FolderPeek({
   children,
 }: FolderPeekProps) {
   const [isOpen, setIsOpen] = useState(false);
-  // Reset the "show all" flag when the popover closes so a fresh
-  // hover opens at the default cap (avoids surprise giant popovers
-  // on subsequent hovers of a folder where the user once expanded).
-  useEffect(() => {
-    if (!isOpen) setUnbounded(false);
-  }, [isOpen]);
   const [position, setPosition] = useState<{ top: number; left: number } | null>(
     null,
   );
@@ -190,15 +172,10 @@ export function FolderPeek({
   const openTab = useEditorStore((s) => s.openTab);
 
   const projectName = useMemo(() => projectBasename(projectPath), [projectPath]);
-  // Live-test 2026-04-28 finding #2 — clicking "+N more" in the
-  // popover flips this flag so the next derive uses the unbounded
-  // variant. Resets to false on close so a fresh peek opens at the
-  // default cap.
-  const [unbounded, setUnbounded] = useState(false);
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
-  const { folders, files, folderOverflow, fileOverflow, isEmpty } = useMemo(
-    () => derivePeekChildren(fileTree, { unbounded, showHidden: showHiddenFiles }),
-    [fileTree, unbounded, showHiddenFiles],
+  const { folders, files, isEmpty } = useMemo(
+    () => derivePeekChildren(fileTree, { showHidden: showHiddenFiles }),
+    [fileTree, showHiddenFiles],
   );
 
   // `path → lastAccessedAt` lookup for the file-row meta column. We
@@ -509,9 +486,18 @@ export function FolderPeek({
                               strokeWidth={1.5}
                               aria-hidden="true"
                             />
-                            <span className="truncate min-w-0 flex-1">
-                              {entry.name}
-                            </span>
+                            <TooltipProvider delayDuration={300}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="truncate min-w-0 flex-1">
+                                    {entry.name}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" sideOffset={8}>
+                                  {entry.name}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                             {/* Meta column (live-test 2026-04-26 #152)
                                 — folders show the recursive file count
                                 so users can scan project structure at
@@ -534,25 +520,6 @@ export function FolderPeek({
                           </button>
                         </SidebarContextMenu>
                       ))}
-                      {folderOverflow > 0 && (
-                        // Live-test 2026-04-28 finding #2 — clickable
-                        // overflow expands the popover to show every
-                        // child (no more cap). The grouped state lives
-                        // in the popover's own `unbounded` flag and
-                        // resets on close.
-                        <button
-                          type="button"
-                          onClick={() => setUnbounded(true)}
-                          aria-label={`Show ${folderOverflow} more folder${folderOverflow === 1 ? "" : "s"}`}
-                          className={cn(
-                            "px-2 py-1 text-xs text-muted-foreground text-left w-full cursor-pointer",
-                            "hover:text-foreground hover:underline underline-offset-2 transition-colors",
-                            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] rounded-sm",
-                          )}
-                        >
-                          +{folderOverflow} more…
-                        </button>
-                      )}
                     </div>
                   )}
                   {files.length > 0 && (
@@ -600,9 +567,18 @@ export function FolderPeek({
                               fileName={entry.name}
                               className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70"
                             />
-                            <span className="truncate min-w-0 flex-1">
-                              {entry.name}
-                            </span>
+                            <TooltipProvider delayDuration={300}>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <span className="truncate min-w-0 flex-1">
+                                    {entry.name}
+                                  </span>
+                                </TooltipTrigger>
+                                <TooltipContent side="right" sideOffset={8}>
+                                  {entry.name}
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                             {/* Meta column (live-test 2026-04-26 #152)
                                 — files show "time since last opened"
                                 from the persisted MRU. Files never
@@ -628,20 +604,6 @@ export function FolderPeek({
                           </button>
                         </SidebarContextMenu>
                       ))}
-                      {fileOverflow > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => setUnbounded(true)}
-                          aria-label={`Show ${fileOverflow} more file${fileOverflow === 1 ? "" : "s"}`}
-                          className={cn(
-                            "px-2 py-1 text-xs text-muted-foreground text-left w-full cursor-pointer",
-                            "hover:text-foreground hover:underline underline-offset-2 transition-colors",
-                            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] rounded-sm",
-                          )}
-                        >
-                          +{fileOverflow} more…
-                        </button>
-                      )}
                     </div>
                   )}
                 </>

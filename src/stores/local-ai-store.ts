@@ -3,11 +3,44 @@ import { persist } from 'zustand/middleware';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
-import type { LocalModelInfo, SystemMemoryInfo, BinaryStatus } from '@/lib/tauri';
+import type {
+  LocalModelInfo,
+  SystemMemoryInfo,
+  BinaryStatus,
+  HardwareProfile,
+  ModelFitResult,
+  GgufCapabilities,
+} from '@/lib/tauri';
 
 export type ServerStatus = 'stopped' | 'starting' | 'running' | 'error';
 export type BinaryState = 'unknown' | 'available' | 'not_found';
 export type ModelCategory = 'all' | 'general' | 'code' | 'reasoning' | 'compact' | 'downloaded';
+
+/**
+ * Local Agent setup-flow stages (task #15). Linear path plus terminal `ready` /
+ * `failed`. `idle` = the flow has never run (or was reset).
+ */
+export type LocalAgentSetupStage =
+  | 'idle'
+  | 'detecting'   // hardware-tier detection + model recommendation
+  | 'downloading' // agent install + model download (parallel)
+  | 'configuring' // local_agent_write_config + connection/routing setup
+  | 'verifying'   // smoke test
+  | 'ready'
+  | 'failed';
+
+/** The active (in-flight) stages a failure can be attributed to. */
+export type LocalAgentActiveStage = Exclude<LocalAgentSetupStage, 'idle' | 'ready' | 'failed'>;
+
+export interface LocalAgentSetupState {
+  stage: LocalAgentSetupStage;
+  /** When `stage === 'failed'`, the stage that was active when it failed. */
+  failedStage?: LocalAgentActiveStage;
+  /** Human-readable failure message. Transient — never persisted. */
+  error?: string;
+  /** Model chosen for the agent. Persisted so an interrupted flow can resume. */
+  modelId?: string;
+}
 
 export interface DownloadState {
   progress: number;
@@ -20,25 +53,58 @@ interface LocalAIStore {
   gpuLayers: number;
   dismissedFirstRun: boolean;
   hiddenModelIds: string[];
+  /** Last completion-server model the user picked. Persisted so the panel
+   *  remembers the choice across restarts even when the server isn't running. */
+  completionModelId: string | null;
 
   // Runtime (non-persisted)
   serverStatus: ServerStatus;
   serverError: string | null;
   serverStatusReason: string | null;
   serverPort: number | null;
+  /** Whether the Local Agent setup dialog (#17) is open. Single app-level flag so
+   *  every entry point (#18 empty state, #19 Add Connection, #20 "Fix") opens the
+   *  same dialog mounted once at the app root. Non-persisted UI state. */
+  localAgentSetupDialogOpen: boolean;
+  /**
+   * Local Agent setup-flow state machine (task #15). Persisted enough to resume
+   * an interrupted flow after relaunch (stage + modelId; the transient `error`
+   * is never persisted). Driven by `useLocalAgentSetup` (#16).
+   */
+  localAgentSetup: LocalAgentSetupState;
+  /** Dedicated FIM server lifecycle (item #8 of the agentic stack).
+   *  Mirrors the main server's status/port/error fields. */
+  completionServerStatus: ServerStatus;
+  completionServerPort: number | null;
+  completionServerError: string | null;
   models: LocalModelInfo[];
   downloads: Record<string, DownloadState>;
   systemMemory: SystemMemoryInfo | null;
   binaryStatus: BinaryState;
   categoryFilter: ModelCategory;
 
+  // Hardware-aware model-fit (runtime — recomputed per session, never persisted)
+  hardwareProfile: HardwareProfile | null;
+  fitById: Record<string, ModelFitResult>;
+  capsById: Record<string, GgufCapabilities>;
+
   // Actions
   setActiveModel: (modelId: string) => void;
   setServerStatus: (status: ServerStatus, error?: string) => void;
   setServerStatusReason: (reason: string | null) => void;
   setServerPort: (port: number | null) => void;
+  /** Advance the Local Agent setup state machine (task #15). */
+  setLocalAgentSetup: (next: Partial<LocalAgentSetupState> & { stage: LocalAgentSetupStage }) => void;
+  /** Reset the setup flow back to `idle` (e.g. user cancels / starts over). */
+  resetLocalAgentSetup: () => void;
+  /** Open/close the app-level Local Agent setup dialog (#17). */
+  setLocalAgentSetupDialogOpen: (open: boolean) => void;
   setModels: (models: LocalModelInfo[]) => void;
   setSystemMemory: (info: SystemMemoryInfo) => void;
+  setHardwareProfile: (profile: HardwareProfile | null) => void;
+  setModelFits: (results: ModelFitResult[]) => void;
+  setModelCaps: (modelId: string, caps: GgufCapabilities) => void;
+  clearModelFits: () => void;
   dismissFirstRun: () => void;
   setContextLength: (len: number) => void;
   setGpuLayers: (layers: number) => void;
@@ -65,6 +131,11 @@ interface LocalAIStore {
   restoreDefaults: () => void;
   checkBinary: () => Promise<BinaryStatus>;
   startServer: (modelId: string, contextLength: number, gpuLayers: number) => Promise<void>;
+  // Completion-server lifecycle
+  setCompletionModelId: (modelId: string | null) => void;
+  startCompletionServer: (modelId: string, contextLength?: number, gpuLayers?: number) => Promise<void>;
+  stopCompletionServer: () => Promise<void>;
+  refreshCompletionServerStatus: () => Promise<void>;
 }
 
 // RAF-throttled progress updates to avoid render storms
@@ -106,23 +177,59 @@ export const useLocalAIStore = create<LocalAIStore>()(
         gpuLayers: -1,
         dismissedFirstRun: false,
         hiddenModelIds: [],
+        completionModelId: null,
 
         // Runtime defaults
         serverStatus: 'stopped',
         serverError: null,
         serverStatusReason: null,
         serverPort: null,
+        localAgentSetupDialogOpen: false,
+        localAgentSetup: { stage: 'idle' },
+        completionServerStatus: 'stopped',
+        completionServerPort: null,
+        completionServerError: null,
         models: [],
         downloads: {},
         systemMemory: null,
         binaryStatus: 'unknown',
         categoryFilter: 'all',
+        hardwareProfile: null,
+        fitById: {},
+        capsById: {},
 
         // Actions
         setActiveModel: (modelId) => set({ activeModelId: modelId }),
+        setHardwareProfile: (profile) => set({ hardwareProfile: profile }),
+        setModelFits: (results) =>
+          set((s) => {
+            const next = { ...s.fitById };
+            for (const r of results) next[r.id] = r;
+            return { fitById: next };
+          }),
+        setModelCaps: (modelId, caps) =>
+          set((s) => ({ capsById: { ...s.capsById, [modelId]: caps } })),
+        clearModelFits: () => set({ fitById: {}, capsById: {} }),
         setServerStatus: (status, error) => set({ serverStatus: status, serverError: error ?? null }),
         setServerStatusReason: (reason) => set({ serverStatusReason: reason }),
         setServerPort: (port) => set({ serverPort: port }),
+        setLocalAgentSetup: (next) =>
+          set((s) => {
+            // Carry the chosen model id forward across stage transitions unless a
+            // call explicitly overrides it. Clear `error`/`failedStage` on any
+            // non-failed stage so a recovered flow doesn't show a stale error.
+            const merged: LocalAgentSetupState = {
+              modelId: s.localAgentSetup.modelId,
+              ...next,
+            };
+            if (merged.stage !== 'failed') {
+              delete merged.error;
+              delete merged.failedStage;
+            }
+            return { localAgentSetup: merged };
+          }),
+        resetLocalAgentSetup: () => set({ localAgentSetup: { stage: 'idle' } }),
+        setLocalAgentSetupDialogOpen: (open) => set({ localAgentSetupDialogOpen: open }),
         setModels: (models) => set({ models }),
         setSystemMemory: (info) => set({ systemMemory: info }),
         dismissFirstRun: () => set({ dismissedFirstRun: true }),
@@ -250,6 +357,53 @@ export const useLocalAIStore = create<LocalAIStore>()(
             toast.error(`Failed to start Local AI: ${errorMsg}`);
           }
         },
+
+        setCompletionModelId: (modelId) => set({ completionModelId: modelId }),
+
+        startCompletionServer: async (modelId, contextLength, gpuLayers) => {
+          set({ completionServerStatus: 'starting', completionServerError: null });
+          try {
+            const port = await tauriApi.startCompletionServer(modelId, contextLength, gpuLayers);
+            set({
+              completionServerStatus: 'running',
+              completionServerPort: port,
+              completionModelId: modelId,
+              completionServerError: null,
+            });
+          } catch (err) {
+            const errorMsg = String(err);
+            set({
+              completionServerStatus: 'error',
+              completionServerPort: null,
+              completionServerError: errorMsg,
+            });
+            toast.error(`Failed to start completion server: ${errorMsg}`);
+          }
+        },
+
+        stopCompletionServer: async () => {
+          try {
+            await tauriApi.stopCompletionServer();
+          } catch (err) {
+            // Best-effort — even if the backend stop fails, surface the local
+            // state as stopped so the UI doesn't get wedged.
+            console.warn('[LocalAI] stop_completion_server errored:', err);
+          }
+          set({ completionServerStatus: 'stopped', completionServerPort: null, completionServerError: null });
+        },
+
+        refreshCompletionServerStatus: async () => {
+          try {
+            const status = await tauriApi.getCompletionServerStatus();
+            set({
+              completionServerStatus: status.running ? 'running' : 'stopped',
+              completionServerPort: status.port,
+              completionModelId: status.model ?? get().completionModelId,
+            });
+          } catch (err) {
+            console.warn('[LocalAI] refreshCompletionServerStatus failed:', err);
+          }
+        },
       };
     },
     {
@@ -260,7 +414,33 @@ export const useLocalAIStore = create<LocalAIStore>()(
         gpuLayers: state.gpuLayers,
         dismissedFirstRun: state.dismissedFirstRun,
         hiddenModelIds: state.hiddenModelIds,
+        completionModelId: state.completionModelId,
+        // Persist enough to resume an interrupted setup (stage + model), never
+        // the transient `error`/`failedStage` (task #15).
+        localAgentSetup: {
+          stage: state.localAgentSetup.stage,
+          modelId: state.localAgentSetup.modelId,
+        },
       }),
     },
   ),
 );
+
+// Listen for completion-server status events emitted by the Rust backend.
+// Mirror of the main server's event listener pattern — the store stays in
+// sync even when start/stop fires from somewhere else (e.g. RunEvent::Exit).
+listen<{ running: boolean; port: number | null; model: string | null }>(
+  'local-completion-server-status',
+  (event) => {
+    const { running, port, model } = event.payload;
+    useLocalAIStore.setState((prev) => ({
+      completionServerStatus: running ? 'running' : 'stopped',
+      completionServerPort: port,
+      // Only adopt the backend's model when running — a stop event would clear
+      // the user's persisted choice otherwise.
+      completionModelId: running && model ? model : prev.completionModelId,
+    }));
+  },
+).catch((e) => {
+  console.warn('[LocalAI] Failed to register local-completion-server-status listener:', e);
+});

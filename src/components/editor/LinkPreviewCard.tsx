@@ -4,6 +4,7 @@ import { Globe, ExternalLink } from "lucide-react";
 import { tauriApi } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { BlockSizeControls } from "@/components/editor/BlockSizeControls";
+import { useSettingsStore } from "@/stores/settings-store";
 
 type CardState = "input" | "loading" | "loaded" | "error";
 
@@ -99,8 +100,15 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
     if (url) window.open(url, "_blank");
   };
 
+  // Remote preview/favicon images are attacker-controllable (they come from the
+  // target page's OpenGraph metadata) and render as live <img> beacons. Gate
+  // them behind an opt-in setting (default off — privacy by default). The card
+  // still shows title/description/site text either way. Security audit MEDIUM.
+  const remoteImagesEnabled = useSettingsStore((s) => s.linkPreviewRemoteImages);
+
   const displaySiteName = siteName || (url ? extractDomain(url) : "");
-  const showImage = imageUrl && !imgError;
+  const showImage = remoteImagesEnabled && imageUrl && !imgError;
+  const showFavicon = remoteImagesEnabled && faviconUrl && !faviconError;
 
   const blockStyle: React.CSSProperties = {};
   if (blockWidth != null) {
@@ -154,11 +162,11 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
           </div>
           <div className="flex gap-4">
             <div className="flex-1 space-y-2">
-              <div className="h-4 w-3/4 bg-muted rounded animate-pulse" />
-              <div className="h-3 w-full bg-muted rounded animate-pulse" />
-              <div className="h-3 w-2/3 bg-muted rounded animate-pulse" />
+              <div className="h-4 w-3/4 bg-muted rounded animate-pulse motion-reduce:animate-none" />
+              <div className="h-3 w-full bg-muted rounded animate-pulse motion-reduce:animate-none" />
+              <div className="h-3 w-2/3 bg-muted rounded animate-pulse motion-reduce:animate-none" />
             </div>
-            <div className="w-[120px] h-[80px] bg-muted rounded animate-pulse shrink-0" />
+            <div className="w-[120px] h-[80px] bg-muted rounded animate-pulse motion-reduce:animate-none shrink-0" />
           </div>
         </div>
       )}
@@ -188,10 +196,11 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
           })()}
           {/* Site name + favicon */}
           <div className="flex items-center gap-1.5 mb-2">
-            {faviconUrl && !faviconError ? (
+            {showFavicon ? (
               <img
-                src={faviconUrl}
+                src={faviconUrl ?? undefined}
                 alt=""
+                referrerPolicy="no-referrer"
                 className="w-4 h-4 rounded-sm"
                 onError={() => setFaviconError(true)}
               />
@@ -230,8 +239,9 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
             {/* Preview image */}
             {showImage && (
               <img
-                src={imageUrl}
+                src={imageUrl ?? undefined}
                 alt=""
+                referrerPolicy="no-referrer"
                 className="w-[120px] h-[80px] rounded object-cover shrink-0"
                 onError={() => setImgError(true)}
               />

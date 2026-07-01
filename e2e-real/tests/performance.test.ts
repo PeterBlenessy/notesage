@@ -8,14 +8,21 @@
  *   Terminal 1: pnpm tauri:test
  *   Terminal 2: tauri-webdriver
  *   Terminal 3: pnpm test:e2e-real
+ *
+ * In CI this spec runs via `.github/workflows/test-perf-e2e.yml` (post-merge,
+ * push to main only). It does NOT run in the PR gate (`test.yml`).
  */
 
+import * as fs from 'fs';
 import * as path from 'path';
 import { waitForElement, openFile, getEditorText } from '../helpers/actions';
 import { measureAction } from '../helpers/timing';
 import { ensureCleanState, ensureProjectOpen } from '../helpers/setup';
 
 const TEST_PROJECT = path.resolve(process.cwd(), 'e2e-real/fixtures/test-project');
+
+// Accumulated timing results — written to perf-results.json in after().
+const timingResults: Record<string, number> = {};
 
 describe('Performance', function () {
     // These tests involve large documents and multiple file operations —
@@ -38,6 +45,17 @@ describe('Performance', function () {
     after(async () => {
         // Restore the default window size in case a test changed it
         await browser.setWindowSize(1200, 800);
+
+        // Write timing measurements to perf-results.json for CI artifact upload.
+        const output = {
+            timestamp: new Date().toISOString(),
+            commitSha: process.env.GITHUB_SHA ?? 'local',
+            runner: process.env.RUNNER_NAME ?? 'local',
+            measurements: timingResults,
+        };
+        const outPath = path.resolve(process.cwd(), 'perf-results.json');
+        fs.writeFileSync(outPath, JSON.stringify(output, null, 2));
+        console.log(`[perf] Results written to ${outPath}`);
     });
 
     // -------------------------------------------------------------------
@@ -49,6 +67,7 @@ describe('Performance', function () {
         });
 
         console.log(`[perf] Large document load time: ${duration.toFixed(0)}ms`);
+        timingResults['large-document-load-ms'] = duration;
         expect(duration).toBeLessThan(3000);
 
         // Verify some expected content actually rendered
@@ -96,8 +115,12 @@ describe('Performance', function () {
         for (const char of chars) {
             const before: number = await browser.execute(() => performance.now());
             await browser.keys([char]);
-            // Wait a tick for ProseMirror to process the transaction
-            await browser.execute(() => new Promise<void>((r) => requestAnimationFrame(() => r())));
+            // Wait a tick for ProseMirror to process the transaction.
+            // NOTE: cannot `browser.execute(() => new Promise(...))` because
+            // WebDriver/WKWebView cannot marshal Promise return values back
+            // through `execute/sync`. `browser.pause(16)` is one frame and
+            // achieves the same purpose.
+            await browser.pause(16);
             const after: number = await browser.execute(() => performance.now());
             latencies.push(after - before);
         }
@@ -108,117 +131,80 @@ describe('Performance', function () {
 
         console.log(`[perf] Keystroke latencies (ms): ${latencies.map((l) => l.toFixed(1)).join(', ')}`);
         console.log(`[perf] Keystroke avg: ${avg.toFixed(1)}ms, min: ${min.toFixed(1)}ms, max: ${max.toFixed(1)}ms`);
+        timingResults['keystroke-avg-ms'] = avg;
+        timingResults['keystroke-max-ms'] = max;
+        timingResults['keystroke-min-ms'] = min;
 
         expect(avg).toBeLessThan(100);
     });
 
     // -------------------------------------------------------------------
-    // Test 3: Editor resize preserves scroll position
-    // -------------------------------------------------------------------
-    it('should reflow content on resize without losing scroll position', async () => {
-        await openFile('large-doc.md');
-
-        // Scroll roughly to the middle of the document
-        await browser.execute(() => {
-            const pm = document.querySelector('.ProseMirror');
-            if (pm) pm.scrollTo(0, pm.scrollHeight / 2);
-        });
-        await browser.pause(300);
-
-        // Record scroll position before resize
-        const scrollBefore: number = await browser.execute(() => {
-            // Try the ProseMirror element's scroll container
-            const pm = document.querySelector('.ProseMirror');
-            if (pm && pm.scrollTop > 0) return pm.scrollTop;
-            // Some layouts scroll the parent container instead
-            const container = pm?.closest('.overflow-y-auto, .overflow-auto');
-            return container ? container.scrollTop : (pm?.scrollTop ?? 0);
-        });
-        console.log(`[perf] Scroll position before resize: ${scrollBefore}px`);
-        if (scrollBefore === 0) {
-            console.log('[perf] SKIP: scroll position is 0 — WebDriver scroll may not work in this environment');
-            return; // Skip gracefully instead of failing
-        }
-
-        // Resize window larger
-        await browser.setWindowSize(1400, 900);
-        await browser.pause(500);
-
-        // Resize window back to original
-        await browser.setWindowSize(1200, 800);
-        await browser.pause(500);
-
-        // Check scroll position is within a reasonable range
-        const scrollAfter: number = await browser.execute(() => {
-            const pm = document.querySelector('.ProseMirror');
-            return pm ? pm.scrollTop : 0;
-        });
-        console.log(`[perf] Scroll position after resize: ${scrollAfter}px`);
-
-        // Allow generous tolerance — reflow may shift things, but the user
-        // should not be teleported to a completely different part of the doc.
-        // Accept if within 50% of original position or at least still scrolled.
-        const drift = Math.abs(scrollAfter - scrollBefore);
-        const tolerance = Math.max(scrollBefore * 0.5, 200);
-        console.log(`[perf] Scroll drift: ${drift}px (tolerance: ${tolerance}px)`);
-        expect(drift).toBeLessThan(tolerance);
-
-        // Verify content is still rendered
-        const text = await getEditorText();
-        expect(text).toContain('Section 1: Implementation Details');
-    });
+    // Test 3 (removed): "reflow content on resize without losing scroll
+    // position".
+    //
+    // Removed because it was low-value and high-cost. Value: it only verified
+    // that scroll position is roughly preserved when the window is resized — a
+    // minor UX nicety — and on CI WKWebView it self-skipped most of the time
+    // anyway (the very `setWindowSize` quirk it probed resets scrollTop to 0,
+    // tripping its own `scrollAfter === 0` bail-out). Cost: the mid-test
+    // `browser.setWindowSize()` is the confirmed trigger of the real-E2E
+    // session-timeout cascade — it wedges tauri-plugin-webdriver's session
+    // teardown, after which every subsequent spec fails to create a session.
+    // This `performance.test.ts` was the spec in the traced cascade runs.
+    // run-real-e2e.sh now also restarts-on-failure as defence-in-depth, but
+    // dropping this dynamic resize removes the most frequent trigger outright.
+    // (The static setWindowSize(1200, 800) in setup is benign and stays.)
 
     // -------------------------------------------------------------------
-    // Test 4: Rapid tab switching
+    // Test 4: Rapid sequential file opens (Quiet Composer single-doc shell)
+    //
+    // Originally "rapid tab switching" — that test opened 4 files and
+    // expected 4 tabs in `openDocuments`. PR #333 (Classic Layout removal)
+    // made the shell single-document: `openTab` evicts the prior active
+    // document, so the array is always length 1. The replacement here
+    // measures the same underlying concern (no crash / no stale content
+    // under rapid file-open pressure) reshaped for the new semantics —
+    // open 4 files back-to-back, assert the last one's content is what's
+    // visible and no JS errors fired.
+    //
+    // (The "no stale content" invariant is also covered by
+    // `startup.test.ts > should not show stale content from previous file
+    // after sequential open`. This case adds the "rapid + multiple files"
+    // pressure that the old tab-switching test was probing.)
     // -------------------------------------------------------------------
-    it('should handle rapid tab switching without errors', async () => {
-        // Open multiple files
+    it('should handle rapid sequential file opens without errors', async () => {
         const files = ['README.md', 'notes.md', 'code-examples.md', 'large-doc.md'];
-        for (const file of files) {
-            await openFile(file);
-            // Brief pause to let each tab initialize
-            await browser.pause(200);
-        }
 
-        // Verify we have multiple tabs open
-        const tabCount: number = await browser.execute(() => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            return (window as any).__E2E_EDITOR_STORE__?.getState().tabs.length ?? 0;
-        });
-        console.log(`[perf] Tabs open: ${tabCount}`);
-        expect(tabCount).toBeGreaterThanOrEqual(files.length);
-
-        // Rapidly switch between tabs by clicking them in sequence
         const { duration } = await measureAction(async () => {
-            // Click each tab 2 full rounds — 8 switches total
-            for (let round = 0; round < 2; round++) {
-                for (const file of files) {
-                    // Tabs display the filename. Find and click the tab element.
-                    const tab = await browser.$(
-                        `//span[contains(@class, "truncate") and text()="${file}"]`
-                    );
-                    const exists = await tab.isExisting();
-                    if (exists) {
-                        await tab.click();
-                        // No pause — this is intentionally rapid
-                    }
-                }
+            for (const file of files) {
+                await openFile(file);
             }
         });
 
-        console.log(`[perf] Rapid tab switching (${files.length} tabs x 2 rounds): ${duration.toFixed(0)}ms`);
+        console.log(`[perf] Rapid sequential opens (${files.length} files): ${duration.toFixed(0)}ms`);
+        timingResults['rapid-open-ms'] = duration;
 
-        // Wait for the last tab switch to settle
+        // Single-doc shell: exactly 1 entry in openDocuments after the
+        // last open, and the active tab is the last file.
+        const state: { count: number; activePath: string | null } = await browser.execute(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const s = (window as any).__E2E_EDITOR_STORE__?.getState();
+            if (!s) return { count: 0, activePath: null };
+            const active = s.openDocuments.find((t: { id: string; filePath: string }) => t.id === s.activeTabId);
+            return { count: s.openDocuments.length, activePath: active?.filePath ?? null };
+        });
+        console.log(`[perf] Active doc after rapid opens: ${state.activePath} (openDocuments.length=${state.count})`);
+        expect(state.count).toBe(1);
+        expect(state.activePath ?? '').toContain(files[files.length - 1]);
+
+        // Settle, then verify the editor renders the last file's content.
         await browser.pause(500);
-
-        // Verify the editor still works — last clicked tab should show content
-        const lastFile = files[files.length - 1];
         const text = await getEditorText();
-        console.log(`[perf] Final tab content length: ${text.length} characters`);
+        console.log(`[perf] Final editor content length: ${text.length} characters`);
         expect(text.length).toBeGreaterThan(0);
 
-        // Check for JS errors by looking at console (best effort)
-        // Note: browser.getLogs() is not supported by tauri-webdriver
+        // Best-effort console error sweep (tauri-webdriver doesn't expose
+        // browser logs — gated behind getLogs availability).
         if (typeof browser.getLogs === 'function') {
             const logs = await browser.getLogs('browser');
             const errors = logs.filter(
@@ -228,11 +214,11 @@ describe('Performance', function () {
                     !log.message.includes('DevTools'),
             );
             if (errors.length > 0) {
-                console.log(`[perf] Browser errors after rapid switching:`, errors);
+                console.log(`[perf] Browser errors after rapid opens:`, errors);
             }
             expect(errors.length).toBe(0);
         }
 
-        console.log(`[perf] Rapid tab switching completed without errors`);
+        console.log(`[perf] Rapid sequential opens completed without errors`);
     });
 });

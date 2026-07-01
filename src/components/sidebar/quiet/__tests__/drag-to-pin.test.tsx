@@ -172,7 +172,9 @@ describe("RecentSection — drag source (#44)", () => {
 // ---------------------------------------------------------------------------
 
 describe("PinnedSection — drop target (#44)", () => {
-  it("appends a new pin when a Recent path is dropped on the empty container", () => {
+  it("appends a new pin when a Recent path is dropped on the container", () => {
+    // The empty section is hidden now, so drag-to-pin targets a non-empty list.
+    useWorkspaceStore.setState({ pinnedFiles: ["/w/alpha.md"] });
     renderWithProviders(<PinnedSection />);
     const dropZone = screen.getByTestId("pinned-drop-zone");
 
@@ -181,11 +183,13 @@ describe("PinnedSection — drop target (#44)", () => {
     fireEvent.drop(dropZone, { dataTransfer: dt });
 
     expect(useWorkspaceStore.getState().pinnedFiles).toEqual([
+      "/w/alpha.md",
       "/w/gamma.md",
     ]);
   });
 
   it("rejects drops that do not carry the FILE_DRAG_MIME type", () => {
+    useWorkspaceStore.setState({ pinnedFiles: ["/w/alpha.md"] });
     renderWithProviders(<PinnedSection />);
     const dropZone = screen.getByTestId("pinned-drop-zone");
 
@@ -193,7 +197,7 @@ describe("PinnedSection — drop target (#44)", () => {
     fireEvent.dragOver(dropZone, { dataTransfer: dt });
     fireEvent.drop(dropZone, { dataTransfer: dt });
 
-    expect(useWorkspaceStore.getState().pinnedFiles).toEqual([]);
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual(["/w/alpha.md"]);
   });
 
   it("ignores a duplicate drop when the path is already pinned", () => {

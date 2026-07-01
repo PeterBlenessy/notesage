@@ -35,6 +35,12 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { cn } from "@/lib/utils";
 import { FilePreview } from "./FilePreview";
 import { SidebarRowIndicators } from "./SidebarRowIndicators";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { formatSavedShort } from "@/lib/saved-ago";
 import {
   FILE_DRAG_MIME,
@@ -47,10 +53,11 @@ import {
 /**
  * PinnedSection — the pinned-files list for the quiet-composer sidebar.
  *
- * Reads absolute file paths from `workspace-store.pinnedFiles`. The list is
- * hidden (header only) when nothing is pinned to avoid an empty-state
- * placeholder. Manual ordering from drag-to-reorder (#44) is preserved by
- * rendering `pinnedFiles` in array order.
+ * Reads absolute file paths from `workspace-store.pinnedFiles`. The entire
+ * section is hidden when nothing is pinned (or the active filter excludes every
+ * pinned file) to avoid an empty header cluttering the top of the sidebar.
+ * Manual ordering from drag-to-reorder (#44) is preserved by rendering
+ * `pinnedFiles` in array order.
  *
  * Drag-and-drop (task #44) — HTML5 DnD is plumbed through `file-drag.ts`:
  * Recent / project-child rows use `FILE_DRAG_MIME` to advertise a single
@@ -301,7 +308,16 @@ function PinnedRowImpl({
             />
           ) : (
             <>
-              <span className="truncate min-w-0 flex-1">{name}</span>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="truncate min-w-0 flex-1">{name}</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="right" sideOffset={8}>
+                    {name}
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
               {/* #129 — git status + external-change dot. Pinned rows are
                  *  always files, so `kind="file"` is hard-coded. */}
               <SidebarRowIndicators path={path} kind="file" />
@@ -610,6 +626,12 @@ export function PinnedSection({ filter }: PinnedSectionProps) {
     setActiveDrop(null);
     setDraggingIndex(null);
   };
+
+  // Hide the whole section when nothing is pinned (or the filter excludes every
+  // pinned file) — an empty "Pinned" header + drop zone at the top of the
+  // sidebar reads as visual clutter. Pinning is still reachable via the row
+  // context menu / drag onto a non-empty list.
+  if (visibleFiles.length === 0) return null;
 
   return (
     <section

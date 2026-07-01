@@ -12,11 +12,35 @@ import { useDirectApiChat } from '@/hooks/useDirectApiChat';
 import { useAcpLifecycle } from '@/hooks/useAcpLifecycle';
 import { useCopilotChat } from '@/hooks/useCopilotChat';
 import { findLockConflict, ProjectLockViolation, describeLockTarget } from '@/lib/ai/project-lock';
+import { track, providerKind, type AiPath } from '@/lib/telemetry';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useSessionRunStore } from '@/stores/session-run-store';
+import { hasSessionCapacity, enqueueSend, dropQueuedSend } from '@/lib/ai/session-run';
+import type { Connection } from '@/lib/ai/connections';
 
 // Re-export ACP utilities for external consumers
-export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
+export { stopAcpAgent, stopAllAcpAgents } from '@/lib/ai/acp-agent-state';
 export { truncateDetail, formatAcpToolName } from '@/lib/ai/acp-utils';
 export { ProjectLockViolation };
+
+// ---------------------------------------------------------------------------
+// Telemetry — classify which of the four routing paths handles a send. Mirrors
+// the branch order in `sendChatMessage` exactly so the reported `path` matches
+// the path actually taken.
+// ---------------------------------------------------------------------------
+
+function aiPathFor(conn: Connection | null): AiPath {
+  if (
+    conn?.credentials &&
+    'agentBinary' in conn.credentials &&
+    conn.credentials.agentBinary === 'copilot-language-server'
+  ) {
+    return 'copilot_lsp';
+  }
+  if (conn?.authMethod === 'agent_managed') return 'acp';
+  if (conn?.authMethod === 'local_bundled') return 'local_bundled';
+  return 'direct';
+}
 
 // ---------------------------------------------------------------------------
 // Hook — routes AI operations between direct API and ACP paths
@@ -45,7 +69,12 @@ export function useAIOperations() {
   // All connections (for reactivity when a connection referenced by project override is added/removed)
   const connections = useConnectionsStore((s) => s.connections);
 
-  // Resolve the effective connection: project override takes priority over global routing
+  // Resolve the effective connection: project override takes priority over
+  // global routing. The Local Agent preset (when selected) is used as-is — if it
+  // has become unhealthy, the send path surfaces a proper error in the chat
+  // message rather than silently falling back to direct local chat (user
+  // decision). A failed *setup* is rolled back so a broken agent never reaches
+  // the dropdown in the first place.
   const effectiveConnection = useMemo(() => {
     const projectProviderOverride = singleMetadata?.ai.provider ?? null;
     if (projectProviderOverride) {
@@ -55,31 +84,20 @@ export function useAIOperations() {
     return interactiveConnection;
   }, [singleMetadata, interactiveConnection, connections]);
 
-  // Resolve effective provider + credentials
+  // Resolve effective provider + credentials from the (post-fallback) connection.
   const resolved = useMemo(() => {
-    const projectProviderOverride = singleMetadata?.ai.provider ?? null;
-
-    if (projectProviderOverride) {
-      const conn = connections.find((c) => c.id === projectProviderOverride);
-      if (conn) {
-        const fromConn = resolveConnectionCredentials(conn, useCaseModel);
-        if (fromConn) return fromConn;
-      }
-
-      const legacyProvider = projectProviderOverride as AIProviderType;
-      if (['anthropic', 'openai', 'ollama', 'google'].includes(legacyProvider)) {
-        return {
-          provider: legacyProvider,
-          connectionId: '',
-          ollamaUrl,
-          config: undefined,
-        };
-      }
+    if (effectiveConnection) {
+      const fromConnection = resolveConnectionCredentials(effectiveConnection, useCaseModel);
+      if (fromConnection) return fromConnection;
     }
 
-    if (interactiveConnection) {
-      const fromConnection = resolveConnectionCredentials(interactiveConnection, useCaseModel);
-      if (fromConnection) return fromConnection;
+    // Legacy: a project override that is a bare provider string (pre-connections).
+    const projectProviderOverride = singleMetadata?.ai.provider ?? null;
+    if (projectProviderOverride) {
+      const legacyProvider = projectProviderOverride as AIProviderType;
+      if (['anthropic', 'openai', 'ollama', 'google'].includes(legacyProvider)) {
+        return { provider: legacyProvider, connectionId: '', ollamaUrl, config: undefined };
+      }
     }
 
     if (aiStore.provider) {
@@ -92,7 +110,7 @@ export function useAIOperations() {
     }
 
     return null;
-  }, [singleMetadata, interactiveConnection, aiStore.provider, aiStore.apiKeys, ollamaUrl, useCaseModel]);
+  }, [effectiveConnection, singleMetadata, aiStore.provider, aiStore.apiKeys, ollamaUrl, useCaseModel]);
 
   // Delegate context building to useAIContext
   const { composedSystemMessage, localSystemMessage, acpSystemMessage, buildComposedSystemMessage, buildAcpSystemMessage } = useAIContext();
@@ -151,15 +169,50 @@ export function useAIOperations() {
   const sendChatMessage = useCallback(
     async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }) => {
       assertLockAllowsSend();
-      if (effectiveConnection?.credentials && 'agentBinary' in effectiveConnection.credentials && effectiveConnection.credentials.agentBinary === 'copilot-language-server') {
-        return copilotSendChatMessage(content, messages, opts);
+      const chatPath = aiPathFor(effectiveConnection);
+      track('ai_chat_sent', {
+        path: chatPath,
+        // A Copilot LSP connection's authMethod is the generic `agent_managed`,
+        // which providerKind() collapses to "agent_managed" — but the routing
+        // path is copilot_lsp. Report copilot_lsp so path/provider_kind agree.
+        provider_kind:
+          chatPath === 'copilot_lsp'
+            ? 'copilot_lsp'
+            : providerKind(
+                effectiveConnection?.provider ?? resolved?.provider ?? '',
+                effectiveConnection?.authMethod ?? '',
+              ),
+      });
+      // Route to the path that owns this connection's streaming.
+      const route = () => {
+        if (effectiveConnection?.credentials && 'agentBinary' in effectiveConnection.credentials && effectiveConnection.credentials.agentBinary === 'copilot-language-server') {
+          return copilotSendChatMessage(content, messages, opts);
+        }
+        if (effectiveConnection?.authMethod === 'agent_managed') {
+          return acpSendChatMessage(content, messages, opts);
+        }
+        return directSendChatMessage(content, messages, opts);
+      };
+
+      // Concurrency cap (task #5). When the live-session count is at the cap,
+      // defer this send: mark its conversation `queued` and park a start-thunk
+      // that `useSessionManager` runs FIFO once a slot frees. The thunk sets the
+      // queued conversation active before routing so the deferred send targets
+      // the right conversation (and the view follows the session that starts).
+      // A brand-new chat with no conversation yet (`targetConv` null) can't be
+      // keyed, so it proceeds immediately — an acceptable rare over-cap edge.
+      const targetConv = useChatStore.getState().activeConversationId;
+      const cap = useSettingsStore.getState().maxConcurrentSessions;
+      if (targetConv && !hasSessionCapacity(cap)) {
+        enqueueSend(targetConv, () => {
+          useChatStore.getState().setActiveConversation(targetConv);
+          void route();
+        });
+        return;
       }
-      if (effectiveConnection?.authMethod === 'agent_managed') {
-        return acpSendChatMessage(content, messages, opts);
-      }
-      return directSendChatMessage(content, messages, opts);
+      return route();
     },
-    [effectiveConnection, copilotSendChatMessage, acpSendChatMessage, directSendChatMessage, assertLockAllowsSend]
+    [effectiveConnection, resolved, copilotSendChatMessage, acpSendChatMessage, directSendChatMessage, assertLockAllowsSend]
   );
 
   // Route cancelChat — always clean up direct listeners, then delegate ACP/Copilot if needed
@@ -168,6 +221,13 @@ export function useAIOperations() {
     && effectiveConnection.credentials.agentBinary === 'copilot-language-server';
 
   const cancelChat = useCallback(() => {
+    // If the foreground conversation is only QUEUED (not yet streaming), drop it
+    // from the queue and clear its run — there are no listeners to tear down.
+    const activeConv = useChatStore.getState().activeConversationId;
+    if (activeConv && dropQueuedSend(activeConv)) {
+      useSessionRunStore.getState().clearRun(activeConv);
+      return;
+    }
     cancelDirectChat();
     cancelCopilotChat();
     if (effectiveConnection?.authMethod === 'agent_managed' && !isCopilotLsp) {

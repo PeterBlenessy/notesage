@@ -18,7 +18,6 @@ describe("PlainTextViewer", () => {
       <PlainTextViewer content="Hello, world!" fileName="readme.txt" />
     );
     expect(screen.getByText("Hello, world!")).toBeTruthy();
-    expect(screen.getByText("readme.txt")).toBeTruthy();
   });
 
   it("renders plain text in <pre> for .log files", () => {

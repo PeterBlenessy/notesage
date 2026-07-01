@@ -44,12 +44,13 @@ src-tauri/src/commands/
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct FileEntry {
     pub name: String,
     pub path: String,
     pub is_directory: bool,
     pub children: Option<Vec<FileEntry>>,
+    pub hidden: bool, // true when name starts with '.' — used for dimmed styling
 }
 
 #[tauri::command]
@@ -81,30 +82,34 @@ pub use ai::*;
 
 ## Registration
 
-Commands must be registered in `src-tauri/src/lib.rs`:
+Commands must be registered in `src-tauri/src/lib.rs`. The real builder
+registers many plugins (`opener`, `fs`, `dialog`, `window-state`, `updater`,
+`process`, `http`, `notification`, `autostart`, `log`), manages a large set of
+state structs (`WatcherState`, `AcpState`, `CopilotLspState`, `McpState`,
+`IndexState`, …), and lists ~150 commands in a single `generate_handler!`.
+The sketch below is **illustrative only** — read `src-tauri/src/lib.rs` for the
+authoritative list before adding a command.
 
 ```rust
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_dialog::init());
+        // ...many more plugins (see lib.rs)
+
+    builder
+        .manage(WatcherState::new())
+        // ...many more .manage(...) state structs (see lib.rs)
         .invoke_handler(tauri::generate_handler![
-            // File operations
-            commands::read_file,
-            commands::write_file,
-            commands::list_directory,
-            commands::create_file,
-            commands::create_directory,
-            commands::rename_path,
-            commands::delete_path,
-            commands::path_exists,
-            // Dialog operations
-            commands::open_folder_dialog,
-            // AI operations
-            commands::ai_generate_text,
-            commands::ai_chat,
-            // Add your new commands here
+            // commands are imported via `use commands::*;` so they appear
+            // unqualified (NOT `commands::read_file`)
+            read_file,
+            write_file,
+            list_directory,
+            open_folder_dialog,
+            // ...add your new command here
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
@@ -115,7 +120,9 @@ pub fn run() {
 
 ### Typed Wrappers (Recommended)
 
-Create typed wrappers in `src/lib/tauri.ts`:
+`src/lib/tauri.ts` exposes a single `tauriApi` object — add your wrapper as a
+method on it, NOT as a free-standing `export async function`. Interfaces that
+mirror Rust structs live at the top of the same file.
 
 ```typescript
 import { invoke } from '@tauri-apps/api/core';
@@ -125,20 +132,28 @@ export interface FileEntry {
   path: string;
   is_directory: boolean;
   children?: FileEntry[];
+  hidden: boolean;
 }
 
-export async function readFile(path: string): Promise<string> {
-  return await invoke<string>('read_file', { path });
-}
+export const tauriApi = {
+  async readFile(path: string): Promise<string> {
+    return await invoke<string>('read_file', { path });
+  },
 
-export async function writeFile(path: string, content: string): Promise<void> {
-  await invoke('write_file', { path, content });
-}
+  async writeFile(path: string, content: string): Promise<void> {
+    await invoke('write_file', { path, content });
+  },
 
-export async function listDirectory(path: string): Promise<FileEntry[]> {
-  return await invoke<FileEntry[]>('list_directory', { path });
-}
+  // optional camelCase args are forwarded as-is; Tauri maps them to the
+  // command's snake_case params (showHidden → show_hidden)
+  async listDirectory(path: string, showHidden?: boolean): Promise<FileEntry[]> {
+    return await invoke<FileEntry[]>('list_directory', { path, showHidden });
+  },
+  // ...add your new wrapper method here
+};
 ```
+
+Call sites use `tauriApi.readFile(path)`, etc.
 
 ### Direct Usage
 
@@ -259,113 +274,64 @@ pub async fn delete_file(path: String) -> Result<(), String> {
 }
 ```
 
-### HTTP Requests (for AI APIs)
-
-```rust
-use reqwest;
-
-#[tauri::command]
-pub async fn fetch_data(url: String) -> Result<String, String> {
-    let response = reqwest::get(&url)
-        .await
-        .map_err(|e| format!("HTTP request failed: {}", e))?;
-
-    let text = response.text()
-        .await
-        .map_err(|e| format!("Failed to read response: {}", e))?;
-
-    Ok(text)
-}
-```
-
 ### AppHandle for Dialogs
+
+`blocking_pick_folder()` (and `blocking_pick_file()`) return an `Option<FilePath>`
+directly — NOT a `Result`. There is no error to `?` or `map_err`; `None` means
+the user cancelled. The real `dialog.rs` matches on the `Option`:
 
 ```rust
 #[tauri::command]
 pub async fn open_folder_dialog(app: tauri::AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
 
-    let folder = app.dialog()
-        .file()
-        .pick_folder()
-        .map_err(|e| format!("Dialog failed: {}", e))?;
+    let folder = app.dialog().file().blocking_pick_folder();
 
-    Ok(folder.map(|p| p.to_string_lossy().to_string()))
+    match folder {
+        Some(path) => Ok(Some(path.to_string())),
+        None => Ok(None),
+    }
 }
 ```
 
-## Dependencies
+## Credentials — Keychain Pattern (load-bearing)
 
-Add to `Cargo.toml` as needed:
+API keys are **never passed across IPC and never stored in localStorage.** They
+live in the OS keychain (macOS Keychain via the `keyring` crate). AI commands
+take a `connection_id` and resolve the key from the keychain inside Rust — the
+key never transits the IPC boundary or appears in the frontend console.
 
-```toml
-[dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-reqwest = { version = "0.12", features = ["json"] }  # For HTTP
-tokio = { version = "1", features = ["full"] }       # For async
-tauri-plugin-dialog = "2.0"                          # For dialogs
-tauri-plugin-fs = "2.0"                               # For filesystem
+```rust
+// AI commands receive connectionId, NOT apiKey:
+#[tauri::command]
+pub async fn ai_chat_stream(/* ... */ connection_id: Option<String> /* ... */) {
+    // backend resolves the key from the keychain using connection_id
+}
 ```
+
+The credential commands live in `src-tauri/src/commands/credentials.rs`
+(`store_credential`, `get_credential`, `delete_credential`, `migrate_credentials`).
+When you add a command that needs a provider key, take `connection_id` and
+resolve via the keychain — do NOT add an `api_key: String` parameter.
 
 ## Security Considerations
 
-1. **Validate inputs** - Never trust frontend data
-2. **Check paths** - Prevent directory traversal attacks
-3. **API keys** - Keep in backend, never log
-4. **Permissions** - Use Tauri's capability system
-5. **Error messages** - Don't leak sensitive info
-
-### Example: Path Validation
-
-```rust
-#[tauri::command]
-pub async fn read_file(path: String) -> Result<String, String> {
-    // Validate path is absolute
-    if !Path::new(&path).is_absolute() {
-        return Err("Path must be absolute".to_string());
-    }
-
-    // Check file exists
-    if !Path::new(&path).exists() {
-        return Err(format!("File not found: {}", path));
-    }
-
-    // Read file
-    std::fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read file: {}", e))
-}
-```
-
-## Performance Tips
-
-1. **Use async for I/O** - Don't block the main thread
-2. **Batch operations** - Combine multiple file reads
-3. **Stream large data** - Don't load huge files into memory
-4. **Debounce rapid calls** - Frontend should debounce auto-save
-
-### Example: Batch File Reading
-
-```rust
-#[tauri::command]
-pub async fn read_files(paths: Vec<String>) -> Result<Vec<String>, String> {
-    let mut results = Vec::new();
-
-    for path in paths {
-        let content = std::fs::read_to_string(&path)
-            .map_err(|e| format!("Failed to read {}: {}", path, e))?;
-        results.push(content);
-    }
-
-    Ok(results)
-}
-```
+1. **Validate inputs** — never trust frontend data; paths must be absolute
+2. **Filesystem boundaries** — Seatbelt sandbox enforces writable paths per
+   connection; see `src-tauri/src/commands/sandbox.rs` and the Security Model
+   in `CLAUDE.md`
+3. **No `fs:allow-*` capabilities** — the renderer never imports
+   `@tauri-apps/plugin-fs`; all file I/O goes through vetted Rust commands
+4. **Credentials** — keychain only, resolved by `connection_id` (see above)
+5. **Error messages** — don't leak sensitive info
 
 ## Reference
 
-Read @docs/tauri-commands.md for:
+Read `docs/tauri-commands.md` for:
 - All current command signatures
 - FileEntry struct definition
 - Complete IPC patterns
 - Frontend usage examples
 - Error handling strategies
+
+And `src-tauri/src/lib.rs` for the authoritative plugin / state / command list.

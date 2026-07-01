@@ -2,18 +2,15 @@
 
 Chat, agents, skills, comment delegation, research, and voice transcription — the user-facing AI features built on top of the [AI Providers](ai-providers.md) infrastructure.
 
-## Chat Surfaces
+## Chat Surface
 
-The chat experience is exposed through two different shells. Both call into the same `useAIOperations.sendChatMessage` pipeline, the same `chat-store`, the same segment renderer, the same branching/resend/edit flows, and the same scoped-approvals layer. Only the surrounding chrome differs.
+Chat is reached through the `FloatingCommandBar` (`src/components/cmd/FloatingCommandBar.tsx`) inside `QuietLayout` — a compact bottom-centre pill that expands on focus (or `Cmd+K`) into a portal-mounted overlay with the input, attachment chips, context row, and conversation stream. A pin affordance (persisted as `settings.cmdBarPinned`) converts the floating overlay into a fixed-position right-edge side panel; the document column reserves matching `padding-right` via the `--cmd-bar-pinned-width` CSS variable. Prefix characters (`/`, `@`, `#`, `!`, `?`, `>`) morph the bar into mode-specific pickers (skills, references, tags, tasks, research, palette).
 
-- **Classic Layout** (`src/components/Layout.tsx`, default): a collapsible right sidebar — `ChatPanel` (`src/components/chat/ChatPanel.tsx`) — opened with `Cmd+Shift+C`. Resizable up to 50% of the content area. Hosts the message list, input, footer (provider, project picker, mode/effort dropdowns), branch switcher, and permission/approval cards inline.
-- **Quiet Composer Layout** (`src/components/QuietLayout.tsx`, gated behind `settings.uiPreview === "quiet-composer"`): the same chat is reached through `FloatingCommandBar` (`src/components/cmd/FloatingCommandBar.tsx`) — a compact bottom-centre pill that expands on focus (or `Cmd+K`) into a portal-mounted overlay with the input, attachment chips, context row, and conversation stream. A pin affordance (persisted as `settings.cmdBarPinned`) converts the floating overlay into a fixed-position right-edge side panel; the document column reserves matching `padding-right` via the `--cmd-bar-pinned-width` CSS variable. Prefix characters (`/`, `@`, `#`, `!`, `?`, `>`) morph the bar into mode-specific pickers (skills, references, tags, tasks, research, palette).
-
-Everything described in the rest of this document applies regardless of which shell is mounted — when a section says "the chat panel" it means whichever surface is active.
+The bar shells the same `useAIOperations.sendChatMessage` pipeline, `chat-store`, segment renderer, branching/resend/edit flows, and scoped-approvals layer that the rest of this document references when it says "the chat panel" — the cmd bar IS the chat panel.
 
 ## Chat Pipeline
 
-Streaming AI responses, identical across both shells.
+Streaming AI responses.
 
 **Direct API path:**
 
@@ -35,12 +32,12 @@ Streaming AI responses, identical across both shells.
 
 **Features:**
 
-- Message resend: one-click resend of any user message. If the message's original `connectionId` differs from the current chat footer provider, a `ResendProviderDialog` asks "Resend with original" vs "Resend with current" before sending. `aiLock` on the selected project disables the non-matching option.
+- Message resend: one-click resend of any user message. If the message's original `connectionId` differs from the current command bar provider, a `ResendProviderDialog` asks "Resend with original" vs "Resend with current" before sending. `aiLock` on the selected project disables the non-matching option.
 - Message edit: click edit on a user message to pre-fill the input, modify and send as a new branch. "Editing message" banner with cancel (X or Escape). Same provider-mismatch dialog as resend fires at send time when the original `connectionId` differs.
 - Quick reply chips: AI responses can include `<quick-replies>` tags with suggested follow-ups
 - Custom prompts/templates for AI actions
 - Project-scoped AI context (provider, agent, and context overrides per project)
-- Multi-select project selector in chat footer
+- Multi-select project selector in command bar
 - Chat/History tab view: Chat tab for active conversation, History tab for past conversations sorted by date with metadata (time, message count, branch count)
 - Conversation branching: branch from any message to explore alternative responses. Branch indicator pills show at branch points with a popover to switch between branches. "Branch from here" action on all messages via GitBranch icon.
 - Conversation export: export active thread as Markdown, all branches as Markdown (separated by horizontal rules with "Branch N" headers), or full tree as JSON with `id`/`parentId` fields. Native save dialog with Reveal in Finder option.
@@ -51,9 +48,9 @@ Streaming AI responses, identical across both shells.
 - Domain deny/timeout messages: blocked or timed-out domain requests shown as chat messages
 - Chat panel resizable up to 50% of the content area
 - Image attachments: paste, drag-drop, or file picker to attach up to 5 images per message. Images compressed client-side (1568px max, PNG→JPEG, 5MB cap). Vision capability auto-detected per provider. Right-click "Add to chat" on editor images/drawings or sidebar image files. See [Image Attachments & Vision](ai-providers.md#image-attachments--vision) for full details.
-- **ACP session modes**: Permission-level mode picker (Shield icon) in chat footer. Agent-specific mode IDs mapped to common levels: Read Only, Agent, Full Access, Plan. Hidden by default — enable in Settings > Advanced. Full Access triggers a conflict dialog when sandbox restrictions are active.
+- **ACP session modes**: Permission-level mode picker (Shield icon) in command bar. Agent-specific mode IDs mapped to common levels: Read Only, Agent, Full Access, Plan. Hidden by default — enable in Settings > Advanced. Full Access triggers a conflict dialog when sandbox restrictions are active.
 - **ACP config options**: Dynamic config dropdowns (e.g., thinking effort with Brain icon) populated from agent session response. Values set via `session/set_config_option`.
-- **ACP usage tracking**: Live token count displayed in chat footer during ACP sessions (e.g., "4.2K / 200K"). Cost shown on hover tooltip when agent provides it.
+- **ACP usage tracking**: Live token count displayed in command bar during ACP sessions (e.g., "4.2K / 200K"). Cost shown on hover tooltip when agent provides it.
 - **ACP plan display**: Agent execution plans rendered as collapsible `PlanSegment` cards with step status icons (pending/in_progress/completed) and priority indicators.
 - **ACP agent slash commands**: Agent-specific commands (e.g., `/compact`, `/clear`) appear in the `/` command menu alongside Notesage skills, distinguished by Terminal icon.
 - **ACP thinking segments**: Agent reasoning output (`agent_thought_chunk`) displayed as collapsible thinking blocks in chat messages.
@@ -98,7 +95,7 @@ File-based agent system for user-created and provider-native agents.
 - **`@` behavior depends on connection type:**
   - **ACP connections** (`agent_managed`): `@agent-name message` is passed through verbatim to the provider, which manages its own subagent system
   - **Direct API connections** (`api_key`, `local`): `@agent-name` strips the prefix and swaps the system prompt to the agent's body content
-- Agent picker dropdown in chat footer; `@agent-name` addressing in chat input for per-message scoping
+- Agent picker dropdown in command bar; `@agent-name` addressing in chat input for per-message scoping
 - Agent-to-skill connection: `allowed-tools` frontmatter filters which skills an agent can access
 - Agents section in Settings > Skills & Agents for viewing, enabling/disabling
 - Skill & agent management: delete and move (global ↔ project) for custom items, gated behind Settings > Advanced toggle
@@ -120,11 +117,17 @@ Extensible AI capability system based on open standards.
 
 **MCP Client Integration:**
 
-- MCP (Model Context Protocol) client in Rust backend using stdio transport with JSON-RPC 2.0
-- Spawn and manage MCP servers as child processes with cleanup on app exit
+- MCP (Model Context Protocol) client in the Rust backend (`commands/mcp.rs`) with two transports behind the `McpConn` enum:
+  - **stdio** — JSON-RPC 2.0 over a spawned child process's stdin/stdout (cleanup on app exit)
+  - **http (Streamable HTTP)** — JSON-RPC POSTed to a single endpoint; responses parsed from `application/json` or `text/event-stream` (SSE), with `Mcp-Session-Id` persisted across requests. No child process; the protocol helpers (`mcp_initialize`, `mcp_list_tools_from_server`, `mcp_call_tool_on_server`) are transport-agnostic.
+- **Curated catalog** (`mcp-catalog.json`, `mcp_catalog_list`) — a "Browse catalog" picker of opt-in server templates, seeded with the official MCP reference servers (Filesystem, Fetch, Memory, Git, Sequential Thinking, Time, Everything), badged "Official" with provenance links. Selecting one pre-fills the Add dialog; nothing runs until the user confirms.
+- **Validate-on-add** (`mcp_validate_server`) — a dry run (spawn/connect → `initialize` → `tools/list` → stop) that previews a server's tools on success or shows a mapped error (`binary_not_found` / `spawn_failed` / `init_failed` / `timeout`) on failure. A config is written to `mcp.json` only after a successful dry run.
+- **Env secrets in the keychain** — env values flagged secret are stored in the OS keychain (`notesage:mcp:<server_id>:<KEY>`); `mcp.json` keeps only a `{ "secret": true }` reference (`McpEnvValue`). Secrets are resolved at spawn, never written to disk, never returned to the frontend.
+- **OAuth 2.1 for protected remote servers** (`commands/mcp_oauth.rs`) — authorization-code + PKCE (S256), RFC 9728→8414 metadata discovery, RFC 7591 dynamic client registration, a transient loopback `127.0.0.1` callback, and refresh. Tokens live in the keychain (`notesage:mcp:<server_id>:oauth`); `HttpMcpClient` attaches `Authorization: Bearer` when a server is authorized. Commands: `mcp_oauth_authorize` / `mcp_oauth_status` / `mcp_oauth_logout`. Add dialog has an "Authorize" button; server cards offer Re-authenticate / Sign out.
+- **Deep-link install** — `notesage://mcp/install?...` links (parsed by `src/lib/mcp/deeplink.ts`) open the validate-first Add dialog pre-filled, via the `notesage` scheme (`tauri-plugin-deep-link`) and `McpDeepLinkInstaller` mounted at the app root.
 - Tool discovery from connected servers, displayed in Tools popover
 - Import existing MCP configs from Claude Desktop, Cursor, VS Code
-- `.notesage/mcp.json` (project) and `~/.notesage/mcp.json` (global) for Notesage-specific servers
+- `.notesage/mcp.json` (project) and `~/.notesage/mcp.json` (global) for Notesage-specific servers; project-scoped servers default to disabled (security). PRD: `docs/prds/2026-06-03-mcp-registration-ux.md`
 
 **Standards:**
 
@@ -164,12 +167,9 @@ Document comments with AI agent delegation — foundational infrastructure for h
 
 **Agent activity surface:**
 
-The agent activity list (running, completed, failed tasks) is exposed through two different surfaces — both backed by the same `activity-store`:
+The agent activity list (running, completed, failed tasks) is exposed through `AgentOrb` (`src/components/activity/AgentOrb.tsx`) — backed by `activity-store`. A 46px ambient circle pinned to the bottom-right of the workspace. Pulses (CSS-only keyframe) and shows a count badge while running tasks are in flight; otherwise a static neutral surface with a subtle Bot glyph. Click (or Enter) opens an `AgentPanel` (`src/components/activity/AgentPanel.tsx`) inside a shadcn `Popover` with focus trap, Esc-to-close, and focus restoration. Hidden via `display: none` while the FloatingCommandBar is in pinned mode (the side panel covers the same screen real estate).
 
-- **Classic Layout** — `ActivityStrip` (`src/components/activity/ActivityStrip.tsx`): a narrow 40px rail along the right edge with per-task status icons, plus a resizable sidebar `ActivityPanel` for full task details. Toggled via Cmd+Shift+A or the title bar button.
-- **Quiet Composer Layout** — `AgentOrb` (`src/components/activity/AgentOrb.tsx`): a 46px ambient circle pinned to the bottom-right of the workspace. Pulses (CSS-only keyframe) and shows a count badge while running tasks are in flight; otherwise a static neutral surface with a subtle Bot glyph. Click (or Enter) opens an `AgentPanel` (`src/components/activity/AgentPanel.tsx`) inside a shadcn `Popover` with focus trap, Esc-to-close, and focus restoration. Hidden via `display: none` while the FloatingCommandBar is in pinned mode (the side panel covers the same screen real estate).
-
-Both surfaces share the same task model:
+Task model:
 
 - Task persistence: historical tasks survive app restart; interrupted tasks marked as error on rehydration
 - Per-task details: thinking output, streaming response, activity log
@@ -195,32 +195,36 @@ Research workflow built on the Skills & Agents Platform.
 
 **Citing:** Three citation formats (inline links, footnotes, academic). Citation format persisted per-project.
 
-## Voice Transcription & Dictation
+## Meeting Recording & Transcription
 
-On-device speech-to-text powered by whisper-rs with Metal GPU acceleration — fully offline.
+On-device speech-to-text powered by whisper-rs with Metal GPU acceleration — fully offline. There is no live dictation and no command-bar voice input: the only voice feature is **record a meeting, then transcribe the whole file in the background**. Capture and transcription are two decoupled phases — capture writes audio to disk and does nothing else, transcription is a separate background job that reads the finished file (PRD `2026-05-30-meeting-recording.md`, motivated by #264).
 
-**Dictation (live):**
+**Lifecycle — one artifact, four states (narrated by the AgentOrb):**
 
-- Real-time speech-to-text inserted at cursor position
-- Web Speech API tried first; auto-falls back to whisper-rs in WKWebView
-- Language selection from 99 supported languages
-- Hallucination filtering removes Whisper artifacts
-- RMS silence detection skips empty audio chunks
-- Keyboard shortcut: Cmd+Shift+R to toggle recording
+```
+⏺ Recording (02:14)  →  ⟳ Transcribing…  →  ✓ Ready to file  →  📁 Moved to project
+```
 
-**Meeting recording & transcription:**
+1. **Record.** The StatusTray microphone (or `⌘⇧R`) starts capture. A single mic-stream owner appends samples to a WAV file in the `~/Notesage/Recordings/Recording <timestamp>/` inbox folder. The orb shows a `recording` item with a pause-aware elapsed time and inline pause/stop controls; while recording the orb draws a clock-style seconds-ray ring (distinct from the agent-activity pulse). Capture is deliberately dumb — samples → file, no Whisper, no chunking — so it can never contend with a transcription. Pause/resume discards samples without tearing down the stream.
+2. **Stop.** A second click (or `⌘⇧R`) signals the stream owner to stop; teardown (stream drop + thread join) is awaited before the command returns and the WAV is finalized. A rapid stop→start is safe because the new stream can only open after the previous owner has fully released CoreAudio.
+3. **Transcribe.** A background **transcription job** (tracked in `activity-store`, surfaced in the orb / `AgentPanel`) runs whole-file Whisper once with the configured model and produces timestamped segments. Progress streams into the activity item via `transcription-progress` events.
+4. **File it.** On completion the panel offers "Move to project"; picking one relocates the whole bundle (audio + transcript note) into that project. No pick leaves it in the inbox, re-openable and re-runnable.
 
-- Record audio from microphone with visual recording indicator
-- Stop recording opens transcription dialog with model selection
-- Full transcription with timestamped segments and progress tracking
+**Data model — segments, not a blob:**
+
+The transcript is stored as an ordered list of `TranscriptSegment` (`start`, `end`, `text`, `speakerId: string | null`, `speakerName: string | null`). `speakerId` / `speakerName` are reserved for a future diarization + naming pass and are `null` in v1. The renderer (`src/lib/transcription/render-transcript.ts`) collapses segments into readable paragraphs for the note body and persists the raw segment array in the note's YAML frontmatter, so a later diarization pass can reconstruct structure and re-render speaker-grouped (`**Alice:** …`) without re-recording. The retained `audio.wav` makes that upgrade re-processable.
+
+**The artifact bundle:** each recording is a folder under the inbox (and later the chosen project) holding `audio.wav` (finalized capture) + `transcript.md` (note rendered from segments). The folder keeps the pair together so "move to project" is a single atomic move (`src/lib/transcription/bundle.ts`, reusing `rename_path` / `copy_directory`).
+
+**The orb / activity model:** `activity-store` carries a `kind: 'agent' | 'transcription' | 'recording'` discriminator so the `AgentPanel` renders the three distinctly — `agent` is the existing AI-delegation treatment, `recording` shows elapsed time + a stop affordance, `transcription` shows a distinct icon + progress and the "Move to project" action on completion. The orb pulses for any in-flight item, giving one continuous indicator across recording → transcribing → ready.
 
 **Whisper model management:**
 
 - 5 model sizes: Tiny (39M), Base (74M), Small (244M), Medium (769M), Large v3 (1550M)
 - Models downloaded from Hugging Face in GGML format
 - Concurrent downloads with per-model progress bars and cancel buttons
-- Model management in Settings > Transcription tab
-- Auto-download: Whisper base model downloaded automatically on first dictation if no model is available
+- Model management in Settings > Voice (the legacy `TranscriptionSettings` panel)
+- The selected **transcription model** (`recording-store.defaultModel`) and **recording language** (`recording-store.speechLanguage`) drive the whole-file `transcribe_file` job
 
 ## Chronological Message Segments
 
@@ -265,21 +269,22 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 
 | File | Purpose |
 | --- | --- |
-| `src/components/chat/ChatPanel.tsx` | AI chat sidebar (Classic Layout) |
+| `src/components/cmd/FloatingCommandBar.tsx` | Floating composer / pinned right-edge panel — the chat surface |
 | `src/components/chat/ChatInput.tsx` | Message input (/ for skills, @ for agents) |
-| `src/components/cmd/FloatingCommandBar.tsx` | Floating composer / pinned right-edge panel (Quiet Composer Layout) |
+| `src/components/chat/ChatMessageList.tsx` | Conversation stream (segments, branches, tool calls) |
 | `src/components/chat/PermissionCard.tsx` | ACP tool call approval |
 | `src/components/chat/ToolCallPermissionCard.tsx` | Direct API tool call approval |
 | `src/components/editor/CommentPopover.tsx` | Comment create/view/delegate |
-| `src/components/activity/ActivityStrip.tsx` | Agent activity strip + panel (Classic Layout) |
-| `src/components/activity/AgentOrb.tsx` | Agent orb pulse + popover trigger (Quiet Composer Layout) |
+| `src/components/activity/AgentOrb.tsx` | Agent orb pulse + popover trigger |
 | `src/components/activity/AgentPanel.tsx` | Agent task list inside the orb popover |
 | `src/hooks/useCommentDelegation.ts` | Comment → agent delegation flow |
 | `src/hooks/useAgentTaskOperations.ts` | Background agent task management |
 | `src/hooks/useSkillOperations.ts` | Skill/agent discovery |
-| `src/hooks/useRecording.ts` | Audio recording lifecycle |
-| `src/hooks/useTranscription.ts` | Whisper transcription with progress |
-| `src/hooks/useSpeechRecognition.ts` | Live dictation |
+| `src/hooks/useRecording.ts` | Mic capture lifecycle (start/stop → WAV file, elapsed timer, `recording-level` events) |
+| `src/hooks/useMeetingRecording.ts` | StatusTray mic / `⌘⇧R` start-stop trigger for a meeting recording |
+| `src/hooks/useTranscriptionJob.ts` | Background transcription-job orchestrator (mounted in `App.tsx`) — capture stop → whole-file transcribe → render note → bundle → "Move to project" |
+| `src/lib/transcription/render-transcript.ts` | `TranscriptSegment[]` → transcript note (paragraphs + segments in frontmatter) |
+| `src/lib/transcription/bundle.ts` | Recording-bundle folder creation + move-to-project |
 | `src/stores/chat-store.ts` | Chat conversation state, branching, `sliceThreadBySegment`, scoped approvals migration |
 | `src/lib/chat-tree.ts` | Tree traversal utilities (getThread, getChildren, getBranches, getLeaves) |
 | `src/lib/ai/project-lock.ts` | `ProjectLockViolation` + lock lookup utilities |
@@ -291,9 +296,9 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 | `src/lib/image-compress.ts` | Client-side image compression pipeline |
 | `src/stores/skill-store.ts` | Skills registry, agents, instructions |
 | `src/stores/comment-store.ts` | Comments, replies, delegation |
-| `src/stores/activity-store.ts` | Agent task registry |
-| `src/stores/recording-store.ts` | Voice recording state |
-| `src-tauri/src/commands/transcription.rs` | Voice recording, Whisper, model management |
+| `src/stores/activity-store.ts` | Agent / transcription / recording task registry (`kind` discriminator) |
+| `src/stores/recording-store.ts` | Meeting-recording state, transcription model + recording language defaults, Whisper model catalog |
+| `src-tauri/src/commands/transcription.rs` | Mic capture-to-WAV (`start_recording`/`stop_recording`), whole-file `transcribe_file`, Whisper model management |
 | `src-tauri/src/commands/skills.rs` | Skill/agent discovery, script execution |
 | `src-tauri/src/commands/mcp.rs` | MCP client |
 

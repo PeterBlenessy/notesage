@@ -81,6 +81,8 @@ describe('PinnedSection', () => {
   });
 
   it('renders the uppercase "Pinned" heading', () => {
+    // Section only renders when something is pinned now.
+    useWorkspaceStore.setState({ pinnedFiles: ['/p/x.md'] });
     renderWithProviders(<PinnedSection />);
     const heading = screen.getByRole('heading', { level: 2, name: /pinned/i });
     expect(heading.textContent).toBe('Pinned');
@@ -92,10 +94,10 @@ describe('PinnedSection', () => {
     expect(screen.queryByRole('button', { name: /add pinned/i })).toBeNull();
   });
 
-  it('renders header only (no list) when pinnedFiles is empty', () => {
+  it('renders nothing when pinnedFiles is empty', () => {
     renderWithProviders(<PinnedSection />);
-    const section = screen.getByRole('region', { name: /pinned/i });
-    expect(section.querySelectorAll('li')).toHaveLength(0);
+    // The whole section is hidden when nothing is pinned (no empty header).
+    expect(screen.queryByRole('region', { name: /pinned/i })).toBeNull();
   });
 
   it('renders a row per pinned file with basename as visible text', () => {
@@ -161,13 +163,13 @@ describe('PinnedSection', () => {
     expect(otherRow.getAttribute('data-active')).toBeNull();
   });
 
-  it('copies the path to the clipboard on ⌘⌥C when a row is focused (#46)', async () => {
+  it('copies the path to the clipboard on ⌘⌥P when a row is focused (#46)', async () => {
     useWorkspaceStore.setState({ pinnedFiles: ['/notes/gamma.md'] });
 
     renderWithProviders(<PinnedSection />);
     const row = screen.getByText('gamma.md').closest('[role="button"]') as HTMLElement;
     row.focus();
-    fireEvent.keyDown(row, { key: 'c', metaKey: true, altKey: true });
+    fireEvent.keyDown(row, { key: 'π', code: 'KeyP', metaKey: true, altKey: true });
 
     await waitFor(() => expect(mockClipboardWrite).toHaveBeenCalled());
     expect(mockClipboardWrite).toHaveBeenCalledWith('/notes/gamma.md');

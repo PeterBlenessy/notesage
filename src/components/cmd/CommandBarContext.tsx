@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, Clock, MessageSquare, Pin, PinOff, Lock, Plus, Target, ChevronUp, FolderOpen, Settings2, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { track } from "@/lib/telemetry";
 import { ProviderLogo } from "@/components/ProviderLogo";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { useRoutingStore } from "@/stores/routing-store";
@@ -79,9 +80,9 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
   const setRouting = useRoutingStore((s) => s.setRouting);
 
   // All registered connections — the dropdown lists those with the
-  // `interactive` capability. Reads from connections-store so the same
-  // store action ChatFooter dispatches drives the AgentSwitchCard flow
-  // via ChatPanel's `effectiveConnection?.id` effect (no duplicate logic).
+  // `interactive` capability. Reads from connections-store so the
+  // store action drives the AgentSwitchCard flow via the bar's
+  // `effectiveConnection?.id` effect (no duplicate logic).
   const allConnections = useConnectionsStore((s) => s.connections);
   const interactiveConnections = useMemo(
     () => allConnections.filter((c) => c.capabilities.includes("interactive")),
@@ -89,11 +90,11 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
   );
 
   // Lock-aware effective connection (live-test 2026-04-26 audit gap
-  // #2 / #8) — match legacy ChatFooter so a locked project pins the
-  // provider pill to the locked connection and disables the picker.
-  // Multiple locks resolving to ONE id is treated as locked; a
-  // mixed-locks case is impossible here because `handleAddProject`
-  // refuses to add a project with a different lock.
+  // #2 / #8) — a locked project pins the provider pill to the locked
+  // connection and disables the picker. Multiple locks resolving to
+  // ONE id is treated as locked; a mixed-locks case is impossible
+  // here because `handleAddProject` refuses to add a project with a
+  // different lock.
 
   // Current conversation (project chips). Read defensively — there may be
   // no conversation yet when the bar is first opened.
@@ -116,7 +117,7 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
   // Locked-provider derivation. When any selected project carries an
   // `aiLock`, the provider pill is pinned to that connection and the
   // picker dropdown is disabled — clicking opens the explain-lock
-  // dialog instead. Matches `ChatFooter.tsx:67-79`.
+  // dialog instead.
   const lockedConnectionId = useMemo(() => {
     const ids = projectPaths
       .map((p) => metadataMap[p]?.aiLock?.connectionId)
@@ -140,14 +141,14 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
   ) as WorkspaceProject[];
 
   // Chat-store actions for project chip add/remove (#25). Reuse the same
-  // `toggleProjectPath` ChatFooter dispatches so the surrounding
-  // `selectPendingProjectSwitch` flow continues to fire.
+  // `toggleProjectPath` drives the surrounding
+  // `selectPendingProjectSwitch` flow.
   const toggleProjectPath = useChatStore((s) => s.toggleProjectPath);
 
-  // "New chat" action — same store action the legacy `ChatPanel`'s "+"
-  // button calls. `createConversation()` creates a fresh conversation
-  // and atomically promotes it to the active conversation, so the bar's
-  // existing selectors (active conversation, segments, etc.) refresh
+  // "New chat" action. `createConversation()` creates a fresh
+  // conversation and atomically promotes it to the active conversation,
+  // so the bar's existing selectors (active conversation, segments,
+  // etc.) refresh
   // without any extra wiring. Live-test 2026-04-26 — the cmd bar had
   // no UI affordance to start a new chat from its chrome.
   const createConversation = useChatStore((s) => s.createConversation);
@@ -163,11 +164,10 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
   // toggle the mode off in one jump.
   const crossProjectMode = useSettingsStore((s) => s.crossProjectMode);
 
-  // #125 — Parity with ChatFooter. The mode picker is gated on
-  // `showAgentModePicker` (Settings > Advanced toggle, same as legacy).
-  // Goals discovery runs for the single-project case; the pill surfaces
-  // the count as "N goals" so users know what's being injected as AI
-  // context.
+  // #125 — The mode picker is gated on `showAgentModePicker` (Settings
+  // > Advanced toggle). Goals discovery runs for the single-project
+  // case; the pill surfaces the count as "N goals" so users know what's
+  // being injected as AI context.
   const showAgentModePicker = useSettingsStore((s) => s.showAgentModePicker);
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const singleProjectPath =
@@ -261,11 +261,10 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
       <Divider />
 
       {/* Projects picker (live-test 2026-04-26) — single multiselect
-          button replaces the legacy chip-per-project row. Reuses the
-          legacy chat-footer `+` menu pattern: trigger shows the
-          count + label, popover lists every workspace project with a
-          checkmark for selected ones. Far more readable when 3+
-          projects are in scope. */}
+          button. Trigger shows the count + label, popover lists every
+          workspace project with a checkmark for selected ones. Far more
+          readable than a chip-per-project row when 3+ projects are in
+          scope. */}
       <ProjectsPicker
         projectPaths={projectPaths}
         workspaceProjects={workspaceProjects}
@@ -288,17 +287,15 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
 
       {/* Mode pill --------------------------------------------------------- */}
       {/*
-       * #26 — Reuse the existing chat-footer mode picker (`AcpModePicker`)
-       * instead of forking a parallel implementation. The picker:
+       * #26 — The command-bar mode picker (`AcpModePicker`). The picker:
        *   - Reads available modes from `connection.acpCapabilities.availableModes`
-       *     (probed at registration), maps them to the four common permission
-       *     levels (Read Only / Agent / Full Access / Plan) via `getCommonModes`,
-       *     and hides itself when fewer than 2 levels are available — which is
-       *     the case for every non-ACP provider (no `acpCapabilities` set).
+       *     (probed at registration) and renders every mode the agent advertises
+       *     with a friendly label (`getAgentModeDisplay`); it hides itself only
+       *     when fewer than 2 modes are available — which is the case for every
+       *     non-ACP provider (no `acpCapabilities` set).
        *   - Dispatches mode changes through `updateCurrentMode` +
-       *     `tauriApi.acpSessionSetMode`, the same store action `ChatFooter`
-       *     uses, so the active ACP session stays in sync no matter which
-       *     surface the user picks from.
+       *     `tauriApi.acpSessionSetMode` so the active ACP session stays
+       *     in sync.
        *   - Owns the mode-sandbox conflict `AlertDialog` (Full Access vs
        *     active sandbox restrictions). We get that for free by reusing it.
        *
@@ -317,9 +314,7 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
         // `AcpSessionControls` bundles the mode picker (gated by
         // `showAgentModePicker` per #125), the config option pickers
         // (thinking effort + any other agent-reported options), and the
-        // usage indicator. Swapping in this one component replaces what
-        // used to be a bare `<AcpModePicker />` + hidden config pickers
-        // with feature parity against `ChatFooter`.
+        // usage indicator in a single component.
         <div className="shrink-0">
           <AcpSessionControls
             showModePicker={showAgentModePicker}
@@ -328,10 +323,10 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
         </div>
       ) : null}
 
-      {/* Goals indicator (#125) — mirrors ChatFooter's "N goals" pill.
-       *  Only surfaces when the selection resolves to a single project
-       *  that has goal files; multi-project or zero-project selections
-       *  don't carry an unambiguous goal context.
+      {/* Goals indicator (#125) — "N goals" pill. Only surfaces when
+       *  the selection resolves to a single project that has goal
+       *  files; multi-project or zero-project selections don't carry
+       *  an unambiguous goal context.
        */}
       {goalFiles.length > 0 ? (
         <TooltipProvider delayDuration={200}>
@@ -357,16 +352,15 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
       {/* Spacer pushes the warning pill + trailing icons to the right. */}
       <div className="flex-1 min-w-2" aria-hidden />
 
-      {/* Cross-project scope warning pill (#73) — replaces the legacy banner */}
+      {/* Cross-project scope warning pill (#73) */}
       {crossProjectMode ? <CrossProjectScopePill /> : null}
 
       {/* Trailing icons ---------------------------------------------------- */}
-      {/* New chat button — sits LEFT of the history toggle. Mirrors the
-          legacy `ChatPanel`'s "+" affordance (lines 466-477) so the new
-          chat is consistent across both shells. `createConversation()`
-          atomically creates and activates a fresh conversation; if the
-          current conversation already has zero messages, clicking is a
-          no-op so we don't churn through empty conversations. When the
+      {/* New chat button — sits LEFT of the history toggle.
+          `createConversation()` atomically creates and activates a fresh
+          conversation; if the current conversation already has zero
+          messages, clicking is a no-op so we don't churn through empty
+          conversations. When the
           bar is in history view, also flip back to chat view via the
           existing `toggle-history` bus event so the user lands in the
           fresh conversation's empty stream (not the history list). */}
@@ -416,6 +410,7 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
         icon={cmdBarPinned ? PinOff : Pin}
         onClick={() => {
           setCmdBarPinned(!cmdBarPinned);
+          track("feature_used", { feature: "cmd_bar_pin" });
         }}
       />
       {/* Close button (live-test 2026-04-26) — explicit mouse path
@@ -423,7 +418,8 @@ function CommandBarContext({ className, chatView = "chat" }: CommandBarContextPr
           always done this from the keyboard, but click-to-close was
           missing. Unpin first so the bar has a non-pinned state to
           collapse to, then fire the bus `close` event for a forced
-          collapse that bypasses the prefix / pin guards in `dismiss`. */}
+          collapse that bypasses the prefix / pin guards in `dismiss`.
+          Like Esc, it PRESERVES the typed draft — only a send clears it. */}
       <IconButton
         ariaLabel="Close command bar"
         icon={X}
@@ -475,8 +471,8 @@ function ProviderPill({
   const label = connection?.label ?? "No provider";
   const provider = connection?.provider ?? null;
 
-  // Locked variant — single static button matching legacy
-  // ChatFooter.tsx:271-289. Click opens the explain-lock dialog.
+  // Locked variant — single static button.
+  // Click opens the explain-lock dialog.
   if (locked) {
     return (
       <button
@@ -519,9 +515,9 @@ function ProviderPill({
                 data-testid="cmd-bar-provider"
                 data-locked="false"
                 className={cn(
-                  // Live-test 2026-04-26 — matches the legacy chat-footer
-                  // picker rhythm (h-7, text-xs font-medium, transparent
-                  // border, soft `bg-muted` fill — same as ProjectChip).
+                  // Live-test 2026-04-26 — picker rhythm (h-7, text-xs
+                  // font-medium, transparent border, soft `bg-muted` fill
+                  // — same as ProjectChip).
                   "inline-flex items-center gap-1.5 h-7 px-2 rounded-md shrink-0",
                   "text-xs font-medium text-foreground",
                   "border border-transparent bg-muted",
@@ -580,12 +576,10 @@ interface ProjectsPickerProps {
 }
 
 /**
- * Project multiselect picker (live-test 2026-04-26) — replaces the
- * legacy chip-per-project row + dashed `+ project` button. Single
- * trigger button shows the count + a representative label; popover
- * shows every workspace project with a checkmark for selected ones,
- * matching the legacy chat-footer's `+` consolidated menu pattern
- * (`ChatFooter.tsx` line 240-263).
+ * Project multiselect picker (live-test 2026-04-26). Single trigger
+ * button shows the count + a representative label; popover shows every
+ * workspace project with a checkmark for selected ones — `+`
+ * consolidated menu pattern.
  */
 function ProjectsPicker({
   projectPaths,
@@ -657,7 +651,7 @@ function ProjectsPicker({
                     : `${projectPaths.length} project${projectPaths.length === 1 ? "" : "s"} selected — ${triggerLabel}`
                 }
                 className={cn(
-                  // Same h-7 chat-footer rhythm as ProviderPill.
+                  // Same h-7 command-bar rhythm as ProviderPill.
                   "inline-flex items-center gap-1.5 h-7 px-2 rounded-md min-w-0 shrink",
                   "text-xs font-medium",
                   "border border-transparent",

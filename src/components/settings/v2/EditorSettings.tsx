@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Switch } from '@/components/ui/switch';
+import { trackSettingToggle } from '@/lib/telemetry';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
@@ -291,7 +292,7 @@ export function EditorSettings() {
             <Switch
               id="external-diff-review"
               checked={externalChangeDiffReview}
-              onCheckedChange={setExternalChangeDiffReview}
+              onCheckedChange={(v) => { setExternalChangeDiffReview(v); trackSettingToggle("external_change_review", v); }}
             />
           }
         />
@@ -304,7 +305,7 @@ export function EditorSettings() {
             sense: ON = restricted (default), OFF = allow everywhere. */}
         <SettingsRow
           label="Restrict completions to project scope"
-          description="When on (default), inline completions are suppressed for files outside the project selected in the chat footer — your completion provider never sees unrelated files. Turn off to receive completions everywhere."
+          description="When on (default), inline completions are suppressed for files outside the project selected in the command bar — your completion provider never sees unrelated files. Turn off to receive completions everywhere."
           htmlFor="restrict-completions-scope"
           control={
             <Switch
@@ -374,7 +375,7 @@ export function EditorSettings() {
             control={
               <Switch
                 checked={printLayout}
-                onCheckedChange={setPrintLayout}
+                onCheckedChange={(v) => { setPrintLayout(v); trackSettingToggle("print_layout", v); }}
               />
             }
           />

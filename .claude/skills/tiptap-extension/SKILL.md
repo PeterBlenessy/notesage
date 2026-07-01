@@ -113,34 +113,10 @@ const editor = useEditor({
 });
 ```
 
-### Standalone
-
-```typescript
-import { useEditor } from '@tiptap/react';
-import Document from '@tiptap/extension-document';
-import Paragraph from '@tiptap/extension-paragraph';
-import Text from '@tiptap/extension-text';
-import { CustomExtension } from './extensions/custom-extension';
-
-const editor = useEditor({
-  extensions: [
-    Document,
-    Paragraph,
-    Text,
-    CustomExtension,
-  ],
-});
-```
+In this repo the editor's extension list is assembled in `src/hooks/useEditor.ts`
+(the production extension set). Add new extensions there.
 
 ## ProseMirror Core Concepts
-
-### Schema
-Defines what content is allowed in the document
-
-```typescript
-// Tiptap handles schema definition through extensions
-// Each Node/Mark extension contributes to the schema
-```
 
 ### Transactions
 **CRITICAL:** Never mutate editor state directly. Always use transactions.
@@ -182,50 +158,19 @@ const decorationPlugin = new Plugin({
 });
 ```
 
-### Plugins
-Low-level ProseMirror functionality
-
-```typescript
-import { Plugin, PluginKey } from '@tiptap/pm/state';
-
-const myPlugin = new Plugin({
-  key: new PluginKey('myPlugin'),
-
-  state: {
-    init() {
-      return {};
-    },
-    apply(tr, value, oldState, newState) {
-      // Update plugin state
-      return value;
-    },
-  },
-
-  view() {
-    return {
-      update(view, prevState) {
-        // Called when editor updates
-      },
-      destroy() {
-        // Cleanup
-      },
-    };
-  },
-});
-```
-
 ## File Location & Organization
 
 Custom extensions go in:
 ```
 src/components/editor/extensions/
 ├── index.ts                    # Re-export all extensions
-├── slash-command.ts           # Slash command menu
-├── ai-decoration.ts           # AI suggestion decorations
-└── custom-extension.ts        # Your custom extension
+├── slash-command.tsx           # Slash command menu
+├── ai-suggestion.ts            # AI suggestion inline-diff decorations
+├── decoration-factory.ts       # Shared createDecorationPlugin() helper
+└── custom-extension.ts         # Your custom extension
 ```
 
-**Export pattern:**
+**Export pattern (matches the real `index.ts`):**
 
 ```typescript
 // custom-extension.ts
@@ -234,10 +179,15 @@ export const CustomExtension = Extension.create({
   // ...
 });
 
-// index.ts
+// index.ts — re-exports the extension plus its command/helper functions
+export {
+  AISuggestion,
+  AISuggestionPluginKey,
+  setSuggestion,
+  clearSuggestion,
+  hasActiveSuggestion,
+} from './ai-suggestion';
 export { CustomExtension } from './custom-extension';
-export { SlashCommand } from './slash-command';
-export { AIDecoration } from './ai-decoration';
 ```
 
 **Usage in editor:**
@@ -259,7 +209,9 @@ const editor = useEditor({
 Always use `editor.chain()` or dispatch transactions.
 
 ### 2. Keep Decorations Namespace Clean
-Decorations are used for AI suggestions and inline diffs (Phase 5). Use unique PluginKeys:
+Decorations drive AI suggestions, inline diffs, comment marks, search
+highlights, tag/mention/date badges, and ghost-text completions — all shipped.
+Use unique PluginKeys:
 
 ```typescript
 new PluginKey('myFeature') // ✅ Specific
@@ -328,30 +280,45 @@ addInputRules() {
 }
 ```
 
-## Decoration Use Cases
+## Decoration Use Cases (all shipped)
 
-**AI Decorations** are used for inline AI suggestions:
-- Green decorations for insertions
-- Red decorations for deletions
-- Accept with Cmd+Enter
-- Reject with Cmd+Backspace
+**AISuggestion** (`ai-suggestion.ts`) — inline AI suggestion diffs: green for
+insertions, red for deletions; accept with `Cmd+Enter`, reject with
+`Cmd+Backspace`. Exposes `setSuggestion` / `hasActiveSuggestion`.
 
-**Inline Diffs (Phase 5)** will use decorations for external change tracking:
-- Show additions/deletions when files change on disk (e.g., from agentic AI)
-- Accept/reject per-change controls (Track Changes style)
+**InlineDiff** (`inline-diff.ts`) — a singleton decoration layer shared by
+external-change review and git branch diff review; per-hunk accept/reject.
 
-**Comments (Phase 5)** will use Tiptap marks for inline comment anchors.
+**CommentMark** (`comment-mark.ts`) — inline comment-anchor decorations with
+status classes (`comment-open`, `comment-delegated`, `comment-done`); remapped
+positions sync back to the store on every `docChanged`.
+
+Other shipped decoration extensions: `SearchHighlight`, `TagHighlight`,
+`MentionHighlight`, `DateHighlight`, `GhostText`, and the table extensions.
+
+### Shared factory — `createDecorationPlugin`
+
+Simple decoration extensions (init from state, rebuild on `docChanged`, expose
+via `props.decorations()`) should use `createDecorationPlugin` from
+`decoration-factory.ts` instead of hand-rolling the boilerplate. Real users:
+`tag-highlight.ts`, `mention-highlight.ts`, `date-highlight.ts`,
+`table-sparkline.ts`. Complex extensions with unique state management
+(`search-highlight`, `comment-mark`, `ghost-text`, `inline-diff`) define their
+plugins manually.
 
 When creating decorations:
-- Use unique decoration types
+- Use unique PluginKeys / decoration types
 - Don't interfere with selection
 - Support undo/redo
 - Clean up on editor destroy
 
 ## Reference
 
-Read @docs/architecture.md for:
-- Editor architecture principles
-- State management patterns
-- Data flow diagrams
-- ProseMirror integration details
+Read `docs/features/editor-architecture.md` for the authoritative deep
+reference — the full custom-extension inventory (every extension, its file, and
+type), the decoration system patterns, the per-tab EditorState cache, plugin
+state patterns (CommentMark, SearchHighlight, InlineDiff, GhostText), and
+markdown round-tripping.
+
+`docs/features/editor.md` covers the user-facing feature surface; `docs/architecture.md`
+covers the broader app (stores, IPC, security).

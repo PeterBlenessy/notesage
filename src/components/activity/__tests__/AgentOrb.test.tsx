@@ -19,6 +19,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import '@/test/tauri-mock';
 import {
   renderWithProviders,
   screen,
@@ -27,6 +28,7 @@ import {
   waitFor,
 } from '@/test/component-harness';
 import type { AgentTask } from '@/stores/activity-store';
+import { useSessionRunStore } from '@/stores/session-run-store';
 
 // ---------------------------------------------------------------------------
 // Radix polyfills for jsdom
@@ -159,6 +161,7 @@ vi.mock('../ActivityTaskCard', () => ({
 function makeTask(id: string, status: AgentTask['status']): AgentTask {
   return {
     id,
+    kind: 'agent',
     type: 'chat',
     label: `Task ${id}`,
     status,
@@ -329,14 +332,14 @@ describe('AgentOrb (#29)', () => {
     ];
     renderWithProviders(<AgentOrb />);
     const orb = screen.getByTestId('agent-orb');
-    expect(orb.getAttribute('aria-label')).toBe('Agent — 3 tasks running');
+    expect(orb.getAttribute('aria-label')).toBe('Agent — 3 running');
   });
 
   it('uses singular "task" in aria-label when exactly one is running', () => {
     mockTasks = [makeTask('t1', 'running')];
     renderWithProviders(<AgentOrb />);
     expect(screen.getByTestId('agent-orb').getAttribute('aria-label')).toBe(
-      'Agent — 1 task running',
+      'Agent — 1 running',
     );
   });
 
@@ -344,7 +347,7 @@ describe('AgentOrb (#29)', () => {
     mockTasks = [];
     renderWithProviders(<AgentOrb />);
     expect(screen.getByTestId('agent-orb').getAttribute('aria-label')).toBe(
-      'Agent — 0 tasks running',
+      'Agent — 0 running',
     );
   });
 
@@ -353,6 +356,92 @@ describe('AgentOrb (#29)', () => {
     const orb = screen.getByTestId('agent-orb');
     expect(orb.tagName).toBe('BUTTON');
     expect(orb.getAttribute('type')).toBe('button');
+  });
+
+  it('shows a recording indicator + elapsed time when a recording is active (#13)', () => {
+    // recordingStartedAt 90s in the past → elapsed renders 01:30.
+    mockTasks = [
+      {
+        id: 'rec-1',
+        kind: 'recording',
+        type: 'workflow',
+        label: 'Recording',
+        status: 'running',
+        activities: [],
+        startedAt: Date.now() - 90_000,
+        recordingStartedAt: Date.now() - 90_000,
+      },
+    ];
+    renderWithProviders(<AgentOrb />);
+    // Recording indicator replaces the plain count badge.
+    expect(screen.getByTestId('agent-orb-recording')).toBeTruthy();
+    expect(screen.queryByTestId('agent-orb-badge')).toBeNull();
+    expect(screen.getByText('01:30')).toBeTruthy();
+    // aria-label narrates the recording leg.
+    expect(screen.getByTestId('agent-orb').getAttribute('aria-label')).toMatch(
+      /^Recording — 01:30$/,
+    );
+  });
+
+  it('shows the seconds-ray ring for a recording and does NOT pulse (#13)', () => {
+    mockTasks = [
+      {
+        id: 'rec-1',
+        kind: 'recording',
+        type: 'workflow',
+        label: 'Recording',
+        status: 'running',
+        activities: [],
+        startedAt: Date.now(),
+        recordingStartedAt: Date.now(),
+      },
+    ];
+    // A recording gets the seconds-ray ring, NOT the agent-activity pulse —
+    // the two states are deliberately distinct.
+    const { unmount } = renderWithProviders(<AgentOrb />);
+    expect(screen.getByTestId('recording-rays')).toBeTruthy();
+    expect(
+      screen.getByTestId('agent-orb-pulse').className.split(/\s+/),
+    ).not.toContain('orb-pulsing');
+    unmount();
+
+    // Reduced motion → rays still render (static ring); still no pulse.
+    useReducedMotionMock.mockReturnValue(true);
+    renderWithProviders(<AgentOrb />);
+    expect(screen.getByTestId('recording-rays')).toBeTruthy();
+    expect(
+      screen.getByTestId('agent-orb-pulse').className.split(/\s+/),
+    ).not.toContain('orb-pulsing');
+    expect(screen.getByTestId('agent-orb-recording')).toBeTruthy();
+  });
+
+  it('pulses when a non-recording task runs alongside a recording (#13)', () => {
+    mockTasks = [
+      {
+        id: 'rec-1',
+        kind: 'recording',
+        type: 'workflow',
+        label: 'Recording',
+        status: 'running',
+        activities: [],
+        startedAt: Date.now(),
+        recordingStartedAt: Date.now(),
+      },
+      makeTask('agent-1', 'running'),
+    ];
+    renderWithProviders(<AgentOrb />);
+    // Rays for the recording AND a pulse for the agent task — both present.
+    expect(screen.getByTestId('recording-rays')).toBeTruthy();
+    expect(
+      screen.getByTestId('agent-orb-pulse').className.split(/\s+/),
+    ).toContain('orb-pulsing');
+  });
+
+  it('falls back to the count badge when running tasks are not recordings', () => {
+    mockTasks = [makeTask('t1', 'running')];
+    renderWithProviders(<AgentOrb />);
+    expect(screen.queryByTestId('agent-orb-recording')).toBeNull();
+    expect(screen.getByTestId('agent-orb-badge').textContent).toBe('1');
   });
 
   it('fires the placeholder log on click without throwing', () => {
@@ -385,7 +474,7 @@ describe('AgentOrb (#79) — panel popover', () => {
 
   it('does not render the panel before the orb is clicked', () => {
     renderWithProviders(<AgentOrb />);
-    expect(screen.queryByRole('region', { name: /agent tasks/i })).toBeNull();
+    expect(screen.queryByRole('region', { name: /activity/i })).toBeNull();
   });
 
   it('opens the panel when the orb is clicked', () => {
@@ -394,9 +483,9 @@ describe('AgentOrb (#79) — panel popover', () => {
     act(() => {
       fireEvent.click(orb);
     });
-    // The panel renders a <region> anchored by the "Agent Tasks" heading,
+    // The panel renders a <region> anchored by the "Activity" heading,
     // and the PopoverContent carries `aria-label="Agent activity"`.
-    expect(screen.getByRole('region', { name: /agent tasks/i })).toBeTruthy();
+    expect(screen.getByRole('region', { name: /activity/i })).toBeTruthy();
   });
 
   it('opens the panel when Enter is pressed with the orb focused', () => {
@@ -410,7 +499,7 @@ describe('AgentOrb (#79) — panel popover', () => {
       fireEvent.keyUp(orb, { key: 'Enter', code: 'Enter' });
       fireEvent.click(orb);
     });
-    expect(screen.getByRole('region', { name: /agent tasks/i })).toBeTruthy();
+    expect(screen.getByRole('region', { name: /activity/i })).toBeTruthy();
   });
 
   it('renders the empty state when there are no agent tasks', () => {
@@ -419,7 +508,7 @@ describe('AgentOrb (#79) — panel popover', () => {
       fireEvent.click(screen.getByTestId('agent-orb'));
     });
     expect(screen.getByTestId('agent-panel-empty')).toBeTruthy();
-    expect(screen.getByText(/no agent tasks yet/i)).toBeTruthy();
+    expect(screen.getByText(/nothing happening yet/i)).toBeTruthy();
   });
 
   it('renders the task list when tasks exist', () => {
@@ -447,7 +536,7 @@ describe('AgentOrb (#79) — panel popover', () => {
       fireEvent.click(orb);
     });
     // Sanity: the panel is open.
-    const region = screen.getByRole('region', { name: /agent tasks/i });
+    const region = screen.getByRole('region', { name: /activity/i });
     expect(region).toBeTruthy();
 
     // Radix Popover listens for Escape on the content layer. Fire from inside
@@ -462,12 +551,59 @@ describe('AgentOrb (#79) — panel popover', () => {
     // Panel dismissed (wait — Radix's dismissable-layer cleanup runs after
     // the synchronous Escape handler as the Content unmounts).
     await waitFor(() => {
-      expect(screen.queryByRole('region', { name: /agent tasks/i })).toBeNull();
+      expect(screen.queryByRole('region', { name: /activity/i })).toBeNull();
     });
     // Focus returned to the trigger — Radix's FocusScope `onUnmountAutoFocus`
     // restores focus when the content unmounts. Wait for the microtask.
     await waitFor(() => {
       expect(document.activeElement).toBe(orb);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #12 / #13 — unwatched chat sessions fold into the orb
+// ---------------------------------------------------------------------------
+
+describe('AgentOrb (#12, #13) — unwatched sessions', () => {
+  beforeEach(() => {
+    useReducedMotionMock.mockReturnValue(false);
+    mockTasks = [];
+    mockCmdBarPinned = false;
+    logInfoMock.mockReset();
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+  });
+
+  it('counts unwatched running sessions in the badge alongside tasks (#12)', () => {
+    // 1 running task + 2 running sessions, one of which is the foreground (excluded).
+    mockTasks = [makeTask('t1', 'running')];
+    useSessionRunStore.setState({ foregroundConversationId: 'A' });
+    useSessionRunStore.getState().setRun('A', { status: 'running' }); // foreground
+    useSessionRunStore.getState().setRun('B', { status: 'running' }); // unwatched
+    useSessionRunStore.getState().setRun('C', { status: 'running' }); // unwatched
+
+    renderWithProviders(<AgentOrb />);
+    // 1 task + 2 unwatched (B, C) = 3.
+    expect(screen.getByTestId('agent-orb-badge').textContent).toBe('3');
+  });
+
+  it('shows the distinct needs-you state when an unwatched session awaits permission (#13)', () => {
+    useSessionRunStore.setState({ foregroundConversationId: 'A' });
+    useSessionRunStore.getState().setRun('B', { status: 'awaiting_permission' });
+
+    renderWithProviders(<AgentOrb />);
+    const orb = screen.getByTestId('agent-orb');
+    expect(orb.getAttribute('data-needs-attention')).toBe('true');
+    expect(orb.getAttribute('aria-label')).toMatch(/needs your approval/i);
+    expect(screen.getByTestId('agent-orb-pulse').className).toContain('orb-pulsing-attention');
+  });
+
+  it('strips the attention pulse class under reduced motion (#13)', () => {
+    useReducedMotionMock.mockReturnValue(true);
+    useSessionRunStore.setState({ foregroundConversationId: 'A' });
+    useSessionRunStore.getState().setRun('B', { status: 'awaiting_permission' });
+
+    renderWithProviders(<AgentOrb />);
+    expect(screen.getByTestId('agent-orb-pulse').className).not.toContain('orb-pulsing-attention');
   });
 });

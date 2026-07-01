@@ -1,9 +1,77 @@
 {
   "releases": [
     {
-      "version": "0.44.0-alpha.3",
-      "date": "2026-05-12",
-      "previousVersion": "0.43.0",
+      "version": "0.47.0",
+      "date": "2026-06-19",
+      "previousVersion": "0.46.0",
+      "sections": {
+        "features": [
+          "**Run several AI sessions at the same time.** Start a chat or agent task, leave it working in the background, and start another — Notesage keeps each conversation's responses, tool permissions, and progress separate. The agent orb shows which sessions are still running and pulses when one needs your attention, and you get a desktop notification when a backgrounded session finishes or asks for permission.",
+          "**A cleaner, more reliable set of keyboard shortcuts.** Shortcuts now work correctly on non-US keyboard layouts (including Swedish), ⌘S saves even with Caps Lock on, and a tidier set of combos has been added: ⌘⌥C to add a comment, ⌘⌥P to copy the current document's path, and ⌘⌥R to reveal it in Finder."
+        ],
+        "improvements": [
+          "**Paste as plain text just works.** ⌘⇧V now pastes the clipboard text directly, without an extra permission prompt getting in the way.",
+          "**The command bar remembers what you were typing.** Closing the bar no longer throws away an unfinished message, and the skill list is sorted so it's easier to scan."
+        ],
+        "fixes": [
+          "**Images appear the first time you open a document** — no more opening a note, seeing blank spots, and having to refresh before pictures show up.",
+          "**Drawings no longer freeze the app.** Opening or exporting documents that contain drawings is now smooth, and drawings stop flooding the logs with font errors.",
+          "**Network restrictions no longer get agents stuck.** When an agent is restricted to certain sites, its requests are handled correctly instead of leaving the conversation hanging."
+        ]
+      }
+    },
+    {
+      "version": "0.46.0",
+      "date": "2026-06-14",
+      "previousVersion": "0.45.0",
+      "sections": {
+        "features": [
+          "**Local AI Agents — a private agent that runs on your Mac.** Set up a local agent in one step (Settings → AI Providers → Add → \"Local Agent\") and it runs a real agent loop — planning, multiple steps, reading and editing your files — entirely on-device against the bundled local model. No API keys, no cloud account. You can also connect your own agent if it speaks the open Agent Client Protocol.",
+          "**Meeting recording with on-device transcription.** Record a meeting and Notesage transcribes it locally in the background, then offers to file the audio and transcript into a project. Start, pause, and stop from the agent orb or with ⌘⇧R; choose the model and language in Settings → Voice.",
+          "**Connect far more AI tools (MCP).** Connect to remote MCP servers (not just local ones), sign in to protected servers with OAuth, browse a built-in catalog of official servers, preview a server's tools before adding it, keep credentials in your OS keychain, and install a server in one click from a `notesage://` link.",
+          "**Opt-in usage and crash reporting.** Optional, privacy-first telemetry that stays off until you turn it on, with a single switch in Settings. Nothing leaves your device without your consent."
+        ],
+        "improvements": [
+          "**A calmer, more flexible workspace.** The title bar is now optional and the sidebar is resizable, with a tidier sidebar (the Pinned section hides when empty, a sticky header, clearer nesting lines, and the open document highlighted) and a stronger \"fade the chrome while I type\" option.",
+          "**Agent controls in the command bar.** When enabled, the agent permission-mode picker is always available and shows each agent's modes with plain-language names.",
+          "**Smoother indexing indicator.** The ring around the status dot now spins steadily while your library indexes instead of flickering.",
+          "**More reliable HTML viewing.** HTML files render correctly under the app's stricter security policy, with a sandboxed mode and find-in-document."
+        ],
+        "fixes": [
+          "**Fixed a startup crash** that affected a few mid-cycle builds.",
+          "**Closed two security issues** in how external tools connect (a malicious-link and a sign-in request-forgery path).",
+          "**Meeting transcription now detects the spoken language automatically** instead of assuming English.",
+          "**Buttons stay legible** — primary and destructive buttons keep a clear white label on the colored fill in both light and dark mode.",
+          "**Chat and agent stability** — conversations and branches keep their state correctly.",
+          "**The Local Agent is far more reliable.** Adding it now succeeds cleanly, its connection check passes once it's set up, and it no longer fails to start with a timeout on larger models. If it ever stops working, you get a clear message in the chat instead of a silent switch to a different model.",
+          "**Signing back in to AI providers is now in-app.** Re-authenticating Claude Code, Codex, Copilot, or Gemini opens the same friendly sign-in you used to add them — no surprise Terminal window — and the sign-in shortcut only appears when a provider actually needs it."
+        ]
+      }
+    },
+    {
+      "version": "0.45.0",
+      "date": "2026-05-24",
+      "previousVersion": "0.44.0",
+      "sections": {
+        "improvements": [
+          "**Quiet Composer is now the only editor shell.** The floating command bar (⌘K), the flat sidebar (Pinned / Projects / Recent / Tags / Mentions), and the document switcher (⌃Tab / ⌃⇧Tab) are the whole interface. The previous multi-column layout has been retired.",
+          "**Read Only mode tooltip describes what actually happens.** Read Only means the agent has read-only access and silently doesn't try writes — no permission prompts. The tooltip used to suggest the agent would ask first; now it says *\"Read access only — agent is denied any write or execute tool calls.\"*",
+          "**Image hover toolbar works in production builds and matches the other block toolbars.** Hovering an image shows the width and alignment popover with the same look as charts, drawings, and link previews.",
+          "**Microphone button stays in sync across the toolbar and status bar.** Starting on one and stopping on the other works as expected.",
+          "**Empty HTML files show a placeholder.** Opening a 0-byte or whitespace-only `.html` file displays \"This HTML file is empty\" instead of a blank pane.",
+          "**Multi-line table cells survive export.** Cells containing line breaks round-trip through PDF, DOCX, and HTML export without flattening to a single line.",
+          "**Editor scroll position restores more reliably** when reopening a document."
+        ],
+        "fixes": [
+          "**`⌘⇧E` (Export), `⌘⇧L` (Sidebar), `⌘⇧R` (Recording) work again.** An editor extension was silently capturing these chords for paragraph alignment.",
+          "**mermaid diagram security alerts closed.** The bundled mermaid renderer was advanced to close four alerts about Gantt-chart DoS, classDef HTML injection, configuration CSS injection, and classDef CSS injection."
+        ]
+      }
+    },
+    {
+      "version": "0.44.0",
+      "date": "2026-05-14",
+      "previousVersion": "0.43.1",
       "sections": {
         "features": [
           "**Block external resources in the HTML viewer.** Settings → System → HTML viewer → \"Block external resources\" — toggle ON to strip `https://...` URLs from `<img src>`, `<link href>`, `<source srcset>`. Local relative paths still load.",
@@ -27,69 +95,6 @@
           "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** Restores from the live saved ratio instead of the stale viewport-cache value.",
           "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** Source-mode chord was matching the physical key position (which is `-` on Swedish ISO). Now matches the produced character.",
           "**Image markdown serializer closes the block correctly.** Without a trailing `\\n\\n`, the next heading was concatenated and its `#` was backslash-escaped, corrupting the saved file."
-        ]
-      }
-    },
-    {
-      "version": "0.44.0-alpha.2",
-      "date": "2026-05-11",
-      "previousVersion": "0.44.0",
-      "sections": {
-        "features": [
-          "**Block external resources in the HTML viewer.** Settings → System → HTML viewer → \"Block external resources\" — toggle ON to strip `https://...` URLs from `<img src>`, `<link href>`, `<source srcset>`, and similar attributes before render. Local relative paths and same-directory files still load. Default OFF.",
-          "**Allow scripts in local HTML files (opt-in).** Settings → System → HTML viewer → \"Allow scripts\" — toggle ON to render HTML files in an isolated `allow-scripts`-only iframe so same-directory `<script src=\"./local.js\">` can execute. External CDN scripts are NOT included (separate toggle below). Default OFF.",
-          "**Unsafe preview mode (per-tab, session-only).** A new toolbar button on each open HTML file shows a security acknowledgment dialog; accept and the file renders in `allow-scripts`-only iframe with raw HTML — CDN scripts and inline `<script>` blocks all execute. Switching tabs resets the toggle. For \"I trust this single file\" workflows that don't warrant flipping the persistent allow-scripts setting on.",
-          "**Allow `<form>` submissions in HTML viewer.** Settings → System → HTML viewer → \"Allow forms\" — toggle ON to keep `<form>`, `<input>`, `<button>`, `<select>`, and form-submission attributes (action / method) in the sanitised tree. Useful for local docs that legitimately contain forms. Default OFF.",
-          "**Width + alignment now persist on charts, drawings, link-previews, and images.** Hover the block → pick 25 / 50 / 75 / 100% width and left / center / right alignment from the popover. The choice survives a save and reappears the next time you open the file. *(Originally in alpha.0; first time effectively shipping.)*",
-          "**`Cmd+=` / `Cmd+-` / `Cmd+0` zoom now also works in the PDF viewer.** Markdown editor and PDF share the same shortcut. *(Originally in alpha.0.)*"
-        ],
-        "improvements": [
-          "**Research and templates folders are now visible in the workspace.** They used to live under `.notesage/` (hidden) and were only reachable through the AI chat. Notesage now creates `research/` and `templates/` at the project root the first time you save research or open a template picker. Existing hidden content is migrated on next launch.",
-          "**HTML files open as a real rendered page.** No iframe wrapper — `.html` files render inline with the same toolbar, theme toggle, `Cmd+T`, and `Cmd+F` as every other viewer. Dangerous tags (`<script>`, `<iframe>`, `<object>`, `<embed>`) are stripped before rendering. *(Originally in alpha.0; the four security toggles above are layered on top of this rewrite.)*",
-          "**Embedded blocks have more breathing room.** Images, charts, drawings, and link-preview cards now sit with a generous margin above and below. *(Originally in alpha.0.)*",
-          "**Status tray completion picker is now a dropdown.** Settings → Inline Completion and the StatusTray popover now show the same control. *(Originally in alpha.0.)*",
-          "**The 494 KB book opens in ~3 seconds again.** Fixes a regression introduced during the alpha.0 branch where the editor's CSS `zoom` property was applied unconditionally and put every descendant in a slow layout-containment path. *(Originally in alpha.0.)*"
-        ],
-        "fixes": [
-          "**Width / alignment values stop disappearing after a tab-switch.** Schemas in the markdown-parse worker now mirror the production extensions; ProseMirror's DOMParser no longer drops those attributes during reload. *(Originally in alpha.0.)*",
-          "**Editor no longer crashes when you insert a chart, drawing, or link preview.** `<Tooltip>` outside any `<TooltipProvider>` caught by the error boundary; now all four reference implementations are regression-tested. *(Originally in alpha.0.)*",
-          "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** Restores from the live saved ratio (tracked on every scroll, debounced 150 ms) instead of the stale viewport-cache value. *(Originally in alpha.0.)*",
-          "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** The source-mode chord was matching the physical key position (`event.code === \"Slash\"`), which on Swedish ISO is the `-` key. Now matches the produced character. *(Originally in alpha.0.)*",
-          "**Image markdown serializer closes the block correctly.** Without the trailing `\\n\\n` separator, the next heading was concatenated to the same line and its `#` got backslash-escaped — corrupting the saved file. *(Originally in alpha.0.)*"
-        ]
-      }
-    },
-    {
-      "version": "0.44.0-alpha.1",
-      "date": "2026-05-10",
-      "previousVersion": "0.44.0",
-      "sections": {
-        "fixes": [
-          "**Release pipeline unblocked.** Removed the obsolete"
-        ]
-      }
-    },
-    {
-      "version": "0.44.0-alpha.0",
-      "date": "2026-05-10",
-      "previousVersion": "0.43.0",
-      "sections": {
-        "features": [
-          "**Width + alignment now persist on charts, drawings, and link-previews.** Hover the block → pick 25 / 50 / 75 / 100% width and left / center / right alignment from the popover. The choice survives a save and reappears the next time you open the file. Saved as a small metadata comment at the end of the markdown line so you can edit the value by hand if you want to.",
-          "**`Cmd+=` / `Cmd+-` / `Cmd+0` zoom now also works in the PDF viewer.** Markdown editor and PDF zoom share the same shortcut."
-        ],
-        "improvements": [
-          "**HTML files open as a real rendered page.** Notesage no longer wraps `.html` files in an isolated iframe — the body renders inline, the toolbar is always visible with a Source / Rendered toggle, `Cmd+T` theme toggling and `Cmd+F` find work straight away. `<script>` and other risky tags are stripped before rendering.",
-          "**Embedded blocks have more breathing room.** Images, charts, drawings, and link-preview cards now sit with a generous margin above and below so they don't visually crowd the surrounding text.",
-          "**Status tray completion picker is now a dropdown.** Settings → Inline Completion and the StatusTray popover now show the same control — a dropdown with a status dot per provider — instead of a segmented toggle.",
-          "**The 494 KB book opens in ~3 seconds again.** A regression introduced during this branch (the editor's CSS `zoom` property was applied unconditionally and put every descendant in a slow layout-containment path) is fixed. The conditional zoom only applies when actually zoomed."
-        ],
-        "fixes": [
-          "**Width / alignment values stop disappearing after a tab-switch.** The worker that parses markdown for tab-switch and file-load was missing the `blockWidth` / `align` attribute slots on its chart, drawing, and link-preview shims, so ProseMirror's DOMParser silently dropped those attributes during reload. Schemas now mirror the production extensions; new regression test catches future drift.",
-          "**Editor no longer crashes when you insert a chart, drawing, or link preview.** PR #173 shipped a `<Tooltip>` outside any `<TooltipProvider>` — the editor's error boundary caught it on every block render. New design-system rule documents that every `<Tooltip>` must be inside a `<TooltipProvider>`, with a regression test that covers the four reference implementations.",
-          "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** The viewport cache only captured `scrollY` 5 seconds after an *edit*, so if you scrolled to the top without editing, the cache restored the old pre-scroll position on reopen. Now restores from the live saved ratio (tracked on every scroll, debounced 150 ms).",
-          "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** The source-mode chord was matching the physical key position (`event.code === \"Slash\"`), which on Swedish ISO is the `-` key. Now matches the produced character; Nordic `Shift+7` fallback for true `Cmd+/` preserved.",
-          "**Image markdown serializer closes the block correctly.** Without the trailing `\\n\\n`, the next heading was concatenated to the same line and its `#` got backslash-escaped — corrupting the saved file."
         ]
       }
     },

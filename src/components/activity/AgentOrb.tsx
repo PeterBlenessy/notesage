@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Bot } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Bot, Mic } from 'lucide-react';
 import {
   Popover,
   PopoverContent,
@@ -12,13 +12,18 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useActivityStore } from '@/stores/activity-store';
+import { useRecordingStore } from '@/stores/recording-store';
+import { useSessionRunStore, selectUnwatchedRunning } from '@/stores/session-run-store';
+import { useChatStore } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { recordedElapsedMs, formatStopwatchMs } from '@/lib/recording-time';
 import { cn } from '@/lib/utils';
 import { log, PERF } from '@/lib/logger';
 import { subscribeToAgentOrbEvents } from '@/lib/agent-orb-events';
 import type { AgentTask } from '@/stores/activity-store';
 import { AgentPanel } from './AgentPanel';
+import { RecordingRays } from './RecordingRays';
 
 export interface AgentOrbProps {
   /**
@@ -72,14 +77,79 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
   const reducedMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
 
-  const runningCount = tasks.filter((t) => t.status === 'running').length;
-  const isActive = runningCount > 0;
-  const shouldPulse = isActive && !reducedMotion;
+  // Unwatched chat sessions (task #12): running/awaiting sessions in conversations
+  // the user is NOT currently watching. The orb's "background work" set is the
+  // union of these with the background agent tasks below. Subscribe to the raw
+  // slices and derive both scalars from ONE filter pass (review perf — the two
+  // scalar selectors recomputed `selectUnwatchedRunning` twice per render).
+  const runs = useSessionRunStore((s) => s.runs);
+  const foregroundConversationId = useSessionRunStore((s) => s.foregroundConversationId);
+  const { unwatchedCount, unwatchedNeedsPermission } = useMemo(() => {
+    const unwatched = selectUnwatchedRunning({ runs, foregroundConversationId });
+    return {
+      unwatchedCount: unwatched.length,
+      unwatchedNeedsPermission: unwatched.some((r) => r.status === 'awaiting_permission'),
+    };
+  }, [runs, foregroundConversationId]);
 
-  const ariaLabel =
-    runningCount === 1
-      ? 'Agent — 1 task running'
-      : `Agent — ${runningCount} tasks running`;
+  const runningTaskCount = tasks.filter((t) => t.status === 'running').length;
+  // The badge / "active" state count background agent tasks AND unwatched chat
+  // sessions together — both are work happening outside the watched view.
+  const runningCount = runningTaskCount + unwatchedCount;
+  const isActive = runningCount > 0;
+  // The box-shadow PULSE is reserved for agent activity. A live recording gets
+  // its own visual language — the seconds-ray ring (RecordingRays) — so the two
+  // states never read alike. Pulse therefore keys off NON-recording running
+  // tasks only; a recording alone shows rays, not a pulse.
+  const runningNonRecordingCount = tasks.filter(
+    (t) => t.status === 'running' && t.kind !== 'recording',
+  ).length;
+  const recordingPausedStore = useRecordingStore((s) => s.isPaused);
+  // Pulse for any non-recording background work — agent tasks OR unwatched
+  // chat sessions (task #12). A distinct, more insistent pulse fires when an
+  // unwatched session is blocked on a permission decision (task #13).
+  const shouldPulse = (runningNonRecordingCount + unwatchedCount) > 0 && !reducedMotion;
+  const needsAttention = unwatchedNeedsPermission && !reducedMotion;
+
+  // Recording state — the orb narrates the live-capture leg of the
+  // Recording → Transcribing → Ready story. We surface the EARLIEST active
+  // recording's elapsed time (there is normally just one) as an `MM:SS`
+  // stopwatch driven by a 1 s text tick. This is plain text, not an
+  // animation, so it does not interact with the reduced-motion gate on the
+  // CSS pulse — it stays correct regardless of the motion preference.
+  // Pause state comes from recording-store (the live-capture source of
+  // truth): while paused the stopwatch freezes and the resumed time
+  // excludes the paused stretch.
+  const activeRecordingStart = tasks
+    .filter((t) => t.kind === 'recording' && t.status === 'running')
+    .map((t) => t.recordingStartedAt ?? t.startedAt)
+    .sort((a, b) => a - b)[0];
+  const isRecording = activeRecordingStart !== undefined;
+  const isPaused = recordingPausedStore;
+  const pauseStartedAt = useRecordingStore((s) => s.pauseStartedAt);
+  const pausedTotalMs = useRecordingStore((s) => s.pausedTotalMs);
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isRecording) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isRecording]);
+
+  const recordingElapsedMs = isRecording
+    ? recordedElapsedMs(activeRecordingStart!, pausedTotalMs, pauseStartedAt, now)
+    : 0;
+  const recordingElapsed = isRecording ? formatStopwatchMs(recordingElapsedMs) : null;
+
+  const ariaLabel = isRecording
+    ? isPaused
+      ? `Recording paused — ${recordingElapsed}`
+      : `Recording — ${recordingElapsed}`
+    : unwatchedNeedsPermission
+      ? 'Agent — a background session needs your approval'
+      : runningCount === 1
+        ? 'Agent — 1 running'
+        : `Agent — ${runningCount} running`;
 
   // Log when the panel opens — keeps the perf:orb breadcrumb that existed on
   // the pre-#79 click stub. Only fires on the open transition, not on close.
@@ -116,6 +186,9 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
           type="button"
           data-testid="agent-orb"
           data-running={isActive ? 'true' : 'false'}
+          // Test hook (#13) — surfaces the distinct "needs you" state so tests
+          // can assert it without introspecting CSS animation classes.
+          data-needs-attention={needsAttention ? 'true' : 'false'}
           // Test hook (#121) — exposes the popover's open state on the DOM so
           // the composition tests can assert toggle behaviour without having
           // to introspect Radix's portal structure under jsdom. Production
@@ -168,11 +241,39 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
               'shadow-md border border-border',
               // CSS-driven pulse while activity is in flight — paints the
               // accent ring around the orb. See `@keyframes orb-pulse` in
-              // globals.css for the box-shadow chain.
-              shouldPulse && 'orb-pulsing',
+              // globals.css for the box-shadow chain. A faster "needs you"
+              // pulse (task #13) takes precedence when an unwatched session
+              // awaits permission.
+              needsAttention && 'orb-pulsing-attention',
+              !needsAttention && shouldPulse && 'orb-pulsing',
             )}
           >
-            {isActive ? (
+            {/* Recording seconds-ray ring — sits just outside the orb body,
+                distinct from the agent-activity pulse. */}
+            {isRecording && (
+              <RecordingRays
+                elapsedSeconds={recordingElapsedMs / 1000}
+                paused={isPaused}
+                reducedMotion={reducedMotion}
+              />
+            )}
+            {isRecording ? (
+              // Recording leg — a mic glyph + the live elapsed time so the orb
+              // reads as "I'm capturing" rather than a generic running count.
+              <span
+                data-testid="agent-orb-recording"
+                className="flex flex-col items-center justify-center gap-0.5 leading-none"
+              >
+                <Mic
+                  className="h-3.5 w-3.5 text-[var(--color-accent-primary)]"
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                />
+                <span className="font-mono text-[8px] font-medium tabular-nums text-[var(--color-accent-primary)]">
+                  {recordingElapsed}
+                </span>
+              </span>
+            ) : isActive ? (
               <span
                 data-testid="agent-orb-badge"
                 className="font-mono text-[10px] font-medium leading-none tabular-nums"
@@ -187,7 +288,7 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
               // and flips to white on hover (paired with `group` on the outer
               // button) so the affordance has a stronger interactive lift.
               <Bot
-                className="h-5 w-5 opacity-60 transition-colors duration-[220ms] ease-out group-hover:text-[oklch(100%_0_0)] group-hover:opacity-100"
+                className="h-5 w-5 opacity-60 transition-colors duration-[220ms] ease-out group-hover:text-popover-foreground group-hover:opacity-100"
                 strokeWidth={1.5}
                 aria-hidden="true"
               />
@@ -209,8 +310,23 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
         // Override the popover default (w-72 + p-4) — AgentPanel manages its
         // own width and padding so the list fills the popover cleanly.
         className="w-auto p-0"
+        // Don't auto-focus the first button inside the panel on open — Radix's
+        // default lands focus on e.g. the recording card's pause button, which
+        // paints the accent focus ring (and would auto-open its focus-triggered
+        // tooltip). Focus stays on the orb; Tab still reaches the controls.
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <AgentPanel onCancelTask={onCancelTask} onClickTask={onClickTask} />
+        <AgentPanel
+          onCancelTask={onCancelTask}
+          onClickTask={onClickTask}
+          onSelectSession={(conversationId) => {
+            // Foreground the picked session (task #14) and close the popover —
+            // #4 mirrors the active conversation into the run-store foreground,
+            // so it drops out of the orb's unwatched set automatically.
+            useChatStore.getState().setActiveConversation(conversationId);
+            setOpen(false);
+          }}
+        />
       </PopoverContent>
     </Popover>
   );

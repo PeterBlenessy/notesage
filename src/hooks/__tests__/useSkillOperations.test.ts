@@ -46,6 +46,9 @@ const mockExecuteSkillScript = vi.fn(async () => ({
   stdout: 'output',
   stderr: '',
 }));
+// Default skill-script content hash returned by the mocked backend. Tests that
+// exercise content-pinning override this per-case.
+const mockHashSkillScript = vi.fn(async () => 'HASH1');
 
 vi.mock('@/lib/tauri', () => ({
   tauriApi: {
@@ -58,6 +61,7 @@ vi.mock('@/lib/tauri', () => ({
     readSkillContent: (...args: unknown[]) => (mockReadSkillContent as (...a: unknown[]) => unknown)(...args),
     readAgentContent: (...args: unknown[]) => (mockReadAgentContent as (...a: unknown[]) => unknown)(...args),
     executeSkillScript: (...args: unknown[]) => (mockExecuteSkillScript as (...a: unknown[]) => unknown)(...args),
+    hashSkillScript: (...args: unknown[]) => (mockHashSkillScript as (...a: unknown[]) => unknown)(...args),
   },
 }));
 
@@ -597,8 +601,10 @@ describe('useSkillOperations', () => {
   });
 
   describe('executeScript', () => {
-    it('executes script when permission is always-allowed', async () => {
-      usePermissionStore.getState().allowSkillScriptAlways('test-skill', null, null);
+    it('executes script when permission is always-allowed (content-pinned)', async () => {
+      // Pin the approval to the same hash the backend will report for the body.
+      mockHashSkillScript.mockResolvedValueOnce('HASH1');
+      usePermissionStore.getState().allowSkillScriptAlways('test-skill', null, null, 'HASH1');
 
       const { result } = renderHook(() => useSkillOperations());
 
@@ -620,12 +626,35 @@ describe('useSkillOperations', () => {
         workingDir: '/working/dir',
         env: null,
         timeoutMs: null,
+        expectedHash: 'HASH1',
       });
       expect(scriptResult).toEqual({
         exitCode: 0,
         stdout: 'script output',
         stderr: '',
       });
+    });
+
+    it('re-prompts (PERMISSION_REQUIRED) when the script body changed since approval', async () => {
+      // User approved the OLD body; the script has since been rewritten so the
+      // backend now reports a different hash. The stale "allow always" must NOT
+      // auto-approve (security audit HIGH #2).
+      usePermissionStore.getState().allowSkillScriptAlways('test-skill', null, null, 'OLD_HASH');
+      mockHashSkillScript.mockResolvedValueOnce('NEW_HASH');
+
+      const { result } = renderHook(() => useSkillOperations());
+
+      let error: Error | undefined;
+      await act(async () => {
+        try {
+          await result.current.executeScript('test-skill', '/path/to/skill', 'run.sh');
+        } catch (e) {
+          error = e as Error;
+        }
+      });
+
+      expect(error?.message).toBe('PERMISSION_REQUIRED:test-skill');
+      expect(mockExecuteSkillScript).not.toHaveBeenCalled();
     });
 
     it('executes script when permission is session-allowed', async () => {
@@ -666,7 +695,7 @@ describe('useSkillOperations', () => {
     });
 
     it('passes empty args array by default', async () => {
-      usePermissionStore.getState().allowSkillScriptAlways('test-skill', null, null);
+      usePermissionStore.getState().allowSkillScriptAlways('test-skill', null, null, 'HASH1');
 
       const { result } = renderHook(() => useSkillOperations());
 
@@ -684,7 +713,7 @@ describe('useSkillOperations', () => {
     });
 
     it('passes null workingDir when not specified', async () => {
-      usePermissionStore.getState().allowSkillScriptAlways('test-skill', null, null);
+      usePermissionStore.getState().allowSkillScriptAlways('test-skill', null, null, 'HASH1');
 
       const { result } = renderHook(() => useSkillOperations());
 

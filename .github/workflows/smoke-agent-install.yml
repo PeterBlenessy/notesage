@@ -1,0 +1,42 @@
+name: Agent Install Smoke Test
+
+# Opt-in, network-dependent smoke test for the managed agent install flow.
+# Every agent installs via `npm install <package>` (see do_npm_install in
+# src-tauri/src/commands/agent_manager.rs); this job runs that real install
+# against the live npm registry and asserts each agent's executable resolves.
+#
+# Deliberately NOT a required/blocking check: it hits the network, depends on
+# npm registry availability, and asserts against whatever version npm serves.
+# It runs on demand and when provider-install code changes, so a registry edit
+# (renamed package, changed bin name, deprecated package) surfaces here rather
+# than only when a user clicks "Install" in the app.
+
+on:
+  workflow_dispatch: # Manual trigger from the Actions UI
+  push:
+    # Run when the provider install wiring changes, on any branch, so the
+    # author sees the result before merge without it gating the PR.
+    paths:
+      - 'src-tauri/src/commands/agent_manager.rs'
+      - 'src/lib/ai/connections.ts'
+      - 'scripts/smoke-agent-install.py'
+      - '.github/workflows/smoke-agent-install.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-agent-install:
+    name: npm install all managed agents
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Run agent install smoke test
+        run: python3 scripts/smoke-agent-install.py

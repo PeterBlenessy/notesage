@@ -12,6 +12,7 @@ import { parseFrontmatter } from "@/lib/frontmatter";
 import { processPendingCommentFile } from "@/lib/pending-comments";
 import { parsedDocCache } from "@/lib/parsed-doc-cache";
 import { deleteCachedViewport } from "@/lib/viewport-cache";
+import { toastExternalReload } from "@/lib/notifications";
 import { log } from "@/lib/logger";
 
 /** Cached home dir for skill/agent path matching (set once on first event). */
@@ -84,6 +85,15 @@ export function useFileWatcher() {
       parsedDocCache.delete(path);
       // Drop the IDB viewport snapshot — cached HTML would be stale.
       deleteCachedViewport(path);
+      // Drop the per-file ProseMirror EditorState cache — restoring a stale
+      // cached state would surface pre-modification content on the next click.
+      // The active-tab case is handled separately by `useFileWatcherIntegration`
+      // (which reloads in place); this dispatch covers cached states for files
+      // that were evicted from `openDocuments` while their state lingered in
+      // the Editor's `cachedEditorStatesRef`.
+      window.dispatchEvent(
+        new CustomEvent('notesage:invalidate-editor-state', { detail: { filePath: path } }),
+      );
 
       // For create/delete events, debounce file tree refresh.
       // Pass the parent directory so only the affected section is refreshed
@@ -94,6 +104,22 @@ export function useFileWatcher() {
         refreshDebounce.current = setTimeout(() => {
           refreshFileTree(parentDir);
         }, 300);
+      }
+
+      // External delete: prune dangling entries from Recent and Pinned so
+      // the sidebar never shows dead rows that 404 on click (issue #391).
+      // This mirrors what useFileOperations.deletePath does for app-initiated
+      // deletes — but for the external-delete path (watcher only refreshes
+      // the tree and never pruned the sidebar lists until now).
+      if (kind === "delete") {
+        const normalizedDeletedPath = normalizePath(path);
+        const ws = useWorkspaceStore.getState();
+        for (const pinned of [...ws.pinnedFiles]) {
+          if (pinned === normalizedDeletedPath || pinned.startsWith(normalizedDeletedPath + "/")) {
+            ws.unpinFile(pinned);
+          }
+        }
+        useEditorStore.getState().removeRecent(normalizedDeletedPath);
       }
 
       // Runtime iCloud project discovery — detect new projects synced from other machines
@@ -263,7 +289,7 @@ async function handleModifyEvent(path: string, normalizedPath: string) {
 
   try {
     const raw = await tauriApi.readFile(path);
-    const { content } = parseFrontmatter(raw);
+    const { content, frontmatter } = parseFrontmatter(raw);
 
     // Re-read state after await — tab state may have changed during the read
     const freshState = useEditorStore.getState();
@@ -272,13 +298,46 @@ async function handleModifyEvent(path: string, normalizedPath: string) {
     );
     if (!freshTab) return;
 
-    // Skip if content matches what's in the tab (no change)
-    if (content === freshTab.content) return;
+    // The editor body excludes YAML frontmatter (it renders in FrontmatterBlock
+    // from `tab.frontmatter`), so a frontmatter-only external/tool write —
+    // e.g. `okf-enrich` adding `type`/`title`/`description` — leaves the body
+    // identical and would be skipped by the body-equality check below. Detect
+    // that case explicitly and refresh the tab's frontmatter so the open doc
+    // reflects the new metadata without a full app reload.
+    const frontmatterChanged =
+      JSON.stringify(frontmatter ?? null) !==
+      JSON.stringify(freshTab.frontmatter ?? null);
+
+    // Skip if BOTH body and frontmatter match what's in the tab (no change)
+    if (content === freshTab.content && !frontmatterChanged) return;
+
+    // Body unchanged but frontmatter changed → apply the frontmatter update.
+    // The body-diff reload path can't carry frontmatter and a diff on an
+    // identical body produces nothing, so handle this directly. Match the
+    // external-change UX: silent reload + info toast (the diff-review path has
+    // no body hunks to review for a frontmatter-only change, so it degrades to
+    // the same silent metadata refresh).
+    if (content === freshTab.content) {
+      // Don't clobber unsaved frontmatter edits silently when diff-review is on;
+      // but with no body delta there's nothing to review, so we still apply the
+      // disk frontmatter (it's what the file holds) and notify.
+      freshState.reloadFrontmatter(freshTab.filePath, frontmatter ?? null);
+      toastExternalReload(freshTab.filePath);
+      return;
+    }
 
     // Skip if content matches what we last saved — this handles the race where the
     // user continues typing after a save but the watcher fires for the save event.
     // The disk content matches our save, so it's not an external change.
     if (freshTab.lastSavedContent !== undefined && content === freshTab.lastSavedContent) return;
+
+    // Body changed too. If the frontmatter ALSO changed, refresh it alongside
+    // the body reload — the body-reload path (`setExternalChange` →
+    // `loadRawMarkdownIntoEditor`) only carries the body, so without this the
+    // FrontmatterBlock would keep stale metadata after a combined write.
+    if (frontmatterChanged) {
+      freshState.reloadFrontmatter(freshTab.filePath, frontmatter ?? null);
+    }
 
     // If a git branch diff review is active, auto-accept silently
     if (useDiffReviewStore.getState().reviewActive) {

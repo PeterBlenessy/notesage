@@ -21,6 +21,7 @@ const defaultCapPath = path.join(
 interface TauriConf {
   app?: {
     security?: {
+      csp?: string | null;
       assetProtocol?: {
         enable?: boolean;
         scope?: {
@@ -33,8 +34,14 @@ interface TauriConf {
   };
 }
 
+interface HttpAllowEntry {
+  url: string;
+}
+
 interface DefaultCapability {
-  permissions: Array<string | { identifier: string; allow?: unknown }>;
+  permissions: Array<
+    string | { identifier: string; allow?: HttpAllowEntry[] }
+  >;
 }
 
 function loadTauriConf(): TauriConf {
@@ -69,9 +76,72 @@ describe('tauri asset protocol scope', () => {
       expect(entry).not.toBe('**');
       expect(entry).not.toBe('*');
       expect(entry).not.toBe('/');
-      // Scope must be rooted under a Tauri path variable ($HOME, $APPDATA,
+      // Scope must be rooted under a Tauri path variable ($APPDATA, $RESOURCE,
       // etc.) — a bare "/**" would be equivalent to "**".
       expect(entry.startsWith('$')).toBe(true);
+    }
+  });
+
+  it('has a non-null Content-Security-Policy (security audit MEDIUM)', () => {
+    // The live window must ship a CSP — `csp: null` leaves a content app that
+    // renders untrusted markdown/agent output with no defense-in-depth if any
+    // HTML-injection sink ever regresses.
+    const conf = loadTauriConf();
+    const csp = conf.app?.security?.csp;
+    expect(typeof csp).toBe('string');
+    expect(csp).toBeTruthy();
+  });
+
+  it('CSP hardens the high-value directives without an inline-script allowance', () => {
+    const conf = loadTauriConf();
+    const csp = conf.app?.security?.csp ?? '';
+    // Strict script source: no `unsafe-inline` / `unsafe-eval` in script-src.
+    const scriptSrc = csp
+      .split(';')
+      .map((d) => d.trim())
+      .find((d) => d.startsWith('script-src'));
+    expect(scriptSrc, 'csp must define script-src').toBeTruthy();
+    expect(scriptSrc).not.toContain("'unsafe-inline'");
+    expect(scriptSrc).not.toContain("'unsafe-eval'");
+    // Lock down the classic injection vectors.
+    expect(csp).toContain("object-src 'none'");
+    expect(csp).toContain("base-uri 'self'");
+    expect(csp).toContain("frame-ancestors 'none'");
+    expect(csp).toContain("default-src 'self'");
+  });
+
+  it('frame-src permits the htmlpreview scheme for the HTML viewer iframe', () => {
+    // The HTML viewer's sandboxed-iframe paths serve their document from the
+    // `htmlpreview://` custom scheme so it renders under its OWN empty CSP rather
+    // than inheriting the app's `frame-ancestors 'none'` (which blanked the old
+    // `blob:`-served frame in production). Dropping this re-breaks the viewer.
+    const conf = loadTauriConf();
+    const csp = conf.app?.security?.csp ?? '';
+    const frameSrc = csp
+      .split(';')
+      .map((d) => d.trim())
+      .find((d) => d.startsWith('frame-src'));
+    expect(frameSrc, 'csp must define frame-src').toBeTruthy();
+    expect(frameSrc).toContain('htmlpreview:');
+  });
+
+  it('does NOT statically expose the home directory (security H1)', () => {
+    // `$HOME/**` (or any $HOME-rooted glob) re-opens the ENTIRE home dir to the
+    // asset protocol — `.ssh`, `.aws`, `.env`, browser profiles, other
+    // projects — and those asset reads are NOT gated by the agent Seatbelt
+    // profile. User-content roots (the Notesage library, opened projects,
+    // explorer folders) are now granted at runtime via the `allow_asset_dir`
+    // command in `useStartWatchers`, NOT blanket-allowed here. The old test
+    // only rejected a literal `**`, so `$HOME/**` slipped through and gave
+    // false assurance that the v1 exfil surface was closed.
+    const conf = loadTauriConf();
+    const allow = conf.app?.security?.assetProtocol?.scope?.allow ?? [];
+    expect(allow).not.toContain('$HOME/**');
+    for (const entry of allow) {
+      expect(
+        entry.startsWith('$HOME'),
+        `asset scope entry "${entry}" is $HOME-rooted — grant user roots at runtime via allow_asset_dir instead`,
+      ).toBe(false);
     }
   });
 });
@@ -88,5 +158,63 @@ describe('tauri default capability permissions', () => {
       return identifier.startsWith('fs:');
     });
     expect(fsPermissions).toEqual([]);
+  });
+
+  it('grants sentry:default (telemetry crash-report invoke bridge)', () => {
+    // `tauri-plugin-sentry` routes frontend errors through Rust via `invoke`;
+    // `sentry:default` enables that bridge. It is an invoke permission, NOT a
+    // network permission — egress originates from the Rust SDK, so this does
+    // not widen the frontend's HTTP surface. See PRD 2026-06-07-telemetry.
+    const cap = loadDefaultCapability();
+    const identifiers = cap.permissions.map((perm) =>
+      typeof perm === 'string' ? perm : perm.identifier,
+    );
+    expect(identifiers).toContain('sentry:default');
+  });
+
+  it('grants aptabase:allow-track-event (telemetry usage invoke bridge)', () => {
+    // `tauri-plugin-aptabase` exposes only the `track_event` command and ships
+    // NO `aptabase:default` set, so the command must be granted explicitly. We
+    // invoke it directly through the v2 IPC (the npm JS binding is pinned to the
+    // Tauri v1 API and can't reach the v2 bridge). Like sentry, this is an
+    // invoke permission, NOT a network permission — egress is Rust-side
+    // `reqwest`, so it does not widen the frontend HTTP surface. Lock that only
+    // `allow-track-event` is granted (never a broader/write aptabase scope).
+    const cap = loadDefaultCapability();
+    const aptabasePerms = cap.permissions
+      .map((perm) => (typeof perm === 'string' ? perm : perm.identifier))
+      .filter((id) => id.startsWith('aptabase:'));
+    expect(aptabasePerms).toEqual(['aptabase:allow-track-event']);
+  });
+
+  it('grants clipboard-manager READ-only (no write/clear/image surface)', () => {
+    // ⌘⇧V paste-plain reads the OS clipboard via the clipboard-manager plugin
+    // (Rust-side, no WebKit paste-permission menu). Only read-text is needed —
+    // writes still go through `navigator.clipboard`. Lock the surface so a
+    // future edit can't quietly grant clipboard write/clear/read-image.
+    const cap = loadDefaultCapability();
+    const clipboardPerms = cap.permissions
+      .map((perm) => (typeof perm === 'string' ? perm : perm.identifier))
+      .filter((id) => id.startsWith('clipboard-manager:'));
+    expect(clipboardPerms).toEqual(['clipboard-manager:allow-read-text']);
+  });
+
+  it('keeps http:default narrowly scoped to the GitHub release endpoints', () => {
+    // Telemetry must NOT widen the JS HTTP surface — all telemetry egress is
+    // Rust-side `reqwest`, which Tauri capabilities don't govern. This locks the
+    // http:default allow-list to exactly the two GitHub release URLs so a future
+    // edit can't quietly add a telemetry (or any other) endpoint here.
+    const cap = loadDefaultCapability();
+    const httpPerm = cap.permissions.find(
+      (perm) => typeof perm !== 'string' && perm.identifier === 'http:default',
+    );
+    expect(httpPerm).toBeDefined();
+    const allow =
+      typeof httpPerm === 'string' ? [] : (httpPerm?.allow ?? []);
+    const urls = allow.map((entry) => entry.url).sort();
+    expect(urls).toEqual([
+      'https://github.com/PeterBlenessy/notesage/**',
+      'https://release-assets.githubusercontent.com/**',
+    ]);
   });
 });

@@ -23,7 +23,7 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import { common, createLowlight } from "lowlight";
 import { Markdown } from "tiptap-markdown";
 import { SlashCommand } from "@/components/editor/extensions/slash-command";
-import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, MentionHighlight, MentionSuggestion, DateHighlight, DateSuggestion, SearchHighlight, Drawing, Chart, MermaidBlock, LinkPreview, TableOfContents } from "@/components/editor/extensions";
+import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, MentionHighlight, MentionSuggestion, WikiLink, DateHighlight, DateSuggestion, SearchHighlight, Drawing, Chart, MermaidBlock, LinkPreview, TableOfContents } from "@/components/editor/extensions";
 import { PageBreaks } from "@/components/editor/extensions/page-breaks";
 import { LinkClick } from "@/components/editor/extensions/link-click";
 import { SendToAI } from "@/components/editor/extensions/send-to-ai";
@@ -95,7 +95,11 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       Placeholder.configure({
         placeholder: "Start typing or press '/' for commands...",
       }),
-      TextAlign.configure({
+      TextAlign.extend({
+        addKeyboardShortcuts() {
+          return {};
+        },
+      }).configure({
         types: ["heading", "paragraph"],
       }),
       TextStyle,
@@ -219,6 +223,7 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
       TagSuggestion,
       MentionHighlight,
       MentionSuggestion,
+      WikiLink,
       SearchHighlight,
       LinkClick,
       Callout,

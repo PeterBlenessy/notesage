@@ -26,20 +26,35 @@ import { useModelMetadata } from '@/hooks/useModelMetadata';
 import { ModelMetadataTooltip } from './ModelMetadataTooltip';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
+// Whisper supports 99 languages; "Auto-detect" covers them all (it sets the
+// language to "auto", which makes Whisper detect the language per recording).
+// The explicit entries below are common picks for users who want to pin a
+// language and skip per-file detection. Keep "Auto-detect" first.
 const LANGUAGES = [
+  { value: 'auto', label: 'Auto-detect' },
   { value: 'ar', label: 'Arabic' },
   { value: 'zh', label: 'Chinese' },
+  { value: 'cs', label: 'Czech' },
+  { value: 'da', label: 'Danish' },
   { value: 'nl', label: 'Dutch' },
   { value: 'en', label: 'English' },
+  { value: 'fi', label: 'Finnish' },
   { value: 'fr', label: 'French' },
   { value: 'de', label: 'German' },
+  { value: 'el', label: 'Greek' },
+  { value: 'hi', label: 'Hindi' },
   { value: 'it', label: 'Italian' },
   { value: 'ja', label: 'Japanese' },
   { value: 'ko', label: 'Korean' },
+  { value: 'no', label: 'Norwegian' },
+  { value: 'pl', label: 'Polish' },
   { value: 'pt', label: 'Portuguese' },
   { value: 'ru', label: 'Russian' },
   { value: 'es', label: 'Spanish' },
   { value: 'sv', label: 'Swedish' },
+  { value: 'tr', label: 'Turkish' },
+  { value: 'uk', label: 'Ukrainian' },
+  { value: 'vi', label: 'Vietnamese' },
 ];
 
 function modelDisplayName(name: string): string {
@@ -84,7 +99,7 @@ export function TranscriptionSettings() {
       <div className="space-y-3">
         <h3 className="text-sm font-medium">Whisper Models</h3>
         <p className="text-xs text-muted-foreground">
-          OpenAI Whisper models for on-device transcription — your audio never leaves your machine. Models are downloaded from{' '}
+          OpenAI Whisper models used to transcribe meeting recordings on-device — your audio never leaves your machine. Models are downloaded from{' '}
           <a
             href="https://huggingface.co/ggerganov/whisper.cpp"
             target="_blank"
@@ -206,9 +221,9 @@ export function TranscriptionSettings() {
         {/* Default model */}
         <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
           <div>
-            <Label className="text-sm font-medium">Default model</Label>
+            <Label className="text-sm font-medium">Transcription model</Label>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Whisper model used for transcription
+              Whisper model used to transcribe meeting recordings in the background
             </p>
           </div>
           <Select
@@ -232,9 +247,9 @@ export function TranscriptionSettings() {
         {/* Speech language */}
         <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
           <div>
-            <Label className="text-sm font-medium">Speech language</Label>
+            <Label className="text-sm font-medium">Recording language</Label>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Language for speech recognition
+              Spoken language of your recordings (leave on auto-detect if unsure)
             </p>
           </div>
           <Select value={speechLanguage} onValueChange={setSpeechLanguage}>

@@ -6,7 +6,7 @@ id: ""
 
 Notesage is a rich text markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** 0.39.1
+**Current version:** see the `version` field in `package.json` (ships on an alpha pre-release channel). Not duplicated here — a hardcoded version line drifts; `package.json` is the single source of truth.
 
 ## Features
 
@@ -88,15 +88,37 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 - Settings: System Tray section (show in tray, close to tray, start at login) + Notification toggles
 - PRD: `docs/prds/2026-03-11-system-tray.md`
 
-### UI Refresh — The Quiet Composer (Phase 1 shipped, Phase 2 + 3 gated)
+### UI Refresh — The Quiet Composer (Completed — Classic Layout removed)
 
 **Goal:** Move from "feature-rich IDE" to "premium native writing tool" — single floating composer for chat/commands/search, ambient agent orb instead of activity rail, flat curated sidebar with summonable tree overlay, fade-on-type chrome.
 
-- Phase 1 (preview, opt-in via Settings > Appearance > UI version) shipped in v0.39.0 — `QuietLayout`, `FloatingCommandBar`, `AgentOrb`, `QuietSidebar` with Pinned / Projects / Recent / Tags / Mentions sections, `TreeOverlay` (`⌘⇧E`), `FolderPeek`, `FocusPill`, `StatusTray`, accent picker (Default / Orange / Blue / System), Quiet chrome presets (Relaxed / Default / Aggressive), Settings v2 shell
-- Phase 1 ship gate has two manual-QA tasks outstanding: `#108` VoiceOver walkthrough, `#109` keyboard-only walkthrough
-- Phase 2 (default-on for new installs) — gated on Phase 1 shipping cleanly, ≥4 weeks live, no P0/P1 reports outstanding. Tasks: `docs/tasks/2026-04-21-ui-refresh-rollout-tasks.md` (#1–#6)
-- Phase 3 (legacy deletion — `Layout.tsx`, `TabBar`, `ChatPanel`, `ActivityStrip`, `CommandPalette`, `ChatFooter`, `NewNoteDialog`, `NewProjectDialog`) — gated on Phase 2 shipping ≥12 weeks. Tasks: rollout tasks #7–#16
+- Phase 1 (opt-in preview) shipped in v0.39.0 — `QuietLayout`, `FloatingCommandBar`, `AgentOrb`, `QuietSidebar` with Pinned / Projects / Recent / Tags / Mentions sections, `TreeOverlay` (`⌘⇧E`), `FolderPeek`, `FocusPill`, `StatusTray`, accent picker (Default / Orange / Blue / System), Quiet chrome presets (Relaxed / Default / Aggressive), Settings v2 shell
+- Phase 2 (default-on for new installs)
+- Phase 3 (Classic Layout deletion) — issue #325, PRD `docs/prds/2026-05-22-classic-layout-removal.md`. Removed `Layout.tsx`, `TabBar`, `ChatPanel`, `ChatFooter`, `ActivityStrip`, `CommandPalette`, `NewNoteDialog`, `NewProjectDialog`, `KeyboardShortcutsDialog`, `PreviewInvitation`, `RevertInvitation`, and the legacy `SettingsDialog`. Quiet Composer is the only shell.
 - PRD: `docs/prds/2026-04-21-ui-refresh.md`
+
+### Local AI Agents — Offline Agentic Chat for Local Models (In progress)
+
+**Goal:** Bring agentic chat (tool calls, MCP, multi-step) to fully-offline local models — no API keys, no network.
+
+- Custom ACP agent connections (`custom_acp`): bring any ACP-compatible binary; probe-on-add, maximal-confinement sandbox defaults
+- Local Agent preset: bundled Goose binary wired to the local llama-server (Path 2 over the bundled model), with isolated config generation, endpoint-change respawn, and the llama port allowed through the kernel network sandbox
+- MCP pass-through: the user's enabled, scope-matching MCP servers are attached to every ACP session (capability-gated; keychain secrets resolved backend-side)
+- Bounded smoke test gating setup; a failed add is rolled back so a broken Local Agent never appears in the provider dropdown. Once added, an agent that later becomes unhealthy surfaces a proper error in the chat message when used — no silent fallback, no header "Fix" pill
+- Staged setup flow (detect → download → configure → verify) with a setup dialog and command-bar empty-state + Add-Connection entry points
+- PRD: `docs/prds/2026-06-12-local-ai-agents.md`
+
+### OKF Wiki-Navigation — Backlinks, Relations & Link Preview (In progress)
+
+**Goal:** Surface the links between documents so a folder of notes (or an Open Knowledge Format bundle) reads like a navigable wiki — without leaving the document you're reading.
+
+- Link-graph index: the comrak parser extracts internal-link edges + surrounding context into a standalone `links.db` (separate from `index.db`); generalized `type`/`title`/`description` frontmatter capture
+- Relations panel: a floating popover docked to the document column's right edge — *Linked from* (backlinks grouped by source, with surrounding context) and *Links to* (forward links with the target's description), enriched with OKF `type` badges
+- In-editor link hover preview (read a neighbour without navigating away)
+- `[[wikilink]]` authoring that normalizes to a standard relative link on save (round-trip-safe), with workspace-global resolution and create-on-click for dangling targets
+- OKF recognition is generic (`type` frontmatter consumed wherever it appears — no OKF-specific parser); a bundled `okf-enrich` skill fills missing `type`/`title`/`description` via structured output
+- Isolation: the link graph is global for humans but never auto-widens AI context (regression-locked)
+- ADRs: `docs/adr/0001`–`0008`; PRD: `docs/prds/2026-06-19-okf-wiki-navigation.md`
 
 ### Beyond — Ideas
 
@@ -105,7 +127,7 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 - **Mobile apps:** iOS app (Swift + Tauri Mobile), Android, sync across devices
 - **Plugins:** Plugin API (Rust or WASM), community marketplace
 - **Advanced editor:** Canvas mode, Mermaid diagrams, math equations
-- **Knowledge base:** Backlinks, daily notes, graph view of note connections
+- **Knowledge base:** ~~Backlinks~~ (delivered — see OKF Wiki-Navigation above), daily notes, graph view of note connections
 - **Advanced AI:** Multi-file context, semantic search, knowledge graph visualization
 
 ## Architectural Decisions
@@ -116,7 +138,7 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 4. `.notesage/` **metadata directory** — Sidecar comments, skill directories, agent instructions, research storage. Project-relative paths keep everything portable.
 5. **YAML frontmatter with lazy document UUID** — Stable document identity for comments that survive renames and cross-document references.
 6. **Provider abstraction (**`AIProvider` **interface)** — Extends to local AI, new providers. Web search implemented as provider-native tools.
-7. **Component modularity** — Sidebar, editor, tabs, chat panel are separate and composable.
+7. **Component modularity** — Sidebar, editor, command bar, and agent orb are separate and composable.
 8. **Open standards (Agent Skills + MCP)** — Skills and tools follow widely adopted cross-tool standards. No proprietary format.
 9. **SQLite document index** — Persistent, structure-aware index built from comrak AST parsing. Replaces regex-based filesystem scanning with instant SQL queries for tags, mentions, tasks, goals, and FTS5 content search. Each device rebuilds its own index from files (iCloud safe).
 10. **OS keychain for credentials** — API keys stored in macOS Keychain (via `keyring` crate), never in localStorage. Backend resolves keys directly — they never transit through IPC. Transparent one-time migration for existing users.

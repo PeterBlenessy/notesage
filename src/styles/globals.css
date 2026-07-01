@@ -120,6 +120,18 @@
 :root {
   --color-accent-primary: var(--accent, var(--color-primary));
 
+  /* Text/icon colour placed ON a `--color-accent-primary` fill (primary button
+     labels, etc.). macOS System Settings keeps a WHITE label+glyph on the
+     accent fill in BOTH light and dark mode, so each `.accent-*` class sets
+     `--color-on-accent: white`. When no accent is active the primary affordance
+     is the NEUTRAL `--color-primary` (dark in light mode, light-grey in dark
+     mode), so the on-accent colour must default to `--color-primary-foreground`
+     — white on the dark neutral in light mode, dark on the light-grey neutral
+     in dark mode. Without this default the dark-mode neutral button would get
+     dark text that the accent classes would NOT override, but the accent case
+     must be white — hence the per-accent overrides below. */
+  --color-on-accent: var(--color-primary-foreground);
+
   /* Audit #17 (2026-04-27 quiet-composer-migration) — macOS unfocused-window
      de-emphasis. Neutral grey value the accent token swaps to when the
      window loses focus. Light-mode value (oklch(60% 0 0)) clears WCAG UI
@@ -307,15 +319,22 @@
 .accent-orange {
   /* Light mode: rgb(255,87,34) — Material Deep Orange 500. ~3.2:1 vs white. */
   --accent: oklch(68% 0.21 37);
+  /* macOS keeps a white label on the accent fill (both themes). The base
+     `.accent-*` rule (no `.dark` qualifier) applies in light AND dark mode,
+     so a single white declaration covers both — the `.dark.accent-*` rules
+     only override `--accent`, not `--color-on-accent`. */
+  --color-on-accent: oklch(100% 0 0);
 }
 
 .accent-blue {
   /* Light mode: rgb(25,118,210) — Material Blue 700. ~4.6:1 vs white (AA body). */
   --accent: oklch(56% 0.16 253);
+  --color-on-accent: oklch(100% 0 0);
 }
 
 .accent-system {
   --accent: var(--accent-system-value, oklch(68% 0.21 37));
+  --color-on-accent: oklch(100% 0 0);
 }
 
 .dark.accent-orange {
@@ -566,6 +585,165 @@ body {
   }
 }
 
+/* Distinct "needs you" pulse for the AgentOrb when an unwatched session is
+ * awaiting a permission decision (task #13) — a faster, more insistent accent
+ * ring than the ambient `orb-pulse`, so "needs you" reads differently from
+ * "merely running". CSS-only; reduced-motion strips it (here + the component
+ * omits the class via `useReducedMotion`). */
+@keyframes orb-pulse-attention {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 var(--color-accent-primary);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 0 0 8px transparent;
+  }
+}
+
+.orb-pulsing-attention {
+  animation: orb-pulse-attention 0.9s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb-pulsing-attention {
+    animation: none;
+  }
+}
+
+/* RelationsPanel collapsed-handle "comet" attention cue (OKF wiki-navigation,
+ * ADR 0004). Instead of a pulsing ring, a small comet — a bright lead dot with a
+ * tapering tail of dimmer, smaller dots — traces the handle's border. Calmer
+ * than a pulse: it draws the eye without flashing the whole element. CSS-only
+ * (per-dot size/opacity/delay are set inline by the component); zero JS in the
+ * animation loop. Runs 3 laps then settles (the dots re-key on each doc-open so
+ * a new document restarts it — "announce, then quiet"). The component omits the
+ * dots entirely under `useReducedMotion()`; the @media guard below parks a
+ * single static head as defence-in-depth for an OS-preference flip after mount.
+ *
+ * The `offset-path` is the perimeter of the 28×112 handle box with 8px-rounded
+ * LEFT corners (matches `w-7 h-28 rounded-l-lg`); dots ride it via `offset-anchor:
+ * center`, looping `offset-distance` 0%→100%. */
+@keyframes relations-comet-run {
+  from { offset-distance: 0%; }
+  to { offset-distance: 100%; }
+}
+
+.relations-comet-dot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  border-radius: 9999px;
+  background: var(--color-accent-primary);
+  offset-path: path("M28,0 L28,112 L8,112 A8,8 0 0 1 0,104 L0,8 A8,8 0 0 1 8,0 Z");
+  offset-anchor: center;
+  animation: relations-comet-run 3.4s linear 3 forwards;
+  will-change: offset-distance;
+}
+
+.relations-comet-head {
+  box-shadow: 0 0 7px 1.5px color-mix(in oklch, var(--color-accent-primary) 75%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relations-comet-dot {
+    animation: none;
+    offset-distance: 8%;
+  }
+  /* Keep only the head as a static "has links" dot under reduced motion. */
+  .relations-comet-dot:not(.relations-comet-head) {
+    display: none;
+  }
+}
+
+/* The handle ⇄ panel morph: the single container eases its size + corner radius
+ * between the slim handle and the rolled-out panel. Kept in CSS (not a React
+ * inline style) so the resize drag can imperatively set `transition: none`
+ * during a drag and clear it after without fighting React's style reconciliation.
+ * Reduced motion snaps instantly. */
+.relations-morph {
+  transition:
+    width 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 340ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 340ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .relations-morph {
+    transition: none;
+  }
+}
+
+/* Session run-state status dot (history rows, task #9). A gentle opacity pulse
+ * for the "running" indicator — subtler than the orb's scale pulse. CSS-only;
+ * components also strip the class under `useReducedMotion()` as defence-in-depth. */
+@keyframes session-status-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.session-status-pulse {
+  animation: session-status-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .session-status-pulse {
+    animation: none;
+  }
+}
+
+/* ============================================================================
+ * HTML viewer find-bar morph (HtmlViewer.tsx)
+ * ============================================================================
+ * The viewer's toolbar pill swaps the search button for the search field in
+ * place. These keyframes make that swap read as a morph: the field scales +
+ * fades up on open and back down on close. CSS-only (no JS animation loop),
+ * mirroring the orb-pulse pattern — and not reliant on tailwindcss-animate
+ * utility generation, which only emits classes used bare in source.
+ * ========================================================================= */
+@keyframes html-find-enter {
+  from {
+    opacity: 0;
+    transform: translateX(12px) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes html-find-exit {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(12px) scale(0.9);
+  }
+}
+
+/* Grow from the right edge — the search button sits at the pill's right, so the
+ * field reads as morphing out of it. Springy ease on enter for a livelier feel. */
+.html-find-enter {
+  transform-origin: right center;
+  /* easeOutCubic — gentler than easeOutQuint, so the motion spreads across the
+   * full duration instead of front-loading and feeling instant. */
+  animation: html-find-enter 400ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.html-find-exit {
+  transform-origin: right center;
+  animation: html-find-exit 240ms ease-in forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .html-find-enter,
+  .html-find-exit {
+    animation: none;
+  }
+}
+
 /* ============================================================================
  * Window unfocused state — macOS-style desaturation (audit #17, 2026-04-27)
  * ============================================================================
@@ -576,8 +754,7 @@ body {
  * The toggle is set by `useWindowFocus()` (mounted from `QuietLayout.tsx`)
  * which listens on `window` for `focus` / `blur` and writes
  * `data-window-inactive="true|false"` onto the QuietLayout root
- * (`[data-quiet-layout-root]`). Quiet Composer only — Classic Layout is
- * Phase 3 deletion track, so the rules are scoped to the Quiet root.
+ * (`[data-quiet-layout-root]`).
  *
  * Initial state: read from `document.hasFocus()` so a window mounted
  * while in the background renders desaturated immediately.
@@ -684,7 +861,9 @@ body {
 .app [data-quiet-toolbar],
 .app [data-quiet-status],
 .app nav[aria-label="Workspace sidebar"],
-.app [data-testid="agent-orb"] {
+.app [data-testid="agent-orb"],
+.app [data-quiet-titlebar],
+.app [data-cmd-bar] {
   transition-property: opacity;
   transition-duration: 340ms;
   transition-timing-function: ease-in-out;
@@ -712,11 +891,44 @@ body {
   opacity: 0.3;
 }
 
+/*
+ * Title bar fade — full fade-to-0, mirroring toolbar/status. The hover /
+ * focus-within guards keep the close-document button reachable the moment
+ * the user reaches for it. Living spec: `docs/design-system.md` →
+ * "Fade-on-Type Pattern".
+ */
+.app.typing[data-quiet-chrome-titlebar="fade"] [data-quiet-titlebar]:not(:hover):not(:focus-within) {
+  opacity: 0;
+}
+
+/*
+ * Command-bar fade — ONLY when the FloatingCommandBar is minimized
+ * (collapsed pill: not expanded AND not pinned) AND unfocused AND
+ * unhovered. The state attributes are written by `FloatingCommandBar.tsx`
+ * (`data-expanded`, `data-cmd-bar-pinned`). When the user expands the bar,
+ * pins it as a side panel, focuses its input, or hovers it, the selector
+ * stops matching and the bar stays fully opaque. Typing inside the bar
+ * separately never triggers `.typing` at all (see `useFadeOnType` —
+ * `[data-cmd-bar]` is excluded from typing signals).
+ *
+ * Rooted on `:root` (not `.app`) because the FloatingCommandBar portals
+ * to `document.body` and is therefore a sibling of `[data-quiet-layout-root]`,
+ * not a descendant. `useFadeOnType` mirrors `.typing` to `<html>` for this
+ * single case; `useQuietChrome` mirrors `data-quiet-chrome-cmdbar` for the
+ * matching gate. Every other target stays scoped to `.app`.
+ */
+:root.typing[data-quiet-chrome-cmdbar="fade"]
+  [data-cmd-bar][data-expanded="false"][data-cmd-bar-pinned="false"]:not(:hover):not(:focus-within) {
+  opacity: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .app [data-quiet-toolbar],
   .app [data-quiet-status],
   .app nav[aria-label="Workspace sidebar"],
-  .app [data-testid="agent-orb"] {
+  .app [data-testid="agent-orb"],
+  .app [data-quiet-titlebar],
+  .app [data-cmd-bar] {
     transition-duration: 0ms;
   }
 }
@@ -776,8 +988,18 @@ body {
    content would still start at y=44 and there'd be nothing for the
    frosted glass to sit on top of. */
 .app[data-quiet-chrome-transparent="true"] [data-quiet-layout-document-area] {
-  padding-top: 0;
+  /* StatusBar (absolute, bottom) — content scrolls behind it regardless of the
+     title bar, so this is unconditional in transparent mode. */
   padding-bottom: 0;
+}
+
+/* The top `padding-top: 0` only made sense to let content scroll behind the
+   frosted TitleBar. When the bar is hidden (`data-titlebar-hidden="true"`) the
+   doc area keeps its React-driven top padding (breathing room / traffic-light
+   clearance) instead. */
+.app[data-quiet-chrome-transparent="true"]:not([data-titlebar-hidden="true"])
+  [data-quiet-layout-document-area] {
+  padding-top: 0;
 }
 
 /* =========================================================================
@@ -808,7 +1030,7 @@ body {
 
 /*
  * #142 — Translucent title bar requires content to actually pass behind it.
- * QuietLayout drops the legacy `pt-11` compensation on the doc area when
+ * QuietLayout drops the `pt-11` compensation on the doc area when
  * transparent chrome is on, so the editor's scroll area now extends up to
  * y=0 (the title bar's z=30 absolute layer overlays it). Two surfaces inside
  * the editor need extra top clearance so they don't sit visually trapped
@@ -826,12 +1048,33 @@ body {
  *     y=0 instead of y=44. Bump it to `top: 48px` so it clears the bar
  *     and floats just below the chrome edge, matching the mockup.
  */
-.app[data-quiet-chrome-transparent="true"] [data-editor-scroll-content] {
+.app[data-quiet-chrome-transparent="true"]:not([data-titlebar-hidden="true"])
+  [data-editor-scroll-content] {
   padding-top: calc(2.5rem + 0.5rem); /* 44px = title bar 36 + 8 gap */
 }
 
-.app[data-quiet-chrome-transparent="true"] [data-editor-pill-toolbar] {
+.app[data-quiet-chrome-transparent="true"]:not([data-titlebar-hidden="true"])
+  [data-editor-pill-toolbar] {
   top: 3rem; /* 48px — clears the 36px title bar with a 12px gap */
+}
+
+/* TitleBar hidden + sidebar hidden — the document column spans the full window
+   width, so its top-left sits under the macOS traffic lights. Instead of an
+   opaque top band, the editor surface flows flush to y=0 (transparent / quiet)
+   and we push the editor's OWN content + pill toolbar down so the first line and
+   controls clear the traffic-light safe zone. The full-width transparent drag
+   strip (QuietLayout) hosts the lights + window dragging. Markdown editor only;
+   non-editor viewers keep their own top spacing. */
+.app[data-titlebar-hidden="true"]
+  [data-quiet-layout-document-area][data-sidebar-pinned="false"]
+  [data-editor-scroll-content] {
+  padding-top: calc(2.5rem + 0.5rem); /* 44px — clears the traffic lights */
+}
+
+.app[data-titlebar-hidden="true"]
+  [data-quiet-layout-document-area][data-sidebar-pinned="false"]
+  [data-editor-pill-toolbar] {
+  top: 3rem; /* 48px */
 }
 
 /* =========================================================================
@@ -853,12 +1096,19 @@ body {
  * ========================================================================= */
 /* Sidebar lives at the layout-root level (sibling of the title-bar +
    doc-area column) since live-test 2026-04-25 — the selector no
-   longer descends through `[data-quiet-layout-document-area]`. */
+   longer descends through `[data-quiet-layout-document-area]`.
+
+   Focus mode fully HIDES the sidebar (Quiet Composer is the only shell):
+   a negative left margin equal to its own width collapses the reserved
+   252 px track so the document column reclaims the space, while the nav
+   slides off the left edge (clipped by the layout root's `overflow-hidden`)
+   and fades out. `var(--quiet-sidebar-width)` is published by QuietLayout
+   (252 px when pinned), so the collapse always matches the actual width. */
 .app.focus-mode nav[aria-label="Workspace sidebar"] {
   opacity: 0;
-  transform: translateX(-12px);
+  margin-left: calc(-1 * var(--quiet-sidebar-width, 252px));
   pointer-events: none;
-  transition: opacity 220ms ease-out, transform 220ms ease-out;
+  transition: opacity 220ms ease-out, margin-left 220ms ease-out;
 }
 .app.focus-mode [data-quiet-toolbar],
 .app.focus-mode [data-quiet-status] {
@@ -874,6 +1124,15 @@ body {
  * row and the document would still need to clear it.
  */
 .app.focus-mode [data-titlebar-mode="quiet"] {
+  display: none;
+}
+/* RelationsPanel handle (OKF wiki-navigation, ADR 0004) is chrome — hide it in
+ * focus mode like the sidebar/toolbar/orb. Defence-in-depth: the component also
+ * returns null while focus mode is active (which unmounts any open popover), but
+ * this keeps the handle gone even if the reactive flag lags a frame. The open
+ * PopoverContent is portaled to body (outside `.app`) so the component-level
+ * unmount, not CSS, is what closes it. */
+.app.focus-mode [data-testid="relations-handle"] {
   display: none;
 }
 /* AgentOrb doesn't carry a dedicated `data-agent-orb` attribute; it uses
@@ -941,8 +1200,18 @@ body {
  * The `Pinned`/`ExpandedResizeHandle` components set `data-cmd-bar-resizing="true"`
  * on `<html>` while the pointer is down and clear it on pointerup. While the
  * attribute is present we strip the bar's transitions so width tracks the
- * cursor frame-perfectly, matching the legacy chat panel's resize feel.
+ * cursor frame-perfectly.
  * ========================================================================= */
 html[data-cmd-bar-resizing="true"] [data-cmd-bar] {
   transition: none !important;
+}
+
+/* =========================================================================
+ * Magic-variable input (TokenInput) — contenteditable placeholder. Shows the
+ * data-placeholder text only when the field is genuinely empty.
+ * ========================================================================= */
+.token-input:empty::before {
+  content: attr(data-placeholder);
+  color: var(--color-muted-foreground);
+  pointer-events: none;
 }

@@ -140,6 +140,7 @@ export function registerDefaultHandlers(): void {
   setMockInvokeHandler('path_exists', () => true);
   setMockInvokeHandler('watch_directory', () => undefined);
   setMockInvokeHandler('unwatch_directory', () => undefined);
+  setMockInvokeHandler('allow_asset_dir', () => undefined);
   setMockInvokeHandler('mark_self_write', () => undefined);
   setMockInvokeHandler('clear_self_write', () => undefined);
   setMockInvokeHandler('open_folder_dialog', () => null);
@@ -150,6 +151,12 @@ export function registerDefaultHandlers(): void {
   setMockInvokeHandler('set_store_value', () => undefined);
   setMockInvokeHandler('store_read', () => null);
   setMockInvokeHandler('store_write', () => undefined);
+  // Link graph (OKF wiki-navigation) — empty by default so mounting the
+  // RelationsPanel / hover preview in component tests doesn't throw.
+  setMockInvokeHandler('get_backlinks', () => []);
+  setMockInvokeHandler('get_outlinks', () => []);
+  setMockInvokeHandler('get_broken_links', () => []);
+  setMockInvokeHandler('resolve_wikilink', () => []);
 }
 
 // ---------------------------------------------------------------------------

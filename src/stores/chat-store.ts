@@ -2,7 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ChatMessage, Citation, AgentActivity, ToolCall, ToolCallActivity, SystemStatusType, Segment } from '@/lib/ai/types';
 import { createTauriStorage } from '@/lib/tauri-storage';
-import { getThread, getDescendants, getChildren, getLeaves } from '@/lib/chat-tree';
+import { getThread, getThreadResilient, getDescendants, getChildren, getLeaves } from '@/lib/chat-tree';
+import { log } from '@/lib/logger';
 // Note: the thread-slicing helper `sliceThreadBySegment` is declared below and
 // exported for use by hooks/components that apply segment-based context isolation.
 import { autoTitle, pruneConversations, pruneStaleProjectPaths as pruneStaleProjectPathsUtil } from '@/lib/conversationOps';
@@ -61,6 +62,13 @@ export interface Conversation {
   /** ACP session ID for session restoration via session/load */
   acpSessionId?: string;
   /**
+   * User-selected ACP session permission mode (e.g. 'acceptEdits' = Agent) for this
+   * conversation. Persisted so it survives agent respawns (scope changes spawn a fresh
+   * session that resets to the agent's default mode). Falls back to the connection's
+   * `acpDefaults.modeId` when unset. See `useAcpLifecycle` mode re-application.
+   */
+  agentModeId?: string;
+  /**
    * Per-branch ACP session IDs, keyed by the new branch's first message ID (assigned when
    * the first message after branching is added). Populated only when `session/fork` was
    * used on a leaf-branch. Historical branches and pre-migration conversations continue
@@ -105,7 +113,10 @@ interface ChatStore {
   // ---------------------------------------------------------------------------
 
   addMessage: (message: ChatMessage) => void;
-  updateMessage: (timestamp: number, content: string, citations?: Citation[]) => void;
+  // Streaming-write actions take an optional trailing `convId` so a background
+  // session can address the conversation that OWNS the message; omitting it
+  // targets the active conversation (today's behavior). See `updateConv` (task #3).
+  updateMessage: (timestamp: number, content: string, citations?: Citation[], convId?: string | null) => void;
   deleteMessage: (timestamp: number) => void;
   /** Delete a message and all its descendants, reset activeLeafId to the message's parent. */
   deleteMessageAndDescendants: (messageId: string) => void;
@@ -116,21 +127,21 @@ interface ChatStore {
   setSelectedProjectPaths: (paths: string[]) => void;
   toggleProjectPath: (path: string) => void;
   setWebSearchEnabled: (enabled: boolean) => void;
-  setMessageError: (timestamp: number, error: string) => void;
+  setMessageError: (timestamp: number, error: string, convId?: string | null) => void;
   /** Mark a message as interrupted (cancelled before completion) */
-  setMessageInterrupted: (timestamp: number) => void;
+  setMessageInterrupted: (timestamp: number, convId?: string | null) => void;
   /** Store the ACP protocol-level message ID on a message (from agent echo). */
-  setMessageAcpId: (timestamp: number, acpMessageId: string) => void;
-  updateMessageThinking: (timestamp: number, thinking: string) => void;
-  addActivity: (messageTimestamp: number, activity: AgentActivity) => void;
-  completeLastActivity: (messageTimestamp: number) => void;
-  completeAllActivities: (messageTimestamp: number) => void;
+  setMessageAcpId: (timestamp: number, acpMessageId: string, convId?: string | null) => void;
+  updateMessageThinking: (timestamp: number, thinking: string, convId?: string | null) => void;
+  addActivity: (messageTimestamp: number, activity: AgentActivity, convId?: string | null) => void;
+  completeLastActivity: (messageTimestamp: number, convId?: string | null) => void;
+  completeAllActivities: (messageTimestamp: number, convId?: string | null) => void;
   /**
    * Patch the `approvalMode` on the most recent running activity (or last overall).
    * Used when a permission decision arrives after the activity is created
    * (ACP path: activity added on `tool_call`, decision made on `acp-permission-request`).
    */
-  setLastActivityApprovalMode: (messageTimestamp: number, mode: import('@/lib/ai/types').ActivityApprovalMode) => void;
+  setLastActivityApprovalMode: (messageTimestamp: number, mode: import('@/lib/ai/types').ActivityApprovalMode, convId?: string | null) => void;
   addToolCallsToMessage: (messageTimestamp: number, toolCalls: ToolCall[]) => void;
   addToolCallActivity: (messageTimestamp: number, activity: ToolCallActivity) => void;
   updateToolCallActivity: (messageTimestamp: number, toolCallId: string, updates: Partial<ToolCallActivity>) => void;
@@ -140,19 +151,19 @@ interface ChatStore {
   // ---------------------------------------------------------------------------
 
   /** Append text to the last text segment, or create a new text segment */
-  appendTextSegment: (messageTimestamp: number, text: string) => void;
+  appendTextSegment: (messageTimestamp: number, text: string, convId?: string | null) => void;
   /** Append text to the last thinking segment, or create a new thinking segment */
-  appendThinkingSegment: (messageTimestamp: number, text: string) => void;
+  appendThinkingSegment: (messageTimestamp: number, text: string, convId?: string | null) => void;
   /** Push a new segment to the message's segments array */
-  pushSegment: (messageTimestamp: number, segment: Segment) => void;
+  pushSegment: (messageTimestamp: number, segment: Segment, convId?: string | null) => void;
   /** Update a segment by index with a partial patch */
-  updateSegment: (messageTimestamp: number, index: number, patch: Partial<Segment>) => void;
+  updateSegment: (messageTimestamp: number, index: number, patch: Partial<Segment>, convId?: string | null) => void;
   /** Update or push a plan segment (full replacement) */
-  updateOrPushPlanSegment: (messageTimestamp: number, entries: PlanEntry[]) => void;
+  updateOrPushPlanSegment: (messageTimestamp: number, entries: PlanEntry[], convId?: string | null) => void;
   /** Finalize all segments: collapse thinking, mark running tool_calls as done */
-  finalizeSegments: (messageTimestamp: number) => void;
+  finalizeSegments: (messageTimestamp: number, convId?: string | null) => void;
   /** Reset an assistant message for retry — clears content, segments, error state */
-  resetAssistantMessage: (timestamp: number) => void;
+  resetAssistantMessage: (timestamp: number, convId?: string | null) => void;
 
   // ---------------------------------------------------------------------------
   // System status messages (reconnection flow)
@@ -200,6 +211,8 @@ interface ChatStore {
   getActiveSegment: () => ConversationSegment | undefined;
   /** Update the session ID on the active segment */
   setSegmentSessionId: (sessionId: string) => void;
+  /** Persist the user-selected ACP permission mode on the active conversation. */
+  setConversationMode: (modeId: string) => void;
 
   /** Remove project paths that no longer exist from all conversations. */
   pruneStaleProjectPaths: (validPaths: Set<string>) => void;
@@ -211,6 +224,8 @@ interface ChatStore {
 
 const MAX_CONVERSATIONS = 50;
 const MAX_MESSAGES_PER_CONVERSATION = 500;
+/** Conversations already warned about an orphaned thread — dedupes the log. Cleared on delete. */
+const warnedOrphanThreads = new Set<string>();
 
 /**
  * Monotonically increasing timestamp for conversation updates.
@@ -238,6 +253,32 @@ function updateActiveConv(
   return {
     conversations: state.conversations.map((c) =>
       c.id === state.activeConversationId ? updater(c) : c
+    ),
+  };
+}
+
+/**
+ * Apply `updater` to a SPECIFIC conversation by id, falling back to the active
+ * conversation when `convId` is null/undefined.
+ *
+ * Streaming-write actions (segment/content/activity updates) route through this
+ * so a background session's deltas land on the conversation that OWNS the
+ * message — not on whatever the user is currently watching. Concurrent sessions
+ * (PRD `2026-06-14-command-bar-session-multitasking`, task #3) each address
+ * their own conversation by id; the foreground/`activeConversationId` is a pure
+ * view selector. Callers that omit `convId` (UI actions operating on the visible
+ * conversation) keep today's active-scoped behavior unchanged.
+ */
+function updateConv(
+  state: { conversations: Conversation[]; activeConversationId: string | null },
+  convId: string | null | undefined,
+  updater: (conv: Conversation) => Conversation,
+): Partial<{ conversations: Conversation[] }> {
+  const targetId = convId ?? state.activeConversationId;
+  if (!targetId) return {};
+  return {
+    conversations: state.conversations.map((c) =>
+      c.id === targetId ? updater(c) : c
     ),
   };
 }
@@ -294,6 +335,7 @@ export const useChatStore = create<ChatStore>()(
       },
 
       deleteConversation: (id) => {
+        warnedOrphanThreads.delete(id); // don't retain diagnostic state for a gone conversation
         set((state) => {
           const remaining = state.conversations.filter((c) => c.id !== id);
           let nextActive = state.activeConversationId;
@@ -375,8 +417,8 @@ export const useChatStore = create<ChatStore>()(
         });
       },
 
-      updateMessage: (timestamp, content, citations) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      updateMessage: (timestamp, content, citations, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           messages: c.messages.map((msg) =>
             msg.timestamp === timestamp
@@ -435,8 +477,8 @@ export const useChatStore = create<ChatStore>()(
 
       setWebSearchEnabled: (enabled) => set({ webSearchEnabled: enabled }),
 
-      setMessageError: (timestamp, error) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      setMessageError: (timestamp, error, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           messages: c.messages.map((msg) =>
             msg.timestamp === timestamp
@@ -446,8 +488,8 @@ export const useChatStore = create<ChatStore>()(
           updatedAt: nextUpdatedAt(),
         }))),
 
-      setMessageInterrupted: (timestamp) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      setMessageInterrupted: (timestamp, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           messages: c.messages.map((msg) =>
             msg.timestamp === timestamp
@@ -457,8 +499,8 @@ export const useChatStore = create<ChatStore>()(
           updatedAt: nextUpdatedAt(),
         }))),
 
-      setMessageAcpId: (timestamp, acpMessageId) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      setMessageAcpId: (timestamp, acpMessageId, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           messages: c.messages.map((msg) =>
             msg.timestamp === timestamp && msg.acpMessageId !== acpMessageId
@@ -468,8 +510,8 @@ export const useChatStore = create<ChatStore>()(
           updatedAt: nextUpdatedAt(),
         }))),
 
-      updateMessageThinking: (timestamp, thinking) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      updateMessageThinking: (timestamp, thinking, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           messages: c.messages.map((msg) =>
             msg.timestamp === timestamp
@@ -478,8 +520,8 @@ export const useChatStore = create<ChatStore>()(
           ),
         }))),
 
-      addActivity: (messageTimestamp, activity) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      addActivity: (messageTimestamp, activity, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           messages: c.messages.map((msg) =>
             msg.timestamp === messageTimestamp
@@ -488,8 +530,8 @@ export const useChatStore = create<ChatStore>()(
           ),
         }))),
 
-      completeLastActivity: (messageTimestamp) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      completeLastActivity: (messageTimestamp, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           messages: c.messages.map((msg) => {
             if (msg.timestamp !== messageTimestamp || !msg.activities) return msg;
@@ -502,8 +544,8 @@ export const useChatStore = create<ChatStore>()(
           }),
         }))),
 
-      completeAllActivities: (messageTimestamp) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      completeAllActivities: (messageTimestamp, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           messages: c.messages.map((msg) => {
             if (msg.timestamp !== messageTimestamp || !msg.activities) return msg;
@@ -514,8 +556,8 @@ export const useChatStore = create<ChatStore>()(
           }),
         }))),
 
-      setLastActivityApprovalMode: (messageTimestamp, mode) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      setLastActivityApprovalMode: (messageTimestamp, mode, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           messages: c.messages.map((msg) => {
             if (msg.timestamp !== messageTimestamp || !msg.activities || msg.activities.length === 0) return msg;
@@ -566,8 +608,8 @@ export const useChatStore = create<ChatStore>()(
 
       // ----- Segment methods -----
 
-      appendTextSegment: (messageTimestamp, text) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      appendTextSegment: (messageTimestamp, text, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
@@ -575,8 +617,8 @@ export const useChatStore = create<ChatStore>()(
           ),
         }))),
 
-      appendThinkingSegment: (messageTimestamp, text) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      appendThinkingSegment: (messageTimestamp, text, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
@@ -584,8 +626,8 @@ export const useChatStore = create<ChatStore>()(
           ),
         }))),
 
-      pushSegment: (messageTimestamp, segment) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      pushSegment: (messageTimestamp, segment, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
@@ -593,8 +635,8 @@ export const useChatStore = create<ChatStore>()(
           ),
         }))),
 
-      updateSegment: (messageTimestamp, index, patch) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      updateSegment: (messageTimestamp, index, patch, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
@@ -602,8 +644,8 @@ export const useChatStore = create<ChatStore>()(
           ),
         }))),
 
-      updateOrPushPlanSegment: (messageTimestamp, entries) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      updateOrPushPlanSegment: (messageTimestamp, entries, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
@@ -611,8 +653,8 @@ export const useChatStore = create<ChatStore>()(
           ),
         }))),
 
-      finalizeSegments: (messageTimestamp) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      finalizeSegments: (messageTimestamp, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
@@ -620,8 +662,8 @@ export const useChatStore = create<ChatStore>()(
           ),
         }))),
 
-      resetAssistantMessage: (messageTimestamp) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      resetAssistantMessage: (messageTimestamp, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           updatedAt: nextUpdatedAt(),
           messages: c.messages.map((msg) =>
@@ -828,6 +870,9 @@ export const useChatStore = create<ChatStore>()(
           ),
         }))),
 
+      setConversationMode: (modeId) =>
+        set((state) => updateActiveConv(state, (c) => ({ ...c, agentModeId: modeId }))),
+
       pruneStaleProjectPaths: (validPaths) =>
         set((state) => {
           const result = pruneStaleProjectPathsUtil(state.conversations, validPaths);
@@ -990,9 +1035,15 @@ const EMPTY_SEGMENTS: ConversationSegment[] = [];
  * otherwise Zustand triggers infinite re-renders (new array !== old array).
  */
 export const selectMessages = (() => {
-  // Closure-scoped cache for thread memoization
-  let cachedThread: ChatMessage[] = EMPTY_MESSAGES;
-  let cachedKey = '';
+  // Per-conversation thread memoization. A single shared slot (the previous
+  // design) corrupts the moment two subscribers render different conversations
+  // — each call overwrote the other's cached thread — and would thrash a
+  // hypothetical side-by-side view (audit perf B4). Keying the cache by
+  // conv.id isolates each conversation; the inner key still forces a recompute
+  // on any message/leaf/update change. Bounded so a long session that touches
+  // many conversations can't grow it without limit.
+  const cache = new Map<string, { key: string; thread: ChatMessage[] }>();
+  const MAX_ENTRIES = 32;
 
   return (state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): ChatMessage[] => {
     if (!state.activeConversationId) return EMPTY_MESSAGES;
@@ -1001,15 +1052,33 @@ export const selectMessages = (() => {
 
     // If conversation has branching data, return only the active thread
     if (conv.activeLeafId) {
-      // Cache key: conversation id + leaf id + message count + updatedAt
-      // updatedAt changes on every message add/update/delete, ensuring cache invalidation
-      const key = `${conv.id}:${conv.activeLeafId}:${conv.messages.length}:${conv.updatedAt}`;
-      if (key !== cachedKey) {
-        const thread = getThread(conv.messages, conv.activeLeafId);
-        cachedThread = thread.length > 0 ? thread : conv.messages;
-        cachedKey = key;
+      // Cache key: leaf id + message count + updatedAt — changes on every
+      // message add/update/delete, ensuring cache invalidation.
+      const key = `${conv.activeLeafId}:${conv.messages.length}:${conv.updatedAt}`;
+      const entry = cache.get(conv.id);
+      if (entry && entry.key === key) return entry.thread;
+
+      // Resilient walk: an orphaned activeLeafId (parent chain references a
+      // missing message) would make a plain getThread return just the leaf,
+      // hiding all history. getThreadResilient falls back to the full thread
+      // on corruption so history is never lost.
+      const { thread, broken } = getThreadResilient(conv.messages, conv.activeLeafId);
+      if (broken && !warnedOrphanThreads.has(conv.id)) {
+        warnedOrphanThreads.add(conv.id);
+        log.warn(
+          'ai',
+          `[chat] orphaned activeLeafId=${conv.activeLeafId} in conv=${conv.id} (${conv.messages.length} msgs) — recovered full history`,
+        );
+      } else if (!broken) {
+        warnedOrphanThreads.delete(conv.id);
       }
-      return cachedThread;
+      const result = thread.length > 0 ? thread : conv.messages;
+      cache.set(conv.id, { key, thread: result });
+      if (cache.size > MAX_ENTRIES) {
+        const oldest = cache.keys().next().value;
+        if (oldest !== undefined) cache.delete(oldest);
+      }
+      return result;
     }
     // Legacy conversations without activeLeafId: return all messages
     return conv.messages;
@@ -1119,6 +1188,27 @@ export function getSessionIdForLeaf(conv: Conversation, leafId: string | null): 
 export function selectProjectPaths(state: Pick<ChatStore, 'conversations' | 'activeConversationId'>): string[] {
   if (!state.activeConversationId) return EMPTY_PATHS;
   return state.conversations.find((c) => c.id === state.activeConversationId)?.projectPaths ?? EMPTY_PATHS;
+}
+
+/**
+ * Display title shown for a conversation that has no user/auto-assigned title
+ * yet. Single source of truth (review #8) — `CommandBarHistory`, `ChatHistoryView`,
+ * `AgentPanel`, and `useSessionManager` all resolved this inline and one used
+ * `'Chat'` while the rest used `'New Chat'`.
+ */
+export const DEFAULT_CONVERSATION_TITLE = 'New Chat';
+
+/**
+ * The display title for a conversation by id — its own `title`, or
+ * {@link DEFAULT_CONVERSATION_TITLE} when unset/blank. Returns the default for an
+ * unknown id too, so callers can render without a presence check.
+ */
+export function selectConversationTitle(
+  state: Pick<ChatStore, 'conversations'>,
+  conversationId: string | null | undefined,
+): string {
+  if (!conversationId) return DEFAULT_CONVERSATION_TITLE;
+  return state.conversations.find((c) => c.id === conversationId)?.title || DEFAULT_CONVERSATION_TITLE;
 }
 
 /** Pending project switch from the active conversation. */

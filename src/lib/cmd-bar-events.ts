@@ -26,18 +26,12 @@ export type CmdBarEvent =
       drilldown?: { kind: 'tag' | 'mention'; name: string };
     }
   | { type: 'dismiss' }
-  // `toggle-pin` — fired by ⌘⇧C under Quiet Composer when the bar is already
-  // expanded AND pinned. The bar's subscriber calls `setCmdBarPinned(false)`
-  // to unpin (flipping it back to the floating overlay). When the bar is
-  // collapsed or floating-but-expanded, the chord instead emits `focus` —
-  // see `useKeyboardShortcuts` for the decision table.
-  | { type: 'toggle-pin' }
   // `toggle-history` — fired by the clock icon in `CommandBarContext` (and
   // by `⌘⇧H` once the keyboard hook is wired) to flip the expanded bar
   // between "chat stream" mode and "history list" mode. The bar's
   // subscriber flips its local `chatView` state. Selecting a conversation
   // from the history list returns to chat via the `onSelectConversation`
-  // callback, same as the legacy `ChatPanel` does (#118).
+  // callback (#118).
   | { type: 'toggle-history' }
   // `close` — fired by the X button in `CommandBarContext` (live-test
   // 2026-04-26). Unlike `dismiss`, this is an explicit user "close the

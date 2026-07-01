@@ -11,7 +11,15 @@ import { useChatStore } from '@/stores/chat-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { useToolPermissionStore } from '@/stores/tool-permission-store';
 import { invoke } from '@tauri-apps/api/core';
+import { streamEvent } from '@/lib/ai/stream-events';
+import { useSessionRunStore } from '@/stores/session-run-store';
 import type { ResolvedCredentials } from '@/lib/ai/credentials';
+
+// The hook generates a unique per-request streamId and emits/listens on
+// `<event>:<streamId>`. Each ai_chat_stream mock captures it so emits and
+// listener-count assertions target the matching channel.
+let lastStreamId = '';
+const sidOf = (args: unknown): string => String((args as { streamId?: string })?.streamId ?? '');
 
 // ---------------------------------------------------------------------------
 // Mock AI provider
@@ -62,8 +70,8 @@ describe('useDirectApiChat — tool calling', () => {
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
     useChatStore.getState().clearMessages();
 
-    setMockInvokeHandler('ai_chat_stream', async () => {
-      setTimeout(() => emitMockEvent('ai-stream-done', null), 0);
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
+      setTimeout(() => emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null), 0);
     });
     vi.mocked(invoke).mockClear();
   });
@@ -159,8 +167,8 @@ describe('useDirectApiChat — listener lifecycle (#9, #15)', () => {
 
   it('cleans up all listeners when ai-stream-done fires', async () => {
     // ai_chat_stream resolves immediately; done event fires in the next tick
-    setMockInvokeHandler('ai_chat_stream', async () => {
-      setTimeout(() => emitMockEvent('ai-stream-done', null), 0);
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
+      setTimeout(() => emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null), 0);
     });
 
     const { result } = renderDirectApiChat();
@@ -175,18 +183,18 @@ describe('useDirectApiChat — listener lifecycle (#9, #15)', () => {
     });
 
     // All listeners should be cleaned up after done
-    expect(getListenerCount('ai-stream-chunk')).toBe(0);
-    expect(getListenerCount('ai-stream-thinking-chunk')).toBe(0);
-    expect(getListenerCount('ai-stream-done')).toBe(0);
-    expect(getListenerCount('ai-tool-use')).toBe(0);
-    expect(getListenerCount('ai-citation')).toBe(0);
-    expect(getListenerCount('ai-tool-call')).toBe(0);
-    expect(getListenerCount('ai-tool-calls-done')).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-chunk', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-thinking-chunk', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-done', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-tool-use', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-citation', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-tool-call', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-tool-calls-done', lastStreamId))).toBe(0);
   });
 
   it('ignores stream events after cancel (#15)', async () => {
     // Stream that never auto-completes — we'll cancel manually
-    setMockInvokeHandler('ai_chat_stream', async () => {});
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args); });
 
     const { result } = renderDirectApiChat();
 
@@ -200,18 +208,18 @@ describe('useDirectApiChat — listener lifecycle (#9, #15)', () => {
     });
 
     // Now emit events — they should be ignored (cancelled flag)
-    emitMockEvent('ai-stream-chunk', 'late chunk');
-    emitMockEvent('ai-stream-thinking-chunk', 'late thinking');
+    emitMockEvent(streamEvent('ai-stream-chunk', lastStreamId), 'late chunk');
+    emitMockEvent(streamEvent('ai-stream-thinking-chunk', lastStreamId), 'late thinking');
 
     // All listeners should be cleaned up
-    expect(getListenerCount('ai-stream-chunk')).toBe(0);
-    expect(getListenerCount('ai-stream-done')).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-chunk', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-done', lastStreamId))).toBe(0);
   });
 
   it('ai-stream-done is registered atomically with other listeners (#9)', async () => {
     // Emit done synchronously inside ai_chat_stream to simulate race
-    setMockInvokeHandler('ai_chat_stream', async () => {
-      emitMockEvent('ai-stream-done', null);
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
+      emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null);
     });
 
     const { result } = renderDirectApiChat();
@@ -221,8 +229,8 @@ describe('useDirectApiChat — listener lifecycle (#9, #15)', () => {
     });
 
     // Done fired synchronously with invoke — should still clean up
-    expect(getListenerCount('ai-stream-chunk')).toBe(0);
-    expect(getListenerCount('ai-stream-done')).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-chunk', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-done', lastStreamId))).toBe(0);
   });
 });
 
@@ -235,7 +243,7 @@ describe('useDirectApiChat — error handling (#17)', () => {
   });
 
   it('sets isError on assistant message when stream fails', async () => {
-    setMockInvokeHandler('ai_chat_stream', async () => {
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
       throw new Error('Network timeout');
     });
 
@@ -263,7 +271,7 @@ describe('useDirectApiChat — concurrent streams', () => {
 
   it('cancel then re-send cleans up first stream before starting second', async () => {
     // First stream that never auto-completes
-    setMockInvokeHandler('ai_chat_stream', async () => {});
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args); });
 
     const { result } = renderDirectApiChat();
 
@@ -273,7 +281,7 @@ describe('useDirectApiChat — concurrent streams', () => {
     });
 
     // Listeners should be active for the first stream
-    expect(getListenerCount('ai-stream-chunk')).toBeGreaterThan(0);
+    expect(getListenerCount(streamEvent('ai-stream-chunk', lastStreamId))).toBeGreaterThan(0);
 
     // Cancel the first stream explicitly
     act(() => {
@@ -281,13 +289,13 @@ describe('useDirectApiChat — concurrent streams', () => {
     });
 
     // First stream's listeners should be cleaned up
-    expect(getListenerCount('ai-stream-chunk')).toBe(0);
-    expect(getListenerCount('ai-stream-done')).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-chunk', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-done', lastStreamId))).toBe(0);
 
     // Now send a second message with a completing stream
     const invokeCountBefore = vi.mocked(invoke).mock.calls.length;
-    setMockInvokeHandler('ai_chat_stream', async () => {
-      emitMockEvent('ai-stream-done', null);
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
+      emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null);
     });
 
     await act(async () => {
@@ -299,8 +307,84 @@ describe('useDirectApiChat — concurrent streams', () => {
     expect(invokeCountAfter).toBeGreaterThan(invokeCountBefore);
 
     // Second stream also cleaned up after done (emitted synchronously)
-    expect(getListenerCount('ai-stream-chunk')).toBe(0);
-    expect(getListenerCount('ai-stream-done')).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-chunk', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-done', lastStreamId))).toBe(0);
+  });
+
+  it('two conversations stream concurrently without cross-contamination (task #3)', async () => {
+    // Both streams hang open; capture each send's streamId in order.
+    const streamIds: string[] = [];
+    setMockInvokeHandler('ai_chat_stream', async (args) => { streamIds.push(sidOf(args)); });
+
+    const { result } = renderDirectApiChat();
+    const assistantTs = (convId: string): number =>
+      useChatStore.getState().conversations.find((c) => c.id === convId)!
+        .messages.find((m) => m.role === 'assistant')!.timestamp ?? 0;
+    const textOf = (convId: string, ts: number) => {
+      const msg = useChatStore.getState().conversations.find((c) => c.id === convId)!
+        .messages.find((m) => m.timestamp === ts)!;
+      return (msg.segments ?? []).filter((s) => s.type === 'text')
+        .map((s) => (s as { content: string }).content).join('');
+    };
+
+    // Conversation A — send, then it becomes the BACKGROUND once B opens.
+    const a = useChatStore.getState().createConversation({ title: 'A' });
+    await act(async () => { await result.current.sendChatMessage('a-msg', []); });
+    const aTs = assistantTs(a);
+
+    // Conversation B — now the foreground.
+    const b = useChatStore.getState().createConversation({ title: 'B' });
+    await act(async () => { await result.current.sendChatMessage('b-msg', []); });
+    const bTs = assistantTs(b);
+
+    // Interleave chunks for both streams while B is foreground. A's chunk must
+    // land on A's message (segments update synchronously), not on the active B.
+    act(() => {
+      emitMockEvent(streamEvent('ai-stream-chunk', streamIds[0]), 'alpha');
+      emitMockEvent(streamEvent('ai-stream-chunk', streamIds[1]), 'beta');
+      emitMockEvent(streamEvent('ai-stream-chunk', streamIds[0]), '-A');
+      emitMockEvent(streamEvent('ai-stream-chunk', streamIds[1]), '-B');
+    });
+
+    expect(textOf(a, aTs)).toBe('alpha-A');
+    expect(textOf(b, bTs)).toBe('beta-B');
+
+    // Cancelling the foreground (B) leaves A's stream intact.
+    act(() => { result.current.cancelDirectChat(b); });
+    expect(getListenerCount(streamEvent('ai-stream-chunk', streamIds[0]))).toBeGreaterThan(0);
+    expect(getListenerCount(streamEvent('ai-stream-chunk', streamIds[1]))).toBe(0);
+
+    act(() => { result.current.cancelDirectChat(a); });
+  });
+
+  it('writes per-conversation run-state to session-run-store (task #4)', async () => {
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+    // Stream that completes on demand.
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args); });
+
+    const { result } = renderDirectApiChat();
+    const a = useChatStore.getState().createConversation({ title: 'A' });
+
+    await act(async () => { await result.current.sendChatMessage('hi', []); });
+    // Running while the stream is open, with the direct path recorded.
+    expect(useSessionRunStore.getState().runs[a]?.status).toBe('running');
+    expect(useSessionRunStore.getState().runs[a]?.path).toBe('direct');
+    expect(useSessionRunStore.getState().runs[a]?.streamId).toBe(lastStreamId);
+
+    // Completion clears the run.
+    act(() => { emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null); });
+    expect(useSessionRunStore.getState().runs[a]).toBeUndefined();
+  });
+
+  it('marks the run errored when the stream invoke rejects (task #4)', async () => {
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+    setMockInvokeHandler('ai_chat_stream', async () => { throw new Error('boom'); });
+
+    const { result } = renderDirectApiChat();
+    const a = useChatStore.getState().createConversation({ title: 'A' });
+
+    await act(async () => { await result.current.sendChatMessage('hi', []); });
+    expect(useSessionRunStore.getState().runs[a]?.status).toBe('error');
   });
 });
 
@@ -314,7 +398,7 @@ describe('useDirectApiChat — abort mid-stream', () => {
 
   it('stops processing chunks after cancelDirectChat is called', async () => {
     // Stream that never auto-completes
-    setMockInvokeHandler('ai_chat_stream', async () => {});
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args); });
 
     const { result } = renderDirectApiChat();
 
@@ -324,8 +408,8 @@ describe('useDirectApiChat — abort mid-stream', () => {
 
     // Emit a few chunks before cancelling
     act(() => {
-      emitMockEvent('ai-stream-chunk', 'chunk1 ');
-      emitMockEvent('ai-stream-chunk', 'chunk2 ');
+      emitMockEvent(streamEvent('ai-stream-chunk', lastStreamId), 'chunk1 ');
+      emitMockEvent(streamEvent('ai-stream-chunk', lastStreamId), 'chunk2 ');
     });
 
     // Cancel mid-stream
@@ -334,14 +418,14 @@ describe('useDirectApiChat — abort mid-stream', () => {
     });
 
     // All listeners should be cleaned up
-    expect(getListenerCount('ai-stream-chunk')).toBe(0);
-    expect(getListenerCount('ai-stream-done')).toBe(0);
-    expect(getListenerCount('ai-stream-thinking-chunk')).toBe(0);
-    expect(getListenerCount('ai-tool-call')).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-chunk', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-done', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-thinking-chunk', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-tool-call', lastStreamId))).toBe(0);
 
     // Late chunks should be no-ops (no crash, no state update)
     act(() => {
-      emitMockEvent('ai-stream-chunk', 'late chunk after cancel');
+      emitMockEvent(streamEvent('ai-stream-chunk', lastStreamId), 'late chunk after cancel');
     });
   });
 });
@@ -366,7 +450,7 @@ describe('useDirectApiChat — approvalMode on activities (task #22)', () => {
       toolCallSession: new Set(),
       toolCallAlways: [],
     });
-    useToolPermissionStore.getState().setPending(null);
+    useToolPermissionStore.setState({ pending: {} });
     vi.mocked(invoke).mockClear();
 
     // Mock web_search tool call emit + result
@@ -379,20 +463,20 @@ describe('useDirectApiChat — approvalMode on activities (task #22)', () => {
     // Stream that emits a single tool_call on the FIRST invoke only, then done
     // on the continuation invoke — otherwise handleToolCalls re-invokes forever.
     let invokeCount = 0;
-    setMockInvokeHandler('ai_chat_stream', async () => {
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
       invokeCount++;
       if (invokeCount === 1) {
         setTimeout(() => {
-          emitMockEvent('ai-tool-call', {
+          emitMockEvent(streamEvent('ai-tool-call', lastStreamId), {
             id: 'call-1',
             name: 'web_search',
             arguments: { query: 'cats' },
           });
-          emitMockEvent('ai-tool-calls-done', null);
+          emitMockEvent(streamEvent('ai-tool-calls-done', lastStreamId), null);
         }, 0);
       } else {
         // Continuation turn — just end the stream.
-        setTimeout(() => emitMockEvent('ai-stream-done', null), 0);
+        setTimeout(() => emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null), 0);
       }
     });
 
@@ -418,14 +502,14 @@ describe('useDirectApiChat — approvalMode on activities (task #22)', () => {
     // The stream emits a single web_search tool_call. Because requireAllToolConfirmations
     // forces tier='none', the hook should await the permission promise — we detect this
     // by observing the pending state on useToolPermissionStore.
-    setMockInvokeHandler('ai_chat_stream', async () => {
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
       setTimeout(() => {
-        emitMockEvent('ai-tool-call', {
+        emitMockEvent(streamEvent('ai-tool-call', lastStreamId), {
           id: 'call-1',
           name: 'web_search',
           arguments: { query: 'cats' },
         });
-        emitMockEvent('ai-tool-calls-done', null);
+        emitMockEvent(streamEvent('ai-tool-calls-done', lastStreamId), null);
       }, 0);
     });
 
@@ -437,7 +521,9 @@ describe('useDirectApiChat — approvalMode on activities (task #22)', () => {
     // Allow the tool_call event and microtasks to settle so setPending fires.
     await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
 
-    const pending = useToolPermissionStore.getState().pending;
+    // Per-conversation map (review #4) — exactly one request pending here.
+    const pendingMap = useToolPermissionStore.getState().pending;
+    const pending = Object.values(pendingMap)[0] ?? null;
     expect(pending).not.toBeNull();
     expect(pending!.name).toBe('web_search');
 
@@ -457,7 +543,7 @@ describe('useDirectApiChat — network timeout error', () => {
   });
 
   it('surfaces network timeout on assistant message with isError', async () => {
-    setMockInvokeHandler('ai_chat_stream', async () => {
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
       throw new Error('Network timeout');
     });
 
@@ -474,8 +560,8 @@ describe('useDirectApiChat — network timeout error', () => {
     expect(assistantMsg!.content).toContain('Network timeout');
 
     // Listeners should be cleaned up even after error
-    expect(getListenerCount('ai-stream-chunk')).toBe(0);
-    expect(getListenerCount('ai-stream-done')).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-chunk', lastStreamId))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-done', lastStreamId))).toBe(0);
   });
 });
 
@@ -494,8 +580,8 @@ describe('useDirectApiChat — stamps connectionId on user messages (#10)', () =
     useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
     useChatStore.getState().clearMessages();
-    setMockInvokeHandler('ai_chat_stream', async () => {
-      setTimeout(() => emitMockEvent('ai-stream-done', null), 0);
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
+      setTimeout(() => emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null), 0);
     });
   });
 
@@ -533,8 +619,8 @@ describe('useDirectApiChat — attachment activity log (task #30)', () => {
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
     useChatStore.getState().clearMessages();
 
-    setMockInvokeHandler('ai_chat_stream', async () => {
-      setTimeout(() => emitMockEvent('ai-stream-done', null), 0);
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
+      setTimeout(() => emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null), 0);
     });
     vi.mocked(invoke).mockClear();
   });
@@ -584,5 +670,45 @@ describe('useDirectApiChat — attachment activity log (task #30)', () => {
     );
     const userMsg = conv?.messages.find((m) => m.role === 'user');
     expect(userMsg?.activities ?? []).toHaveLength(0);
+  });
+});
+
+describe('useDirectApiChat — backend cancel (audit C2)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
+    useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
+    useChatStore.getState().clearMessages();
+    vi.mocked(invoke).mockClear();
+  });
+
+  it('cancelDirectChat invokes ai_chat_stream_cancel with the active streamId', async () => {
+    // Stream stays open until cancelled. Intentionally does NOT touch the shared
+    // lastStreamId: this test reads the id from the invoke args, and leaving the
+    // global untouched means a stray `ai-stream-done` timer leaked from a prior
+    // test can't land on THIS stream's channel and trip cleanup mid-test (the
+    // CI flake this test originally hit).
+    setMockInvokeHandler('ai_chat_stream', async () => {});
+    setMockInvokeHandler('ai_chat_stream_cancel', async () => {});
+
+    const { result } = renderDirectApiChat();
+
+    await act(async () => {
+      void result.current.sendChatMessage('hello', []);
+    });
+
+    // The streamId the hook generated and passed to ai_chat_stream.
+    const streamCall = vi.mocked(invoke).mock.calls.find(([cmd]) => cmd === 'ai_chat_stream');
+    const sid = (streamCall![1] as { streamId?: string }).streamId;
+    expect(sid).toBeTruthy();
+
+    act(() => {
+      result.current.cancelDirectChat();
+    });
+
+    // Cancel must reach the backend with the SAME streamId so it aborts the
+    // right in-flight stream (not just tear down frontend listeners).
+    const cancelCall = vi.mocked(invoke).mock.calls.find(([cmd]) => cmd === 'ai_chat_stream_cancel');
+    expect(cancelCall).toBeDefined();
+    expect((cancelCall![1] as { streamId?: string }).streamId).toBe(sid);
   });
 });

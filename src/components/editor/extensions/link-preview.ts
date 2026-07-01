@@ -2,6 +2,7 @@ import { Node, mergeAttributes } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { LinkPreviewCard } from "../LinkPreviewCard";
+import { track } from "@/lib/telemetry";
 
 const URL_RE = /^https?:\/\/\S+$/;
 const linkPreviewPasteKey = new PluginKey("linkPreviewPaste");
@@ -287,7 +288,8 @@ export const LinkPreview = Node.create({
     return {
       insertLinkPreview:
         (attrs) =>
-        ({ commands }) => {
+        ({ commands, dispatch }) => {
+          if (dispatch) track("block_inserted", { kind: "link_preview" });
           return commands.insertContent({
             type: this.name,
             attrs,

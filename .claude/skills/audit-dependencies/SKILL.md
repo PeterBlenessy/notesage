@@ -10,34 +10,37 @@ Produce a comprehensive Software Bill of Materials and dependency health report.
 
 ## CRITICAL: Completeness Requirement
 
-**Every section below is MANDATORY. Do not skip, abbreviate, or summarize any section.**
+**Every section below is MANDATORY. Run every command in the canonical list — no skipping for time or output length.** Produce output for every table (an empty table with "None found" is fine; omitting it is not). Process the full output of each command; do not truncate or sample. If a command fails, report the failure and try an alternative. Partial reports are unacceptable — the user depends on this for security decisions.
 
-- You MUST run every command listed. If a command fails, report the failure and try an alternative.
-- You MUST produce output for every table. An empty table with "None found" is acceptable; omitting the table is NOT.
-- Do NOT say "skipping due to time" or "this would take too long." Run it. Wait for it. Report the results.
-- If a command produces large output, process ALL of it and report the findings. Do not truncate or sample.
-- Partial reports are UNACCEPTABLE. If you cannot complete a section, explain exactly what failed and why.
+## Canonical Command List
 
-The user is depending on this report for security decisions. Incomplete data is worse than no data.
+Run ALL of these first, then fill in the sections below from their output. Each command has a graceful fallback for when a tool isn't installed — use the fallback, don't skip the section. If a tool is missing and you can install it (`pnpm add -g <tool>`), do so; otherwise note the gap explicitly.
+
+```bash
+# npm — installed versions, outdated, security audit, licenses
+pnpm ls --depth=0 --json
+pnpm outdated --format=json 2>/dev/null || pnpm outdated
+pnpm audit --json 2>/dev/null || pnpm audit
+pnpm licenses list --json 2>/dev/null || npx license-checker --json --production 2>/dev/null
+
+# npm — package age (run per concerning package during staleness analysis)
+# npm view <package> time --json 2>/dev/null | tail -5
+
+# npm — heavy/duplicate deps (run during heavy-deps analysis)
+# pnpm ls --depth=2 --json | head -500
+# pnpm why <package> 2>/dev/null
+
+# Cargo — direct deps, outdated, security audit
+cd src-tauri && cargo tree --depth=1 --prefix=none 2>/dev/null
+cd src-tauri && cargo outdated --root-deps-only 2>/dev/null || echo "cargo-outdated not installed — check Cargo.toml vs Cargo.lock manually"
+cd src-tauri && cargo audit 2>/dev/null || echo "cargo-audit not installed — check advisories manually"
+```
 
 ---
 
 ## Section 1: npm Dependency Inventory (SBOM)
 
-Run these commands and process the FULL output:
-
-```bash
-# Current versions of all direct dependencies
-pnpm ls --depth=0 --json
-
-# Check for outdated packages
-pnpm outdated --format=json 2>/dev/null || pnpm outdated
-
-# Security audit
-pnpm audit --json 2>/dev/null || pnpm audit
-```
-
-**Produce this table for ALL direct dependencies** (from `package.json` dependencies + devDependencies):
+From `pnpm ls`, `pnpm outdated`, and `pnpm audit` output, **produce this table for ALL direct dependencies** (from `package.json` dependencies + devDependencies):
 
 ```markdown
 | Package | Current | Latest | Type | Status | Notes |
@@ -60,20 +63,7 @@ For packages with `Major available` or `Vulnerable` status, add a **Notes** colu
 
 ## Section 2: Cargo Dependency Inventory
 
-Run these commands:
-
-```bash
-# List direct dependencies with versions
-cd src-tauri && cargo tree --depth=1 --prefix=none 2>/dev/null
-
-# Check for outdated crates (if cargo-outdated is installed)
-cargo outdated --root-deps-only 2>/dev/null || echo "cargo-outdated not installed — check Cargo.toml manually"
-
-# Security audit (if cargo-audit is installed)
-cargo audit 2>/dev/null || echo "cargo-audit not installed �� check advisories manually"
-```
-
-**Produce this table for ALL direct Cargo dependencies** (from `Cargo.toml` [dependencies]):
+From `cargo tree`, `cargo outdated`, and `cargo audit` output (see the canonical command list), **produce this table for ALL direct Cargo dependencies** (from `Cargo.toml` [dependencies]):
 
 ```markdown
 | Crate | Current | Latest | Status | Notes |
@@ -117,15 +107,9 @@ If `cargo audit` is unavailable, state that explicitly and note it as a gap.
 
 **Goal:** Identify dependencies that may be unmaintained or abandoned.
 
-For each direct dependency, check when the last version was published. Flag any package with:
+For each direct dependency, check when the last version was published (`npm view <package> time` — see the canonical command list). Flag any package with:
 - **No release in 12+ months** — potential maintenance risk
 - **No release in 24+ months** — likely unmaintained, evaluate alternatives
-
-Run:
-```bash
-# Check npm package ages (run for each concerning package)
-npm view <package> time --json 2>/dev/null | tail -5
-```
 
 Focus on packages that are NOT widely-used ecosystem staples (React, TypeScript, etc. are fine even if their release cadence slows). Flag niche or single-maintainer packages.
 
@@ -170,15 +154,7 @@ If no major upgrades are available, state: "No major version upgrades pending."
 
 ## Section 6: Heavy Transitive Dependencies
 
-Identify packages that pull in disproportionately large dependency trees:
-
-```bash
-# Show dependency tree depth and count
-pnpm ls --depth=2 --json | head -500
-
-# Or count transitive deps per direct dependency
-pnpm why <package> 2>/dev/null
-```
+Identify packages that pull in disproportionately large dependency trees (`pnpm ls --depth=2` and `pnpm why <package>` — see the canonical command list).
 
 Flag any direct dependency that:
 - Pulls in 50+ transitive packages
@@ -199,12 +175,7 @@ Flag any direct dependency that:
 
 **Important for desktop apps distributed to users.**
 
-```bash
-# Generate license list
-pnpm licenses list --json 2>/dev/null || npx license-checker --json --production 2>/dev/null
-```
-
-Produce a summary:
+From `pnpm licenses list` output (see the canonical command list), produce a summary:
 
 ```markdown
 ### License Distribution
@@ -267,17 +238,3 @@ Save the full report with this structure:
 
 <Full sections 1-7 below>
 ```
-
-## Example Commands That MUST Be Run
-
-These are not suggestions. Run ALL of them:
-
-1. `pnpm outdated` — version comparison
-2. `pnpm audit` — vulnerability scan
-3. `pnpm ls --depth=0` — current installed versions
-4. `cd src-tauri && cargo tree --depth=1` — Rust dependency tree
-5. `cargo audit` (or note if unavailable)
-6. `cargo outdated` (or note if unavailable)
-7. `pnpm licenses list` (or alternative)
-
-If any command is not available, install it first (`pnpm add -g <tool>`) or use an alternative. Do NOT skip the section.

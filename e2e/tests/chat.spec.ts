@@ -3,7 +3,7 @@ import { setupTauriMock, emitTauriEvent, trackInvokeCalls } from '../fixtures/ta
 
 /**
  * Pre-seeds localStorage with a mock Anthropic connection and routing config
- * so the chat panel treats the app as having an active AI provider.
+ * so the cmd-bar treats the app as having an active AI provider.
  */
 async function seedAIProvider(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
@@ -72,12 +72,20 @@ async function seedAIProvider(page: import('@playwright/test').Page) {
   });
 }
 
-test.describe('Chat panel', () => {
+/**
+ * Post-Classic-removal (#325) the chat surface is QuietLayout's
+ * FloatingCommandBar — a single composer that doubles as the cmd palette.
+ * These tests open it via the documented chord (`Cmd+K` is the canonical
+ * focus chord; double-tap `Cmd` also summons) and assert against
+ * the bar's selectors: `[data-cmd-bar]` wraps the bar, the input is
+ * `textarea[role="combobox"]`, the send button has
+ * `aria-label="Send message"`.
+ */
+test.describe('Chat (FloatingCommandBar)', () => {
   test.beforeEach(async ({ page }) => {
     await setupTauriMock(page);
     await seedAIProvider(page);
     await page.goto('/');
-    // Wait for the app to mount
     await page.waitForFunction(
       () => {
         const root = document.getElementById('root');
@@ -87,146 +95,126 @@ test.describe('Chat panel', () => {
     );
   });
 
-  test('opens chat panel with Cmd+Shift+C', async ({ page }) => {
-    // Chat panel should not be visible initially
-    const chatPanel = page.locator('.bg-card').filter({ hasText: 'New Chat' });
-    await expect(chatPanel).not.toBeVisible();
+  test('Cmd+K expands the command bar', async ({ page }) => {
+    const bar = page.locator('[data-cmd-bar]');
+    // The bar mounts collapsed (data-expanded="false"); the input only
+    // becomes visible once the user expands.
+    await expect(bar).toBeVisible({ timeout: 5000 });
+    await expect(bar).toHaveAttribute('data-expanded', 'false');
 
-    // Open chat panel with keyboard shortcut
-    await page.keyboard.press('Meta+Shift+c');
+    await page.keyboard.press('Meta+k');
 
-    // Chat panel should now be visible — look for the "New Chat" tab text
-    const chatTab = page.locator('button', { hasText: 'New Chat' }).first();
-    await expect(chatTab).toBeVisible({ timeout: 5000 });
+    await expect(bar).toHaveAttribute('data-expanded', 'true', { timeout: 5000 });
+    const input = bar.locator('textarea[role="combobox"]');
+    await expect(input).toBeVisible();
   });
 
-  test('can type a message in the chat input', async ({ page }) => {
-    // Open chat panel
-    await page.keyboard.press('Meta+Shift+c');
-    await page.waitForTimeout(500);
+  // (⌘⇧C as a summon was removed in the keyboard-shortcut overhaul — ⌘K and
+  // double-tap ⌘ are the summons; the ⌘K expand case is covered above.)
 
-    // Find the textarea inside the chat panel
-    const textarea = page.locator('textarea[placeholder*="Ask"]');
-    await expect(textarea).toBeVisible({ timeout: 5000 });
+  test('can type a message in the command bar input', async ({ page }) => {
+    await page.keyboard.press('Meta+k');
+    const input = page.locator('[data-cmd-bar] textarea[role="combobox"]');
+    await expect(input).toBeVisible({ timeout: 5000 });
 
-    // Type a message
-    await textarea.fill('Hello, how are you?');
-    await expect(textarea).toHaveValue('Hello, how are you?');
+    await input.fill('Hello, how are you?');
+    await expect(input).toHaveValue('Hello, how are you?');
   });
 
-  test('send button is enabled when text is present and disabled when empty', async ({ page }) => {
-    // Open chat panel
-    await page.keyboard.press('Meta+Shift+c');
-    await page.waitForTimeout(500);
+  test('send button is disabled when input is empty and enabled with text', async ({ page }) => {
+    await page.keyboard.press('Meta+k');
+    const input = page.locator('[data-cmd-bar] textarea[role="combobox"]');
+    await expect(input).toBeVisible({ timeout: 5000 });
 
-    const textarea = page.locator('textarea[placeholder*="Ask"]');
-    await expect(textarea).toBeVisible({ timeout: 5000 });
-
-    // Send button should be disabled when empty
-    const sendButton = page.locator('button[title="Send (Cmd+Enter)"]');
+    const sendButton = page.locator('[data-cmd-bar] button[aria-label="Send message"]');
     await expect(sendButton).toBeDisabled();
 
-    // Type a message — send button should become enabled
-    await textarea.fill('Hello!');
+    await input.fill('Hello!');
     await expect(sendButton).toBeEnabled();
 
-    // Clear the message — send button should become disabled again
-    await textarea.fill('');
+    await input.fill('');
     await expect(sendButton).toBeDisabled();
   });
 
-  test('sending a message adds it to the chat message list', async ({ page }) => {
-    // Open chat panel
-    await page.keyboard.press('Meta+Shift+c');
-    await page.waitForTimeout(500);
+  test('sending a message renders the user message in the stream', async ({ page }) => {
+    await page.keyboard.press('Meta+k');
+    const input = page.locator('[data-cmd-bar] textarea[role="combobox"]');
+    await expect(input).toBeVisible({ timeout: 5000 });
 
-    const textarea = page.locator('textarea[placeholder*="Ask"]');
-    await expect(textarea).toBeVisible({ timeout: 5000 });
-
-    // Type and send a message
-    await textarea.fill('What is Notesage?');
-    const sendButton = page.locator('button[title="Send (Cmd+Enter)"]');
+    await input.fill('What is Notesage?');
+    const sendButton = page.locator('[data-cmd-bar] button[aria-label="Send message"]');
     await sendButton.click();
 
-    // The user message should appear in the chat list
-    const userMessage = page.locator('p').filter({ hasText: 'What is Notesage?' });
+    // The user message should appear in the bar's conversation stream.
+    const userMessage = page.locator('[data-cmd-bar]').getByText('What is Notesage?').first();
     await expect(userMessage).toBeVisible({ timeout: 5000 });
 
-    // Input should be cleared after sending
-    await expect(textarea).toHaveValue('');
+    // Input is cleared after sending.
+    await expect(input).toHaveValue('');
   });
 
-  test('sending a message via Cmd+Enter keyboard shortcut', async ({ page }) => {
-    // Open chat panel
-    await page.keyboard.press('Meta+Shift+c');
-    await page.waitForTimeout(500);
+  test('Cmd+Enter sends the message from the input', async ({ page }) => {
+    await page.keyboard.press('Meta+k');
+    const input = page.locator('[data-cmd-bar] textarea[role="combobox"]');
+    await expect(input).toBeVisible({ timeout: 5000 });
 
-    const textarea = page.locator('textarea[placeholder*="Ask"]');
-    await expect(textarea).toBeVisible({ timeout: 5000 });
+    await input.fill('Tell me about markdown');
+    await input.press('Meta+Enter');
 
-    // Type a message and send via keyboard
-    await textarea.fill('Tell me about markdown');
-    await textarea.press('Meta+Enter');
-
-    // The user message should appear
-    const userMessage = page.locator('p').filter({ hasText: 'Tell me about markdown' });
+    const userMessage = page.locator('[data-cmd-bar]').getByText('Tell me about markdown').first();
     await expect(userMessage).toBeVisible({ timeout: 5000 });
   });
 
-  test('mock streaming response renders assistant message', async ({ page }) => {
-    // Open chat panel
-    await page.keyboard.press('Meta+Shift+c');
-    await page.waitForTimeout(500);
+  test('streaming response renders the assistant text', async ({ page }) => {
+    await page.keyboard.press('Meta+k');
+    const input = page.locator('[data-cmd-bar] textarea[role="combobox"]');
+    await expect(input).toBeVisible({ timeout: 5000 });
 
-    const textarea = page.locator('textarea[placeholder*="Ask"]');
-    await expect(textarea).toBeVisible({ timeout: 5000 });
-
-    // Type and send a message
-    await textarea.fill('What is Notesage?');
-    const sendButton = page.locator('button[title="Send (Cmd+Enter)"]');
-    await sendButton.click();
-
-    // Wait for user message to appear
-    await expect(page.locator('p').filter({ hasText: 'What is Notesage?' })).toBeVisible({ timeout: 5000 });
-
-    // Give the app time to invoke ai_chat_stream and set up listeners
-    await page.waitForTimeout(300);
-
-    // Simulate streaming AI response via mock Tauri events
-    await emitTauriEvent(page, 'ai-stream-chunk', 'Notesage is ');
-    await emitTauriEvent(page, 'ai-stream-chunk', 'a rich text ');
-    await emitTauriEvent(page, 'ai-stream-chunk', 'markdown editor.');
-    await emitTauriEvent(page, 'ai-stream-done', null);
-
-    // The streamed assistant response should appear in the chat
-    const assistantMessage = page.locator('text=Notesage is a rich text markdown editor.');
-    await expect(assistantMessage).toBeVisible({ timeout: 5000 });
-  });
-
-  test('ai_chat_stream command is invoked with correct messages', async ({ page }) => {
-    // Open chat panel
-    await page.keyboard.press('Meta+Shift+c');
-    await page.waitForTimeout(500);
-
-    // Set up invoke tracking
+    // Capture invoke args so we can read the per-request streamId the hook
+    // generates (events are emitted/listened on `<event>:<streamId>`).
     const getInvokeCalls = await trackInvokeCalls(page);
 
-    const textarea = page.locator('textarea[placeholder*="Ask"]');
-    await expect(textarea).toBeVisible({ timeout: 5000 });
+    await input.fill('What is Notesage?');
+    await page.locator('[data-cmd-bar] button[aria-label="Send message"]').click();
 
-    // Send a message
-    await textarea.fill('Hello AI');
-    const sendButton = page.locator('button[title="Send (Cmd+Enter)"]');
-    await sendButton.click();
+    await expect(
+      page.locator('[data-cmd-bar]').getByText('What is Notesage?').first(),
+    ).toBeVisible({ timeout: 5000 });
 
-    // Wait for the invoke to happen
+    // Give the app a beat to invoke ai_chat_stream and wire up listeners.
+    await page.waitForTimeout(300);
+
+    const calls = await getInvokeCalls();
+    const streamCall = calls.find((c) => c.cmd === 'ai_chat_stream');
+    const streamId = (streamCall?.args as { streamId?: string } | undefined)?.streamId ?? '';
+    const ev = (base: string) => (streamId ? `${base}:${streamId}` : base);
+
+    await emitTauriEvent(page, ev('ai-stream-chunk'), 'Notesage is ');
+    await emitTauriEvent(page, ev('ai-stream-chunk'), 'a rich text ');
+    await emitTauriEvent(page, ev('ai-stream-chunk'), 'markdown editor.');
+    await emitTauriEvent(page, ev('ai-stream-done'), null);
+
+    await expect(
+      page.locator('[data-cmd-bar]').getByText('Notesage is a rich text markdown editor.'),
+    ).toBeVisible({ timeout: 5000 });
+  });
+
+  test('ai_chat_stream is invoked with the user message', async ({ page }) => {
+    await page.keyboard.press('Meta+k');
+    const getInvokeCalls = await trackInvokeCalls(page);
+
+    const input = page.locator('[data-cmd-bar] textarea[role="combobox"]');
+    await expect(input).toBeVisible({ timeout: 5000 });
+
+    await input.fill('Hello AI');
+    await page.locator('[data-cmd-bar] button[aria-label="Send message"]').click();
+
     await page.waitForTimeout(500);
 
     const calls = await getInvokeCalls();
     const streamCall = calls.find((c) => c.cmd === 'ai_chat_stream');
     expect(streamCall).toBeDefined();
 
-    // Verify the messages array contains the user message
     const args = streamCall!.args as Record<string, unknown>;
     const messages = args.messages as Array<{ role: string; content: string }>;
     expect(messages).toBeDefined();
@@ -234,26 +222,16 @@ test.describe('Chat panel', () => {
     expect(userMsg).toBeDefined();
   });
 
-  test('chat panel renders even without AI provider configured', async ({ page }) => {
-    // The chat panel should render and show the input textarea
-    // regardless of whether a provider is configured
-    await page.keyboard.press('Meta+Shift+c');
-    await page.waitForTimeout(500);
+  test('Escape collapses the expanded floating command bar', async ({ page }) => {
+    const bar = page.locator('[data-cmd-bar]');
 
-    const textarea = page.locator('textarea[placeholder*="Ask"]');
-    await expect(textarea).toBeVisible({ timeout: 5000 });
-  });
+    await page.keyboard.press('Meta+k');
+    await expect(bar).toHaveAttribute('data-expanded', 'true', { timeout: 5000 });
 
-  test('chat panel toggles closed with Cmd+Shift+C', async ({ page }) => {
-    // Open chat panel
-    await page.keyboard.press('Meta+Shift+c');
-    const chatTab = page.locator('button', { hasText: 'New Chat' }).first();
-    await expect(chatTab).toBeVisible({ timeout: 5000 });
+    // Esc is the documented dismiss path in float mode (the bar's keymap
+    // owns Esc).
+    await page.keyboard.press('Escape');
 
-    // Close chat panel with the same shortcut
-    await page.keyboard.press('Meta+Shift+c');
-
-    // Chat panel content should disappear
-    await expect(chatTab).not.toBeVisible({ timeout: 5000 });
+    await expect(bar).toHaveAttribute('data-expanded', 'false', { timeout: 5000 });
   });
 });

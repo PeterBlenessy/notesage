@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { invoke } from '@tauri-apps/api/core';
 import type { LogLevel } from '@/lib/logger';
 import type { AccentName } from '@/lib/accent';
 import {
@@ -7,16 +8,31 @@ import {
   type QuietChromePreset,
   type QuietChromeTargets,
 } from '@/lib/quiet-chrome-presets';
+import { buildIsAlpha } from '@/lib/version';
 
 
 type Theme = "light" | "dark" | "system";
 export type ContentWidth = "full" | "auto" | "a4" | "a5" | "letter";
+
+/** Resizable Quiet Composer sidebar width bounds (px). */
+export const SIDEBAR_MIN_WIDTH = 200;
+export const SIDEBAR_MAX_WIDTH = 500;
+export const SIDEBAR_DEFAULT_WIDTH = 252;
+
+/** RelationsPanel partial-height band (fraction of the document column). */
+export const RELATIONS_PANEL_MIN_HEIGHT = 0.4;
+export const RELATIONS_PANEL_MAX_HEIGHT = 0.6;
+export const RELATIONS_PANEL_DEFAULT_HEIGHT = 0.5;
+
+/** RelationsPanel resizable-width band (px). */
+export const RELATIONS_PANEL_MIN_WIDTH = 280;
+export const RELATIONS_PANEL_MAX_WIDTH = 600;
+export const RELATIONS_PANEL_DEFAULT_WIDTH = 340;
 export type MeasurementUnit = "cm" | "inch";
 export type ExportTemplate = "clean" | "academic" | "report";
 export type ExportPageSize = "a4" | "letter" | "a5";
 export type ExportFormat = "pdf" | "pptx" | "docx";
 export type PptxTemplate = "simple" | "business" | "report";
-export type UiPreview = "legacy" | "quiet-composer";
 export type ReleaseChannel = 'stable' | 'alpha';
 interface SettingsStore {
   theme: Theme;
@@ -42,7 +58,6 @@ interface SettingsStore {
   sidebarOpen: boolean;
   sidebarPinned: boolean;
   sidebarWidth: number;
-  chatPanelOpen: boolean;
   notesRootPath: string;
   gitEnabled: boolean;
   printLayout: boolean;
@@ -54,13 +69,24 @@ interface SettingsStore {
   /** Global toggle — disables inline completions across all documents */
   inlineCompletionsDisabled: boolean;
   /**
-   * When true, inline completions are issued for files outside the chat
-   * footer's selected project scope (+ notes root) — the legacy behaviour
+   * When true, inline completions are issued for files outside the command
+   * bar's selected project scope (+ notes root) — the legacy behaviour
    * prior to task #17. Default false: out-of-scope files see no completion
    * traffic. Opt-in escape hatch for users who want completions everywhere.
    */
   completionsOnOutOfScope: boolean;
   chatHistoryLimit: number;
+  /** Planning context (tokens) used by the local model-fit memory estimate.
+   *  Not the model's max context — the size llama-server is launched with. */
+  localPlanningContext: number;
+  /** Phase 2 calibration share: whether to ever surface the opt-in
+   *  "share with the community" prompt. The prompt only opens a reviewable
+   *  GitHub submission — it never sends anything itself. */
+  offerCalibrationShare: boolean;
+  /** Set once the share prompt has been shown (one-time trigger). */
+  calibrationSharePromptedAt: string | null;
+  /** Set when the user picks "Don't ask again". */
+  calibrationShareDismissed: boolean;
   skillManagement: boolean;
   /** Global toggle — controls whether tools are sent with direct API chat requests */
   toolCallingEnabled: boolean;
@@ -80,6 +106,22 @@ interface SettingsStore {
   lastUpdateCheck: string | null;
   dismissedVersion: string | null;
   releaseChannel: ReleaseChannel;
+  /**
+   * Telemetry consent — usage analytics (Aptabase). Tri-state:
+   * `null` = follow the running build via `buildIsAlpha()` (alpha build → on,
+   * stable build → off — NOT the user's chosen update channel);
+   * `true`/`false` = explicit user choice that always wins. The effective
+   * value is computed by `selectEffectiveTelemetryUsage`. PRD 2026-06-07-telemetry.
+   */
+  telemetryUsageEnabled: boolean | null;
+  /**
+   * Telemetry consent — crash / error reporting (Sentry). Tri-state with the
+   * same semantics as `telemetryUsageEnabled`. Effective value via
+   * `selectEffectiveTelemetryCrash`.
+   */
+  telemetryCrashEnabled: boolean | null;
+  /** Whether the first-run telemetry disclosure notice has been shown. */
+  telemetryNoticeSeen: boolean;
   /** @deprecated PDF/DOCX now always use "clean". Kept for backwards compatibility. */
   lastExportTemplate: ExportTemplate;
   lastExportPageSize: ExportPageSize;
@@ -112,22 +154,15 @@ interface SettingsStore {
    * by this setting.
    */
   sidebarFilePreviewEnabled: boolean;
-  /** Show agent mode picker in chat footer (default: off — uses default mode automatically) */
+  /** Show agent mode picker in the command bar (default: off — uses default mode automatically) */
   showAgentModePicker: boolean;
   /**
    * Cross-project mode: when true, the ACP agent's filesystem sandbox is widened
    * to ALL workspace projects + explorer folders, not just the projects selected
-   * in the chat footer. Default false. Opt-in escape hatch — disables the
+   * in the command bar. Default false. Opt-in escape hatch — disables the
    * primary project-isolation guarantee from the project-data-isolation PRD.
    */
   crossProjectMode: boolean;
-  /**
-   * UI preview opt-in. Default "legacy" for both fresh installs and existing
-   * users on upgrade — no user is force-flipped to the new layout. Phase 1 of
-   * the Quiet Composer rollout (PRD 2026-04-21-ui-refresh): the new UI mounts
-   * only when this is "quiet-composer".
-   */
-  uiPreview: UiPreview;
   /**
    * Quiet Composer pinned-panel mode (PRD 2026-04-21-ui-refresh, task #28).
    * When true the FloatingCommandBar renders as a right-edge side panel
@@ -139,6 +174,20 @@ interface SettingsStore {
    * restarts. Clamped to 280–800. Default 400.
    */
   cmdBarPinnedWidth: number;
+  /**
+   * Height of the RelationsPanel (OKF wiki-navigation, ADR 0004), stored as a
+   * fraction `[0.4, 0.6]` of the document column height — the panel is partial
+   * height by design and the drag handle clamps to that band. Drives the
+   * `--relations-panel-height` CSS variable. Default 0.5.
+   */
+  relationsPanelHeight: number;
+  /**
+   * Width (in pixels) of the RelationsPanel (OKF wiki-navigation, ADR 0004).
+   * Persisted across restarts. Clamped to 280–600. Default 340. Drives the
+   * `--relations-panel-width` CSS variable; a left-edge drag mutates the var
+   * live (no React re-render mid-drag) and persists on release.
+   */
+  relationsPanelWidth: number;
   /**
    * Width (in pixels) of the floating command bar in the expanded state.
    * Persisted across restarts so users on large displays can scale the bar
@@ -173,6 +222,15 @@ interface SettingsStore {
    */
   quietChromeTransparent: boolean;
   /**
+   * Show the QuietLayout TitleBar (document name + dirty dot + close ×).
+   * Default off — the filename also lives in the sidebar (Recent/Pinned) and
+   * the StatusBar, and the window controls + dragging are handled by the
+   * sidebar's full-height drag region, so the bar is optional chrome. When off,
+   * the document area reclaims the vertical space. Trial toggle (can be flipped
+   * back on in Settings > Appearance) ahead of a possible full removal.
+   */
+  showTitleBar: boolean;
+  /**
    * Sidebar composition (ui-refresh #35). Maximum number of rows shown in
    * the quiet-composer sidebar Recent section. Clamped to [3, 15]. Default 5.
    */
@@ -189,36 +247,25 @@ interface SettingsStore {
    * `sidebarTagsCap`. `0` hides the section entirely.
    */
   sidebarMentionsCap: number;
-  /**
-   * Timestamp (ms since epoch) when the preview-invitation banner was last
-   * shown to the user, or null if it has never been shown. Used by
-   * `shouldShowPreviewInvitation` to gate the 30-day re-appearance window
-   * after a dismissal. Persisted. ui-refresh task #97.
-   */
-  previewInvitationShownAt: number | null;
-  /**
-   * Timestamp (ms since epoch) when the user last dismissed the preview-
-   * invitation banner, or null if it has never been dismissed. Used by
-   * `shouldShowPreviewInvitation` to compute the 30-day cooldown. Persisted.
-   * ui-refresh task #97.
-   */
-  previewInvitationDismissedAt: number | null;
-  /**
-   * Mirror of the preview-invitation timestamps for the REVERT banner
-   * (task #107). When a user is in Quiet Composer mode, we surface a
-   * symmetric "Prefer the classic UI? Switch back" banner once and then
-   * honour a 30-day cooldown on dismissal. Persisted. Separate fields
-   * so the two banners' show/dismiss state doesn't interfere.
-   */
-  revertInvitationShownAt: number | null;
-  revertInvitationDismissedAt: number | null;
   // System tray settings
   showInTray: boolean;
   closeToTray: boolean;
   startAtLogin: boolean;
+  // Automations — master enable (also gates the Rust scheduler tick loop)
+  automationsEnabled: boolean;
   // Notification settings
   notifyAgentCompletion: boolean;
   notifyExternalChanges: boolean;
+  /** Desktop notification when an automation run fails. Default on. */
+  notifyAutomationFailure: boolean;
+  /** Desktop notification when a BACKGROUNDED session hits a permission request
+   *  (task #15). Default on — the notification is the time-sensitive signal for
+   *  an unwatched session. */
+  notifyPermissionRequest: boolean;
+  /** Max concurrent live AI sessions before further sends queue (task #5).
+   *  Clamped to [3, 5]; default 4. Protects RAM / agent process count and, for
+   *  `local_bundled`, the single llama-server that serializes requests. */
+  maxConcurrentSessions: number;
   // Runtime-only (not persisted) — detected on startup
   homeDir: string | null; // Resolved once on startup, used by skill pipeline to avoid IPC
   skillsReady: boolean; // Set early — after home dir resolution, before tree validation
@@ -241,7 +288,10 @@ interface SettingsStore {
   setSidebarOpen: (open: boolean) => void;
   setSidebarPinned: (pinned: boolean) => void;
   setSidebarWidth: (width: number) => void;
-  setChatPanelOpen: (open: boolean) => void;
+  /** Persist the RelationsPanel height fraction (clamped to `[0.4, 0.6]`). */
+  setRelationsPanelHeight: (fraction: number) => void;
+  /** Persist the RelationsPanel width in px (clamped to `[280, 600]`). */
+  setRelationsPanelWidth: (width: number) => void;
   setNotesRootPath: (path: string) => void;
   setGitEnabled: (enabled: boolean) => void;
   setPrintLayout: (enabled: boolean) => void;
@@ -253,6 +303,10 @@ interface SettingsStore {
   setInlineCompletionsDisabled: (disabled: boolean) => void;
   setCompletionsOnOutOfScope: (enabled: boolean) => void;
   setChatHistoryLimit: (limit: number) => void;
+  setLocalPlanningContext: (ctx: number) => void;
+  setOfferCalibrationShare: (enabled: boolean) => void;
+  markCalibrationSharePrompted: () => void;
+  dismissCalibrationShare: () => void;
   setSkillManagement: (enabled: boolean) => void;
   setToolCallingEnabled: (enabled: boolean) => void;
   setRequireAllToolConfirmations: (enabled: boolean) => void;
@@ -261,6 +315,9 @@ interface SettingsStore {
   setLastUpdateCheck: (timestamp: string | null) => void;
   setDismissedVersion: (version: string | null) => void;
   setReleaseChannel: (channel: ReleaseChannel) => void;
+  setTelemetryUsageEnabled: (v: boolean | null) => void;
+  setTelemetryCrashEnabled: (v: boolean | null) => void;
+  setTelemetryNoticeSeen: (v: boolean) => void;
   /** @deprecated PDF/DOCX now always use "clean". Kept for backwards compatibility. */
   setLastExportTemplate: (template: ExportTemplate) => void;
   setLastExportPageSize: (pageSize: ExportPageSize) => void;
@@ -281,7 +338,6 @@ interface SettingsStore {
   setSidebarFilePreviewEnabled: (enabled: boolean) => void;
   setShowAgentModePicker: (show: boolean) => void;
   setCrossProjectMode: (enabled: boolean) => void;
-  setUiPreview: (preview: UiPreview) => void;
   setCmdBarPinned: (pinned: boolean) => void;
   setCmdBarPinnedWidth: (width: number) => void;
   setCmdBarExpandedWidth: (width: number) => void;
@@ -289,6 +345,7 @@ interface SettingsStore {
   setQuietChromePreset: (preset: QuietChromePreset | "custom") => void;
   /** #132 — toggle the translucent chrome + editor flow-under effect. */
   setQuietChromeTransparent: (enabled: boolean) => void;
+  setShowTitleBar: (show: boolean) => void;
   /**
    * Toggle a single per-element override. Automatically flips the preset to
    * "custom" so the override is actually used at read time.
@@ -297,26 +354,15 @@ interface SettingsStore {
   setSidebarRecentCap: (n: number) => void;
   setSidebarTagsCap: (n: number) => void;
   setSidebarMentionsCap: (n: number) => void;
-  /** Mark the preview-invitation banner as shown right now. ui-refresh #97. */
-  markPreviewInvitationShown: () => void;
-  /** Mark the preview-invitation banner as dismissed right now. ui-refresh #97. */
-  dismissPreviewInvitation: () => void;
-  /** Mark the revert-invitation banner as shown right now. ui-refresh #107. */
-  markRevertInvitationShown: () => void;
-  /** Mark the revert-invitation banner as dismissed right now. ui-refresh #107. */
-  dismissRevertInvitation: () => void;
   setShowInTray: (show: boolean) => void;
   setCloseToTray: (close: boolean) => void;
   setStartAtLogin: (start: boolean) => void;
+  setAutomationsEnabled: (enabled: boolean) => void;
+  setNotifyAutomationFailure: (notify: boolean) => void;
   setNotifyAgentCompletion: (notify: boolean) => void;
   setNotifyExternalChanges: (notify: boolean) => void;
-  /**
-   * When true, the HTML viewer iframe includes `allow-forms` and
-   * `allow-top-navigation-by-user-activation` in its sandbox attribute so
-   * HTML forms can be submitted. Default false (forms are blocked).
-   */
-  htmlViewerAllowForms: boolean;
-  setHtmlViewerAllowForms: (enabled: boolean) => void;
+  setNotifyPermissionRequest: (notify: boolean) => void;
+  setMaxConcurrentSessions: (n: number) => void;
   /**
    * When true, the HTML viewer bypasses DOMPurify and renders content in an
    * isolated iframe with `sandbox="allow-scripts"` (no `allow-same-origin`).
@@ -327,19 +373,73 @@ interface SettingsStore {
   setHtmlViewerAllowScripts: (enabled: boolean) => void;
   /**
    * When true, the HTML viewer strips external network resources (remote `src`,
-   * `href`, and `srcset` attribute values starting with `https?:`) via a
-   * DOMPurify `uponSanitizeAttribute` hook before rendering. Inline `<style>`
-   * blocks, `data:` URIs, `blob:` URIs, and relative paths are unaffected.
-   * Default false (all resources load freely — matching the natural
-   * "open an HTML file and see what's in it" behaviour most users expect).
+   * `href`, and `srcset` attribute values starting with `https?:`) before
+   * rendering. Applied via a shared `stripExternalResources()` utility on all
+   * render paths (sanitised-div, allowScripts iframe, unsafe-preview iframe).
+   * Inline `<style>` blocks, `data:` URIs, `blob:` URIs, and relative paths are
+   * unaffected. Default false (all resources load freely).
    */
   htmlViewerBlockExternalResources: boolean;
   setHtmlViewerBlockExternalResources: (enabled: boolean) => void;
+  /**
+   * When true, link-preview cards load the remote preview image and favicon
+   * fetched from the (attacker-controllable) target page. These render as live
+   * `<img>` elements, so loading them is an un-validated outbound request —
+   * a tracking beacon / IP-leak and a potential internal-GET primitive from
+   * agent-authored `> [!link](url)` cards (security audit MEDIUM). Default
+   * false (privacy by default): the card still shows title/description/site
+   * (safe text) but falls back to a neutral globe glyph instead of fetching
+   * remote images. Card metadata fetching is unaffected — only the image
+   * `<img src>` loads are gated.
+   */
+  linkPreviewRemoteImages: boolean;
+  setLinkPreviewRemoteImages: (enabled: boolean) => void;
+}
+
+/**
+ * Effective usage-analytics consent. When the user hasn't made an explicit
+ * choice (`telemetryUsageEnabled === null`), the default follows the BUILD: an
+ * alpha/prerelease build defaults on, a stable build defaults off. Keyed on the
+ * build (`buildIsAlpha()`), NOT the user's chosen update channel, so everyone
+ * running an alpha build defaults on — including those who never opted into the
+ * alpha update channel (a default `releaseChannel: 'stable'`). An explicit
+ * toggle always wins.
+ */
+export const selectEffectiveTelemetryUsage = (
+  state: Pick<SettingsStore, 'telemetryUsageEnabled'>,
+): boolean => state.telemetryUsageEnabled ?? buildIsAlpha();
+
+/**
+ * Effective crash-reporting consent. Same build-derived default semantics as
+ * {@link selectEffectiveTelemetryUsage}.
+ */
+export const selectEffectiveTelemetryCrash = (
+  state: Pick<SettingsStore, 'telemetryCrashEnabled'>,
+): boolean => state.telemetryCrashEnabled ?? buildIsAlpha();
+
+/**
+ * Push the recomputed effective consent booleans to the Rust backend so it can
+ * gate Sentry init / Aptabase egress. Best-effort and fire-and-forget — a
+ * missing command or backend error must never surface to the user.
+ */
+function applyTelemetryConsent(state: SettingsStore): void {
+  try {
+    invoke('telemetry_apply_consent', {
+      usage: selectEffectiveTelemetryUsage(state),
+      crash: selectEffectiveTelemetryCrash(state),
+    }).catch((e) => {
+      // Never surface to the user (matches the track() contract), but leave a
+      // diagnostic trail so a Rust/UI consent drift is debuggable.
+      console.error('telemetry_apply_consent failed:', e);
+    });
+  } catch {
+    /* invoke unavailable (e.g. non-Tauri test env) — ignore */
+  }
 }
 
 export const useSettingsStore = create<SettingsStore>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       theme: "system",
       accent: "default",
       contrastLevel: 0,
@@ -355,8 +455,7 @@ export const useSettingsStore = create<SettingsStore>()(
       marginRight: 2.54,
       sidebarOpen: true,
       sidebarPinned: true,
-      sidebarWidth: 280,
-      chatPanelOpen: false,
+      sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
       notesRootPath: "~/Notesage",
       gitEnabled: false,
       personasMigrated: false,
@@ -367,26 +466,28 @@ export const useSettingsStore = create<SettingsStore>()(
       sidebarFilePreviewEnabled: true,
       showAgentModePicker: false,
       crossProjectMode: false,
-      uiPreview: "legacy",
       cmdBarPinned: false,
       cmdBarPinnedWidth: 400,
+      relationsPanelHeight: RELATIONS_PANEL_DEFAULT_HEIGHT,
+      relationsPanelWidth: RELATIONS_PANEL_DEFAULT_WIDTH,
       cmdBarExpandedWidth: 640,
       cmdBarExpandedHeight: 480,
       quietChromePreset: "default",
       quietChromeOverrides: { ...QUIET_CHROME_PRESETS.default },
       quietChromeTransparent: false,
+      showTitleBar: false,
       sidebarRecentCap: 5,
       sidebarTagsCap: 5,
       sidebarMentionsCap: 5,
-      previewInvitationShownAt: null,
-      previewInvitationDismissedAt: null,
-      revertInvitationShownAt: null,
-      revertInvitationDismissedAt: null,
       showInTray: true,
       closeToTray: false,
       startAtLogin: false,
+      automationsEnabled: false,
       notifyAgentCompletion: true,
       notifyExternalChanges: false,
+      notifyAutomationFailure: true,
+      notifyPermissionRequest: true,
+      maxConcurrentSessions: 4,
       homeDir: null,
       skillsReady: false,
       startupReady: false,
@@ -401,6 +502,10 @@ export const useSettingsStore = create<SettingsStore>()(
       inlineCompletionsDisabled: false,
       completionsOnOutOfScope: false,
       chatHistoryLimit: 0,
+      localPlanningContext: 8192,
+      offerCalibrationShare: true,
+      calibrationSharePromptedAt: null,
+      calibrationShareDismissed: false,
       skillManagement: false,
       toolCallingEnabled: true,
       requireAllToolConfirmations: false,
@@ -410,6 +515,9 @@ export const useSettingsStore = create<SettingsStore>()(
       lastUpdateCheck: null,
       dismissedVersion: null,
       releaseChannel: 'stable' as ReleaseChannel,
+      telemetryUsageEnabled: null,
+      telemetryCrashEnabled: null,
+      telemetryNoticeSeen: false,
       lastExportTemplate: "clean",
       lastExportPageSize: "a4",
       lastExportIncludeToC: false,
@@ -478,11 +586,30 @@ export const useSettingsStore = create<SettingsStore>()(
       },
 
       setSidebarWidth: (width: number) => {
-        set({ sidebarWidth: Math.round(Math.max(200, Math.min(400, width))) });
+        set({
+          sidebarWidth: Math.round(
+            Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, width)),
+          ),
+        });
       },
 
-      setChatPanelOpen: (open: boolean) => {
-        set({ chatPanelOpen: open });
+      setRelationsPanelHeight: (fraction: number) => {
+        const clamped = Math.max(
+          RELATIONS_PANEL_MIN_HEIGHT,
+          Math.min(RELATIONS_PANEL_MAX_HEIGHT, fraction),
+        );
+        set({ relationsPanelHeight: clamped });
+      },
+
+      setRelationsPanelWidth: (width: number) => {
+        set({
+          relationsPanelWidth: Math.round(
+            Math.max(
+              RELATIONS_PANEL_MIN_WIDTH,
+              Math.min(RELATIONS_PANEL_MAX_WIDTH, width),
+            ),
+          ),
+        });
       },
 
       setNotesRootPath: (path: string) => {
@@ -529,6 +656,22 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ chatHistoryLimit: limit });
       },
 
+      setLocalPlanningContext: (ctx: number) => {
+        set({ localPlanningContext: ctx });
+      },
+
+      setOfferCalibrationShare: (enabled: boolean) => {
+        set({ offerCalibrationShare: enabled });
+      },
+
+      markCalibrationSharePrompted: () => {
+        set({ calibrationSharePromptedAt: new Date().toISOString() });
+      },
+
+      dismissCalibrationShare: () => {
+        set({ calibrationShareDismissed: true });
+      },
+
       setSkillManagement: (enabled: boolean) => {
         set({ skillManagement: enabled });
       },
@@ -558,7 +701,24 @@ export const useSettingsStore = create<SettingsStore>()(
       },
 
       setReleaseChannel: (channel: ReleaseChannel) => {
+        // Update channel only — telemetry defaults track the build
+        // (`buildIsAlpha`), not the chosen channel, so there's nothing to
+        // re-sync here. The two telemetry toggles are the single opt-out.
         set({ releaseChannel: channel });
+      },
+
+      setTelemetryUsageEnabled: (v: boolean | null) => {
+        set({ telemetryUsageEnabled: v });
+        applyTelemetryConsent(get());
+      },
+
+      setTelemetryCrashEnabled: (v: boolean | null) => {
+        set({ telemetryCrashEnabled: v });
+        applyTelemetryConsent(get());
+      },
+
+      setTelemetryNoticeSeen: (v: boolean) => {
+        set({ telemetryNoticeSeen: v });
       },
 
       setLastExportTemplate: (template: ExportTemplate) => {
@@ -637,10 +797,6 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ crossProjectMode: enabled });
       },
 
-      setUiPreview: (preview: UiPreview) => {
-        set({ uiPreview: preview });
-      },
-
       setCmdBarPinned: (pinned: boolean) => {
         set({ cmdBarPinned: pinned });
       },
@@ -696,6 +852,10 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ quietChromeTransparent: enabled });
       },
 
+      setShowTitleBar: (show: boolean) => {
+        set({ showTitleBar: show });
+      },
+
       setSidebarRecentCap: (n: number) => {
         // Clamp to [3, 15] per PRD; round so the slider value stays integer.
         set({ sidebarRecentCap: Math.round(Math.max(3, Math.min(15, n))) });
@@ -713,22 +873,6 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ sidebarMentionsCap: Math.round(Math.max(0, Math.min(15, n))) });
       },
 
-      markPreviewInvitationShown: () => {
-        set({ previewInvitationShownAt: Date.now() });
-      },
-
-      dismissPreviewInvitation: () => {
-        set({ previewInvitationDismissedAt: Date.now() });
-      },
-
-      markRevertInvitationShown: () => {
-        set({ revertInvitationShownAt: Date.now() });
-      },
-
-      dismissRevertInvitation: () => {
-        set({ revertInvitationDismissedAt: Date.now() });
-      },
-
       setShowInTray: (show: boolean) => {
         set({ showInTray: show });
       },
@@ -741,6 +885,16 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ startAtLogin: start });
       },
 
+      // Pure — the Rust master flag is synced by useAutomationDiscovery
+      // (mirrors setCloseToTray, whose invoke happens at the call site).
+      setAutomationsEnabled: (enabled: boolean) => {
+        set({ automationsEnabled: enabled });
+      },
+
+      setNotifyAutomationFailure: (notify: boolean) => {
+        set({ notifyAutomationFailure: notify });
+      },
+
       setNotifyAgentCompletion: (notify: boolean) => {
         set({ notifyAgentCompletion: notify });
       },
@@ -749,10 +903,12 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ notifyExternalChanges: notify });
       },
 
-      htmlViewerAllowForms: false,
+      setNotifyPermissionRequest: (notify: boolean) => {
+        set({ notifyPermissionRequest: notify });
+      },
 
-      setHtmlViewerAllowForms: (enabled: boolean) => {
-        set({ htmlViewerAllowForms: enabled });
+      setMaxConcurrentSessions: (n: number) => {
+        set({ maxConcurrentSessions: Math.round(Math.max(3, Math.min(5, n))) });
       },
 
       htmlViewerAllowScripts: false,
@@ -766,10 +922,16 @@ export const useSettingsStore = create<SettingsStore>()(
       setHtmlViewerBlockExternalResources: (enabled: boolean) => {
         set({ htmlViewerBlockExternalResources: enabled });
       },
+
+      linkPreviewRemoteImages: false,
+
+      setLinkPreviewRemoteImages: (enabled: boolean) => {
+        set({ linkPreviewRemoteImages: enabled });
+      },
     }),
     {
       name: "notesage-settings",
-      version: 17,
+      version: 24,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -834,6 +996,22 @@ export const useSettingsStore = create<SettingsStore>()(
           }
           if (typeof state.quietChromeTransparent !== 'boolean') {
             state.quietChromeTransparent = false;
+          }
+          if (typeof state.showTitleBar !== 'boolean') {
+            state.showTitleBar = false;
+          }
+          if (
+            typeof state.sidebarWidth !== 'number' ||
+            Number.isNaN(state.sidebarWidth)
+          ) {
+            state.sidebarWidth = SIDEBAR_DEFAULT_WIDTH;
+          } else {
+            state.sidebarWidth = Math.round(
+              Math.max(
+                SIDEBAR_MIN_WIDTH,
+                Math.min(SIDEBAR_MAX_WIDTH, state.sidebarWidth),
+              ),
+            );
           }
         }
         if (version < 8) {
@@ -932,6 +1110,105 @@ export const useSettingsStore = create<SettingsStore>()(
             state.htmlViewerBlockExternalResources = false;
           }
         }
+        if (version < 18) {
+          // Classic layout removal (#325) — force all users onto the Quiet
+          // Composer shell. Any persisted "legacy" value is upgraded to
+          // "quiet-composer". Undefined (first launch after install) also gets
+          // the new default.
+          if (state.uiPreview === 'legacy' || typeof state.uiPreview === 'undefined') {
+            state.uiPreview = 'quiet-composer';
+          }
+        }
+        if (version < 19) {
+          // Classic layout removal (#325) finalization — the uiPreview,
+          // chatPanelOpen, and preview/revert-invitation fields no longer
+          // exist in the store. Drop them from persisted state so a future
+          // schema reshuffle can reuse the names cleanly.
+          delete state.uiPreview;
+          delete state.chatPanelOpen;
+          delete state.previewInvitationShownAt;
+          delete state.previewInvitationDismissedAt;
+          delete state.revertInvitationShownAt;
+          delete state.revertInvitationDismissedAt;
+        }
+        if (version < 20) {
+          // HTML viewer allowForms removal (#360) — the toggle was non-functional
+          // when allowScripts was ON (DOMPurify hook never ran on the iframe path).
+          // Forms without scripts are inert in a sanitised div, so the setting is
+          // dropped. Delete the persisted key so the name is free for future reuse.
+          delete state.htmlViewerAllowForms;
+        }
+        if (version < 21) {
+          // Quiet-chrome extension (2026-05-28) — add `titlebar` and `cmdbar`
+          // keys to `quietChromeOverrides` so a Custom-mode user gets sane
+          // defaults the first time they see the new rows. Existing preset
+          // values (`relaxed`/`default`/`aggressive`) bake the new keys in
+          // via `QUIET_CHROME_PRESETS`; this branch only matters for
+          // persisted Custom-mode overrides.
+          if (
+            state.quietChromeOverrides &&
+            typeof state.quietChromeOverrides === 'object'
+          ) {
+            const overrides = state.quietChromeOverrides as Record<string, unknown>;
+            if (typeof overrides.titlebar !== 'boolean') {
+              overrides.titlebar = false;
+            }
+            if (typeof overrides.cmdbar !== 'boolean') {
+              overrides.cmdbar = false;
+            }
+          }
+        }
+        if (version < 22) {
+          // Security audit MEDIUM — link-preview remote images. Default false
+          // (privacy by default): preview/favicon images from the target page
+          // are no longer auto-loaded as live <img> beacons unless opted in.
+          if (typeof state.linkPreviewRemoteImages !== 'boolean') {
+            state.linkPreviewRemoteImages = false;
+          }
+        }
+        if (version < 23) {
+          // Command-bar session multitasking (#8) — concurrency cap + the
+          // backgrounded-permission notification toggle.
+          if (typeof state.maxConcurrentSessions !== 'number') {
+            state.maxConcurrentSessions = 4;
+          } else {
+            state.maxConcurrentSessions = Math.round(
+              Math.max(3, Math.min(5, state.maxConcurrentSessions)),
+            );
+          }
+          if (typeof state.notifyPermissionRequest !== 'boolean') {
+            state.notifyPermissionRequest = true;
+          }
+        }
+        if (version < 24) {
+          // OKF wiki-navigation (ADR 0004) — RelationsPanel partial height,
+          // stored as a fraction of the document column clamped to [0.4, 0.6].
+          if (
+            typeof state.relationsPanelHeight !== 'number' ||
+            Number.isNaN(state.relationsPanelHeight)
+          ) {
+            state.relationsPanelHeight = RELATIONS_PANEL_DEFAULT_HEIGHT;
+          } else {
+            state.relationsPanelHeight = Math.max(
+              RELATIONS_PANEL_MIN_HEIGHT,
+              Math.min(RELATIONS_PANEL_MAX_HEIGHT, state.relationsPanelHeight),
+            );
+          }
+          // RelationsPanel resizable width (px), clamped to [280, 600].
+          if (
+            typeof state.relationsPanelWidth !== 'number' ||
+            Number.isNaN(state.relationsPanelWidth)
+          ) {
+            state.relationsPanelWidth = RELATIONS_PANEL_DEFAULT_WIDTH;
+          } else {
+            state.relationsPanelWidth = Math.round(
+              Math.max(
+                RELATIONS_PANEL_MIN_WIDTH,
+                Math.min(RELATIONS_PANEL_MAX_WIDTH, state.relationsPanelWidth),
+              ),
+            );
+          }
+        }
         return state;
       },
 
@@ -940,67 +1217,13 @@ export const useSettingsStore = create<SettingsStore>()(
         const { homeDir: _hd, skillsReady: _sr, startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, debugLogging: _d, ...persisted } = state;
         return persisted;
       },
+      // After rehydration, push the effective consent to Rust so the backend
+      // matches the (possibly channel-derived) UI state. Without this, a fresh
+      // alpha install would show crash reporting ON in Settings while the Rust
+      // consent file (absent) leaves Sentry unbound until the user toggled it.
+      onRehydrateStorage: () => (state) => {
+        if (state) applyTelemetryConsent(state);
+      },
     }
   )
 );
-
-/**
- * Window (in milliseconds) before the preview-invitation banner reappears
- * after dismissal — 30 days.
- */
-export const PREVIEW_INVITATION_REAPPEAR_MS = 30 * 24 * 60 * 60 * 1000;
-
-/**
- * Pure helper — given the relevant slice of settings state and a "now"
- * timestamp, decide whether the preview-invitation banner should be shown.
- *
- * Returns false if the user has already opted into the new UI (uiPreview is
- * "quiet-composer"). Otherwise returns true if the banner has never been
- * shown, or if 30 days have elapsed since both the last appearance and the
- * last dismissal (so a freshly-dismissed banner doesn't immediately re-pop
- * but reappears one more time after the cooldown).
- *
- * Pure: no Date.now() lookup, no store reads — caller passes both inputs so
- * the helper is trivially testable. ui-refresh task #97.
- */
-export function shouldShowPreviewInvitation(
-  state: Pick<
-    SettingsStore,
-    "uiPreview" | "previewInvitationShownAt" | "previewInvitationDismissedAt"
-  >,
-  now: number,
-): boolean {
-  // Already on the new UI — no need to invite.
-  if (state.uiPreview === "quiet-composer") return false;
-
-  // Never shown before — show on first launch.
-  if (state.previewInvitationShownAt === null) return true;
-
-  // Shown but never dismissed — the user hasn't actively closed it yet, so
-  // keep showing it on subsequent launches in the same session window.
-  if (state.previewInvitationDismissedAt === null) return true;
-
-  // Previously dismissed — re-appear once after the 30-day cooldown from
-  // the last dismissal.
-  return now - state.previewInvitationDismissedAt >= PREVIEW_INVITATION_REAPPEAR_MS;
-}
-
-/**
- * Mirror of `shouldShowPreviewInvitation` for the revert banner (task
- * #107). Only eligible when the user is currently on Quiet Composer;
- * same 30-day cooldown shape so the two banners feel symmetric. Pure.
- */
-export function shouldShowRevertInvitation(
-  state: Pick<
-    SettingsStore,
-    "uiPreview" | "revertInvitationShownAt" | "revertInvitationDismissedAt"
-  >,
-  now: number,
-): boolean {
-  if (state.uiPreview !== "quiet-composer") return false;
-  if (state.revertInvitationShownAt === null) return true;
-  if (state.revertInvitationDismissedAt === null) return true;
-  return (
-    now - state.revertInvitationDismissedAt >= PREVIEW_INVITATION_REAPPEAR_MS
-  );
-}

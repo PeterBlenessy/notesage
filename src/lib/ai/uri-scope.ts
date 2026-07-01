@@ -16,7 +16,7 @@
  */
 
 export interface UriScope {
-  /** Projects the chat footer is currently scoped to. */
+  /** Projects the command bar is currently scoped to. */
   projectRoots: string[];
   /**
    * Absolute path to the user's notes library (`~/Notesage` resolved). When

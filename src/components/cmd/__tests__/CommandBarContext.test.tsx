@@ -33,6 +33,7 @@ const toggleProjectPathMock = vi.fn<(path: string) => void>();
 const setSelectedProjectPathsMock = vi.fn<(paths: string[]) => void>();
 const updateConnectionMock = vi.fn<(id: string, patch: Partial<Connection>) => void>();
 const createConversationMock = vi.fn<() => string>(() => 'conv-new');
+const setConversationModeMock = vi.fn<(modeId: string) => void>();
 
 // ---------------------------------------------------------------------------
 // ACP agent / session mocks (driving `AcpModePicker` via #26)
@@ -101,6 +102,19 @@ vi.mock('@/lib/ai/acp-agent-state', async () => {
           }
         : null;
     },
+    // After the per-conversation registry migration (task #2) the mode picker
+    // resolves its agent via `getAcpAgent(activeConversationId)` instead of the
+    // `acpAgent` binding. Mirror the same controllable mock value here (the key
+    // arg is irrelevant in-test — there is only one mock agent).
+    getAcpAgent: () =>
+      mockAcpAgent.instanceId
+        ? {
+            instanceId: mockAcpAgent.instanceId,
+            connectionId: mockAcpAgent.connectionId!,
+            chatSessionId: mockAcpAgent.chatSessionId,
+            sandboxScopeKey: '',
+          }
+        : null,
     getSessionInfo: () => mockSessionInfo,
     subscribeSessionInfo: (fn: () => void) => {
       sessionInfoListeners.add(fn);
@@ -142,6 +156,9 @@ vi.mock('@/stores/chat-store', () => {
     toggleProjectPath: (path: string) => toggleProjectPathMock(path),
     setSelectedProjectPaths: (paths: string[]) => setSelectedProjectPathsMock(paths),
     createConversation: () => createConversationMock(),
+    // AcpModePicker persists the picked mode per-conversation so it survives
+    // agent respawns (fix/acp-mode-persists-across-respawn).
+    setConversationMode: (modeId: string) => setConversationModeMock(modeId),
   };
   return {
     useChatStore: Object.assign(
@@ -210,8 +227,8 @@ vi.mock('@/stores/project-metadata-store', () => {
   };
 });
 
-// #125 — `showAgentModePicker` gates whether the mode picker renders in
-// both shells (legacy + quiet). Flip per-test to cover both paths.
+// #125 — `showAgentModePicker` gates whether the mode picker renders.
+// Flip per-test to cover both paths.
 let mockShowAgentModePicker = false;
 
 vi.mock('@/stores/settings-store', () => {
@@ -574,9 +591,7 @@ describe('CommandBarContext', () => {
 
   // -------------------------------------------------------------------------
   // New-chat button (live-test 2026-04-26) — sits LEFT of the history toggle
-  // and dispatches `createConversation()` on the chat store. Mirrors the
-  // legacy `ChatPanel`'s "+" affordance so the new chat is consistent across
-  // both shells.
+  // and dispatches `createConversation()` on the chat store.
   // -------------------------------------------------------------------------
 
   describe('new-chat button (live-test 2026-04-26)', () => {
@@ -1046,7 +1061,7 @@ describe('CommandBarContext', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Mode pill (#26) — wires the chat-footer's `AcpModePicker` into the
+  // Mode pill (#26) — wires the command bar's `AcpModePicker` into the
   // context row. We exercise the picker directly (rather than mocking it
   // out) so the integration — common-mode mapping, store-action dispatch,
   // and the Full Access × sandbox conflict dialog — is end-to-end covered.
@@ -1322,7 +1337,7 @@ describe('CommandBarContext', () => {
   // -------------------------------------------------------------------------
   // Overflow / shrink layout (regression lock for the 5-project bug where
   // the agent mode picker and trailing icons got pushed out of view when
-  // the chat footer carried more than 2 project chips).
+  // the command bar carried more than 2 project chips).
   // -------------------------------------------------------------------------
 
   describe('overflow (regression lock — live-test 2026-04-26)', () => {

@@ -408,6 +408,45 @@ describe('FloatingCommandBar', () => {
     expect(screen.getByText(/press ⌘k to ask/i)).toBeTruthy();
   });
 
+  it('preserves the typed draft across collapse and restores it on reopen', () => {
+    // Closing the bar (Esc, or opening Settings — which dispatches a synthetic
+    // Escape) used to wipe the input. The draft must survive collapse and come
+    // back on reopen; only an actual send (or the explicit X) clears it.
+    renderWithProviders(<FloatingCommandBar />);
+    fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+    const input = screen.getByRole('combobox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'half-written thought' } });
+
+    // Dismiss collapses the bar (no prefix → single stage).
+    act(() => emitCmdBarEvent({ type: 'dismiss' }));
+    expect(screen.queryByRole('combobox')).toBeNull();
+
+    // Reopen — the draft is still there.
+    fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+    const reopened = screen.getByRole('combobox') as HTMLInputElement;
+    expect(reopened.value).toBe('half-written thought');
+  });
+
+  it('preserves the typed draft across the X close button too (not just Esc)', () => {
+    // The X "Close command bar" button is the mouse equivalent of Esc-collapse,
+    // so it must preserve the draft like Esc — closing then reopening must not
+    // lose the prompt. (It used to wipe the input via the `close` event.)
+    renderWithProviders(<FloatingCommandBar />);
+    fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+    const input = screen.getByRole('combobox') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'half-written thought' } });
+
+    // The X button fires a `close` event on the bus.
+    act(() => emitCmdBarEvent({ type: 'close' }));
+    expect(screen.queryByRole('combobox')).toBeNull();
+
+    fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+    const reopened = screen.getByRole('combobox') as HTMLInputElement;
+    expect(reopened.value).toBe('half-written thought');
+  });
+
   it.each([
     ['/', 'skill-mode-stub'],
     ['@', 'reference-mode-stub'],

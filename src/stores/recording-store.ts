@@ -26,9 +26,14 @@ export interface DownloadState {
 interface RecordingStore {
   // Runtime state (not persisted)
   isRecording: boolean;
-  isDictating: boolean;
   recordingSource: RecordingSource;
   recordingStartTime: number | null;
+  /** True while the live capture is paused (stream alive, samples discarded). */
+  isPaused: boolean;
+  /** Epoch ms when the CURRENT pause began; `null` while running. */
+  pauseStartedAt: number | null;
+  /** Accumulated duration (ms) of completed pause stretches this recording. */
+  pausedTotalMs: number;
   transcriptionProgress: number;
   availableModels: ModelInfo[];
   /** Map of model name → download progress (supports concurrent downloads) */
@@ -42,8 +47,10 @@ interface RecordingStore {
   // Actions
   startRecording: (source: RecordingSource) => void;
   stopRecording: () => void;
-  startDictating: () => void;
-  stopDictating: () => void;
+  /** Mark the capture paused (state only — the backend call lives in `useRecording`). */
+  pauseRecording: () => void;
+  /** Mark the capture resumed, folding the pause stretch into `pausedTotalMs`. */
+  resumeRecording: () => void;
   setTranscriptionProgress: (progress: number) => void;
   setAvailableModels: (models: ModelInfo[]) => void;
   setDefaultModel: (model: string) => void;
@@ -90,16 +97,20 @@ export const useRecordingStore = create<RecordingStore>()(
       return {
         // Runtime state
         isRecording: false,
-        isDictating: false,
         recordingSource: 'microphone',
         recordingStartTime: null,
+        isPaused: false,
+        pauseStartedAt: null,
+        pausedTotalMs: 0,
         transcriptionProgress: 0,
         availableModels: [],
         activeDownloads: {},
 
         // Persisted state
         defaultModel: 'base',
-        speechLanguage: 'en',
+        // 'auto' lets Whisper detect the spoken language (all 99 it supports)
+        // instead of forcing English and mistranscribing other languages.
+        speechLanguage: 'auto',
         lastUsedSource: 'microphone',
 
         // Actions
@@ -108,6 +119,9 @@ export const useRecordingStore = create<RecordingStore>()(
             isRecording: true,
             recordingSource: source,
             recordingStartTime: Date.now(),
+            isPaused: false,
+            pauseStartedAt: null,
+            pausedTotalMs: 0,
             lastUsedSource: source,
             transcriptionProgress: 0,
           }),
@@ -116,11 +130,27 @@ export const useRecordingStore = create<RecordingStore>()(
           set({
             isRecording: false,
             recordingStartTime: null,
+            isPaused: false,
+            pauseStartedAt: null,
+            pausedTotalMs: 0,
           }),
 
-        startDictating: () => set({ isDictating: true }),
+        pauseRecording: () => {
+          const s = get();
+          if (!s.isRecording || s.isPaused) return;
+          set({ isPaused: true, pauseStartedAt: Date.now() });
+        },
 
-        stopDictating: () => set({ isDictating: false }),
+        resumeRecording: () => {
+          const s = get();
+          if (!s.isPaused) return;
+          const stretch = s.pauseStartedAt ? Date.now() - s.pauseStartedAt : 0;
+          set({
+            isPaused: false,
+            pauseStartedAt: null,
+            pausedTotalMs: s.pausedTotalMs + Math.max(0, stretch),
+          });
+        },
 
         setTranscriptionProgress: (progress) =>
           set({ transcriptionProgress: progress }),

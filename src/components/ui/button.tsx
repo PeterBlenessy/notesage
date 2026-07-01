@@ -15,8 +15,19 @@ const buttonVariants = cva(
       variant: {
         // Default (primary) variant: bg + hover go through --color-accent-primary.
         // Hover uses CSS color-mix to mimic the previous bg-primary/90 (10% darker).
+        // Label uses --color-on-accent: white on a chromatic accent (macOS
+        // System Settings style, matching the white glyph) in BOTH themes, and
+        // --color-primary-foreground on the neutral no-accent button. Using
+        // --color-primary-foreground directly here gave DARK text on the accent
+        // in dark mode (the icon stayed white → mismatch).
+        //
+        // Disabled: the shared base sets `disabled:text-muted-foreground`, which
+        // is grey-on-accent and unreadable on the filled button. macOS dims the
+        // whole button via opacity but KEEPS the white label, so override the
+        // disabled text back to --color-on-accent (the base `disabled:opacity-70`
+        // still fades the button to signal the disabled state).
         default:
-          "bg-[var(--color-accent-primary)] text-primary-foreground hover:bg-[color-mix(in_oklab,var(--color-accent-primary),black_10%)]",
+          "bg-[var(--color-accent-primary)] text-[var(--color-on-accent)] disabled:text-[var(--color-on-accent)] hover:bg-[color-mix(in_oklab,var(--color-accent-primary),black_10%)]",
         destructive:
           "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 focus-visible:border-destructive dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
         // Outline variant: the border IS the primary visual cue (no filled

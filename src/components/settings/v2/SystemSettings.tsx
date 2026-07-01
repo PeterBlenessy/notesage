@@ -40,7 +40,13 @@ import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
 import { setLogLevel as setLoggerLevel } from '@/lib/logger';
 import type { LogLevel } from '@/lib/logger';
-import { useSettingsStore } from '@/stores/settings-store';
+import { openUrl } from '@tauri-apps/plugin-opener';
+import {
+  useSettingsStore,
+  selectEffectiveTelemetryUsage,
+  selectEffectiveTelemetryCrash,
+} from '@/stores/settings-store';
+import { track, trackSettingToggle } from '@/lib/telemetry';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useEditorStore } from '@/stores/editor-store';
@@ -61,6 +67,10 @@ export interface SystemSettingsProps {
    */
   onDismissSettings?: () => void;
 }
+
+/** Public privacy doc the "What we collect" link opens (created in task #14). */
+const TELEMETRY_DOC_URL =
+  'https://github.com/peterblenessy/notesage/blob/main/docs/telemetry.md';
 
 function friendlyUpdateError(error: string | null): string {
   if (!error) return 'Could not check for updates';
@@ -131,12 +141,14 @@ export function SystemSettings({
   );
 
   // HTML viewer
-  const htmlViewerAllowForms = useSettingsStore((s) => s.htmlViewerAllowForms);
-  const setHtmlViewerAllowForms = useSettingsStore((s) => s.setHtmlViewerAllowForms);
   const htmlViewerAllowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
   const setHtmlViewerAllowScripts = useSettingsStore((s) => s.setHtmlViewerAllowScripts);
   const htmlViewerBlockExternalResources = useSettingsStore((s) => s.htmlViewerBlockExternalResources);
   const setHtmlViewerBlockExternalResources = useSettingsStore((s) => s.setHtmlViewerBlockExternalResources);
+
+  // Link previews
+  const linkPreviewRemoteImages = useSettingsStore((s) => s.linkPreviewRemoteImages);
+  const setLinkPreviewRemoteImages = useSettingsStore((s) => s.setLinkPreviewRemoteImages);
 
   // Files
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
@@ -162,6 +174,18 @@ export function SystemSettings({
   const lastUpdateCheck = useSettingsStore((s) => s.lastUpdateCheck);
   const releaseChannel = useSettingsStore((s) => s.releaseChannel);
   const setReleaseChannel = useSettingsStore((s) => s.setReleaseChannel);
+
+  // Telemetry — switches bind to the *effective* value (explicit override or
+  // build default) so the toggle reflects what's actually happening; the setters
+  // store the explicit boolean, which overrides the build default.
+  const telemetryUsageEffective = useSettingsStore(selectEffectiveTelemetryUsage);
+  const telemetryCrashEffective = useSettingsStore(selectEffectiveTelemetryCrash);
+  const setTelemetryUsageEnabled = useSettingsStore(
+    (s) => s.setTelemetryUsageEnabled,
+  );
+  const setTelemetryCrashEnabled = useSettingsStore(
+    (s) => s.setTelemetryCrashEnabled,
+  );
 
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [logPath, setLogPath] = useState<string | null>(null);
@@ -278,9 +302,18 @@ export function SystemSettings({
           control={
             <Select
               value={releaseChannel ?? 'stable'}
-              onValueChange={(v) => setReleaseChannel(v as 'stable' | 'alpha')}
+              onValueChange={(v) => {
+                // Update channel only — this controls which builds the updater
+                // offers, NOT telemetry. Telemetry defaults track the build the
+                // user is actually running (see useAppLifecycle's first-run
+                // disclosure + selectEffectiveTelemetry*), so switching the
+                // update channel no longer turns telemetry on/off.
+                const next = v as 'stable' | 'alpha';
+                setReleaseChannel(next);
+                track("setting_changed", { setting: "release_channel", value: next });
+              }}
             >
-              <SelectTrigger className="w-[120px] h-7 text-[13px]">
+              <SelectTrigger className="w-[120px] h-8 text-xs">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -288,6 +321,56 @@ export function SystemSettings({
                 <SelectItem value="alpha">Alpha</SelectItem>
               </SelectContent>
             </Select>
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="Telemetry"
+        description="Anonymous usage analytics and crash reports. No document content, file contents, or AI prompts are ever sent. Alpha builds default these on; stable builds default them off — your choice here overrides the default."
+        searchKeywords={['telemetry', 'analytics', 'crash', 'sentry', 'privacy', 'aptabase']}
+      >
+        <SettingsRow
+          label="Usage analytics"
+          description="Share anonymous feature-usage events so the maintainer can see which features are used and prune what isn't."
+          htmlFor="telemetry-usage"
+          control={
+            <Switch
+              id="telemetry-usage"
+              checked={telemetryUsageEffective}
+              onCheckedChange={(v) => { setTelemetryUsageEnabled(v); trackSettingToggle("telemetry_usage", v); }}
+              aria-label="Usage analytics"
+            />
+          }
+        />
+        <SettingsRow
+          label="Crash reports"
+          description="Share anonymous crash and error reports grouped by version so regressions can be fixed without a manual report."
+          htmlFor="telemetry-crash"
+          control={
+            <Switch
+              id="telemetry-crash"
+              checked={telemetryCrashEffective}
+              onCheckedChange={(v) => { setTelemetryCrashEnabled(v); trackSettingToggle("telemetry_crash", v); }}
+              aria-label="Crash reports"
+            />
+          }
+        />
+        <SettingsRow
+          label="What we collect"
+          description="Read exactly what is and isn't sent."
+          control={
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 text-xs"
+              aria-label="View what we collect"
+              onClick={() => {
+                openUrl(TELEMETRY_DOC_URL).catch(() => {});
+              }}
+            >
+              View
+            </Button>
           }
         />
       </SettingsGroup>
@@ -390,20 +473,8 @@ export function SystemSettings({
         description="Configure sandboxing behaviour when rendering .html and .htm files."
       >
         <SettingsRow
-          label="Allow form submissions"
-          description="When on, HTML forms can be submitted inside the viewer iframe. Off by default — only enable if you trust the HTML files you open."
-          htmlFor="html-viewer-allow-forms"
-          control={
-            <Switch
-              id="html-viewer-allow-forms"
-              checked={htmlViewerAllowForms}
-              onCheckedChange={setHtmlViewerAllowForms}
-            />
-          }
-        />
-        <SettingsRow
           label="Allow scripts (unsafe)"
-          description="When on, inline and same-directory scripts execute in an isolated iframe. Scripts cannot access Tauri IPC or host storage. Off by default — only enable for local HTML files you trust."
+          description="When on, inline and same-directory scripts execute in an isolated iframe. Forms and event handlers are included when scripts are enabled. Scripts cannot access Tauri IPC or host storage. Off by default — only enable for local HTML files you trust."
           htmlFor="html-viewer-allow-scripts"
           control={
             <Switch
@@ -415,13 +486,31 @@ export function SystemSettings({
         />
         <SettingsRow
           label="Block external resources"
-          description="When on, remote images, stylesheets, and fonts (URLs starting with http:// or https://) are stripped before rendering. Inline styles, data: URIs, and relative-path resources are unaffected. Takes effect on the next file open or switch."
+          description="When on, remote images, stylesheets, and fonts (URLs starting with http:// or https://) are stripped before rendering across all render paths. Inline styles, data: URIs, and relative-path resources are unaffected."
           htmlFor="html-viewer-block-external"
           control={
             <Switch
               id="html-viewer-block-external"
               checked={htmlViewerBlockExternalResources}
               onCheckedChange={setHtmlViewerBlockExternalResources}
+            />
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="Link previews"
+        description="Control what link-preview cards load from the linked page."
+      >
+        <SettingsRow
+          label="Load remote preview images"
+          description="When on, link-preview cards load the preview image and favicon from the linked page. These come from the page itself, so loading them reveals your IP and that the document was opened to that site. Off by default — the card still shows the title, description, and site name."
+          htmlFor="link-preview-remote-images"
+          control={
+            <Switch
+              id="link-preview-remote-images"
+              checked={linkPreviewRemoteImages}
+              onCheckedChange={setLinkPreviewRemoteImages}
             />
           }
         />
@@ -522,6 +611,7 @@ export function SystemSettings({
                 setLogLevel(level);
                 setLoggerLevel(level);
                 tauriApi.setLogLevel(level);
+                track("setting_changed", { setting: "log_level", value: level });
               }}
             >
               <SelectTrigger className="w-[140px] h-8 text-xs">

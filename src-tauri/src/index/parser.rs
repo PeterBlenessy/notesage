@@ -1,6 +1,7 @@
 use comrak::nodes::{AstNode, NodeValue};
 use comrak::{parse_document, Arena, Options};
 use regex::Regex;
+use std::path::Path;
 use std::sync::LazyLock;
 
 /// Result of parsing a single markdown file.
@@ -58,6 +59,45 @@ pub struct Frontmatter {
     pub date_saved: Option<String>,
     pub doc_type: Option<String>,
     pub template: Option<String>,
+    /// Generalized OKF frontmatter `description` (ADR 0005). Captured for any
+    /// document, not just research/goal files.
+    pub description: Option<String>,
+}
+
+/// A single internal/external link edge extracted from a document's body.
+/// Targets are resolved relative to the source file's directory the same way
+/// `link-click.ts` resolves them at runtime (ADR 0007); unresolved targets are
+/// retained (the raw relative target if it couldn't be normalized).
+#[derive(Debug, Clone)]
+pub struct LinkEdge {
+    /// Absolute path for resolvable internal links, or the raw href otherwise.
+    pub target_path: String,
+    /// The link's visible text.
+    pub link_text: String,
+    /// Surrounding-block text of the link (ADR 0006) — the full block the link
+    /// appears in, stored as text (not offsets) so it is self-contained.
+    pub context: String,
+    /// `true` for internal document links, `false` for external URLs
+    /// (`http`/`https`/`mailto`/`tel`/`#anchor`).
+    pub is_internal: bool,
+}
+
+/// Generalized frontmatter capture for the link store (ADR 0005). Mirrors the
+/// `ConceptMeta` shape in the PRD — arbitrary `type`/`title`/`description` per
+/// file, recorded regardless of whether the doc is a goal/research file.
+#[derive(Debug, Clone, Default)]
+pub struct ConceptMeta {
+    pub doc_type: Option<String>,
+    pub title: Option<String>,
+    pub description: Option<String>,
+}
+
+/// Result of parsing a document for the link graph: the generalized
+/// frontmatter meta plus all extracted link edges.
+#[derive(Debug, Clone, Default)]
+pub struct ParsedLinks {
+    pub meta: ConceptMeta,
+    pub edges: Vec<LinkEdge>,
 }
 
 #[derive(Debug, Clone)]
@@ -234,6 +274,200 @@ pub fn parse_file(content: &str, file_name: &str, is_in_research_dir: bool) -> P
     result
 }
 
+/// Parse a document for the link graph (ADR 0002/0003/0005/0006/0007).
+///
+/// `source_path` is the absolute path of the document being parsed; its parent
+/// directory is used to resolve relative link targets the same way
+/// `link-click.ts` does at runtime. `file_name` drives the title fallback.
+///
+/// Returns the generalized frontmatter meta plus every link edge found in the
+/// body (internal + external). Internal targets are resolved to absolute paths
+/// when possible; otherwise the raw href is retained (ADR 0007).
+pub fn parse_links(content: &str, source_path: &str, file_name: &str) -> ParsedLinks {
+    let arena = Arena::new();
+    let mut options = Options::default();
+    options.extension.table = true;
+    options.extension.tasklist = true;
+    options.extension.strikethrough = true;
+    options.extension.autolink = true;
+    options.extension.front_matter_delimiter = Some("---".to_string());
+    let root = parse_document(&arena, content, &options);
+
+    let source_dir = Path::new(source_path)
+        .parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+
+    let mut frontmatter: Option<Frontmatter> = None;
+    let mut first_h1: Option<String> = None;
+    let mut edges: Vec<LinkEdge> = Vec::new();
+
+    for node in root.descendants() {
+        let node_data = node.data.borrow();
+        match &node_data.value {
+            NodeValue::FrontMatter(fm) => {
+                let fm_text: String = fm
+                    .lines()
+                    .filter(|line| line.trim() != "---")
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                if let Some(parsed) = parse_frontmatter(fm_text.trim()) {
+                    frontmatter = Some(parsed);
+                }
+            }
+            NodeValue::Heading(h) => {
+                if h.level == 1 && first_h1.is_none() {
+                    first_h1 = Some(collect_text_content(node));
+                }
+            }
+            NodeValue::Link(link) => {
+                // Skip links inside code (defensive; comrak normally won't
+                // produce Link nodes inside code, but stay consistent with the
+                // tag/mention extraction policy).
+                if is_inside_code(node) {
+                    continue;
+                }
+                let href = link.url.clone();
+                if href.is_empty() {
+                    continue;
+                }
+                let link_text = collect_text_content(node);
+                let context = collect_block_context(node);
+                let is_internal = !is_external_href(&href);
+                let target_path = if is_internal {
+                    resolve_internal_target(&source_dir, &href)
+                } else {
+                    href.clone()
+                };
+                edges.push(LinkEdge {
+                    target_path,
+                    link_text,
+                    context,
+                    is_internal,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    let title = frontmatter
+        .as_ref()
+        .and_then(|fm| fm.title.clone())
+        .or(first_h1)
+        .or_else(|| {
+            let name = file_name.strip_suffix(".md").unwrap_or(file_name);
+            Some(name.to_string())
+        });
+
+    let meta = ConceptMeta {
+        doc_type: frontmatter.as_ref().and_then(|fm| fm.doc_type.clone()),
+        title,
+        description: frontmatter.as_ref().and_then(|fm| fm.description.clone()),
+    };
+
+    ParsedLinks { meta, edges }
+}
+
+/// Mirror of `link-utils.ts:isExternalUrl` — external = http(s), mailto, tel,
+/// or in-document anchor.
+fn is_external_href(href: &str) -> bool {
+    let lower = href.trim_start().to_ascii_lowercase();
+    lower.starts_with("http://")
+        || lower.starts_with("https://")
+        || lower.starts_with("mailto:")
+        || lower.starts_with("tel:")
+        || lower.starts_with('#')
+}
+
+/// Resolve an internal (relative or absolute) link target against the source
+/// file's directory, mirroring `link-utils.ts:handleLinkNavigation`. Absolute
+/// paths and `~`-prefixed paths are kept verbatim; relative paths are joined
+/// to `source_dir` and `.`/`..` segments collapsed. If resolution isn't
+/// possible (no source dir), the raw href is retained (ADR 0007).
+fn resolve_internal_target(source_dir: &str, href: &str) -> String {
+    // Strip any in-document anchor fragment from the target for resolution,
+    // but only for relative/absolute file links (handled by is_internal).
+    let (path_part, _fragment) = match href.split_once('#') {
+        Some((p, f)) => (p, Some(f)),
+        None => (href, None),
+    };
+
+    if path_part.is_empty() {
+        return href.to_string();
+    }
+
+    // Absolute or home-relative — keep verbatim (the frontend opens these
+    // directly without joining to the source dir).
+    if path_part.starts_with('/') || path_part.starts_with('~') {
+        return path_part.to_string();
+    }
+
+    if source_dir.is_empty() {
+        return href.to_string();
+    }
+
+    normalize_path(&format!("{}/{}", source_dir, path_part))
+}
+
+/// Collapse `.` and `..` segments in a path (mirror of
+/// `link-utils.ts:normalizePath`). Preserves a leading `/`.
+fn normalize_path(path: &str) -> String {
+    let leading_slash = path.starts_with('/');
+    let mut resolved: Vec<&str> = Vec::new();
+    for part in path.split('/') {
+        match part {
+            "" | "." => continue,
+            ".." => {
+                resolved.pop();
+            }
+            other => resolved.push(other),
+        }
+    }
+    let joined = resolved.join("/");
+    if leading_slash {
+        format!("/{}", joined)
+    } else {
+        joined
+    }
+}
+
+/// Collect the surrounding-block text of a link node (ADR 0006): walk up to the
+/// nearest block ancestor (paragraph, heading, list item, table cell, etc.) and
+/// collect all of its text. Falls back to the link's own text when no block
+/// ancestor is found. Truncated to a generous window to bound stored size.
+fn collect_block_context<'a>(node: &'a AstNode<'a>) -> String {
+    // Walk up until we hit a block-level container.
+    let mut current = node.parent();
+    let mut block: Option<&'a AstNode<'a>> = None;
+    while let Some(parent) = current {
+        let is_block = {
+            let pd = parent.data.borrow();
+            matches!(
+                pd.value,
+                NodeValue::Paragraph
+                    | NodeValue::Heading(_)
+                    | NodeValue::Item(_)
+                    | NodeValue::TableCell
+                    | NodeValue::BlockQuote
+                    | NodeValue::TaskItem(_)
+                    | NodeValue::CodeBlock(_)
+            )
+        };
+        if is_block {
+            block = Some(parent);
+            break;
+        }
+        current = parent.parent();
+    }
+
+    let text = match block {
+        Some(b) => collect_text_content(b),
+        None => collect_text_content(node),
+    };
+    // Bound the stored context to keep the DB small; full block but capped.
+    truncate_str(&text, 400)
+}
+
 fn parse_frontmatter(text: &str) -> Option<Frontmatter> {
     let value: serde_norway::Value = serde_norway::from_str(text).ok()?;
     let mapping = value.as_mapping()?;
@@ -263,6 +497,11 @@ fn parse_frontmatter(text: &str) -> Option<Frontmatter> {
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
+    let description = mapping
+        .get(&serde_norway::Value::String("description".into()))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
     let tags = mapping
         .get(&serde_norway::Value::String("tags".into()))
         .and_then(|v| match v {
@@ -286,6 +525,7 @@ fn parse_frontmatter(text: &str) -> Option<Frontmatter> {
         date_saved,
         doc_type,
         template,
+        description,
     })
 }
 
@@ -541,5 +781,121 @@ mod tests {
         let content = "Just a note in the research directory.";
         let result = parse_file(content, "note.md", true);
         assert!(result.is_research);
+    }
+
+    // ---- parse_links tests (OKF wiki-navigation #2 / #6) ----
+
+    #[test]
+    fn test_parse_links_internal_relative_resolved() {
+        let content = "See the [other doc](./other.md) for details.";
+        let parsed = parse_links(content, "/p/notes/a.md", "a.md");
+        assert_eq!(parsed.edges.len(), 1);
+        let e = &parsed.edges[0];
+        assert!(e.is_internal);
+        assert_eq!(e.target_path, "/p/notes/other.md");
+        assert_eq!(e.link_text, "other doc");
+        // Context is the surrounding block text.
+        assert!(e.context.contains("See the other doc for details"));
+    }
+
+    #[test]
+    fn test_parse_links_parent_traversal() {
+        let content = "Link to [parent](../sibling/x.md).";
+        let parsed = parse_links(content, "/p/notes/a.md", "a.md");
+        assert_eq!(parsed.edges.len(), 1);
+        assert_eq!(parsed.edges[0].target_path, "/p/sibling/x.md");
+    }
+
+    #[test]
+    fn test_parse_links_external_marked_not_internal() {
+        let content = "Visit [site](https://example.com) and email [me](mailto:a@b.com).";
+        let parsed = parse_links(content, "/p/a.md", "a.md");
+        assert_eq!(parsed.edges.len(), 2);
+        assert!(parsed.edges.iter().all(|e| !e.is_internal));
+        assert_eq!(parsed.edges[0].target_path, "https://example.com");
+        assert_eq!(parsed.edges[1].target_path, "mailto:a@b.com");
+    }
+
+    #[test]
+    fn test_parse_links_unresolved_target_retained() {
+        // No source dir context can be derived (root-level path) → relative
+        // target is still retained, joined to the empty/root dir.
+        let content = "A dangling [thing](Thing.md) reference.";
+        let parsed = parse_links(content, "a.md", "a.md");
+        assert_eq!(parsed.edges.len(), 1);
+        // source_dir is empty for a bare "a.md" → raw href retained (ADR 0007).
+        assert_eq!(parsed.edges[0].target_path, "Thing.md");
+        assert!(parsed.edges[0].is_internal);
+    }
+
+    #[test]
+    fn test_parse_links_absolute_target_kept_verbatim() {
+        let content = "Open [abs](/Users/me/Notesage/x.md).";
+        let parsed = parse_links(content, "/p/a.md", "a.md");
+        assert_eq!(parsed.edges[0].target_path, "/Users/me/Notesage/x.md");
+    }
+
+    #[test]
+    fn test_parse_links_anchor_only_is_external() {
+        let content = "Jump to [section](#heading).";
+        let parsed = parse_links(content, "/p/a.md", "a.md");
+        assert_eq!(parsed.edges.len(), 1);
+        assert!(!parsed.edges[0].is_internal, "in-doc anchor is external/non-edge");
+    }
+
+    #[test]
+    fn test_parse_links_context_is_full_block() {
+        let content = "# Heading\n\nThis is a long paragraph that mentions [target](./t.md) somewhere in the middle of a sentence with surrounding words.";
+        let parsed = parse_links(content, "/p/a.md", "a.md");
+        assert_eq!(parsed.edges.len(), 1);
+        let ctx = &parsed.edges[0].context;
+        assert!(ctx.contains("long paragraph"));
+        assert!(ctx.contains("surrounding words"));
+        // The heading is NOT part of the link's block context.
+        assert!(!ctx.contains("Heading"));
+    }
+
+    #[test]
+    fn test_parse_links_generalized_frontmatter_meta() {
+        let content = "---\ntitle: Orders Table\ntype: table\ndescription: All customer orders\n---\n\nBody with [a link](./b.md).";
+        let parsed = parse_links(content, "/p/a.md", "a.md");
+        assert_eq!(parsed.meta.title.as_deref(), Some("Orders Table"));
+        assert_eq!(parsed.meta.doc_type.as_deref(), Some("table"));
+        assert_eq!(parsed.meta.description.as_deref(), Some("All customer orders"));
+        assert_eq!(parsed.edges.len(), 1);
+    }
+
+    #[test]
+    fn test_parse_links_title_falls_back_to_h1_then_filename() {
+        let h1 = parse_links("# My Heading\n\nText.", "/p/a.md", "a.md");
+        assert_eq!(h1.meta.title.as_deref(), Some("My Heading"));
+
+        let fname = parse_links("Just text.", "/p/my-note.md", "my-note.md");
+        assert_eq!(fname.meta.title.as_deref(), Some("my-note"));
+    }
+
+    #[test]
+    fn test_parse_links_description_generalized_on_frontmatter() {
+        // description is now part of the generic Frontmatter capture (ADR 0005).
+        let content = "---\ntitle: T\ndescription: a desc\n---\n\nbody";
+        let result = parse_file(content, "t.md", false);
+        assert_eq!(
+            result.frontmatter.unwrap().description.as_deref(),
+            Some("a desc")
+        );
+    }
+
+    /// Verifies comrak >= 0.52 is in use: `options.extension.insert` was added in 0.51
+    /// and did not exist in 0.50. This test will fail to compile against comrak 0.50.
+    #[test]
+    fn test_comrak_0_52_insert_extension_available() {
+        use comrak::{format_html, Arena, Options};
+        let mut options = Options::default();
+        options.extension.insert = true;
+        let arena = Arena::new();
+        let doc = parse_document(&arena, "++inserted++", &options);
+        let mut html = String::new();
+        format_html(doc, &options, &mut html).unwrap();
+        assert!(html.contains("<ins>"), "comrak insert extension should render <ins> tags");
     }
 }

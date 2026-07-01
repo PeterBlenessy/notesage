@@ -1,8 +1,54 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock, Mutex};
+use tokio::sync::Notify;
 use super::constants;
 use super::credentials::get_credential_internal;
+
+/// Registry of in-flight `ai_chat_stream` cancellation handles, keyed by the
+/// frontend's per-request `stream_id`. `ai_chat_stream_cancel` notifies a
+/// handle; the command's `tokio::select!` then drops the streaming future,
+/// which drops the underlying reqwest byte-stream and closes the connection —
+/// so the provider stops billing and the socket is released (audit C2: the old
+/// "cancel" only tore down frontend listeners while the backend kept streaming).
+#[derive(Default)]
+pub struct AiStreamState {
+    cancels: Mutex<HashMap<String, Arc<Notify>>>,
+}
+
+impl AiStreamState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Register a fresh cancel handle for `stream_id` and return it.
+    fn register(&self, stream_id: &str) -> Arc<Notify> {
+        let notify = Arc::new(Notify::new());
+        self.cancels
+            .lock()
+            .unwrap()
+            .insert(stream_id.to_string(), notify.clone());
+        notify
+    }
+
+    /// Drop the cancel handle for `stream_id` (stream finished or errored).
+    fn unregister(&self, stream_id: &str) {
+        self.cancels.lock().unwrap().remove(stream_id);
+    }
+
+    /// Signal cancellation for an in-flight stream. Returns false if unknown.
+    fn cancel(&self, stream_id: &str) -> bool {
+        if let Some(notify) = self.cancels.lock().unwrap().get(stream_id) {
+            // `notify_one()` stores a permit if the stream's `select!` hasn't
+            // begun awaiting yet — closes the register→await race.
+            notify.notify_one();
+            true
+        } else {
+            false
+        }
+    }
+}
 
 /// Typed AI provider enum replacing raw `String` for compile-time safety.
 /// JSON values match the frontend strings: `"anthropic"`, `"openai"`, `"ollama"`,
@@ -46,21 +92,34 @@ pub fn normalize_base_url(url: &str) -> &str {
         .trim_end_matches('/')
 }
 
-/// Resolve an API key: prefer explicit `api_key`, fall back to keychain via `connection_id`.
+/// Resolve an API key for an AI request.
+///
+/// Security model (audit MEDIUM): keys live in the OS keychain and are resolved
+/// here from `connection_id` — they must NOT have to transit Tauri IPC. The
+/// keychain is therefore the AUTHORITATIVE source and is consulted FIRST; the
+/// explicit `api_key` IPC parameter is only a last-resort fallback for callers
+/// that have no `connection_id` (and is never populated by the current
+/// frontend). This precedence means a key passed over IPC can never override or
+/// shadow the keychain-resolved key for a known connection.
 fn resolve_api_key(api_key: &Option<String>, connection_id: &Option<String>) -> Result<Option<String>, String> {
-    if let Some(key) = api_key.as_ref() {
-        if !key.is_empty() {
-            log::debug!(target: "notesage::ai", "Using explicit api_key parameter");
-            return Ok(Some(key.clone()));
+    if let Some(conn_id) = connection_id.as_ref() {
+        if !conn_id.is_empty() {
+            log::debug!(target: "notesage::ai", "Resolving API key from keychain for connection={conn_id}");
+            match get_credential_internal(conn_id) {
+                Ok(Some(key)) => return Ok(Some(key)),
+                Ok(None) => {
+                    log::warn!(target: "notesage::ai", "No credential found in keychain for connection={conn_id}");
+                }
+                Err(e) => return Err(e),
+            }
         }
     }
-    if let Some(conn_id) = connection_id.as_ref() {
-        log::debug!(target: "notesage::ai", "Resolving API key from keychain for connection={conn_id}");
-        let result = get_credential_internal(conn_id);
-        if let Ok(None) = &result {
-            log::warn!(target: "notesage::ai", "No credential found in keychain for connection={conn_id}");
+    // Fallback only when the keychain had nothing for this connection (or no
+    // connection_id was supplied at all).
+    if let Some(key) = api_key.as_ref() {
+        if !key.is_empty() {
+            return Ok(Some(key.clone()));
         }
-        return result;
     }
     Ok(None)
 }
@@ -187,22 +246,75 @@ pub async fn ai_chat_stream(
     temperature: Option<f64>,
     max_tokens: Option<u32>,
     base_url: Option<String>,
+    response_format: Option<serde_json::Value>,
+    stream_id: Option<String>,
     state: tauri::State<'_, super::local_inference::LocalInferenceState>,
+    stream_state: tauri::State<'_, AiStreamState>,
 ) -> Result<(), String> {
     use crate::commands::ai_streaming::*;
 
     let search = web_search_enabled.unwrap_or(false);
     let resolved_key = resolve_api_key(&api_key, &connection_id)?;
+    // Per-request correlation id. Events are emitted on `<event>:<stream_id>` so
+    // concurrent direct-API generations never cross-contaminate the global bus.
+    // Empty (caller passed none) falls back to the legacy global event names.
+    let sid = stream_id.as_deref().unwrap_or("");
 
-    match provider {
-        AIProviderType::Anthropic => anthropic_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url).await,
-        AIProviderType::OpenAI => openai_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url).await,
-        AIProviderType::Ollama => ollama_chat_stream(&window, &messages, &ollama_url, &tools, &model, temperature, max_tokens, &base_url).await,
-        AIProviderType::OpenAICompatible => openai_compatible_chat_stream(&window, &messages, &resolved_key, &tools, &model, temperature, max_tokens, &base_url).await,
-        AIProviderType::LocalBundled => {
-            super::local_inference::local_bundled_chat_stream(&window, &messages, &state, &tools, &model, temperature, max_tokens).await
+    // Register a cancel handle so `ai_chat_stream_cancel(stream_id)` can abort
+    // this stream. Legacy callers without an id get no handle (can't be cancelled).
+    let cancel = if sid.is_empty() {
+        None
+    } else {
+        Some(stream_state.register(sid))
+    };
+
+    let run = async {
+        match provider {
+            AIProviderType::Anthropic => anthropic_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url, sid).await,
+            AIProviderType::OpenAI => openai_chat_stream(&window, &messages, &resolved_key, search, &tools, &model, temperature, max_tokens, &base_url, sid).await,
+            AIProviderType::Ollama => ollama_chat_stream(&window, &messages, &ollama_url, &tools, &model, temperature, max_tokens, &base_url, &response_format, sid).await,
+            AIProviderType::OpenAICompatible => openai_compatible_chat_stream(&window, &messages, &resolved_key, &tools, &model, temperature, max_tokens, &base_url, &response_format, sid).await,
+            AIProviderType::LocalBundled => {
+                super::local_inference::local_bundled_chat_stream(&window, &messages, &state, &tools, &model, temperature, max_tokens, &response_format, sid).await
+            }
         }
+    };
+
+    // When a cancel handle exists, race the stream against the cancel signal.
+    // On cancel, `run` is dropped — closing the provider byte-stream — and we
+    // return Ok without emitting `ai-stream-done` (the frontend already tore
+    // its listeners down on cancel).
+    let result = match cancel {
+        Some(ref notify) => {
+            tokio::select! {
+                r = run => r,
+                _ = notify.notified() => {
+                    log::info!(target: "notesage::ai", "ai_chat_stream cancelled (stream_id={})", sid);
+                    Ok(())
+                }
+            }
+        }
+        None => run.await,
+    };
+
+    if !sid.is_empty() {
+        stream_state.unregister(sid);
     }
+    result
+}
+
+/// Abort an in-flight `ai_chat_stream` by its `stream_id`. Best-effort and
+/// idempotent — returns Ok even when the stream already finished or the id is
+/// unknown. The streaming task observes the notification via `tokio::select!`,
+/// drops the provider byte-stream, and returns without emitting
+/// `ai-stream-done`.
+#[tauri::command]
+pub async fn ai_chat_stream_cancel(
+    stream_id: String,
+    stream_state: tauri::State<'_, AiStreamState>,
+) -> Result<(), String> {
+    stream_state.cancel(&stream_id);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1010,6 +1122,39 @@ pub async fn ollama_model_supports_vision(
 mod tests {
     use super::*;
     use serde_json::json;
+
+    // --- resolve_api_key precedence (security audit MEDIUM) ---
+
+    #[test]
+    fn resolve_api_key_returns_none_when_nothing_supplied() {
+        assert_eq!(resolve_api_key(&None, &None).unwrap(), None);
+        assert_eq!(resolve_api_key(&Some(String::new()), &None).unwrap(), None);
+    }
+
+    #[test]
+    fn resolve_api_key_falls_back_to_explicit_when_no_connection() {
+        // With no connection_id the keychain is never consulted; the explicit
+        // param is the only source.
+        assert_eq!(
+            resolve_api_key(&Some("explicit-key".into()), &None).unwrap(),
+            Some("explicit-key".into())
+        );
+    }
+
+    #[test]
+    fn resolve_api_key_falls_back_when_keychain_has_no_entry() {
+        // A random connection id has no keychain entry → resolver must fall
+        // through to the explicit key rather than erroring. (The security
+        // property — keychain WINS when an entry exists — is enforced by the
+        // keychain-first ordering in resolve_api_key; exercising a populated
+        // keychain entry would mutate the OS keychain and is left to manual/CI
+        // keychain tests.)
+        let conn = Some(format!("notesage-test-missing-{}", std::process::id()));
+        assert_eq!(
+            resolve_api_key(&Some("fallback-key".into()), &conn).unwrap(),
+            Some("fallback-key".into())
+        );
+    }
 
     #[test]
     fn test_chat_message_basic_serialization() {

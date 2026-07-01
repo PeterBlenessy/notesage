@@ -92,7 +92,7 @@ describe('AcpSessionControls — capability source of truth', () => {
 
   it('renders the mode picker from connection capabilities (no live session needed)', () => {
     // No session exists yet — the mode picker must still populate from
-    // connection.acpCapabilities, otherwise the footer would be empty until the
+    // connection.acpCapabilities, otherwise the picker would be empty until the
     // user sends a first message.
     const conn = makeConnection({ acpCapabilities: CLAUDE_CAPS });
     render(<AcpSessionControls showModePicker={true} connection={conn} />);
@@ -124,10 +124,9 @@ describe('AcpSessionControls — capability source of truth', () => {
     expect(screen.getByRole('button', { name: /^m/i })).toBeDefined();
   });
 
-  it('hides the mode picker when fewer than 2 common modes are available', () => {
-    // A connection with only one mapped common mode (just "default" → read_only)
-    // — not enough variety to warrant a picker. But the config picker for
-    // reasoning effort should still render.
+  it('shows the mode picker even for a single advertised mode (toggle on)', () => {
+    // The picker's ONLY visibility gate is the showModePicker toggle. A single
+    // advertised mode is NOT a reason to hide it — it renders with that one mode.
     const conn = makeConnection({
       acpCapabilities: {
         availableModes: [{ id: 'default', name: 'Default' }],
@@ -136,11 +135,37 @@ describe('AcpSessionControls — capability source of truth', () => {
     });
     render(<AcpSessionControls showModePicker={true} connection={conn} />);
 
-    // No "Read Only" / "Agent" / "Plan" / "Full Access" mode buttons at top
-    // level — but the reasoning effort picker is present.
-    expect(screen.queryByRole('button', { name: /read only/i })).toBeNull();
-    // The M (medium) picker should be there.
+    // 'default' → common "Read Only" — the picker trigger is visible.
+    expect(screen.getByRole('button', { name: /read only/i })).toBeDefined();
+    // The M (medium) config picker is also present.
     expect(screen.getByRole('button', { name: /^m/i })).toBeDefined();
+  });
+
+  it('renders the Local Agent (Goose) preset modes with friendly labels', () => {
+    // Regression lock: Goose advertises auto/approve/smart_approve/chat. Only
+    // `auto` is in the cross-agent common-mode map, so the old getCommonModes
+    // collapse left 1 mapped mode → picker hidden. The picker now renders every
+    // advertised mode via getAgentModeDisplay, so it must be visible with the
+    // friendly label of the first mode (smart_approve → "Smart Approval").
+    const conn = makeConnection({
+      provider: 'custom_acp',
+      config: { localAgentPreset: 'goose' },
+      acpCapabilities: {
+        availableModes: [
+          { id: 'smart_approve', name: 'smart_approve' },
+          { id: 'approve', name: 'approve' },
+          { id: 'auto', name: 'auto' },
+          { id: 'chat', name: 'chat' },
+        ],
+        configOptions: [],
+      },
+    });
+    render(<AcpSessionControls showModePicker={true} connection={conn} />);
+
+    // Picker trigger shows the friendly label of the default (first) mode —
+    // NOT the raw "smart_approve" id.
+    expect(screen.getByRole('button', { name: /smart approval/i })).toBeDefined();
+    expect(screen.queryByRole('button', { name: /smart_approve/i })).toBeNull();
   });
 
   it('filters config options with category=mode or category=model', () => {
@@ -163,6 +188,27 @@ describe('AcpSessionControls — capability source of truth', () => {
     // duplicate config options are filtered out — the mode picker above renders
     // those separately.
     expect(screen.queryByRole('button', { name: /gpt-5/i })).toBeNull();
+  });
+
+  it('suppresses agent-reported config-option pickers for the local-agent (Goose) preset', () => {
+    // The Local Agent preset's provider + model are fixed by the env config in
+    // local_agent.rs (bundled llama-server) — exposing Goose's provider/model
+    // dropdown would let the user break the local-only setup. The mode picker
+    // (gated by showModePicker) is unaffected.
+    const conn = makeConnection({
+      provider: 'custom_acp',
+      config: { localAgentPreset: 'goose' },
+      acpCapabilities: {
+        availableModes: CODEX_CAPS.availableModes,
+        configOptions: CODEX_CAPS.configOptions,
+      },
+    });
+    render(<AcpSessionControls showModePicker={true} connection={conn} />);
+
+    // Reasoning-effort (and any other agent-reported) config picker is hidden.
+    expect(screen.queryByRole('button', { name: /^m/i })).toBeNull();
+    // The mode picker still renders (Codex's modes map to common modes).
+    expect(screen.getByRole('button', { name: /read only/i })).toBeDefined();
   });
 
   it('respects showModePicker=false even when modes are available', () => {

@@ -11,7 +11,10 @@
   color: var(--color-foreground);
   /* Required by ProseMirror to suppress its white-space check warning */
   white-space: pre-wrap;
-  /* Base font from paragraph preset (legacy vars kept for backwards compat) */
+  /* Base font from paragraph preset. The `var(--editor-font-family, ...)`
+     fallback exists because editor-styles-store rolled out via a
+     migration — older persisted states may not have the namespaced
+     `--ns-*` variables yet. */
   font-family: var(--ns-paragraph-font-family, var(--editor-font-family));
   /* Base font size — view-zoom is applied via CSS `zoom` on the editor
      wrapper, so we don't need to multiply here (would compound the scale). */
@@ -354,6 +357,26 @@
  * is untouched.
  * ========================================================================== */
 
+.ProseMirror[data-preview] {
+  /* Override the root `.ProseMirror { white-space: pre-wrap }` rule for
+     the preview surface only. Comrak emits pretty-printed HTML with `\n`
+     between block-level siblings (`</p>\n<h2>...`); under `pre-wrap`
+     those text nodes become anonymous inline boxes that render as
+     line-height-sized blank gaps between every block. The live editor
+     doesn't have this problem because Tiptap writes DOM nodes directly
+     (no stray text nodes between blocks). The editor still needs
+     `pre-wrap` for ProseMirror's internal whitespace check; the preview
+     is read-only HTML and doesn't.
+
+     Background: surfaced after the 2026-05-22 GitHub Actions macos
+     runner image rotation (20260427 → 20260520) bumped Chromium /
+     WebKit; the older renderer happened to suppress these whitespace
+     boxes, the newer one renders them per spec. `<pre>` blocks inside
+     the preview keep their own browser-default `white-space: pre`, so
+     code formatting still works. */
+  white-space: normal;
+}
+
 .ProseMirror[data-preview] blockquote > p {
   /* Tighten spacing between paragraphs inside a multi-paragraph blockquote
      (e.g. quoted line + attribution). Comrak emits each line as its own `<p>`;
@@ -576,6 +599,22 @@
 }
 
 .ProseMirror a:not([href^="http"]):not([href^="mailto"]):not([href^="tel"]):not([href^="#"]):hover {
+  border-bottom-color: var(--color-accent-primary);
+}
+
+/* Links — unresolved internal / dangling wikilink targets (OKF #12).
+   Applied as an inline ProseMirror decoration (class `wikilink-unresolved`) on
+   internal links whose target file does not exist — freshly-created danglers or
+   links to deleted files. Muted foreground + persistent dashed underline make
+   the "not yet created" state legible, mirroring the Obsidian/Roam red-link
+   convention while staying within the neutral palette. */
+.ProseMirror .wikilink-unresolved {
+  color: var(--color-muted-foreground);
+  border-bottom: 1px dashed var(--color-muted-foreground);
+}
+
+.ProseMirror .wikilink-unresolved:hover {
+  color: var(--color-accent-primary);
   border-bottom-color: var(--color-accent-primary);
 }
 
@@ -1010,28 +1049,6 @@
 
 .thin-scrollbar::-webkit-scrollbar-thumb:hover {
   background-color: var(--color-foreground);
-}
-
-/* Tab bar horizontal scrollbar — always 2px to avoid layout shift, thumb visible on hover only */
-.tabbar-scrollbar::-webkit-scrollbar {
-  height: 2px;
-}
-
-.tabbar-scrollbar::-webkit-scrollbar-track {
-  background: var(--color-accent);
-}
-
-.tabbar-scrollbar::-webkit-scrollbar-thumb {
-  background-color: var(--color-accent);
-  border-radius: 1px;
-}
-
-.tabbar-scrollbar:hover::-webkit-scrollbar-thumb {
-  background-color: oklch(45% 0 0);
-}
-
-.dark .tabbar-scrollbar:hover::-webkit-scrollbar-thumb {
-  background-color: oklch(55% 0 0);
 }
 
 /* Tag badges */
@@ -1576,7 +1593,8 @@ mark.dom-find-highlight-active {
   cursor: default;
 }
 
-/* Legacy: single button without container (backward compat) */
+/* Single-button hover for the historical mermaid preview shape
+   (no wrapping container). */
 .mermaid-preview:hover > .mermaid-edit-btn {
   opacity: 1;
 }

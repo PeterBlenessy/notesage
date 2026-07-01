@@ -120,3 +120,60 @@ Chronological log of major implementation milestones and changes.
 | 114 | [Release v0.44.0-alpha.2](114-release-v0.44.0-alpha.2.md) | Real shipping cut of the post-v0.43 stack: four new HTML viewer security toggles (block external resources, allow scripts, unsafe preview mode, allow forms), research / templates folders now visible at project root, and the full alpha.0 content (width + alignment persistence, inline HTML rendering, Cmd+= PDF zoom, Swedish-keyboard chord fix, 494 KB book opens fast again) that didn't actually ship in alpha.0 or alpha.1. |
 | 115 | [Release v0.43.1](115-release-v0.43.1.md) | Stable patch. Stops Stable-channel users from being auto-upgraded to alpha builds (defense in depth: release workflow auto-flags `-alpha`/`-beta`/`-rc` tags as prereleases, AND the in-app updater on Stable refuses any prerelease version regardless of what the server says). Also makes the Alpha channel actually receive updates — the manifest fetch now goes through Tauri's HTTP plugin so GitHub's release-asset redirect doesn't trip WKWebView CORS. |
 | 116 | [Release v0.44.0-alpha.3](116-release-v0.44.0-alpha.3.md) | First alpha that delivers on the v0.43.0 "switch back to Stable any time" promise. Leaving Alpha now offers an explicit "Switch back to Stable v0.43.1?" dialog (with a clear downgrade warning) when the latest stable is older than your current alpha. Also brings the v0.43.1 channel-isolation guarantees forward into the alpha track — and makes the Alpha channel actually receive in-app updates (alpha → alpha works via Tauri's HTTP plugin). Anyone stuck on alpha.0/.1/.2 needs a manual reinstall — those binaries can't auto-update. |
+| 117 | [Release v0.44.0](117-release-v0.44.0.md) | Promotes the cumulative v0.44.0 alpha to stable: HTML viewer security toggles (block external resources, allow scripts, allow forms, per-tab unsafe preview), block-size persistence on charts / drawings / link-previews / images, `Cmd+= / Cmd+- / Cmd+0` zoom in the PDF viewer, research and templates folders visible at project root, one-click switch back from Alpha to Stable, auto-check on channel change, and the alpha.0 editor fixes (Tooltip-provider crash, Swedish-keyboard collision, scroll-restore, image-serializer block separator, width-after-tab-switch). Ships with three known limitations tracked as open issues (image hover toolbar in prod builds, toolbar align on embedded blocks, empty HTML files). |
+| 118 | [Release v0.45.0-alpha.0](118-release-v0.45.0-alpha.0.md) | First alpha after v0.44.0 stable. Closes 5 of 6 open Dependabot alerts (4 mermaid sanitisation issues + 1 transitive rand). Image hover toolbar finally works in production builds (long-standing regression fix). Update / switch-channel dialogs render markdown. In-app changelog is channel-aware (stable users no longer see alpha entries). Empty HTML files show a placeholder instead of a blank pane. MicButton in StatusTray and Toolbar stay in sync. 22 frontend deps refreshed (tiptap 3.22 → 3.23 + others); 10 Rust deps patched. Ships with a known issue: voice dictation can hang the app after extended use (#264) — avoid extended sessions on this alpha. |
+| 119 | [Release v0.45.0-alpha.1](119-release-v0.45.0-alpha.1.md) | Fix-focused alpha. Restores the agent mode picker (Shield icon) for anyone whose AI provider connection was set up before the capability-probe change in alpha.0 — opening the chat now backfills the picker automatically. Unblocks `Cmd+Shift+E` (Export), `Cmd+Shift+L` (Sidebar) and `Cmd+Shift+R` (Recording) keyboard shortcuts that an editor extension was silently capturing for paragraph alignment. Resolves the image hover toolbar styling inconsistency known issue from alpha.0. Read Only mode tooltip clarified to reflect what the mode actually does. |
+| 120 | [Release v0.45.0-alpha.2](120-release-v0.45.0-alpha.2.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 121 | [Release v0.45.0-alpha.3](121-release-v0.45.0-alpha.3.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 122 | [Release v0.45.0-alpha.4](122-release-v0.45.0-alpha.4.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 123 | [Release v0.45.0-alpha.5](123-release-v0.45.0-alpha.5.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 124 | [Release v0.45.0](124-release-v0.45.0.md) | Promotes the v0.45.0 alpha series to stable — Quiet Composer is now the only editor shell. |
+| 125 | [Release v0.45.0-alpha.6](125-release-v0.45.0-alpha.6.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 126 | [Release v0.46.0-alpha.1](126-release-v0.46.0-alpha.1.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 127 | [Release v0.46.0-alpha.2](127-release-v0.46.0-alpha.2.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 128 | [Release v0.46.0-alpha.3](128-release-v0.46.0-alpha.3.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 129 | [Release v0.46.0-alpha.4](129-release-v0.46.0-alpha.4.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 130 | [Release v0.46.0-alpha.5](130-release-v0.46.0-alpha.5.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 131 | [Release v0.46.0-alpha.6](131-release-v0.46.0-alpha.6.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 132 | [Release v0.46.0-alpha.7](132-release-v0.46.0-alpha.7.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 133 | [Release v0.46.0-alpha.8](133-release-v0.46.0-alpha.8.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 134 | [Release v0.46.0-alpha.9](134-release-v0.46.0-alpha.9.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 135 | [Release v0.46.0-alpha.10](135-release-v0.46.0-alpha.10.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 136 | [Release v0.46.0-alpha.11](136-release-v0.46.0-alpha.11.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 137 | [Release v0.46.0-alpha.12](137-release-v0.46.0-alpha.12.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 138 | [Release v0.46.0-alpha.13](138-release-v0.46.0-alpha.13.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 139 | [Release v0.46.0-alpha.14](139-release-v0.46.0-alpha.14.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 140 | [Release v0.46.0-alpha.15](140-release-v0.46.0-alpha.15.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 141 | [Release v0.46.0-alpha.16](141-release-v0.46.0-alpha.16.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 142 | [Release v0.46.0-alpha.17](142-release-v0.46.0-alpha.17.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 143 | [Release v0.46.0-alpha.18](143-release-v0.46.0-alpha.18.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 144 | [Release v0.46.0-alpha.19](144-release-v0.46.0-alpha.19.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 145 | [Release v0.46.0-alpha.20](145-release-v0.46.0-alpha.20.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 146 | [Release v0.46.0-alpha.21](146-release-v0.46.0-alpha.21.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 147 | [Release v0.46.0-alpha.22](147-release-v0.46.0-alpha.22.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 148 | [Release v0.46.0-alpha.23](148-release-v0.46.0-alpha.23.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 149 | [Release v0.46.0-alpha.24](149-release-v0.46.0-alpha.24.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 150 | [Release v0.46.0-alpha.25](150-release-v0.46.0-alpha.25.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 151 | [Release v0.46.0-alpha.26](151-release-v0.46.0-alpha.26.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 152 | [Release v0.46.0-alpha.27](152-release-v0.46.0-alpha.27.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 153 | [Release v0.46.0-alpha.28](153-release-v0.46.0-alpha.28.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 154 | [Release v0.46.0](154-release-v0.46.0.md) | Stable: Local AI Agents (on-device agent), on-device meeting transcription, MCP remote/OAuth/catalog, opt-in telemetry, and Quiet Composer polish. |
+| 155 | [Release v0.46.0-alpha.29](155-release-v0.46.0-alpha.29.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 156 | [Release v0.46.0-alpha.30](156-release-v0.46.0-alpha.30.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 157 | [Release v0.47.0-alpha.1](157-release-v0.47.0-alpha.1.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 158 | [Release v0.47.0-alpha.2](158-release-v0.47.0-alpha.2.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 159 | [Release v0.47.0-alpha.3](159-release-v0.47.0-alpha.3.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 160 | [Release v0.47.0-alpha.4](160-release-v0.47.0-alpha.4.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 161 | [Release v0.47.0-alpha.5](161-release-v0.47.0-alpha.5.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 162 | [Release v0.47.0-alpha.6](162-release-v0.47.0-alpha.6.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 163 | [Release v0.47.0-alpha.7](163-release-v0.47.0-alpha.7.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 164 | [Release v0.47.0-alpha.8](164-release-v0.47.0-alpha.8.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 165 | [Release v0.48.0-alpha.1](165-release-v0.48.0-alpha.1.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 166 | [Release v0.47.0](166-release-v0.47.0.md) | Stable (2026-06-19): concurrent AI sessions, keyboard-shortcut overhaul, editor & drawing first-paint fixes |
+| 167 | [Release v0.48.0-alpha.2](167-release-v0.48.0-alpha.2.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 168 | [Release v0.48.0-alpha.3](168-release-v0.48.0-alpha.3.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 169 | [Release v0.48.0-alpha.4](169-release-v0.48.0-alpha.4.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 170 | [Release v0.48.0-alpha.5](170-release-v0.48.0-alpha.5.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 171 | [Release v0.48.0-alpha.6](171-release-v0.48.0-alpha.6.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 172 | [Release v0.48.0-alpha.7](172-release-v0.48.0-alpha.7.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 173 | [Release v0.48.0-alpha.8](173-release-v0.48.0-alpha.8.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |

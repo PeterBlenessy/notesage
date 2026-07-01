@@ -41,7 +41,6 @@ Check that an implementation meets its PRD requirements and project quality gate
    | Chromatic accent colors | Grep for `text-blue`, `bg-indigo`, etc. in `.tsx` files |
    | Custom components replacing shadcn/ui | Manual inspection |
    | Direct editor mutation | Grep for `.state.doc =` or `.state.selection =` |
-   | Relative imports | Grep for `from '\.\./` in `src/` |
 
 5. **Check PRD requirements** one by one:
    - For each quality gate in the PRD, verify it's met
@@ -64,7 +63,6 @@ Check that an implementation meets its PRD requirements and project quality gate
    - [ ] No `any` types: PASS / FAIL
    - [ ] Transitions on interactive elements: PASS / FAIL
    - [ ] No chromatic accents: PASS / FAIL
-   - [ ] No relative imports: PASS / FAIL
 
    ## PRD Requirements
    - [ ] Requirement 1: PASS / FAIL — notes

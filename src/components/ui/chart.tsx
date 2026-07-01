@@ -79,6 +79,20 @@ function ChartContainer({
   )
 }
 
+// Config keys and color values can originate from user/document data (chart
+// blocks in the editor), and they are interpolated into a raw <style> block.
+// Sanitize both so a crafted key/color can't break out of the CSS context with
+// `</style>…` (security audit LOW — self-XSS hardening).
+const sanitizeCssIdent = (value: string): string =>
+  value.replace(/[^a-zA-Z0-9_-]/g, "")
+
+// Permit only the CSS color shapes charts actually use; reject anything that
+// could contain `}` `<` `;` or a `</style>` breakout.
+const SAFE_CSS_COLOR = /^(#[0-9a-fA-F]{3,8}|(rgb|rgba|hsl|hsla|oklch|oklab|lab|lch)\([0-9a-zA-Z.,%/\s-]+\)|[a-zA-Z]+|var\(--[a-zA-Z0-9_-]+\))$/
+
+const sanitizeCssColor = (value: string): string | null =>
+  SAFE_CSS_COLOR.test(value.trim()) ? value.trim() : null
+
 const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
   const colorConfig = Object.entries(config).filter(
     ([, config]) => config.theme ?? config.color
@@ -88,19 +102,22 @@ const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
     return null
   }
 
+  const safeId = sanitizeCssIdent(id)
+
   return (
     <style
       dangerouslySetInnerHTML={{
         __html: Object.entries(THEMES)
           .map(
             ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
+${prefix} [data-chart=${safeId}] {
 ${colorConfig
   .map(([key, itemConfig]) => {
-    const color =
+    const rawColor =
       itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ??
       itemConfig.color
-    return color ? `  --color-${key}: ${color};` : null
+    const color = rawColor ? sanitizeCssColor(rawColor) : null
+    return color ? `  --color-${sanitizeCssIdent(key)}: ${color};` : null
   })
   .join("\n")}
 }

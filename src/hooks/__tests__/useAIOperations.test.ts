@@ -10,6 +10,9 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useAIStore } from '@/stores/ai-store';
 import { useChatStore } from '@/stores/chat-store';
 import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-metadata-store';
+import { useSettingsStore } from '@/stores/settings-store';
+import { useSessionRunStore } from '@/stores/session-run-store';
+import { processSendQueue, __resetSendQueue } from '@/lib/ai/session-run';
 import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
@@ -54,6 +57,8 @@ vi.mock('@/lib/ai/acp-agent-state', () => ({
   stopAcpAgent: vi.fn(),
   acpAgent: null,
   ensureAcpAgent: vi.fn(),
+  isLocalAgentPreset: (conn: { provider?: string; config?: { localAgentPreset?: string } } | null) =>
+    conn?.provider === 'custom_acp' && conn?.config?.localAgentPreset === 'goose',
 }));
 
 vi.mock('@/lib/ai/acp-utils', () => ({
@@ -208,6 +213,69 @@ describe('useAIOperations', () => {
 
       expect(mockAcpSendChatMessage).toHaveBeenCalled();
       expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---- concurrency cap + queue (task #5) ----
+
+  describe('concurrency cap', () => {
+    beforeEach(() => {
+      useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+      __resetSendQueue();
+      useSettingsStore.setState({ maxConcurrentSessions: 2 });
+    });
+
+    const routeInteractive = (connId: string) =>
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: connId },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+
+    it('queues a send when at the cap, then starts it when a slot frees', async () => {
+      const conn = makeConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      routeInteractive(conn.id);
+      useChatStore.setState({
+        conversations: [{ id: 'conv-E', title: '', messages: [], createdAt: 0, updatedAt: 0, projectPaths: [], segments: [], activeSegmentIndex: 0, activeLeafId: null }] as never,
+        activeConversationId: 'conv-E',
+      });
+      // Fill the cap (2) with running sessions.
+      useSessionRunStore.getState().setRun('conv-A', { status: 'running' });
+      useSessionRunStore.getState().setRun('conv-B', { status: 'running' });
+
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => { await result.current.sendChatMessage('hi', []); });
+
+      // At cap → parked, the path send is NOT invoked and the run is `queued`.
+      expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
+      expect(useSessionRunStore.getState().runs['conv-E']?.status).toBe('queued');
+
+      // A slot frees → draining starts the parked send.
+      act(() => {
+        useSessionRunStore.getState().clearRun('conv-A');
+        processSendQueue(2);
+      });
+      expect(mockDirectSendChatMessage).toHaveBeenCalledTimes(1);
+    });
+
+    it('sends immediately when under the cap', async () => {
+      const conn = makeConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      routeInteractive(conn.id);
+      useChatStore.setState({
+        conversations: [{ id: 'conv-E', title: '', messages: [], createdAt: 0, updatedAt: 0, projectPaths: [], segments: [], activeSegmentIndex: 0, activeLeafId: null }] as never,
+        activeConversationId: 'conv-E',
+      });
+      useSessionRunStore.getState().setRun('conv-A', { status: 'running' }); // 1 < cap 2
+
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => { await result.current.sendChatMessage('hi', []); });
+
+      expect(mockDirectSendChatMessage).toHaveBeenCalledTimes(1);
+      expect(useSessionRunStore.getState().runs['conv-E']?.status).toBeUndefined();
     });
   });
 
@@ -377,7 +445,7 @@ describe('useAIOperations', () => {
   // ---- aiLock enforcement (red-team TDD) ----
   //
   // Attack scenario per leak #8 / PRD 1.5: the user has locked Project A to
-  // Claude Code (`aiLock.connectionId = 'conn-claude'`). The chat footer is
+  // Claude Code (`aiLock.connectionId = 'conn-claude'`). The command bar is
   // somehow set to OpenAI. The user presses Send. PRE-FIX the send routed to
   // OpenAI — the lock was advisory. POST-FIX it's refused with a toast and a
   // ProjectLockViolation is thrown, no downstream provider is called.
@@ -640,6 +708,66 @@ describe('useAIOperations', () => {
 
       expect(mockDirectGenerateText).toHaveBeenCalledWith('local test');
       expect(mockAcpGenerateText).not.toHaveBeenCalled();
+    });
+  });
+
+  // ---- Local Agent preset routing (no silent fallback — user decision) ----
+
+  describe('Local Agent preset routing', () => {
+    function makePresetConnection(overrides: Partial<Connection> = {}): Connection {
+      return makeConnection({
+        id: 'preset',
+        provider: 'custom_acp',
+        authMethod: 'agent_managed',
+        label: 'Local Agent',
+        credentials: { type: 'agent_managed', agentBinary: '/opt/goose' },
+        config: { binaryPath: '/opt/goose', localAgentPreset: 'goose' },
+        ...overrides,
+      });
+    }
+    const localBundled: Connection = {
+      id: 'lb',
+      provider: 'local_ai',
+      authMethod: 'local_bundled',
+      status: 'connected',
+      label: 'Local (bundled)',
+      credentials: { type: 'local_bundled' },
+      capabilities: ['interactive'],
+      createdAt: Date.now(),
+    };
+
+    function routeTo(connId: string) {
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: connId },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+    }
+
+    it('routes to the agent (ACP) when the preset is selected', async () => {
+      useConnectionsStore.setState({ connections: [makePresetConnection(), localBundled] });
+      routeTo('preset');
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => {
+        await result.current.sendChatMessage('hi', []);
+      });
+      expect(mockAcpSendChatMessage).toHaveBeenCalled();
+      expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
+    });
+
+    it('surfaces an agent error to the caller instead of silently falling back to direct local chat', async () => {
+      // User decision: a broken Local Agent must NOT silently route to Path 4.
+      // The error propagates so the chat message shows the real failure.
+      useConnectionsStore.setState({ connections: [makePresetConnection(), localBundled] });
+      routeTo('preset');
+      mockAcpSendChatMessage.mockRejectedValueOnce(new Error('Local AI server is not running'));
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => {
+        await expect(result.current.sendChatMessage('hi', [])).rejects.toThrow(/not running/);
+      });
+      expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
     });
   });
 });

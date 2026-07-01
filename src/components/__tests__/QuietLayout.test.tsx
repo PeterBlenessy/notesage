@@ -9,15 +9,10 @@ import {
 } from '@/test/component-harness';
 import {
   QuietLayout,
-  resolveCreateParent,
   type QuietLayoutProps,
 } from '@/components/QuietLayout';
-import { useQuietSidebarStore } from '@/stores/quiet-sidebar-store';
-import { useEditorStore } from '@/stores/editor-store';
-import { useWorkspaceStore, type WorkspaceProject } from '@/stores/workspace-store';
 
-// Mock sonner so the Cmd+N toast fallback is observable without rendering
-// the real Toaster component.
+// Mock sonner so toasts don't render the real Toaster component in tests.
 vi.mock('sonner', () => ({
   toast: {
     info: vi.fn(),
@@ -30,23 +25,16 @@ vi.mock('sonner', () => ({
   Toaster: () => null,
 }));
 
-// Import after mock so `toast` resolves to the mocked instance.
-import { toast as mockedToast } from 'sonner';
-
 // ---------------------------------------------------------------------------
 // Mock TitleBar — heavy dependency tree, not relevant to placeholder shell
 // ---------------------------------------------------------------------------
 
-// Stub the TitleBar. Echoes back the `mode` prop via a data attribute so
-// tests can assert QuietLayout passes `mode="quiet"` (tasks #103 + #124 —
-// hide the chat / activity-strip toggle buttons in Quiet Composer because
-// the FloatingCommandBar + AgentOrb replace their targets).
+// Stub the TitleBar. Always echoes data-titlebar-mode="quiet" so the
+// .app.focus-mode CSS hook regression-lock keeps working — the real
+// TitleBar applies the same constant attribute post-Classic-removal.
 vi.mock('@/components/TitleBar', () => ({
-  TitleBar: (props: { mode?: string }) => (
-    <div
-      data-testid="titlebar"
-      data-titlebar-mode={props.mode ?? 'classic'}
-    >
+  TitleBar: () => (
+    <div data-testid="titlebar" data-titlebar-mode="quiet">
       TitleBar
     </div>
   ),
@@ -86,12 +74,19 @@ vi.mock('@/components/editor/Editor', () => ({
 let mockCmdBarPinned = false;
 let mockSidebarPinned = true;
 let mockQuietChromeTransparent = false;
+// Default the TitleBar ON in tests so the existing mount/CSS-hook assertions
+// exercise the enabled path. The real store default is OFF (see settings-store
+// + the "hides the TitleBar by default" test below).
+let mockShowTitleBar = true;
 
 vi.mock('@/stores/settings-store', () => {
   const state = {
     get cmdBarPinned() { return mockCmdBarPinned; },
     get sidebarPinned() { return mockSidebarPinned; },
     get quietChromeTransparent() { return mockQuietChromeTransparent; },
+    get showTitleBar() { return mockShowTitleBar; },
+    sidebarWidth: 252,
+    setSidebarWidth: () => {},
     // Quiet-chrome (#51) — the real store seeds these defaults on startup.
     // QuietLayout mounts `useQuietChrome()` which reads both slices, so the
     // mock has to supply them or the hook crashes with "undefined.toolbar".
@@ -102,6 +97,8 @@ vi.mock('@/stores/settings-store', () => {
       docHead: true,
       sidebar: false,
       orb: false,
+      titlebar: false,
+      cmdbar: false,
     },
   };
   return {
@@ -109,23 +106,12 @@ vi.mock('@/stores/settings-store', () => {
       vi.fn((sel: (s: typeof state) => unknown) => sel(state)),
       { getState: () => state },
     ),
-    // #107 — the `RevertInvitation` banner mounted inside QuietLayout
-    // imports this helper. Not under test here; return `false` so the
-    // banner stays hidden and doesn't pull in the real store surface.
-    shouldShowRevertInvitation: () => false,
-    // #97 — symmetric helper for the preview banner. Not mounted in
-    // QuietLayout but exporting it keeps the mock API matching the
-    // real module's public surface.
-    shouldShowPreviewInvitation: () => false,
+    // QuietSidebar imports these named constants from the (mocked) module.
+    SIDEBAR_MIN_WIDTH: 200,
+    SIDEBAR_MAX_WIDTH: 500,
+    SIDEBAR_DEFAULT_WIDTH: 252,
   };
 });
-
-// #107 — stub the banner itself so the tests don't need to mock the
-// settings fields / Button subtree. The banner is covered by its own
-// focused tests.
-vi.mock('@/components/RevertInvitation', () => ({
-  RevertInvitation: () => null,
-}));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -144,9 +130,6 @@ function defaultProps(overrides: Partial<QuietLayoutProps> = {}): QuietLayoutPro
     onExportOpenChange: vi.fn(),
     outlineOpen: false,
     onOutlineOpenChange: vi.fn(),
-    updateAvailable: false,
-    updateVersion: null,
-    onUpdateClick: vi.fn(),
     onShortcutsOpen: vi.fn(),
     onOpenActions: vi.fn(),
     onOpenSettings: vi.fn(),
@@ -170,6 +153,7 @@ describe('QuietLayout (placeholder)', () => {
     mockCmdBarPinned = false;
     mockSidebarPinned = true;
     mockQuietChromeTransparent = false;
+    mockShowTitleBar = true;
   });
 
   it('renders without crashing', () => {
@@ -187,11 +171,53 @@ describe('QuietLayout (placeholder)', () => {
     expect(screen.getByTestId('titlebar')).toBeTruthy();
   });
 
-  it('passes mode="quiet" to the TitleBar (tasks #103 + #124)', () => {
-    // Hides the chat-toggle + activity-strip-toggle buttons in the TitleBar
-    // because the FloatingCommandBar and AgentOrb replace their targets in
-    // Quiet Composer. Dead toggles in the top chrome would contradict the
-    // "quieter UI" promise.
+  it('hides the TitleBar and sits the document flush to the top (sidebar shown)', () => {
+    mockShowTitleBar = false;
+    mockSidebarPinned = true;
+    const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+    // No TitleBar mounted.
+    expect(screen.queryByTestId('titlebar')).toBeNull();
+    // Root advertises the hidden state for the CSS clearance overrides.
+    const root = container.querySelector('[data-quiet-layout-root]');
+    expect(root?.getAttribute('data-titlebar-hidden')).toBe('true');
+    // Flush: the document area reserves NO top padding — the sidebar covers the
+    // traffic-light corner, so the column starts at y=0.
+    const docArea = container.querySelector('[data-quiet-layout-document-area]');
+    expect(docArea?.className).not.toMatch(/\bpt-/);
+    // No doc-column drag strip when the sidebar is present (it owns dragging).
+    expect(
+      container.querySelector('div[aria-hidden][data-tauri-drag-region]'),
+    ).toBeNull();
+  });
+
+  it('flows the editor flush under a transparent drag strip when title bar AND sidebar are hidden', () => {
+    mockShowTitleBar = false;
+    mockSidebarPinned = false;
+    const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+    const docArea = container.querySelector('[data-quiet-layout-document-area]');
+    // Flush — no opaque top band; the editor surface flows to y=0 and the CSS
+    // (data-titlebar-hidden + data-sidebar-pinned="false") pushes editor content
+    // down to clear the traffic lights.
+    expect(docArea?.className).not.toMatch(/\bpt-/);
+    expect(docArea?.getAttribute('data-sidebar-pinned')).toBe('false');
+    // A transparent drag region covers the traffic-light zone for window moves.
+    expect(
+      container.querySelector('div[aria-hidden][data-tauri-drag-region]'),
+    ).toBeTruthy();
+  });
+
+  it('marks the root data-titlebar-hidden="false" when showTitleBar is on', () => {
+    const { container } = renderWithProviders(<QuietLayout {...defaultProps()} />);
+    const root = container.querySelector('[data-quiet-layout-root]');
+    expect(root?.getAttribute('data-titlebar-hidden')).toBe('false');
+  });
+
+  it('mounts the TitleBar with data-titlebar-mode="quiet"', () => {
+    // TitleBar's `data-titlebar-mode="quiet"` is a load-bearing CSS hook
+    // for `.app.focus-mode [data-titlebar-mode="quiet"]` in globals.css
+    // (which hides the bar entirely in focus mode). Post-Classic-removal
+    // (#325) the attribute is a constant; the test locks it in so a
+    // future TitleBar refactor doesn't silently break the CSS.
     renderWithProviders(<QuietLayout {...defaultProps()} />);
     const titlebar = screen.getByTestId('titlebar');
     expect(titlebar.getAttribute('data-titlebar-mode')).toBe('quiet');
@@ -416,378 +442,3 @@ describe('QuietLayout (placeholder)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// resolveCreateParent — pure helper
-// ---------------------------------------------------------------------------
-
-describe('resolveCreateParent (#41)', () => {
-  const projects: WorkspaceProject[] = [
-    { path: '/Users/me/Notesage/alpha', fileTree: [] },
-    { path: '/Users/me/Notesage/beta', fileTree: [] },
-  ];
-
-  it('returns the active tab parent dir when the file is inside a project', () => {
-    expect(
-      resolveCreateParent('/Users/me/Notesage/alpha/notes/a.md', projects),
-    ).toBe('/Users/me/Notesage/alpha/notes');
-  });
-
-  it('returns the project root when the active file is at the project root', () => {
-    expect(
-      resolveCreateParent('/Users/me/Notesage/alpha/a.md', projects),
-    ).toBe('/Users/me/Notesage/alpha');
-  });
-
-  it('returns null when there are no projects', () => {
-    expect(resolveCreateParent('/Users/me/Notesage/alpha/a.md', [])).toBeNull();
-  });
-
-  it('returns null when the active file is outside every project', () => {
-    expect(
-      resolveCreateParent('/Users/me/elsewhere/a.md', projects),
-    ).toBeNull();
-  });
-
-  it('returns null when there is no active file', () => {
-    expect(resolveCreateParent(null, projects)).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Cmd+N keyboard handler (#41)
-// ---------------------------------------------------------------------------
-
-describe('QuietLayout — Cmd+N keyboard handler (#41)', () => {
-  beforeEach(() => {
-    registerDefaultHandlers();
-    mockCmdBarPinned = false;
-    mockSidebarPinned = true;
-    vi.mocked(mockedToast.info).mockReset();
-    useQuietSidebarStore.setState({ pendingCreate: null });
-    useWorkspaceStore.setState({
-      explorerFolders: [],
-      projects: [],
-      recentProjects: [],
-      notesTree: [],
-    });
-    useEditorStore.setState({
-      openDocuments: [],
-      activeTabId: null,
-      persistedTabs: [],
-      persistedActiveFilePath: null,
-    });
-  });
-
-  function dispatchCmdN(modifiers: Partial<KeyboardEventInit> = {}) {
-    window.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'n',
-        metaKey: true,
-        bubbles: true,
-        cancelable: true,
-        ...modifiers,
-      }),
-    );
-  }
-
-  it('Cmd+N with an active tab inside a project sets pending create with that parent', () => {
-    useWorkspaceStore.setState({
-      projects: [
-        { path: '/Users/me/Notesage/alpha', fileTree: [] },
-      ],
-    });
-    useEditorStore.setState({
-      openDocuments: [
-        {
-          id: 't1',
-          filePath: '/Users/me/Notesage/alpha/docs/intro.md',
-          fileName: 'intro.md',
-          isDirty: false,
-          content: '',
-          frontmatter: null,
-          fileType: 'markdown',
-          contentLoaded: true,
-        },
-      ],
-      activeTabId: 't1',
-      persistedTabs: [],
-      persistedActiveFilePath: null,
-    });
-
-    renderWithProviders(<QuietLayout {...defaultProps()} />);
-    dispatchCmdN();
-
-    expect(useQuietSidebarStore.getState().pendingCreate).toEqual({
-      parentDir: '/Users/me/Notesage/alpha/docs',
-    });
-    expect(vi.mocked(mockedToast.info)).not.toHaveBeenCalled();
-  });
-
-  it('Cmd+N with active tab at the project root sets pending at the project root', () => {
-    useWorkspaceStore.setState({
-      projects: [
-        { path: '/Users/me/Notesage/alpha', fileTree: [] },
-      ],
-    });
-    useEditorStore.setState({
-      openDocuments: [
-        {
-          id: 't1',
-          filePath: '/Users/me/Notesage/alpha/note.md',
-          fileName: 'note.md',
-          isDirty: false,
-          content: '',
-          frontmatter: null,
-          fileType: 'markdown',
-          contentLoaded: true,
-        },
-      ],
-      activeTabId: 't1',
-      persistedTabs: [],
-      persistedActiveFilePath: null,
-    });
-
-    renderWithProviders(<QuietLayout {...defaultProps()} />);
-    dispatchCmdN();
-
-    expect(useQuietSidebarStore.getState().pendingCreate).toEqual({
-      parentDir: '/Users/me/Notesage/alpha',
-    });
-  });
-
-  it('Cmd+N with no matching project shows a toast and leaves pending null', () => {
-    useWorkspaceStore.setState({
-      projects: [{ path: '/Users/me/Notesage/alpha', fileTree: [] }],
-    });
-    useEditorStore.setState({
-      openDocuments: [
-        {
-          id: 't1',
-          filePath: '/tmp/elsewhere.md',
-          fileName: 'elsewhere.md',
-          isDirty: false,
-          content: '',
-          frontmatter: null,
-          fileType: 'markdown',
-          contentLoaded: true,
-        },
-      ],
-      activeTabId: 't1',
-      persistedTabs: [],
-      persistedActiveFilePath: null,
-    });
-
-    renderWithProviders(<QuietLayout {...defaultProps()} />);
-    dispatchCmdN();
-
-    expect(useQuietSidebarStore.getState().pendingCreate).toBeNull();
-    expect(vi.mocked(mockedToast.info)).toHaveBeenCalledWith(
-      expect.stringMatching(/open a project/i),
-    );
-  });
-
-  it('Cmd+N while typing in an input is a no-op', () => {
-    useWorkspaceStore.setState({
-      projects: [{ path: '/Users/me/Notesage/alpha', fileTree: [] }],
-    });
-    useEditorStore.setState({
-      openDocuments: [
-        {
-          id: 't1',
-          filePath: '/Users/me/Notesage/alpha/a.md',
-          fileName: 'a.md',
-          isDirty: false,
-          content: '',
-          frontmatter: null,
-          fileType: 'markdown',
-          contentLoaded: true,
-        },
-      ],
-      activeTabId: 't1',
-      persistedTabs: [],
-      persistedActiveFilePath: null,
-    });
-
-    renderWithProviders(<QuietLayout {...defaultProps()} />);
-
-    const input = document.createElement('input');
-    document.body.appendChild(input);
-    input.focus();
-
-    input.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'n',
-        metaKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-
-    expect(useQuietSidebarStore.getState().pendingCreate).toBeNull();
-    input.remove();
-  });
-
-  it('Cmd+Shift+N does NOT set the note-level pendingCreate signal', () => {
-    // Cmd+N owns the note-create signal (`pendingCreate`); Cmd+Shift+N
-    // belongs to the project-create handler below and must not spill over
-    // into the note-create code path.
-    useWorkspaceStore.setState({
-      projects: [{ path: '/Users/me/Notesage/alpha', fileTree: [] }],
-    });
-    useEditorStore.setState({
-      openDocuments: [
-        {
-          id: 't1',
-          filePath: '/Users/me/Notesage/alpha/a.md',
-          fileName: 'a.md',
-          isDirty: false,
-          content: '',
-          frontmatter: null,
-          fileType: 'markdown',
-          contentLoaded: true,
-        },
-      ],
-      activeTabId: 't1',
-      persistedTabs: [],
-      persistedActiveFilePath: null,
-    });
-
-    renderWithProviders(<QuietLayout {...defaultProps()} />);
-    dispatchCmdN({ shiftKey: true });
-
-    expect(useQuietSidebarStore.getState().pendingCreate).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Cmd+Shift+N keyboard handler (#42) — project-create
-// ---------------------------------------------------------------------------
-
-describe('QuietLayout — Cmd+Shift+N keyboard handler (#42)', () => {
-  beforeEach(() => {
-    registerDefaultHandlers();
-    mockCmdBarPinned = false;
-    mockSidebarPinned = true;
-    useQuietSidebarStore.setState({
-      pendingCreate: null,
-      pendingCreateProject: false,
-    });
-    useWorkspaceStore.setState({
-      explorerFolders: [],
-      projects: [],
-      recentProjects: [],
-      notesTree: [],
-    });
-    useEditorStore.setState({
-      openDocuments: [],
-      activeTabId: null,
-      persistedTabs: [],
-      persistedActiveFilePath: null,
-    });
-  });
-
-  function dispatchCmdShiftN(modifiers: Partial<KeyboardEventInit> = {}) {
-    window.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'n',
-        metaKey: true,
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-        ...modifiers,
-      }),
-    );
-  }
-
-  it('Cmd+Shift+N sets pendingCreateProject to true', () => {
-    renderWithProviders(<QuietLayout {...defaultProps()} />);
-    dispatchCmdShiftN();
-
-    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(true);
-    // Note-create signal left untouched so the two flows don't fight.
-    expect(useQuietSidebarStore.getState().pendingCreate).toBeNull();
-  });
-
-  it('Cmd+N alone does NOT set pendingCreateProject (#41 territory)', () => {
-    useWorkspaceStore.setState({
-      projects: [{ path: '/Users/me/Notesage/alpha', fileTree: [] }],
-    });
-    useEditorStore.setState({
-      openDocuments: [
-        {
-          id: 't1',
-          filePath: '/Users/me/Notesage/alpha/a.md',
-          fileName: 'a.md',
-          isDirty: false,
-          content: '',
-          frontmatter: null,
-          fileType: 'markdown',
-          contentLoaded: true,
-        },
-      ],
-      activeTabId: 't1',
-      persistedTabs: [],
-      persistedActiveFilePath: null,
-    });
-
-    renderWithProviders(<QuietLayout {...defaultProps()} />);
-    window.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'n',
-        metaKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-
-    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(false);
-  });
-
-  it('Cmd+Shift+N while typing in an input is a no-op', () => {
-    renderWithProviders(<QuietLayout {...defaultProps()} />);
-
-    const input = document.createElement('input');
-    document.body.appendChild(input);
-    input.focus();
-
-    input.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'n',
-        metaKey: true,
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-
-    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(false);
-    input.remove();
-  });
-
-  it('Ctrl+Shift+N works on non-mac paths (ctrlKey alternative to metaKey)', () => {
-    renderWithProviders(<QuietLayout {...defaultProps()} />);
-    window.dispatchEvent(
-      new KeyboardEvent('keydown', {
-        key: 'n',
-        ctrlKey: true,
-        shiftKey: true,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-
-    expect(useQuietSidebarStore.getState().pendingCreateProject).toBe(true);
-  });
-});
-
-// =============================================================================
-// QuietLayout — Cmd+Shift+E TreeOverlay handler (#139) — REMOVED in #20
-// =============================================================================
-//
-// The capture-phase listener in QuietLayout that preempted the legacy
-// Export-as-PDF chord was deleted alongside TreeOverlay in
-// sidebar-simplification task #20. ⌘⇧E now bubbles to
-// `useKeyboardShortcuts` and opens the multi-format Export dialog in
-// both shells. The original #139 regression test asserted the
-// preempt; with TreeOverlay gone there's nothing to preempt and
-// nothing to test here.

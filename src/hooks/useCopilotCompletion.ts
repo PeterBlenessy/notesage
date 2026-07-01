@@ -37,7 +37,7 @@ export function useCopilotCompletion(editor: Editor | null) {
   const connection = rawConnection?.authMethod === 'agent_managed' ? rawConnection : null;
 
   const activeTab = openDocuments.find((t) => t.id === activeTabId);
-  // Working directory for the LSP must reflect the chat footer's project
+  // Working directory for the LSP must reflect the command bar's project
   // selection (Track 1 isolation — task #15). Falling back to the first
   // workspace folder only when no conversation is active keeps the LSP
   // bootable before any chat is opened.
@@ -79,7 +79,7 @@ export function useCopilotCompletion(editor: Editor | null) {
 
     // Start LSP — or, if already running, notify of workspace folder change.
     // Task #15 (Track 1 isolation): the working directory must follow the
-    // chat footer's project selection. When the selection changes while the
+    // command bar's project selection. When the selection changes while the
     // LSP is up, we re-invoke `copilot_lsp_start` so the backend emits
     // `workspace/didChangeWorkspaceFolders`.
     if (!lspReady) {

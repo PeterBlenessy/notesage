@@ -1,4 +1,10 @@
 use serde::{Deserialize, Serialize};
+use std::net::{IpAddr, ToSocketAddrs};
+
+/// Maximum bytes we will read from a link-preview response body.
+const MAX_PREVIEW_BODY_BYTES: usize = 2 * 1024 * 1024; // 2 MiB
+/// Maximum number of redirects we will follow (each re-validated for SSRF).
+const MAX_PREVIEW_REDIRECTS: usize = 3;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LinkMetadata {
@@ -12,24 +18,57 @@ pub struct LinkMetadata {
 
 /// Fetch a URL and extract OpenGraph / meta tag metadata from the HTML `<head>`.
 /// Returns structured link preview data for rich link cards.
+///
+/// SSRF hardening: this command runs in the main (unsandboxed) process and is
+/// auto-triggered when an agent-authored `> [!link](url)` card renders, so it
+/// must not be usable to probe internal services. We require an http(s) scheme,
+/// reject any host that resolves to a loopback/private/link-local/CGNAT address
+/// (covers the cloud-metadata endpoint and the app's own localhost servers),
+/// re-validate every redirect hop, and cap the response body size.
 #[tauri::command]
 pub async fn fetch_link_metadata(url: String) -> Result<LinkMetadata, String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(5))
-        .redirect(reqwest::redirect::Policy::limited(3))
+        // Follow redirects manually so every hop can be re-validated for SSRF.
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
 
-    let resp = client
-        .get(&url)
-        .header(
-            "User-Agent",
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        )
-        .header("Accept", "text/html,application/xhtml+xml")
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {}", e))?;
+    let original_url = validate_public_url(&url).await?;
+    let mut current = original_url.clone();
+    let mut redirects = 0usize;
+
+    let mut resp = loop {
+        let resp = client
+            .get(current.clone())
+            .header(
+                "User-Agent",
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            )
+            .header("Accept", "text/html,application/xhtml+xml")
+            .send()
+            .await
+            .map_err(|e| format!("Request failed: {}", e))?;
+
+        if resp.status().is_redirection() {
+            if redirects >= MAX_PREVIEW_REDIRECTS {
+                return Err("Too many redirects".to_string());
+            }
+            let location = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or("Redirect without a Location header")?;
+            // Resolve relative redirects against the current URL, then re-validate.
+            let next = current
+                .join(location)
+                .map_err(|e| format!("Invalid redirect target: {}", e))?;
+            current = validate_public_url(next.as_str()).await?;
+            redirects += 1;
+            continue;
+        }
+        break resp;
+    };
 
     if !resp.status().is_success() {
         return Err(format!("HTTP {}", resp.status()));
@@ -40,17 +79,117 @@ pub async fn fetch_link_metadata(url: String) -> Result<LinkMetadata, String> {
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
+        .unwrap_or("")
+        .to_string();
     if !content_type.contains("text/html") && !content_type.contains("application/xhtml") {
         return Err(format!("Not an HTML page (Content-Type: {})", content_type));
     }
 
-    let html = resp
-        .text()
+    // Read the body with a hard size cap — defends against unbounded or chunked
+    // responses that carry no Content-Length.
+    let mut body = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
         .await
-        .map_err(|e| format!("Failed to read response body: {}", e))?;
+        .map_err(|e| format!("Failed to read response body: {}", e))?
+    {
+        body.extend_from_slice(&chunk);
+        if body.len() > MAX_PREVIEW_BODY_BYTES {
+            return Err("Response body too large".to_string());
+        }
+    }
+    let html = String::from_utf8_lossy(&body).into_owned();
 
-    Ok(parse_html_metadata(&url, &html))
+    Ok(parse_html_metadata(original_url.as_str(), &html))
+}
+
+/// Validate that a URL is safe to fetch server-side: an http(s) scheme and a
+/// host that does not resolve to a private/loopback/link-local address.
+/// Returns the parsed URL on success so the caller can reuse it.
+///
+/// Known residual (security audit LOW — DNS rebinding / TOCTOU): we resolve the
+/// host here and reject blocked IPs, but `reqwest` performs its OWN resolution
+/// when it connects, so a hostile resolver that returns a public IP for this
+/// lookup and a private IP for reqwest's connect lookup could still reach an
+/// internal address. Fully closing this requires connecting to the pinned,
+/// pre-validated IP while preserving the original Host/SNI (not yet wired). The
+/// blast radius is bounded: this fetch reads metadata only, never credentials,
+/// and the body size is capped.
+async fn validate_public_url(raw: &str) -> Result<url::Url, String> {
+    let parsed = url::Url::parse(raw).map_err(|e| format!("Invalid URL: {}", e))?;
+    match parsed.scheme() {
+        "http" | "https" => {}
+        other => {
+            return Err(format!(
+                "Unsupported URL scheme '{}': only http(s) is allowed",
+                other
+            ))
+        }
+    }
+    let host = parsed.host_str().ok_or("URL has no host")?.to_string();
+
+    // Host given as an IP literal — check it directly (no DNS).
+    if let Ok(ip) = host.parse::<IpAddr>() {
+        if is_blocked_ip(ip) {
+            return Err("Refusing to fetch a private or loopback address".to_string());
+        }
+        return Ok(parsed);
+    }
+
+    // Hostname — resolve and reject if ANY resolved address is blocked.
+    // DNS resolution is blocking, so run it on the blocking pool (our tokio
+    // build does not enable the `net` feature for async lookup_host).
+    let port = parsed.port_or_known_default().unwrap_or(80);
+    let resolved = tokio::task::spawn_blocking(move || {
+        (host.as_str(), port)
+            .to_socket_addrs()
+            .map(|it| it.collect::<Vec<_>>())
+    })
+    .await
+    .map_err(|e| format!("DNS resolution task failed: {}", e))?
+    .map_err(|e| format!("Could not resolve host: {}", e))?;
+    let mut saw_any = false;
+    for addr in resolved {
+        saw_any = true;
+        if is_blocked_ip(addr.ip()) {
+            return Err(
+                "Refusing to fetch a host that resolves to a private or loopback address"
+                    .to_string(),
+            );
+        }
+    }
+    if !saw_any {
+        return Err("Host did not resolve to any address".to_string());
+    }
+    Ok(parsed)
+}
+
+/// True if an IP is in a range we must never fetch from the main process
+/// (loopback, RFC-1918 private, link-local incl. cloud metadata, CGNAT, ULA…).
+fn is_blocked_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            let o = v4.octets();
+            v4.is_loopback()            // 127.0.0.0/8
+                || v4.is_private()      // 10/8, 172.16/12, 192.168/16
+                || v4.is_link_local()   // 169.254.0.0/16 (incl. 169.254.169.254 metadata)
+                || v4.is_broadcast()    // 255.255.255.255
+                || v4.is_unspecified()  // 0.0.0.0
+                || v4.is_documentation()
+                || o[0] == 0            // 0.0.0.0/8
+                || (o[0] == 100 && (o[1] & 0xc0) == 0x40) // 100.64.0.0/10 CGNAT
+        }
+        IpAddr::V6(v6) => {
+            if let Some(v4) = v6.to_ipv4_mapped() {
+                return is_blocked_ip(IpAddr::V4(v4));
+            }
+            let seg = v6.segments();
+            v6.is_loopback()
+                || v6.is_unspecified()
+                || (seg[0] & 0xfe00) == 0xfc00 // fc00::/7 unique-local
+                || (seg[0] & 0xffc0) == 0xfe80 // fe80::/10 link-local
+        }
+    }
 }
 
 /// Parse HTML and extract metadata using CSS selectors.
@@ -199,6 +338,21 @@ fn extract_domain(url: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Compile-time assertion: scraper must be pinned to 0.27 in Cargo.toml.
+    /// This test is RED when scraper = "0.23" and GREEN after the bump to "0.27".
+    #[test]
+    fn test_scraper_dependency_is_0_27() {
+        let cargo_toml = include_str!("../../Cargo.toml");
+        assert!(
+            cargo_toml.contains("scraper = \"0.27\""),
+            "Expected scraper = \"0.27\" in Cargo.toml but found: {}",
+            cargo_toml
+                .lines()
+                .find(|l| l.contains("scraper"))
+                .unwrap_or("<scraper line not found>")
+        );
+    }
 
     #[test]
     fn test_full_metadata() {
@@ -350,5 +504,51 @@ mod tests {
         let meta = parse_html_metadata("https://example.com", html);
         assert!(meta.title.is_none());
         assert!(meta.description.is_none());
+    }
+
+    #[test]
+    fn blocks_private_loopback_and_metadata_ips() {
+        for ip in [
+            "127.0.0.1",
+            "10.0.0.1",
+            "172.16.0.1",
+            "192.168.1.1",
+            "169.254.169.254", // cloud metadata
+            "100.64.0.1",      // CGNAT
+            "0.0.0.0",
+        ] {
+            assert!(
+                is_blocked_ip(ip.parse::<IpAddr>().unwrap()),
+                "{} should be blocked",
+                ip
+            );
+        }
+        assert!(is_blocked_ip("::1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("fe80::1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("fc00::1".parse::<IpAddr>().unwrap()));
+        assert!(is_blocked_ip("::ffff:127.0.0.1".parse::<IpAddr>().unwrap()));
+    }
+
+    #[test]
+    fn allows_public_ips() {
+        assert!(!is_blocked_ip("8.8.8.8".parse::<IpAddr>().unwrap()));
+        assert!(!is_blocked_ip("1.1.1.1".parse::<IpAddr>().unwrap()));
+        assert!(!is_blocked_ip("2606:4700:4700::1111".parse::<IpAddr>().unwrap()));
+    }
+
+    #[tokio::test]
+    async fn rejects_non_http_scheme() {
+        assert!(validate_public_url("file:///etc/passwd").await.is_err());
+        assert!(validate_public_url("ftp://example.com").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn rejects_ip_literal_to_internal_targets() {
+        // Cloud metadata, the app's own localhost inference server, and IPv6 loopback.
+        assert!(validate_public_url("http://169.254.169.254/latest/meta-data/")
+            .await
+            .is_err());
+        assert!(validate_public_url("http://127.0.0.1:8190/").await.is_err());
+        assert!(validate_public_url("http://[::1]/").await.is_err());
     }
 }

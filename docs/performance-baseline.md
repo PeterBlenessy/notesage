@@ -646,3 +646,33 @@ Cache miss path (first load or after external edit): identical to Phase 3b — c
 - Store operations are sub-millisecond — no concern for performance
 - CI budgets use 3x multiplier to account for shared runner variability
 - Dev budgets use 2x multiplier for local machine variance
+### 2026-06-14 — v0.46.0 release (`c6c34f7c`, code-identical to alpha.28 `9f3277f0`)
+
+**Machine:** Apple M3 / 24 GB RAM / macOS. Steady-state page refresh (not cold first launch).
+
+Dataset: 6 iCloud projects, 4 explorer folders, 11 sidebar sections, **4,343 total files**, 1 open tab (590 KB `.pptx`).
+
+**Skills pipeline:**
+
+| Step | ms |
+| --- | --- |
+| skill-scan | 870 |
+| skill-tool-extract (11 skills) | 47 |
+| agent-scan | 122 |
+| instruction-scan | 10 |
+| **phase1-ready (tools visible)** | **1,049** |
+| bundled-skills-extract | 8 |
+| phase2-extract | 50 |
+| **total** | **1,099** |
+
+**Startup & trees:**
+
+| Metric | ms |
+| --- | --- |
+| trees validated | 797 |
+| tree refresh (11 sections, 4,343 files) | 1,460 |
+| index init total | 888 |
+| **startup ready** | **2,274** |
+| tabs restored (1 tab, 590 KB pptx) | 1,860 |
+
+**Comparison vs the last recorded startup baseline (v0.32.1, 2026-04-14):** a large across-the-board improvement, achieved despite ~3.5× the files (4,343 vs 1,237). startup ready 13,068 → 2,274 ms (−83%); phase1-ready 5,426 → 1,049 ms (−81%); tree refresh 10,487 → 1,460 ms (−86%); skills total 8,793 → 1,099 ms (−88%, the old sequential skill-tool-extract bottleneck is gone — 3,175 → 47 ms). No regressions. Cross-date/cross-dataset comparison is approximate, but the direction is unambiguous.

@@ -21,6 +21,12 @@ use super::network_proxy::NetworkSandboxConfig;
 /// The basename is extracted before matching — callers don't need to normalize.
 /// Adding a new agent requires extending this match plus adding a matching
 /// Rust unit test.
+///
+/// POLICY — unknown/custom agent binaries get NOTHING by default. A basename
+/// that doesn't match a known agent receives no Bucket C re-allow entries
+/// (only the app's own `.notesage`); the deny-by-default `$HOME` read rule
+/// and the deny-last sensitive entries apply in full. Users opt in to extra
+/// paths via the connection's writable-paths UI, never via this table.
 #[cfg(target_os = "macos")]
 #[derive(Clone, Debug)]
 pub(crate) enum SandboxEntry {
@@ -84,6 +90,20 @@ pub(crate) fn agent_config_entries(agent_binary: &str) -> Vec<SandboxEntry> {
         // Google Gemini CLI via `gemini --acp`.
         "gemini" => {
             entries.push(SandboxEntry::Subpath(".gemini"));
+        }
+        // Goose (`goose acp`) — the Local Agent preset binary.
+        //
+        // The preset redirects Goose's XDG dirs into the Notesage-owned
+        // ~/.notesage/agents/goose tree (already covered by the `.notesage`
+        // grant above), so in the happy path no extra row is needed. These
+        // conventional XDG dirs are a fallback for the case where Goose ignores
+        // the XDG redirect on a given platform. Narrowed to Goose's own dirs —
+        // do NOT broaden to all of `~/.config`.
+        "goose" => {
+            entries.push(SandboxEntry::Subpath(".config/goose"));
+            entries.push(SandboxEntry::Subpath(".cache/goose"));
+            entries.push(SandboxEntry::Subpath(".local/share/goose"));
+            entries.push(SandboxEntry::Subpath(".local/state/goose"));
         }
         // Unknown / custom agent binaries get only `.notesage` — defense in
         // depth: no cross-agent config leakage by default.
@@ -247,13 +267,22 @@ pub fn generate_seatbelt_profile(
     //   (allow network*) permits all network. Proxy env vars are the only enforcement.
     let network_block = if kernel_network_deny {
         if let Some(nc) = network_config {
+            // Extra direct-localhost allows (e.g. the bundled llama-server port
+            // for the Goose preset). Each is a loopback service the agent
+            // reaches without the proxy; ordinary agents have none, so the
+            // confinement to {proxy port} is unchanged for them.
+            let extra_port_allows: String = nc
+                .extra_localhost_ports
+                .iter()
+                .map(|p| format!("\n(allow network-outbound (remote ip \"localhost:{}\"))", p))
+                .collect();
             format!(
                 r#";; Network: kernel-enforced deny (deny default blocks all network)
-;; Only the proxy port on localhost is reachable from within the sandbox.
+;; Only the proxy port (+ any explicit extra localhost ports) is reachable.
 ;; DNS is blocked — resolution happens through the proxy outside the sandbox.
 
 ;; Allow connecting to the proxy port
-(allow network-outbound (remote ip "localhost:{port}"))
+(allow network-outbound (remote ip "localhost:{port}")){extra_port_allows}
 
 ;; Allow localhost bind + inbound for agent subprocess IPC
 ;; Uses "*:*" for IPv6 dual-stack compat (::ffff:127.0.0.1 vs 127.0.0.1)
@@ -495,7 +524,14 @@ pub fn cleanup_legacy_profiles() {
 
 /// Determine if sandbox should be enabled by default based on binary source.
 /// Managed installs (downloaded by Notesage) are sandboxed by default.
-/// System installs (user's own) are not sandboxed by default.
+/// System installs (the user's own KNOWN agent CLIs) are not sandboxed by default.
+///
+/// NOTE: this default only applies when the connection carries no explicit
+/// `sandboxEnabled` value. `custom_acp` connections (arbitrary user-supplied
+/// binaries at absolute paths) are registered with an explicit `true` by
+/// `registerCustomAcpConnection` — relying on this source-based default for
+/// them would leave arbitrary third-party binaries unsandboxed (locked by the
+/// registration test in `useAcpLifecycle.custom-agent.test.ts`).
 pub fn should_sandbox_by_default(binary_path: &str) -> bool {
     let managed_dir = dirs::home_dir()
         .unwrap_or_default()
@@ -570,6 +606,101 @@ mod tests {
             NetworkSandboxConfig {
                 proxy_addr: format!("127.0.0.1:{}", port),
                 proxy_port: port,
+                extra_localhost_ports: Vec::new(),
+            }
+        }
+
+        fn make_network_config_with_extra(port: u16, extra: Vec<u16>) -> NetworkSandboxConfig {
+            NetworkSandboxConfig {
+                proxy_addr: format!("127.0.0.1:{}", port),
+                proxy_port: port,
+                extra_localhost_ports: extra,
+            }
+        }
+
+        /// Count of `(allow network-outbound (remote ip "localhost:N"))` lines.
+        fn localhost_allow_count(content: &str) -> usize {
+            content
+                .matches(r#"(allow network-outbound (remote ip "localhost:"#)
+                .count()
+        }
+
+        // Task #9 regression lock: the Local Agent preset profile must allow
+        // EXACTLY {proxy port, llama-server port} on localhost — no more.
+        #[test]
+        fn preset_profile_allows_exactly_proxy_and_llama_ports() {
+            let id = "test-preset-ports";
+            let nc = make_network_config_with_extra(12345, vec![8137]);
+            let result =
+                generate_seatbelt_profile(id, "goose", &[], Some(&nc), true);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            assert!(
+                content.contains(r#"(allow network-outbound (remote ip "localhost:12345"))"#),
+                "preset profile must allow the proxy port:\n{}",
+                content
+            );
+            assert!(
+                content.contains(r#"(allow network-outbound (remote ip "localhost:8137"))"#),
+                "preset profile must allow the llama-server port:\n{}",
+                content
+            );
+            assert_eq!(
+                localhost_allow_count(&content),
+                2,
+                "preset profile must allow EXACTLY 2 localhost ports (proxy + llama), got:\n{}",
+                content
+            );
+        }
+
+        // An ordinary agent (no extra ports) stays confined to the proxy port only.
+        #[test]
+        fn ordinary_agent_allows_only_proxy_port() {
+            let id = "test-ordinary-ports";
+            let nc = make_network_config(12345);
+            let result =
+                generate_seatbelt_profile(id, "claude-agent-acp", &[], Some(&nc), true);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            assert_eq!(
+                localhost_allow_count(&content),
+                1,
+                "ordinary agent must allow EXACTLY the proxy port on localhost, got:\n{}",
+                content
+            );
+        }
+
+        // Goose's Bucket C row: its own config/cache/data/state dirs re-allowed,
+        // sibling agent dirs still denied.
+        #[test]
+        fn goose_bucket_c_grants_own_dirs_only() {
+            let id = "test-goose-bucket-c";
+            let result = generate_seatbelt_profile(id, "goose", &[], None, false);
+            let path = result.expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            // Goose's own conventional XDG dirs are the only Bucket C grants.
+            for own in [".config/goose", ".cache/goose", ".local/share/goose", ".local/state/goose"] {
+                assert!(
+                    content.contains(&home_subpath_needle(own)),
+                    "Goose profile must re-allow ~/{} — got:\n{}",
+                    own,
+                    content
+                );
+            }
+            // Sibling agent config dirs stay denied.
+            for sibling in [".claude", ".codex", ".gemini", ".copilot"] {
+                assert!(
+                    !content.contains(&home_subpath_needle(sibling)),
+                    "Goose profile must NOT re-allow sibling {} — got:\n{}",
+                    sibling,
+                    content
+                );
             }
         }
 
@@ -1076,6 +1207,100 @@ mod tests {
             assert!(
                 !content.contains("Library/Keychains/login.keychain-db"),
                 "Unknown-agent profile must NOT allow login.keychain-db:\n{}",
+                content,
+            );
+        }
+
+        // ---------------------------------------------------------------------
+        // Local-AI-agents task #3 — conservative defaults for unknown/custom
+        // agent binaries.
+        //
+        // Custom ACP agents (any binary the user registers) must start
+        // maximally confined: no Bucket C re-allow entries, deny-by-default
+        // $HOME reads, and the deny-last sensitive entries intact. The `_`
+        // arm in `agent_config_entries` grants nothing — these tests lock
+        // that in so a future Bucket C edit can't accidentally widen the
+        // unknown-basename profile.
+        // ---------------------------------------------------------------------
+
+        #[test]
+        fn unknown_basenames_get_no_bucket_c_entries() {
+            // Bare names AND absolute paths (basename extraction must not
+            // accidentally match a known agent for custom binaries).
+            for (id, binary) in [
+                ("task3-goose-custom", "goose-custom"),
+                ("task3-my-agent", "my-agent"),
+                ("task3-abs-custom", "/Users/peter/.notesage/agents/bin/my-agent"),
+            ] {
+                let content = profile_contents(id, binary);
+
+                for bucket_c in [".claude", ".codex", ".copilot", ".gemini"] {
+                    assert!(
+                        !content.contains(&home_subpath_needle(bucket_c)),
+                        "Unknown binary {binary} must NOT get ~{bucket_c} — Bucket C is opt-in via writable-paths UI:\n{content}",
+                    );
+                }
+                assert!(
+                    !content.contains(".claude.json"),
+                    "Unknown binary {binary} must NOT get the .claude.json literal:\n{content}",
+                );
+                assert!(
+                    !content.contains("Library/Keychains/login.keychain-db"),
+                    "Unknown binary {binary} must NOT get the keychain literal:\n{content}",
+                );
+            }
+        }
+
+        #[test]
+        fn known_basenames_keep_bucket_c_grants() {
+            // One assertion per known agent — a future refactor of the
+            // Bucket C table can't silently drop a grant without failing here.
+            for (id, binary, expected) in [
+                ("task3-keep-claude", "claude-agent-acp", ".claude"),
+                ("task3-keep-codex", "codex-acp", ".codex"),
+                ("task3-keep-copilot", "copilot", ".copilot"),
+                ("task3-keep-copilot-lsp", "copilot-language-server", ".copilot"),
+                ("task3-keep-gemini", "gemini", ".gemini"),
+            ] {
+                let content = profile_contents(id, binary);
+                assert!(
+                    content.contains(&home_subpath_needle(expected)),
+                    "{binary} profile must keep its ~{expected} Bucket C grant:\n{content}",
+                );
+            }
+        }
+
+        #[test]
+        fn unknown_basename_profile_keeps_home_deny_and_deny_last() {
+            // Maximal confinement: the unknown-basename profile must keep the
+            // deny-by-default $HOME read rule AND the explicit deny-last
+            // sensitive entries — Bucket C narrowing must not perturb either.
+            let content = profile_contents("task3-unknown-denies", "my-agent");
+
+            let home = dirs::home_dir().unwrap();
+            let home_deny = format!("(deny file-read* (subpath \"{}\"))", home.display());
+            assert!(
+                content.contains(&home_deny),
+                "Unknown-agent profile must deny $HOME reads by default; expected `{}` in:\n{}",
+                home_deny, content,
+            );
+
+            for sensitive in [".ssh", ".aws", ".gnupg"] {
+                let needle = home_subpath_needle(sensitive);
+                assert!(
+                    content.contains(&needle),
+                    "Unknown-agent profile must keep the ~{} deny-last entry; expected `{}` in:\n{}",
+                    sensitive, needle, content,
+                );
+            }
+            assert!(
+                content.contains(r#"(regex #"\.env$")"#),
+                "Unknown-agent profile must keep the .env deny regex:\n{}",
+                content,
+            );
+            assert!(
+                content.contains(r#"(regex #"\.env\..*$")"#),
+                "Unknown-agent profile must keep the .env.* deny regex:\n{}",
                 content,
             );
         }

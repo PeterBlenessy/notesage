@@ -1,13 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { Wrench, ChevronDown } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
+import { Wrench } from 'lucide-react';
 import type { PendingToolPermission } from '@/stores/tool-permission-store';
+import { useIsRequestForeground } from '@/hooks/useSessionManager';
+import { resolveDirectPermission, type ApprovalTier } from '@/lib/ai/permission-resolve';
+import { TieredApprovalButtons } from '@/components/chat/TieredApprovalButtons';
+import { formatToolArgsPreview } from '@/lib/ai/tool-args';
 
 interface ToolCallPermissionCardProps {
   request: PendingToolPermission;
@@ -19,6 +16,9 @@ interface ToolCallPermissionCardProps {
  * Follows the same pattern as PermissionCard (ACP) and DomainApprovalCard.
  * Rendered inline in the chat stream when the tool execution loop
  * (useDirectApiChat) encounters a tool call that needs user approval.
+ *
+ * Resolves through the shared `resolveDirectPermission` + `TieredApprovalButtons`
+ * (review #6/#7) so the in-stream and history-inline approval forms never drift.
  */
 export function ToolCallPermissionCard({ request, onResolved }: ToolCallPermissionCardProps) {
   const [resolved, setResolved] = useState<string | null>(null);
@@ -26,15 +26,38 @@ export function ToolCallPermissionCard({ request, onResolved }: ToolCallPermissi
   const resolvedRef = useRef(false);
   const onResolvedRef = useRef(onResolved);
   onResolvedRef.current = onResolved;
+  // Foreground-aware auto-deny (task #7): only count down while this request's
+  // session is the one being watched. A backgrounded request never auto-denies
+  // — the desktop notification (task #15) is its time-sensitive signal.
+  const isForeground = useIsRequestForeground(request.conversationId);
 
-  // Auto-deny after 30 seconds
+  const TIER_LABEL: Record<ApprovalTier, string> = {
+    allow: `Allowed "${request.name}" once`,
+    session: `Allowed "${request.name}" for session`,
+    always: `Allowed "${request.name}" always`,
+    deny: `Denied "${request.name}"`,
+  };
+
+  const decide = (tier: ApprovalTier) => {
+    if (resolvedRef.current) return;
+    resolvedRef.current = true;
+    resolveDirectPermission(request, tier);
+    setResolved(TIER_LABEL[tier]);
+    setTimeout(() => onResolvedRef.current?.(request.id), 1500);
+  };
+
+  // Auto-deny after 30 seconds — only while foreground.
   useEffect(() => {
+    if (!isForeground) {
+      setCountdown(30); // frozen while backgrounded; restarts on foreground
+      return;
+    }
     const timer = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
           if (!resolvedRef.current) {
             resolvedRef.current = true;
-            request.resolve('deny');
+            resolveDirectPermission(request, 'deny');
             setResolved(`Tool call "${request.name}" timed out — denied.`);
             setTimeout(() => onResolvedRef.current?.(request.id), 1500);
           }
@@ -45,51 +68,7 @@ export function ToolCallPermissionCard({ request, onResolved }: ToolCallPermissi
     }, 1000);
     return () => clearInterval(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [request.id]);
-
-  const handleAllow = () => {
-    if (resolvedRef.current) return;
-    resolvedRef.current = true;
-    request.resolve('allow');
-    setResolved(`Allowed "${request.name}" once`);
-    setTimeout(() => onResolved?.(request.id), 1500);
-  };
-
-  const handleAllowSession = () => {
-    if (resolvedRef.current) return;
-    resolvedRef.current = true;
-    request.resolve('session');
-    setResolved(`Allowed "${request.name}" for session`);
-    setTimeout(() => onResolved?.(request.id), 1500);
-  };
-
-  const handleAllowAlways = () => {
-    if (resolvedRef.current) return;
-    resolvedRef.current = true;
-    request.resolve('always');
-    setResolved(`Allowed "${request.name}" always`);
-    setTimeout(() => onResolved?.(request.id), 1500);
-  };
-
-  const handleDeny = () => {
-    if (resolvedRef.current) return;
-    resolvedRef.current = true;
-    request.resolve('deny');
-    setResolved(`Denied "${request.name}"`);
-    setTimeout(() => onResolved?.(request.id), 1500);
-  };
-
-  const formatArgs = (args: Record<string, unknown>): string | null => {
-    const entries = Object.entries(args);
-    if (entries.length === 0) return null;
-    return entries
-      .map(([key, val]) => {
-        const strVal = typeof val === 'string' ? val : JSON.stringify(val);
-        const truncated = strVal.length > 80 ? strVal.slice(0, 80) + '\u2026' : strVal;
-        return `${key}: ${truncated}`;
-      })
-      .join('\n');
-  };
+  }, [request.id, isForeground]);
 
   if (resolved) {
     return (
@@ -100,7 +79,7 @@ export function ToolCallPermissionCard({ request, onResolved }: ToolCallPermissi
     );
   }
 
-  const formattedArgs = formatArgs(request.arguments);
+  const formattedArgs = formatToolArgsPreview(request.arguments);
 
   return (
     <div className="rounded-lg border border-border bg-card px-3 py-2.5">
@@ -115,42 +94,11 @@ export function ToolCallPermissionCard({ request, onResolved }: ToolCallPermissi
           )}
         </div>
       </div>
-      <div className="flex items-center gap-1.5 mt-2 ml-[26px]">
-        <Button variant="ghost" size="xs" onClick={handleDeny}>
-          Deny{countdown < 30 ? ` (${countdown}s)` : ''}
-        </Button>
-        <div className="flex items-center">
-          <Button
-            variant="default"
-            size="xs"
-            className="rounded-r-none"
-            onClick={handleAllow}
-          >
-            Allow
-          </Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="default"
-                size="xs"
-                className="rounded-l-none border-l border-l-primary-foreground/20 px-1"
-              >
-                <ChevronDown className="h-3 w-3" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="min-w-[160px]">
-              <DropdownMenuItem onClick={handleAllow}>
-                Allow once
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleAllowSession}>
-                Allow for this session
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleAllowAlways}>
-                Always allow
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
+      <div className="mt-2 ml-[26px]">
+        <TieredApprovalButtons
+          onDecide={decide}
+          denySuffix={countdown < 30 ? ` (${countdown}s)` : ''}
+        />
       </div>
     </div>
   );

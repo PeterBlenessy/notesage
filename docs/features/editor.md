@@ -26,9 +26,9 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 ## Editing Features
 
-- Top toolbar with formatting controls: heading level picker, undo/redo, bold, italic, underline, strikethrough, code, subscript, superscript, text color, highlight, bullet list, ordered list, task list, indent/outdent, blockquote, callout picker (4 types), code block, horizontal rule, alignment (left/center/right), table, image, drawing, typography settings (searchable font picker with 14 presets + all installed system fonts, font size, line height, paragraph spacing), dictation
+- Top toolbar with formatting controls: heading level picker, undo/redo, bold, italic, underline, strikethrough, code, subscript, superscript, text color, highlight, bullet list, ordered list, task list, indent/outdent, blockquote, callout picker (4 types), code block, horizontal rule, alignment (left/center/right), table, image, drawing, typography settings (searchable font picker with 14 presets + all installed system fonts, font size, line height, paragraph spacing)
 - Bubble menu on text selection with AI actions (Improve, Summarize, Expand) — toggleable in settings
-- Right-click "Add to chat" on images and drawing blocks sends the image to the AI chat panel as an attachment (via `SendToAI` ProseMirror plugin and vision event bus)
+- Right-click "Add to chat" on images and drawing blocks sends the image to the FloatingCommandBar as an attachment (via `SendToAI` ProseMirror plugin and vision event bus)
 - Floating table toolbar appears when cursor is inside a table — add/remove rows and columns, merge/split cells, toggle header row, delete table
 - ~~Block drag handles~~ — deferred, needs unified left-gutter design
 - ~~Item annotations~~ — deferred, needs unified left-gutter design
@@ -40,12 +40,11 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 ## Document Switching Surface
 
-The editor exposes the active document and switching affordance differently depending on which layout shell is mounted:
+QuietLayout (`src/components/QuietLayout.tsx`) renders no tab bar and no breadcrumb row. The active document's filename surfaces in the macOS window title, the sidebar (the open file is highlighted in Recent/Pinned and in the tree with an accent icon), and — when enabled — the optional `TitleBar` (`src/components/TitleBar.tsx`, gated on `settings.showTitleBar`, **off by default**), which also shows a dirty dot + hover-revealed close-document × button. With the title bar hidden the document column reclaims the top space (flush when the sidebar is shown; editor flows under a transparent top zone when the sidebar is also hidden). The status strip (word count · `⌘.` focus hint) lives in the **sidebar footer** (the editor portals it there via `SidebarStatusBar`), so the editor runs edge-to-edge; the "saved Xs ago" readout was removed (redundant with auto-save — `SavedLabel.tsx` is now unused). Document switching happens via the `QuietSidebar` (including the inline `→`-expand peek on a focused project/folder row), the recent-document cycle (⌃Tab / ⌃⇧Tab), or the command bar.
 
-- **Classic Layout** (`src/components/Layout.tsx`, default): a `TabBar` (`src/components/tabs/TabBar.tsx`) renders along the top of the editor area with one tab per open document, drag-to-reorder, middle-click to close, dirty-dot indicator, and the standard `Cmd+W` close shortcut.
-- **Quiet Composer Layout** (`src/components/QuietLayout.tsx`, gated behind `settings.uiPreview === "quiet-composer"`): there is no tab bar and no breadcrumb row — the active document's filename surfaces in the macOS window title and the `TitleBar` (`src/components/TitleBar.tsx`), which also shows a dirty dot + right-aligned "saved Xs ago" timer (via `src/components/SavedLabel.tsx`) when a document is active. Document switching happens via the `QuietSidebar`, the `TreeOverlay` (⌘⇧E), the recent-document cycle (⌘⇧[ / ⌘⇧]), or the command bar. An earlier `DocHead` breadcrumb component originally carried this chrome; it was removed in task #131 of the 2026-04-21 UI refresh because the breadcrumb felt redundant against the window title.
+Quiet Composer is a single-document shell — opening a new document evicts the prior one. State lives in `editor-store.openDocuments` (the array name retains "Documents" plural for migration compatibility, but in practice it holds at most one entry).
 
-Both shells read from the same `editor-store.openDocuments` array — only the surface is different, the underlying state is shared.
+An earlier `DocHead` breadcrumb component originally carried the document chrome; it was removed in task #131 of the 2026-04-21 UI refresh because the breadcrumb felt redundant against the window title.
 
 ## File Management
 
@@ -166,8 +165,8 @@ Hashtag-based tagging system with visual badges, autocomplete, and cross-file se
 | --- | --- |
 | `src/components/editor/Editor.tsx` | Main editor wrapper |
 | `src/components/editor/EditorContent.tsx` | Tiptap content area |
-| `src/components/SavedLabel.tsx` | Shared "saved Xs ago" label used by TitleBar (quiet) and StatusBar |
-| `src/components/tabs/TabBar.tsx` | Classic Layout tab bar (legacy shell) |
+| `src/components/SavedLabel.tsx` | "saved Xs ago" label — currently unused (removed from StatusBar 2026-07-01) |
+| `src/stores/sidebar-status-slot-store.ts` | Slot node the editor's `SidebarStatusBar` portals into (sidebar footer) |
 | `src/components/editor/Toolbar.tsx` | Floating format toolbar |
 | `src/components/editor/SlashCommand.tsx` | Slash command menu |
 | `src/components/editor/BubbleMenu.tsx` | Selection bubble menu |
