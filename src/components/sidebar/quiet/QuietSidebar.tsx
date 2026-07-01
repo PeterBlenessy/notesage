@@ -5,8 +5,16 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Filter, X } from "lucide-react";
+import { Filter, Settings, X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useSidebarStatusSlotStore } from "@/stores/sidebar-status-slot-store";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import {
@@ -125,7 +133,12 @@ function WorkspaceHeader() {
   );
 }
 
-export function QuietSidebar() {
+export function QuietSidebar({
+  onOpenSettings,
+}: {
+  /** Opens the Settings dialog — driven from the footer's gear button. */
+  onOpenSettings?: () => void;
+}) {
   const [filter, setFilter] = useState<string>("");
   const setPendingCreateProject = useQuietSidebarStore(
     (s) => s.setPendingCreateProject,
@@ -234,6 +247,10 @@ export function QuietSidebar() {
         <TagsSection filter={filter} />
         <MentionsSection filter={filter} />
       </div>
+      {/* Sticky footer — OUTSIDE the scroll body so it never moves when the
+          section list scrolls. Holds the discoverable Settings button and the
+          status strip relocated from the editor footer. */}
+      <SidebarFooter onOpenSettings={onOpenSettings} />
       <SidebarResizeHandle />
     </nav>
   );
@@ -332,6 +349,58 @@ function SidebarResizeHandle() {
         "after:absolute after:inset-y-0 after:left-1/2 after:w-4 after:-translate-x-1/2",
       )}
     />
+  );
+}
+
+/**
+ * Sticky bottom bar. Rendered as a sibling of the scroll body (not inside it),
+ * so it stays pinned to the sidebar's bottom edge while the section list scrolls
+ * — mirroring how `WorkspaceHeader` is pinned at the top.
+ *
+ * Left: a discoverable Settings gear whose tooltip teaches the `⌘,` shortcut
+ * (the reason this exists — the shortcut was previously undiscoverable). Right:
+ * the status slot that the editor's `StatusBar` portals into (status-tray
+ * trigger + word count + focus-mode hint), relocated here so the editor column
+ * runs edge-to-edge.
+ */
+function SidebarFooter({ onOpenSettings }: { onOpenSettings?: () => void }) {
+  const setSlot = useSidebarStatusSlotStore((s) => s.setEl);
+  return (
+    <div
+      // Isolate footer keystrokes from the nav's type-to-filter handler so
+      // activating the gear (Space/Enter) or focusing the status strip doesn't
+      // leak characters into the filter string.
+      onKeyDown={(e) => e.stopPropagation()}
+      className="mt-2 pt-2 flex items-center gap-1 shrink-0 border-t border-border"
+    >
+      <TooltipProvider delayDuration={300}>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              aria-label="Settings"
+              onClick={onOpenSettings}
+              className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <Settings className="size-4" strokeWidth={1.5} aria-hidden="true" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="top" className="flex items-center gap-2">
+            <span>Settings</span>
+            <kbd className="font-sans text-[10px] text-muted-foreground">⌘,</kbd>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+      {/* Portal target for the editor's StatusBar. Empty (0-height content)
+          when no document is open — the gear still anchors the bar. */}
+      <div
+        ref={setSlot}
+        data-sidebar-status-slot
+        className="flex-1 min-w-0 flex items-center"
+      />
+    </div>
   );
 }
 

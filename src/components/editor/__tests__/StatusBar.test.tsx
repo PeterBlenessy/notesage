@@ -201,11 +201,10 @@ describe('StatusBar', () => {
       expect(container.textContent ?? '').not.toContain('1 words');
     });
 
-    it('renders the "saved Xs ago" label next to the word count when a tab is active (live-test 2026-04-26)', () => {
-      // Saved-ago was moved BACK into QuietStatusBar from the TitleBar
-      // so word count and last-save recency are colocated. The shared
-      // SavedLabel is still suppressed mid-edit; clean tabs with a
-      // known lastSavedAt show "saved Ns ago".
+    it('does NOT render a "saved Xs ago" label, even for a clean saved tab (removed 2026-07-01)', () => {
+      // Saved-ago was dropped when the strip moved into the narrow sidebar
+      // footer — redundant with auto-save and no room beside the Settings
+      // button. Even a clean tab with a known lastSavedAt shows no label.
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       openTab('/p/file.md', 'file.md', Date.now() - 3_000);
 
@@ -213,7 +212,7 @@ describe('StatusBar', () => {
         <StatusBar editor={editor} />,
       );
 
-      expect(container.textContent ?? '').toMatch(/saved \d+s ago/);
+      expect(container.textContent ?? '').not.toMatch(/saved \d+s ago/);
     });
 
     it('omits the saved-ago label entirely when no tab is active', () => {

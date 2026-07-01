@@ -222,7 +222,7 @@ export function QuietLayout(props: QuietLayoutProps) {
         traffic lights. Internal `pt-10` keeps content clear of the
         macOS traffic-light safe zone.
        */}
-      {sidebarPinned ? <QuietSidebar /> : null}
+      {sidebarPinned ? <QuietSidebar onOpenSettings={props.onOpenSettings} /> : null}
 
       {/* Right column: title bar above doc-area. The title bar centres
           its label inside this column, which means the title shares a
