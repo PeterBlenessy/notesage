@@ -258,6 +258,8 @@ Flat-list sidebar in fixed section order: **Pinned → Projects → Folders → 
 
 **Sticky header.** The workspace header (Notesage "N" avatar + name) stays pinned at the top; only the section list below scrolls (the `nav` is `overflow-hidden` with a separate inner scroll container).
 
+**Sticky footer.** A bottom bar (`SidebarFooter`) is pinned at the bottom edge — a sibling of the scroll body, not inside it, so it never moves as the list scrolls. It holds a **Settings gear** (ghost icon button whose tooltip teaches the `⌘,` shortcut — added because the shortcut was otherwise undiscoverable) and the **status strip** relocated from the editor footer (status-tray trigger · word count · `⌘.` focus hint), which the editor portals in via `SidebarStatusBar`. See "Status Tray + Status Bar" below.
+
 **Active-document highlight.** Child rows in the Projects / Folders trees mark the open document — the file icon takes `--color-accent-primary` and the name goes solid/medium (`data-active` + `aria-current="page"`). A lightweight icon-led selection cue, not a full-row fill (the top-level project/folder row uses its existing `bg-muted` active treatment).
 
 Type-to-filter: when the sidebar has focus, printable keys append to a local filter string passed down to every section. A small badge at the top shows the current filter; Backspace deletes a character, `Esc` clears. Text-entry surfaces inside the sidebar (rename rows) own their own keystrokes via an `isTypingTarget` guard.
@@ -289,13 +291,15 @@ Implementation: `src/components/sidebar/quiet/FolderPeek.tsx`.
 - **Sidebar shown** → the document column sits **flush at y=0** (the macOS traffic lights are over the sidebar, not this column).
 - **Sidebar also hidden** (`⌘⇧L`) → the editor surface flows under a **transparent** top zone; the editor's content + pill toolbar are pushed down (CSS gated on the root `data-titlebar-hidden` + the doc-area `data-sidebar-pinned="false"`) so the first line and controls clear the traffic-light safe zone, and a full-width invisible drag strip hosts the lights + window dragging.
 
-When shown, `TitleBar` (`src/components/TitleBar.tsx`) sits at the top of the editor zone with no tab strip beneath it (a breadcrumb row used to render here as `DocHead`; removed in task #131) and carries two pieces of document chrome in its right zone: a dirty dot (shown when the active tab has unsaved edits) and a hover-revealed close-document × button. The filename is centred in the bar via `editor-store.activeTabId`. The "saved Xs ago" timer lives in `StatusBar` (`src/components/SavedLabel.tsx`) regardless of the title bar.
+When shown, `TitleBar` (`src/components/TitleBar.tsx`) sits at the top of the editor zone with no tab strip beneath it (a breadcrumb row used to render here as `DocHead`; removed in task #131) and carries two pieces of document chrome in its right zone: a dirty dot (shown when the active tab has unsaved edits) and a hover-revealed close-document × button. The filename is centred in the bar via `editor-store.activeTabId`. (The "saved Xs ago" readout that formerly lived in `StatusBar` was removed on 2026-07-01 when the status strip moved into the sidebar footer — it was redundant with auto-save.)
 
 ### Status Tray + Status Bar
 
-Compact strip pinned to the bottom of the editor zone with a popover for detail. The `StatusBar` is the always-visible row (file name, dirty indicator, language, completion provider icon); the `StatusTray` is the popover-anchored detail panel (provider switcher, completion toggle, recording controls, tools indicator).
+Compact strip (status dot · word count · `⌘.` focus hint) with a popover for detail. The `StatusBar` is the always-visible row; the `StatusTray` is the popover-anchored detail panel (provider switcher, completion toggle, recording controls, tools indicator).
 
-Implementation: `src/components/editor/StatusBar.tsx`, `src/components/editor/StatusTray.tsx`.
+**Location — the sidebar footer, not the editor.** The strip lives in the QuietSidebar's sticky bottom bar (next to the Settings button), so the editor column runs edge-to-edge top-to-bottom. `StatusBar` stays a plain inline component (testable in isolation); the app renders it through `SidebarStatusBar`, which **portals the strip into the sidebar footer slot** (registered via `sidebar-status-slot-store`) or renders **nothing** when the sidebar — and thus the slot — is hidden (`⌘⇧L`). There is no inline-in-editor fallback: the status footer only ever appears in the sidebar. The "saved Xs ago" readout was removed from the strip (redundant with auto-save; no room in the narrow footer).
+
+Implementation: `src/components/editor/StatusBar.tsx` (`StatusBar` strip + `SidebarStatusBar` portal wrapper), `src/components/editor/StatusTray.tsx`, `src/stores/sidebar-status-slot-store.ts`, `src/components/sidebar/quiet/QuietSidebar.tsx` (`SidebarFooter`).
 
 ### Focus Mode (`⌘.`)
 

@@ -63,7 +63,7 @@ import { FindBar } from "./FindBar";
 import { TranscriptionOverlay } from "./TranscriptionOverlay";
 import { CommentPopover } from "./CommentPopover";
 import { DatePickerPopover } from "./DatePickerPopover";
-import { StatusBar } from "./StatusBar";
+import { SidebarStatusBar } from "./StatusBar";
 import { FrontmatterBlock } from "./FrontmatterBlock";
 import { DocumentOutline } from "@/components/DocumentOutline";
 import { getDocumentDir } from "@/lib/image-utils";
@@ -582,7 +582,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           <span className="text-xs max-w-md text-center break-words font-mono opacity-50">{activeTab.loadError}</span>
         </div>
         {!focusMode && (
-          <StatusBar editor={null} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
+          <SidebarStatusBar editor={null} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
         )}
       </div>
     );
@@ -596,7 +596,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           Loading...
         </div>
         {!focusMode && (
-          <StatusBar editor={null} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
+          <SidebarStatusBar editor={null} onShortcutsOpen={onShortcutsOpen} onOpenActions={onOpenActions} />
         )}
       </div>
     );
@@ -766,7 +766,7 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         </div>
       )}
       {!focusMode && (
-        <StatusBar
+        <SidebarStatusBar
           editor={editor}
           onToggleViewMode={activeTab?.fileType === "markdown" ? handleToggleViewMode : undefined}
           comments={commentOps.comments}

@@ -40,7 +40,7 @@ Tiptap-powered rich text editor with full markdown round-tripping.
 
 ## Document Switching Surface
 
-QuietLayout (`src/components/QuietLayout.tsx`) renders no tab bar and no breadcrumb row. The active document's filename surfaces in the macOS window title, the sidebar (the open file is highlighted in Recent/Pinned and in the tree with an accent icon), the StatusBar, and — when enabled — the optional `TitleBar` (`src/components/TitleBar.tsx`, gated on `settings.showTitleBar`, **off by default**), which also shows a dirty dot + hover-revealed close-document × button. With the title bar hidden the document column reclaims the top space (flush when the sidebar is shown; editor flows under a transparent top zone when the sidebar is also hidden). The "saved Xs ago" timer lives in `StatusBar` (`src/components/SavedLabel.tsx`) regardless. Document switching happens via the `QuietSidebar` (including the inline `→`-expand peek on a focused project/folder row), the recent-document cycle (⌃Tab / ⌃⇧Tab), or the command bar.
+QuietLayout (`src/components/QuietLayout.tsx`) renders no tab bar and no breadcrumb row. The active document's filename surfaces in the macOS window title, the sidebar (the open file is highlighted in Recent/Pinned and in the tree with an accent icon), and — when enabled — the optional `TitleBar` (`src/components/TitleBar.tsx`, gated on `settings.showTitleBar`, **off by default**), which also shows a dirty dot + hover-revealed close-document × button. With the title bar hidden the document column reclaims the top space (flush when the sidebar is shown; editor flows under a transparent top zone when the sidebar is also hidden). The status strip (word count · `⌘.` focus hint) lives in the **sidebar footer** (the editor portals it there via `SidebarStatusBar`), so the editor runs edge-to-edge; the "saved Xs ago" readout was removed (redundant with auto-save — `SavedLabel.tsx` is now unused). Document switching happens via the `QuietSidebar` (including the inline `→`-expand peek on a focused project/folder row), the recent-document cycle (⌃Tab / ⌃⇧Tab), or the command bar.
 
 Quiet Composer is a single-document shell — opening a new document evicts the prior one. State lives in `editor-store.openDocuments` (the array name retains "Documents" plural for migration compatibility, but in practice it holds at most one entry).
 
@@ -165,7 +165,8 @@ Hashtag-based tagging system with visual badges, autocomplete, and cross-file se
 | --- | --- |
 | `src/components/editor/Editor.tsx` | Main editor wrapper |
 | `src/components/editor/EditorContent.tsx` | Tiptap content area |
-| `src/components/SavedLabel.tsx` | "saved Xs ago" label rendered by StatusBar |
+| `src/components/SavedLabel.tsx` | "saved Xs ago" label — currently unused (removed from StatusBar 2026-07-01) |
+| `src/stores/sidebar-status-slot-store.ts` | Slot node the editor's `SidebarStatusBar` portals into (sidebar footer) |
 | `src/components/editor/Toolbar.tsx` | Floating format toolbar |
 | `src/components/editor/SlashCommand.tsx` | Slash command menu |
 | `src/components/editor/BubbleMenu.tsx` | Selection bubble menu |

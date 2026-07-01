@@ -17,6 +17,7 @@ import { HtmlViewer } from "../HtmlViewer";
 import { PlainTextViewer } from "../PlainTextViewer";
 import { EditorViewerContainer } from "../../EditorViewerContainer";
 import { useSettingsStore } from "@/stores/settings-store";
+import { useSidebarStatusSlotStore } from "@/stores/sidebar-status-slot-store";
 import { setMockInvokeHandler } from "@/test/tauri-mock";
 import { HTML_KEY_NS, HTML_FIND_NS } from "../html-find-frame";
 
@@ -1068,6 +1069,20 @@ describe("HtmlViewer — Find opens in iframe render modes (in-frame search)", (
 
 // Bug 5 — htmlSourceMode in EditorViewerContainer must reset on tab switch
 describe("EditorViewerContainer — Bug 5: htmlSourceMode resets to false on tab switch", () => {
+  // The status strip (and its tray, which hosts the view-mode toggle) now
+  // portals into the sidebar footer slot and renders nothing without one.
+  // Register a slot so SidebarStatusBar mounts in this standalone viewer test.
+  let statusSlot: HTMLElement;
+  beforeEach(() => {
+    statusSlot = document.createElement("div");
+    document.body.appendChild(statusSlot);
+    useSidebarStatusSlotStore.getState().setEl(statusSlot);
+  });
+  afterEach(() => {
+    useSidebarStatusSlotStore.getState().setEl(null);
+    statusSlot.remove();
+  });
+
   it("resets htmlSourceMode to false when activeTab.id changes", async () => {
     const tab1 = {
       id: "tab-bug5-1",

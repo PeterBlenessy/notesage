@@ -5,12 +5,12 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
+import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/core";
 import { cn } from "@/lib/utils";
-import { SavedLabel } from "@/components/SavedLabel";
+import { useSidebarStatusSlotStore } from "@/stores/sidebar-status-slot-store";
 import { useLocalAIStore } from "@/stores/local-ai-store";
 import { useConnectionsStore } from "@/stores/connections-store";
-import { useEditorStore } from "@/stores/editor-store";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
 import type { ViewMode } from "@/lib/file-utils";
 import type { Comment } from "@/stores/comment-store";
@@ -266,17 +266,6 @@ export function StatusBar({
 }: StatusBarProps) {
   const reducedMotion = useReducedMotion();
 
-  // Read the active tab so we can render the "saved Xs ago" readout
-  // next to the word count (live-test 2026-04-26 — relocated from the
-  // TitleBar). The shared `<SavedLabel />` handles its own polling and
-  // visibility (suppressed mid-edit, em-dash for never-saved tabs).
-  const activeTab = useEditorStore((s) => {
-    const tab = s.openDocuments.find((t) => t.id === s.activeTabId);
-    return tab ?? null;
-  });
-  const isDirty = Boolean(activeTab?.isDirty);
-  const lastSavedAt = activeTab?.lastSavedAt;
-
   // Re-read word count when the editor transacts so it tracks typing.
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -409,7 +398,7 @@ export function StatusBar({
     return hasLocalAi ? `${base} — opens Session group` : `${base} — opens status tray`;
   })();
 
-  return (
+  const content = (
     <TooltipProvider delayDuration={300}>
       <div
         ref={anchorRef}
@@ -420,7 +409,7 @@ export function StatusBar({
         onClick={(e) => handleActivate(e)}
         onKeyDown={handleKeyDown}
         className={cn(
-          "h-8 flex items-center gap-3 px-3 text-xs text-muted-foreground",
+          "h-8 flex items-center gap-2.5 px-2 text-xs text-muted-foreground min-w-0",
           "cursor-pointer select-none",
           "hover:text-foreground transition-colors",
           "transition-opacity duration-[340ms] ease-in-out",
@@ -459,26 +448,10 @@ export function StatusBar({
           </span>
         ) : null}
 
-        {/* Live-test 2026-04-26 — saved-ago moved here from the
-            TitleBar so document-state info (word count + last-save
-            recency) lives in one place. The slot is intentionally
-            empty (no separator, no label) whenever `<SavedLabel />`
-            itself would render nothing: no active tab, the tab is
-            dirty (saved-ago would lie mid-edit), or the tab is clean
-            but has never been saved this session (no "-" stale
-            placeholder). Mounting the bullet behind the SAME gate
-            that SavedLabel uses internally guarantees no orphan
-            separator in any state. */}
-        {activeTab && !isDirty && lastSavedAt !== undefined ? (
-          <>
-            <span aria-hidden="true">·</span>
-            <SavedLabel
-              lastSavedAt={lastSavedAt}
-              isDirty={isDirty}
-              className="text-xs text-muted-foreground tabular-nums"
-            />
-          </>
-        ) : null}
+        {/* "saved Xs ago" was removed here (2026-07-01) when the strip moved
+            into the narrow sidebar footer — it's redundant with auto-save and
+            the extra width didn't fit alongside the Settings button. Auto-save
+            still runs; the dirty state shows via the TitleBar dot when enabled. */}
 
         <span className="ml-auto flex items-center gap-3">
           <span>
@@ -504,4 +477,19 @@ export function StatusBar({
       />
     </TooltipProvider>
   );
+
+  return content;
+}
+
+/**
+ * App wrapper that teleports the {@link StatusBar} strip into the QuietSidebar
+ * footer slot (next to the Settings button), so the editor column runs
+ * edge-to-edge. Renders **nothing** when the sidebar — and thus the slot — is
+ * hidden (`⌘⇧L`): the status footer only ever appears in the sidebar, never
+ * inline in the editor. `StatusBar` itself stays a plain inline component so it
+ * remains testable in isolation.
+ */
+export function SidebarStatusBar(props: StatusBarProps) {
+  const slotEl = useSidebarStatusSlotStore((s) => s.el);
+  return slotEl ? createPortal(<StatusBar {...props} />, slotEl) : null;
 }

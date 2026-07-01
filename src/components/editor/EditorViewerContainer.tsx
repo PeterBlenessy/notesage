@@ -1,6 +1,6 @@
 import { Suspense, lazy, useState, useCallback, useEffect } from "react";
 import { PlainTextViewer } from "./viewers/PlainTextViewer";
-import { StatusBar } from "./StatusBar";
+import { SidebarStatusBar } from "./StatusBar";
 import { toast } from "sonner";
 import { isHtmlViewerFile } from "@/lib/codemirror-languages";
 
@@ -116,7 +116,7 @@ export function EditorViewerContainer({ activeTab, focusMode, onOpenFile, onShor
         </Suspense>
       </div>
       {!focusMode && (
-        <StatusBar
+        <SidebarStatusBar
           editor={null}
           onShortcutsOpen={onShortcutsOpen}
           onOpenActions={onOpenActions}
