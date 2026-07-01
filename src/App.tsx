@@ -7,6 +7,7 @@ import { UpdateDialog } from "@/components/UpdateDialog";
 import { CalibrationShareDialog } from "@/components/settings/CalibrationShareDialog";
 import { QuietLayout } from "@/components/QuietLayout";
 import { McpDeepLinkInstaller } from "@/components/settings/McpDeepLinkInstaller";
+import { MissedRunsDialog } from "@/components/automations/MissedRunsDialog";
 import { LocalAgentSetupDialog } from "@/components/settings/LocalAgentSetupDialog";
 
 // Lazy-load dialogs — these are hidden by default and only shown on demand.
@@ -29,6 +30,8 @@ import { useStartWatchers } from "@/hooks/useStartWatchers";
 import { useSkillDiscovery } from "@/hooks/useSkillOperations";
 import { useWindowTitle } from "@/hooks/useWindowTitle";
 import { useMcpDiscovery } from "@/hooks/useMcpOperations";
+import { useAutomationDiscovery } from "@/hooks/useAutomationDiscovery";
+import { useAutomationRunner } from "@/hooks/useAutomationRunner";
 import { useLocalAI } from "@/hooks/useLocalAI";
 import { useSandboxViolations } from "@/hooks/useSandboxViolations";
 import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
@@ -139,6 +142,8 @@ function App() {
   // document is active.
   useWindowTitle();
   useMcpDiscovery();
+  useAutomationDiscovery();
+  useAutomationRunner();
   useLocalAI();
   useSandboxViolations();
   useActionScanner();
@@ -794,6 +799,7 @@ function App() {
       </div>
       <McpDeepLinkInstaller />
       <LocalAgentSetupDialog />
+      <MissedRunsDialog />
       <Toaster position="bottom-right" />
     </ThemeProvider>
   );

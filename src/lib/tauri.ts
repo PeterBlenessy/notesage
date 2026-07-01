@@ -3,6 +3,7 @@ import type { AIProviderType } from './ai/types';
 import type { BackendTypographyPresets } from './typography-presets';
 import type { AcpListResult, AcpSessionResult } from './ai/acp-utils';
 import type { AcpMcpServerInput } from './ai/acp-mcp';
+import type { AutomationFile, AutomationValidation } from './automations/types';
 
 export interface FileEntry {
   name: string;
@@ -1296,6 +1297,40 @@ export const tauriApi = {
       query,
       limit: limit ?? null,
     });
+  },
+
+  // Automations
+  async listAutomations(baseDirs: string[]): Promise<AutomationFile[]> {
+    return await invoke<AutomationFile[]>("list_automations", { baseDirs });
+  },
+
+  async saveAutomation(path: string, yaml: string): Promise<void> {
+    await invoke("save_automation", { path, yaml });
+  },
+
+  async deleteAutomation(path: string): Promise<void> {
+    await invoke("delete_automation", { path });
+  },
+
+  async validateAutomation(yaml: string): Promise<AutomationValidation> {
+    return await invoke<AutomationValidation>("validate_automation", { yaml });
+  },
+
+  /** Resolve a document-step write path within `base`, rejecting absolute paths
+   *  and `..` traversal. Rejects (throws) if the path would escape the scope. */
+  async resolveAutomationWritePath(base: string, relPath: string): Promise<string> {
+    return await invoke<string>("resolve_automation_write_path", { base, relPath });
+  },
+
+  /** Master enable flag — also gates the scheduler tick loop. */
+  async setAutomationsEnabled(enabled: boolean): Promise<void> {
+    await invoke("set_automations_enabled", { enabled });
+  },
+
+  /** Rebuild the active schedule from disk; the first call per launch also
+   *  emits `automations-missed` for the catch-up chooser. Returns the count. */
+  async reloadAutomationSchedule(baseDirs: string[]): Promise<number> {
+    return await invoke<number>("reload_automation_schedule", { baseDirs });
   },
 
   // Skill & agent operations

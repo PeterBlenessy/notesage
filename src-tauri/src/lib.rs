@@ -223,6 +223,7 @@ pub fn run() {
         .manage(IndexState::new())
         .manage(tray::TrayState::new())
         .manage(html_preview::HtmlPreviewState::new())
+        .manage(AutomationSchedulerState::new())
         // Serves the HTML viewer's sandboxed-iframe documents from a real origin
         // with their own (empty) CSP, instead of a `blob:` URL that inherits the
         // app's hardened CSP and gets blanked by `frame-ancestors 'none'`. See
@@ -244,6 +245,13 @@ pub fn run() {
             copy_file,
             copy_directory,
             rename_path,
+            list_automations,
+            save_automation,
+            delete_automation,
+            validate_automation,
+            resolve_automation_write_path,
+            set_automations_enabled,
+            reload_automation_schedule,
             delete_path,
             path_exists,
             allow_asset_dir,
@@ -496,6 +504,10 @@ pub fn run() {
             if let Err(e) = tray::setup_tray(app) {
                 log::error!(target: "notesage::tray", "Failed to set up tray: {}", e);
             }
+
+            // Start the automations scheduler tick loop (gated on the master
+            // enable flag; emits `automation-due` for the frontend runner).
+            automations::spawn_scheduler(app.handle().clone());
 
             Ok(())
         })

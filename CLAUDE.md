@@ -69,6 +69,7 @@ Reversible + cheap → act, then report. Otherwise → ask first.
 | Chat, agents, skills, MCP, delegation, research, voice | @docs/features/ai-workflows.md |
 | EPUB, PDF export, DOCX, viewers | @docs/features/document-formats.md |
 | Projects, file tree, iCloud, git, external changes | @docs/features/workspace.md |
+| Automations (triggers, steps, agent-step provider & permissions, builder) | docs/features/automations.md |
 
 ## Development Lifecycle
 

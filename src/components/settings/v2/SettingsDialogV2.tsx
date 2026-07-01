@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Cog,
   Mic,
+  Zap,
 } from 'lucide-react';
 import { SettingsShell, type SettingsShellNavGroup } from './SettingsShell';
 import {
@@ -22,6 +23,7 @@ import { SkillsSettings } from './SkillsSettings';
 import { ProjectsSettings } from './ProjectsSettings';
 import { SystemSettings } from './SystemSettings';
 import { VoiceSettings } from './VoiceSettings';
+import { AutomationsSettings } from './AutomationsSettings';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
 
@@ -89,6 +91,7 @@ const NAV: SettingsShellNavGroup[] = [
       { id: 'skills', label: 'Skills & Agents', icon: Blocks },
       { id: 'voice', label: 'Voice', icon: Mic },
       { id: 'projects', label: 'Projects', icon: FolderOpen },
+      { id: 'automations', label: 'Automations', icon: Zap },
       { id: 'system', label: 'System', icon: Cog },
     ],
   },
@@ -134,6 +137,7 @@ const PANELS: PanelEntry[] = [
   { id: 'skills', label: 'Skills & Agents', render: () => <SkillsSettings /> },
   { id: 'voice', label: 'Voice', render: () => <VoiceSettings /> },
   { id: 'projects', label: 'Projects', render: () => <ProjectsSettings /> },
+  { id: 'automations', label: 'Automations', render: () => <AutomationsSettings /> },
   {
     id: 'system',
     label: 'System',

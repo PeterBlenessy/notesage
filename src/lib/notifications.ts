@@ -6,30 +6,24 @@ import {
 import { toast } from "sonner";
 import { useSettingsStore } from "@/stores/settings-store";
 
-type NotificationType = "agent_completion" | "agent_error" | "external_change";
+type NotificationType =
+  | "agent_completion"
+  | "agent_error"
+  | "external_change"
+  | "automation_failure";
 
 const TYPE_TO_SETTING: Record<NotificationType, keyof Pick<
   ReturnType<typeof useSettingsStore.getState>,
-  "notifyAgentCompletion" | "notifyExternalChanges"
+  "notifyAgentCompletion" | "notifyExternalChanges" | "notifyAutomationFailure"
 >> = {
   agent_completion: "notifyAgentCompletion",
   agent_error: "notifyAgentCompletion",
   external_change: "notifyExternalChanges",
+  automation_failure: "notifyAutomationFailure",
 };
 
-/**
- * Send a desktop notification if the corresponding setting is enabled.
- * Handles permission checking/requesting silently.
- */
-export async function notify(
-  type: NotificationType,
-  title: string,
-  body: string
-): Promise<void> {
-  const settingKey = TYPE_TO_SETTING[type];
-  const settings = useSettingsStore.getState();
-  if (!settings[settingKey]) return;
-
+/** Permission check + send, with silent degradation. Setting-agnostic. */
+async function deliverNotification(title: string, body: string): Promise<void> {
   try {
     let granted = await isPermissionGranted();
     if (!granted) {
@@ -42,6 +36,28 @@ export async function notify(
   } catch {
     // Notification not supported or permission denied — silent degradation
   }
+}
+
+/**
+ * Send a desktop notification if the corresponding setting is enabled.
+ * Handles permission checking/requesting silently.
+ */
+export async function notify(
+  type: NotificationType,
+  title: string,
+  body: string
+): Promise<void> {
+  const settingKey = TYPE_TO_SETTING[type];
+  if (!useSettingsStore.getState()[settingKey]) return;
+  await deliverNotification(title, body);
+}
+
+/**
+ * A user-authored automation `notify` step — always fires (subject to OS
+ * permission), since it's explicit user intent, not a gated diagnostic.
+ */
+export async function notifyAutomation(title: string, body: string): Promise<void> {
+  await deliverNotification(title, body);
 }
 
 /**
