@@ -10,8 +10,8 @@ The ten shortcuts that will change how you use Notesage.
 | **⌘⇧E** | Export to PDF, Word, or PowerPoint |
 | **⌘F** | Find text in the current note |
 | **⌘.** | Toggle focus mode (hide all chrome) |
-| **⌘⇧R** | Start/stop voice dictation |
-| **⌘⇧M** | Add an inline comment to selected text |
+| **⌘⇧R** | Start/stop meeting recording |
+| **⌘⌥C** | Add an inline comment to selected text |
 | **⌘⇧K** | Show the full keyboard shortcut reference |
 | **⌘,** | Open Settings |
 

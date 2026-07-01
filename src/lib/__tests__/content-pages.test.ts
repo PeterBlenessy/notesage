@@ -2,12 +2,24 @@ import { describe, it, expect } from 'vitest';
 import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 
+// Validates the composed content pages (content/pages/*.md — cross-cutting
+// narrative that isn't a single feature), the shared screenshots, and the
+// in-app connection guide. Per-feature content lives in the content-atom system
+// (content/features/*.md, validated by content-facts.test.ts).
+
 const repoRoot = path.resolve(__dirname, '../../..');
-const marketingDir = path.join(repoRoot, 'docs', 'marketing');
-const screenshotsDir = path.join(marketingDir, 'screenshots');
+const pagesDir = path.join(repoRoot, 'content', 'pages');
+const screenshotsDir = path.join(repoRoot, 'content', 'screenshots');
+const helpDir = path.join(repoRoot, 'docs', 'help');
 
 function readMarkdown(filename: string): string {
-  const filePath = path.join(marketingDir, filename);
+  const filePath = path.join(pagesDir, filename);
+  if (!existsSync(filePath)) return '';
+  return readFileSync(filePath, 'utf-8');
+}
+
+function readHelp(filename: string): string {
+  const filePath = path.join(helpDir, filename);
   if (!existsSync(filePath)) return '';
   return readFileSync(filePath, 'utf-8');
 }
@@ -26,10 +38,11 @@ function wordCount(text: string): number {
   return cleaned.split(/\s+/).filter(Boolean).length;
 }
 
+// Composed pages (cross-cutting narrative). Per-feature content (feature-tour,
+// ai-connections) moved to the content-atom system (content/features/*.md,
+// validated by content-facts.test.ts).
 const REQUIRED_MD_FILES = [
   'pitch.md',
-  'feature-tour.md',
-  'ai-connections.md',
   'use-cases.md',
   'privacy.md',
   'getting-started.md',
@@ -54,20 +67,20 @@ const REQUIRED_SCREENSHOTS = [
 const PNG_MAGIC = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 describe('file existence', () => {
-  it('docs/marketing/ directory exists', () => {
-    expect(existsSync(marketingDir)).toBe(true);
+  it('content/pages/ directory exists', () => {
+    expect(existsSync(pagesDir)).toBe(true);
   });
 
   for (const filename of REQUIRED_MD_FILES) {
     it(`${filename} exists and is non-empty`, () => {
-      const filePath = path.join(marketingDir, filename);
+      const filePath = path.join(pagesDir, filename);
       expect(existsSync(filePath)).toBe(true);
       const content = readFileSync(filePath, 'utf-8');
       expect(content.trim().length).toBeGreaterThan(0);
     });
   }
 
-  it('docs/marketing/screenshots/ directory exists', () => {
+  it('content/screenshots/ directory exists', () => {
     expect(existsSync(screenshotsDir)).toBe(true);
   });
 
@@ -120,140 +133,58 @@ describe('pitch.md content', () => {
   });
 });
 
-describe('feature-tour.md content', () => {
-  it('covers Editor surface', () => {
-    const content = readMarkdown('feature-tour.md');
-    expect(content.toLowerCase()).toMatch(/editor|writing|document/);
+describe('in-app guidance: connecting-ai.md', () => {
+  it('exists', () => {
+    expect(existsSync(path.join(helpDir, 'connecting-ai.md'))).toBe(true);
   });
 
-  it('covers AI chat / Quiet Composer surface', () => {
-    const content = readMarkdown('feature-tour.md');
-    expect(content.toLowerCase()).toMatch(/ai|chat|command/);
+  it('includes the provider comparison table with the key columns', () => {
+    const content = readHelp('connecting-ai.md').toLowerCase();
+    expect(content).toMatch(/\|.*\|/);
+    expect(content).toMatch(/auth method/);
+    expect(content).toMatch(/cost model/);
+    expect(content).toMatch(/offline/);
+    expect(content).toMatch(/tool calling/);
+    expect(content).toMatch(/vision/);
   });
 
-  it('covers Sidebar & projects surface', () => {
-    const content = readMarkdown('feature-tour.md');
-    expect(content.toLowerCase()).toMatch(/sidebar|project|workspace/);
-  });
-
-  it('covers Export surface', () => {
-    const content = readMarkdown('feature-tour.md');
-    expect(content.toLowerCase()).toMatch(/export|pdf|docx/);
-  });
-
-  it('covers at least 6 major surfaces', () => {
-    const content = readMarkdown('feature-tour.md');
-    const headingMatches = content.match(/^#{1,3}\s+.+/gm) ?? [];
-    expect(headingMatches.length).toBeGreaterThanOrEqual(5);
-  });
-
-  it('covers document viewers (EPUB, PDF, DOCX)', () => {
-    const content = readMarkdown('feature-tour.md');
-    expect(content.toLowerCase()).toMatch(/epub|viewer|docx|pdf/);
-  });
-
-  it('covers voice transcription', () => {
-    const content = readMarkdown('feature-tour.md');
-    expect(content.toLowerCase()).toMatch(/voice|transcri|dictation/);
-  });
-});
-
-describe('ai-connections.md content', () => {
-  it('names Anthropic provider', () => {
-    const content = readMarkdown('ai-connections.md');
+  it('names every supported provider', () => {
+    const content = readHelp('connecting-ai.md');
     expect(content).toMatch(/[Aa]nthropic/);
-  });
-
-  it('names OpenAI provider', () => {
-    const content = readMarkdown('ai-connections.md');
     expect(content).toMatch(/[Oo]pen[Aa][Ii]/);
-  });
-
-  it('names Ollama provider', () => {
-    const content = readMarkdown('ai-connections.md');
+    expect(content).toMatch(/[Cc]opilot/);
+    expect(content).toMatch(/[Gg]emini/);
+    expect(content).toMatch(/[Cc]odex/);
     expect(content).toMatch(/[Oo]llama/);
   });
 
-  it('names GitHub Copilot provider', () => {
-    const content = readMarkdown('ai-connections.md');
-    expect(content).toMatch(/[Cc]opilot/);
-  });
-
-  it('names Gemini / Google provider', () => {
-    const content = readMarkdown('ai-connections.md');
-    expect(content).toMatch(/[Gg]emini|[Gg]oogle/);
-  });
-
-  it('names Codex provider', () => {
-    const content = readMarkdown('ai-connections.md');
-    expect(content).toMatch(/[Cc]odex/);
-  });
-
-  it('includes a comparison table', () => {
-    const content = readMarkdown('ai-connections.md');
-    // Markdown table has | delimiters
-    expect(content).toMatch(/\|.*\|/);
-  });
-
-  it('comparison table includes "auth method" column', () => {
-    const content = readMarkdown('ai-connections.md');
-    expect(content.toLowerCase()).toMatch(/auth method|authentication/);
-  });
-
-  it('comparison table includes "cost model" column', () => {
-    const content = readMarkdown('ai-connections.md');
-    expect(content.toLowerCase()).toMatch(/cost model|pricing|free|paid/);
-  });
-
-  it('comparison table includes "offline" column', () => {
-    const content = readMarkdown('ai-connections.md');
-    expect(content.toLowerCase()).toMatch(/offline/);
-  });
-
-  it('comparison table includes "tool calling" column', () => {
-    const content = readMarkdown('ai-connections.md');
-    expect(content.toLowerCase()).toMatch(/tool call|tool use/);
-  });
-
-  it('comparison table includes "vision" column', () => {
-    const content = readMarkdown('ai-connections.md');
-    expect(content.toLowerCase()).toMatch(/vision|image/);
-  });
-
-  it('flags June 15, 2026 Anthropic credit-pool change', () => {
-    const content = readMarkdown('ai-connections.md');
-    expect(content).toMatch(/June\s+15[,.]?\s+2026|2026-06-15/i);
-    expect(content.toLowerCase()).toMatch(/anthropic|credit|billing|agent/);
-  });
-
-  it('translates auth methods to plain English (no developer jargon)', () => {
-    const content = readMarkdown('ai-connections.md');
-    // Should mention "API key", "subscription", "local", or "bundled" in plain language
-    expect(content.toLowerCase()).toMatch(/api key|subscription|locally|bundled|bring your/);
+  it('gives per-provider setup steps', () => {
+    const content = readHelp('connecting-ai.md').toLowerCase();
+    expect(content).toMatch(/setting up|add connection|api key/);
   });
 });
 
 describe('use-cases.md content', () => {
-  it('contains at least 4 persona stories', () => {
+  it('contains at least 4 value sections', () => {
     const content = readMarkdown('use-cases.md');
-    // Count headings as story boundaries
+    // Count headings as section boundaries
     const headingMatches = content.match(/^#{1,3}\s+.+/gm) ?? [];
     expect(headingMatches.length).toBeGreaterThanOrEqual(4);
   });
 
-  it('includes a researcher persona', () => {
+  it('covers a researching / reading use', () => {
     const content = readMarkdown('use-cases.md');
-    expect(content.toLowerCase()).toMatch(/research|paper|study/);
+    expect(content.toLowerCase()).toMatch(/research|paper|study|annotate|read/);
   });
 
-  it('includes a writer persona', () => {
+  it('covers a writing use', () => {
     const content = readMarkdown('use-cases.md');
-    expect(content.toLowerCase()).toMatch(/writer|writing|author/);
+    expect(content.toLowerCase()).toMatch(/writer|writing|author|distraction/);
   });
 
-  it('includes a developer persona', () => {
+  it('covers a project / client use', () => {
     const content = readMarkdown('use-cases.md');
-    expect(content.toLowerCase()).toMatch(/developer|engineer|code|project/);
+    expect(content.toLowerCase()).toMatch(/developer|engineer|code|project|client/);
   });
 });
 

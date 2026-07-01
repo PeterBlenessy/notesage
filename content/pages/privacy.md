@@ -38,9 +38,9 @@ The local index that Notesage builds for search is excluded from iCloud sync. Ea
 
 ---
 
-## No telemetry by default
+## Telemetry is opt-out — and off in stable builds
 
-Notesage does not send any usage data, crash reports, or analytics by default. The app works entirely offline. The only network connections it makes are the ones you explicitly set up (your AI provider, iCloud if enabled).
+Stable releases of Notesage collect no usage data or crash reports. Pre-release (alpha) builds turn on basic, anonymous diagnostics by default to help catch problems early — and you can switch both usage and crash reporting off at any time in Settings, with a first-run notice when they're on. Whatever the build, the contents of your notes are never collected, and the app otherwise makes only the network connections you set up yourself (your AI provider, iCloud if enabled).
 
 Some third-party AI providers may collect data according to their own policies. Check your provider's documentation for details.
 

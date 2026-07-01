@@ -1,10 +1,12 @@
-# AI Connections
+# Connecting an AI provider
 
-Notesage works with all the AI services you already use. You don't need a new account — just connect what you have.
+In-app setup guidance (more detailed than the marketing overview). Shown to people who are actually configuring a connection in **Settings → Connections**.
+
+> Note: this is the detailed reference relocated out of the marketing content, which stays high-level. If you want a heads-up here about a provider's own billing/policy changes (e.g. how a provider bills agent usage), add it once it's confirmed against that provider's official documentation — don't publish unverified third-party policy claims.
 
 ---
 
-## How You Can Connect
+## Ways to connect
 
 There are four ways to bring AI into Notesage:
 
@@ -17,7 +19,7 @@ There are four ways to bring AI into Notesage:
 
 ---
 
-## Supported Providers
+## Supported providers
 
 | Provider | Auth method | Cost model | Works offline | Tool calling | Vision |
 |---|---|---|---|---|---|
@@ -31,7 +33,7 @@ There are four ways to bring AI into Notesage:
 
 ---
 
-## Setting Up Each Provider
+## Setting up each provider
 
 ### Anthropic (Claude)
 1. Go to [console.anthropic.com](https://console.anthropic.com) and create an API key.
@@ -60,25 +62,3 @@ Add a **Codex** connection and sign in with your OpenAI account that has Codex a
 
 ### Bundled model
 Enable **Local AI** in Settings → Connections. Download one of the curated models (a small download — most are under 5 GB). No internet connection is needed after download.
-
----
-
-## ⚠️ Important notice for Claude Code (ACP) users
-
-**Effective June 15, 2026**, Anthropic is changing how Claude Code usage is billed when accessed through agent connections (ACP). Previously, usage flowed from your individual Claude account. After June 15, 2026, ACP usage will be drawn from a **credit pool** tied to your organisation or team plan instead.
-
-**What this means for you:**
-- If you use Claude Code via Notesage's agent connection, your usage will be billed against your team's shared credit pool after June 15, 2026.
-- If you are on an individual Claude plan without an organisation, check Anthropic's documentation to understand how this change applies to your account.
-- No action is needed inside Notesage — the connection settings remain the same.
-
-For up-to-date information, see [Anthropic's billing documentation](https://docs.anthropic.com).
-
----
-
-## Which provider should I choose?
-
-- **Best output quality:** Anthropic Claude or OpenAI GPT-4o.
-- **I already pay for Copilot:** Use the GitHub Copilot connection — no extra cost.
-- **Privacy matters most:** Ollama or the bundled model. Your text never leaves your device.
-- **Just getting started:** Try the bundled model — no account, no key, no cost.
