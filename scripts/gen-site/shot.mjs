@@ -1,0 +1,10 @@
+import { chromium } from '@playwright/test';
+import path from 'node:path';
+const t = process.argv[2], dark = process.argv[3]==='dark';
+const b = await chromium.launch();
+const p = await b.newPage({ viewport:{width:1300,height:860}, deviceScaleFactor:2 });
+await p.goto('file://'+path.join(process.cwd(),t),{waitUntil:'networkidle'});
+if(dark) await p.evaluate(()=>document.documentElement.classList.add('dark'));
+await p.waitForTimeout(200);
+await p.screenshot({ path: t.replace(/\.html$/, dark?'-dark.png':'-light.png') });
+await b.close(); console.log('shot', t);

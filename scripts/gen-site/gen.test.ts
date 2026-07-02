@@ -9,6 +9,8 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, writeFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { renderProseMirrorHtml } from "./render-doc";
+import { appWindow } from "./frame";
+import { landingHtml } from "./landing";
 
 const REPO = process.cwd();
 
@@ -57,16 +59,58 @@ const DOCS: Array<{ rel: string; slug: string; title: string }> = [
   { rel: "Prompt library.md", slug: "prompt-library", title: "Prompt library" },
 ];
 
+/** Full app-window page: the Quiet Composer shell + generated editor content. */
+function windowPage(title: string, appHtml: string, css: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${title}</title>
+<style>${css}</style>
+<style>
+  html, body { margin: 0; background: oklch(93% 0 0); }
+  html.dark, html.dark body { background: oklch(11% 0 0); }
+  .frame-stage { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 48px; box-sizing: border-box; }
+  .app-window { width: 1200px; height: 760px; border-radius: 12px; overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0,0,0,.22), 0 2px 8px rgba(0,0,0,.08);
+    border: 1px solid var(--color-border); background: var(--color-background); }
+  .app-window .ProseMirror { padding: 0 !important; }
+</style>
+</head>
+<body>
+<div class="app stage frame-stage">${appHtml}</div>
+</body>
+</html>`;
+}
+
 describe("marketing site generation", () => {
-  it("renders every demo doc to a pixel-match .ProseMirror page", () => {
+  it("renders every demo doc + the full app-window hero", () => {
     const css = compiledCss();
+    const htmlBySlug: Record<string, string> = {};
     for (const { rel, slug, title } of DOCS) {
       const md = readFileSync(path.join(REPO, "content/demo", rel), "utf8");
       const html = renderProseMirrorHtml(md);
       expect(html.length).toBeGreaterThan(0);
+      htmlBySlug[slug] = html;
       writeFileSync(path.join(REPO, "content/site", `${slug}.html`), page(`Notesage — ${title}`, html, css));
-      // eslint-disable-next-line no-console
-      console.log(`[gen] ${slug}.html — ${html.length} chars`);
     }
+    // App-window mockups: the editor inside the real Quiet Composer frame.
+    const windows: Array<[string, string]> = [
+      ["window", windowPage("Notesage", appWindow(htmlBySlug.hero, { active: "On Attention.md" }), css)],
+      ["window-rich", windowPage("Notesage — data", appWindow(htmlBySlug["quarterly-review"], { active: "Quarterly review.md" }), css)],
+      ["window-quiet", windowPage("Notesage — quiet composer", appWindow(htmlBySlug.hero, { sidebar: false }), css)],
+      ["window-focus", windowPage("Notesage — focus", appWindow(htmlBySlug.hero, { focus: true }), css)],
+      ["window-ai", windowPage("Notesage — AI", appWindow(htmlBySlug.hero, { cmdBar: "expanded" }), css)],
+      ["window-ai-pinned", windowPage("Notesage — AI pinned", appWindow(htmlBySlug.hero, { cmdBar: "pinned", sidebar: false }), css)],
+      ["window-settings", windowPage("Notesage — settings", appWindow(htmlBySlug.hero, { modal: "settings" }), css)],
+    ];
+    for (const [name, html] of windows) writeFileSync(path.join(REPO, "content/site", `${name}.html`), html);
+    // Step 4 — assemble the plain-static landing page from the editor atoms.
+    const index = landingHtml(css, htmlBySlug);
+    expect(index).toContain("<!DOCTYPE html>");
+    writeFileSync(path.join(REPO, "content/site", "index.html"), index);
+    // eslint-disable-next-line no-console
+    console.log(`[gen] ${DOCS.length} docs + ${windows.length} app windows + index.html`);
   });
 });
