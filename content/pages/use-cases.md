@@ -24,7 +24,7 @@ Record a meeting or a quick spoken summary, and Notesage transcribes the whole t
 
 ## Read, annotate, and make sense of it
 
-Open PDFs, ebooks, and research papers right inside Notesage. Highlight a passage, leave a comment, and ask the assistant to explain or summarise it — the reply appears alongside your note, ready to fold into your own writing. Tag related ideas as you go, and a single click gathers every note on a topic across your whole library.
+Open PDFs, ebooks, and research papers right inside Notesage and search them without leaving your desk. In your own notes, highlight a passage and hand it to the assistant to explain or summarise — the reply appears alongside your writing, ready to fold in. Tag related ideas as you go, and a single click gathers every note on a topic across your whole library.
 
 ---
 

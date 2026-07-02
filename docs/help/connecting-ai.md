@@ -24,7 +24,7 @@ There are four ways to bring AI into Notesage:
 | Provider | Auth method | Cost model | Works offline | Tool calling | Vision |
 |---|---|---|---|---|---|
 | **Anthropic (Claude)** | API key | Pay per use | No | Yes | Yes |
-| **OpenAI (GPT-4o, etc.)** | API key | Pay per use | No | Yes | Yes |
+| **OpenAI** | API key | Pay per use | No | Yes | Yes |
 | **GitHub Copilot** | Copilot subscription | Monthly subscription | No | Yes | Yes |
 | **Gemini CLI** | Google account or API key | Free tier / pay per use | No | Yes | Yes |
 | **Codex (OpenAI)** | Codex subscription | Monthly subscription | No | Yes | No |
@@ -40,7 +40,7 @@ There are four ways to bring AI into Notesage:
 2. In Notesage, open **Settings → Connections → Add Connection → Anthropic**.
 3. Paste your API key. Notesage stores it securely in your system keychain.
 
-### OpenAI (GPT-4o and friends)
+### OpenAI
 1. Go to [platform.openai.com](https://platform.openai.com) and create an API key.
 2. In Notesage, open **Settings → Connections → Add Connection → OpenAI**.
 3. Paste your API key.
@@ -61,4 +61,4 @@ Add a **Codex** connection and sign in with your OpenAI account that has Codex a
 2. In Notesage, add an **Ollama** connection. The default address `http://localhost:11434` works out of the box.
 
 ### Bundled model
-Enable **Local AI** in Settings → Connections. Download one of the curated models (a small download — most are under 5 GB). No internet connection is needed after download.
+Enable **Local AI** in Settings → Connections, then download a curated model. The catalog flags which models fit your Mac's memory, so you can pick one sized to your hardware. No internet connection is needed after download.

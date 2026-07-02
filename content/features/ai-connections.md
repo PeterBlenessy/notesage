@@ -22,7 +22,7 @@ Notesage is deliberately model-agnostic. Instead of a built-in AI you can't chan
 - **Bring your own key** — a key from Anthropic or OpenAI, pay-as-you-go.
 - **Use a subscription** — sign in with Copilot, Gemini, or Codex.
 - **Run locally** — point at a model on your own machine.
-- **Bundled model** — an offline assistant that ships with the app; no account, no key.
+- **Bundled model** — an offline assistant that ships with the app, in sizes matched to your Mac's memory; no account, no key.
 
 ### Pick the right tool per job
 
@@ -40,7 +40,7 @@ Whenever "which AI?" has more than one answer: cost, quality, privacy, or offlin
 
 - Step-by-step setup for each provider lives in the in-app connection guide.
 - Removing a connection deletes its key from the keychain immediately.
-- Start with the bundled model if you just want to try things — it needs nothing.
+- Start with the bundled model if you just want to try things — Notesage suggests a size that fits your Mac's memory, and it needs nothing else.
 
 ## [in-app]
 

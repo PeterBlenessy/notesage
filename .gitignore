@@ -69,3 +69,6 @@ src-tauri/.pkg-config-stubs/
 .env
 .env.local
 public/excalidraw-assets/
+.dev-home/
+content/site/
+content/screenshots/

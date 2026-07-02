@@ -39,7 +39,7 @@ You can write notes without any AI connection, but to use chat and assistance yo
 
 ## Step 4: Take your first note
 
-1. Click the **+** button in the sidebar (or press **⌘N**) to create a new note.
+1. Press **⌘N** to create a new note (or click **New Note** on the welcome screen).
 2. Start typing. Use the toolbar to format text, or type `/` to insert a callout, table, or drawing.
 3. Press **⌘K** to open the AI command bar. Type a question — the AI will reply instantly.
 4. Your note saves automatically as you type.

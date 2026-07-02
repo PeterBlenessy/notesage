@@ -20,7 +20,7 @@ An automation is a small, saved workflow: a trigger plus a short list of steps. 
 ### Triggers and steps
 
 - **Triggers** — a time (a daily or weekly schedule), or a change (a file added or edited in a folder).
-- **Steps** — summarise or transform a note, create or append to a file, send a notification, or hand a task to an AI agent. Steps pass results to each other through plain-English variables, so one step's output becomes the next step's input.
+- **Steps** — three kinds: hand a task to an AI agent, create or append to a note, or send a notification. Steps pass results to each other through plain-English variables, so one step's output feeds the next — ask an agent step to summarise, and a later step files the result.
 
 ### Safe by default
 
