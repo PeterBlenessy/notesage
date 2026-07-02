@@ -4,7 +4,18 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-@theme {
+/*
+ * `static` = emit EVERY theme variable to `:root`, not just the ones Tailwind
+ * detects as used. Several tokens here (the `--color-callout-*` fills, and
+ * other editor-content colours) are consumed only via `var(--…)` inside
+ * `editor.css` — a plain stylesheet that is NOT an `@source`, so Tailwind's
+ * usage scan can't see them and, without `static`, tree-shakes their base
+ * (light) values out of the production build. Their `.dark`/`.soft` overrides
+ * live in plain CSS blocks below and survive, which made the bug light-mode
+ * only: callout fills silently vanished in `vite build` output. `static`
+ * keeps all base tokens; the size cost is a handful of unused CSS variables.
+ */
+@theme static {
   --font-family-sans: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   --font-family-mono: ui-monospace, "SFMono-Regular", "SF Mono", "Menlo", "Consolas", "Liberation Mono", monospace;
   --radius: 0.5rem;
