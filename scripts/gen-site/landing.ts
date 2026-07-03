@@ -132,8 +132,8 @@ function audienceBand(): string {
   const people: Array<[string, string, string]> = [
     [icon('<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/>'), "Writers & essayists", "Draft in focus mode, keep every note as clean markdown, and call the assistant only when you want a second read."],
     [icon('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'), "Researchers", "Read PDFs and ebooks in place, tag across your whole library, and synthesize with AI that cites what it used."],
-    [icon('<path d="M14.5 2v6h6"/><path d="M4 2h10l6 6v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M9 13h6"/><path d="M9 17h3"/>'), "Product & strategy", "Turn meeting recordings into notes, track goals and tasks, and export a polished brief in a single step."],
-    [icon('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'), "Everyday notes", "A fast, private home for daily notes, checklists, and half-formed ideas that never phones home."],
+    [icon('<path d="M14.5 2v6h6"/><path d="M4 2h10l6 6v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M9 13h6"/><path d="M9 17h3"/>'), "Product managers", "Turn meeting recordings into notes, track goals and tasks, and export a polished brief in a single step."],
+    [icon('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'), "Everyday note-takers", "A fast, private home for daily notes, checklists, and half-formed ideas that never phones home."],
   ];
   return `<section class="audience"><div class="wrap">
     <div class="aud-head"><div class="eyebrow">Made for the way you work</div><h2>However you think, it keeps up.</h2></div>
