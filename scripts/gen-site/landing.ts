@@ -127,18 +127,18 @@ function cardsBand(): string {
   </div></section>`;
 }
 
-/** "Who it's for" band — audience segmentation, no mockup (mossnotes-style). */
-function audienceBand(): string {
-  const people: Array<[string, string, string]> = [
-    [icon('<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/>'), "Writers & essayists", "Draft in focus mode, keep every note as clean markdown, and call the assistant only when you want a second read."],
-    [icon('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'), "Researchers", "Read PDFs and ebooks in place, tag across your whole library, and synthesize with AI that cites what it used."],
-    [icon('<path d="M14.5 2v6h6"/><path d="M4 2h10l6 6v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M9 13h6"/><path d="M9 17h3"/>'), "Product managers", "Turn meeting recordings into notes, track goals and tasks, and export a polished brief in a single step."],
-    [icon('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'), "Everyday note-takers", "A fast, private home for daily notes, checklists, and half-formed ideas that never phones home."],
+/** Use-case band — activities anyone can recognize (vs. named personas). */
+function useCasesBand(): string {
+  const cases: Array<[string, string, string]> = [
+    [icon('<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/>'), "Turn conversations into notes", "Record a meeting or a quick thought — Notesage transcribes it on your own device into a note you can edit, tag, and act on."],
+    [icon('<path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/>'), "Make sense of what you read", "Open PDFs, ebooks, and papers in place, highlight a passage, and hand it to the assistant to explain or summarise."],
+    [icon('<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>'), "Find everything on a topic", "Tags, @mentions, and backlinks pull related notes together — one click gathers everything on an idea across your whole library."],
+    [icon('<path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.84z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>'), "Keep every client separate", "Give each project its own space and its own AI, so confidential work stays sealed off from everything else."],
   ];
-  return `<section class="audience"><div class="wrap">
-    <div class="aud-head"><div class="eyebrow">Made for the way you work</div><h2>However you think, it keeps up.</h2></div>
-    <div class="aud-grid">
-      ${people.map(([ic, t, b]) => `<div class="aud-item"><div class="card-ic">${ic}</div><h3>${t}</h3><p>${b}</p></div>`).join("")}
+  return `<section class="usecases"><div class="wrap">
+    <div class="uc-head"><div class="eyebrow">Made for the way you work</div><h2>However you work, it keeps up.</h2></div>
+    <div class="uc-grid">
+      ${cases.map(([ic, t, b]) => `<div class="uc-item"><div class="card-ic">${ic}</div><h3>${t}</h3><p>${b}</p></div>`).join("")}
     </div>
   </div></section>`;
 }
@@ -348,14 +348,14 @@ export function landingHtml(css: string, editors: Record<string, string>): strin
   .card h3 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 8px; }
   .card p { font-size: 14.5px; line-height: 1.55; color: var(--color-muted-foreground); margin: 0; }
 
-  /* ---- Audience band (who it's for) ------------------------------------- */
-  .audience { padding: 88px 0; }
-  .aud-head { text-align: center; margin-bottom: 48px; }
-  .aud-head h2 { font-size: clamp(30px, 3.6vw, 44px); line-height: 1.08; letter-spacing: -0.022em; font-weight: 700; margin: 8px 0 0; }
-  .aud-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 26px; max-width: 960px; margin: 0 auto; }
-  .aud-item h3 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 8px; }
-  .aud-item p { font-size: 14px; line-height: 1.5; color: var(--color-muted-foreground); margin: 0; }
-  @media (max-width: 980px) { .aud-grid { grid-template-columns: repeat(2, 1fr); } }
+  /* ---- Use-case band (what you'll do with it) --------------------------- */
+  .usecases { padding: 88px 0; }
+  .uc-head { text-align: center; margin-bottom: 48px; }
+  .uc-head h2 { font-size: clamp(30px, 3.6vw, 44px); line-height: 1.08; letter-spacing: -0.022em; font-weight: 700; margin: 8px 0 0; }
+  .uc-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 26px; max-width: 1000px; margin: 0 auto; }
+  .uc-item h3 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 8px; }
+  .uc-item p { font-size: 14px; line-height: 1.5; color: var(--color-muted-foreground); margin: 0; }
+  @media (max-width: 980px) { .uc-grid { grid-template-columns: repeat(2, 1fr); } }
 
   /* ---- Privacy band (icon trio, no mockup) ------------------------------ */
   .privacy-band { padding: 88px 0; background: color-mix(in oklch, var(--color-foreground) 3%, var(--page-bg));
@@ -409,7 +409,7 @@ export function landingHtml(css: string, editors: Record<string, string>): strin
   ${richFeature}
   ${dataFeature}
   ${focusFeature}
-  ${audienceBand()}
+  ${useCasesBand()}
   ${privacyBand()}
   ${closingCta()}
   ${footer()}
