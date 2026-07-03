@@ -29,8 +29,20 @@ function device(editorHtml: string, opts: WindowOpts, scale = 0.62, dark = false
  * content (callouts, tables, code) large and legible. `offset` nudges the
  * content up to bring a lower block into the crop.
  */
+function contentCardInner(editorHtml: string, offset = 0): string {
+  return `<div class="content-card"><div class="cc-scroll" style="transform:translateY(${offset}px)"><div class="ProseMirror" translate="no">${editorHtml}</div></div><div class="cc-fade"></div></div>`;
+}
 function contentCard(editorHtml: string, offset = 0): string {
-  return `<div class="shot"><div class="content-card"><div class="cc-scroll" style="transform:translateY(${offset}px)"><div class="ProseMirror" translate="no">${editorHtml}</div></div><div class="cc-fade"></div></div></div>`;
+  return `<div class="shot">${contentCardInner(editorHtml, offset)}</div>`;
+}
+
+/**
+ * A chart figure — a PNG screenshot of the REAL app Recharts node-view rendered
+ * headlessly by render-charts.mjs (the screenshot exception for React node-views
+ * the deterministic pipeline can't serialize). Run render-charts.mjs first.
+ */
+function chartCard(src: string, caption: string): string {
+  return `<figure class="chart-card"><figcaption>${caption}</figcaption><img src="${src}" alt="${caption}"></figure>`;
 }
 
 /**
@@ -115,6 +127,22 @@ function cardsBand(): string {
   </div></section>`;
 }
 
+/** "Who it's for" band — audience segmentation, no mockup (mossnotes-style). */
+function audienceBand(): string {
+  const people: Array<[string, string, string]> = [
+    [icon('<path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/>'), "Writers & essayists", "Draft in focus mode, keep every note as clean markdown, and call the assistant only when you want a second read."],
+    [icon('<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>'), "Researchers", "Read PDFs and ebooks in place, tag across your whole library, and synthesize with AI that cites what it used."],
+    [icon('<path d="M14.5 2v6h6"/><path d="M4 2h10l6 6v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"/><path d="M9 13h6"/><path d="M9 17h3"/>'), "Product & strategy", "Turn meeting recordings into notes, track goals and tasks, and export a polished brief in a single step."],
+    [icon('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'), "Everyday notes", "A fast, private home for daily notes, checklists, and half-formed ideas that never phones home."],
+  ];
+  return `<section class="audience"><div class="wrap">
+    <div class="aud-head"><div class="eyebrow">Made for the way you work</div><h2>However you think, it keeps up.</h2></div>
+    <div class="aud-grid">
+      ${people.map(([ic, t, b]) => `<div class="aud-item"><div class="card-ic">${ic}</div><h3>${t}</h3><p>${b}</p></div>`).join("")}
+    </div>
+  </div></section>`;
+}
+
 /** Privacy statement band — icon trio, no mockup (breaks the shot cadence). */
 function privacyBand(): string {
   const items: Array<[string, string, string]> = [
@@ -176,9 +204,9 @@ export function landingHtml(css: string, editors: Record<string, string>): strin
     flip: true,
   });
   const dataFeature = feature({
-    title: "Tables that actually compute.",
-    body: "Give a column a type — currency, percentage, date — then sort, filter, and total it. An aggregation footer and inline sparklines turn a plain grid into a small spreadsheet, still stored as GitHub-flavoured markdown.",
-    mockup: contentCard(editors["quarterly-review"]),
+    title: "Tables that compute, charts that explain.",
+    body: "Give a column a type — currency, percentage, date — then sort, filter, and total it with an aggregation footer. Turn any series into a live chart in a click. It looks like a small spreadsheet; it's still plain GitHub-flavoured markdown.",
+    mockup: `<div class="shot data-stack">${contentCardInner(editors["quarterly-review"])}${chartCard("assets/chart-revenue.png", "Revenue by quarter")}</div>`,
   });
   const focusFeature = feature({
     title: "Write without distraction.",
@@ -275,6 +303,15 @@ export function landingHtml(css: string, editors: Record<string, string>): strin
   .content-card .cc-fade { position: absolute; left: 0; right: 0; bottom: 0; height: 96px; pointer-events: none;
     background: linear-gradient(transparent, var(--color-background)); }
 
+  /* Data section stack: computing table close-up + a real chart figure. */
+  .data-stack { flex-direction: column; gap: 20px; width: 100%; max-width: 560px; }
+  .data-stack .content-card { height: 300px; max-width: none; width: 100%; }
+  .chart-card { position: relative; z-index: 1; margin: 0; width: 100%; border-radius: 14px; overflow: hidden;
+    background: var(--color-background); border: 1px solid var(--color-border);
+    box-shadow: 0 2px 6px rgba(0,0,0,.06), 0 40px 90px -30px rgba(0,0,0,.32); padding: 16px 18px 10px; }
+  .chart-card figcaption { font-size: 12.5px; font-weight: 600; letter-spacing: -0.005em; color: var(--color-foreground); margin-bottom: 6px; }
+  .chart-card img { display: block; width: 100%; height: auto; }
+
   /* Blinking caret at the end of the focused block (focus-mode shot). */
   .ns-caret { display: inline-block; width: 2px; height: 1.05em; margin-left: 1.5px; vertical-align: -0.16em;
     border-radius: 1px; background: var(--color-accent-primary); animation: ns-blink 1.1s steps(1) infinite; }
@@ -310,6 +347,15 @@ export function landingHtml(css: string, editors: Record<string, string>): strin
     background: var(--accent-soft); color: var(--color-accent-primary); margin-bottom: 16px; }
   .card h3 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 8px; }
   .card p { font-size: 14.5px; line-height: 1.55; color: var(--color-muted-foreground); margin: 0; }
+
+  /* ---- Audience band (who it's for) ------------------------------------- */
+  .audience { padding: 88px 0; }
+  .aud-head { text-align: center; margin-bottom: 48px; }
+  .aud-head h2 { font-size: clamp(30px, 3.6vw, 44px); line-height: 1.08; letter-spacing: -0.022em; font-weight: 700; margin: 8px 0 0; }
+  .aud-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 26px; max-width: 960px; margin: 0 auto; }
+  .aud-item h3 { font-size: 16px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 8px; }
+  .aud-item p { font-size: 14px; line-height: 1.5; color: var(--color-muted-foreground); margin: 0; }
+  @media (max-width: 980px) { .aud-grid { grid-template-columns: repeat(2, 1fr); } }
 
   /* ---- Privacy band (icon trio, no mockup) ------------------------------ */
   .privacy-band { padding: 88px 0; background: color-mix(in oklch, var(--color-foreground) 3%, var(--page-bg));
@@ -363,6 +409,7 @@ export function landingHtml(css: string, editors: Record<string, string>): strin
   ${richFeature}
   ${dataFeature}
   ${focusFeature}
+  ${audienceBand()}
   ${privacyBand()}
   ${closingCta()}
   ${footer()}
