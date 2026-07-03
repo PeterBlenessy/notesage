@@ -11,6 +11,8 @@ import path from "node:path";
 import { renderProseMirrorHtml } from "./render-doc";
 import { appWindow } from "./frame";
 import { landingHtml } from "./landing";
+import { featuresHtml } from "./features";
+import { privacyHtml } from "./privacy";
 
 const REPO = process.cwd();
 
@@ -110,7 +112,16 @@ describe("marketing site generation", () => {
     const index = landingHtml(css, htmlBySlug);
     expect(index).toContain("<!DOCTYPE html>");
     writeFileSync(path.join(REPO, "content/site", "index.html"), index);
+    // Secondary pages (shared shell): Features + Privacy.
+    const pages: Array<[string, string]> = [
+      ["features.html", featuresHtml(css)],
+      ["privacy.html", privacyHtml(css)],
+    ];
+    for (const [name, html] of pages) {
+      expect(html).toContain("<!DOCTYPE html>");
+      writeFileSync(path.join(REPO, "content/site", name), html);
+    }
     // eslint-disable-next-line no-console
-    console.log(`[gen] ${DOCS.length} docs + ${windows.length} app windows + index.html`);
+    console.log(`[gen] ${DOCS.length} docs + ${windows.length} app windows + index + ${pages.length} pages`);
   });
 });
