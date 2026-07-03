@@ -18,7 +18,9 @@ describe('CSS accent wiring (UI Refresh #6)', () => {
     // Tailwind v4 auto-creates a `bg-X` utility for every `--color-X` inside @theme.
     // We deliberately put accent-primary outside @theme so it stays an arbitrary-value
     // token (no `bg-accent-primary` collision with the existing neutral --color-accent).
-    const themeBlock = globals.match(/@theme\s*\{([\s\S]*?)\n\}/);
+    // `@theme` carries the `static` modifier (`@theme static { … }`) so editor-only
+    // tokens aren't tree-shaken from production builds — match either form.
+    const themeBlock = globals.match(/@theme(?:\s+static)?\s*\{([\s\S]*?)\n\}/);
     expect(themeBlock).toBeTruthy();
     expect(themeBlock![1]).not.toContain('--color-accent-primary');
   });

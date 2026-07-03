@@ -209,7 +209,9 @@ function extractRuleBody(css: string, selectorRegex: RegExp): string | null {
 function loadPalettes(): { light: Palette; dark: Palette } {
   const css = readFileSync(globalsPath, 'utf8');
 
-  const themeBody = extractRuleBody(css, /@theme\s*\{/);
+  // `@theme` may carry the `static` modifier (`@theme static { … }`) — which we
+  // use so editor-only tokens aren't tree-shaken from production builds.
+  const themeBody = extractRuleBody(css, /@theme(\s+static)?\s*\{/);
   // Use a more anchored regex for `:root` and `.dark` so we don't accidentally
   // match the literal text inside a CSS comment (the file contains a doc
   // comment about the dark-mode block; the prior loose regex matched the

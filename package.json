@@ -23,7 +23,9 @@
     "coverage:check": "bash scripts/coverage-check.sh",
     "coverage:update-baseline": "vitest run --coverage && node scripts/update-coverage-baseline.js",
     "test:perf": "vitest run --config vitest.perf.config.ts",
-    "test:e2e-real-full": "./scripts/run-real-e2e.sh"
+    "test:e2e-real-full": "./scripts/run-real-e2e.sh",
+    "gen:charts": "node scripts/gen-site/render-charts.mjs",
+    "gen:site": "vitest run --config vitest.gen.config.ts"
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.3",
