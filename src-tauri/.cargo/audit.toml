@@ -1,0 +1,26 @@
+# cargo-audit configuration (read by the "Rust Dependency Audit" CI job, which
+# runs `cargo audit` from this directory).
+#
+# We ignore ONLY advisories that are unfixable from this repo — i.e. they live
+# in TRANSITIVE crates pinned by third-party dependencies we don't control, so
+# `cargo update` cannot reach the patched version. Everything else must be fixed
+# by upgrading (e.g. anyhow, memmap2 were bumped rather than ignored). Each entry
+# below records why it's unfixable and when it can be dropped. Re-audit whenever
+# the pinning dependency releases an update.
+#
+# Tracking issue: https://github.com/PeterBlenessy/notesage/issues/508
+
+[advisories]
+ignore = [
+    # quick-xml — memory-exhaustion DoS when parsing untrusted XML. Reachable
+    # only through document import/export parsers, and every copy in our tree is
+    # transitive and below the patched 0.41.0:
+    #   0.36.2 ← docx-rs
+    #   0.38.4 ← citationberg ← hayagriva ← typst-library
+    #   0.39.4 ← plist ← syntect / ppt-rs
+    #   0.37.5 ← (transitive)
+    # None expose a semver-compatible >=0.41.0, so this can't be resolved until
+    # those upstreams bump quick-xml. Drop these once they do.
+    "RUSTSEC-2026-0195", # Unbounded namespace-declaration allocation in NsReader (DoS)
+    "RUSTSEC-2026-0194", # Quadratic run time checking a start tag for duplicate attribute names (DoS)
+]
