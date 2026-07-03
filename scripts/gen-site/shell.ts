@@ -28,6 +28,7 @@ export function nav(active = ""): string {
     <a class="brand" href="index.html"><span class="brand-mark">N</span><span class="brand-name">Notesage</span></a>
     <div class="nav-links">
       ${link("features.html", "Features", "features")}
+      ${link("getting-started.html", "Get started", "getting-started")}
       ${link("privacy.html", "Privacy", "privacy")}
       <a class="btn btn-primary btn-sm" href="${DOWNLOAD_URL}">${APPLE}<span>Download</span></a>
     </div>
@@ -54,8 +55,8 @@ export function footer(): string {
       <p>The writing tool that thinks with you. Private by default, on your device.</p>
     </div>
     <div class="footer-cols">
-      <div><h4>Product</h4><a href="features.html">Features</a><a href="privacy.html">Privacy</a><a href="${DOWNLOAD_URL}">Download</a></div>
-      <div><h4>Resources</h4><a href="${GITHUB_URL}">GitHub</a><a href="${GITHUB_URL}/releases">Releases</a><a href="${GITHUB_URL}/issues">Report an issue</a></div>
+      <div><h4>Product</h4><a href="features.html">Features</a><a href="getting-started.html">Get started</a><a href="privacy.html">Privacy</a><a href="${DOWNLOAD_URL}">Download</a></div>
+      <div><h4>Company</h4><a href="about.html">About</a><a href="${GITHUB_URL}">GitHub</a><a href="${GITHUB_URL}/releases">Releases</a><a href="${GITHUB_URL}/issues">Report an issue</a></div>
     </div>
   </div>
   <div class="wrap footer-legal">© Notesage · Your notes, on your device. · MIT-licensed &amp; open source.</div>
@@ -253,6 +254,51 @@ export const BASE_CSS = `
   .doc-sec li::marker { color: var(--color-accent-primary); }
   .doc-sec strong { color: var(--color-foreground); font-weight: 600; }
 
+  /* ---- Shared centered section head ------------------------------------ */
+  .sec-head { text-align: center; max-width: 640px; margin: 0 auto 38px; }
+  .sec-head h2 { font-size: clamp(24px, 2.8vw, 34px); letter-spacing: -0.02em; font-weight: 700; margin: 0 0 8px; }
+  .sec-head p { margin: 0; color: var(--color-muted-foreground); font-size: 15.5px; }
+
+  /* ---- Getting-started steps -------------------------------------------- */
+  .steps { max-width: 760px; margin: 0 auto; }
+  .step { display: flex; gap: 20px; padding: 28px 0; border-top: 1px solid color-mix(in oklch, var(--color-border) 55%, transparent); }
+  .step:first-child { border-top: 0; padding-top: 8px; }
+  .step-num { flex: none; width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-weight: 650; font-size: 16px; background: var(--accent-soft); color: var(--color-accent-primary); }
+  .step-body h2 { font-size: 20px; letter-spacing: -0.015em; font-weight: 700; margin: 5px 0 8px; }
+  .step-body p { font-size: 15.5px; line-height: 1.6; color: var(--color-muted-foreground); margin: 0 0 8px; }
+  .step-body ol { list-style: decimal; }
+  .step-body ul { list-style: disc; }
+  .step-body ol, .step-body ul { margin: 0; padding-left: 20px; color: var(--color-muted-foreground); font-size: 15px; line-height: 1.6; }
+  .step-body li { margin: 5px 0; padding-left: 3px; }
+  .step-body li::marker { color: color-mix(in oklch, var(--color-accent-primary) 70%, var(--color-muted-foreground)); }
+  .step-body strong { color: var(--color-foreground); font-weight: 600; }
+  .step-tip { margin-top: 12px; padding: 11px 15px; border-radius: 10px; background: var(--accent-soft);
+    font-size: 14px; line-height: 1.5; color: var(--color-foreground); }
+
+  /* keyboard chips + shortcut table */
+  kbd { display: inline-block; font: 600 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; padding: 2px 7px; border-radius: 6px;
+    background: var(--color-muted); border: 1px solid var(--color-border-strong); color: var(--color-foreground);
+    box-shadow: 0 1px 0 color-mix(in oklch, var(--color-border-strong) 55%, transparent); }
+  .sc-wrap { max-width: 620px; margin: 0 auto; }
+  .sc-table { width: 100%; border-collapse: collapse; }
+  .sc-table td { padding: 12px 4px; border-top: 1px solid color-mix(in oklch, var(--color-border) 55%, transparent);
+    font-size: 15px; color: var(--color-muted-foreground); vertical-align: middle; }
+  .sc-table tr:first-child td { border-top: 0; }
+  .sc-table td:first-child { width: 118px; white-space: nowrap; }
+
+  /* tips grid + about links (shared card look) */
+  .tips, .about-links { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; max-width: 760px; margin: 0 auto; }
+  .about-links { max-width: 640px; }
+  .tip-card, .about-link { display: flex; gap: 13px; align-items: flex-start; padding: 16px 18px; border-radius: 12px;
+    border: 1px solid var(--color-border); background: var(--color-card); transition: border-color .15s ease; }
+  .about-link:hover { border-color: var(--color-border-strong); }
+  .tip-card .fi-ic, .about-link .fi-ic { flex: none; color: var(--color-accent-primary); margin-top: 1px; }
+  .tip-card p { margin: 0; font-size: 14.5px; line-height: 1.5; color: var(--color-muted-foreground); }
+  .about-link h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.005em; }
+  .about-link p { margin: 2px 0 0; font-size: 13px; color: var(--color-muted-foreground); }
+  .tip-card strong, .tip-card kbd { color: var(--color-foreground); }
+
   /* ---- Closing CTA ------------------------------------------------------ */
   .cta-band { position: relative; overflow: hidden; text-align: center; padding: 110px 0; margin-top: 40px;
     background: color-mix(in oklch, var(--color-accent-primary) 7%, var(--page-bg)); border-top: 1px solid color-mix(in oklch, var(--color-border) 60%, transparent); }
@@ -277,7 +323,7 @@ export const BASE_CSS = `
   @media (max-width: 900px) {
     .grid, .feature.flip .grid { grid-template-columns: 1fr; gap: 40px; }
     .feature.flip .copy, .feature.flip .art { order: 0; }
-    .cards, .pb-grid, .uc-grid, .feat-grid { grid-template-columns: 1fr; }
+    .cards, .pb-grid, .uc-grid, .feat-grid, .tips, .about-links { grid-template-columns: 1fr; }
     .nav-links a:not(.btn) { display: none; }
   }
 `;

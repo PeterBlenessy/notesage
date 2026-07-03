@@ -13,6 +13,8 @@ import { appWindow } from "./frame";
 import { landingHtml } from "./landing";
 import { featuresHtml } from "./features";
 import { privacyHtml } from "./privacy";
+import { gettingStartedHtml } from "./getting-started";
+import { aboutHtml } from "./about";
 
 const REPO = process.cwd();
 
@@ -115,7 +117,9 @@ describe("marketing site generation", () => {
     // Secondary pages (shared shell): Features + Privacy.
     const pages: Array<[string, string]> = [
       ["features.html", featuresHtml(css)],
+      ["getting-started.html", gettingStartedHtml(css)],
       ["privacy.html", privacyHtml(css)],
+      ["about.html", aboutHtml(css)],
     ];
     for (const [name, html] of pages) {
       expect(html).toContain("<!DOCTYPE html>");
