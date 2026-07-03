@@ -3,10 +3,10 @@
  * shared site chrome. Plain, specific, section-per-topic. Copy stays faithful to
  * the source atom (and to the app's actual behaviour in docs/architecture.md).
  */
-import { nav, footer, closingCta, htmlDoc } from "./shell";
+import { page, closingCta, htmlDoc } from "./shell";
 
 function di(paths: string): string {
-  return `<span class="fi-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg></span>`;
+  return `<span class="fi-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths}</svg></span>`;
 }
 
 function sec(iconPaths: string, title: string, body: string): string {
@@ -65,11 +65,9 @@ export function privacyHtml(css: string): string {
     ),
   ].join("\n");
 
-  const body = `${nav("privacy")}
-  ${hero}
+  const body = page("privacy", `${hero}
   <div class="wrap"><div class="doc">${sections}</div></div>
-  ${closingCta()}
-  ${footer()}`;
+  ${closingCta()}`);
 
   return htmlDoc({ title: "Privacy — Notesage", appCss: css, body });
 }

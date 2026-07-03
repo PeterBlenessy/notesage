@@ -25,11 +25,12 @@ export default defineConfig({
     // Per-file resets would be open-ended. Sequential is the contained, proven
     // fix; revisit if run time becomes painful.
     fileParallelism: false,
-    // `scripts/**` holds the marketing-site generator (scripts/gen-site/*.test.ts).
-    // It is NOT a unit test: it needs the compiled app CSS (dist/assets, a
-    // `vite build` output) that CI's unit-test job never produces, and it writes
-    // into content/site. Run it explicitly via `pnpm gen:site` (vitest.gen.config.ts).
-    exclude: ['e2e/**', 'e2e-real/**', 'node_modules/**', 'bundled-skills/**/node_modules/**', '.claude/worktrees/**', 'scripts/**', 'src/perf/**/*.perf.test.ts', 'src/perf/**/*.perf.test.tsx'],
+    // Only the marketing-site *generator* is excluded: gen.test.ts reads the
+    // compiled app CSS (dist/assets, a `vite build` output CI's unit job never
+    // produces) and writes into content/site. Run it via `pnpm gen:site`
+    // (vitest.gen.config.ts). Its companion quality.test.ts is a pure static
+    // check with no build/browser dependency, so it DOES run here in CI.
+    exclude: ['e2e/**', 'e2e-real/**', 'node_modules/**', 'bundled-skills/**/node_modules/**', '.claude/worktrees/**', 'scripts/gen-site/gen.test.ts', 'src/perf/**/*.perf.test.ts', 'src/perf/**/*.perf.test.tsx'],
     // Note: perf benchmarks (*.perf.test.{ts,tsx}) are excluded from default runs.
     // Run them separately via `pnpm test:perf` which uses vitest.perf.config.ts.
     environmentOptions: {

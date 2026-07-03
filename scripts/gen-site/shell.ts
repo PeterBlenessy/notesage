@@ -15,9 +15,20 @@ const GITHUB_URL = "https://github.com/PeterBlenessy/notesage";
 
 export const APPLE = `<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg>`;
 
-/** A 20px lucide-style stroked icon from raw path markup. */
+/** A 20px lucide-style stroked icon from raw path markup (decorative). */
 export function icon(paths: string): string {
-  return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  return `<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths}</svg>`;
+}
+
+/**
+ * Assemble a full page body: a skip link, the nav, the content wrapped in a
+ * <main> landmark, and the footer. `active` highlights the current nav item.
+ */
+export function page(active: string, main: string): string {
+  return `<a class="skip-link" href="#main">Skip to content</a>
+${nav(active)}
+<main id="main">${main}</main>
+${footer()}`;
 }
 
 /** Sticky top nav. `active` highlights the current page ("features"|"privacy"). */
@@ -55,8 +66,8 @@ export function footer(): string {
       <p>The writing tool that thinks with you. Private by default, on your device.</p>
     </div>
     <div class="footer-cols">
-      <div><h4>Product</h4><a href="features.html">Features</a><a href="getting-started.html">Get started</a><a href="privacy.html">Privacy</a><a href="${DOWNLOAD_URL}">Download</a></div>
-      <div><h4>Company</h4><a href="about.html">About</a><a href="${GITHUB_URL}">GitHub</a><a href="${GITHUB_URL}/releases">Releases</a><a href="${GITHUB_URL}/issues">Report an issue</a></div>
+      <div><h2>Product</h2><a href="features.html">Features</a><a href="getting-started.html">Get started</a><a href="privacy.html">Privacy</a><a href="${DOWNLOAD_URL}">Download</a></div>
+      <div><h2>Company</h2><a href="about.html">About</a><a href="${GITHUB_URL}">GitHub</a><a href="${GITHUB_URL}/releases">Releases</a><a href="${GITHUB_URL}/issues">Report an issue</a></div>
     </div>
   </div>
   <div class="wrap footer-legal">© Notesage · Your notes, on your device. · MIT-licensed &amp; open source.</div>
@@ -86,10 +97,25 @@ export const BASE_CSS = `
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--page-bg); color: var(--color-foreground);
     font-family: "SF Pro Display", -apple-system, ui-sans-serif, system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
-  /* Warm-neutral page base + a soft accent tint mixed in — not pure grey. */
-  :root { --page-bg: oklch(98.6% 0.006 70); --accent-soft: color-mix(in oklch, var(--color-accent-primary) 12%, transparent); }
+  /* Warm-neutral page base + a soft accent tint mixed in — not pure grey.
+     --accent-ink is a deepened orange for accent TEXT (eyebrows) so it clears
+     WCAG AA 4.5:1 on the page, which the vibrant brand accent (~3.1:1) does not. */
+  :root { --page-bg: oklch(98.6% 0.006 70); --accent-soft: color-mix(in oklch, var(--color-accent-primary) 12%, transparent);
+    --accent-ink: oklch(52% 0.16 42); }
+  body { overflow-x: clip; }
   a { color: inherit; text-decoration: none; }
   .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  /* Keyboard focus — a visible, on-brand ring for every interactive element. */
+  a:focus-visible, button:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent-ink); outline-offset: 3px; border-radius: 7px; }
+  /* Skip-to-content link — hidden until focused. */
+  .skip-link { position: fixed; top: 10px; left: 10px; z-index: 100; transform: translateY(-160%);
+    padding: 9px 15px; border-radius: 9px; background: var(--color-foreground); color: var(--color-background);
+    font-size: 14px; font-weight: 600; transition: transform .18s ease; }
+  .skip-link:focus-visible { transform: translateY(0); outline: 2px solid var(--accent-ink); outline-offset: 2px; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
   /* ---- Nav -------------------------------------------------------------- */
   .nav { position: sticky; top: 0; z-index: 50; backdrop-filter: saturate(1.2) blur(12px);
@@ -125,7 +151,7 @@ export const BASE_CSS = `
             mask-image: radial-gradient(70% 60% at 50% 12%, #000 30%, transparent 78%); }
   .hero-copy { position: relative; z-index: 1; }
   .eyebrow { display: inline-block; font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
-    color: var(--color-accent-primary); margin-bottom: 20px; }
+    color: var(--accent-ink); margin-bottom: 20px; }
   .hero h1 { font-size: clamp(42px, 6.6vw, 78px); line-height: 1.02; letter-spacing: -0.028em; font-weight: 700; margin: 0 0 22px; }
   .accent-word { font-family: Charter, "Source Serif 4", Georgia, serif; font-style: italic; font-weight: 600; }
   .lede { max-width: 620px; margin: 0 auto; font-size: clamp(16px, 1.9vw, 20px); line-height: 1.55; color: var(--color-muted-foreground); }
@@ -295,7 +321,7 @@ export const BASE_CSS = `
   .about-link:hover { border-color: var(--color-border-strong); }
   .tip-card .fi-ic, .about-link .fi-ic { flex: none; color: var(--color-accent-primary); margin-top: 1px; }
   .tip-card p { margin: 0; font-size: 14.5px; line-height: 1.5; color: var(--color-muted-foreground); }
-  .about-link h3 { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: -0.005em; }
+  .about-link .al-title { display: block; font-size: 15px; font-weight: 600; letter-spacing: -0.005em; color: var(--color-foreground); }
   .about-link p { margin: 2px 0 0; font-size: 13px; color: var(--color-muted-foreground); }
   .tip-card strong, .tip-card kbd { color: var(--color-foreground); }
 
@@ -315,7 +341,7 @@ export const BASE_CSS = `
   .footer-brand { max-width: 320px; }
   .footer-brand p { margin: 14px 0 0; font-size: 14px; line-height: 1.55; color: var(--color-muted-foreground); }
   .footer-cols { display: flex; gap: 64px; }
-  .footer-cols h4 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--color-muted-foreground); margin: 0 0 14px; }
+  .footer-cols h2 { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--color-muted-foreground); margin: 0 0 14px; }
   .footer-cols a { display: block; font-size: 14.5px; margin-bottom: 9px; color: var(--color-foreground); opacity: .82; }
   .footer-cols a:hover { opacity: 1; }
   .footer-legal { margin-top: 44px; font-size: 13px; color: var(--color-muted-foreground); }
@@ -326,4 +352,13 @@ export const BASE_CSS = `
     .cards, .pb-grid, .uc-grid, .feat-grid, .tips, .about-links { grid-template-columns: 1fr; }
     .nav-links a:not(.btn) { display: none; }
   }
+  /* Fixed-size app-window mockups are designed at 1200×760 and can't reflow, so
+     scale them down to fit narrow screens (zoom keeps the layout box in sync —
+     unlike transform). Content close-ups and the chart card are already fluid.
+     The hero shot is the widest (1032px), so it scales a step earlier. */
+  @media (max-width: 1080px) { .hero-shot .device { zoom: 0.8; } }
+  @media (max-width: 900px)  { .hero-shot .device { zoom: 0.66; } }
+  @media (max-width: 760px)  { .shot .device { zoom: 0.48; } }
+  @media (max-width: 560px)  { .shot .device { zoom: 0.32; } }
+  @media (max-width: 400px)  { .shot .device { zoom: 0.26; } }
 `;

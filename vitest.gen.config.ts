@@ -18,6 +18,7 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    include: ['scripts/gen-site/**/*.test.ts'],
+    // Only the generator here (quality.test.ts runs in the default unit suite).
+    include: ['scripts/gen-site/gen.test.ts'],
   },
 });

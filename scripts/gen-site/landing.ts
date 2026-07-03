@@ -5,13 +5,15 @@
  * app's compiled CSS. No framework, no build step.
  */
 import { appWindow, type WindowOpts } from "./frame";
-import { APPLE, icon, nav, footer, closingCta, htmlDoc, DOWNLOAD_URL } from "./shell";
+import { APPLE, icon, page, closingCta, htmlDoc, DOWNLOAD_URL } from "./shell";
 
 /** A scaled device frame around an app-window mockup, wrapped in a glow stage. */
 function device(editorHtml: string, opts: WindowOpts, scale = 0.62, dark = false): string {
   const w = Math.round(1200 * scale);
   const h = Math.round(760 * scale);
-  const shot = `<div class="shot"><div class="device" style="width:${w}px;height:${h}px"><div class="device-inner" style="transform:scale(${scale})">${appWindow(editorHtml, opts)}</div></div></div>`;
+  // The mockup is a decorative illustration of the app — hide its (fake) menu
+  // items and icons from assistive tech.
+  const shot = `<div class="shot" aria-hidden="true"><div class="device" style="width:${w}px;height:${h}px"><div class="device-inner" style="transform:scale(${scale})">${appWindow(editorHtml, opts)}</div></div></div>`;
   return dark ? `<div class="dark">${shot}</div>` : shot;
 }
 
@@ -25,7 +27,7 @@ function contentCardInner(editorHtml: string, offset = 0): string {
   return `<div class="content-card"><div class="cc-scroll" style="transform:translateY(${offset}px)"><div class="ProseMirror" translate="no">${editorHtml}</div></div><div class="cc-fade"></div></div>`;
 }
 function contentCard(editorHtml: string, offset = 0): string {
-  return `<div class="shot">${contentCardInner(editorHtml, offset)}</div>`;
+  return `<div class="shot" aria-hidden="true">${contentCardInner(editorHtml, offset)}</div>`;
 }
 
 /**
@@ -67,7 +69,7 @@ function heroSection(editorHtml: string): string {
       </div>
       <div class="trust">Private by default<i></i>Local-first<i></i>Bring any model</div>
     </div>
-    <div class="hero-shot">${device(editorHtml, { active: "On Attention.md" }, 0.86)}</div>
+    <div class="hero-shot" aria-hidden="true">${device(editorHtml, { active: "On Attention.md" }, 0.86)}</div>
     <div class="works">
       <span class="works-label">Works with the models you already use</span>
       <div class="works-row">
@@ -94,7 +96,7 @@ function cardsBand(): string {
     [icon('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M7 10l5 5 5-5"/><path d="M12 15V3"/>'), "Export anywhere", "One document to PDF, Word, PowerPoint, or HTML — typeset with your own presets, not dumped through a converter."],
     [icon('<path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/>'), "Wiki-links & backlinks", "Link between notes with [[…]], hover to preview, and see everything that links back — a folder of notes reads like a wiki."],
   ];
-  return `<section class="cards-band"><div class="wrap cards">
+  return `<section class="cards-band" aria-label="Highlights"><h2 class="visually-hidden">Highlights</h2><div class="wrap cards">
     ${cards.map(([ic, t, b]) => `<div class="card"><div class="card-ic">${ic}</div><h3>${t}</h3><p>${b}</p></div>`).join("")}
   </div></section>`;
 }
@@ -151,7 +153,7 @@ export function landingHtml(css: string, editors: Record<string, string>): strin
   const dataFeature = feature({
     title: "Tables that compute, charts that explain.",
     body: "Give a column a type — currency, percentage, date — then sort, filter, and total it with an aggregation footer. Turn any series into a live chart in a click. It looks like a small spreadsheet; it's still plain GitHub-flavoured markdown.",
-    mockup: `<div class="shot data-stack">${contentCardInner(editors["quarterly-review"])}${chartCard("assets/chart-revenue.png", "Revenue by quarter")}</div>`,
+    mockup: `<div class="shot data-stack" aria-hidden="true">${contentCardInner(editors["quarterly-review"])}${chartCard("assets/chart-revenue.png", "Revenue by quarter")}</div>`,
   });
   const focusFeature = feature({
     title: "Write without distraction.",
@@ -160,8 +162,7 @@ export function landingHtml(css: string, editors: Record<string, string>): strin
     flip: true,
   });
 
-  const body = `${nav()}
-  ${heroSection(editors.hero)}
+  const body = page("", `${heroSection(editors.hero)}
   ${cardsBand()}
   ${aiFeature}
   ${richFeature}
@@ -169,8 +170,7 @@ export function landingHtml(css: string, editors: Record<string, string>): strin
   ${focusFeature}
   ${useCasesBand()}
   ${privacyBand()}
-  ${closingCta()}
-  ${footer()}`;
+  ${closingCta()}`);
 
   return htmlDoc({ title: "Notesage — the writing tool that thinks with you", appCss: css, body });
 }

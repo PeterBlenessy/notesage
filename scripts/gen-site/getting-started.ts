@@ -3,7 +3,7 @@
  * keyboard shortcuts. Built from content/pages/getting-started.md and
  * shortcuts-highlights.md, in the shared site chrome.
  */
-import { nav, footer, closingCta, htmlDoc, DOWNLOAD_URL } from "./shell";
+import { page, closingCta, htmlDoc, DOWNLOAD_URL } from "./shell";
 
 interface Step { title: string; body: string }
 function step(n: number, { title, body }: Step): string {
@@ -69,7 +69,7 @@ const SHORTCUTS: Array<[string, string]> = [
   ["⌘,", "Open Settings"],
 ];
 
-const BOLT = '<span class="fi-ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>';
+const BOLT = '<span class="fi-ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></svg></span>';
 
 export function gettingStartedHtml(css: string): string {
   const hero = `<header class="subhero">
@@ -91,16 +91,14 @@ export function gettingStartedHtml(css: string): string {
   const rows = SHORTCUTS.map(([k, d]) => `<tr><td><kbd>${k}</kbd></td><td>${d}</td></tr>`).join("");
   const shortcuts = `<section class="feat-cat"><div class="wrap">
     <div class="sec-head"><h2>Top keyboard shortcuts</h2><p>The ten that will change how you use Notesage.</p></div>
-    <div class="sc-wrap"><table class="sc-table"><tbody>${rows}</tbody></table></div>
+    <div class="sc-wrap"><table class="sc-table"><caption class="visually-hidden">Keyboard shortcuts and what they do</caption><tbody>${rows}</tbody></table></div>
   </div></section>`;
 
-  const body = `${nav("getting-started")}
-  ${hero}
+  const body = page("getting-started", `${hero}
   ${steps}
   ${tips}
   ${shortcuts}
-  ${closingCta()}
-  ${footer()}`;
+  ${closingCta()}`);
 
   return htmlDoc({ title: "Getting started — Notesage", appCss: css, body });
 }

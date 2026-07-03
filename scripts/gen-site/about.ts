@@ -2,12 +2,12 @@
  * About page — a compact page from content/pages/about-copy.md: what Notesage
  * is, where to find it, and credits. Shared site chrome.
  */
-import { nav, footer, closingCta, htmlDoc } from "./shell";
+import { page, closingCta, htmlDoc } from "./shell";
 
 const GITHUB = "https://github.com/PeterBlenessy/notesage";
 
 function fi(paths: string): string {
-  return `<span class="fi-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg></span>`;
+  return `<span class="fi-ic"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths}</svg></span>`;
 }
 
 const LINKS: Array<[string, string, string, string]> = [
@@ -29,7 +29,7 @@ export function aboutHtml(css: string): string {
 
   const links = `<section class="feat-cat"><div class="wrap">
     <div class="about-links">
-      ${LINKS.map(([ic, t, d, href]) => `<a class="about-link" href="${href}">${fi(ic)}<div><h3>${t}</h3><p>${d}</p></div></a>`).join("")}
+      ${LINKS.map(([ic, t, d, href]) => `<a class="about-link" href="${href}">${fi(ic)}<div><span class="al-title">${t}</span><p>${d}</p></div></a>`).join("")}
     </div>
   </div></section>`;
 
@@ -39,12 +39,10 @@ export function aboutHtml(css: string): string {
     <p>Notesage is open source and licensed under the MIT License. You can read the code, audit exactly what it does, and build it yourself.</p>
   </div></div></div></section>`;
 
-  const body = `${nav("about")}
-  ${hero}
+  const body = page("about", `${hero}
   ${links}
   ${credits}
-  ${closingCta()}
-  ${footer()}`;
+  ${closingCta()}`);
 
   return htmlDoc({ title: "About — Notesage", appCss: css, body });
 }

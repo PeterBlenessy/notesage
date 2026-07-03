@@ -4,11 +4,11 @@
  * shared shell (nav, footer, CTA, base CSS). Copy is user-facing and traces to
  * docs/features/* and docs/product-description.md.
  */
-import { nav, footer, closingCta, htmlDoc } from "./shell";
+import { page, closingCta, htmlDoc } from "./shell";
 
-/** An 18px accent feature icon. */
+/** An 18px accent feature icon (decorative). */
 function fi(paths: string): string {
-  return `<span class="fi-ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">${paths}</svg></span>`;
+  return `<span class="fi-ic"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths}</svg></span>`;
 }
 
 type Item = [string, string, string]; // [iconPaths, title, description]
@@ -42,11 +42,11 @@ const CATEGORIES: Category[] = [
     blurb: "Connect the models you already use — and keep control of what they touch.",
     items: [
       ['<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/>', "Any provider", "Anthropic, OpenAI, Copilot, Gemini, Ollama, or a bundled local model — a key, a subscription, or nothing."],
-      ['<rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="8" cy="16" r="1"/><circle cx="16" cy="16" r="1"/><path d="M12 7v4"/><path d="M8 7h8"/><circle cx="12" cy="5" r="2"/>', "Agents that act", "Let an agent read and edit files, run skills, and search the web — every action asks permission first."],
+      ['<rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="8" cy="16" r="1"/><circle cx="16" cy="16" r="1"/><path d="M12 7v4"/><path d="M8 7h8"/><circle cx="12" cy="5" r="2"/>', "Agents that act", "Let an agent read and edit files, run skills, and search the web — it asks before it writes a file or runs a command."],
       ['<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>', "Chat beside your writing", "A floating command bar (⌘K) you can pin as a side panel; watch it think, call tools, and cite sources."],
       ['<path d="M12 22v-5"/><path d="M9 8V2"/><path d="M15 8V2"/><path d="M18 8v5a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"/>', "Skills & MCP", "Extend the assistant with Agent Skills and MCP servers — the open standards other AI tools use."],
       ['<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>', "Comments → agents", "Delegate a comment to an agent; the reply threads inline and can be applied as a tracked edit."],
-      ['<path d="M12 20h.01"/><path d="M8.5 16.4a5 5 0 0 1 7 0"/><path d="M5 12.9a10 10 0 0 1 5.2-2.7"/><path d="M19 12.9a10 10 0 0 0-3-2.3"/><path d="M2 8.8a15 15 0 0 1 4.2-2.5"/><path d="M17.8 6.3A15 15 0 0 1 22 8.8"/><line x1="2" y1="2" x2="22" y2="22"/>', "Runs fully offline", "Download a model once, then chat, complete, and use tools with no key and no network."],
+      ['<path d="M12 20h.01"/><path d="M8.5 16.4a5 5 0 0 1 7 0"/><path d="M5 12.9a10 10 0 0 1 5.2-2.7"/><path d="M19 12.9a10 10 0 0 0-3-2.3"/><path d="M2 8.8a15 15 0 0 1 4.2-2.5"/><path d="M17.8 6.3A15 15 0 0 1 22 8.8"/><line x1="2" y1="2" x2="22" y2="22"/>', "Runs fully offline", "Download a model once and chat, complete, and run local tools entirely on your machine — no account, no cloud."],
     ],
   },
   {
@@ -102,11 +102,9 @@ export function featuresHtml(css: string): string {
     </div>
   </header>`;
 
-  const body = `${nav("features")}
-  ${hero}
+  const body = page("features", `${hero}
   ${CATEGORIES.map(category).join("\n")}
-  ${closingCta()}
-  ${footer()}`;
+  ${closingCta()}`);
 
   return htmlDoc({ title: "Features — Notesage", appCss: css, body });
 }
