@@ -1682,4 +1682,165 @@ describe('useCopilotCompletion', () => {
       expect(toast.info).not.toHaveBeenCalled();
     });
   });
+
+  // =========================================================================
+  // Deep-review batch1 findings #2 + #3
+  //
+  // #2 — request-supersede guard: a slow completion request N resolving after
+  // N+1 must not paint stale ghost text (mirrors useLocalCompletion's
+  // requestId guard), and a response whose request anchor no longer matches
+  // the caret must be discarded.
+  //
+  // #3 — `inlineCompletionsDisabled` must be a store SUBSCRIPTION, not a
+  // `getState()` read in a dep array (which evaluates once per render and
+  // never re-arms the effects when the setting flips).
+  // =========================================================================
+
+  describe('deep-review #2 — completion supersede guard', () => {
+    beforeEach(() => {
+      useSettingsStore.setState({
+        homeDir: '/Users/tester',
+        notesRootPath: '/Users/tester/Notesage',
+        completionsOnOutOfScope: false,
+        inlineCompletionsDisabled: false,
+      });
+    });
+
+    it('discards a stale completion superseded by a newer request', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      setupWithProject('/project');
+      setupWithTab(makeTab());
+
+      let resolveFirst: (v: { text: string; command?: undefined } | null) => void = () => {};
+      mockRequestCopilotCompletion
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveFirst = resolve; }))
+        .mockResolvedValueOnce({ text: ' fresh', command: undefined });
+
+      const editor = makeMockEditor('Hello world');
+      renderHook(() => useCopilotCompletion(editor));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      vi.mocked(mockSetGhostText).mockClear();
+
+      // Request N — stays in flight (unresolved promise).
+      act(() => {
+        (editor as unknown as { _emit: (event: string) => void })._emit('update');
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      expect(mockRequestCopilotCompletion).toHaveBeenCalledTimes(1);
+
+      // Request N+1 — resolves immediately and paints.
+      act(() => {
+        (editor as unknown as { _emit: (event: string) => void })._emit('update');
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      expect(mockRequestCopilotCompletion).toHaveBeenCalledTimes(2);
+      expect(mockSetGhostText).toHaveBeenCalledTimes(1);
+      expect(mockSetGhostText).toHaveBeenCalledWith(editor, expect.objectContaining({ text: ' fresh' }));
+
+      // Request N resolves LATE — must be discarded, not painted over N+1.
+      vi.mocked(mockSetGhostText).mockClear();
+      resolveFirst({ text: ' stale' });
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      expect(mockSetGhostText).not.toHaveBeenCalled();
+    });
+
+    it('discards a completion when the cursor moved off the request anchor', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      setupWithProject('/project');
+      setupWithTab(makeTab());
+
+      let resolveReq: (v: { text: string; command?: undefined } | null) => void = () => {};
+      mockRequestCopilotCompletion.mockImplementationOnce(
+        () => new Promise((resolve) => { resolveReq = resolve; }),
+      );
+
+      const editor = makeMockEditor('Hello world', 11);
+      renderHook(() => useCopilotCompletion(editor));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      vi.mocked(mockSetGhostText).mockClear();
+
+      act(() => {
+        (editor as unknown as { _emit: (event: string) => void })._emit('update');
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(200);
+      });
+      expect(mockRequestCopilotCompletion).toHaveBeenCalledTimes(1);
+
+      // Cursor moves off the request anchor while the response is in flight
+      // (e.g. an arrow key — no doc update, so no superseding request fires).
+      (editor.state.selection as { $from: { pos: number } }).$from.pos = 5;
+
+      resolveReq({ text: ' late' });
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      expect(mockSetGhostText).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('deep-review #3 — reactive inlineCompletionsDisabled subscription', () => {
+    beforeEach(() => {
+      useSettingsStore.setState({
+        homeDir: '/Users/tester',
+        notesRootPath: '/Users/tester/Notesage',
+        completionsOnOutOfScope: false,
+        inlineCompletionsDisabled: false,
+      });
+    });
+
+    it('reacts to the setting flipping at runtime WITHOUT a manual rerender', async () => {
+      const conn = makeAgentManagedConnection();
+      setupWithConnection(conn);
+      setupWithProject('/project');
+      setupWithTab(makeTab());
+
+      mockHasActiveGhostText.mockReturnValue(true);
+
+      const editor = makeMockEditor('Hello world');
+      renderHook(() => useCopilotCompletion(editor));
+
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      vi.mocked(mockClearGhostText).mockClear();
+      mockRequestCopilotCompletion.mockClear();
+
+      // Flip the setting with NO rerender() call — the hook must re-render via
+      // its own store subscription. A `getState()` read in a dep array never
+      // subscribes, so pre-fix the clear-ghost-text effect stayed dormant
+      // until an unrelated re-render.
+      act(() => {
+        useSettingsStore.setState({ inlineCompletionsDisabled: true });
+      });
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+
+      expect(mockClearGhostText).toHaveBeenCalledWith(editor);
+
+      // And typing while disabled issues no completion request.
+      act(() => {
+        (editor as unknown as { _emit: (event: string) => void })._emit('update');
+      });
+      await act(async () => {
+        await vi.runAllTimersAsync();
+      });
+      expect(mockRequestCopilotCompletion).not.toHaveBeenCalled();
+    });
+  });
 });
