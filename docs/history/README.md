@@ -178,3 +178,4 @@ Chronological log of major implementation milestones and changes.
 | 172 | [Release v0.48.0-alpha.7](172-release-v0.48.0-alpha.7.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 173 | [Release v0.48.0-alpha.8](173-release-v0.48.0-alpha.8.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 174 | [Release v0.48.0-alpha.9](174-release-v0.48.0-alpha.9.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 175 | [Release v0.48.0-alpha.10](175-release-v0.48.0-alpha.10.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
