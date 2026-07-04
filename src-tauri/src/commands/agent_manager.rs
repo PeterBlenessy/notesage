@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::path::PathBuf;
 use std::process::Command;
 use tauri::{AppHandle, Emitter, Manager};
@@ -6,6 +7,100 @@ use tokio::sync::Mutex;
 
 use super::shell_path::get_shell_path;
 use super::constants;
+
+// ---------------------------------------------------------------------------
+// Download / extraction limits (audit batch 3 fix #5)
+//
+// Download sizes come from remote-controllable metadata (HTTP Content-Length,
+// zip local-file headers), so they must never be trusted for allocation, and
+// the actual byte streams must be capped independently of what the headers
+// claim. The ceilings are deliberately generous: the Node.js runtime tarball
+// is ~50 MB, agent release binaries are tens of MB, and the unpacked Node
+// runtime is ~200 MB on disk.
+// ---------------------------------------------------------------------------
+
+/// Clamp for `Vec::with_capacity` hints derived from remote size fields.
+const MAX_PREALLOC_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
+/// Hard stop for a single downloaded artifact (runtime tarball, agent binary).
+const MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024; // 512 MiB
+/// Hard stop for a single file pulled out of a release archive into memory.
+const MAX_EXTRACTED_FILE_BYTES: u64 = 512 * 1024 * 1024; // 512 MiB
+/// Hard stop for the cumulative bytes written while unpacking the Node runtime.
+const MAX_RUNTIME_EXTRACT_BYTES: u64 = 1024 * 1024 * 1024; // 1 GiB
+
+/// Stream a download into memory with a running-total cap, invoking
+/// `on_progress(downloaded, total)` per chunk. The Content-Length is used only
+/// as a (clamped) pre-allocation hint and for progress display — the cap is
+/// enforced on the bytes actually received.
+async fn download_capped(
+    resp: reqwest::Response,
+    cap: u64,
+    mut on_progress: impl FnMut(u64, u64),
+) -> Result<Vec<u8>, String> {
+    use futures::StreamExt;
+
+    let total = resp.content_length().unwrap_or(0);
+    if total > cap {
+        return Err(format!(
+            "Download advertises {} bytes, above the {} byte limit",
+            total, cap
+        ));
+    }
+    let mut data = Vec::with_capacity((total as usize).min(MAX_PREALLOC_BYTES));
+    let mut downloaded: u64 = 0;
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| format!("Download error: {}", e))?;
+        downloaded += chunk.len() as u64;
+        if downloaded > cap {
+            return Err(format!(
+                "Download exceeded the {} byte limit — aborting",
+                cap
+            ));
+        }
+        data.extend_from_slice(&chunk);
+        on_progress(downloaded, total);
+    }
+    Ok(data)
+}
+
+// ---------------------------------------------------------------------------
+// Download integrity (audit batch 3 fix #6)
+// ---------------------------------------------------------------------------
+
+/// Lowercase hex SHA-256 of a byte slice.
+fn sha256_hex(data: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(data))
+}
+
+/// Find the SHA-256 for `filename` in a `SHASUMS256.txt`-style manifest
+/// (lines of `<hex>  <filename>`, one entry per line — the format nodejs.org
+/// publishes alongside every release).
+fn find_sha256_for_file(shasums: &str, filename: &str) -> Option<String> {
+    for line in shasums.lines() {
+        let mut parts = line.split_whitespace();
+        let (Some(hash), Some(name)) = (parts.next(), parts.next()) else {
+            continue;
+        };
+        // Some manifests prefix binary-mode entries with '*'.
+        if name.trim_start_matches('*') == filename && hash.len() == 64 {
+            return Some(hash.to_ascii_lowercase());
+        }
+    }
+    None
+}
+
+/// Checksum asset name published alongside GitHub release binaries, if any.
+///
+/// TODO(audit batch 3 fix #6b): Goose releases do not have a checksum asset
+/// pattern we could verify without guessing, so GitHub-binary installs are
+/// currently *recorded* (SHA-256 of the downloaded archive is computed and
+/// logged) but not *verified*. When upstream publishes a stable checksum
+/// asset (e.g. `sha256sums.txt`), set this to `Some("…")` and
+/// `do_github_binary_install` will fetch it from the same release and verify
+/// the archive digest before extraction — the verification path is already
+/// wired below.
+const GITHUB_BINARY_CHECKSUM_ASSET: Option<&str> = None;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -538,12 +633,10 @@ async fn download_node_runtime(app: &AppHandle) -> Result<(), String> {
     };
 
     // Download Node.js 22 LTS
-    let url = format!(
-        "https://nodejs.org/dist/v22.14.0/node-v22.14.0-{}-{}.tar.gz",
-        node_os, node_arch
-    );
+    let node_dist_dir = "https://nodejs.org/dist/v22.14.0";
+    let node_filename = format!("node-v22.14.0-{}-{}.tar.gz", node_os, node_arch);
+    let url = format!("{}/{}", node_dist_dir, node_filename);
 
-    use futures::StreamExt;
     let client = reqwest::Client::new();
     let resp = client
         .get(&url)
@@ -555,16 +648,7 @@ async fn download_node_runtime(app: &AppHandle) -> Result<(), String> {
         return Err(format!("Node.js download returned {}", resp.status()));
     }
 
-    let total = resp.content_length().unwrap_or(0);
-    let mut stream = resp.bytes_stream();
-    let mut data = Vec::with_capacity(total as usize);
-    let mut downloaded: u64 = 0;
-
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Download error: {}", e))?;
-        downloaded += chunk.len() as u64;
-        data.extend_from_slice(&chunk);
-
+    let data = download_capped(resp, MAX_DOWNLOAD_BYTES, |downloaded, total| {
         let _ = app.emit(
             "agent-install-progress",
             AgentInstallProgress {
@@ -579,6 +663,35 @@ async fn download_node_runtime(app: &AppHandle) -> Result<(), String> {
                 ),
             },
         );
+    })
+    .await
+    .map_err(|e| format!("Node.js download failed: {}", e))?;
+
+    // Integrity check (audit batch 3 fix #6a): verify the tarball's SHA-256
+    // against the SHASUMS256.txt nodejs.org publishes in the same release
+    // directory, before anything is extracted or executed.
+    let shasums = client
+        .get(format!("{}/SHASUMS256.txt", node_dist_dir))
+        .send()
+        .await
+        .map_err(|e| format!("Node.js checksum manifest download failed: {}", e))?
+        .error_for_status()
+        .map_err(|e| format!("Node.js checksum manifest request failed: {}", e))?
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read Node.js checksum manifest: {}", e))?;
+    let expected = find_sha256_for_file(&shasums, &node_filename).ok_or_else(|| {
+        format!(
+            "Node.js checksum manifest has no entry for {}",
+            node_filename
+        )
+    })?;
+    let actual = sha256_hex(&data);
+    if actual != expected {
+        return Err(format!(
+            "Node.js download failed integrity check: expected sha256 {}, got {}",
+            expected, actual
+        ));
     }
 
     let _ = app.emit(
@@ -605,6 +718,11 @@ async fn download_node_runtime(app: &AppHandle) -> Result<(), String> {
 
     // Node.js tarballs have a top-level directory like node-v22.14.0-darwin-arm64/
     // We need to strip that prefix and extract into runtime_dir
+    //
+    // Decompression-bomb guard (audit batch 3 fix #5): the gzip layer can
+    // expand far beyond the downloaded size, so cap the cumulative bytes
+    // written to disk independently of the download cap.
+    let mut total_extracted: u64 = 0;
     for entry in archive.entries().map_err(|e| format!("Tar error: {}", e))? {
         let mut entry = entry.map_err(|e| format!("Tar entry error: {}", e))?;
         let path = entry.path().map_err(|e| format!("Path error: {}", e))?.to_path_buf();
@@ -640,8 +758,19 @@ async fn download_node_runtime(app: &AppHandle) -> Result<(), String> {
             }
             let mut outfile = std::fs::File::create(&dest)
                 .map_err(|e| format!("Create {}: {}", dest.display(), e))?;
-            std::io::copy(&mut entry, &mut outfile)
+            // `take(remaining + 1)` bounds the write BEFORE it happens; if the
+            // copy fills the extra byte the archive is over budget.
+            let remaining = MAX_RUNTIME_EXTRACT_BYTES.saturating_sub(total_extracted);
+            let mut limited = std::io::Read::take(&mut entry, remaining.saturating_add(1));
+            let written = std::io::copy(&mut limited, &mut outfile)
                 .map_err(|e| format!("Extract {}: {}", stripped.display(), e))?;
+            if written > remaining {
+                return Err(format!(
+                    "Node.js archive expands past the {} byte extraction limit — aborting",
+                    MAX_RUNTIME_EXTRACT_BYTES
+                ));
+            }
+            total_extracted += written;
 
             // Preserve executable permission, but mask to rwxr-xr-x — never
             // honor setuid/setgid/sticky or world-writable bits from an
@@ -907,9 +1036,21 @@ fn extract_and_install_binary(asset: &str, bin_name: &str, data: &[u8]) -> Resul
                 None => continue,
             };
             if file.is_file() && name.file_name().and_then(|n| n.to_str()) == Some(bin_name) {
-                let mut buf = Vec::with_capacity(file.size() as usize);
-                std::io::copy(&mut file, &mut buf)
+                // The zip header's size field is attacker-controlled — clamp
+                // the pre-allocation hint and cap the bytes actually read
+                // (audit batch 3 fix #5).
+                let mut buf =
+                    Vec::with_capacity((file.size() as usize).min(MAX_PREALLOC_BYTES));
+                let mut limited =
+                    std::io::Read::take(&mut file, MAX_EXTRACTED_FILE_BYTES.saturating_add(1));
+                std::io::copy(&mut limited, &mut buf)
                     .map_err(|e| format!("Zip read error: {}", e))?;
+                if buf.len() as u64 > MAX_EXTRACTED_FILE_BYTES {
+                    return Err(format!(
+                        "'{}' in archive {} exceeds the {} byte extraction limit",
+                        bin_name, asset, MAX_EXTRACTED_FILE_BYTES
+                    ));
+                }
                 return install_extracted_binary(bin_name, &buf);
             }
         }
@@ -938,9 +1079,19 @@ fn extract_and_install_binary(asset: &str, bin_name: &str, data: &[u8]) -> Resul
             if entry.header().entry_type().is_file()
                 && path.file_name().and_then(|n| n.to_str()) == Some(bin_name)
             {
+                // Gzip-bomb guard: cap the decompressed bytes read into
+                // memory (audit batch 3 fix #5).
                 let mut buf = Vec::new();
-                std::io::copy(&mut entry, &mut buf)
+                let mut limited =
+                    std::io::Read::take(&mut entry, MAX_EXTRACTED_FILE_BYTES.saturating_add(1));
+                std::io::copy(&mut limited, &mut buf)
                     .map_err(|e| format!("Tar read error: {}", e))?;
+                if buf.len() as u64 > MAX_EXTRACTED_FILE_BYTES {
+                    return Err(format!(
+                        "'{}' in archive {} exceeds the {} byte extraction limit",
+                        bin_name, asset, MAX_EXTRACTED_FILE_BYTES
+                    ));
+                }
                 return install_extracted_binary(bin_name, &buf);
             }
         }
@@ -983,7 +1134,6 @@ async fn do_github_binary_install(
         },
     );
 
-    use futures::StreamExt;
     let client = reqwest::Client::new();
     let resp = client
         .get(&url)
@@ -995,14 +1145,7 @@ async fn do_github_binary_install(
         return Err(format!("{} download returned {}", agent_id, resp.status()));
     }
 
-    let total = resp.content_length().unwrap_or(0);
-    let mut stream = resp.bytes_stream();
-    let mut data = Vec::with_capacity(total as usize);
-    let mut downloaded: u64 = 0;
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|e| format!("Download error: {}", e))?;
-        downloaded += chunk.len() as u64;
-        data.extend_from_slice(&chunk);
+    let data = download_capped(resp, MAX_DOWNLOAD_BYTES, |downloaded, total| {
         let _ = app.emit(
             "agent-install-progress",
             AgentInstallProgress {
@@ -1017,6 +1160,47 @@ async fn do_github_binary_install(
                     total as f64 / 1_048_576.0
                 ),
             },
+        );
+    })
+    .await
+    .map_err(|e| format!("{} download failed: {}", agent_id, e))?;
+
+    // Integrity (audit batch 3 fix #6b): always compute + record the archive
+    // digest; verify it against a release checksum asset when one is
+    // configured (see GITHUB_BINARY_CHECKSUM_ASSET — currently None because
+    // Goose publishes no stable checksum asset we could rely on without
+    // guessing, so the digest is logged as an audit trail instead).
+    let digest = sha256_hex(&data);
+    if let Some(checksum_asset) = GITHUB_BINARY_CHECKSUM_ASSET {
+        let checksum_url = format!(
+            "https://github.com/{}/releases/download/v{}/{}",
+            config.repo, version, checksum_asset
+        );
+        let manifest = client
+            .get(&checksum_url)
+            .header("User-Agent", "notesage")
+            .send()
+            .await
+            .map_err(|e| format!("{} checksum download failed: {}", agent_id, e))?
+            .error_for_status()
+            .map_err(|e| format!("{} checksum request failed: {}", agent_id, e))?
+            .text()
+            .await
+            .map_err(|e| format!("Failed to read {} checksum manifest: {}", agent_id, e))?;
+        let expected = find_sha256_for_file(&manifest, asset).ok_or_else(|| {
+            format!("{} checksum manifest has no entry for {}", agent_id, asset)
+        })?;
+        if digest != expected {
+            return Err(format!(
+                "{} download failed integrity check: expected sha256 {}, got {}",
+                agent_id, expected, digest
+            ));
+        }
+    } else {
+        log::info!(
+            target: "notesage::agent_manager",
+            "Downloaded {} v{} asset {} — sha256 {} (no upstream checksum asset to verify against)",
+            agent_id, version, asset, digest
         );
     }
 
@@ -1197,6 +1381,66 @@ mod tests {
         assert!(!version_at_least("1.36.9", "1.37.0"));
         assert!(!version_at_least("1.36.99", "1.37.0"));
         assert!(!version_at_least("0.9.0", "1.37.0"));
+    }
+
+    // --- download integrity + limits (audit batch 3 fixes #5/#6) ---
+
+    #[test]
+    fn find_sha256_matches_nodejs_shasums_format() {
+        let manifest = "\
+0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  node-v22.14.0-darwin-arm64.tar.gz
+fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210  node-v22.14.0-linux-x64.tar.gz
+";
+        assert_eq!(
+            find_sha256_for_file(manifest, "node-v22.14.0-darwin-arm64.tar.gz").as_deref(),
+            Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        );
+        assert_eq!(
+            find_sha256_for_file(manifest, "node-v22.14.0-linux-x64.tar.gz").as_deref(),
+            Some("fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210")
+        );
+        assert!(find_sha256_for_file(manifest, "node-v22.14.0-win-x64.zip").is_none());
+    }
+
+    #[test]
+    fn find_sha256_handles_binary_mode_prefix_and_junk() {
+        // '*' binary-mode prefix tolerated; malformed lines and wrong-length
+        // hashes ignored.
+        let manifest = "\
+not a manifest line
+deadbeef  short-hash.tar.gz
+0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef  *goose-aarch64-apple-darwin.tar.gz
+";
+        assert_eq!(
+            find_sha256_for_file(manifest, "goose-aarch64-apple-darwin.tar.gz").as_deref(),
+            Some("0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef")
+        );
+        assert!(find_sha256_for_file(manifest, "short-hash.tar.gz").is_none());
+    }
+
+    #[test]
+    fn sha256_hex_is_lowercase_hex_of_content() {
+        // Known vector: sha256("abc").
+        assert_eq!(
+            sha256_hex(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn download_prealloc_hint_is_clamped() {
+        // The Content-Length-derived with_capacity hint must never exceed the
+        // clamp even when the header advertises something absurd.
+        let advertised: usize = usize::MAX;
+        assert_eq!(advertised.min(MAX_PREALLOC_BYTES), MAX_PREALLOC_BYTES);
+        // And the running-total caps have sane relative sizes.
+        assert!(MAX_PREALLOC_BYTES as u64 <= MAX_DOWNLOAD_BYTES);
+        assert!(MAX_DOWNLOAD_BYTES <= MAX_RUNTIME_EXTRACT_BYTES);
+    }
+
+    #[test]
+    fn extract_and_install_rejects_unknown_format() {
+        assert!(extract_and_install_binary("thing.rar", "goose", b"data").is_err());
     }
 
     #[test]

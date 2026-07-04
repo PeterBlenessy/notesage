@@ -255,24 +255,102 @@ async fn run_proxy_loop(
 // Connection handler (HTTP CONNECT + plain HTTP)
 // ---------------------------------------------------------------------------
 
+/// Hard cap on the size of the request head (request line + headers). Mirrors
+/// the MAX_HEADER_BYTES discipline in `commands/json_rpc.rs` — a peer that
+/// never sends the header terminator must not grow the buffer without bound.
+const MAX_REQUEST_HEAD_BYTES: usize = 64 * 1024;
+
+/// Outcome of reading the HTTP request head from a client connection.
+enum RequestHead {
+    /// Connection closed before any bytes arrived.
+    Closed,
+    /// Full head received. `buf` holds everything read so far (head PLUS any
+    /// body/pipelined bytes that arrived in the same segments); `head_len` is
+    /// the offset just past the header terminator.
+    Complete { buf: Vec<u8>, head_len: usize },
+    /// Head exceeded [`MAX_REQUEST_HEAD_BYTES`] without a terminator.
+    TooLarge,
+    /// EOF arrived mid-head (no terminator).
+    Truncated,
+}
+
+/// Offset just past the header terminator (`\r\n\r\n`, or lenient bare
+/// `\n\n`), or `None` if the head is not complete yet.
+fn find_head_end(buf: &[u8]) -> Option<usize> {
+    // Scan for "\n\r\n" (i.e. "...\r\n\r\n") or "\n\n".
+    let mut i = 0;
+    while i < buf.len() {
+        if buf[i] == b'\n' {
+            if buf[i + 1..].starts_with(b"\r\n") {
+                return Some(i + 3);
+            }
+            if buf[i + 1..].first() == Some(&b'\n') {
+                return Some(i + 2);
+            }
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Read from the client until the full request head has arrived (audit batch 3
+/// fix #1). The previous single 8 KB `read()` parsed whatever the first TCP
+/// segment happened to carry — partial delivery could truncate the headers so
+/// the Host-vs-request-target mismatch guard silently never ran. This loop
+/// accumulates until the `\r\n\r\n` terminator (bounded by
+/// [`MAX_REQUEST_HEAD_BYTES`]); bytes read past the terminator are returned in
+/// `buf` so the caller can forward them rather than lose them.
+async fn read_request_head<R: tokio::io::AsyncRead + Unpin>(
+    client: &mut R,
+) -> Result<RequestHead, String> {
+    let mut buf: Vec<u8> = Vec::with_capacity(8192);
+    let mut chunk = [0u8; 8192];
+    loop {
+        let n = client
+            .read(&mut chunk)
+            .await
+            .map_err(|e| format!("Read error: {}", e))?;
+        if n == 0 {
+            return Ok(if buf.is_empty() {
+                RequestHead::Closed
+            } else {
+                RequestHead::Truncated
+            });
+        }
+        buf.extend_from_slice(&chunk[..n]);
+        if let Some(head_len) = find_head_end(&buf) {
+            return Ok(RequestHead::Complete { buf, head_len });
+        }
+        if buf.len() > MAX_REQUEST_HEAD_BYTES {
+            return Ok(RequestHead::TooLarge);
+        }
+    }
+}
+
 async fn handle_connection(
     mut client: TcpStream,
     shared: Arc<SharedProxyState>,
 ) -> Result<(), String> {
-    // Read the initial request line and headers
-    let mut buf = vec![0u8; 8192];
-    let n = client
-        .read(&mut buf)
-        .await
-        .map_err(|e| format!("Read error: {}", e))?;
-    if n == 0 {
-        return Ok(());
-    }
+    // Read the full request head (request line + headers).
+    let (buf, head_len) = match read_request_head(&mut client).await? {
+        RequestHead::Closed => return Ok(()),
+        RequestHead::Complete { buf, head_len } => (buf, head_len),
+        RequestHead::TooLarge => {
+            send_response(&mut client, 431, "Request header section too large").await;
+            return Err("Request head exceeds size cap".to_string());
+        }
+        RequestHead::Truncated => {
+            send_response(&mut client, 400, "Bad Request").await;
+            return Err("Connection closed mid-request-head".to_string());
+        }
+    };
 
-    let request = String::from_utf8_lossy(&buf[..n]);
+    // Parse request line + headers from the head ONLY — body bytes that
+    // happened to arrive in the same read must not be scanned for headers.
+    let head = String::from_utf8_lossy(&buf[..head_len]).into_owned();
 
     // Parse the first line: METHOD target HTTP/version
-    let first_line = request.lines().next().unwrap_or("");
+    let first_line = head.lines().next().unwrap_or("");
     let parts: Vec<&str> = first_line.split_whitespace().collect();
     if parts.len() < 3 {
         send_response(&mut client, 400, "Bad Request").await;
@@ -283,11 +361,13 @@ async fn handle_connection(
     let target = parts[1];
 
     if method.eq_ignore_ascii_case("CONNECT") {
-        // HTTPS tunneling: CONNECT host:port HTTP/1.1
-        handle_connect(client, target, &shared).await
+        // HTTPS tunneling: CONNECT host:port HTTP/1.1. Any bytes the client
+        // pipelined after the head (unusual, but the read loop may have
+        // consumed them) must be forwarded once the tunnel is up.
+        handle_connect(client, target, &buf[head_len..], &shared).await
     } else {
         // Plain HTTP: GET http://host/path HTTP/1.1
-        handle_plain_http(client, &buf[..n], target, &shared).await
+        handle_plain_http(client, &buf, &head, target, &shared).await
     }
 }
 
@@ -295,6 +375,7 @@ async fn handle_connection(
 async fn handle_connect(
     mut client: TcpStream,
     target: &str,
+    early_client_bytes: &[u8],
     shared: &SharedProxyState,
 ) -> Result<(), String> {
     let (domain, port) = parse_host_port(target)?;
@@ -309,7 +390,7 @@ async fn handle_connect(
     }
 
     // Connect to the target
-    let upstream = TcpStream::connect(target)
+    let mut upstream = TcpStream::connect(target)
         .await
         .map_err(|e| format!("Upstream connect to {} failed: {}", target, e))?;
 
@@ -321,15 +402,28 @@ async fn handle_connect(
         .await
         .map_err(|e| format!("Write response: {}", e))?;
 
+    // Forward any client bytes that were read past the CONNECT head — they
+    // belong to the tunneled stream and must not be dropped.
+    if !early_client_bytes.is_empty() {
+        upstream
+            .write_all(early_client_bytes)
+            .await
+            .map_err(|e| format!("Write early bytes upstream: {}", e))?;
+    }
+
     // Bidirectional tunnel
     tunnel(client, upstream).await;
     Ok(())
 }
 
-/// Handle plain HTTP forwarding
+/// Handle plain HTTP forwarding. `initial_data` is everything read from the
+/// client so far (head + any body bytes) and is forwarded verbatim upstream;
+/// `head` is the request line + headers only, used for Host-header parsing so
+/// body bytes can never smuggle a fake `Host:` line.
 async fn handle_plain_http(
     mut client: TcpStream,
     initial_data: &[u8],
+    head: &str,
     target_url: &str,
     shared: &SharedProxyState,
 ) -> Result<(), String> {
@@ -341,18 +435,17 @@ async fn handle_plain_http(
     // the allowlist on the header yet connected upstream to attacker.com. Now
     // the request-target is authoritative, and a Host header that disagrees is
     // rejected outright.
-    let request_str = String::from_utf8_lossy(initial_data);
     let (domain, port) = if let Some(after) = target_url.strip_prefix("http://") {
         split_url_authority(after, 80)
     } else {
         // Origin-form target with no scheme — fall back to the Host header.
-        match host_from_header(&request_str) {
+        match host_from_header(head) {
             Some(h) => (h, 80u16),
             None => return Err("Cannot determine host from request".to_string()),
         }
     };
 
-    if let Some(hdr_host) = host_from_header(&request_str) {
+    if let Some(hdr_host) = host_from_header(head) {
         if !hdr_host.eq_ignore_ascii_case(&domain) {
             log::info!(target: "notesage::network_proxy", "HTTP host confusion: request-target {} vs Host {} — DENIED (agent: {})", domain, hdr_host, shared.agent_id);
             send_response(&mut client, 403, "Proxy Denied — Host header does not match request target").await;
@@ -594,6 +687,7 @@ async fn send_response(stream: &mut TcpStream, status: u16, body: &str) {
             200 => "OK",
             400 => "Bad Request",
             403 => "Forbidden",
+            431 => "Request Header Fields Too Large",
             _ => "Error",
         },
         body.len(),
@@ -809,6 +903,87 @@ mod tests {
         )
         .unwrap();
         assert_ne!(target_host.to_ascii_lowercase(), header_host.to_ascii_lowercase());
+    }
+
+    #[test]
+    fn test_find_head_end() {
+        // CRLF terminator — offset is one past the final \n.
+        assert_eq!(
+            find_head_end(b"GET / HTTP/1.1\r\nHost: a\r\n\r\n"),
+            Some(b"GET / HTTP/1.1\r\nHost: a\r\n\r\n".len())
+        );
+        // Lenient bare-LF terminator.
+        assert_eq!(
+            find_head_end(b"GET / HTTP/1.1\nHost: a\n\n"),
+            Some(b"GET / HTTP/1.1\nHost: a\n\n".len())
+        );
+        // Terminator mid-buffer: offset points just past it, not at the end.
+        let buf = b"GET / HTTP/1.1\r\n\r\nBODYBYTES";
+        assert_eq!(find_head_end(buf), Some(18));
+        assert_eq!(&buf[18..], b"BODYBYTES");
+        // Incomplete head — no terminator yet.
+        assert_eq!(find_head_end(b"GET / HTTP/1.1\r\nHost: a\r\n"), None);
+        assert_eq!(find_head_end(b""), None);
+    }
+
+    #[tokio::test]
+    async fn test_read_request_head_across_partial_segments() {
+        // Simulates partial TCP delivery: the Host header only exists in the
+        // full stream — a single-read parser would have missed it (audit
+        // batch 3 fix #1). `&[u8]` yields everything in one read here, but the
+        // loop must also assemble the head when the terminator arrives late;
+        // tokio's `AsyncReadExt` on a chained reader delivers split segments.
+        let part1: &[u8] = b"GET http://api.anthropic.com/ HTTP/1.1\r\n";
+        let part2: &[u8] = b"Host: api.anthropic.com\r\n\r\n";
+        let mut reader = tokio::io::AsyncReadExt::chain(part1, part2);
+        match read_request_head(&mut reader).await.unwrap() {
+            RequestHead::Complete { buf, head_len } => {
+                assert_eq!(head_len, part1.len() + part2.len());
+                let head = String::from_utf8_lossy(&buf[..head_len]).into_owned();
+                assert_eq!(host_from_header(&head).as_deref(), Some("api.anthropic.com"));
+            }
+            _ => panic!("expected Complete"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_request_head_preserves_body_bytes() {
+        let mut input: &[u8] = b"POST http://h/ HTTP/1.1\r\nHost: h\r\nContent-Length: 4\r\n\r\nBODY";
+        match read_request_head(&mut input).await.unwrap() {
+            RequestHead::Complete { buf, head_len } => {
+                assert_eq!(&buf[head_len..], b"BODY", "body bytes must be preserved, not lost");
+            }
+            _ => panic!("expected Complete"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_request_head_eof_cases() {
+        // Immediate EOF → Closed.
+        let mut empty: &[u8] = b"";
+        assert!(matches!(
+            read_request_head(&mut empty).await.unwrap(),
+            RequestHead::Closed
+        ));
+        // EOF mid-head → Truncated.
+        let mut partial: &[u8] = b"GET / HTTP/1.1\r\nHost: a";
+        assert!(matches!(
+            read_request_head(&mut partial).await.unwrap(),
+            RequestHead::Truncated
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_read_request_head_rejects_oversized_head() {
+        // Endless header bytes with no terminator must bail with TooLarge
+        // rather than grow the buffer without bound.
+        let mut input = Vec::from(&b"GET / HTTP/1.1\r\nX-Junk: "[..]);
+        input.resize(MAX_REQUEST_HEAD_BYTES + 16 * 1024, b'a');
+        let mut reader = &input[..];
+        assert!(matches!(
+            read_request_head(&mut reader).await.unwrap(),
+            RequestHead::TooLarge
+        ));
     }
 
     #[test]

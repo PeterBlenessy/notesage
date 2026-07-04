@@ -487,12 +487,11 @@ pub fn run() {
             log::set_max_level(log::LevelFilter::Warn);
 
             // Kill orphaned agent processes from previous sessions that weren't cleaned up
-            // (e.g. app was force-quit or crashed).
-            for pattern in &["claude-agent-acp", "codex-acp"] {
-                let _ = std::process::Command::new("pkill")
-                    .args(["-f", pattern])
-                    .output();
-            }
+            // (e.g. app was force-quit or crashed). PID-file based with identity
+            // verification — the old system-wide `pkill -f claude-agent-acp` also
+            // killed matching processes owned by OTHER apps (a terminal Claude Code
+            // session, another editor's ACP agent).
+            acp::kill_orphaned_acp_agents();
             // Kill orphaned llama-server by PID file — NOT pkill, which would kill
             // llama-server instances from other apps (Ollama, LM Studio, etc.) and
             // race with the frontend's auto-start after app updates.
