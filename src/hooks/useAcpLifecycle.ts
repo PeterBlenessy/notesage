@@ -444,6 +444,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
   // Listen for agent process death events
   useEffect(() => {
+    // Mounted-flag pattern (see `useSandboxViolations`): `listen()` resolves
+    // asynchronously, so an unmount racing the registration must unlisten
+    // the late registration immediately instead of leaking it.
+    let mounted = true;
     let unlisten: (() => void) | null = null;
 
     listen<{ instanceId: string; exitCode: number | null }>('acp-agent-exited', (event) => {
@@ -461,9 +465,15 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       // Clean up if we're mid-prompt
       clearUnresponsiveTimer();
       runConvCleanup(cleanupRefs.current, ownerConversationId);
-    }).then((fn) => { unlisten = fn; });
+    }).then((fn) => {
+      if (mounted) unlisten = fn;
+      else fn(); // Already unmounted — clean up immediately
+    });
 
-    return () => { unlisten?.(); };
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -494,6 +504,13 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     // mode + hydration state changes can fire this effect multiple times at startup;
     // without the lock, all firings race to create/resume redundantly).
     if (eagerSessionPromise) return;
+
+    // Cleanup-race guard: the IIFE below only reaches its `await listen(...)`
+    // after long awaits (hydration, agent spawn, session restore). If this
+    // effect firing is cleaned up during that window (conversation switch,
+    // unmount), the late-resolving listener must be unlistened immediately
+    // instead of being stored in a ref that cleanup already drained.
+    let active = true;
 
     eagerSessionPromise = (async () => {
       try {
@@ -595,6 +612,12 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             if (typeof configId === 'string' && typeof value === 'string') updateConfigOptionValue(configId, value);
           }
         });
+        // This effect firing was cleaned up while the listen was in flight —
+        // drop the late registration now; nothing will unlisten it later.
+        if (!active) {
+          eagerUnlisten();
+          return;
+        }
         // Store unlisten so cleanup can call it
         const prevEagerUnlisten = eagerUnlistenRef.current;
         eagerUnlistenRef.current = eagerUnlisten;
@@ -630,9 +653,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     });
 
     return () => {
-      // Tear down the init-time session listener. Safe to call on strict-mode
-      // re-mount cleanups too: the ref is re-populated when the first firing
-      // finishes attaching the listener (only one firing runs thanks to the lock).
+      // Flag first so an in-flight IIFE's late `listen` resolution unlistens
+      // itself instead of repopulating the ref after this cleanup ran.
+      active = false;
+      // Tear down the init-time session listener.
       eagerUnlistenRef.current?.();
       eagerUnlistenRef.current = null;
     };

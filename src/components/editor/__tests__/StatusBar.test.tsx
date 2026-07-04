@@ -17,6 +17,7 @@ import {
   renderWithProviders,
   registerDefaultHandlers,
   fireEvent,
+  act,
 } from '@/test/component-harness';
 import { createMockEditor } from '@/test/mock-editor';
 import type { Editor } from '@tiptap/core';
@@ -282,6 +283,72 @@ describe('StatusBar', () => {
       expect(text).toContain('Completions');
       expect(text).toContain('Comments');
       expect(text).toContain('Help');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Word-count debounce (deep-review batch 2, item #11) — the recompute runs
+  // `editor.getText()` over the whole document, so the transaction tick is
+  // debounced (250 ms trailing) instead of firing per keystroke.
+  // -------------------------------------------------------------------------
+  describe('word count debounce', () => {
+    /** Grab the `transaction` handler StatusBar registered on the mock editor. */
+    function getTransactionHandler(editor: Editor): () => void {
+      const call = (editor.on as unknown as ReturnType<typeof vi.fn>).mock.calls.find(
+        (c: unknown[]) => c[0] === 'transaction',
+      );
+      expect(call).toBeTruthy();
+      return call![1] as () => void;
+    }
+
+    it('recomputes the word count only after the 250ms trailing window, resetting on new transactions', () => {
+      vi.useFakeTimers();
+      const editor = createMockEditor({ text: 'one two' }) as unknown as Editor;
+      const { container } = renderWithProviders(<StatusBar editor={editor} />);
+      expect(container.textContent ?? '').toContain('2 words');
+
+      // Simulate typing: the document text grows and a transaction fires.
+      (editor.getText as unknown as ReturnType<typeof vi.fn>).mockReturnValue('one two three');
+      const onTransaction = getTransactionHandler(editor);
+
+      act(() => {
+        onTransaction();
+      });
+      // No per-keystroke recompute — still the stale count.
+      expect(container.textContent ?? '').toContain('2 words');
+
+      // Another transaction inside the window resets the trailing timer.
+      act(() => {
+        vi.advanceTimersByTime(200);
+        onTransaction();
+      });
+      act(() => {
+        vi.advanceTimersByTime(200);
+      });
+      expect(container.textContent ?? '').toContain('2 words');
+
+      // 250ms after the LAST transaction the count lands.
+      act(() => {
+        vi.advanceTimersByTime(60);
+      });
+      expect(container.textContent ?? '').toContain('3 words');
+    });
+
+    it('clears the pending debounce timer on unmount', () => {
+      vi.useFakeTimers();
+      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const { unmount } = renderWithProviders(<StatusBar editor={editor} />);
+      const onTransaction = getTransactionHandler(editor);
+
+      act(() => {
+        onTransaction();
+      });
+      unmount();
+      // The trailing tick must not fire (setState) after unmount.
+      expect(() => {
+        vi.runAllTimers();
+      }).not.toThrow();
+      expect(vi.getTimerCount()).toBe(0);
     });
   });
 
