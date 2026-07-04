@@ -13,7 +13,8 @@
  */
 
 import { tauriApi } from "@/lib/tauri";
-import type { ChartData } from "@/lib/chart-types";
+import { isChartData, type ChartData } from "@/lib/chart-types";
+import { log } from "@/lib/logger";
 
 const CHARTS_DIR = ".notesage/charts";
 
@@ -61,7 +62,12 @@ export async function loadChart(
     if (!exists) return null;
 
     const raw = await tauriApi.readFile(filePath);
-    return JSON.parse(raw) as ChartData;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isChartData(parsed)) {
+      log.warn("charts", `Chart sidecar ${filePath} has an invalid shape — ignoring`);
+      return null;
+    }
+    return parsed;
   } catch {
     return null;
   }

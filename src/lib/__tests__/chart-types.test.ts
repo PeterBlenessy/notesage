@@ -11,6 +11,7 @@ import {
   createEmptyChartData,
   getChartTypeMeta,
   isCartesian,
+  isChartData,
   isRadial,
   type ChartType,
   type ColorScheme,
@@ -185,5 +186,37 @@ describe("createEmptyChartData", () => {
 
     a.data[0].category = "changed";
     expect(b.data[0].category).not.toBe("changed");
+  });
+});
+
+describe("isChartData", () => {
+  it("accepts a freshly created empty chart", () => {
+    expect(isChartData(createEmptyChartData())).toBe(true);
+    expect(isChartData(createEmptyChartData("scatter"))).toBe(true);
+  });
+
+  it("accepts an optional series array", () => {
+    const data = { ...createEmptyChartData(), series: [{ key: "a", label: "A" }] };
+    expect(isChartData(data)).toBe(true);
+  });
+
+  it("rejects junk primitives", () => {
+    expect(isChartData(null)).toBe(false);
+    expect(isChartData(undefined)).toBe(false);
+    expect(isChartData(42)).toBe(false);
+    expect(isChartData("chart")).toBe(false);
+    expect(isChartData([createEmptyChartData()])).toBe(false);
+  });
+
+  it("rejects wrong-shape containers", () => {
+    const valid = createEmptyChartData();
+    expect(isChartData({})).toBe(false);
+    expect(isChartData({ ...valid, type: "sankey" })).toBe(false);
+    expect(isChartData({ ...valid, type: 42 })).toBe(false);
+    expect(isChartData({ ...valid, title: null })).toBe(false);
+    expect(isChartData({ ...valid, data: "rows" })).toBe(false);
+    expect(isChartData({ ...valid, config: null })).toBe(false);
+    expect(isChartData({ ...valid, config: [1] })).toBe(false);
+    expect(isChartData({ ...valid, series: "not-array" })).toBe(false);
   });
 });

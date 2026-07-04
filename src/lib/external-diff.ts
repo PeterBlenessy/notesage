@@ -3,6 +3,7 @@ import DOMPurify from "dompurify";
 import type { Editor } from "@tiptap/core";
 import { DOMParser as PMDOMParser, type Node as PMNode } from "@tiptap/pm/model";
 import type { InlineDiffHunk } from "@/components/editor/extensions/inline-diff";
+import { getEditorStorage, type EditorStorageMarkdown } from "@/lib/editor-storage";
 
 /**
  * A diff hunk with character offsets in the old text.
@@ -142,9 +143,8 @@ function buildTextWithPositions(doc: PMNode): TextWithPositions {
 function parseMarkdownToDoc(editor: Editor, markdown: string): PMNode | null {
   try {
     // tiptap-markdown stores the parser in editor.storage.markdown.parser
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const mdStorage = (editor.storage as any).markdown as Record<string, unknown> | undefined;
-    const parser = mdStorage?.parser as { parse: (content: string) => string } | undefined;
+    const mdStorage = getEditorStorage<EditorStorageMarkdown>(editor, "markdown");
+    const parser = mdStorage?.parser;
     if (parser) {
       const html = parser.parse(markdown);
       if (typeof html !== "string") return null;

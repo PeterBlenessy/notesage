@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useMcpStore, mcpSourceToItemSource, type McpServerEntry, type McpToolInfo, type McpEnvValue } from '@/stores/mcp-store';
+import { filterValidMcpConfigs, type McpServerConfig } from '@/lib/mcp/config-guards';
 import { track } from '@/lib/telemetry';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
@@ -11,18 +12,9 @@ import { log } from '@/lib/logger';
 // ---------------------------------------------------------------------------
 // Types matching Rust backend
 // ---------------------------------------------------------------------------
-
-interface McpServerConfig {
-  id: string;
-  name: string;
-  command: string;
-  args: string[];
-  env: Record<string, McpEnvValue>;
-  source: 'notesage_global' | 'notesage_project' | 'claude_desktop' | 'cursor' | 'vscode';
-  enabled: boolean;
-  transport?: 'stdio' | 'http';
-  url?: string | null;
-}
+// `McpServerConfig` (the wire shape of `mcp_discover_configs` /
+// `mcp_import_configs`, parsed by Rust from foreign config files) lives in
+// `src/lib/mcp/config-guards.ts` together with its runtime validators.
 
 interface McpServerInfo {
   id: string;
@@ -135,15 +127,26 @@ export function useMcpDiscovery() {
         //
         // Running scans in parallel keeps startup latency bounded by the
         // slowest single scan rather than summing across all projects.
-        const globalConfigs: McpServerConfig[] = await invoke('mcp_discover_configs', {
+        // The command reads foreign, user-editable config files — validate the
+        // wire shape at runtime and skip malformed entries instead of trusting
+        // an `invoke<...>` type assertion (see config-guards.ts).
+        const globalRaw = await invoke<unknown>('mcp_discover_configs', {
           baseDirs: [],
         });
+        const { configs: globalConfigs } = filterValidMcpConfigs(
+          globalRaw,
+          'mcp_discover_configs (global)',
+        );
 
         const perProjectResults = await Promise.all(
           projects.map(async (p) => {
-            const configs: McpServerConfig[] = await invoke('mcp_discover_configs', {
+            const raw = await invoke<unknown>('mcp_discover_configs', {
               baseDirs: [p.path],
             });
+            const { configs } = filterValidMcpConfigs(
+              raw,
+              `mcp_discover_configs (${p.path})`,
+            );
             return { projectPath: p.path, configs };
           }),
         );

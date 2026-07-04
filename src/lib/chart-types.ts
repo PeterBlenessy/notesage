@@ -87,6 +87,36 @@ export interface ChartData {
   config: ChartConfig;
 }
 
+const CHART_TYPE_VALUES: ReadonlySet<string> = new Set<string>([
+  "bar",
+  "line",
+  "area",
+  "pie",
+  "donut",
+  "horizontal_bar",
+  "radar",
+  "scatter",
+  "radial_bar",
+  "composed",
+]);
+
+/**
+ * Lightweight runtime guard for chart JSON parsed from untrusted sources
+ * (the `chartJson` node attribute embedded in markdown, or legacy sidecar
+ * files on disk). Validates the top-level container shape the renderer
+ * actually reads — `type`, `title`, `data[]`, `config`, optional `series[]`.
+ */
+export function isChartData(v: unknown): v is ChartData {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
+  const o = v as Record<string, unknown>;
+  if (typeof o.type !== "string" || !CHART_TYPE_VALUES.has(o.type)) return false;
+  if (typeof o.title !== "string") return false;
+  if (!Array.isArray(o.data)) return false;
+  if (typeof o.config !== "object" || o.config === null || Array.isArray(o.config)) return false;
+  if (o.series !== undefined && !Array.isArray(o.series)) return false;
+  return true;
+}
+
 // ─── Color Schemes ───────────────────────────────────────────
 
 export type ColorScheme =
