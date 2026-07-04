@@ -129,7 +129,7 @@ note-sage/
 │   │   │   ├── FloatingCommandBar.tsx, CommandBarContext.tsx, CommandBarHistory.tsx
 │   │   │   ├── CommandBarStream.tsx, AttachmentChips.tsx, prefix-modes.ts, verb-modes.ts
 │   │   │   └── modes/      # Prefix-mode pickers — single-char nouns (SkillMode, ReferenceMode, TagMode, TaskMode, ResearchMode, PaletteMode) + `:` verbs (FileMode)
-│   │   ├── sidebar/        # Sidebar.tsx, FileTree.tsx, FileTreeItem.tsx, ExplorerFolderItem.tsx
+│   │   ├── sidebar/        # FileIcon.tsx (shared file-type icon)
 │   │   │   └── quiet/      # Quiet Composer sidebar — QuietSidebar.tsx, PinnedSection.tsx, ProjectsSection.tsx, FoldersSection.tsx, RecentSection.tsx, TagsSection.tsx, MentionsSection.tsx, SidebarContextMenu.tsx, SidebarInlineEdit.tsx, SidebarRowIndicators.tsx, FilePreview.tsx, FolderPeek.tsx, aria-announcer.ts, useRovingTabindex.ts, useSidebarItemShortcuts.ts, rename-utils.ts, sidebar-clipboard.ts, file-drag.ts
 │   │   ├── settings/       # ConnectionsSettings, LocalAISettings, TranscriptionSettings, etc.
 │   │   │   └── v2/         # Settings shell — SettingsDialogV2, SettingsShell, SettingsRow, SettingsGroup, SettingsSearch + per-area panels (Appearance, General, Editor, AI, Skills, Projects, Privacy, Advanced, About)
