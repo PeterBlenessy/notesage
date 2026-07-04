@@ -370,17 +370,6 @@ fn format_params(raw: u64) -> String {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn fetch_hf_metadata(repo_id: String) -> Result<HfModelMetadata, String> {
-    fetch_hf_metadata_inner(&repo_id).await
-}
-
-#[tauri::command]
-pub async fn parse_gguf_metadata(file_path: String) -> Result<gguf_parser::GgufMetadata, String> {
-    let path = Path::new(&file_path);
-    gguf_parser::parse_gguf_header(path)
-}
-
-#[tauri::command]
 pub async fn get_runtime_model_metadata(port: u16) -> Result<RuntimeModelMetadata, String> {
     fetch_runtime_metadata(port).await
 }

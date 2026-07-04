@@ -216,16 +216,15 @@ describe('StatusBar', () => {
     });
 
     it('omits the saved-ago label entirely when no tab is active', () => {
-      // No tab open \u2014 the SavedLabel slot is empty so we don't show a
-      // stale dash for "no document".
+      // No tab open \u2014 no saved-ago label and no stale dash for
+      // "no document".
       const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
       const { container } = renderWithProviders(
         <StatusBar editor={editor} />,
       );
 
       expect(container.textContent ?? '').not.toMatch(/saved \d+s ago/);
-      // The em-dash placeholder is also suppressed \u2014 `<SavedLabel />`
-      // is only mounted when an active tab exists.
+      // The em-dash placeholder is also suppressed when no tab is active.
       expect(container.querySelector('[aria-label="Not yet saved this session"]')).toBeNull();
     });
 
@@ -255,9 +254,7 @@ describe('StatusBar', () => {
     });
 
     // The "updates the saved label as time advances" test was deleted
-    // along with QuietSavedLabel (live-test 2026-04-25). The shared
-    // `SavedLabel` component still has its own timer test in
-    // `src/components/__tests__/SavedLabel.test.tsx`.
+    // along with the quiet saved-ago label component (live-test 2026-04-25).
 
     // ---------------------------------------------------------------------
     // Task #53 regression: quiet strip now owns the StatusTray popover.

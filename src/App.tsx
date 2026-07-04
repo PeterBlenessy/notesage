@@ -233,11 +233,6 @@ function App() {
         : settings.notesRootPath;
       if (target) useQuietSidebarStore.getState().setPendingCreate({ parentDir: target });
     }, []),
-    onQuickNote: useCallback(() => {
-      const settings = useSettingsStore.getState();
-      const target = settings.notesRootPath;
-      if (target) useQuietSidebarStore.getState().setPendingCreate({ parentDir: target });
-    }, []),
     onOpenActions: useCallback(() => emitCmdBarEvent({ type: "focus", prefix: "!" }), []),
     onOpenFile: handleTrayOpenFile,
   });

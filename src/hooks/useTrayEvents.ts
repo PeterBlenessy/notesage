@@ -6,7 +6,6 @@ import { log } from "@/lib/logger";
 
 interface UseTrayEventsOptions {
   onNewNote: () => void;
-  onQuickNote: () => void;
   onOpenActions: () => void;
   onOpenFile: (path: string) => void;
 }
@@ -17,7 +16,6 @@ interface UseTrayEventsOptions {
  */
 export function useTrayEvents({
   onNewNote,
-  onQuickNote,
   onOpenActions,
   onOpenFile,
 }: UseTrayEventsOptions) {
@@ -36,13 +34,6 @@ export function useTrayEvents({
         await listen("tray-new-note", () => {
           log.debug("tray", "Tray: new note");
           onNewNote();
-        })
-      );
-
-      unlisteners.push(
-        await listen("tray-quick-note", () => {
-          log.debug("tray", "Tray: quick note");
-          onQuickNote();
         })
       );
 
@@ -66,5 +57,5 @@ export function useTrayEvents({
     return () => {
       unlisteners.forEach((fn) => fn());
     };
-  }, [onNewNote, onQuickNote, onOpenActions, onOpenFile]);
+  }, [onNewNote, onOpenActions, onOpenFile]);
 }
