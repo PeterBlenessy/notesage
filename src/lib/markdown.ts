@@ -1327,7 +1327,7 @@ export async function streamingHydrate(
 
   // Empty / malformed doc — fast path. Just clear the editor.
   if (!Array.isArray(docContent) || docContent.length === 0) {
-    if (signal.aborted) {
+    if (signal.aborted || editor.isDestroyed) {
       return { aborted: true, chunkCount: 0, topLevelNodes: 0, newDocSize: 0, oldDocSize, ms: performance.now() - t0 };
     }
     editor.chain().setMeta("addToHistory", false).setContent({ type: "doc", content: [] }).run();
@@ -1341,7 +1341,7 @@ export async function streamingHydrate(
     };
   }
 
-  if (signal.aborted) {
+  if (signal.aborted || editor.isDestroyed) {
     return { aborted: true, chunkCount: 0, topLevelNodes: docContent.length, newDocSize: oldDocSize, oldDocSize, ms: performance.now() - t0 };
   }
 
@@ -1353,8 +1353,12 @@ export async function streamingHydrate(
   // single-chunk fast path skips the yield, no overhead.
   let chunkCount = 0;
   for (let i = 0; i < docContent.length; i += HYDRATE_CHUNK_SIZE) {
-    if (signal.aborted) {
-      return { aborted: true, chunkCount, topLevelNodes: docContent.length, newDocSize: editor.state.doc.nodeSize, oldDocSize, ms: performance.now() - t0 };
+    // The rAF yield below hands control back to the browser between chunks —
+    // the editor can be destroyed (Editor unmount) during that gap, not just
+    // aborted. Writing to a destroyed ProseMirror view throws, so the
+    // isDestroyed check is load-bearing; don't touch `editor.state` either.
+    if (signal.aborted || editor.isDestroyed) {
+      return { aborted: true, chunkCount, topLevelNodes: docContent.length, newDocSize: editor.isDestroyed ? oldDocSize : editor.state.doc.nodeSize, oldDocSize, ms: performance.now() - t0 };
     }
 
     const chunk = docContent.slice(i, i + HYDRATE_CHUNK_SIZE);
@@ -1383,8 +1387,8 @@ export async function streamingHydrate(
     }
   }
 
-  if (signal.aborted) {
-    return { aborted: true, chunkCount, topLevelNodes: docContent.length, newDocSize: editor.state.doc.nodeSize, oldDocSize, ms: performance.now() - t0 };
+  if (signal.aborted || editor.isDestroyed) {
+    return { aborted: true, chunkCount, topLevelNodes: docContent.length, newDocSize: editor.isDestroyed ? oldDocSize : editor.state.doc.nodeSize, oldDocSize, ms: performance.now() - t0 };
   }
 
   // Same fresh-state pattern as `loadParsedJsonIntoEditor` — clears undo
@@ -1406,6 +1410,9 @@ export async function streamingHydrate(
   }
   if (side.annotations.size > 0) {
     requestAnimationFrame(() => {
+      // Deferred past the return — the editor can be destroyed (or the
+      // activation aborted) before this frame fires.
+      if (signal.aborted || editor.isDestroyed) return;
       applyAnnotationsToEditor(editor, side.annotations);
     });
   }
