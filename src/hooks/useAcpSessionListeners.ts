@@ -23,6 +23,8 @@ import {
 import { resetUnresponsiveTimer } from '@/hooks/useAcpLifecycle';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 import { updateCurrentMode, updateConfigOptionValue, updateUsage, setAvailableCommands } from '@/lib/ai/acp-agent-state';
+import { parseUsageMeta } from '@/lib/ai/usage';
+import { useUsageStore } from '@/stores/usage-store';
 import { runRunning, runAwaitingPermission, runIdle } from '@/lib/ai/session-run';
 
 // ---------------------------------------------------------------------------
@@ -316,8 +318,24 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       const cost = (rawCost && typeof rawCost.amount === 'number' && typeof rawCost.currency === 'string')
         ? { amount: rawCost.amount, currency: rawCost.currency }
         : undefined;
-      if (contextUsed > 0 || contextSize > 0) {
-        updateUsage({ contextUsed, contextSize, cost });
+      // Rate-limit state riding along in the non-contractual `_meta` bag
+      // (e.g. `_claude/rateLimit` from claude-code-acp). Best-effort: malformed
+      // or absent `_meta` yields undefined and behavior matches today.
+      const rateLimit = parseUsageMeta(update._meta);
+      if (contextUsed > 0 || contextSize > 0 || rateLimit) {
+        updateUsage({ contextUsed, contextSize, cost, rateLimit });
+        // Write through to the per-connection snapshot store (#6) so the live
+        // singleton and Settings-facing snapshots stay in sync. Sparse patch:
+        // a rate-limit-only update must not zero out a prior context reading.
+        if (deps.connectionId) {
+          useUsageStore.getState().recordUsage(deps.connectionId, {
+            ...(contextUsed > 0 || contextSize > 0 ? { contextUsed, contextSize } : {}),
+            cost,
+            rateLimit,
+            source: 'acp',
+            confidence: 'exact',
+          });
+        }
       }
     } else if (update.sessionUpdate === 'available_commands_update' && Array.isArray(update.availableCommands ?? update.available_commands)) {
       // Agent slash commands (camelCase from ACP schema)

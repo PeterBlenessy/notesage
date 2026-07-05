@@ -8,6 +8,7 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { PROVIDER_OPTIONS, getCapabilities } from '@/lib/ai/connections';
 import type { Connection, ConnectionCredentials, AcpDiscoveredCapabilities } from '@/lib/ai/connections';
 import type { AcpSpawnResult, AcpSessionResult, AcpSessionModeState, AcpSessionConfigOption, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
+import type { ProviderRateLimitInfo } from '@/lib/ai/usage';
 
 // ---------------------------------------------------------------------------
 // Common mode mapping — maps agent-specific mode IDs to universal display names
@@ -186,6 +187,8 @@ export interface AcpUsageInfo {
   contextUsed: number;
   contextSize: number;
   cost?: { amount: number; currency: string };
+  /** Rate-limit state parsed from `usage_update._meta` (e.g. `_claude/rateLimit`). */
+  rateLimit?: ProviderRateLimitInfo;
 }
 
 export interface AcpAgentCommand {
