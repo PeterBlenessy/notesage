@@ -262,10 +262,6 @@ async fn handle_server_request(
             if let Some(params) = params {
                 if let Some(uri) = params.get("uri").and_then(|v| v.as_str()) {
                     log::info!(target: "notesage::copilot", "window/showDocument: {} (suppressed auto-open)", uri);
-                    let _ = app.emit(
-                        "copilot-auth-browser-open",
-                        serde_json::json!({ "uri": uri }),
-                    );
                 }
             }
             serde_json::json!({ "success": true })

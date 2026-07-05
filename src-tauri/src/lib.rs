@@ -308,7 +308,6 @@ pub fn run() {
             agent_resolve_binary,
             agent_install,
             agent_uninstall,
-            agent_install_node_runtime,
             agent_check_updates,
             agent_update,
             commands::local_agent::local_agent_write_config,
@@ -441,8 +440,6 @@ pub fn run() {
             check_llama_server_available,
             // Model metadata
             get_model_metadata,
-            fetch_hf_metadata,
-            parse_gguf_metadata,
             get_runtime_model_metadata,
             // Hardware-aware model recommendation
             model_fit::hardware::detect_hardware_profile,
@@ -455,9 +452,6 @@ pub fn run() {
             network_domain_respond,
             network_proxy_status,
             network_default_domains,
-            // Sandbox violation monitoring
-            sandbox_monitor_register_pid,
-            sandbox_monitor_unregister_pid,
             // Secure credential storage
             store_credential,
             get_credential,

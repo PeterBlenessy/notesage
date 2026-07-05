@@ -130,14 +130,6 @@ pub struct AgentInstallProgress {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct AgentInstallDone {
-    pub agent_id: String,
-    pub success: bool,
-    pub version: Option<String>,
-    pub error: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
 pub struct AgentVersionEntry {
     pub version: String,
     pub installed_at: String,
@@ -519,17 +511,6 @@ pub async fn agent_install(
         let mut installing = state.installing.lock().await;
         *installing = None;
     }
-
-    // Emit done event
-    let _ = app.emit(
-        "agent-install-done",
-        AgentInstallDone {
-            agent_id: agent_id.clone(),
-            success: result.is_ok(),
-            version: result.as_ref().ok().cloned().unwrap_or(None),
-            error: result.as_ref().err().cloned(),
-        },
-    );
 
     result.map(|_| ())
 }
@@ -961,11 +942,6 @@ async fn do_npm_install(
     );
 
     Ok(Some(version))
-}
-
-#[tauri::command]
-pub async fn agent_install_node_runtime(app: AppHandle) -> Result<(), String> {
-    download_node_runtime(&app).await
 }
 
 // ---------------------------------------------------------------------------
@@ -1467,7 +1443,7 @@ pub struct AgentUpdateInfo {
 }
 
 #[tauri::command]
-pub async fn agent_check_updates(app: AppHandle, force: Option<bool>) -> Result<Vec<AgentUpdateInfo>, String> {
+pub async fn agent_check_updates(force: Option<bool>) -> Result<Vec<AgentUpdateInfo>, String> {
     let mut versions = read_versions();
 
     // Rate limit: minimum 1 hour between automatic checks (skipped when force=true)
@@ -1520,11 +1496,6 @@ pub async fn agent_check_updates(app: AppHandle, force: Option<bool>) -> Result<
                 log::warn!(target: "notesage::agent_manager", "Failed to check updates for {}: {}", agent_id, e);
             }
         }
-    }
-
-    // Emit events for each available update
-    for update in &updates {
-        let _ = app.emit("agent-update-available", update.clone());
     }
 
     Ok(updates)

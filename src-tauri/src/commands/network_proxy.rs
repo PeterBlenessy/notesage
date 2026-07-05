@@ -54,15 +54,6 @@ pub enum DomainDecision {
     Deny,
 }
 
-/// Event payload for always-allowed domains (frontend persists these)
-#[derive(Serialize, Clone, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct DomainAlwaysPayload {
-    pub instance_id: String,
-    pub agent_id: String,
-    pub domain: String,
-}
-
 /// Event payload when a domain request is resolved (denied, timed out, etc.)
 #[derive(Serialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -569,20 +560,15 @@ async fn check_domain_allowed(
         }
         DomainDecision::AllowAlways => {
             log::info!(target: "notesage::network_proxy", "Domain {} allowed always", domain);
+            // Add to the live session list so THIS proxy honors it immediately.
+            // Persistence is written frontend-side at the same call site that
+            // sends the `allow_always` decision (DomainApprovalCard →
+            // permission-store.allowDomain), so no "persist me" event is needed.
             shared
                 .session_domains
                 .lock()
                 .await
                 .push(domain.to_string());
-            // Notify frontend to persist
-            let _ = shared.app.emit(
-                "network-domain-always",
-                DomainAlwaysPayload {
-                    instance_id: shared.instance_id.clone(),
-                    agent_id: shared.agent_id.clone(),
-                    domain: domain.to_string(),
-                },
-            );
             Ok(true)
         }
         DomainDecision::Deny => {

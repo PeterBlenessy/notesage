@@ -47,20 +47,35 @@ export function useBackgroundActivity(): BackgroundActivity {
   const [indexing, setIndexing] = useState<{ current: number; total: number } | null>(null);
 
   useEffect(() => {
+    // Mounted-flag pattern (see `useSandboxViolations`): the dynamic import +
+    // `listen()` calls resolve asynchronously, so an unmount that races the
+    // registration must immediately unlisten late-arriving registrations
+    // instead of leaking them (and must not setState on an unmounted hook).
+    let mounted = true;
     let unlistenProgress: (() => void) | undefined;
     let unlistenReady: (() => void) | undefined;
 
     import("@tauri-apps/api/event").then(({ listen }) => {
       listen<{ current: number; total: number }>("index-progress", (event) => {
-        setIndexing(event.payload);
-      }).then((fn) => { unlistenProgress = fn; });
+        if (mounted) setIndexing(event.payload);
+      }).then((fn) => {
+        if (mounted) unlistenProgress = fn;
+        else fn(); // Already unmounted — clean up immediately
+      });
 
       listen("index-ready", () => {
-        setIndexing(null);
-      }).then((fn) => { unlistenReady = fn; });
+        if (mounted) setIndexing(null);
+      }).then((fn) => {
+        if (mounted) unlistenReady = fn;
+        else fn(); // Already unmounted — clean up immediately
+      });
     });
 
-    return () => { unlistenProgress?.(); unlistenReady?.(); };
+    return () => {
+      mounted = false;
+      unlistenProgress?.();
+      unlistenReady?.();
+    };
   }, []);
 
   const activeDownloads = useRecordingStore((s) => s.activeDownloads);

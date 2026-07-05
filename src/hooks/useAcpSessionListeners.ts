@@ -31,6 +31,16 @@ import { runRunning, runAwaitingPermission, runIdle } from '@/lib/ai/session-run
 
 interface ChatListenerDeps {
   instanceId: string;
+  /**
+   * ACP session this turn prompts on. A single agent instance is reused across
+   * sessions within a conversation (`chatSessionId` is swapped on the agent
+   * object, not the instance), so the instanceId gate alone lets a stale
+   * listener receive a NEWER session's chunks — the listeners below also
+   * reject events whose payload carries a different sessionId. Conservative:
+   * when either side lacks a session id (older agents, pre-session updates),
+   * the gate falls back to instanceId-only so legitimate events aren't dropped.
+   */
+  sessionId?: string | null;
   assistantMessageId: number;
   conversationId: string | null;
   /**
@@ -101,6 +111,10 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
 
   const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
     if (event.payload.instanceId !== deps.instanceId) return;
+    // Session gate — see `ChatListenerDeps.sessionId`. Only rejects when BOTH
+    // sides carry a session id and they differ; a missing id on either side
+    // falls back to the instanceId-only gate.
+    if (deps.sessionId && event.payload.sessionId && event.payload.sessionId !== deps.sessionId) return;
     // Reset unresponsiveness timer — agent is still alive
     resetUnresponsiveTimer();
     // Any session activity means the agent is working again — if it had been
@@ -325,6 +339,8 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
 
   const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
     if (event.payload.instanceId !== deps.instanceId) return;
+    // Session gate — same conservative rule as the session-update listener.
+    if (deps.sessionId && event.payload.sessionId && event.payload.sessionId !== deps.sessionId) return;
     const payload = event.payload;
 
     // Clear the active tool spinner — the previous tool finished,

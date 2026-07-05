@@ -181,6 +181,36 @@ describe('ApprovalsSettings', () => {
     expect(state.toolCallAlways.find((a) => a.toolName === 'bash')).toBeDefined();
   });
 
+  it('revokes a single domain approval on row Revoke click (scoped to its project bucket)', () => {
+    seedConnections();
+    usePermissionStore.setState({
+      domainAlwaysAllowed: {
+        'conn-claude': {
+          global: ['api.github.com'],
+          '/work/projB': ['internal.example.com'],
+        },
+      },
+    });
+
+    renderWithProviders(<ApprovalsSettings />);
+
+    const domainCell = screen.getByText('internal.example.com');
+    const row = domainCell.closest('tr');
+    expect(row).toBeTruthy();
+    const revoke = within(row as HTMLElement).getByRole('button', {
+      name: /revoke internal\.example\.com/i,
+    });
+    act(() => {
+      fireEvent.click(revoke);
+    });
+
+    const state = usePermissionStore.getState().domainAlwaysAllowed;
+    // Project-bucket entry gone (empty bucket pruned)…
+    expect(state['conn-claude']?.['/work/projB']).toBeUndefined();
+    // …the global entry for the same connection is untouched.
+    expect(state['conn-claude']?.global).toEqual(['api.github.com']);
+  });
+
   it('bulk-revokes all legacy approvals (null connection + null project)', () => {
     seedConnections();
     usePermissionStore.setState({

@@ -19,7 +19,6 @@ describe('PERF category constants', () => {
     expect(PERF.palette).toBe('perf:palette');
     expect(PERF.docLoad).toBe('perf:doc-load');
     expect(PERF.docSwitch).toBe('perf:doc-switch');
-    expect(PERF.docPreload).toBe('perf:doc-preload');
     expect(PERF.skills).toBe('perf:skills');
     expect(PERF.aiChat).toBe('perf:ai-chat');
     expect(PERF.index).toBe('perf:index');

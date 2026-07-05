@@ -31,7 +31,6 @@ interface AIStore {
   provider: AIProviderType | null;
   apiKeys: Record<string, string | undefined>;
   ollamaUrl: string;
-  suggestionsEnabled: boolean;
 
   /** Kept for persona→agent migration. */
   activePersonaId: string;
@@ -45,7 +44,6 @@ interface AIStore {
   setProvider: (provider: AIProviderType | null) => void;
   setApiKey: (provider: 'anthropic' | 'openai', key: string) => void;
   setOllamaUrl: (url: string) => void;
-  toggleSuggestions: () => void;
 
   addCustomPrompt: (prompt: Omit<CustomPrompt, 'id'>) => void;
   updateCustomPrompt: (id: string, prompt: Partial<CustomPrompt>) => void;
@@ -58,7 +56,6 @@ export const useAIStore = create<AIStore>()(
       provider: null,
       apiKeys: {},
       ollamaUrl: 'http://localhost:11434',
-      suggestionsEnabled: false,
       activePersonaId: 'general',
       customPersonas: [],
       customPrompts: [],
@@ -70,8 +67,6 @@ export const useAIStore = create<AIStore>()(
           apiKeys: { ...state.apiKeys, [provider]: key },
         })),
       setOllamaUrl: (url) => set({ ollamaUrl: url }),
-      toggleSuggestions: () =>
-        set((state) => ({ suggestionsEnabled: !state.suggestionsEnabled })),
 
       addCustomPrompt: (prompt) =>
         set((state) => ({

@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.11",
+      "date": "2026-07-05",
+      "previousVersion": "0.48.0-alpha.10",
+      "sections": {},
+      "underTheHood": [
+        "Deep review 2026-07-03: audit report + batch-0 remediation decisions (#517)",
+        "docs: record batch-0 decisions for deep-review remediation",
+        "docs: add 2026-07-03 deep-review audit report"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.10",
       "date": "2026-07-04",
       "previousVersion": "0.48.0-alpha.9",

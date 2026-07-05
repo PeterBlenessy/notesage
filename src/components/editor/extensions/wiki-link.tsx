@@ -400,15 +400,22 @@ export const WikiLink = Extension.create({
         const onCreated = () => invalidateExistsCacheAndRecompute();
         const onReindexed = () => invalidateExistsCacheAndRecompute();
         window.addEventListener("notesage:wikilink-created", onCreated);
+        // Destroy-race guard (mirrors `useSandboxViolations`): `listen()`
+        // resolves asynchronously, so an editor destroyed before resolution
+        // must unlisten the late registration immediately — otherwise it
+        // leaks and keeps dispatching into a detached view.
+        let active = true;
         let unlistenReindex: (() => void) | undefined;
         void listen("links-reindexed", onReindexed).then((fn) => {
-          unlistenReindex = fn;
+          if (active) unlistenReindex = fn;
+          else fn(); // View already destroyed — clean up immediately
         });
         return {
           update: (v) => {
             view.current = v;
           },
           destroy: () => {
+            active = false;
             if (resolveTimer) clearTimeout(resolveTimer);
             window.removeEventListener("notesage:wikilink-created", onCreated);
             unlistenReindex?.();

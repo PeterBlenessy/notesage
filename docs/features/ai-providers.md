@@ -300,7 +300,7 @@ When a tool call errors or the user denies permission, `buildToolResultContent` 
 **Settings:**
 
 - `toolCallingEnabled` toggle in Settings > Advanced (default: enabled)
-- `searchProvider` setting for web search backend (DuckDuckGo)
+- Web search backend is DuckDuckGo, wired directly in the Rust `web_search` command (the former `searchProvider` setting was removed as dead code)
 - Tools indicator badge in command bar showing count of available tools
 
 **Tool call content rendering (ACP):**
@@ -361,7 +361,7 @@ Chat messages can include up to 5 image attachments, enabling multimodal convers
 
 **UI components:**
 
-- `AttachmentStrip` shows pending image thumbnails with remove buttons below the chat input
+- Pending image thumbnails with remove buttons render in the `FloatingCommandBar`'s attachment strip (alongside the `AttachmentChips` reference/task/research chips) above the input
 - Sent messages display image thumbnails (120px max) that are clickable for full-size preview
 - Image event bus (`src/lib/ai/vision.ts`) bridges editor "Add to chat" actions to the chat panel
 
@@ -371,7 +371,7 @@ Chat messages can include up to 5 image attachments, enabling multimodal convers
 | --- | --- |
 | `src/lib/image-compress.ts` | Client-side image compression (resize, PNG→JPEG, 5MB cap) |
 | `src/lib/ai/vision.ts` | Vision detection per provider + image event bus |
-| `src/components/chat/AttachmentStrip.tsx` | Thumbnail strip with remove buttons |
+| `src/components/cmd/FloatingCommandBar.tsx` | Pending-attachment strip (image thumbnails + chips) above the composer input |
 | `src/components/editor/extensions/send-to-ai.ts` | ProseMirror plugin for "Add to chat" context menu |
 
 ## Re-authentication
