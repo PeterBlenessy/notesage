@@ -1078,17 +1078,52 @@ pub async fn mcp_restart_server(
     mcp_start_server(app, state, config).await
 }
 
+/// Cache-first read-through decision for `mcp_list_tools`: use the handle's
+/// cached tools when the cache is non-empty and the caller did not ask for a
+/// refresh; otherwise fall through to a live `tools/list` query. Pure so the
+/// decision is unit-testable without a live server.
+fn should_live_query_tools(cached_len: usize, refresh: Option<bool>) -> bool {
+    refresh.unwrap_or(false) || cached_len == 0
+}
+
+/// List a running server's tools — cache-first read-through.
+///
+/// Returns the cached tool list (populated at `mcp_start_server`) when it is
+/// non-empty. When the cache is empty, or when `refresh: true` is passed, a
+/// live `tools/list` is issued and the handle's cache is updated with the
+/// result before returning. This unifies the previous split between the cached
+/// `mcp_list_tools` and the live-query helper `mcp_list_tools_from_server`
+/// (which remains as the transport-level helper used by start/validate).
 #[tauri::command]
 pub async fn mcp_list_tools(
     state: State<'_, McpState>,
     server_id: String,
+    refresh: Option<bool>,
 ) -> Result<Vec<McpToolInfo>, String> {
-    let servers = state.servers.lock().await;
-    let handle = servers
-        .get(&server_id)
-        .ok_or_else(|| format!("Server '{}' not found", server_id))?;
+    // Read the cache (and grab a connection handle for a possible live query)
+    // under a short lock.
+    let (cached, conn) = {
+        let servers = state.servers.lock().await;
+        let handle = servers
+            .get(&server_id)
+            .ok_or_else(|| format!("Server '{}' not found", server_id))?;
+        (handle.tools.clone(), handle.conn.clone_handle())
+    };
 
-    Ok(handle.tools.clone())
+    if !should_live_query_tools(cached.len(), refresh) {
+        return Ok(cached);
+    }
+
+    // Live query outside the lock, then write the result back into the cache
+    // (the server may have been stopped/removed meanwhile — skip silently).
+    let tools = mcp_list_tools_from_server(&conn, &server_id).await?;
+    {
+        let mut servers = state.servers.lock().await;
+        if let Some(handle) = servers.get_mut(&server_id) {
+            handle.tools = tools.clone();
+        }
+    }
+    Ok(tools)
 }
 
 #[tauri::command]
@@ -1800,6 +1835,27 @@ mod tests {
             );
         }
         assert!(catalog.iter().any(|i| i.id == "filesystem"));
+    }
+
+    #[test]
+    fn list_tools_uses_cache_when_populated_and_no_refresh() {
+        // Cached hit: non-empty cache + no refresh → no live query.
+        assert!(!should_live_query_tools(3, None));
+        assert!(!should_live_query_tools(1, Some(false)));
+    }
+
+    #[test]
+    fn list_tools_live_queries_when_cache_empty() {
+        // Empty cache triggers a live query regardless of the refresh flag.
+        assert!(should_live_query_tools(0, None));
+        assert!(should_live_query_tools(0, Some(false)));
+    }
+
+    #[test]
+    fn list_tools_refresh_forces_live_query() {
+        // refresh: true forces a live query even with a populated cache.
+        assert!(should_live_query_tools(5, Some(true)));
+        assert!(should_live_query_tools(0, Some(true)));
     }
 
     #[test]

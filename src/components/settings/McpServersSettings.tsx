@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import {
   RefreshCw, Plus, MoreHorizontal, Play, Square, RotateCcw,
-  ChevronDown, Download, Wrench, Trash2, Boxes,
+  ChevronDown, Download, Wrench, Trash2, Boxes, FolderSync,
   Loader2, CheckCircle2, AlertCircle, Lock, LogOut, ShieldAlert,
 } from 'lucide-react';
 import { Label } from '@/components/ui/label';
@@ -43,7 +43,7 @@ import {
   type McpTransport,
   type McpEnvValue,
 } from '@/stores/mcp-store';
-import { useMcpOperations, type McpValidationResult, type McpValidateInput } from '@/hooks/useMcpOperations';
+import { useMcpOperations, refreshMcpServerStatus, type McpValidationResult, type McpValidateInput } from '@/hooks/useMcpOperations';
 import { McpCatalog } from './McpCatalog';
 import { cn } from '@/lib/utils';
 
@@ -1135,11 +1135,26 @@ export function McpServersSettings() {
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [prefill, setPrefill] = useState<CatalogPrefill | undefined>(undefined);
   const [rescanSpinning, setRescanSpinning] = useState(false);
+  const [statusRefreshing, setStatusRefreshing] = useState(false);
 
   const handleRescan = () => {
     useMcpStore.getState().requestRescan();
     setRescanSpinning(true);
     setTimeout(() => setRescanSpinning(false), 600);
+  };
+
+  // Fetch the backend snapshot (`mcp_get_server_status`) and reconcile each
+  // card's running/stopped/tool-count state. Cheaper than a full rescan —
+  // no config re-discovery, no server restarts.
+  const handleRefreshStatus = async () => {
+    setStatusRefreshing(true);
+    try {
+      await refreshMcpServerStatus();
+    } catch (err) {
+      toast.error(`Failed to refresh server status: ${err}`);
+    } finally {
+      setStatusRefreshing(false);
+    }
   };
 
   // Catalog pick → close catalog, seed the Add dialog with the entry's template.
@@ -1182,11 +1197,23 @@ export function McpServersSettings() {
             <Button
               variant="ghost"
               size="sm"
+              onClick={handleRefreshStatus}
+              disabled={statusRefreshing}
+              aria-busy={statusRefreshing}
+              aria-label="Refresh status"
+              title="Refresh server status from the backend"
+            >
+              <RefreshCw className={cn('h-3.5 w-3.5', statusRefreshing && 'animate-spin')} strokeWidth={1.5} />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
               onClick={handleRescan}
               disabled={rescanSpinning}
               aria-label="Refresh servers"
+              title="Rescan server configs from disk"
             >
-              <RefreshCw className={cn('h-3.5 w-3.5', rescanSpinning && 'animate-spin')} strokeWidth={1.5} />
+              <FolderSync className={cn('h-3.5 w-3.5', rescanSpinning && 'animate-spin')} strokeWidth={1.5} />
             </Button>
           </div>
         </div>

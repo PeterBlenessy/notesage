@@ -425,6 +425,12 @@ This run shows ~16 s click → editable on the same book. The gap is explained b
 
 **Cold-launch numbers vs v0.38.0 (`a0abcb5`)** are also higher (skill-scan 2,775→1,955ms is faster, but agent-scan 174→13,824ms looks like a 80× regression). Both numbers are dominated by iCloud sync — agent-scan walks `~/.notesage/agents/`, `~/.notesage/bundled-agents/`, `~/.claude/agents/`, etc. Second-run agent-scan in this session was 16ms (vs v0.38.0's 7ms warm), so the agent-scan code path itself is healthy. The cold first-run number is iCloud variance, not a regression.
 
+### 2026-07-04 — Batched file-backed store reads at startup (branch `claude/deep-review-batch5a-small-wirings`, base `dad9c463`)
+
+Change, not a measurement run: the four file-backed Zustand stores (`chat-store`, `activity-store`, `action-store`, `automation-store`) all rehydrate through `src/lib/tauri-storage.ts` during the same synchronous module-evaluation pass at startup, previously issuing four separate `store_read` IPC calls. `getItem` reads that land in the same microtask are now coalesced into ONE `store_read_batch` call (Rust `store.rs` — sync I/O, avoiding the ~100 ms/file tokio scheduling overhead its comment documents), with a per-key `store_read` fallback if the batch command fails. The batch logs a `[perf:startup]` entry (`store batch read`, `{ keys, ms }`).
+
+Expected effect: up to ~3 fewer IPC round-trips before rehydration completes (4→1). **Measurement pending on macOS** — this change landed from a Linux dev container that can't run the app; capture the `[perf:startup] store batch read` line and the `startup ready` delta on the next macOS dev run and append the numbers here.
+
 ## Load File Performance (real-world, dev mode)
 
 Per-phase before/after for the [large-file instant-load PRD](prds/2026-05-03-large-file-instant-load.md). Measured via DevTools Timeline (Safari Web Inspector) recordings on representative files. Covers all file sizes — small-file rows are regression-watch (must not get slower as we optimize the large-file path).

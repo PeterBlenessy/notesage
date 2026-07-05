@@ -1412,8 +1412,9 @@ Located in `src-tauri/src/commands/mcp.rs` and `mcp_oauth.rs`. See `docs/feature
 | `mcp_start_server` | `(config: McpServerConfig) -> McpServerInfo` | Connect (stdio spawn or http) → `initialize` → discover tools; register in `McpState`. Resolves secret env refs from the keychain at spawn. |
 | `mcp_validate_server` | `(config) -> McpValidationResult` | Dry run (connect → handshake → `tools/list` → stop) without registering. Returns `{ ok, tools, server_info, error, error_kind, stderr_tail }`; `error_kind` ∈ `binary_not_found \| spawn_failed \| init_failed \| timeout`. |
 | `mcp_stop_server` / `mcp_restart_server` | `(server_id)` | Lifecycle. http servers have no child process. |
-| `mcp_list_tools` / `mcp_call_tool` | `(server_id, …)` | Tools from a running server. |
-| `mcp_get_server_status` | `() -> Vec<McpServerInfo>` | Snapshot of all servers. |
+| `mcp_list_tools` | `(server_id, refresh?)` | Cache-first read-through: returns the handle's cached tools when non-empty; live `tools/list` (updating the cache) when empty or `refresh: true`. |
+| `mcp_call_tool` | `(server_id, …)` | Call a tool on a running server. |
+| `mcp_get_server_status` | `() -> Vec<McpServerInfo>` | Snapshot of all servers. Wired to the Settings > MCP "Refresh status" button, which reconciles each card's running/stopped/tool-count state. |
 | `mcp_catalog_list` | `() -> Vec<McpCatalogItem>` | Curated catalog manifest (embedded `mcp-catalog.json`). |
 | `mcp_discover_configs` / `mcp_import_configs` / `mcp_save_config` / `mcp_check_import_sources` | — | Read/import/write `mcp.json`; import sources (Claude Desktop, Cursor, VS Code). |
 | `mcp_oauth_authorize` | `(server_id, server_url, scope?) -> OAuthStatus` | Full browser OAuth: discovery (RFC 9728→8414) → DCR (RFC 7591) → PKCE → loopback callback → token exchange → keychain store. |

@@ -1,7 +1,8 @@
 import { invoke } from '@tauri-apps/api/core';
 import { createJSONStorage } from 'zustand/middleware';
 import type { StateStorage } from 'zustand/middleware';
-import { log } from '@/lib/logger';
+import { log, PERF } from '@/lib/logger';
+import { tauriApi } from '@/lib/tauri';
 
 /**
  * Zustand StateStorage adapter backed by Tauri file storage (~/.notesage/state/).
@@ -77,6 +78,80 @@ if (typeof window !== 'undefined') {
 /** Keys already checked for localStorage→file migration. */
 const migrated = new Set<string>();
 
+// ---------------------------------------------------------------------------
+// Batched reads (store_read_batch)
+//
+// All file-backed stores (chat, activity, action, automation) rehydrate during
+// the same synchronous module-evaluation pass at startup, each issuing a
+// `store_read` IPC call. Coalescing the reads that land in the same microtask
+// into ONE `store_read_batch` call collapses 4 round-trips (each ~100ms of
+// tokio scheduling overhead per the Rust-side comment) into one.
+//
+// Fallback: if the batch call fails, each key falls back to the legacy
+// per-key `store_read` path individually.
+// ---------------------------------------------------------------------------
+
+/** Keys awaiting the next batch flush → their pending resolvers. */
+const pendingReads = new Map<string, Array<(value: string | null) => void>>();
+let readFlushScheduled = false;
+
+async function flushPendingReads(): Promise<void> {
+  readFlushScheduled = false;
+  if (pendingReads.size === 0) return;
+
+  const batch = new Map(pendingReads);
+  pendingReads.clear();
+  const keys = [...batch.keys()];
+  const t0 = performance.now();
+
+  let results: Record<string, string> | null = null;
+  try {
+    results = await tauriApi.storeReadBatch(keys);
+    log.info(PERF.startup, 'store batch read', {
+      keys: keys.length,
+      ms: Math.round(performance.now() - t0),
+    });
+  } catch (err) {
+    log.warn('store', 'store_read_batch failed — falling back to per-key reads', err);
+  }
+
+  for (const [key, resolvers] of batch) {
+    let value: string | null;
+    if (results) {
+      // Missing keys are omitted from the batch result → null.
+      value = results[key] ?? null;
+    } else {
+      // Per-key fallback to the legacy single-read path.
+      try {
+        value = (await invoke<string | null>('store_read', { key })) ?? null;
+      } catch (err) {
+        log.error('store', `Failed to read store file '${key}'`, err);
+        value = null;
+      }
+    }
+    for (const resolve of resolvers) resolve(value);
+  }
+}
+
+/**
+ * Read one store key, coalescing with every other read registered in the same
+ * microtask into a single `store_read_batch` IPC call.
+ */
+function batchedStoreRead(key: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const resolvers = pendingReads.get(key);
+    if (resolvers) {
+      resolvers.push(resolve);
+    } else {
+      pendingReads.set(key, [resolve]);
+    }
+    if (!readFlushScheduled) {
+      readFlushScheduled = true;
+      queueMicrotask(() => void flushPendingReads());
+    }
+  });
+}
+
 /**
  * Create the raw StateStorage adapter (file-backed).
  */
@@ -111,14 +186,9 @@ function createRawTauriStorage(): StateStorage {
       const queued = writeQueue.find((w) => w.key === key);
       if (queued) return queued.value;
 
-      // Read from file
-      try {
-        const value = await invoke<string | null>('store_read', { key });
-        return value ?? null;
-      } catch (err) {
-        log.error('store', `Failed to read store file '${key}'`, err);
-        return null;
-      }
+      // Read from file — coalesced with concurrent reads into one
+      // store_read_batch IPC call (per-key store_read fallback inside).
+      return batchedStoreRead(key);
     },
 
     setItem: (key: string, value: string): void => {
