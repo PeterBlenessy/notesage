@@ -30,6 +30,15 @@ function fmtNum(n: number): string {
   return fmt.format(n);
 }
 
+/**
+ * Trailing debounce for the word-count recompute. `editor.getText()` + the
+ * regex split walk the whole document — running that on every transaction
+ * meant a full-doc scan per keystroke. 250 ms trailing keeps the count
+ * feeling live (it lands right after typing pauses) while bounding the
+ * recompute to at most ~4x/sec.
+ */
+const WORD_COUNT_DEBOUNCE_MS = 250;
+
 // ---------------------------------------------------------------------------
 // StatusBar — the Quiet Composer status strip.
 //
@@ -267,13 +276,25 @@ export function StatusBar({
   const reducedMotion = useReducedMotion();
 
   // Re-read word count when the editor transacts so it tracks typing.
+  // Debounced (trailing): the recompute below runs `editor.getText()` over the
+  // whole document, so ticking on every transaction cost a full-doc scan per
+  // keystroke. The tick now fires WORD_COUNT_DEBOUNCE_MS after the last
+  // transaction — prompt once typing stops, silent while keys are streaming.
   const [, setTick] = useState(0);
   useEffect(() => {
     if (!editor) return;
-    const onTransaction = () => setTick((t) => t + 1);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onTransaction = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        setTick((t) => t + 1);
+      }, WORD_COUNT_DEBOUNCE_MS);
+    };
     editor.on("transaction", onTransaction);
     return () => {
       editor.off("transaction", onTransaction);
+      if (timer) clearTimeout(timer); // never fire after unmount
     };
   }, [editor]);
 

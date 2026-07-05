@@ -100,7 +100,10 @@ function App() {
   } | null>(null);
 
   const { state: updateState, checkForUpdate, downloadAndInstall, restartNow, dismiss: dismissUpdate } = useAutoUpdate();
-  const { addProject, addExplorerFolder } = useWorkspaceStore();
+  // Atomic selectors — the whole-store destructure subscribed the App root
+  // to every workspace-store change for two identity-stable actions.
+  const addProject = useWorkspaceStore((s) => s.addProject);
+  const addExplorerFolder = useWorkspaceStore((s) => s.addExplorerFolder);
   const { projectPath: activeProjectPath } = useActiveProject();
 
   // Window focus/blur de-emphasis lives in `useWindowFocus()` (audit #17,
@@ -234,19 +237,19 @@ function App() {
         : settings.notesRootPath;
       if (target) useQuietSidebarStore.getState().setPendingCreate({ parentDir: target });
     }, []),
-    onQuickNote: useCallback(() => {
-      const settings = useSettingsStore.getState();
-      const target = settings.notesRootPath;
-      if (target) useQuietSidebarStore.getState().setPendingCreate({ parentDir: target });
-    }, []),
     onOpenActions: useCallback(() => emitCmdBarEvent({ type: "focus", prefix: "!" }), []),
     onOpenFile: handleTrayOpenFile,
   });
 
   // Handle file-open events from macOS file association
   useEffect(() => {
+    // Mounted-flag pattern (see `useSandboxViolations`): the dynamic import +
+    // `listen()` resolve asynchronously, so a cleanup racing the registration
+    // must immediately unlisten the late registration instead of leaking it.
+    let mounted = true;
     let unlisten: (() => void) | undefined;
     import("@tauri-apps/api/event").then(({ listen }) => {
+      if (!mounted) return;
       listen<string[]>("open-files", async (event) => {
         for (const filePath of event.payload) {
           const fileName = filePath.split("/").pop() ?? filePath;
@@ -272,11 +275,17 @@ function App() {
             toast.error(`Failed to open file: ${error}`);
           }
         }
-      }).then((fn) => { unlisten = fn; }).catch((e) => {
+      }).then((fn) => {
+        if (mounted) unlisten = fn;
+        else fn(); // Already unmounted — clean up immediately
+      }).catch((e) => {
         log.warn("lifecycle", "Failed to register listener for open-files", e);
       });
     }).catch((e) => log.warn("lifecycle", "Failed to set up file-open listener", e));
-    return () => { unlisten?.(); };
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
   }, [openFile, addExplorerFolder]);
 
   // Refresh file tree when hidden files toggle changes

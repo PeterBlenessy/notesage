@@ -4810,7 +4810,6 @@ version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-schema",
- "async-trait",
  "bytes",
  "chrono",
  "chrono-tz",
@@ -4866,10 +4865,8 @@ dependencies = [
  "tokio",
  "tokio-util",
  "typst",
- "typst-library",
  "typst-pdf",
  "typst-syntax",
- "typst-utils",
  "url",
  "urlencoding",
  "usvg",

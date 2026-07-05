@@ -48,6 +48,7 @@ note-sage/
 │   │   │   ├── tool_execution.rs # Tool call parsing, accumulators (extracted from ai_streaming)
 │   │   │   ├── segment_builder.rs # Thinking tag detection, template extraction (extracted from ai_streaming)
 │   │   │   ├── actions.rs  # Actions dashboard (task/goal scanning)
+│   │   │   ├── automations.rs # Automation YAML discovery/parse/validation/CRUD + trigger scheduler (`list/save/delete/validate_automation`, `reload_automation_schedule`); step execution stays in the frontend runner
 │   │   │   ├── health.rs   # Backend health check
 │   │   │   ├── logging.rs  # Debug logging control
 │   │   │   ├── telemetry.rs # Telemetry consent file + Sentry runtime live-disable + before_send PII scrubber (`telemetry_apply_consent`)
@@ -67,6 +68,7 @@ note-sage/
 │   │   │   ├── link_preview.rs # OpenGraph metadata fetch for link preview cards
 │   │   │   ├── alpha_update.rs  # Alpha-channel update check via runtime-URL UpdaterBuilder (`alpha_check`)
 │   │   │   ├── preview.rs       # Markdown → HTML body fragment for large-file instant-load preview (`render_markdown_preview`)
+│   │   │   ├── html_preview.rs  # In-memory HTML doc store + `htmlpreview://` URI scheme for the HTML viewer's sandboxed iframe paths (`html_preview_register`/`html_preview_unregister`)
 │   │   │   ├── constants.rs    # Shared constants (app paths, defaults)
 │   │   │   ├── acp_binary.rs   # ACP agent binary path resolution (PATH, Homebrew, npm, bundled)
 │   │   │   ├── acp_client.rs   # ACP inbound handlers (on_receive_request/notification → Tauri event forwarding, permission channels)
@@ -108,13 +110,12 @@ note-sage/
 │   └── capabilities/
 ├── src/                    # React frontend
 │   ├── main.tsx            # Entry point
-│   ├── App.tsx             # Root component — mounts lifecycle hooks, renders Layout (or QuietLayout) + dialogs
+│   ├── App.tsx             # Root component — mounts lifecycle hooks, renders QuietLayout (unconditional) + dialogs
 │   ├── components/
-│   │   ├── Layout.tsx      # Legacy layout (ResizablePanelGroup: sidebar, editor, chat, activity)
-│   │   ├── QuietLayout.tsx # Quiet Composer layout — gated on settings.uiPreview === "quiet-composer" (PRD 2026-04-21-ui-refresh)
+│   │   ├── QuietLayout.tsx # Quiet Composer layout — the only shell (Classic Layout removed in #325; PRD 2026-04-21-ui-refresh / 2026-05-22-classic-layout-removal)
 │   │   ├── ErrorBoundary.tsx # Reusable error boundary (wraps editor, chat, sidebar)
 │   │   ├── editor/         # Tiptap editor components
-│   │   │   ├── Editor.tsx, EditorContent.tsx, Toolbar.tsx, SlashCommand.tsx
+│   │   │   ├── Editor.tsx, Toolbar.tsx
 │   │   │   ├── BubbleMenu.tsx, CommentPopover.tsx, CommentListPopover.tsx
 │   │   │   ├── CommentThread.tsx, DelegationPanel.tsx
 │   │   │   ├── TranscriptionOverlay.tsx, SourceModeEditor.tsx
@@ -123,20 +124,20 @@ note-sage/
 │   │   │   ├── FocusPill.tsx     # Floating exit affordance for focus mode
 │   │   │   ├── StatusTray.tsx    # Quiet Composer status tray popover
 │   │   │   ├── TableHeaderMenu.tsx  # Column type/aggregation context menu
-│   │   │   └── extensions/ # Custom Tiptap extensions (see editor-architecture.md)
+│   │   │   └── extensions/ # Custom Tiptap extensions incl. slash-command.tsx (see editor-architecture.md)
 │   │   ├── cmd/            # Floating command bar (Quiet Composer)
 │   │   │   ├── FloatingCommandBar.tsx, CommandBarContext.tsx, CommandBarHistory.tsx
 │   │   │   ├── CommandBarStream.tsx, AttachmentChips.tsx, prefix-modes.ts, verb-modes.ts
 │   │   │   └── modes/      # Prefix-mode pickers — single-char nouns (SkillMode, ReferenceMode, TagMode, TaskMode, ResearchMode, PaletteMode) + `:` verbs (FileMode)
-│   │   ├── sidebar/        # Sidebar.tsx, FileTree.tsx, FileTreeItem.tsx, ExplorerFolderItem.tsx
+│   │   ├── sidebar/        # FileIcon.tsx (shared file-type icon)
 │   │   │   └── quiet/      # Quiet Composer sidebar — QuietSidebar.tsx, PinnedSection.tsx, ProjectsSection.tsx, FoldersSection.tsx, RecentSection.tsx, TagsSection.tsx, MentionsSection.tsx, SidebarContextMenu.tsx, SidebarInlineEdit.tsx, SidebarRowIndicators.tsx, FilePreview.tsx, FolderPeek.tsx, aria-announcer.ts, useRovingTabindex.ts, useSidebarItemShortcuts.ts, rename-utils.ts, sidebar-clipboard.ts, file-drag.ts
 │   │   ├── settings/       # ConnectionsSettings, LocalAISettings, TranscriptionSettings, etc.
 │   │   │   └── v2/         # Settings shell — SettingsDialogV2, SettingsShell, SettingsRow, SettingsGroup, SettingsSearch + per-area panels (Appearance, General, Editor, AI, Skills, Projects, Privacy, Advanced, About)
-│   │   ├── chat/           # ChatMessage, ChatInput, ChatMessageList, BranchSwitcher, PermissionCard, DomainApprovalCard, AgentSwitchCard, AttachmentStrip, ResendProviderDialog, ChatHistoryView, segments/, etc. — all consumed by FloatingCommandBar / CommandBarStream / CommandBarContext (Quiet Composer is the only shell)
+│   │   ├── chat/           # ChatMessage, ChatMessageList, BranchSwitcher, PermissionCard, DomainApprovalCard, AgentSwitchCard, ResendProviderDialog, ChatHistoryView, segments/, etc. — all consumed by FloatingCommandBar / CommandBarStream / CommandBarContext (Quiet Composer is the only shell; the input + attachment chips live in cmd/)
 │   │   ├── activity/       # ActivityTaskCard.tsx, AgentOrb.tsx, AgentPanel.tsx
 │   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer, CodeEditor, PptxViewer (+ PptxSlideRenderer, PptxChartRenderer, PptxSearchBar, PptxZoomControls)
 │   │   └── ui/             # shadcn/ui components (auto-generated)
-│   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, useTrayEvents, useTraySync, useFadeOnType, useFocusMode, useWindowFocus, useReducedMotion, useCommandBarShortcuts, useDoubleTapCmd, useRecentDocumentCycle, etc.)
+│   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, useTrayEvents, useTraySync, useFadeOnType, useFocusMode, useWindowFocus, useReducedMotion, useGlobalShortcuts (absorbed useCommandBarShortcuts + useDoubleTapCmd), useRecentDocumentCycle, etc.)
 │   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, folder-appearance, quiet-sidebar, etc.)
 │   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, cmd-bar-events, contrast-math, quiet-chrome, quiet-chrome-presets, accent, saved-ago, tray-recents, telemetry, etc.)
 │   └── styles/             # globals.css, editor.css (+ __tests__/reduced-motion-sweep.test.ts, __tests__/accent.test.ts)
@@ -233,7 +234,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `editor-store` | Open documents (`openDocuments[]` — renamed from legacy `openTabs`), `activeTabId`, `closeTab`, per-document flags. The store property names retain "tab" for the active-id and close action; only the array was renamed. UI surfaces (Quiet Composer) show the document via `TitleBar` + sidebar, not as tabs | Full |
 | `workspace-store` | Explorer folders, projects, notes tree | Full |
 | `project-metadata-store` | Project metadata from `.notesage/project.json` (incl. optional `aiLock: { connectionId, lockedAt, reason? }`) | Full |
-| `settings-store` | Theme, accent (`accent`, `tintHue`, `tintChroma`), contrast slider, UI preferences, `startupReady` flag, `toolCallingEnabled`, `searchProvider`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`), isolation flags (`crossProjectMode`, `completionsOnOutOfScope`, `requireAllToolConfirmations`), Quiet Composer flags (`uiPreview`, `cmdBarPinned`, `cmdBarPinnedWidth`, `quietChromePreset`, `quietChromeOverrides`, `quietChromeTransparent`, `showTitleBar` (default off — gates the optional document TitleBar), `sidebarPinned`, `sidebarWidth` (resizable sidebar, clamp `[200, 500]`, default 252, drives `--quiet-sidebar-width`), `sidebarRecentCap`, `sidebarTagsCap` (clamp `[0, 15]`; `0` hides the section), `sidebarMentionsCap` (clamp `[0, 15]`; `0` hides the section)), telemetry consent (`telemetryUsageEnabled`/`telemetryCrashEnabled` tri-state `boolean \| null` — `null` follows the running build via `buildIsAlpha()` (not the update channel); effective values via `selectEffectiveTelemetryUsage`/`selectEffectiveTelemetryCrash`; `telemetryNoticeSeen`), home directory | Full (except `startupReady`) |
+| `settings-store` | Theme, accent (`accent`, `tintHue`, `tintChroma`), contrast slider, UI preferences, `startupReady` flag, `toolCallingEnabled`, `showHiddenFiles`, tray settings (`showInTray`, `closeToTray`, `startAtLogin`), notification settings (`notifyAgentCompletion`, `notifyExternalChanges`), isolation flags (`crossProjectMode`, `completionsOnOutOfScope`, `requireAllToolConfirmations`), Quiet Composer flags (`cmdBarPinned`, `cmdBarPinnedWidth`, `quietChromePreset`, `quietChromeOverrides`, `quietChromeTransparent`, `showTitleBar` (default off — gates the optional document TitleBar), `sidebarPinned`, `sidebarWidth` (resizable sidebar, clamp `[200, 500]`, default 252, drives `--quiet-sidebar-width`), `sidebarRecentCap`, `sidebarTagsCap` (clamp `[0, 15]`; `0` hides the section), `sidebarMentionsCap` (clamp `[0, 15]`; `0` hides the section)), telemetry consent (`telemetryUsageEnabled`/`telemetryCrashEnabled` tri-state `boolean \| null` — `null` follows the running build via `buildIsAlpha()` (not the update channel); effective values via `selectEffectiveTelemetryUsage`/`selectEffectiveTelemetryCrash`; `telemetryNoticeSeen`), home directory | Full (except `startupReady`) |
 | `ai-store` | AI provider config — predates `routing-store` / `connections-store`; kept for one-time migration of v1 settings and as a fallback when no routing entry exists. Not deprecated for usage, deprecated for new features | Full |
 | `skill-store` | Skills registry (`{ global, byProject }`), agents, instructions, active agent (default: none) | Partial (overrides + active agent) |
 | `connections-store` | Multi-provider connections, sandbox/network config, kernel enforcement, writable paths | Full |
@@ -258,6 +259,12 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `agent-status-store` | ACP agent unresponsive/exited banner state | None |
 | `folder-appearance-store` | Per-folder appearance overrides (custom icon + color) for explorer/external folders in the Folders section; keyed by absolute path. Project folders store appearance in `.notesage/project.json` instead | None (not persisted — external paths are ephemeral) |
 | `quiet-sidebar-store` | Quiet Composer sidebar inline-edit signals: `pendingCreate` (new file under a project) and `pendingCreateProject` (new project under notes root) | None |
+| `automation-store` | Automation registry — cache of the on-disk YAML automations (the files are authoritative; `useAutomationDiscovery` repopulates on startup) + durable per-automation run history (`runsByAutomation`, capped + TTL-pruned) | Partial (`runsByAutomation` only — definitions re-scanned from disk) |
+| `cmd-bar-summon-store` | Durable "open the command bar" summon intent (prefix / drilldown + nonce), written by the always-mounted `useGlobalShortcuts` dispatcher so a summon survives a command-bar crash/remount | None |
+| `domain-request-store` | Pending network-domain approval requests from the agent network proxy — hoisted out of `ChatMessageList` so approvals work while the command bar is collapsed | None |
+| `model-fit-measurement-store` | Measured runtime samples per local model on the current machine (rolling-median tok/s, peak RAM, sample history); keyed to `chipName` — measurements discarded when the chip changes | Full |
+| `session-run-store` | Per-conversation AI session run state (`idle \| queued \| running \| awaiting_permission \| error`) + foreground (watched) conversation — the data spine for command-bar session multitasking; in-flight runs flip to `error` on rehydrate | Partial (durable `status` per run only — transient handles (`streamId`, `instanceId`, `pendingPermissionId`, `startedAt`) and `foregroundConversationId` stripped) |
+| `sidebar-status-slot-store` | DOM node of the QuietSidebar footer's status slot so the editor's `StatusBar` can portal itself there (`null` when the sidebar is hidden) | None |
 
 ### Styling
 
@@ -283,7 +290,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `pnpm coverage:check` | Coverage regression detection | Compares changed files against `coverage-baseline.json` |
 | `pnpm coverage:update-baseline` | Update coverage baseline | Runs tests + writes `coverage-baseline.json` |
 
-**Test inventory (2026-06-03):** 304 unit test files, 18 Playwright E2E specs, 11 real-e2e specs. Run `pnpm test` for the current case count.
+**Test inventory (2026-07-04):** 361 unit test files, 20 Playwright E2E specs, 13 real-e2e specs. Re-measure instead of trusting these numbers: `find src -name '*.test.ts' -o -name '*.test.tsx' | wc -l` (unit), `find e2e/tests -name '*.spec.ts' | wc -l` (Playwright), `find e2e-real/tests -name '*.test.ts' | wc -l` (real E2E). Run `pnpm test` for the current case count.
 
 **Frontend coverage** uses `@vitest/coverage-istanbul` and requires Node 22 (pinned in `.nvmrc`). Coverage output lands in `./coverage/` (gitignored). Coverage baseline tracked in `coverage-baseline.json` with per-file metrics. Regression detection via `scripts/coverage-check.sh`: identifies changed `.ts`/`.tsx` files via git diff, compares per-file coverage against baseline, reports regressions. Currently warning-only (exit 0).
 

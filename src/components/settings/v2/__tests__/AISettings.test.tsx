@@ -94,8 +94,8 @@ describe('AISettings (v2)', () => {
 
   // The standalone "Web search provider" display row was dropped (audit
   // batch 1, 2026-04-26) — it was a read-only label masquerading as a
-  // setting, since `searchProvider` is a literal with no setter. The
-  // DuckDuckGo info now lives in the "Enable tool calling" description.
+  // setting with no setter. The DuckDuckGo info now lives in the
+  // "Enable tool calling" description.
   it('"Enable tool calling" description discloses provider-native + DuckDuckGo fallback', () => {
     renderWithProviders(<AISettings />);
     // Privacy disclosure — users should see where search queries go,
