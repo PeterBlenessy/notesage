@@ -33,6 +33,9 @@ import {
   PopoverContent,
 } from "@/components/ui/popover";
 import { FolderAppearancePicker } from "@/components/FolderAppearancePicker";
+import { BranchComparePopover } from "@/components/git/BranchComparePopover";
+import { useGitStore } from "@/stores/git-store";
+import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { SIDEBAR_MAKE_PROJECT_EVENT } from "@/components/sidebar/quiet/SidebarContextMenu";
 import { subscribeToSidebarEvents } from "@/lib/sidebar-events";
 import {
@@ -167,6 +170,25 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
       decrementCustomizePopoverOpen();
     };
   }, [customizingPath]);
+  // Branch diff review — which folder's "Compare branch…" picker is open.
+  // Same one-at-a-time + overlay-freeze semantics as the customize popover.
+  const [comparingPath, setComparingPath] = useState<string | null>(null);
+  useEffect(() => {
+    if (comparingPath === null) return;
+    forceCloseAllPeeks();
+    incrementOpenContextMenus();
+    incrementCustomizePopoverOpen();
+    return () => {
+      decrementOpenContextMenus();
+      decrementCustomizePopoverOpen();
+    };
+  }, [comparingPath]);
+  // Repo-backed top-level folders get "Compare branch…" / "End branch
+  // review" in their inline context menu — same gating as
+  // SidebarContextMenu (git integration on + detected repo root).
+  const gitEnabled = useSettingsStore((s) => s.gitEnabled);
+  const gitRepos = useGitStore((s) => s.repos);
+  const reviewActive = useDiffReviewStore((s) => s.reviewActive);
   const rowRefs = useRef<Map<string, HTMLElement>>(new Map());
 
   const registerRef = useCallback((rowId: string, el: HTMLElement | null) => {
@@ -494,6 +516,13 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
               >
                 <PopoverAnchor asChild>
                   <span className="block">
+                    <BranchComparePopover
+                      repoPath={folder.path}
+                      open={comparingPath === folder.path}
+                      onOpenChange={(open) =>
+                        setComparingPath(open ? folder.path : null)
+                      }
+                    >
                     <FolderPeek
                       projectPath={folder.path}
                       fileTree={folder.fileTree}
@@ -609,6 +638,36 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
                               </ContextMenuItem>
                             );
                           })()}
+                          {/* Branch diff review — repo-backed folders only.
+                              Same action pair as SidebarContextMenu on
+                              project rows. */}
+                          {gitEnabled && gitRepos[folder.path]?.isGitRepo && (
+                            <>
+                              <ContextMenuSeparator />
+                              {reviewActive ? (
+                                <ContextMenuItem
+                                  onSelect={() =>
+                                    useDiffReviewStore.getState().endReview()
+                                  }
+                                >
+                                  End branch review
+                                </ContextMenuItem>
+                              ) : (
+                                <ContextMenuItem
+                                  onSelect={() => {
+                                    // Defer one frame so the menu closes
+                                    // before the picker paints (same dance
+                                    // as Customize…).
+                                    requestAnimationFrame(() =>
+                                      setComparingPath(folder.path),
+                                    );
+                                  }}
+                                >
+                                  Compare branch…
+                                </ContextMenuItem>
+                              )}
+                            </>
+                          )}
                           <ContextMenuSeparator />
                           <ContextMenuItem
                             onSelect={() => handleRemove(folder.path)}
@@ -618,6 +677,7 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
                         </ContextMenuContent>
                       </ContextMenu>
                     </FolderPeek>
+                    </BranchComparePopover>
                   </span>
                 </PopoverAnchor>
                 <PopoverContent
