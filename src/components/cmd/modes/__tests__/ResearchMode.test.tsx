@@ -3,6 +3,7 @@
 import '@/test/tauri-mock';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  act,
   renderWithProviders,
   screen,
   fireEvent,
@@ -158,6 +159,11 @@ describe('ResearchMode', () => {
       <ResearchMode filter="" onPick={onPick} />,
     );
     await screen.findByText('First');
+    // findByText can resolve on the DOM mutation BEFORE the passive effect
+    // that re-registers the document keydown handler with the non-empty
+    // results closure has flushed (seen on loaded CI runners). Flush effects
+    // so the keys can't hit the stale empty-results handler.
+    await act(async () => {});
 
     // The picker listens for arrow keys on the document so the parent input
     // can keep focus; dispatching on document mirrors how the bar will use it.
