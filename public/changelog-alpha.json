@@ -1,6 +1,42 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.10",
+      "date": "2026-07-04",
+      "previousVersion": "0.48.0-alpha.9",
+      "sections": {},
+      "underTheHood": [
+        "chore(deps): resolve Rust dependency audit (RustSec advisories) (#510)",
+        "chore(deps): resolve Rust audit — bump anyhow/memmap2, ignore transitive quick-xml DoS"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.9",
+      "date": "2026-07-03",
+      "previousVersion": "0.48.0-alpha.8",
+      "sections": {
+        "features": [
+          "feat(marketing): notesage.io static-site generator — 5 pages, real product shots, a11y gate (#217)"
+        ]
+      },
+      "underTheHood": [
+        "fix(styles): accent test parses `@theme static`",
+        "fix(styles): teach contrast-audit to parse `@theme static`",
+        "feat(marketing): accessibility quality pass + CI quality gate",
+        "feat(marketing): add Getting Started and About pages",
+        "feat(marketing): add Features and Privacy pages on a shared shell",
+        "refactor(marketing): reframe audience band as use cases",
+        "fix(marketing): make audience personas consistent (people, not work areas)",
+        "feat(marketing): audience band + real chart shots; isolate gen-site from CI",
+        "feat(marketing): premium landing redesign with varied product shots",
+        "feat(marketing): app-window frame, command bar, and landing assembler",
+        "feat(marketing): deterministic HTML generation of demo docs",
+        "fix(styles): emit editor-only theme tokens with @theme static",
+        "feat(content): single-source content-atom system for notesage.io",
+        "chore(docs): add end-user marketing content package with screenshots"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.8",
       "date": "2026-07-01",
       "previousVersion": "0.48.0-alpha.7",
