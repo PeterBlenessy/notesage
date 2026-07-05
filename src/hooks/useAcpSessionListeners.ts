@@ -20,7 +20,7 @@ import {
   normalizeToolCallContent,
   formatResourceLinkAsMarkdown,
 } from '@/lib/ai/acp-utils';
-import { resetUnresponsiveTimer } from '@/hooks/useAcpLifecycle';
+import { resetUnresponsiveTimer } from '@/hooks/acp/unresponsive-monitor';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
 import { updateCurrentMode, updateConfigOptionValue, updateUsage, setAvailableCommands } from '@/lib/ai/acp-agent-state';
 import { runRunning, runAwaitingPermission, runIdle } from '@/lib/ai/session-run';
