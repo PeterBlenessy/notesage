@@ -285,3 +285,168 @@ describe('AcpSessionControls — capability source of truth', () => {
     expect(screen.getByRole('button', { name: /^agent/i })).toBeDefined();
   });
 });
+
+// ---------------------------------------------------------------------------
+// Usage indicator — exact (ACP) + estimated paths (provider-usage-display #8)
+// ---------------------------------------------------------------------------
+
+import { updateUsage } from '@/lib/ai/acp-agent-state';
+import { useChatStore } from '@/stores/chat-store';
+import { useLocalAIStore } from '@/stores/local-ai-store';
+import { useUsageStore } from '@/stores/usage-store';
+import type { ChatMessage } from '@/lib/ai/types';
+
+function seedConversation(messageCount = 2): void {
+  const messages: ChatMessage[] = [];
+  for (let i = 0; i < messageCount; i++) {
+    messages.push({
+      id: `m-${i}`,
+      role: i % 2 === 0 ? 'user' : 'assistant',
+      content: 'x'.repeat(400),
+      timestamp: 1_000 + i,
+      parentId: i === 0 ? null : `m-${i - 1}`,
+    });
+  }
+  useChatStore.setState({
+    conversations: [
+      {
+        id: 'conv-usage',
+        title: 'Usage test',
+        messages,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        projectPaths: [],
+        segments: [{ projectPaths: [], sessionId: null, startMessageIndex: 0, historyIncluded: false }],
+        activeSegmentIndex: 0,
+        activeLeafId: messages[messages.length - 1]?.id ?? null,
+      },
+    ],
+    activeConversationId: 'conv-usage',
+  });
+}
+
+function getRingArc(container: HTMLElement): SVGCircleElement | null {
+  // Second circle = the progress arc (first is the background track).
+  const circles = container.querySelectorAll('svg circle');
+  return (circles[1] as SVGCircleElement) ?? null;
+}
+
+describe('UsageIndicator — exact + estimated paths (#8)', () => {
+  beforeEach(() => {
+    clearSessionInfo();
+    useChatStore.setState({ conversations: [], activeConversationId: null });
+    useUsageStore.setState({ snapshots: {} });
+    useLocalAIStore.setState({ contextLength: 4096 });
+  });
+
+  const NO_CONTROL_CAPS = { availableModes: [], configOptions: [] };
+
+  it('ACP path: renders the ring from sessionInfo usage (regression)', () => {
+    const conn = makeConnection({ acpCapabilities: NO_CONTROL_CAPS });
+    updateUsage({ contextUsed: 4200, contextSize: 200_000 });
+
+    const { container } = render(
+      <AcpSessionControls showModePicker={false} connection={conn} />,
+    );
+
+    expect(container.querySelector('svg')).not.toBeNull();
+    // Below 75% — no threshold class, today's muted look (0.7 opacity arc).
+    const arc = getRingArc(container);
+    expect(arc?.getAttribute('class') ?? '').toBe('');
+    expect(arc?.getAttribute('opacity')).toBe('0.7');
+  });
+
+  it('estimated path: renders the ring for a direct-API connection with a known size', () => {
+    seedConversation();
+    const conn = makeConnection({
+      authMethod: 'api_key',
+      credentials: { type: 'api_key', credentialStored: true },
+      acpCapabilities: NO_CONTROL_CAPS,
+    });
+
+    const { container } = render(
+      <AcpSessionControls showModePicker={false} connection={conn} />,
+    );
+
+    expect(container.querySelector('svg')).not.toBeNull();
+    // The estimate wrote through with estimate provenance.
+    const snap = useUsageStore.getState().getSnapshot('conn-test');
+    expect(snap?.source).toBe('estimate');
+    expect(snap?.confidence).toBe('estimated');
+    expect(snap?.contextSize).toBe(200_000);
+  });
+
+  it('renders nothing when neither source has data (regression: null bailout)', () => {
+    seedConversation();
+    // openai_compatible has no size source → no estimate; no ACP usage either.
+    const conn = makeConnection({
+      provider: 'openai_compatible',
+      authMethod: 'api_key',
+      credentials: { type: 'api_key', credentialStored: true },
+      config: { model: 'gpt-4o' },
+      acpCapabilities: NO_CONTROL_CAPS,
+    });
+
+    const { container } = render(
+      <AcpSessionControls showModePicker={false} connection={conn} />,
+    );
+    expect(container.firstChild).toBeNull();
+    expect(Object.keys(useUsageStore.getState().snapshots)).toHaveLength(0);
+  });
+
+  it('ACP usage wins over the estimate when both exist', () => {
+    seedConversation();
+    const conn = makeConnection({
+      authMethod: 'api_key',
+      credentials: { type: 'api_key', credentialStored: true },
+      acpCapabilities: NO_CONTROL_CAPS,
+    });
+    // 76% exact usage — the arc must reflect the ACP ratio, not the tiny estimate.
+    updateUsage({ contextUsed: 152_000, contextSize: 200_000 });
+
+    const { container } = render(
+      <AcpSessionControls showModePicker={false} connection={conn} />,
+    );
+    const arc = getRingArc(container);
+    // 75–90% band → foreground class at full opacity.
+    expect(arc?.getAttribute('class')).toBe('text-foreground');
+    expect(arc?.getAttribute('opacity')).toBe('1');
+  });
+
+  it('threshold coloring: ≥90% → destructive, 75–90% → foreground, <75% → inherited', () => {
+    const conn = makeConnection({ acpCapabilities: NO_CONTROL_CAPS });
+
+    updateUsage({ contextUsed: 182_000, contextSize: 200_000 }); // 91%
+    const destructive = render(
+      <AcpSessionControls showModePicker={false} connection={conn} />,
+    );
+    expect(getRingArc(destructive.container)?.getAttribute('class')).toBe('text-destructive');
+    destructive.unmount();
+
+    updateUsage({ contextUsed: 152_000, contextSize: 200_000 }); // 76%
+    const foreground = render(
+      <AcpSessionControls showModePicker={false} connection={conn} />,
+    );
+    expect(getRingArc(foreground.container)?.getAttribute('class')).toBe('text-foreground');
+    foreground.unmount();
+
+    updateUsage({ contextUsed: 100_000, contextSize: 200_000 }); // 50%
+    const muted = render(
+      <AcpSessionControls showModePicker={false} connection={conn} />,
+    );
+    expect(getRingArc(muted.container)?.getAttribute('class') ?? '').toBe('');
+    expect(getRingArc(muted.container)?.getAttribute('opacity')).toBe('0.7');
+  });
+
+  it('never estimates for agent_managed connections (exact path owns them)', () => {
+    seedConversation();
+    const conn = makeConnection({ acpCapabilities: NO_CONTROL_CAPS }); // agent_managed
+    const { container } = render(
+      <AcpSessionControls showModePicker={false} connection={conn} />,
+    );
+    // No ACP usage reported and no estimate applies → nothing renders, and
+    // nothing was written to the usage-store.
+    expect(container.firstChild).toBeNull();
+    expect(Object.keys(useUsageStore.getState().snapshots)).toHaveLength(0);
+  });
+});

@@ -21,9 +21,10 @@ vi.mock('@/lib/logger', () => ({
   },
 }));
 
-// `resetUnresponsiveTimer` reaches back into the lifecycle module. Stub it — we're
-// testing the dispatcher in isolation.
-vi.mock('@/hooks/useAcpLifecycle', () => ({
+// `resetUnresponsiveTimer` reaches into the unresponsive-monitor runtime. Stub
+// it — we're testing the dispatcher in isolation. (Import path updated when the
+// timer moved from `useAcpLifecycle` to `acp/unresponsive-monitor`.)
+vi.mock('@/hooks/acp/unresponsive-monitor', () => ({
   resetUnresponsiveTimer: vi.fn(),
 }));
 
@@ -33,6 +34,7 @@ vi.mock('@/lib/ai/acp-agent-state', () => ({
   updateConfigOptionValue: vi.fn(),
   updateUsage: vi.fn(),
   setAvailableCommands: vi.fn(),
+  setLastTurnUsage: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -300,6 +302,268 @@ describe('setupAcpChatListeners', () => {
 
       expect(getAssistantMessage()?.acpMessageId).toBeUndefined();
       expect(getUserMessage()?.acpMessageId).toBeUndefined();
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // usage_update `_meta` ingestion (provider-usage-display #4)
+  //
+  // `_meta` is non-contractual — a populated `_claude/rateLimit` must reach
+  // `updateUsage` as parsed rateLimit; malformed `_meta` must degrade to
+  // exactly today's behavior (usage populated, rateLimit undefined).
+  // -------------------------------------------------------------------------
+  describe('usage_update _meta ingestion (#4)', () => {
+    function emitUsageUpdate(update: Record<string, unknown>): void {
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        update: { sessionUpdate: 'usage_update', ...update },
+      });
+    }
+
+    it('populates usage.rateLimit from _meta["_claude/rateLimit"]', async () => {
+      const { updateUsage } = await import('@/lib/ai/acp-agent-state');
+      const mockUpdateUsage = vi.mocked(updateUsage);
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      const rateLimitPayload = {
+        status: 'allowed_warning',
+        rateLimitType: 'five_hour',
+        resetsAt: 1_751_700_000,
+        utilization: 87,
+      };
+      emitUsageUpdate({
+        used: 4200,
+        size: 200_000,
+        cost: { amount: 0.42, currency: 'USD' },
+        _meta: { '_claude/rateLimit': rateLimitPayload },
+      });
+
+      expect(mockUpdateUsage).toHaveBeenCalledTimes(1);
+      expect(mockUpdateUsage).toHaveBeenCalledWith({
+        contextUsed: 4200,
+        contextSize: 200_000,
+        cost: { amount: 0.42, currency: 'USD' },
+        rateLimit: {
+          status: 'allowed_warning',
+          rateLimitType: 'five_hour',
+          resetsAt: 1_751_700_000,
+          utilization: 87,
+          raw: rateLimitPayload,
+        },
+      });
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('captures rate-limit state even when the update carries no token counts', async () => {
+      const { updateUsage } = await import('@/lib/ai/acp-agent-state');
+      const mockUpdateUsage = vi.mocked(updateUsage);
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitUsageUpdate({ _meta: { '_claude/rateLimit': { status: 'allowed_warning' } } });
+
+      expect(mockUpdateUsage).toHaveBeenCalledTimes(1);
+      const arg = mockUpdateUsage.mock.calls[0][0];
+      expect(arg.contextUsed).toBe(0);
+      expect(arg.contextSize).toBe(0);
+      expect(arg.rateLimit?.status).toBe('allowed_warning');
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('malformed _meta leaves usage populated with rateLimit undefined (never throws)', async () => {
+      const { updateUsage } = await import('@/lib/ai/acp-agent-state');
+      const mockUpdateUsage = vi.mocked(updateUsage);
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitUsageUpdate({
+        used: 4200,
+        size: 200_000,
+        _meta: { '_claude/rateLimit': 'total garbage' },
+      });
+
+      expect(mockUpdateUsage).toHaveBeenCalledTimes(1);
+      expect(mockUpdateUsage).toHaveBeenCalledWith({
+        contextUsed: 4200,
+        contextSize: 200_000,
+        cost: undefined,
+        rateLimit: undefined,
+      });
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('no _meta behaves exactly as today (regression)', async () => {
+      const { updateUsage } = await import('@/lib/ai/acp-agent-state');
+      const mockUpdateUsage = vi.mocked(updateUsage);
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitUsageUpdate({ used: 4200, size: 200_000 });
+
+      expect(mockUpdateUsage).toHaveBeenCalledTimes(1);
+      expect(mockUpdateUsage).toHaveBeenCalledWith({
+        contextUsed: 4200,
+        contextSize: 200_000,
+        cost: undefined,
+        rateLimit: undefined,
+      });
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('writes through to the usage-store snapshot when a connectionId is known (#6)', async () => {
+      const { useUsageStore } = await import('@/stores/usage-store');
+      useUsageStore.setState({ snapshots: {} });
+
+      const deps = { ...makeDeps(), connectionId: 'conn-usage' };
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(deps);
+
+      emitUsageUpdate({
+        used: 4200,
+        size: 200_000,
+        cost: { amount: 0.42, currency: 'USD' },
+        _meta: { '_claude/rateLimit': { status: 'allowed_warning' } },
+      });
+
+      const snap = useUsageStore.getState().getSnapshot('conn-usage');
+      expect(snap).toBeDefined();
+      expect(snap?.contextUsed).toBe(4200);
+      expect(snap?.contextSize).toBe(200_000);
+      expect(snap?.cost).toEqual({ amount: 0.42, currency: 'USD' });
+      expect(snap?.rateLimit?.status).toBe('allowed_warning');
+      expect(snap?.source).toBe('acp');
+      expect(snap?.confidence).toBe('exact');
+      expect(snap?.updatedAt).toBeGreaterThan(0);
+
+      // A rate-limit-only follow-up must not zero out the context reading.
+      emitUsageUpdate({ _meta: { '_claude/rateLimit': { status: 'allowed' } } });
+      const after = useUsageStore.getState().getSnapshot('conn-usage');
+      expect(after?.contextUsed).toBe(4200);
+      expect(after?.rateLimit?.status).toBe('allowed');
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('skips the usage-store write-through when no connectionId is known', async () => {
+      const { useUsageStore } = await import('@/stores/usage-store');
+      useUsageStore.setState({ snapshots: {} });
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitUsageUpdate({ used: 4200, size: 200_000 });
+
+      expect(Object.keys(useUsageStore.getState().snapshots)).toHaveLength(0);
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('empty usage_update with no _meta stays a no-op (regression)', async () => {
+      const { updateUsage } = await import('@/lib/ai/acp-agent-state');
+      const mockUpdateUsage = vi.mocked(updateUsage);
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitUsageUpdate({});
+      emitUsageUpdate({ used: 0, size: 0, _meta: { '_unknown/key': { foo: 1 } } });
+
+      expect(mockUpdateUsage).not.toHaveBeenCalled();
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // acp-turn-usage listener (provider-usage-display #5)
+  //
+  // The Rust prompt path emits `{ instanceId, sessionId, usage }` when the
+  // agent reports `PromptResponse.usage` (UNSTABLE upstream) — validate the
+  // payload, store on the singleton, write through to the usage-store.
+  // -------------------------------------------------------------------------
+  describe('acp-turn-usage listener (#5)', () => {
+    it('validates the payload, stores lastTurnUsage, and writes through to the usage-store', async () => {
+      const { setLastTurnUsage } = await import('@/lib/ai/acp-agent-state');
+      const { useUsageStore } = await import('@/stores/usage-store');
+      useUsageStore.setState({ snapshots: {} });
+
+      const deps = { ...makeDeps(), connectionId: 'conn-turn' };
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(deps);
+
+      emitMockEvent('acp-turn-usage', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        usage: {
+          totalTokens: 1500,
+          inputTokens: 1000,
+          outputTokens: 500,
+          thoughtTokens: 120,
+          cachedReadTokens: 300,
+        },
+      });
+
+      expect(vi.mocked(setLastTurnUsage)).toHaveBeenCalledWith({
+        totalTokens: 1500,
+        inputTokens: 1000,
+        outputTokens: 500,
+        thoughtTokens: 120,
+        cachedReadTokens: 300,
+      });
+      const snap = useUsageStore.getState().getSnapshot('conn-turn');
+      expect(snap?.lastTurnUsage?.totalTokens).toBe(1500);
+      expect(snap?.source).toBe('acp');
+      expect(snap?.confidence).toBe('exact');
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('ignores malformed payloads without touching state', async () => {
+      const { setLastTurnUsage } = await import('@/lib/ai/acp-agent-state');
+      const { useUsageStore } = await import('@/stores/usage-store');
+      useUsageStore.setState({ snapshots: {} });
+
+      const deps = { ...makeDeps(), connectionId: 'conn-turn' };
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(deps);
+
+      // Missing required totals / wrong types / non-object — all ignored.
+      emitMockEvent('acp-turn-usage', { instanceId: INSTANCE_ID, sessionId: 'sess-1', usage: { totalTokens: 'lots' } });
+      emitMockEvent('acp-turn-usage', { instanceId: INSTANCE_ID, sessionId: 'sess-1', usage: 'garbage' });
+      emitMockEvent('acp-turn-usage', { instanceId: INSTANCE_ID, sessionId: 'sess-1', usage: null });
+      emitMockEvent('acp-turn-usage', { instanceId: INSTANCE_ID, sessionId: 'sess-1', usage: { totalTokens: 1, inputTokens: 1 } });
+
+      expect(vi.mocked(setLastTurnUsage)).not.toHaveBeenCalled();
+      expect(Object.keys(useUsageStore.getState().snapshots)).toHaveLength(0);
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('ignores events from other agent instances', async () => {
+      const { setLastTurnUsage } = await import('@/lib/ai/acp-agent-state');
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-turn-usage', {
+        instanceId: 'someone-else',
+        sessionId: 'sess-1',
+        usage: { totalTokens: 1, inputTokens: 1, outputTokens: 0 },
+      });
+
+      expect(vi.mocked(setLastTurnUsage)).not.toHaveBeenCalled();
 
       unlisten();
       unlistenPermission();
