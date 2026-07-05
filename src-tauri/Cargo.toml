@@ -77,8 +77,12 @@ libc = "0.2"
 # model selection now goes through config options with category "model".
 # agent-client-protocol 0.14.0 pins the schema crate to exactly =0.13.6, so the
 # two versions must move together.
-agent-client-protocol = { version = "0.14.0", features = ["unstable_session_fork", "unstable_auth_methods"] }
-agent-client-protocol-schema = { version = "=0.13.6", features = ["unstable_session_fork", "unstable_auth_methods"] }
+# `unstable_end_turn_token_usage` gates `PromptResponse.usage` (per-turn token
+# breakdown, provider-usage-display #1). UNSTABLE upstream — the field
+# deserializes DefaultOnError so a shape change degrades to `None`, never a
+# prompt failure; consumption in acp.rs is strictly best-effort.
+agent-client-protocol = { version = "0.14.0", features = ["unstable_session_fork", "unstable_auth_methods", "unstable_end_turn_token_usage"] }
+agent-client-protocol-schema = { version = "=0.13.6", features = ["unstable_session_fork", "unstable_auth_methods", "unstable_end_turn_token_usage"] }
 tokio-util = { version = "0.7", features = ["compat"] }
 
 # Logging

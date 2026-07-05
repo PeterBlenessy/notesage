@@ -22,7 +22,9 @@ import {
 } from '@/lib/ai/acp-utils';
 import { resetUnresponsiveTimer } from '@/hooks/acp/unresponsive-monitor';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
-import { updateCurrentMode, updateConfigOptionValue, updateUsage, setAvailableCommands } from '@/lib/ai/acp-agent-state';
+import { updateCurrentMode, updateConfigOptionValue, updateUsage, setAvailableCommands, setLastTurnUsage } from '@/lib/ai/acp-agent-state';
+import { parseUsageMeta, parseTurnUsage } from '@/lib/ai/usage';
+import { useUsageStore } from '@/stores/usage-store';
 import { runRunning, runAwaitingPermission, runIdle } from '@/lib/ai/session-run';
 
 // ---------------------------------------------------------------------------
@@ -316,8 +318,24 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       const cost = (rawCost && typeof rawCost.amount === 'number' && typeof rawCost.currency === 'string')
         ? { amount: rawCost.amount, currency: rawCost.currency }
         : undefined;
-      if (contextUsed > 0 || contextSize > 0) {
-        updateUsage({ contextUsed, contextSize, cost });
+      // Rate-limit state riding along in the non-contractual `_meta` bag
+      // (e.g. `_claude/rateLimit` from claude-code-acp). Best-effort: malformed
+      // or absent `_meta` yields undefined and behavior matches today.
+      const rateLimit = parseUsageMeta(update._meta);
+      if (contextUsed > 0 || contextSize > 0 || rateLimit) {
+        updateUsage({ contextUsed, contextSize, cost, rateLimit });
+        // Write through to the per-connection snapshot store (#6) so the live
+        // singleton and Settings-facing snapshots stay in sync. Sparse patch:
+        // a rate-limit-only update must not zero out a prior context reading.
+        if (deps.connectionId) {
+          useUsageStore.getState().recordUsage(deps.connectionId, {
+            ...(contextUsed > 0 || contextSize > 0 ? { contextUsed, contextSize } : {}),
+            cost,
+            rateLimit,
+            source: 'acp',
+            confidence: 'exact',
+          });
+        }
       }
     } else if (update.sessionUpdate === 'available_commands_update' && Array.isArray(update.availableCommands ?? update.available_commands)) {
       // Agent slash commands (camelCase from ACP schema)
@@ -336,6 +354,31 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       log.debug('ai', `Unknown ACP session update type: ${update.sessionUpdate}`);
     }
   });
+
+  // Per-turn token usage from the prompt response (`acp-turn-usage`, emitted by
+  // the Rust prompt path when the agent reports `PromptResponse.usage` — an
+  // UNSTABLE upstream field, so the payload is validated, never trusted).
+  // Malformed payloads are ignored silently (provider-usage-display #5).
+  const unlistenTurnUsage = await listen<{ instanceId: string; sessionId: string; usage: unknown }>(
+    'acp-turn-usage',
+    (event) => {
+      if (event.payload.instanceId !== deps.instanceId) return;
+      // Session gate — same conservative rule as the session-update listener:
+      // reject only when BOTH sides carry a session id and they differ, so a
+      // stale listener never records another session's turn usage.
+      if (deps.sessionId && event.payload.sessionId && event.payload.sessionId !== deps.sessionId) return;
+      const turnUsage = parseTurnUsage(event.payload.usage);
+      if (!turnUsage) return;
+      setLastTurnUsage(turnUsage);
+      if (deps.connectionId) {
+        useUsageStore.getState().recordUsage(deps.connectionId, {
+          lastTurnUsage: turnUsage,
+          source: 'acp',
+          confidence: 'exact',
+        });
+      }
+    },
+  );
 
   const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
     if (event.payload.instanceId !== deps.instanceId) return;
@@ -428,7 +471,12 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
   });
 
   return {
-    unlisten,
+    // Compose the turn-usage teardown into the session-update handle so every
+    // existing call site cleans it up without changes.
+    unlisten: () => {
+      unlisten();
+      unlistenTurnUsage();
+    },
     unlistenPermission,
     getStreamedContent: () => streamedContent,
   };

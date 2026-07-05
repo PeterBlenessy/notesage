@@ -390,6 +390,21 @@ Each reused component keeps a **terminal sign-in only as its own last-resort fal
 
 **Why this exists:** ACP agents read OAuth tokens from the OS keychain at spawn time. Tokens can go stale asynchronously while other Claude/Copilot processes on the host refresh them, leaving Notesage's spawned agent with a cached-but-rejected token until respawn. The re-auth path handles both the stale-token and the truly-expired-token cases.
 
+## Provider Usage Display
+
+Every interactive connection gets a context indicator in the command bar; account-level usage state surfaces on the Settings connection card. PRD: `docs/prds/2026-07-05-provider-usage-display.md`.
+
+**Hard constraints (user decision — do not relax):** Notesage never reads third-party credential files (`~/.claude/.credentials.json`, `~/.codex/auth.json`, browser cookies) and never calls private provider usage endpoints. All data is event-pushed over ACP or computed locally, with zero background polling (no timers — countdown/freshness labels are computed at render).
+
+**Data sources:**
+
+- **Exact (ACP):** `usage_update` events carry `used`/`size`/`cost`; the listener also parses the non-contractual `_meta` bag through a **keyed parser registry** (`parseUsageMeta` in `src/lib/ai/usage.ts`) — `_meta["_claude/rateLimit"]` today ({ status, rateLimitType, resetsAt, utilization }, forwarded by claude-code-acp near warning thresholds). Adding a provider is a one-entry addition (Phase 3: `_codex/rateLimits` when the upstream codex-acp PR lands). Every field is optional and type-validated; malformed or unknown `_meta` degrades silently — the parser never throws. Per-turn token breakdowns arrive via the `acp-turn-usage` Tauri event, emitted best-effort from the Rust prompt path when `PromptResponse.usage` is present (UNSTABLE upstream feature `unstable_end_turn_token_usage`; deserializes DefaultOnError so a shape change can never break prompting).
+- **Estimated (direct API / local):** `useEstimatedContextUsage` computes `estimateMessagesTokens` (chars/4) over the active thread, recomputed at message boundaries only — never per keystroke or stream chunk. The denominator comes from `getContextSize` (`src/lib/ai/context-size.ts`): `local_bundled` → the configured llama-server context length; `anthropic`/`openai` → a small per-model constant map; anything else → no size, and **no size ⇒ no indicator** (never invent a denominator). Estimated values render with an "≈" prefix and an "Estimated locally" caption.
+
+**State:** `AcpUsageInfo.rateLimit` + `AcpSessionInfo.lastTurnUsage` live on the session-info singleton (cleared by `clearSessionInfo` on connection switch / agent stop — no new lifecycle); the non-persisted `usage-store` keeps a per-connection `ProviderUsageSnapshot` with `source`/`confidence` provenance, written through from both paths.
+
+**UI:** the usage pill (ring only at rest; tooltip keeps the one-line summary) is click-to-open — `UsagePopover` shows context (with 75/90 threshold captions "Context filling up" / "Start a new session soon"), per-turn tokens, cumulative cost, rate-limit rows with a reset countdown, and a provenance + freshness footer. Ring thresholds stay inside the strict-neutral palette: `<75%` muted (unchanged), `75–90%` foreground, `≥90%` `--color-destructive`. On the Settings connection card, a plan pill ("Free account" from `connection.freeAccount`) and an Info popover (`ConnectionUsageDetail`) expose the latest snapshot with provenance and an explicit empty state; refresh is passive (live events + the existing heartbeat), no new polling.
+
 ## Web Search
 
 Web search is implemented as a client-side tool (`web_search`) available to all providers when tool calling is enabled. The backend `web_search` Tauri command queries DuckDuckGo's HTML endpoint — no API key needed. Results are returned to the model as tool call results with title, URL, and snippet for each hit.
@@ -444,6 +459,12 @@ For providers that also support server-side web search (Anthropic `web_search_20
 | `src/lib/ai/react-prompt.ts` | `REACT_GUIDANCE` + `buildReActAddendum()` — tool-use protocol appended to `localSystemMessage` |
 | `src/lib/ai/tool-feedback.ts` | `ToolCallHistory` + `buildToolResultContent()` — wraps tool errors with reasoning guidance, escalates on repeated identical failures |
 | `src/lib/ai/context-trim.ts` | `trimMessagesToBudget()` + `localBundledTrimBudget()` — sliding-window trim for local_bundled, preserves tool_call/tool_result pairing |
+| `src/lib/ai/usage.ts` | Usage types (`ProviderRateLimitInfo`, `TurnUsage`, `ProviderUsageSnapshot`) + defensive `_meta` parser registry (`parseUsageMeta`) and `acp-turn-usage` payload validation (`parseTurnUsage`) |
+| `src/lib/ai/context-size.ts` | `getContextSize()` — context-window denominator per connection (local_bundled config, anthropic/openai model map; unknown ⇒ no indicator) |
+| `src/hooks/useEstimatedContextUsage.ts` | Message-boundary-memoized local context estimation for non-ACP connections, write-through to usage-store |
+| `src/stores/usage-store.ts` | Non-persisted per-connection `ProviderUsageSnapshot` store with provenance |
+| `src/components/chat/UsagePopover.tsx` | Usage pill + click-to-open detail popover (context, per-turn tokens, cost, rate limit, provenance) |
+| `src/components/settings/ConnectionUsageDetail.tsx` | Settings connection-card usage detail popover (Phase 2) |
 
 ## Future Enhancements
 
