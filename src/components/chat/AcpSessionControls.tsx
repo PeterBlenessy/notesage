@@ -39,6 +39,9 @@ import {
 } from '@/lib/ai/acp-agent-state';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useChatStore } from '@/stores/chat-store';
+import { useUsageStore } from '@/stores/usage-store';
+import { useEstimatedContextUsage, type EstimatedContextUsage } from '@/hooks/useEstimatedContextUsage';
+import { UsagePopover } from '@/components/chat/UsagePopover';
 import type { AcpSessionConfigOption } from '@/lib/ai/acp-utils';
 import type { Connection } from '@/lib/ai/connections';
 
@@ -61,42 +64,6 @@ function hasActiveRestrictions(connectionId: string): boolean {
   const conn = useConnectionsStore.getState().connections.find(c => c.id === connectionId);
   if (!conn) return false;
   return !!(conn.sandboxEnabled || conn.networkSandboxEnabled || conn.kernelNetworkDeny);
-}
-
-// ---------------------------------------------------------------------------
-// Context usage indicator — circular progress icon
-// ---------------------------------------------------------------------------
-
-function ContextUsageIcon({ used, size }: { used: number; size: number }) {
-  const ratio = size > 0 ? Math.min(used / size, 1) : 0;
-  const r = 6;
-  const circumference = 2 * Math.PI * r;
-  const offset = circumference * (1 - ratio);
-
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" className="shrink-0">
-      {/* Background circle */}
-      <circle cx="8" cy="8" r={r} fill="none" stroke="currentColor" strokeWidth="2" opacity="0.25" />
-      {/* Progress arc */}
-      <circle
-        cx="8" cy="8" r={r}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeDasharray={circumference}
-        strokeDashoffset={offset}
-        strokeLinecap="round"
-        transform="rotate(-90 8 8)"
-        opacity="0.7"
-      />
-    </svg>
-  );
-}
-
-function formatTokenCount(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
 }
 
 // ---------------------------------------------------------------------------
@@ -428,39 +395,42 @@ const ConfigOptionPicker = memo(function ConfigOptionPicker({
 });
 
 // ---------------------------------------------------------------------------
-// Usage Indicator — circular progress with tooltip
+// Usage Indicator — data assembly for the usage pill + popover
 // ---------------------------------------------------------------------------
 
-const UsageIndicator = memo(function UsageIndicator() {
+const UsageIndicator = memo(function UsageIndicator({
+  connectionId,
+  estimate,
+}: {
+  connectionId: string;
+  /** Locally-estimated fallback for non-ACP connections (provider-usage-display #8). */
+  estimate?: EstimatedContextUsage;
+}) {
   const sessionInfo = useSyncExternalStore(subscribeSessionInfo, getSessionInfo);
+  // Freshness timestamp for the popover's provenance footer.
+  const snapshot = useUsageStore((s) => s.snapshots[connectionId]);
   const usage = sessionInfo.usage;
-  if (!usage || (usage.contextUsed === 0 && usage.contextSize === 0)) return null;
+  const hasAcpUsage = !!usage && !(usage.contextUsed === 0 && usage.contextSize === 0);
 
-  const label = usage.contextSize > 0
-    ? `${formatTokenCount(usage.contextUsed)} / ${formatTokenCount(usage.contextSize)}`
-    : formatTokenCount(usage.contextUsed);
+  // Exact ACP usage wins; the estimate is the fallback for connections that
+  // report nothing. Neither source → hidden (current behavior, no invented ring).
+  const source = hasAcpUsage && usage
+    ? { contextUsed: usage.contextUsed, contextSize: usage.contextSize, isEstimated: false }
+    : estimate
+      ? { contextUsed: estimate.contextUsed, contextSize: estimate.contextSize, isEstimated: true }
+      : null;
+  if (!source) return null;
 
-  const costText = usage.cost
-    ? `${usage.cost.currency === 'USD' ? '$' : usage.cost.currency + ' '}${usage.cost.amount.toFixed(2)}`
-    : undefined;
-
-  // Bordered pill to match the other command-bar buttons. Just the icon at rest —
-  // the token count (and optional cost) live in the tooltip, which gives the
-  // same affordance without consuming horizontal space.
   return (
-    <TooltipProvider delayDuration={200}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <span className="inline-flex items-center h-7 px-2 rounded-md text-muted-foreground/60 transition-colors duration-150 border border-transparent hover:text-foreground hover:bg-muted hover:border-border cursor-default">
-            <ContextUsageIcon used={usage.contextUsed} size={usage.contextSize} />
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="top" className="text-xs">
-          <p>{label}</p>
-          {costText && <p className="text-muted-foreground">{costText}</p>}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <UsagePopover
+      data={{
+        ...source,
+        cost: hasAcpUsage ? usage.cost : undefined,
+        rateLimit: hasAcpUsage ? usage.rateLimit : undefined,
+        lastTurnUsage: hasAcpUsage ? sessionInfo.lastTurnUsage : undefined,
+        updatedAt: snapshot?.updatedAt,
+      }}
+    />
   );
 });
 
@@ -476,6 +446,21 @@ export const AcpSessionControls = memo(function AcpSessionControls({
   connection?: Connection;
 }) {
   const sessionInfo = useSyncExternalStore(subscribeSessionInfo, getSessionInfo);
+
+  // Estimated context for connections that never report ACP usage (direct API,
+  // local) — provider-usage-display #8. The hook self-gates: it returns
+  // undefined for ACP/unknown-size connections (no-denominator rule) and only
+  // recomputes at message boundaries, so mounting it unconditionally is cheap.
+  const activeConversation = useChatStore((s) => {
+    const id = s.activeConversationId;
+    return id ? s.conversations.find((c) => c.id === id) ?? null : null;
+  });
+  // System prompt is intentionally NOT threaded in: building it here would
+  // couple this render path to useAIContext and add re-render churn for a
+  // marginal accuracy gain. The estimate undershoots by the system-prompt size
+  // as a result — acceptable because the "≈" prefix already flags the value as
+  // approximate. Thread it through later if the undershoot proves material.
+  const estimate = useEstimatedContextUsage(activeConversation, connection ?? null);
 
   if (!connection) return null;
 
@@ -509,7 +494,8 @@ export const AcpSessionControls = memo(function AcpSessionControls({
 
   const hasControls = (showModePicker && availableModes.length > 0)
     || configOptions.length > 0
-    || sessionInfo.usage;
+    || sessionInfo.usage
+    || estimate;
   if (!hasControls) return null;
 
   return (
@@ -522,7 +508,7 @@ export const AcpSessionControls = memo(function AcpSessionControls({
           liveCurrentValue={liveCurrentValues.get(opt.id)}
         />
       ))}
-      <UsageIndicator />
+      <UsageIndicator connectionId={connection.id} estimate={estimate} />
     </div>
   );
 });
