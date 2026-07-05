@@ -33,6 +33,7 @@ vi.mock('@/lib/ai/acp-agent-state', () => ({
   updateConfigOptionValue: vi.fn(),
   updateUsage: vi.fn(),
   setAvailableCommands: vi.fn(),
+  setLastTurnUsage: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -479,6 +480,89 @@ describe('setupAcpChatListeners', () => {
       emitUsageUpdate({ used: 0, size: 0, _meta: { '_unknown/key': { foo: 1 } } });
 
       expect(mockUpdateUsage).not.toHaveBeenCalled();
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // acp-turn-usage listener (provider-usage-display #5)
+  //
+  // The Rust prompt path emits `{ instanceId, sessionId, usage }` when the
+  // agent reports `PromptResponse.usage` (UNSTABLE upstream) — validate the
+  // payload, store on the singleton, write through to the usage-store.
+  // -------------------------------------------------------------------------
+  describe('acp-turn-usage listener (#5)', () => {
+    it('validates the payload, stores lastTurnUsage, and writes through to the usage-store', async () => {
+      const { setLastTurnUsage } = await import('@/lib/ai/acp-agent-state');
+      const { useUsageStore } = await import('@/stores/usage-store');
+      useUsageStore.setState({ snapshots: {} });
+
+      const deps = { ...makeDeps(), connectionId: 'conn-turn' };
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(deps);
+
+      emitMockEvent('acp-turn-usage', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-1',
+        usage: {
+          totalTokens: 1500,
+          inputTokens: 1000,
+          outputTokens: 500,
+          thoughtTokens: 120,
+          cachedReadTokens: 300,
+        },
+      });
+
+      expect(vi.mocked(setLastTurnUsage)).toHaveBeenCalledWith({
+        totalTokens: 1500,
+        inputTokens: 1000,
+        outputTokens: 500,
+        thoughtTokens: 120,
+        cachedReadTokens: 300,
+      });
+      const snap = useUsageStore.getState().getSnapshot('conn-turn');
+      expect(snap?.lastTurnUsage?.totalTokens).toBe(1500);
+      expect(snap?.source).toBe('acp');
+      expect(snap?.confidence).toBe('exact');
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('ignores malformed payloads without touching state', async () => {
+      const { setLastTurnUsage } = await import('@/lib/ai/acp-agent-state');
+      const { useUsageStore } = await import('@/stores/usage-store');
+      useUsageStore.setState({ snapshots: {} });
+
+      const deps = { ...makeDeps(), connectionId: 'conn-turn' };
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(deps);
+
+      // Missing required totals / wrong types / non-object — all ignored.
+      emitMockEvent('acp-turn-usage', { instanceId: INSTANCE_ID, sessionId: 'sess-1', usage: { totalTokens: 'lots' } });
+      emitMockEvent('acp-turn-usage', { instanceId: INSTANCE_ID, sessionId: 'sess-1', usage: 'garbage' });
+      emitMockEvent('acp-turn-usage', { instanceId: INSTANCE_ID, sessionId: 'sess-1', usage: null });
+      emitMockEvent('acp-turn-usage', { instanceId: INSTANCE_ID, sessionId: 'sess-1', usage: { totalTokens: 1, inputTokens: 1 } });
+
+      expect(vi.mocked(setLastTurnUsage)).not.toHaveBeenCalled();
+      expect(Object.keys(useUsageStore.getState().snapshots)).toHaveLength(0);
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('ignores events from other agent instances', async () => {
+      const { setLastTurnUsage } = await import('@/lib/ai/acp-agent-state');
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-turn-usage', {
+        instanceId: 'someone-else',
+        sessionId: 'sess-1',
+        usage: { totalTokens: 1, inputTokens: 1, outputTokens: 0 },
+      });
+
+      expect(vi.mocked(setLastTurnUsage)).not.toHaveBeenCalled();
 
       unlisten();
       unlistenPermission();

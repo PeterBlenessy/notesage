@@ -4,7 +4,7 @@
 // payloads (garbage included) and never throw.
 
 import { describe, it, expect } from 'vitest';
-import { parseUsageMeta } from '../usage';
+import { parseUsageMeta, parseTurnUsage } from '../usage';
 
 const CLAUDE_KEY = '_claude/rateLimit';
 
@@ -115,5 +115,61 @@ describe('parseUsageMeta', () => {
       },
     });
     expect(parseUsageMeta(trap)?.status).toBe('allowed');
+  });
+});
+
+describe('parseTurnUsage', () => {
+  it('parses a full Usage payload (camelCase from the Rust serializer)', () => {
+    expect(
+      parseTurnUsage({
+        totalTokens: 1500,
+        inputTokens: 1000,
+        outputTokens: 500,
+        thoughtTokens: 120,
+        cachedReadTokens: 300,
+        cachedWriteTokens: 50,
+      }),
+    ).toEqual({
+      totalTokens: 1500,
+      inputTokens: 1000,
+      outputTokens: 500,
+      thoughtTokens: 120,
+      cachedReadTokens: 300,
+      cachedWriteTokens: 50,
+    });
+  });
+
+  it('accepts the minimal required shape and omits absent optionals', () => {
+    const result = parseTurnUsage({ totalTokens: 10, inputTokens: 7, outputTokens: 3 });
+    expect(result).toEqual({ totalTokens: 10, inputTokens: 7, outputTokens: 3 });
+    expect(result && 'thoughtTokens' in result).toBe(false);
+  });
+
+  it('rejects payloads missing any required total', () => {
+    expect(parseTurnUsage({ inputTokens: 1, outputTokens: 1 })).toBeUndefined();
+    expect(parseTurnUsage({ totalTokens: 1, outputTokens: 1 })).toBeUndefined();
+    expect(parseTurnUsage({ totalTokens: 1, inputTokens: 1 })).toBeUndefined();
+  });
+
+  it('rejects wrong-typed required fields and drops wrong-typed optionals', () => {
+    expect(parseTurnUsage({ totalTokens: '1500', inputTokens: 1, outputTokens: 1 })).toBeUndefined();
+    expect(parseTurnUsage({ totalTokens: NaN, inputTokens: 1, outputTokens: 1 })).toBeUndefined();
+
+    const result = parseTurnUsage({
+      totalTokens: 10,
+      inputTokens: 7,
+      outputTokens: 3,
+      thoughtTokens: 'many',
+      cachedReadTokens: null,
+    });
+    expect(result).toEqual({ totalTokens: 10, inputTokens: 7, outputTokens: 3 });
+  });
+
+  it('never throws on garbage input', () => {
+    const garbage: unknown[] = [null, undefined, 'x', 42, true, [], [1, 2], () => {}];
+    for (const value of garbage) {
+      expect(() => parseTurnUsage(value)).not.toThrow();
+      expect(parseTurnUsage(value)).toBeUndefined();
+    }
   });
 });

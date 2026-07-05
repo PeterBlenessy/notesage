@@ -814,6 +814,9 @@ fn run_agent_thread(
         // Inbound handler context, cloned into each registered handler closure.
         let notif_ctx = client_ctx.clone();
         let perm_ctx = client_ctx.clone();
+        // Cloned into the command loop for best-effort `acp-turn-usage` emits
+        // from prompt responses (provider-usage-display #1).
+        let usage_ctx = client_ctx.clone();
 
         // The command loop and initialize handshake live inside `connect_with`'s
         // closure — the future returned by `connect_with` drives the connection for
@@ -1120,6 +1123,7 @@ fn run_agent_thread(
                     let conn = conn.clone();
                     let prompt_binary = agent_binary.clone();
                     let prompt_sid = sid.clone();
+                    let prompt_usage_ctx = usage_ctx.clone();
                     tokio::task::spawn(async move {
                         log::info!(
                             target: "notesage::acp",
@@ -1143,12 +1147,20 @@ fn run_agent_thread(
                             blocks,
                         );
                         match conn.send_request(req).block_task().await {
-                            Ok(_) => {
+                            Ok(resp) => {
                                 log::info!(
                                     target: "notesage::acp",
                                     "[{}] Prompt completed in {:.1}s (session={})",
                                     prompt_binary, start.elapsed().as_secs_f64(), prompt_sid,
                                 );
+                                // Best-effort per-turn usage forwarding (UNSTABLE
+                                // upstream field; deserializes DefaultOnError so a
+                                // shape change lands here as `None`). Emitted BEFORE
+                                // the reply resolves but isolated from it — nothing
+                                // on this path can change the prompt result.
+                                if let Some(usage) = resp.usage.as_ref() {
+                                    prompt_usage_ctx.emit_turn_usage(&prompt_sid, usage);
+                                }
                                 let _ = reply.send(Ok(()));
                             }
                             Err(e) => {

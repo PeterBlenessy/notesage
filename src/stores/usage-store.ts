@@ -46,6 +46,14 @@ export const useUsageStore = create<UsageStore>((set, get) => ({
     ) as UsagePatch;
     set((state) => {
       const existing = state.snapshots[connectionId];
+      // Provenance precedence: a local `estimate` write must never downgrade an
+      // exact `acp` snapshot. Today the estimator structurally can't fire for
+      // ACP connections (`getContextSize` returns undefined for agents), so this
+      // is a guard against a future writer, not a live path — a stale estimate
+      // clobbering "Reported by agent" provenance would mislead the UI footer.
+      if (existing?.source === 'acp' && defined.source === 'estimate') {
+        return state;
+      }
       const next: ProviderUsageSnapshot = {
         ...existing,
         ...defined,

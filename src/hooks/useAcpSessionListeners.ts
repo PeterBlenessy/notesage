@@ -22,8 +22,8 @@ import {
 } from '@/lib/ai/acp-utils';
 import { resetUnresponsiveTimer } from '@/hooks/useAcpLifecycle';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
-import { updateCurrentMode, updateConfigOptionValue, updateUsage, setAvailableCommands } from '@/lib/ai/acp-agent-state';
-import { parseUsageMeta } from '@/lib/ai/usage';
+import { updateCurrentMode, updateConfigOptionValue, updateUsage, setAvailableCommands, setLastTurnUsage } from '@/lib/ai/acp-agent-state';
+import { parseUsageMeta, parseTurnUsage } from '@/lib/ai/usage';
 import { useUsageStore } from '@/stores/usage-store';
 import { runRunning, runAwaitingPermission, runIdle } from '@/lib/ai/session-run';
 
@@ -355,6 +355,31 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
     }
   });
 
+  // Per-turn token usage from the prompt response (`acp-turn-usage`, emitted by
+  // the Rust prompt path when the agent reports `PromptResponse.usage` — an
+  // UNSTABLE upstream field, so the payload is validated, never trusted).
+  // Malformed payloads are ignored silently (provider-usage-display #5).
+  const unlistenTurnUsage = await listen<{ instanceId: string; sessionId: string; usage: unknown }>(
+    'acp-turn-usage',
+    (event) => {
+      if (event.payload.instanceId !== deps.instanceId) return;
+      // Session gate — same conservative rule as the session-update listener:
+      // reject only when BOTH sides carry a session id and they differ, so a
+      // stale listener never records another session's turn usage.
+      if (deps.sessionId && event.payload.sessionId && event.payload.sessionId !== deps.sessionId) return;
+      const turnUsage = parseTurnUsage(event.payload.usage);
+      if (!turnUsage) return;
+      setLastTurnUsage(turnUsage);
+      if (deps.connectionId) {
+        useUsageStore.getState().recordUsage(deps.connectionId, {
+          lastTurnUsage: turnUsage,
+          source: 'acp',
+          confidence: 'exact',
+        });
+      }
+    },
+  );
+
   const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
     if (event.payload.instanceId !== deps.instanceId) return;
     // Session gate — same conservative rule as the session-update listener.
@@ -446,7 +471,12 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
   });
 
   return {
-    unlisten,
+    // Compose the turn-usage teardown into the session-update handle so every
+    // existing call site cleans it up without changes.
+    unlisten: () => {
+      unlisten();
+      unlistenTurnUsage();
+    },
     unlistenPermission,
     getStreamedContent: () => streamedContent,
   };

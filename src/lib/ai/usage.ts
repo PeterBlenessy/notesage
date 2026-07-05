@@ -94,6 +94,33 @@ const RATE_LIMIT_META_PARSERS: Array<{
 ];
 
 /**
+ * Validate an `acp-turn-usage` event payload's `usage` field against
+ * {@link TurnUsage}. The Rust side serializes the ACP schema's `Usage` struct
+ * (camelCase), but the upstream field is UNSTABLE — validate every field and
+ * return `undefined` on any shape surprise rather than trusting the wire.
+ * The three required totals must all be finite numbers; the optional
+ * breakdowns are kept only when individually valid.
+ */
+export function parseTurnUsage(value: unknown): TurnUsage | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const v = value as Record<string, unknown>;
+  const totalTokens = asFiniteNumber(v.totalTokens);
+  const inputTokens = asFiniteNumber(v.inputTokens);
+  const outputTokens = asFiniteNumber(v.outputTokens);
+  if (totalTokens === undefined || inputTokens === undefined || outputTokens === undefined) {
+    return undefined;
+  }
+  const usage: TurnUsage = { totalTokens, inputTokens, outputTokens };
+  const thoughtTokens = asFiniteNumber(v.thoughtTokens);
+  if (thoughtTokens !== undefined) usage.thoughtTokens = thoughtTokens;
+  const cachedReadTokens = asFiniteNumber(v.cachedReadTokens);
+  if (cachedReadTokens !== undefined) usage.cachedReadTokens = cachedReadTokens;
+  const cachedWriteTokens = asFiniteNumber(v.cachedWriteTokens);
+  if (cachedWriteTokens !== undefined) usage.cachedWriteTokens = cachedWriteTokens;
+  return usage;
+}
+
+/**
  * Extract rate-limit info from a `usage_update._meta` payload. Strictly
  * best-effort: unknown keys, malformed values, and non-object input all yield
  * `undefined` (or a partial with only the valid fields) — never a throw.

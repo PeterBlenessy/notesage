@@ -161,12 +161,15 @@ describe('ensureAcpAgent', () => {
       cost: { amount: 0.42, currency: 'USD' },
       rateLimit: { status: 'allowed_warning', rateLimitType: 'seven_day', utilization: 91 },
     });
+    mod.setLastTurnUsage({ totalTokens: 1500, inputTokens: 1000, outputTokens: 500 });
     expect(mod.getSessionInfo().usage?.rateLimit?.utilization).toBe(91);
     expect(mod.getSessionInfo().usage?.cost?.amount).toBe(0.42);
+    expect(mod.getSessionInfo().lastTurnUsage?.totalTokens).toBe(1500);
 
     mod.stopAcpAgent();
 
     expect(mod.getSessionInfo().usage).toBeNull();
+    expect(mod.getSessionInfo().lastTurnUsage).toBeNull();
   });
 
   it('throws after exceeding max retry depth instead of infinite recursion', async () => {
