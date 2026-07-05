@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-07-05 |
-| **Status** | Not started |
+| **Status** | Complete (all 12 tasks — commits `caed2dd`, `2ea2e0c`) |
 | **PRD** | [provider-usage-display](../prds/2026-07-05-provider-usage-display.md) |
 | **Total** | 12 tasks: 4S, 6M, 2L |
 | **Suggested order** | Backend (#1) → Types & state (#2–#7) → UI (#8–#10) → Docs & verify (#11–#12) |
