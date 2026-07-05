@@ -2,7 +2,7 @@ import { useCallback, useRef } from 'react';
 import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { usePermissionStore } from '@/stores/permission-store';
-import { useToolPermissionStore, type ToolCallDecision } from '@/stores/tool-permission-store';
+import { useToolPermissionStore, selectPendingForConversation, type ToolCallDecision } from '@/stores/tool-permission-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { getAIProvider } from '@/lib/ai';
 import type { ChatMessage, Citation, ToolDefinition, ToolCallSegment, ImageAttachment } from '@/lib/ai/types';
@@ -234,6 +234,13 @@ export function useDirectApiChat({
         let thinkingSegmentIndex = -1;
         let thinkingSegmentContent = '';
 
+        // Track whether this streaming session has been cleaned up (cancel or
+        // done). Declared before `handleToolCalls` so the tool loop can check
+        // it after every await and bail instead of re-invoking `ai_chat_stream`
+        // — a continuation after Stop would spawn a fresh provider stream whose
+        // events land on torn-down channels (invisible, but billed).
+        let cancelled = false;
+
         // Tracks messages accumulated during multi-turn tool call loops.
         // Starts with the initial history + user message, then grows with
         // assistant tool_call messages and tool result messages.
@@ -255,7 +262,7 @@ export function useDirectApiChat({
         // Tool call execution — called when all tool calls for a turn arrive
         // -------------------------------------------------------------------
         const handleToolCalls = async () => {
-          if (pendingToolCalls.length === 0) return;
+          if (pendingToolCalls.length === 0 || cancelled) return;
 
           // Snapshot the tool calls and clear the pending list for the next turn
           const calls = [...pendingToolCalls];
@@ -324,6 +331,10 @@ export function useDirectApiChat({
                 });
               });
               useToolPermissionStore.getState().setPending(null, conversationId);
+              // Stop pressed while the card was up — `cleanup` resolved this
+              // promise ('deny') and already finalized the message. Bail before
+              // any further writes or the continuation re-invoke.
+              if (cancelled) return;
               // Decision in (allow or deny) — the turn resumes streaming either way.
               runRunning(conversationId);
 
@@ -409,6 +420,11 @@ export function useDirectApiChat({
               homeDir: scopeHomeDir,
             });
 
+            // Stop pressed while the tool executed — `cleanup` already tore
+            // down the listeners and finalized the message's segments. Bail
+            // before writing post-cancel state or re-invoking the stream.
+            if (cancelled) return;
+
             // Update activity to done
             addActivity(assistantMessageId, {
               kind: 'tool_call',
@@ -453,6 +469,10 @@ export function useDirectApiChat({
           thinkingSegmentIndex = -1;
           thinkingSegmentContent = '';
 
+          // Bail before the continuation if this turn was cancelled mid-loop —
+          // re-invoking would spawn a zombie backend stream on a dead channel.
+          if (cancelled) return;
+
           // Re-invoke ai_chat_stream with full history including tool results
           await invoke('ai_chat_stream', {
             messages: mapMessagesForRust(trimForProvider(conversationMessages)),
@@ -473,9 +493,6 @@ export function useDirectApiChat({
         // -------------------------------------------------------------------
         // Event listeners
         // -------------------------------------------------------------------
-
-        // Track whether this streaming session has been cleaned up (cancel or done)
-        let cancelled = false;
 
         const [
           unlistenChunk,
@@ -584,6 +601,17 @@ export function useDirectApiChat({
           unlistenToolCall();
           unlistenToolCallsDone();
           unlistenDone();
+          // Unblock a tool-permission decision this turn may be awaiting (Stop
+          // pressed while the card was visible). Resolving lets the orphaned
+          // promise in `handleToolCalls` settle — the `cancelled` flag set above
+          // then bails it out before any continuation re-invoke — and clearing
+          // the pending entry removes the card so a later click can't spawn a
+          // zombie backend stream.
+          const pendingPerm = selectPendingForConversation(conversationId)(useToolPermissionStore.getState());
+          if (pendingPerm) {
+            useToolPermissionStore.getState().setPending(null, conversationId);
+            pendingPerm.resolve('deny');
+          }
           if (streamedThinking) {
             updateMessageThinking(assistantMessageId, streamedThinking, conversationId);
           }

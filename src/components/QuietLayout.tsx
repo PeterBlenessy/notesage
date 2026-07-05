@@ -8,8 +8,9 @@ import { QuietSidebar } from "@/components/sidebar/quiet/QuietSidebar";
 import { Editor } from "@/components/editor/Editor";
 import { RelationsPanel } from "@/components/editor/RelationsPanel";
 import { EditorLinkHoverPreview } from "@/components/editor/EditorLinkHoverPreview";
+import { AlertTriangle } from "lucide-react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { useSettingsStore } from "@/stores/settings-store";
+import { useSettingsStore, SIDEBAR_DEFAULT_WIDTH } from "@/stores/settings-store";
 import { useFadeOnType } from "@/hooks/useFadeOnType";
 import { useFocusMode } from "@/hooks/useFocusMode";
 import { useWindowFocus } from "@/hooks/useWindowFocus";
@@ -222,7 +223,33 @@ export function QuietLayout(props: QuietLayoutProps) {
         traffic lights. Internal `pt-10` keeps content clear of the
         macOS traffic-light safe zone.
        */}
-      {sidebarPinned ? <QuietSidebar onOpenSettings={props.onOpenSettings} /> : null}
+      {/*
+        ErrorBoundary: a render error in the sidebar (tree rows, tag/mention
+        sections, inline edits) must NOT white-screen the app — the editor and
+        command bar keep working. The custom fallback mirrors the sidebar
+        shell (same `--quiet-sidebar-width` width, right border, muted
+        surface) so the flex-row layout keeps its left column intact instead
+        of collapsing the document area's centerline (error-UX finding #7).
+       */}
+      {sidebarPinned ? (
+        <ErrorBoundary
+          name="Sidebar"
+          fallback={
+            <div
+              data-testid="sidebar-error-fallback"
+              className="relative flex h-full shrink-0 flex-col items-center justify-center gap-2 border-r border-border-strong bg-muted/30 px-4 text-center"
+              style={{ width: `var(--quiet-sidebar-width, ${SIDEBAR_DEFAULT_WIDTH}px)` }}
+            >
+              <AlertTriangle className="size-5 text-muted-foreground" strokeWidth={1.5} />
+              <p className="text-xs text-muted-foreground">
+                Something went wrong in the sidebar
+              </p>
+            </div>
+          }
+        >
+          <QuietSidebar onOpenSettings={props.onOpenSettings} />
+        </ErrorBoundary>
+      ) : null}
 
       {/* Right column: title bar above doc-area. The title bar centres
           its label inside this column, which means the title shares a

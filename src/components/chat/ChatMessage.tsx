@@ -1,12 +1,11 @@
 import { Copy, Check, User, Sparkles, ExternalLink, ChevronDown, Loader2, X, AlertTriangle, Brain, Zap, Wrench, Ban, GitBranch, Pencil, RotateCcw, Ellipsis, CircleStop, Paperclip } from 'lucide-react';
-import { useState, useRef, useEffect, memo } from 'react';
+import { useState, useRef, useEffect, useMemo, memo } from 'react';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { MarkdownContent } from '@/components/MarkdownContent';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { BranchSwitcher } from './BranchSwitcher';
 import { ReconnectCard } from './ReconnectCard';
 import { useChatStore } from '@/stores/chat-store';
-import { useForegroundLoading } from '@/hooks/useSessionManager';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -536,19 +535,44 @@ function groupSegments(segments: Segment[]): SegmentGroup[] {
   return groups;
 }
 
-function SegmentRenderer({ segments, isActivelyStreaming }: { segments: Segment[]; isActivelyStreaming: boolean }) {
-  const groups = groupSegments(segments);
+/**
+ * Group descriptor ready for rendering: verb groups carry their segment slice
+ * so the (memoized) grouping computation is the only place slices are
+ * allocated — memo-wrapped `ToolCallGroup` then sees a stable array reference
+ * on renders where `segments` didn't change.
+ */
+type RenderableGroup =
+  | { type: 'single'; index: number }
+  | { type: 'verb_group'; label: string; startIndex: number; segments: Segment[] };
+
+const SegmentRenderer = memo(function SegmentRenderer({ segments, isActivelyStreaming }: { segments: Segment[]; isActivelyStreaming: boolean }) {
+  // Grouping + per-group slices computed once per `segments` reference. The
+  // segments array changes on every store flush (correct — content changed);
+  // the memo stops recomputation on renders where it didn't.
+  const groups = useMemo<RenderableGroup[]>(
+    () =>
+      groupSegments(segments).map((group) =>
+        group.type === 'verb_group'
+          ? {
+              type: 'verb_group' as const,
+              label: group.label,
+              startIndex: group.startIndex,
+              segments: segments.slice(group.startIndex, group.endIndex + 1),
+            }
+          : group,
+      ),
+    [segments],
+  );
 
   return (
     <div className="flex flex-col">
       {groups.map((group) => {
         if (group.type === 'verb_group') {
-          const groupSegs = segments.slice(group.startIndex, group.endIndex + 1);
           return (
             <ToolCallGroup
               key={`group-${group.startIndex}`}
               label={group.label}
-              segments={groupSegs}
+              segments={group.segments}
               isActivelyStreaming={isActivelyStreaming}
             />
           );
@@ -624,12 +648,19 @@ function SegmentRenderer({ segments, isActivelyStreaming }: { segments: Segment[
       })}
     </div>
   );
-}
+});
 
 interface ChatMessageProps {
   message: ChatMessageType;
-  /** Whether this is the last message in the list (controls streaming cursor) */
-  isLast?: boolean;
+  /**
+   * Whether this message is the tail of an actively streaming run
+   * (`isLoading && isLast`, computed by the parent list). Drives the streaming
+   * cursor / thinking auto-expand and hides mutation affordances while the
+   * stream writes into this message. Passed as a prop — rather than
+   * subscribed via `useForegroundLoading()` — so a loading flip only
+   * re-renders the one message whose prop changed (render-perf finding #3).
+   */
+  isActivelyStreaming?: boolean;
   /** Number of child branches from this message (shows branch indicator when > 1) */
   branchCount?: number;
   /** Callback to create a branch from this message's timestamp */
@@ -642,17 +673,13 @@ interface ChatMessageProps {
   onRetry?: (message: ChatMessageType) => void;
 }
 
-export const ChatMessage = memo(function ChatMessage({ message, isLast = false, branchCount, onBranch, onResend, onEdit, onRetry }: ChatMessageProps) {
+export const ChatMessage = memo(function ChatMessage({ message, isActivelyStreaming = false, branchCount, onBranch, onResend, onEdit, onRetry }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
-  // Foreground-conversation loading (task #4) — the message renders inside the
-  // watched conversation, so its streaming affordances reflect that run.
-  const isLoading = useForegroundLoading();
   const deleteMessage = useChatStore((s) => s.deleteMessage);
 
   // Auto-expand thinking while streaming, collapse after completion. User toggle overrides.
   const [thinkingManualToggle, setThinkingManualToggle] = useState<boolean | null>(null);
-  const isActiveStream = isLoading && isLast;
-  const thinkingExpanded = thinkingManualToggle ?? (isActiveStream && !!message.thinking);
+  const thinkingExpanded = thinkingManualToggle ?? (isActivelyStreaming && !!message.thinking);
   const setThinkingExpanded = (v: boolean) => setThinkingManualToggle(v);
 
   // Bind message/timestamp into stable () => void wrappers for child components
@@ -683,7 +710,6 @@ export const ChatMessage = memo(function ChatMessage({ message, isLast = false, 
   }
 
   const isUser = message.role === 'user';
-  const isActivelyStreaming = isLoading && isLast;
   const isStreaming = !isUser && isActivelyStreaming && message.content.length === 0 && !hasSegments(message);
   const hasCitations = !isUser && message.citations && message.citations.length > 0;
   const hasActivities = !isUser && message.activities && message.activities.length > 0;
@@ -796,7 +822,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isLast = false, 
         )}
 
         {/* Provider badge */}
-        {!isUser && message.connectionProvider && !(isLoading && isLast) && message.content && (
+        {!isUser && message.connectionProvider && !isActivelyStreaming && message.content && (
           <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground/60">
             <ProviderLogo provider={message.connectionProvider} className="w-3 h-3" />
             <span>{message.connectionLabel || message.connectionProvider}</span>
@@ -850,8 +876,10 @@ export const ChatMessage = memo(function ChatMessage({ message, isLast = false, 
           </div>
         )}
 
-        {/* Delete button — circular, positioned like macOS notification dismiss */}
-        {!isLoading && message.timestamp && (
+        {/* Delete button — circular, positioned like macOS notification dismiss.
+            Hidden while the stream is actively writing into THIS message; earlier
+            messages keep their affordances during a run (render-perf finding #3). */}
+        {!isActivelyStreaming && message.timestamp && (
           <ActionIconButton
             label="Delete message"
             onClick={() => deleteMessage(message.timestamp!)}
@@ -862,7 +890,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isLast = false, 
         )}
 
         {/* Action buttons — bottom row */}
-        {!isLoading && message.content && (
+        {!isActivelyStreaming && message.content && (
           <UserActionButtons
             isUser={isUser}
             onEdit={handleEdit}
