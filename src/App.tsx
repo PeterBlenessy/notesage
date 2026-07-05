@@ -6,6 +6,7 @@ import { emitAgentOrbEvent } from "@/lib/agent-orb-events";
 import { UpdateDialog } from "@/components/UpdateDialog";
 import { CalibrationShareDialog } from "@/components/settings/CalibrationShareDialog";
 import { QuietLayout } from "@/components/QuietLayout";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { McpDeepLinkInstaller } from "@/components/settings/McpDeepLinkInstaller";
 import { MissedRunsDialog } from "@/components/automations/MissedRunsDialog";
 import { LocalAgentSetupDialog } from "@/components/settings/LocalAgentSetupDialog";
@@ -664,27 +665,35 @@ function App() {
   return (
     <ThemeProvider>
       <div className="flex h-screen w-screen overflow-hidden">
-        <QuietLayout
-          stripExpanded={false}
-          onNewNote={handleNewNote}
-          onNewProject={handleNewProject}
-          onOpenFolder={handleOpenFolder}
-          onOpenProject={handleOpenProject}
-          onOpenFile={handleOpenFile}
-          exportOpen={exportOpen}
-          onExportOpenChange={setExportOpen}
-          outlineOpen={outlineOpen}
-          onOutlineOpenChange={setOutlineOpen}
-          onShortcutsOpen={() => setShortcutsOpen(true)}
-          onOpenActions={() => emitCmdBarEvent({ type: "focus", prefix: "!" })}
-          onOpenSettings={() => openSettingsAndCloseMenus(setSettingsOpen)}
-          onBrowseForProject={handleBrowseForProject}
-          onOpenProjectSettings={handleOpenProjectSettings}
-          onMakeProject={handleMakeProject}
-          onExportFile={handleExportFile}
-          onCancelTask={handleCancelTask}
-          onClickTask={handleClickTask}
-        />
+        {/*
+          Top-level ErrorBoundary: QuietLayout is the whole workspace shell —
+          an unhandled render error anywhere inside it (that a nested boundary
+          didn't catch first) must degrade to the boundary fallback instead of
+          white-screening the app (error-UX finding #7).
+         */}
+        <ErrorBoundary name="Workspace">
+          <QuietLayout
+            stripExpanded={false}
+            onNewNote={handleNewNote}
+            onNewProject={handleNewProject}
+            onOpenFolder={handleOpenFolder}
+            onOpenProject={handleOpenProject}
+            onOpenFile={handleOpenFile}
+            exportOpen={exportOpen}
+            onExportOpenChange={setExportOpen}
+            outlineOpen={outlineOpen}
+            onOutlineOpenChange={setOutlineOpen}
+            onShortcutsOpen={() => setShortcutsOpen(true)}
+            onOpenActions={() => emitCmdBarEvent({ type: "focus", prefix: "!" })}
+            onOpenSettings={() => openSettingsAndCloseMenus(setSettingsOpen)}
+            onBrowseForProject={handleBrowseForProject}
+            onOpenProjectSettings={handleOpenProjectSettings}
+            onMakeProject={handleMakeProject}
+            onExportFile={handleExportFile}
+            onCancelTask={handleCancelTask}
+            onClickTask={handleClickTask}
+          />
+        </ErrorBoundary>
 
         <Suspense fallback={null}>
           <SettingsDialogV2

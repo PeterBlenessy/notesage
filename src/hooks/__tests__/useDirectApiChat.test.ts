@@ -673,6 +673,144 @@ describe('useDirectApiChat — attachment activity log (task #30)', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Deep-review batch1 finding #1 — Stop during a tool call must not spawn a
+// zombie backend stream. `handleToolCalls` re-invoked `ai_chat_stream` after
+// its awaits without checking the `cancelled` flag, and a pending tool-
+// permission promise was orphaned by cleanup (a later click on the still-
+// visible card resumed the loop and spawned an invisible provider stream).
+// ---------------------------------------------------------------------------
+
+describe('useDirectApiChat — cancel during tool loop (deep-review #1)', () => {
+  const streamInvokeCount = () =>
+    vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === 'ai_chat_stream').length;
+
+  beforeEach(() => {
+    useSettingsStore.setState({
+      toolCallingEnabled: true,
+      chatHistoryLimit: 0,
+      requireAllToolConfirmations: false,
+    });
+    useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
+    useChatStore.getState().clearMessages();
+    usePermissionStore.setState({
+      requests: [],
+      sessionAllowed: new Set(),
+      alwaysAllowed: [],
+      domainSessionAllowed: {},
+      domainAlwaysAllowed: {},
+      skillScriptSession: new Set(),
+      skillScriptAlways: [],
+      toolCallSession: new Set(),
+      toolCallAlways: [],
+    });
+    useToolPermissionStore.setState({ pending: {} });
+    setMockInvokeHandler('ai_chat_stream_cancel', async () => {});
+    vi.mocked(invoke).mockClear();
+  });
+
+  it('cancel during a pending tool permission clears the request and blocks the continuation', async () => {
+    // First invoke emits a write_file tool call (requires approval → the loop
+    // blocks on the permission promise). Any continuation invoke would be the
+    // zombie stream this test locks out. Intentionally does NOT touch the
+    // shared `lastStreamId`: a stray done-emit timer leaked from a prior test
+    // reads that global at fire time and would land on THIS stream's channel,
+    // cancelling it mid-test (same flake the audit-C2 test documents).
+    let sid = '';
+    setMockInvokeHandler('ai_chat_stream', async (args) => { sid = sidOf(args);
+      setTimeout(() => {
+        emitMockEvent(streamEvent('ai-tool-call', sid), {
+          id: 'call-1',
+          name: 'write_file',
+          arguments: { path: '/tmp/out.txt', content: 'x' },
+        });
+        emitMockEvent(streamEvent('ai-tool-calls-done', sid), null);
+      }, 0);
+    });
+
+    const { result } = renderDirectApiChat();
+    await act(async () => {
+      void result.current.sendChatMessage('write a file', []);
+    });
+    // Let the tool_call event land and the permission card go pending.
+    await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
+
+    const pendingMap = useToolPermissionStore.getState().pending;
+    const pending = Object.values(pendingMap)[0] ?? null;
+    expect(pending).not.toBeNull();
+    // Capture the resolve as the orphaned card's click handler would hold it.
+    const orphanedResolve = pending!.resolve;
+
+    const invokesBeforeCancel = streamInvokeCount();
+    expect(invokesBeforeCancel).toBe(1);
+
+    act(() => {
+      result.current.cancelDirectChat();
+    });
+
+    // Cancel must clear the pending permission (no dead card left behind).
+    expect(Object.values(useToolPermissionStore.getState().pending)).toHaveLength(0);
+
+    // A late click on the (formerly visible) card must NOT resume the loop —
+    // cleanup already resolved the promise, so this is a settled-promise no-op.
+    orphanedResolve('allow');
+    await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
+
+    // No continuation ai_chat_stream (the zombie) and no tool execution.
+    expect(streamInvokeCount()).toBe(invokesBeforeCancel);
+    expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === 'write_file')).toBe(false);
+  });
+
+  it('cancel while a tool executes blocks the continuation invoke and finalizes segments', async () => {
+    // Auto-allowed web_search whose execution we control — cancel lands while
+    // `executeToolCall` is awaiting the backend.
+    let resolveWebSearch: (v: unknown) => void = () => {};
+    const webSearchPending = new Promise((resolve) => { resolveWebSearch = resolve; });
+    setMockInvokeHandler('web_search', () => webSearchPending);
+    // Local stream id — see the note in the previous test about the shared
+    // `lastStreamId` flake.
+    let sid = '';
+    setMockInvokeHandler('ai_chat_stream', async (args) => { sid = sidOf(args);
+      setTimeout(() => {
+        emitMockEvent(streamEvent('ai-tool-call', sid), {
+          id: 'call-1',
+          name: 'web_search',
+          arguments: { query: 'cats' },
+        });
+        emitMockEvent(streamEvent('ai-tool-calls-done', sid), null);
+      }, 0);
+    });
+
+    const { result } = renderDirectApiChat();
+    await act(async () => {
+      void result.current.sendChatMessage('search for cats', []);
+    });
+    // Wait until the tool call is in flight (web_search invoked, unresolved).
+    await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
+    expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === 'web_search')).toBe(true);
+    expect(streamInvokeCount()).toBe(1);
+
+    act(() => {
+      result.current.cancelDirectChat();
+    });
+
+    // The tool result arrives AFTER cancel — the loop must bail, not continue.
+    resolveWebSearch([{ title: 'r1', url: 'https://example.com', snippet: 's1' }]);
+    await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
+
+    expect(streamInvokeCount()).toBe(1);
+
+    // The cancel path left the message in a sane final state — no tool_call
+    // segment stuck in 'running' (cleanup's finalizeSegments handled it).
+    const conv = useChatStore.getState().conversations[0];
+    const assistantMsg = conv?.messages.find((m) => m.role === 'assistant');
+    const runningToolSegs = (assistantMsg?.segments ?? []).filter(
+      (s) => s.type === 'tool_call' && s.status === 'running',
+    );
+    expect(runningToolSegs).toHaveLength(0);
+  });
+});
+
 describe('useDirectApiChat — backend cancel (audit C2)', () => {
   beforeEach(() => {
     useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
