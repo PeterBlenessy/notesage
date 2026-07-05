@@ -51,6 +51,10 @@ export function useLocalCompletion(editor: Editor | null) {
   const notesRootPath = useSettingsStore((s) => s.notesRootPath);
   const homeDir = useSettingsStore((s) => s.homeDir);
   const completionsOnOutOfScope = useSettingsStore((s) => s.completionsOnOutOfScope);
+  // Subscribed (not `getState()`) so toggling the setting re-renders this hook
+  // and re-arms the effects/callbacks below — a `getState()` read in a dep
+  // array is evaluated once per render and never subscribes.
+  const inlineCompletionsDisabled = useSettingsStore((s) => s.inlineCompletionsDisabled);
   const resolvedNotesRoot =
     notesRootPath && notesRootPath.startsWith('~')
       ? homeDir
@@ -100,7 +104,7 @@ export function useLocalCompletion(editor: Editor | null) {
       if (consecutiveErrors.current >= 5) return;
 
       // Don't request if completions disabled for this tab
-      if (useSettingsStore.getState().inlineCompletionsDisabled) return;
+      if (inlineCompletionsDisabled) return;
 
       // Task #17 scope gate — skip requests for tabs outside the selected
       // project scope (+ notes root). `completionsOnOutOfScope` bypasses the
@@ -214,7 +218,7 @@ export function useLocalCompletion(editor: Editor | null) {
         }
       }
     },
-    [editor, isActive, useSettingsStore.getState().inlineCompletionsDisabled, activeTab?.filePath, model, ollamaUrl, baseUrl, connectionId, connection?.authMethod, fimContextChars, selectedProjectPaths, resolvedNotesRoot, completionsOnOutOfScope]
+    [editor, isActive, inlineCompletionsDisabled, activeTab?.filePath, model, ollamaUrl, baseUrl, connectionId, connection?.authMethod, fimContextChars, selectedProjectPaths, resolvedNotesRoot, completionsOnOutOfScope]
   );
 
   // -------------------------------------------------------------------------
@@ -228,7 +232,7 @@ export function useLocalCompletion(editor: Editor | null) {
       if (!activeTab) return;
 
       // Skip completion request if disabled for this tab
-      if (useSettingsStore.getState().inlineCompletionsDisabled) return;
+      if (inlineCompletionsDisabled) return;
 
       // Debounce: 300ms after typing stops
       if (completionTimeout.current) {
@@ -252,17 +256,17 @@ export function useLocalCompletion(editor: Editor | null) {
         abortControllerRef.current = null;
       }
     };
-  }, [editor, isActive, activeTab?.filePath, useSettingsStore.getState().inlineCompletionsDisabled, requestCompletion]);
+  }, [editor, isActive, activeTab?.filePath, inlineCompletionsDisabled, requestCompletion]);
 
   // -------------------------------------------------------------------------
   // Clear ghost text when completions are disabled for the active tab
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    if (editor && useSettingsStore.getState().inlineCompletionsDisabled && hasActiveGhostText(editor)) {
+    if (editor && inlineCompletionsDisabled && hasActiveGhostText(editor)) {
       clearGhostText(editor);
     }
-  }, [editor, useSettingsStore.getState().inlineCompletionsDisabled]);
+  }, [editor, inlineCompletionsDisabled]);
 
   // -------------------------------------------------------------------------
   // Clear ghost text on tab switch

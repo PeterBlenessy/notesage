@@ -46,6 +46,8 @@ pub mod credentials;
 pub mod web_search;
 pub mod fonts;
 pub mod link_preview;
+pub mod net_guard;
+pub mod process_guard;
 pub mod theme;
 
 pub use alpha_update::*;

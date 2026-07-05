@@ -202,6 +202,17 @@ export function FolderPeek({
     return () => clearInterval(id);
   }, [isOpen]);
 
+  // Unmount-only cleanup: the hover open/close timers are cleared on the
+  // mouse paths, but a row unmounting mid-hover (tree refresh, filter,
+  // section collapse) would otherwise leave a pending setTimeout firing
+  // setState on an unmounted component.
+  useEffect(() => {
+    return () => {
+      if (openTimerRef.current) clearTimeout(openTimerRef.current);
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, []);
+
   const clearOpenTimer = useCallback(() => {
     if (openTimerRef.current) {
       clearTimeout(openTimerRef.current);

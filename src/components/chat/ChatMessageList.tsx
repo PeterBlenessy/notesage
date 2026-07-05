@@ -3,7 +3,7 @@ import { Loader2, GitBranch } from 'lucide-react';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
-import { useChatStore, selectMessages, selectAllMessages, selectPendingProjectSwitch, selectPendingAgentSwitch, selectSegments, getSessionIdForLeaf } from '@/stores/chat-store';
+import { useChatStore, selectMessages, selectAllMessages, selectPendingProjectSwitch, selectPendingAgentSwitch, selectSegments, getSessionIdForLeaf, type ConversationSegment } from '@/stores/chat-store';
 import { getChildren } from '@/lib/chat-tree';
 import { getAcpAgent } from '@/lib/ai/acp-agent-state';
 import { hasSessionCapability } from '@/lib/ai/acp-utils';
@@ -91,17 +91,30 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
     autoScrollRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   }, []);
 
-  // MutationObserver: scroll when DOM content actually changes
+  // MutationObserver: scroll when DOM content actually changes. The
+  // scrollHeight read + scrollTop write are coalesced into a single
+  // requestAnimationFrame per mutation burst — doing them synchronously in
+  // the observer callback forced a reflow per streamed chunk (render-perf
+  // finding #2). `characterData` stays in the config: streamed text arrives
+  // as text-node mutations and MUST trigger autoscroll.
   useEffect(() => {
     const el = scrollContainerRef.current;
     if (!el) return;
+    let rafId: number | null = null;
     const observer = new MutationObserver(() => {
-      if (autoScrollRef.current) {
-        el.scrollTop = el.scrollHeight;
-      }
+      if (!autoScrollRef.current || rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (autoScrollRef.current) {
+          el.scrollTop = el.scrollHeight;
+        }
+      });
     });
     observer.observe(el, { childList: true, subtree: true, characterData: true });
-    return () => observer.disconnect();
+    return () => {
+      observer.disconnect();
+      if (rafId !== null) cancelAnimationFrame(rafId);
+    };
   }, []);
 
   // Scroll to bottom when conversation changes
@@ -183,6 +196,81 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
     });
   }, [branchFromMessage, scrollToEnd, selectedProjectPaths]);
 
+  /**
+   * Per-message quick-reply parse cache, keyed by message object identity
+   * (render-perf finding #5). Chat-store updates are immutable — only the
+   * message being written to gets a new object per flush — so unchanged
+   * messages keep their cached parse AND their `displayMessage` reference,
+   * which is what lets `ChatMessage`'s memo skip them.
+   */
+  const quickReplyCacheRef = useRef(
+    new WeakMap<ChatMessageType, { replies: string[]; displayMessage: ChatMessageType }>()
+  );
+
+  /**
+   * Derived per-row data (render-perf findings #5 + #6), computed once per
+   * `messages`/`allMessages`/`segments` change instead of per message per
+   * render:
+   *   - child counts: one pass over the full tree (was `getChildren` — an
+   *     O(allMessages) filter — per row, O(n²) per render)
+   *   - segment dividers: one pass over `segments` into an id-keyed map
+   *     (was a `findIndex` with nested `allMessages` lookups per row)
+   *   - quick replies + `displayMessage`: cached per message object (was a
+   *     regex parse + fresh spread per assistant row per render)
+   */
+  const derivedRows = useMemo(() => {
+    const childCounts = new Map<string, number>();
+    for (const m of allMessages) {
+      if (m.parentId) childCounts.set(m.parentId, (childCounts.get(m.parentId) ?? 0) + 1);
+    }
+
+    // Segment dividers: match by message identity, not flat array index.
+    // First segment (beyond the initial one) anchored at each message id.
+    const segmentByMessageId = new Map<
+      string,
+      { segment: ConversationSegment; prevSegment: ConversationSegment | undefined }
+    >();
+    segments.forEach((seg, si) => {
+      if (si === 0) return;
+      const segMsg = allMessages[seg.startMessageIndex];
+      if (segMsg?.id && !segmentByMessageId.has(segMsg.id)) {
+        segmentByMessageId.set(segMsg.id, { segment: seg, prevSegment: segments[si - 1] });
+      }
+    });
+
+    const cache = quickReplyCacheRef.current;
+    return messages.map((message) => {
+      let displayMessage = message;
+      let replies: string[] = [];
+      if (message.role === 'assistant' && message.content) {
+        let entry = cache.get(message);
+        if (!entry) {
+          const parsed = parseQuickReplies(message.content);
+          entry = {
+            replies: parsed.replies,
+            displayMessage:
+              parsed.strippedContent !== message.content
+                ? { ...message, content: parsed.strippedContent }
+                : message,
+          };
+          cache.set(message, entry);
+        }
+        displayMessage = entry.displayMessage;
+        replies = entry.replies;
+      }
+
+      const segmentLookup = message.id ? segmentByMessageId.get(message.id) : undefined;
+      return {
+        message,
+        displayMessage,
+        replies,
+        segment: segmentLookup?.segment ?? null,
+        prevSegment: segmentLookup?.prevSegment,
+        branchCount: message.id ? (childCounts.get(message.id) ?? 0) : 0,
+      };
+    });
+  }, [messages, allMessages, segments]);
+
   return (
     <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto px-3 py-4">
       {messages.length === 0 ? (
@@ -213,46 +301,31 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
         </div>
       ) : (
         <>
-          {messages.map((message, index) => {
-            const isLast = index === messages.length - 1;
+          {derivedRows.map((row, index) => {
+            const { message, displayMessage, replies, segment, prevSegment, branchCount } = row;
+            const isLast = index === derivedRows.length - 1;
             const isLastAssistant = !isLoading && message.role === 'assistant' && isLast;
-            const isAssistant = message.role === 'assistant';
-            const parsed = isAssistant && message.content ? parseQuickReplies(message.content) : null;
-            const displayMessage = parsed && parsed.strippedContent !== message.content
-              ? { ...message, content: parsed.strippedContent }
-              : message;
-
-            // Segment dividers: match by message identity, not flat array index.
-            // Only show if the segment's start message is in the current thread.
-            const segmentAtIndex = message.id
-              ? segments.findIndex((s, si) => {
-                  if (si === 0) return false;
-                  const segMsg = allMessages[s.startMessageIndex];
-                  return segMsg?.id === message.id;
-                })
-              : -1;
-            const segment = segmentAtIndex >= 0 ? segments[segmentAtIndex] : null;
-            const prevSegment = segmentAtIndex >= 1 ? segments[segmentAtIndex - 1] : undefined;
-
-            const branchChildren = message.id ? getChildren(allMessages, message.id) : [];
-            const branchCount = branchChildren.length;
 
             return (
-              <div key={index}>
+              // Keyed by the stable message id (index fallback for legacy
+              // messages without ids) so branch switches / edits / resends
+              // reconcile rows to the same message instead of remounting
+              // subtrees and leaking per-message local state (finding #1).
+              <div key={message.id ?? index}>
                 {segment && (
                   <ContextDivider segment={segment} previousSegment={prevSegment} />
                 )}
                 <ChatMessage
                   message={displayMessage}
-                  isLast={isLast}
+                  isActivelyStreaming={isLoading && isLast}
                   branchCount={branchCount}
                   onResend={onResend && message.role === 'user' ? handleResend : undefined}
                   onEdit={onEdit && message.role === 'user' ? handleEdit : undefined}
                   onRetry={onResend && message.role === 'assistant' && message.isError ? handleRetry : undefined}
                   onBranch={message.timestamp ? handleBranch : undefined}
                 />
-                {isLastAssistant && parsed && parsed.replies.length > 0 && (
-                  <QuickReplies replies={parsed.replies} onSelect={onSend} />
+                {isLastAssistant && replies.length > 0 && (
+                  <QuickReplies replies={replies} onSelect={onSend} />
                 )}
               </div>
             );

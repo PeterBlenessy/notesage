@@ -261,6 +261,32 @@ export function runAllConvCleanups(map: CleanupMap, cancelled?: boolean): void {
   for (const fn of fns) fn(cancelled);
 }
 
+/**
+ * Register a conversation's stream cleanup, running any STALE entry for the
+ * same conversation first. A plain `map.set` overwrite leaked the previous
+ * closure — its listeners stayed live alongside the new registration and both
+ * passed the instanceId gate, double-writing stream events (deep-review
+ * finding #4b). The stale closure only tears down ITS OWN listeners/state;
+ * the new cleanup being registered is untouched.
+ *
+ * Returns whether a stale cleanup ran, so the caller can re-assert per-send
+ * state the stale closure cleared as a side effect (loading flag, run entry).
+ */
+export function registerConvCleanup(
+  map: CleanupMap,
+  conversationId: string | null | undefined,
+  cleanup: (cancelled?: boolean) => void,
+): boolean {
+  const key = cleanupKeyFor(conversationId);
+  const stale = map.get(key);
+  if (stale) {
+    map.delete(key);
+    stale();
+  }
+  map.set(key, cleanup);
+  return stale !== undefined;
+}
+
 // ---------------------------------------------------------------------------
 // Hook
 // ---------------------------------------------------------------------------
@@ -444,6 +470,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
   // Listen for agent process death events
   useEffect(() => {
+    // Mounted-flag pattern (see `useSandboxViolations`): `listen()` resolves
+    // asynchronously, so an unmount racing the registration must unlisten
+    // the late registration immediately instead of leaking it.
+    let mounted = true;
     let unlisten: (() => void) | null = null;
 
     listen<{ instanceId: string; exitCode: number | null }>('acp-agent-exited', (event) => {
@@ -461,9 +491,15 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       // Clean up if we're mid-prompt
       clearUnresponsiveTimer();
       runConvCleanup(cleanupRefs.current, ownerConversationId);
-    }).then((fn) => { unlisten = fn; });
+    }).then((fn) => {
+      if (mounted) unlisten = fn;
+      else fn(); // Already unmounted — clean up immediately
+    });
 
-    return () => { unlisten?.(); };
+    return () => {
+      mounted = false;
+      unlisten?.();
+    };
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -494,6 +530,13 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     // mode + hydration state changes can fire this effect multiple times at startup;
     // without the lock, all firings race to create/resume redundantly).
     if (eagerSessionPromise) return;
+
+    // Cleanup-race guard: the IIFE below only reaches its `await listen(...)`
+    // after long awaits (hydration, agent spawn, session restore). If this
+    // effect firing is cleaned up during that window (conversation switch,
+    // unmount), the late-resolving listener must be unlistened immediately
+    // instead of being stored in a ref that cleanup already drained.
+    let active = true;
 
     eagerSessionPromise = (async () => {
       try {
@@ -595,6 +638,12 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             if (typeof configId === 'string' && typeof value === 'string') updateConfigOptionValue(configId, value);
           }
         });
+        // This effect firing was cleaned up while the listen was in flight —
+        // drop the late registration now; nothing will unlisten it later.
+        if (!active) {
+          eagerUnlisten();
+          return;
+        }
         // Store unlisten so cleanup can call it
         const prevEagerUnlisten = eagerUnlistenRef.current;
         eagerUnlistenRef.current = eagerUnlisten;
@@ -630,9 +679,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     });
 
     return () => {
-      // Tear down the init-time session listener. Safe to call on strict-mode
-      // re-mount cleanups too: the ref is re-populated when the first firing
-      // finishes attaching the listener (only one firing runs thanks to the lock).
+      // Flag first so an in-flight IIFE's late `listen` resolution unlistens
+      // itself instead of repopulating the ref after this cleanup ran.
+      active = false;
+      // Tear down the init-time session listener.
       eagerUnlistenRef.current?.();
       eagerUnlistenRef.current = null;
     };
@@ -934,9 +984,14 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         eagerUnlistenRef.current?.();
         eagerUnlistenRef.current = null;
 
-        const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
-        cleanupRefs.current.set(
-          cleanupKeyFor(conversationId),
+        // Session this turn prompts on — the listeners gate on it so a session
+        // swap on the shared agent instance (or an overlapping send) can't
+        // bleed another session's chunks into this message (finding #4a).
+        const promptSessionId = resolveActiveSessionId(agent.chatSessionId);
+        const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId, sessionId: promptSessionId });
+        const hadStale = registerConvCleanup(
+          cleanupRefs.current,
+          conversationId,
           buildAcpChatCleanup(
             listeners,
             instanceId,
@@ -949,6 +1004,12 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             conversationId ?? null,
           ),
         );
+        if (hadStale) {
+          // The stale cleanup cleared the loading flag and this conversation's
+          // run entry as side effects — re-assert what THIS send established.
+          setLoading(true);
+          runStarted(conversationId, 'acp', { instanceId });
+        }
 
         try {
           // Prepend system prompt on the first message of a new session
@@ -973,7 +1034,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             : null;
           await invoke('acp_session_prompt', {
             instanceId,
-            sessionId: resolveActiveSessionId(agent.chatSessionId),
+            sessionId: promptSessionId,
             content: promptContent,
             images: acpImages,
           });
@@ -1210,10 +1271,13 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       eagerUnlistenRef.current?.();
       eagerUnlistenRef.current = null;
 
+      // Session this retry prompts on — the listeners gate on it (finding #4a).
+      const retrySessionId = resolveActiveSessionId(liveAgent.chatSessionId);
       // Set up listeners
-      const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId });
-      cleanupRefs.current.set(
-        cleanupKeyFor(conversationId),
+      const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId, sessionId: retrySessionId });
+      const hadStale = registerConvCleanup(
+        cleanupRefs.current,
+        conversationId,
         buildAcpChatCleanup(
           listeners,
           instanceId,
@@ -1226,6 +1290,12 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           conversationId ?? null,
         ),
       );
+      if (hadStale) {
+        // The stale cleanup cleared the loading flag and this conversation's
+        // run entry as side effects — re-assert what THIS retry established.
+        setLoading(true);
+        runStarted(conversationId ?? useChatStore.getState().activeConversationId ?? null, 'acp', { instanceId });
+      }
 
       // Resend the prompt
       const effectiveSystemMessage = buildAcpSystemMessage
@@ -1246,7 +1316,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           : null;
         await invoke('acp_session_prompt', {
           instanceId,
-          sessionId: resolveActiveSessionId(liveAgent.chatSessionId),
+          sessionId: retrySessionId,
           content: promptContent,
           images: retryImages,
         });
