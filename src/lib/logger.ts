@@ -33,7 +33,6 @@ export const PERF = {
   palette: 'perf:palette',
   docLoad: 'perf:doc-load',
   docSwitch: 'perf:doc-switch',
-  docPreload: 'perf:doc-preload',
   skills: 'perf:skills',
   aiChat: 'perf:ai-chat',
   index: 'perf:index',
@@ -67,11 +66,6 @@ let minLevel: LogLevel = 'warn';
 /** Set the minimum log level for forwarding and console output. */
 export function setLogLevel(level: LogLevel): void {
   minLevel = level;
-}
-
-/** @deprecated Use setLogLevel('debug') or setLogLevel('warn') instead. */
-export function setDebugLogging(enabled: boolean): void {
-  minLevel = enabled ? 'debug' : 'warn';
 }
 
 function shouldForward(level: string): boolean {

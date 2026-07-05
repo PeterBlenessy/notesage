@@ -33,6 +33,38 @@ function folderNameFromPath(path: string): string {
   return path.split('/').filter(Boolean).pop() || 'Untitled';
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/**
+ * Runtime guard for `project.json` read from disk (user-editable, may be
+ * half-written or hand-edited). Checks the fields the app actually reads:
+ * `name` / `description` strings, the `ai` block, and — when present — the
+ * security-relevant `aiLock.connectionId`.
+ */
+export function isProjectMetadata(v: unknown): v is ProjectMetadata {
+  if (!isRecord(v)) return false;
+  if (typeof v.name !== 'string' || typeof v.description !== 'string') return false;
+
+  const ai = v.ai;
+  if (!isRecord(ai)) return false;
+  if (ai.provider !== null && ai.provider !== undefined && typeof ai.provider !== 'string') {
+    return false;
+  }
+  if (ai.agentName !== null && ai.agentName !== undefined && typeof ai.agentName !== 'string') {
+    return false;
+  }
+  if (ai.projectContext !== undefined && typeof ai.projectContext !== 'string') return false;
+
+  // aiLock is enforcement data — if present it must carry a connection id.
+  if (v.aiLock !== undefined) {
+    if (!isRecord(v.aiLock) || typeof v.aiLock.connectionId !== 'string') return false;
+  }
+
+  return true;
+}
+
 async function loadProjectMetadata(
   projectPath: string,
   setMetadata: (path: string, metadata: ProjectMetadata) => void,
@@ -70,8 +102,19 @@ async function loadProjectMetadata(
       setMetadata(projectPath, defaults);
     } else {
       const raw = await tauriApi.readFile(filePath);
-      const parsed = JSON.parse(raw) as ProjectMetadata;
-      setMetadata(projectPath, parsed);
+      const parsed: unknown = JSON.parse(raw);
+      if (isProjectMetadata(parsed)) {
+        setMetadata(projectPath, parsed);
+      } else {
+        // Corrupted / hand-edited file: fall back to defaults in memory
+        // (mirrors the file-absent branch above) but do NOT overwrite the
+        // file on disk — the user may want to repair it.
+        log.warn(
+          'project-metadata',
+          `Invalid project.json shape for ${projectPath} — using defaults`,
+        );
+        setMetadata(projectPath, createDefaultMetadata(folderNameFromPath(projectPath)));
+      }
     }
   } catch (error) {
     console.error(`Failed to load project metadata for ${projectPath}:`, error);

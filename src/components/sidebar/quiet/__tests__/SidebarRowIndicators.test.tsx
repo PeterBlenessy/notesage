@@ -194,6 +194,86 @@ describe("SidebarRowIndicators (#129)", () => {
     ).toBeNull();
   });
 
+  // Branch-diff-review re-wire — repo-backed project / folder rows carry a
+  // small GitBranch badge so the user can see which roots are git repos
+  // (and thus which rows offer "Compare branch…"). Derived purely from
+  // git-store state; gated on settings.gitEnabled.
+  describe("git repo badge", () => {
+    function seedRepo(path: string, overrides: Partial<{ isGitRepo: boolean; currentBranch: string }> = {}) {
+      useGitStore.setState({
+        repos: {
+          [path]: {
+            isGitRepo: true,
+            currentBranch: "main",
+            fileStatuses: [],
+            fileStatusMap: new Map(),
+            isLoading: false,
+            statusError: false,
+            ...overrides,
+          },
+        },
+      });
+    }
+
+    it("shows the badge with the current branch tooltip on a repo-backed project row", () => {
+      seedRepo("/p", { currentBranch: "feature/x" });
+      renderWithProviders(<SidebarRowIndicators path="/p" kind="project" />);
+      expect(
+        screen.getByLabelText("Git repository — on feature/x"),
+      ).toBeTruthy();
+    });
+
+    it("shows the badge on a repo-backed folder row", () => {
+      seedRepo("/f");
+      renderWithProviders(<SidebarRowIndicators path="/f" kind="folder" />);
+      expect(screen.getByLabelText("Git repository — on main")).toBeTruthy();
+    });
+
+    it("falls back to a generic tooltip when the branch is not yet known", () => {
+      seedRepo("/p", { currentBranch: "" });
+      renderWithProviders(<SidebarRowIndicators path="/p" kind="project" />);
+      expect(screen.getByLabelText("Git repository")).toBeTruthy();
+    });
+
+    it("does not show the badge on a non-repo project row", () => {
+      useGitStore.setState({
+        repos: {
+          "/p": {
+            isGitRepo: false,
+            currentBranch: "",
+            fileStatuses: [],
+            fileStatusMap: new Map(),
+            isLoading: false,
+            statusError: false,
+          },
+        },
+      });
+      const { container } = renderWithProviders(
+        <SidebarRowIndicators path="/p" kind="project" />,
+      );
+      expect(container.querySelector("[data-sidebar-indicators]")).toBeNull();
+    });
+
+    it("hides the badge when git integration is disabled", () => {
+      seedRepo("/p");
+      useSettingsStore.setState({
+        gitEnabled: false,
+      } as unknown as Parameters<typeof useSettingsStore.setState>[0]);
+      const { container } = renderWithProviders(
+        <SidebarRowIndicators path="/p" kind="project" />,
+      );
+      expect(container.querySelector("[data-sidebar-indicators]")).toBeNull();
+    });
+
+    it("never shows the badge on file rows even when git-store has an entry for the path", () => {
+      seedRepo("/p/a/file.md");
+      const { container } = renderWithProviders(
+        <SidebarRowIndicators path="/p/a/file.md" kind="file" />,
+      );
+      expect(container.querySelector("[data-sidebar-indicators]")).toBeNull();
+    });
+  });
+
   // Regression lock for the 2026-04-27 audit finding #18 — the padlock
   // tooltip used to render `aiLock.connectionId` directly, leaking the
   // raw store id (e.g. `conn-1774086797085-ak920t`) to the user. The

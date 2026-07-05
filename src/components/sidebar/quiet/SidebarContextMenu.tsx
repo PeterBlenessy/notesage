@@ -39,8 +39,10 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { useGitStore } from "@/stores/git-store";
+import { useDiffReviewStore } from "@/stores/diff-review-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { BranchComparePopover } from "@/components/git/BranchComparePopover";
 import type { FileEntry } from "@/lib/tauri";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 import { FolderAppearancePicker } from "@/components/FolderAppearancePicker";
@@ -148,6 +150,7 @@ export function SidebarContextMenu({
 }: SidebarContextMenuProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [customizeOpen, setCustomizeOpen] = useState(false);
+  const [compareOpen, setCompareOpen] = useState(false);
   const { openFile, deletePath, refreshFileTree, renamePath } = useFileOperations();
   const pinnedFiles = useWorkspaceStore((s) => s.pinnedFiles);
   const pinFile = useWorkspaceStore((s) => s.pinFile);
@@ -186,6 +189,18 @@ export function SidebarContextMenu({
   const isTrackedUnderGit = Boolean(
     repoState?.isGitRepo && repoState.fileStatusMap?.has(filePath),
   );
+
+  // Branch diff review — container rows that ARE a detected git repo root
+  // (populated once per root by `useGitRepoDetection`) get the
+  // "Compare branch…" action; while a review is active the same slot shows
+  // "End branch review". Gated on `settings.gitEnabled` like every other
+  // git affordance.
+  const gitEnabled = useSettingsStore((s) => s.gitEnabled);
+  const rowRepo = useGitStore((s) =>
+    isContainer ? s.repos[filePath] : undefined,
+  );
+  const isRepoRoot = Boolean(gitEnabled && rowRepo?.isGitRepo);
+  const reviewActive = useDiffReviewStore((s) => s.reviewActive);
 
   // #135 — "Move to…" destinations: Quick Notes root + every project +
   // every explorer folder, deduped, with the row's own path filtered
@@ -651,6 +666,37 @@ export function SidebarContextMenu({
             </>
           )}
 
+          {/* Branch diff review — repo-backed project / folder rows only.
+             *  "Compare branch…" opens the anchored branch picker (a sibling
+             *  Popover, same deferred-open pattern as Customize…); selecting
+             *  a branch starts an inline diff review of current-branch vs
+             *  picked-branch in the editor. While a review is active the
+             *  slot flips to "End branch review". */}
+          {isContainer && isRepoRoot && (
+            <>
+              <ContextMenuSeparator />
+              {reviewActive ? (
+                <ContextMenuItem
+                  className={ITEM_DENSITY}
+                  onSelect={() => useDiffReviewStore.getState().endReview()}
+                >
+                  End branch review
+                </ContextMenuItem>
+              ) : (
+                <ContextMenuItem
+                  className={ITEM_DENSITY}
+                  onSelect={() => {
+                    // Same deferred-open dance as Customize… — let the menu
+                    // close animation finish before the popover paints.
+                    requestAnimationFrame(() => setCompareOpen(true));
+                  }}
+                >
+                  Compare branch…
+                </ContextMenuItem>
+              )}
+            </>
+          )}
+
           {/* Skip the separator + Move-to… / Move-to-trash / Remove block
               entirely for system folders — every item below this point is
               gated on `!isSystemFolder`, so the separator would orphan. */}
@@ -821,12 +867,36 @@ export function SidebarContextMenu({
     };
   }, [customizeOpen]);
 
+  // Same freeze for the branch-compare popover — its CommandInput must not
+  // feed the sidebar type-to-filter, and FolderPeek must not pop over it.
+  useEffect(() => {
+    if (!compareOpen) return;
+    forceCloseAllPeeks();
+    incrementOpenContextMenus();
+    incrementCustomizePopoverOpen();
+    return () => {
+      decrementOpenContextMenus();
+      decrementCustomizePopoverOpen();
+    };
+  }, [compareOpen]);
+
   return (
     <>
       {isContainer ? (
         <Popover open={customizeOpen} onOpenChange={setCustomizeOpen}>
           <PopoverAnchor asChild>
-            <span className="block">{contextMenuTree}</span>
+            <span className="block">
+              {/* Branch-compare picker is anchored to the same row. It only
+                  renders content while open, so nesting the two anchors is
+                  free for every other row interaction. */}
+              <BranchComparePopover
+                repoPath={filePath}
+                open={compareOpen}
+                onOpenChange={setCompareOpen}
+              >
+                {contextMenuTree}
+              </BranchComparePopover>
+            </span>
           </PopoverAnchor>
           <PopoverContent
             side="right"

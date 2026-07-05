@@ -42,8 +42,6 @@ typst-syntax = "0.14.2"
 usvg = "0.45"
 fontdb = "0.23"
 resvg = "0.45"
-typst-library = "0.14.2"
-typst-utils = "0.14.2"
 chrono = { version = "0.4", default-features = false, features = ["now", "clock"] }
 comrak = { version = "0.52.0", default-features = false, features = ["syntect"] }
 
@@ -81,7 +79,6 @@ libc = "0.2"
 # two versions must move together.
 agent-client-protocol = { version = "0.14.0", features = ["unstable_session_fork", "unstable_auth_methods"] }
 agent-client-protocol-schema = { version = "=0.13.6", features = ["unstable_session_fork", "unstable_auth_methods"] }
-async-trait = "0.1"
 tokio-util = { version = "0.7", features = ["compat"] }
 
 # Logging

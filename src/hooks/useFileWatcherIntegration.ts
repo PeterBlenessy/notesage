@@ -245,7 +245,7 @@ export function useFileWatcherIntegration({
     );
   }, [editor, activeTab, saveFile]);
 
-  // Handle per-hunk accept/reject from the ChangeListPopover.
+  // Handle per-hunk accept/reject from the inline diff controls.
   // Only works for the focused file (PM plugin dispatch).
   const handleExternalAcceptHunk = useCallback((hunkId: string) => {
     if (!editor || !activeTab) return;
@@ -260,7 +260,7 @@ export function useFileWatcherIntegration({
   // Sync: keep the external-change-store's hunks in sync with the InlineDiff
   // plugin state. When individual hunks are accepted/rejected via inline controls,
   // only the plugin state updates — this effect mirrors those changes to the store
-  // so the ChangeListPopover stays accurate.
+  // so the pending-change entry stays accurate.
   //
   // When ALL hunks are resolved, resolves the change entry and saves.
   //

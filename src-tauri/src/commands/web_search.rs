@@ -1,5 +1,11 @@
 use serde::{Deserialize, Serialize};
 
+/// Cap on the DuckDuckGo HTML response body (audit batch 3 fix #7). A normal
+/// results page is well under 1 MiB; reading is stopped at the cap and the
+/// partial HTML is parsed — results appear early in the page, so truncation
+/// degrades gracefully instead of failing the search.
+const MAX_SEARCH_BODY_BYTES: usize = 4 * 1024 * 1024;
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SearchResult {
     pub title: String,
@@ -32,8 +38,26 @@ pub async fn web_search(query: String, max_results: Option<usize>) -> Result<Vec
         return Err(format!("Search failed with status: {}", resp.status()));
     }
 
-    let html = resp.text().await
-        .map_err(|e| format!("Failed to read search response: {}", e))?;
+    // Stream the body with a hard size cap instead of an unbounded `text()`.
+    let mut resp = resp;
+    let mut body: Vec<u8> = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| format!("Failed to read search response: {}", e))?
+    {
+        body.extend_from_slice(&chunk);
+        if body.len() >= MAX_SEARCH_BODY_BYTES {
+            log::warn!(
+                target: "notesage::web_search",
+                "Search response exceeded {} bytes — truncating and parsing the partial page",
+                MAX_SEARCH_BODY_BYTES
+            );
+            body.truncate(MAX_SEARCH_BODY_BYTES);
+            break;
+        }
+    }
+    let html = String::from_utf8_lossy(&body).into_owned();
 
     // Parse DuckDuckGo HTML results
     let results = parse_duckduckgo_html(&html, max);

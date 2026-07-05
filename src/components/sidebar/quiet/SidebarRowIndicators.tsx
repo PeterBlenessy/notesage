@@ -1,8 +1,10 @@
 import { useMemo } from "react";
-import { Lock } from "lucide-react";
+import { GitBranch, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useFileTreeItemState } from "@/hooks/useFileTreeItemState";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useGitStore } from "@/stores/git-store";
+import { useSettingsStore } from "@/stores/settings-store";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { describeLockTarget } from "@/lib/ai/project-lock";
@@ -19,6 +21,11 @@ import {
  *
  *   - git status — single-letter glyph from `useFileTreeItemState`
  *     (M / A / U / D / R / C; `●` when a folder contains changes).
+ *   - git repo badge — project/folder rows that ARE a detected git repo
+ *     root get a small `GitBranch` glyph (only while git integration is
+ *     enabled). Tooltip shows the current branch when git-store has it.
+ *     Derived purely from git-store state populated once per root by
+ *     `useGitRepoDetection` — no IPC per row render.
  *   - external-change indicator — dim dot when another process wrote
  *     the file behind our back (drives the inline diff review).
  *   - AI-lock padlock — project rows only. Surfaces when the project
@@ -68,6 +75,18 @@ export function SidebarRowIndicators({
     repoRoot,
   );
 
+  // Repo badge — only for container rows that are themselves a detected
+  // git repo root (populated by `useGitRepoDetection`), and only while
+  // git integration is on. File rows never carry the badge.
+  const gitEnabled = useSettingsStore((s) => s.gitEnabled);
+  const rowRepo = useGitStore((s) =>
+    kind === "file" ? undefined : s.repos[path],
+  );
+  const isRepoRoot = Boolean(gitEnabled && rowRepo?.isGitRepo);
+  const repoTooltip = rowRepo?.currentBranch
+    ? `Git repository — on ${rowRepo.currentBranch}`
+    : "Git repository";
+
   // AI-lock only matters on project rows. The selector returns
   // undefined for non-project paths, which short-circuits the padlock.
   const aiLock = useProjectMetadataStore((s) => {
@@ -90,7 +109,7 @@ export function SidebarRowIndicators({
     : null;
 
   const hasAnyIndicator =
-    Boolean(gitInfo) || hasExternalChange || Boolean(aiLock);
+    Boolean(gitInfo) || hasExternalChange || Boolean(aiLock) || isRepoRoot;
 
   if (!hasAnyIndicator) return null;
 
@@ -132,6 +151,21 @@ export function SidebarRowIndicators({
               </span>
             </TooltipTrigger>
             <TooltipContent side="top">{gitInfo.tooltip}</TooltipContent>
+          </Tooltip>
+        ) : null}
+
+        {isRepoRoot ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                role="status"
+                aria-label={repoTooltip}
+                className="inline-flex items-center text-muted-foreground"
+              >
+                <GitBranch className="h-3 w-3" strokeWidth={1.5} />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top">{repoTooltip}</TooltipContent>
           </Tooltip>
         ) : null}
 

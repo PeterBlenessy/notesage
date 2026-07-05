@@ -1,6 +1,10 @@
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, ToSocketAddrs};
 
+// Shared SSRF blocklist (audit batch 3 fix #10): the list lives in
+// `net_guard` so this module and `mcp_oauth` can never drift apart again.
+use super::net_guard::is_blocked_ip;
+
 /// Maximum bytes we will read from a link-preview response body.
 const MAX_PREVIEW_BODY_BYTES: usize = 2 * 1024 * 1024; // 2 MiB
 /// Maximum number of redirects we will follow (each re-validated for SSRF).
@@ -162,34 +166,6 @@ async fn validate_public_url(raw: &str) -> Result<url::Url, String> {
         return Err("Host did not resolve to any address".to_string());
     }
     Ok(parsed)
-}
-
-/// True if an IP is in a range we must never fetch from the main process
-/// (loopback, RFC-1918 private, link-local incl. cloud metadata, CGNAT, ULA…).
-fn is_blocked_ip(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(v4) => {
-            let o = v4.octets();
-            v4.is_loopback()            // 127.0.0.0/8
-                || v4.is_private()      // 10/8, 172.16/12, 192.168/16
-                || v4.is_link_local()   // 169.254.0.0/16 (incl. 169.254.169.254 metadata)
-                || v4.is_broadcast()    // 255.255.255.255
-                || v4.is_unspecified()  // 0.0.0.0
-                || v4.is_documentation()
-                || o[0] == 0            // 0.0.0.0/8
-                || (o[0] == 100 && (o[1] & 0xc0) == 0x40) // 100.64.0.0/10 CGNAT
-        }
-        IpAddr::V6(v6) => {
-            if let Some(v4) = v6.to_ipv4_mapped() {
-                return is_blocked_ip(IpAddr::V4(v4));
-            }
-            let seg = v6.segments();
-            v6.is_loopback()
-                || v6.is_unspecified()
-                || (seg[0] & 0xfe00) == 0xfc00 // fc00::/7 unique-local
-                || (seg[0] & 0xffc0) == 0xfe80 // fe80::/10 link-local
-        }
-    }
 }
 
 /// Parse HTML and extract metadata using CSS selectors.

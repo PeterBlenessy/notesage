@@ -278,6 +278,29 @@ pub struct HttpMcpClient {
     session_id: Arc<Mutex<Option<String>>>,
 }
 
+/// Hard cap on an HTTP MCP response body. Remote MCP servers are third-party
+/// endpoints; an unbounded `resp.text()` would let a hostile/buggy server
+/// exhaust memory (audit batch 3 fix #7 — mirrors link_preview's
+/// MAX_PREVIEW_BODY_BYTES pattern). Tool results are JSON/SSE text; 8 MiB is
+/// generous.
+const MAX_MCP_HTTP_BODY_BYTES: usize = 8 * 1024 * 1024;
+
+/// Read a response body with a running-total byte cap, erroring past the cap.
+async fn read_body_capped(mut resp: reqwest::Response, cap: usize) -> Result<String, String> {
+    let mut body: Vec<u8> = Vec::new();
+    while let Some(chunk) = resp
+        .chunk()
+        .await
+        .map_err(|e| format!("Failed to read response body: {}", e))?
+    {
+        if body.len() + chunk.len() > cap {
+            return Err(format!("Response body exceeds the {} byte limit", cap));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(String::from_utf8_lossy(&body).into_owned())
+}
+
 impl HttpMcpClient {
     fn new(url: String, server_id: String) -> Self {
         let client = reqwest::Client::builder()
@@ -336,10 +359,7 @@ impl HttpMcpClient {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("")
             .to_string();
-        let text = resp
-            .text()
-            .await
-            .map_err(|e| format!("Failed to read response body: {}", e))?;
+        let text = read_body_capped(resp, MAX_MCP_HTTP_BODY_BYTES).await?;
 
         parse_jsonrpc_http_response(&content_type, &text, id)
     }

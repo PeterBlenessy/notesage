@@ -1111,62 +1111,56 @@ listen<{ old_path: string; new_path: string; is_directory: boolean }>('file-rena
 
 ## Research Operations
 
-Located in `src-tauri/src/commands/file.rs`
+Located in `src-tauri/src/index/mod.rs` (part of the SQLite document index — the legacy filesystem-scanning `search_research` command was removed when research search moved to the index).
 
-### search_research
+### index_search_research
 
-Searches research files (.md) in given directories by parsing YAML frontmatter and matching against query/tag filters. Designed for real-time command palette filtering.
+Searches indexed research files across the given project scopes, matching against title/URL/snippet (`query`) and tags (`tag`). SQL-backed (per-scope `index.db`), designed for real-time command palette filtering (ResearchMode, `?` prefix).
 
 ```rust
 #[tauri::command]
-pub async fn search_research(
-    dirs: Vec<String>,
+pub async fn index_search_research(
+    state: tauri::State<'_, IndexState>,
+    project_paths: Vec<String>,
     query: Option<String>,
     tag: Option<String>,
     limit: Option<usize>,
-) -> Result<Vec<ResearchSearchResult>, String>
+) -> Result<Vec<ResearchResult>, String>
 ```
 
 **Parameters:**
 
-- `dirs`: Array of directory paths to search (e.g., project `research/` paths)
-- `query`: Optional case-insensitive substring to match against title, body, source URL, and tags
-- `tag`: Optional exact tag match (case-insensitive) against the tags array
+- `project_paths`: Project roots whose index databases to query (`camelCase` `projectPaths` over IPC)
+- `query`: Optional substring matched against title, source URL, and snippet (SQL `LIKE`)
+- `tag`: Optional substring matched against the research entry's tags (SQL `LIKE`)
 - `limit`: Maximum results to return (default 50)
 
 **Returns:**
 
-- `Ok(Vec<ResearchSearchResult>)`: Matched files sorted by relevance descending
+- `Ok(Vec<ResearchResult>)`: Matched entries sorted by `date_saved` descending
 - `Err(String)`: Error message
 
-**ResearchSearchResult struct:**
+**ResearchResult struct** (`src-tauri/src/index/queries.rs`; frontend type `IndexResearchResult` in `src/lib/tauri.ts`):
 
 ```rust
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ResearchSearchResult {
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ResearchResult {
     pub file: String,
     pub title: String,
     pub tags: Vec<String>,
     pub source_url: String,
     pub snippet: String,
-    pub relevance: f32,
     pub date_saved: String,
     pub word_count: usize,
+    pub project_name: Option<String>,
 }
 ```
-
-**Relevance scoring:**
-
-- Title match: 1.0
-- Tag match: 0.8
-- URL match: 0.6
-- Body match: 0.5
 
 **Frontend usage:**
 
 ```typescript
-const results = await tauriApi.searchResearch(
-  ['/path/to/project/research', '/Users/me/Notesage/research'],
+const results = await tauriApi.indexSearchResearch(
+  ['/path/to/project', '/Users/me/Notesage'],  // project roots (not research/ subdirs)
   'climate policy',  // query
   'climate',         // tag
   20                 // limit

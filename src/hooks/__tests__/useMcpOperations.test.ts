@@ -360,3 +360,62 @@ describe('useMcpDiscovery auto-start', () => {
     });
   });
 });
+
+describe('useMcpDiscovery runtime validation (foreign config boundary)', () => {
+  beforeEach(() => {
+    clearMockInvokeHandlers();
+    registerDefaultHandlers();
+    useWorkspaceStore.setState({ projects: [] });
+    useSettingsStore.setState({ startupReady: false });
+    useMcpStore.getState().setServers([]);
+  });
+
+  it('skips malformed discovery entries without throwing and keeps valid ones', async () => {
+    const valid = {
+      id: 'global:good',
+      name: 'good',
+      command: 'npx',
+      args: ['-y', 'good-server'],
+      env: {},
+      source: 'notesage_global',
+      enabled: false, // disabled so no auto-start is attempted
+    };
+    setMockInvokeHandler('mcp_discover_configs', () => [
+      valid,
+      { id: 'global:bad', name: 'bad' }, // missing most fields
+      { ...valid, id: 'global:bad-enabled', enabled: 'yes' }, // wrong-typed field
+      42, // junk primitive
+      null,
+    ]);
+
+    renderHook(() => useMcpDiscovery());
+    useSettingsStore.setState({ startupReady: true });
+
+    await waitFor(() => {
+      expect(useMcpStore.getState().servers).toHaveLength(1);
+    });
+    expect(useMcpStore.getState().servers[0]).toMatchObject({
+      id: 'global:good',
+      name: 'good',
+      source: 'notesage-global',
+    });
+  });
+
+  it('degrades to an empty registry when the command returns a non-array payload', async () => {
+    let discoverCalled = false;
+    setMockInvokeHandler('mcp_discover_configs', () => {
+      discoverCalled = true;
+      return { totally: 'wrong' };
+    });
+
+    renderHook(() => useMcpDiscovery());
+    useSettingsStore.setState({ startupReady: true });
+
+    // The discovery effect must settle without throwing and register nothing.
+    await waitFor(() => {
+      expect(discoverCalled).toBe(true);
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(useMcpStore.getState().servers).toHaveLength(0);
+  });
+});

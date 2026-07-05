@@ -13,6 +13,49 @@ pub struct ScriptResult {
     pub timed_out: bool,
 }
 
+/// Cap on captured stdout/stderr per stream (audit batch 3 fix #7). Skill
+/// scripts are semi-trusted; an unbounded `read_to_end` let a runaway script
+/// grow two Vecs without limit for the whole timeout window. Output past the
+/// cap is discarded (the pipe keeps being drained so the child never blocks)
+/// and the result is suffixed with [`OUTPUT_TRUNCATED_MARKER`].
+const MAX_SCRIPT_OUTPUT_BYTES: usize = 4 * 1024 * 1024;
+
+/// Appended to a capped stream so callers (and the model reading the tool
+/// result) know the output is incomplete.
+const OUTPUT_TRUNCATED_MARKER: &str = "\n[output truncated]";
+
+/// Read a child stream to EOF, keeping at most `cap` bytes. Bytes past the
+/// cap are read and discarded — the child must never block on a full pipe —
+/// and truncation is flagged with the marker.
+async fn read_stream_capped<R: tokio::io::AsyncRead + Unpin>(mut reader: R, cap: usize) -> String {
+    use tokio::io::AsyncReadExt;
+    let mut buf: Vec<u8> = Vec::new();
+    let mut scratch = [0u8; 8192];
+    let mut truncated = false;
+    loop {
+        match reader.read(&mut scratch).await {
+            Ok(0) => break,
+            Ok(n) => {
+                if buf.len() < cap {
+                    let take = n.min(cap - buf.len());
+                    buf.extend_from_slice(&scratch[..take]);
+                    if take < n {
+                        truncated = true;
+                    }
+                } else {
+                    truncated = true;
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    let mut out = String::from_utf8_lossy(&buf).to_string();
+    if truncated {
+        out.push_str(OUTPUT_TRUNCATED_MARKER);
+    }
+    out
+}
+
 /// Compute the lowercase hex SHA-256 of a file's bytes.
 ///
 /// Used to content-pin skill-script approvals (security audit HIGH #2): an
@@ -153,26 +196,16 @@ pub async fn execute_skill_script(
     let stderr_handle = child.stderr.take();
 
     let stdout_task = tokio::spawn(async move {
-        if let Some(out) = stdout_handle {
-            let mut buf = Vec::new();
-            use tokio::io::AsyncReadExt;
-            let mut reader = out;
-            let _ = reader.read_to_end(&mut buf).await;
-            String::from_utf8_lossy(&buf).to_string()
-        } else {
-            String::new()
+        match stdout_handle {
+            Some(out) => read_stream_capped(out, MAX_SCRIPT_OUTPUT_BYTES).await,
+            None => String::new(),
         }
     });
 
     let stderr_task = tokio::spawn(async move {
-        if let Some(err) = stderr_handle {
-            let mut buf = Vec::new();
-            use tokio::io::AsyncReadExt;
-            let mut reader = err;
-            let _ = reader.read_to_end(&mut buf).await;
-            String::from_utf8_lossy(&buf).to_string()
-        } else {
-            String::new()
+        match stderr_handle {
+            Some(err) => read_stream_capped(err, MAX_SCRIPT_OUTPUT_BYTES).await,
+            None => String::new(),
         }
     });
 
@@ -527,6 +560,68 @@ mod tests {
         let (prog, args) = resolve_interpreter(&script).unwrap();
         assert!(prog.contains("myscript"));
         assert!(args.is_empty());
+    }
+
+    // --- capped output tests (audit batch 3 fix #7) ---
+
+    #[tokio::test]
+    async fn read_stream_capped_passes_small_output_through() {
+        let input: &[u8] = b"hello world";
+        let out = read_stream_capped(input, MAX_SCRIPT_OUTPUT_BYTES).await;
+        assert_eq!(out, "hello world");
+        assert!(!out.contains("[output truncated]"));
+    }
+
+    #[tokio::test]
+    async fn read_stream_capped_truncates_and_marks() {
+        let input = vec![b'x'; 100];
+        let out = read_stream_capped(&input[..], 10).await;
+        assert!(
+            out.starts_with(&"x".repeat(10)),
+            "keeps exactly the first `cap` bytes"
+        );
+        assert!(out.ends_with("[output truncated]"));
+        // Capped content + marker only — the other 90 bytes were drained
+        // and discarded.
+        assert_eq!(out.len(), 10 + OUTPUT_TRUNCATED_MARKER.len());
+    }
+
+    #[tokio::test]
+    async fn read_stream_capped_exact_cap_is_not_marked_truncated() {
+        let input = vec![b'y'; 10];
+        let out = read_stream_capped(&input[..], 10).await;
+        assert_eq!(out, "y".repeat(10));
+    }
+
+    #[test]
+    fn execute_script_truncates_runaway_stdout() {
+        // A script that prints far more than the cap must come back capped
+        // with the truncation marker, not OOM the buffer.
+        let tmp = create_temp_dir();
+        let scripts_dir = tmp.path().join("scripts");
+        fs::create_dir(&scripts_dir).unwrap();
+        // ~8 MiB of output (two caps' worth at the 4 MiB default).
+        fs::write(
+            scripts_dir.join("spew.sh"),
+            "#!/bin/bash\nyes 0123456789abcdef0123456789abcdef | head -c 8388608",
+        )
+        .unwrap();
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let res = rt
+            .block_on(execute_skill_script(
+                tmp.path().to_string_lossy().to_string(),
+                "scripts/spew.sh".to_string(),
+                vec![],
+                Some(tmp.path().to_string_lossy().to_string()),
+                None,
+                None,
+                None,
+            ))
+            .unwrap();
+        assert!(res.stdout.ends_with(OUTPUT_TRUNCATED_MARKER));
+        assert!(res.stdout.len() <= MAX_SCRIPT_OUTPUT_BYTES + OUTPUT_TRUNCATED_MARKER.len());
+        assert_eq!(res.exit_code, 0);
     }
 
     // --- content-hash pinning tests (security audit HIGH #2) ---

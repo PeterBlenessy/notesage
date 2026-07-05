@@ -159,6 +159,30 @@ describe("FolderPeek (#36)", () => {
     expect(screen.queryByTestId("folder-peek-content")).toBeNull();
   });
 
+  it("clears pending hover timers on unmount (deep-review batch 2, #7)", () => {
+    const { unmount } = renderWithProviders(
+      <FolderPeek
+        projectPath="/p/alpha"
+        fileTree={[makeFile("a.md", "/p/alpha/a.md")]}
+      >
+        <Trigger />
+      </FolderPeek>
+    );
+
+    const triggerWrap = screen.getByTestId("trigger").parentElement!;
+    fireEvent.mouseEnter(triggerWrap);
+    // The 500 ms open timer is now pending.
+    expect(vi.getTimerCount()).toBeGreaterThan(0);
+
+    unmount();
+    // The unmount-only cleanup must clear the pending timer so it cannot
+    // fire setState on the unmounted component.
+    expect(vi.getTimerCount()).toBe(0);
+    expect(() => {
+      vi.runAllTimers();
+    }).not.toThrow();
+  });
+
   const HOVER_DELAY = 500;
 
   it("renders folders before files, both alphabetical and case-insensitive", () => {

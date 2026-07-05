@@ -61,6 +61,7 @@ import { EditorViewerContainer } from "./EditorViewerContainer";
 import { EditorEmptyState } from "./EditorEmptyState";
 import { BubbleMenu } from "./BubbleMenu";
 import { FindBar } from "./FindBar";
+import { DiffReviewPill } from "./DiffReviewPill";
 import { TranscriptionOverlay } from "./TranscriptionOverlay";
 import { CommentPopover } from "./CommentPopover";
 import { DatePickerPopover } from "./DatePickerPopover";
@@ -286,7 +287,10 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   }, [activeTab?.filePath]);
 
   const { exportPdf, exportPptx, isExporting } = useExportOperations(editor);
-  useDiffReview(editor);
+  // Branch diff review — the hook drives the inline diff decorations via its
+  // own effects; the returned state + handlers feed the DiffReviewPill
+  // (persistent "review is running" affordance) rendered below.
+  const diffReview = useDiffReview(editor);
   const { settings: pageSettings, updateSettings: updatePageSettings } = usePageSettings(editor);
   const [hfEditState, setHfEditState] = useState<{ type: 'header' | 'footer'; page: number; zoneElement: HTMLDivElement } | null>(null);
   const hfEditStateRef = useRef(hfEditState);
@@ -671,6 +675,20 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                 variant="pill"
               />
             </div>
+          )}
+          {/*
+            Branch diff review pill — persistent affordance while a review
+            session is active (started from the sidebar's "Compare branch…"
+            context-menu action). Top-right so it never collides with the
+            centred pill toolbar. Hidden in focus mode with the rest of the
+            chrome; the sidebar context menu still offers "End branch review".
+          */}
+          {diffReview.reviewActive && !focusMode && (
+            <DiffReviewPill
+              compareBranch={diffReview.compareBranch}
+              onAcceptAll={() => void diffReview.handleAcceptAll()}
+              onEnd={diffReview.endReview}
+            />
           )}
           {findBarOpen && activeTab?.fileType === "markdown" && (
             <FindBar

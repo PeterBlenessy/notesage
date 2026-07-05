@@ -87,7 +87,7 @@ return (
 
 - `src/components/activity/AgentOrb.tsx`
 - `src/components/cmd/FloatingCommandBar.tsx`
-- `src/components/CommitDialog.tsx`
+- `src/components/git/CommitDialog.tsx`
 - `src/components/TitleBar.tsx`
 
 **Anti-patterns:**
@@ -222,7 +222,7 @@ Every accent variant is audited automatically by `scripts/contrast-audit.ts` (`p
 
 ## Quiet Composer Layout
 
-The post-Phase-1 UI shell — mounted only when `settings.uiPreview === "quiet-composer"` — replaces the legacy three-column layout with a quieter, composer-centric arrangement. The shell itself lives in `src/components/QuietLayout.tsx`. Each surface below is the canonical implementation; do not invent a parallel surface for the same role.
+The post-Phase-1 UI shell — now the only shell, mounted unconditionally (the `uiPreview` flag and the Classic layout were removed in #325) — replaces the legacy three-column layout with a quieter, composer-centric arrangement. The shell itself lives in `src/components/QuietLayout.tsx`. Each surface below is the canonical implementation; do not invent a parallel surface for the same role.
 
 ### Floating Command Bar
 

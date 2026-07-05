@@ -1,5 +1,19 @@
 // @vitest-environment jsdom
 
+// cmdk (Command, used by the branch-compare picker) observes its list size
+// via ResizeObserver and scrolls the selected item into view — neither
+// exists in jsdom. Polyfill both.
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+}
+if (typeof Element.prototype.scrollIntoView !== "function") {
+  Element.prototype.scrollIntoView = () => {};
+}
+
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import userEvent from "@testing-library/user-event";
 import {
@@ -15,6 +29,9 @@ import {
   SIDEBAR_ENTER_RENAME_MODE_EVENT,
 } from "../SidebarContextMenu";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useGitStore } from "@/stores/git-store";
+import { useSettingsStore } from "@/stores/settings-store";
+import { useDiffReviewStore } from "@/stores/diff-review-store";
 
 // ---------------------------------------------------------------------------
 // Mock useFileOperations — the menu calls openFile + deletePath
@@ -434,5 +451,178 @@ describe("SidebarContextMenu", () => {
     );
     openMenu();
     expect(screen.getByText("Export as…")).toBeTruthy();
+  });
+
+  // -------------------------------------------------------------------
+  // Branch diff review re-wire — "Compare branch…" / "End branch review"
+  // on repo-backed container rows.
+  // -------------------------------------------------------------------
+
+  describe("Compare branch… (branch diff review)", () => {
+    function seedRepoRoot(path: string, isGitRepo = true) {
+      useSettingsStore.setState({
+        gitEnabled: true,
+      } as unknown as Parameters<typeof useSettingsStore.setState>[0]);
+      useGitStore.setState({
+        repos: {
+          [path]: {
+            isGitRepo,
+            currentBranch: "main",
+            fileStatuses: [],
+            fileStatusMap: new Map(),
+            isLoading: false,
+            statusError: false,
+          },
+        },
+      });
+    }
+
+    beforeEach(() => {
+      useGitStore.setState({ repos: {} });
+      useSettingsStore.setState({
+        gitEnabled: false,
+      } as unknown as Parameters<typeof useSettingsStore.setState>[0]);
+      useDiffReviewStore.setState({
+        compareBranch: null,
+        baseBranch: null,
+        changedFiles: [],
+        reviewActive: false,
+        isLoading: false,
+        error: null,
+      });
+    });
+
+    it("shows Compare branch… on a repo-backed project row", () => {
+      seedRepoRoot("/proj");
+      renderWithProviders(
+        <SidebarContextMenu filePath="/proj" kind="project">
+          {trigger()}
+        </SidebarContextMenu>,
+      );
+      openMenu();
+      expect(screen.getByText("Compare branch…")).toBeTruthy();
+    });
+
+    it("shows Compare branch… on a repo-backed folder row", () => {
+      seedRepoRoot("/folder");
+      renderWithProviders(
+        <SidebarContextMenu filePath="/folder" kind="folder">
+          {trigger()}
+        </SidebarContextMenu>,
+      );
+      openMenu();
+      expect(screen.getByText("Compare branch…")).toBeTruthy();
+    });
+
+    it("hides Compare branch… on non-repo container rows", () => {
+      seedRepoRoot("/proj", false);
+      renderWithProviders(
+        <SidebarContextMenu filePath="/proj" kind="project">
+          {trigger()}
+        </SidebarContextMenu>,
+      );
+      openMenu();
+      expect(screen.queryByText("Compare branch…")).toBeNull();
+    });
+
+    it("hides Compare branch… when git integration is disabled", () => {
+      seedRepoRoot("/proj");
+      useSettingsStore.setState({
+        gitEnabled: false,
+      } as unknown as Parameters<typeof useSettingsStore.setState>[0]);
+      renderWithProviders(
+        <SidebarContextMenu filePath="/proj" kind="project">
+          {trigger()}
+        </SidebarContextMenu>,
+      );
+      openMenu();
+      expect(screen.queryByText("Compare branch…")).toBeNull();
+    });
+
+    it("hides Compare branch… on file rows even inside a repo", () => {
+      seedRepoRoot("/proj");
+      renderWithProviders(
+        <SidebarContextMenu filePath="/proj/a.md" kind="file">
+          {trigger()}
+        </SidebarContextMenu>,
+      );
+      openMenu();
+      expect(screen.queryByText("Compare branch…")).toBeNull();
+    });
+
+    it("opens the branch picker when Compare branch… is selected", async () => {
+      seedRepoRoot("/proj");
+      setMockInvokeHandler("git_branch_list", () => ["feature/x", "main"]);
+      const user = userEvent.setup();
+
+      renderWithProviders(
+        <SidebarContextMenu filePath="/proj" kind="project">
+          {trigger()}
+        </SidebarContextMenu>,
+      );
+      openMenu();
+      await user.click(screen.getByText("Compare branch…"));
+
+      // The picker opens after a requestAnimationFrame; the picked branch
+      // list excludes the current branch (main).
+      await waitFor(() => {
+        expect(screen.getByText("feature/x")).toBeTruthy();
+      });
+      expect(
+        screen.getByPlaceholderText("Compare against branch…"),
+      ).toBeTruthy();
+    });
+
+    it("selecting a branch in the picker starts the review with the right args", async () => {
+      seedRepoRoot("/proj");
+      setMockInvokeHandler("git_branch_list", () => ["feature/x", "main"]);
+      setMockInvokeHandler("git_diff_files", () => ["a.md"]);
+      setMockInvokeHandler("git_diff_file", () => []);
+      const user = userEvent.setup();
+
+      renderWithProviders(
+        <SidebarContextMenu filePath="/proj" kind="project">
+          {trigger()}
+        </SidebarContextMenu>,
+      );
+      openMenu();
+      await user.click(screen.getByText("Compare branch…"));
+      await waitFor(() => {
+        expect(screen.getByText("feature/x")).toBeTruthy();
+      });
+      await user.click(screen.getByText("feature/x"));
+
+      await waitFor(() => {
+        const state = useDiffReviewStore.getState();
+        expect(state.reviewActive).toBe(true);
+        // Base = the checked-out branch from git-store; compare = picked.
+        expect(state.baseBranch).toBe("main");
+        expect(state.compareBranch).toBe("feature/x");
+      });
+    });
+
+    it("shows End branch review while a review is active and ends it on select", async () => {
+      seedRepoRoot("/proj");
+      useDiffReviewStore.setState({
+        reviewActive: true,
+        baseBranch: "main",
+        compareBranch: "feature/x",
+      });
+      const user = userEvent.setup();
+
+      renderWithProviders(
+        <SidebarContextMenu filePath="/proj" kind="project">
+          {trigger()}
+        </SidebarContextMenu>,
+      );
+      openMenu();
+      expect(screen.queryByText("Compare branch…")).toBeNull();
+      await user.click(screen.getByText("End branch review"));
+
+      await waitFor(() => {
+        expect(useDiffReviewStore.getState().reviewActive).toBe(false);
+      });
+      expect(useDiffReviewStore.getState().compareBranch).toBeNull();
+    });
   });
 });
