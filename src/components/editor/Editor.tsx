@@ -21,6 +21,7 @@ import { useCommentEditorSync } from "@/hooks/useCommentEditorSync";
 import { useCopilotCompletion } from "@/hooks/useCopilotCompletion";
 import { useCopilotCompletionCM } from "@/hooks/useCopilotCompletionCM";
 import { useLocalCompletion } from "@/hooks/useLocalCompletion";
+import { useEditorImageDrop } from "@/hooks/useEditorImageDrop";
 import { useEditorKeyBindings } from "@/hooks/useEditorKeyBindings";
 import { useFileWatcherIntegration } from "@/hooks/useFileWatcherIntegration";
 import { useEditorTabSwitch } from "@/hooks/useEditorTabSwitch";
@@ -299,6 +300,9 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   useCopilotCompletion(editor);
   useCopilotCompletionCM(cmView);
   useLocalCompletion(editor);
+  // Finder → editor image drops (HTML5 drag events, scoped to the editor's
+  // scroll area so command-bar / sidebar drops keep their own handlers).
+  useEditorImageDrop(editor, scrollAreaRef);
 
   // Expose editor instance for tool executor access (comment tools, etc.)
   useEffect(() => {

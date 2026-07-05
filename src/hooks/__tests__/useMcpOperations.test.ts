@@ -7,10 +7,11 @@ import {
   clearMockInvokeHandlers,
   registerDefaultHandlers,
 } from '@/test/tauri-mock';
-import { useMcpOperations, useMcpDiscovery, type McpValidationResult } from '../useMcpOperations';
+import { useMcpOperations, useMcpDiscovery, refreshMcpServerStatus, type McpValidationResult } from '../useMcpOperations';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { useMcpStore } from '@/stores/mcp-store';
+import { useMcpStore, type McpServerEntry } from '@/stores/mcp-store';
+import { tauriApi } from '@/lib/tauri';
 
 // The hook is mocked at the @tauri-apps boundary by src/test/tauri-mock.ts
 // (wired globally in vitest setup). We register per-test invoke handlers.
@@ -199,6 +200,117 @@ describe('useMcpOperations.validateServer', () => {
     expect(res.ok).toBe(false);
     expect(res.error_kind).toBe('binary_not_found');
     expect(res.error).toContain('PATH');
+  });
+});
+
+describe('refreshMcpServerStatus', () => {
+  const entry = (overrides: Partial<McpServerEntry>): McpServerEntry => ({
+    id: 'global:demo',
+    name: 'demo',
+    command: 'npx',
+    args: [],
+    env: {},
+    source: 'notesage-global',
+    enabled: true,
+    status: 'stopped',
+    tools: [],
+    ...overrides,
+  });
+
+  beforeEach(() => {
+    clearMockInvokeHandlers();
+    registerDefaultHandlers();
+    useMcpStore.setState({ servers: [], enabledOverrides: {} });
+  });
+
+  it('reconciles status, error, and tools from the backend snapshot', async () => {
+    useMcpStore.setState({
+      servers: [
+        entry({ id: 'global:a', name: 'a', status: 'stopped', tools: [] }),
+        entry({ id: 'global:b', name: 'b', status: 'running', error: 'stale error' }),
+      ],
+    });
+
+    setMockInvokeHandler('mcp_get_server_status', () => [
+      {
+        id: 'global:a', name: 'a', command: 'npx', args: [], env: {},
+        source: 'notesage_global', enabled: true, status: 'running', error: null,
+        tools: [{ name: 'read_file', description: null, input_schema: {}, server_id: 'global:a' }],
+        transport: 'stdio', url: null,
+      },
+      {
+        id: 'global:b', name: 'b', command: 'npx', args: [], env: {},
+        source: 'notesage_global', enabled: true, status: 'error', error: 'spawn failed',
+        tools: [], transport: 'stdio', url: null,
+      },
+    ]);
+
+    await refreshMcpServerStatus();
+
+    const servers = useMcpStore.getState().servers;
+    const a = servers.find((s) => s.id === 'global:a');
+    const b = servers.find((s) => s.id === 'global:b');
+    expect(a?.status).toBe('running');
+    expect(a?.tools).toHaveLength(1);
+    expect(b?.status).toBe('error');
+    expect(b?.error).toBe('spawn failed');
+  });
+
+  it('marks servers absent from the snapshot as stopped with no tools', async () => {
+    useMcpStore.setState({
+      servers: [
+        entry({
+          id: 'global:gone',
+          name: 'gone',
+          status: 'running',
+          tools: [{ name: 'x', description: null, input_schema: {}, server_id: 'global:gone' }],
+        }),
+      ],
+    });
+    setMockInvokeHandler('mcp_get_server_status', () => []);
+
+    await refreshMcpServerStatus();
+
+    const gone = useMcpStore.getState().servers[0];
+    expect(gone.status).toBe('stopped');
+    expect(gone.tools).toHaveLength(0);
+    expect(gone.error).toBeUndefined();
+  });
+
+  it('propagates backend errors to the caller (button shows a toast)', async () => {
+    setMockInvokeHandler('mcp_get_server_status', () => {
+      throw new Error('backend gone');
+    });
+    await expect(refreshMcpServerStatus()).rejects.toThrow('backend gone');
+  });
+});
+
+describe('tauriApi.mcpListTools (cache-first wrapper)', () => {
+  beforeEach(() => {
+    clearMockInvokeHandlers();
+  });
+
+  it('passes refresh: false by default', async () => {
+    const captured: Record<string, unknown> = {};
+    setMockInvokeHandler('mcp_list_tools', (args) => {
+      Object.assign(captured, args as Record<string, unknown>);
+      return [];
+    });
+
+    await tauriApi.mcpListTools('global:demo');
+    expect(captured).toMatchObject({ serverId: 'global:demo', refresh: false });
+  });
+
+  it('forwards refresh: true to force a live query', async () => {
+    const captured: Record<string, unknown> = {};
+    setMockInvokeHandler('mcp_list_tools', (args) => {
+      Object.assign(captured, args as Record<string, unknown>);
+      return [{ name: 't', description: null, input_schema: {}, server_id: 'global:demo' }];
+    });
+
+    const tools = await tauriApi.mcpListTools('global:demo', true);
+    expect(captured).toMatchObject({ serverId: 'global:demo', refresh: true });
+    expect(tools).toHaveLength(1);
   });
 });
 

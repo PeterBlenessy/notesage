@@ -8,6 +8,7 @@ import { filterValidMcpConfigs, type McpServerConfig } from '@/lib/mcp/config-gu
 import { track } from '@/lib/telemetry';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
+import { tauriApi } from '@/lib/tauri';
 
 // ---------------------------------------------------------------------------
 // Types matching Rust backend
@@ -251,6 +252,32 @@ function sourceToRust(source: McpServerEntry['source']): string {
     vscode: 'vscode',
   };
   return mapping[source] ?? 'notesage_global';
+}
+
+/**
+ * Fetch the backend's server snapshot (`mcp_get_server_status`) and reconcile
+ * the mcp-store: each known server takes the backend's status/error/tools;
+ * servers the backend has no handle for (never started, or stopped and
+ * removed) are marked stopped with no tools.
+ *
+ * Module-level (not hook-bound) so it is directly unit-testable and callable
+ * from non-component code.
+ */
+export async function refreshMcpServerStatus(): Promise<void> {
+  const infos = await tauriApi.mcpGetServerStatus();
+  const store = useMcpStore.getState();
+  const byId = new Map(infos.map((i) => [i.id, i]));
+
+  for (const server of store.servers) {
+    const info = byId.get(server.id);
+    if (info) {
+      store.setServerStatus(server.id, info.status, info.error ?? undefined);
+      store.setServerTools(server.id, info.tools);
+    } else {
+      store.setServerStatus(server.id, 'stopped');
+      store.setServerTools(server.id, []);
+    }
+  }
 }
 
 export function useMcpOperations() {

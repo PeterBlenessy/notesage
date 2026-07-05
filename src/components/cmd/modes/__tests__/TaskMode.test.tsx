@@ -3,6 +3,7 @@
 import '@/test/tauri-mock';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  act,
   renderWithProviders,
   screen,
   fireEvent,
@@ -251,6 +252,9 @@ describe('TaskMode', () => {
     await waitFor(() => {
       expect(screen.getByText('First')).toBeTruthy();
     });
+    // Flush the passive effect that re-registers the window keydown handler
+    // with the non-empty results closure (stale-closure flake on loaded CI).
+    await act(async () => {});
 
     fireEvent.keyDown(window, { key: 'ArrowDown' });
     fireEvent.keyDown(window, { key: 'Enter' });
@@ -466,6 +470,9 @@ describe('TaskMode', () => {
       await waitFor(() => {
         expect(screen.getByText('Project A row')).toBeTruthy();
       });
+      // Flush the keydown-handler re-registration effect (stale-closure
+      // flake on loaded CI runners) before dispatching keys.
+      await act(async () => {});
 
       // Initial highlight is row 0 (Project A row). ↓ moves to row 1
       // (Project B row across a different group). ↓ again → ungrouped row.

@@ -133,6 +133,7 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
         get_store_value: () => null,
         set_store_value: () => null,
         store_read: () => null,
+        store_read_batch: () => ({}),
         store_write: () => null,
 
         // Logging

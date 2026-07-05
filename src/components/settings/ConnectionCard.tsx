@@ -6,7 +6,17 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { Button } from '@/components/ui/button';
-import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle, Shield, Globe, KeyRound, BrainCog } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle, Shield, Globe, KeyRound, BrainCog, Trash2, LogOut } from 'lucide-react';
 import { LocalAIModelsDialog } from './LocalAIModelsDialog';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
@@ -71,10 +81,67 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
   const [labelDraft, setLabelDraft] = useState('');
   const [modelsDialogOpen, setModelsDialogOpen] = useState(false);
   const [reauthOpen, setReauthOpen] = useState(false);
+  const [uninstallOpen, setUninstallOpen] = useState(false);
+  const [uninstalling, setUninstalling] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const labelInputRef = useRef<HTMLInputElement>(null);
   const updateConnection = useConnectionsStore((s) => s.updateConnection);
 
   const isRenamable = connection.provider === 'openai_compatible';
+
+  // The agent id for agent_manager.rs commands is the binary name — the same
+  // mapping ConnectionsSettings uses for `agent_update` (see updateAvailable).
+  const agentBinary =
+    connection.authMethod === 'agent_managed'
+      ? (connection.credentials as { agentBinary?: string }).agentBinary ?? null
+      : null;
+  const isCopilotLsp = agentBinary === 'copilot-language-server';
+  // Uninstall applies only to binaries Notesage itself installed
+  // (~/.notesage/agents/bin/) — never to PATH-resolved system binaries.
+  const canUninstall = connection.binarySource === 'managed' && !!agentBinary;
+
+  const handleUninstall = useCallback(async () => {
+    if (!agentBinary) return;
+    setUninstalling(true);
+    try {
+      await tauriApi.agentUninstall(agentBinary);
+      // Refresh installed-state: a PATH-resolved system binary may still
+      // exist; if nothing resolves, the connection is no longer usable.
+      let resolution: Awaited<ReturnType<typeof tauriApi.agentResolveBinary>> = null;
+      try {
+        resolution = await tauriApi.agentResolveBinary(agentBinary);
+      } catch {
+        // Resolver failure — treat as not installed.
+      }
+      if (resolution) {
+        updateConnection(connection.id, { binarySource: resolution.source });
+      } else {
+        updateConnection(connection.id, { binarySource: undefined, status: 'not_installed' });
+      }
+      toast.success(`Uninstalled ${agentBinary}`);
+      setUninstallOpen(false);
+    } catch (err) {
+      toast.error(`Uninstall failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setUninstalling(false);
+    }
+  }, [agentBinary, connection.id, updateConnection]);
+
+  const handleCopilotSignOut = useCallback(async () => {
+    setSigningOut(true);
+    try {
+      await tauriApi.copilotLspSignOut();
+      // The OAuth token is gone — mark the connection as needing re-auth so
+      // the key icon (re-authenticate) surfaces, mirroring the reauth flow's
+      // status transitions.
+      updateConnection(connection.id, { status: 'expired' });
+      toast.success('Signed out of GitHub Copilot');
+    } catch (err) {
+      toast.error(`Sign out failed: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      setSigningOut(false);
+    }
+  }, [connection.id, updateConnection]);
 
   const startRename = useCallback(() => {
     setLabelDraft(connection.label);
@@ -391,6 +458,35 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               </Button>
             );
           })()}
+          {isCopilotLsp && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-foreground"
+              onClick={handleCopilotSignOut}
+              disabled={signingOut}
+              title="Sign out of GitHub Copilot"
+              aria-label="Sign out of GitHub Copilot"
+            >
+              {signingOut ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
+              ) : (
+                <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />
+              )}
+            </Button>
+          )}
+          {canUninstall && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7 text-muted-foreground hover:text-destructive"
+              onClick={() => setUninstallOpen(true)}
+              title="Uninstall agent binary"
+              aria-label="Uninstall agent binary"
+            >
+              <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
+            </Button>
+          )}
           {connection.authMethod === 'local_bundled' && (
             <Button
               variant="ghost"
@@ -449,6 +545,36 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
           open={reauthOpen}
           onOpenChange={setReauthOpen}
         />
+      )}
+      {canUninstall && (
+        <AlertDialog open={uninstallOpen} onOpenChange={setUninstallOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Uninstall {connection.label}?</AlertDialogTitle>
+              <AlertDialogDescription>
+                The binary will be removed; your connection settings remain.
+                You can reinstall it any time from this connection card.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel disabled={uninstalling}>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={(e) => {
+                  // Keep the dialog open while the IPC call runs; it closes
+                  // on success inside handleUninstall.
+                  e.preventDefault();
+                  void handleUninstall();
+                }}
+                disabled={uninstalling}
+              >
+                {uninstalling ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
+                ) : null}
+                Uninstall
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </div>
   );

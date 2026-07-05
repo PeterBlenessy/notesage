@@ -150,6 +150,7 @@ export function registerDefaultHandlers(): void {
   setMockInvokeHandler('get_store_value', () => null);
   setMockInvokeHandler('set_store_value', () => undefined);
   setMockInvokeHandler('store_read', () => null);
+  setMockInvokeHandler('store_read_batch', () => ({}));
   setMockInvokeHandler('store_write', () => undefined);
   // Link graph (OKF wiki-navigation) — empty by default so mounting the
   // RelationsPanel / hover preview in component tests doesn't throw.
