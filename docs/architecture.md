@@ -139,7 +139,7 @@ note-sage/
 │   │   └── ui/             # shadcn/ui components (auto-generated)
 │   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, useTrayEvents, useTraySync, useFadeOnType, useFocusMode, useWindowFocus, useReducedMotion, useGlobalShortcuts (absorbed useCommandBarShortcuts + useDoubleTapCmd), useRecentDocumentCycle, etc.)
 │   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, folder-appearance, quiet-sidebar, etc.)
-│   ├── lib/                # Utilities (markdown, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, cmd-bar-events, contrast-math, quiet-chrome, quiet-chrome-presets, accent, saved-ago, tray-recents, telemetry, etc.)
+│   ├── lib/                # Utilities (markdown + markdown-html-converters, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, cmd-bar-events, contrast-math, quiet-chrome, quiet-chrome-presets, accent, saved-ago, tray-recents, telemetry, etc.)
 │   └── styles/             # globals.css, editor.css (+ __tests__/reduced-motion-sweep.test.ts, __tests__/accent.test.ts)
 ├── public/
 │   ├── foliate-js/         # Vendored EPUB renderer (MIT)
@@ -265,6 +265,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `model-fit-measurement-store` | Measured runtime samples per local model on the current machine (rolling-median tok/s, peak RAM, sample history); keyed to `chipName` — measurements discarded when the chip changes | Full |
 | `session-run-store` | Per-conversation AI session run state (`idle \| queued \| running \| awaiting_permission \| error`) + foreground (watched) conversation — the data spine for command-bar session multitasking; in-flight runs flip to `error` on rehydrate | Partial (durable `status` per run only — transient handles (`streamId`, `instanceId`, `pendingPermissionId`, `startedAt`) and `foregroundConversationId` stripped) |
 | `sidebar-status-slot-store` | DOM node of the QuietSidebar footer's status slot so the editor's `StatusBar` can portal itself there (`null` when the sidebar is hidden) | None |
+| `usage-store` | Per-connection `ProviderUsageSnapshot` (context used/size, cost, rate-limit state, per-turn tokens) with `source`/`confidence` provenance. Written through from the ACP `usage_update` / `acp-turn-usage` listeners (`source: 'acp'`) and the local estimation hook (`source: 'estimate'`). Read by the command-bar usage popover and the Settings connection-card detail | None (deliberate — usage is live state; stale persisted quota is worse than none) |
 
 ### Styling
 

@@ -1,0 +1,1015 @@
+//! ACP (Agent Client Protocol) command surface.
+//!
+//! This module is the thin Tauri command layer: each `#[tauri::command]` below
+//! looks up the target agent in `AcpState`, forwards an `AgentCmd` over the
+//! agent's command channel, and awaits the reply. The heavy lifting — spawning
+//! the subprocess, the ACP handshake, and the per-message command loop — lives
+//! in the sibling implementation modules:
+//!
+//! - [`types`]        — serializable IPC types (the wire contract)
+//! - [`state`]        — `AcpState`, `AgentHandle`, the `AgentCmd` protocol, orphan PID files
+//! - [`helpers`]      — MCP-server construction, model-info + session-result assembly
+//! - [`agent_thread`] — `run_agent_thread`: subprocess spawn, `initialize`, the command loop
+//!
+//! The command functions are defined directly in this module (not re-exported
+//! from a submodule) so `commands::acp::<name>` — the path `generate_handler!`
+//! resolves via `commands/mod.rs`'s `pub use acp::*` — is unchanged by the split.
+
+mod agent_thread;
+mod helpers;
+mod state;
+mod types;
+
+#[cfg(test)]
+mod tests;
+
+use std::collections::HashMap;
+use tauri::{AppHandle, State};
+use tokio::sync::{mpsc, oneshot};
+
+use crate::commands::acp_binary::{resolve_absolute_binary, resolve_agent_binary};
+
+use agent_thread::run_agent_thread;
+use helpers::build_acp_mcp_servers;
+use state::{AgentCmd, AgentHandle};
+
+// Public API re-exports. `commands/mod.rs` does `pub use acp::*`, so these become
+// `commands::acp::*` for the rest of the crate (and the frontend wire types).
+pub use state::{kill_orphaned_acp_agents, AcpState};
+// Glob re-export of the full wire-type surface — every one of these was
+// historically a `pub` item defined in `acp.rs` and reachable at
+// `commands::acp::<Type>` (and `commands::*` via `commands/mod.rs`'s
+// `pub use acp::*`). A glob keeps that surface intact without tripping the
+// `unused_imports` lint on the types only consumed via their `types::` path.
+pub use types::*;
+
+// ---------------------------------------------------------------------------
+// Tauri commands
+// ---------------------------------------------------------------------------
+
+/// Spawn an ACP agent subprocess, initialize the connection, and return an instance ID.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn acp_agent_spawn(
+    app: AppHandle,
+    state: State<'_, AcpState>,
+    network_proxy_state: State<'_, crate::commands::network_proxy::NetworkProxyState>,
+    agent_binary: String,
+    agent_args: Option<Vec<String>>,
+    role: AgentRole,
+    working_directory: String,
+    env_vars: Option<HashMap<String, String>>,
+    sandbox_enabled: Option<bool>,
+    sandbox_paths: Option<Vec<String>>,
+    network_sandbox_enabled: Option<bool>,
+    network_allowed_domains: Option<Vec<String>>,
+    kernel_network_deny: Option<bool>,
+    connection_id: Option<String>,
+    env_var_keys: Option<Vec<String>>,
+    extra_localhost_ports: Option<Vec<u16>>,
+) -> Result<SpawnResult, String> {
+    let mut env = env_vars.unwrap_or_default();
+    // Resolve env-var secrets from the OS keychain (`notesage:<conn_id>:env:<KEY>`).
+    // Keychain values are authoritative and override any value passed over IPC —
+    // same precedence as `resolve_api_key` in ai.rs. The IPC `env_vars` map stays
+    // as the same-session fallback for values not yet written to the keychain.
+    if let Some(conn_id) = connection_id.as_deref() {
+        for key in env_var_keys.unwrap_or_default() {
+            match crate::commands::credentials::get_credential_internal(&format!("{conn_id}:env:{key}")) {
+                Ok(Some(value)) => {
+                    env.insert(key, value);
+                }
+                Ok(None) => {
+                    log::debug!(target: "notesage::acp",
+                        "No keychain entry for env var {key} on connection {conn_id} — using IPC fallback if present");
+                }
+                Err(e) => {
+                    log::warn!(target: "notesage::acp",
+                        "Failed to resolve env var {key} from keychain for connection {conn_id}: {e}");
+                }
+            }
+        }
+    }
+    let args = agent_args.unwrap_or_default();
+
+    // Resolve the actual binary path. Absolute paths (custom agents) go through
+    // `resolve_absolute_binary` directly so its precise validation errors
+    // ("not found at <path>" / "not executable") reach the frontend instead of
+    // collapsing into the generic not-found message; agent names keep the
+    // PATH/Homebrew/npm/bundled lookup.
+    let resolved_binary = if std::path::Path::new(&agent_binary).is_absolute() {
+        resolve_absolute_binary(&agent_binary)?
+    } else {
+        resolve_agent_binary(&agent_binary, &app)
+            .ok_or_else(|| format!("Agent binary '{}' not found", agent_binary))?
+    };
+
+    // Determine sandbox policy: explicit override, or default based on binary source
+    let sandbox = sandbox_enabled
+        .unwrap_or_else(|| crate::commands::sandbox::should_sandbox_by_default(&resolved_binary));
+
+    // Writable paths: explicit list, or fall back to [working_directory]
+    let writable_paths = sandbox_paths
+        .unwrap_or_else(|| vec![working_directory.clone()]);
+
+    // Generate instance ID before spawning so the thread can use it for events
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let instance_id = format!(
+        "acp-{}-{}",
+        ts,
+        &format!("{:x}", ts.wrapping_mul(6364136223846793005).wrapping_add(1))[..8]
+    );
+
+    // Save a copy of allowed domains for AgentHandle before they're consumed
+    let saved_network_domains = network_allowed_domains.clone();
+
+    // Start network proxy if network sandboxing is enabled (requires filesystem sandbox)
+    let network_config = if sandbox && network_sandbox_enabled.unwrap_or(false) {
+        let domains = network_allowed_domains
+            .unwrap_or_else(|| crate::commands::network_proxy::default_allowed_domains(&agent_binary));
+
+        match network_proxy_state
+            .start_proxy(&instance_id, &agent_binary, domains, app.clone())
+            .await
+        {
+            Ok(mut config) => {
+                // Direct-localhost allows (e.g. the bundled llama-server port
+                // for the Goose preset) — reachable without the proxy under
+                // kernel network deny. Empty for ordinary agents.
+                if let Some(ports) = extra_localhost_ports.clone() {
+                    config.extra_localhost_ports = ports;
+                }
+                // Inject proxy env vars into the agent's environment
+                let proxy_url = format!("http://{}", config.proxy_addr);
+                env.insert("HTTP_PROXY".to_string(), proxy_url.clone());
+                env.insert("HTTPS_PROXY".to_string(), proxy_url.clone());
+                env.insert("http_proxy".to_string(), format!("http://{}", config.proxy_addr));
+                env.insert("https_proxy".to_string(), format!("http://{}", config.proxy_addr));
+                env.insert("NO_PROXY".to_string(), "localhost,127.0.0.1".to_string());
+                env.insert("no_proxy".to_string(), "localhost,127.0.0.1".to_string());
+                log::info!(target: "notesage::acp",
+                    "Network proxy started for {} at {}",
+                    agent_binary, config.proxy_addr
+                );
+                Some(config)
+            }
+            Err(e) => {
+                log::warn!(target: "notesage::acp",
+                    "Failed to start network proxy for {}: {} — spawning without network sandbox",
+                    agent_binary, e
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    let has_network_sandbox = network_config.is_some();
+    let knd = kernel_network_deny.unwrap_or(false);
+
+    let (init_tx, init_rx) = oneshot::channel();
+    let (cmd_tx, cmd_rx) = mpsc::channel(32);
+
+    // Shared PID cell — thread writes after spawn, AgentHandle reads for SIGKILL
+    let child_pid = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let child_pid_thread = std::sync::Arc::clone(&child_pid);
+
+    let binary = resolved_binary;
+    let cwd = working_directory.clone();
+    let iid = instance_id.clone();
+    let spawn_args = args.clone();
+    let spawn_env = env.clone();
+    let spawn_writable = writable_paths.clone();
+
+    let thread_handle = std::thread::Builder::new()
+        .name(format!("acp-{}", &binary))
+        .spawn(move || {
+            run_agent_thread(app, iid, binary, spawn_args, cwd, spawn_env, sandbox, spawn_writable, network_config, knd, cmd_rx, init_tx, child_pid_thread);
+        })
+        .map_err(|e| format!("Failed to spawn agent thread: {}", e))?;
+
+    // Wait for initialization result from the agent thread (30s timeout)
+    let init_result = tokio::time::timeout(std::time::Duration::from_secs(30), init_rx)
+        .await
+        .map_err(|_| {
+            // Timeout — kill the agent thread
+            let _ = cmd_tx.try_send(AgentCmd::Stop {
+                reply: oneshot::channel().0,
+            });
+            "ACP initialize timed out after 30s — the agent binary may not support ACP".to_string()
+        })?
+        .map_err(|_| "Agent thread exited unexpectedly during initialization".to_string())?;
+    let init_info = init_result?;
+
+    let handle = AgentHandle {
+        role,
+        agent_binary: agent_binary.clone(),
+        working_directory: working_directory.clone(),
+        child_pid,
+        cmd_tx,
+        thread_handle: Some(thread_handle),
+        agent_args: args,
+        env_vars: env,
+        sandbox_enabled: sandbox,
+        sandbox_writable_paths: writable_paths,
+        network_sandbox_enabled: has_network_sandbox,
+        network_allowed_domains: if has_network_sandbox {
+            saved_network_domains
+        } else {
+            None
+        },
+        kernel_network_deny: knd,
+        extra_localhost_ports: extra_localhost_ports.unwrap_or_default(),
+        supports_images: init_info.supports_images,
+    };
+
+    state
+        .agents
+        .lock()
+        .await
+        .insert(instance_id.clone(), handle);
+
+    Ok(SpawnResult {
+        instance_id,
+        agent_name: init_info.agent_name,
+        agent_version: init_info.agent_version,
+        auth_methods: init_info.auth_methods,
+        sandbox_enabled: sandbox,
+        network_sandbox_enabled: has_network_sandbox,
+        supports_images: init_info.supports_images,
+        capabilities: init_info.capabilities,
+    })
+}
+
+/// Authenticate with an ACP agent.
+/// If `method_id` is None, uses the first available auth method from the agent.
+#[tauri::command]
+pub async fn acp_agent_authenticate(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    method_id: Option<String>,
+) -> Result<AuthStatus, String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    }; // lock released here
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+
+    cmd_tx
+        .send(AgentCmd::Authenticate {
+            method_id,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to authenticate".to_string())?
+}
+
+/// Check if an ACP agent instance is still registered (lightweight map lookup).
+#[tauri::command]
+pub async fn acp_agent_exists(
+    state: State<'_, AcpState>,
+    instance_id: String,
+) -> Result<bool, String> {
+    Ok(state.agents.lock().await.contains_key(&instance_id))
+}
+
+/// Check whether the agent's background thread is still running.
+/// Returns `false` if the agent is unknown or its thread has exited.
+#[tauri::command]
+pub async fn acp_is_agent_alive(
+    state: State<'_, AcpState>,
+    instance_id: String,
+) -> Result<bool, String> {
+    let agents = state.agents.lock().await;
+    match agents.get(&instance_id) {
+        Some(handle) => Ok(handle
+            .thread_handle
+            .as_ref()
+            .map_or(false, |th| !th.is_finished())),
+        None => Ok(false),
+    }
+}
+
+/// Stop an ACP agent subprocess and clean up resources.
+#[tauri::command]
+pub async fn acp_agent_stop(
+    state: State<'_, AcpState>,
+    instance_id: String,
+) -> Result<(), String> {
+    // Remove the handle and DROP the map lock before any `.await`, so concurrent
+    // ACP commands aren't blocked for the whole stop round-trip (which can be as
+    // long as an in-flight prompt). Holding `agents` across the send/reply/join
+    // below would serialize every other command behind this one.
+    let mut handle = {
+        let mut agents = state.agents.lock().await;
+        agents
+            .remove(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?
+    };
+
+    let thread_handle = handle.thread_handle.take();
+
+    // Best-effort graceful stop. On any failure we still join the OS thread
+    // below so we never leak a zombie (dropping `handle` releases `cmd_tx`, and
+    // `kill_on_drop` tears down the child).
+    let (reply_tx, reply_rx) = oneshot::channel();
+    let result = match handle.cmd_tx.send(AgentCmd::Stop { reply: reply_tx }).await {
+        Ok(()) => reply_rx
+            .await
+            .map_err(|_| "Agent thread did not respond to stop".to_string())
+            .and_then(|r| r),
+        Err(_) => Err("Agent thread is no longer running".to_string()),
+    };
+
+    // Drop the handle (releases cmd_tx → the command loop ends), then join the
+    // OS thread on a blocking-safe task so we don't park the async executor.
+    drop(handle);
+    if let Some(th) = thread_handle {
+        let _ = tokio::task::spawn_blocking(move || th.join()).await;
+    }
+
+    result
+}
+
+/// Kill a hung agent, respawn with the same config, re-authenticate, and load the session.
+/// Returns a new `SpawnResult` with a fresh `instance_id`.
+#[tauri::command]
+pub async fn acp_agent_reconnect(
+    app: AppHandle,
+    state: State<'_, AcpState>,
+    network_proxy_state: State<'_, crate::commands::network_proxy::NetworkProxyState>,
+    instance_id: String,
+    session_id: String,
+) -> Result<SpawnResult, String> {
+    // 1. Remove the old agent from the map and extract its spawn config
+    let old_handle = {
+        let mut agents = state.agents.lock().await;
+        agents.remove(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?
+    };
+
+    // 2. SIGKILL the old subprocess directly via PID
+    let pid = old_handle.child_pid.load(std::sync::atomic::Ordering::Relaxed);
+    if pid != 0 {
+        unsafe { libc::kill(pid as libc::pid_t, libc::SIGKILL); }
+        log::info!(target: "notesage::acp", "Reconnect: sent SIGKILL to old agent PID {}", pid);
+    }
+
+    // 3. Drop the command channel and join the thread with 500ms timeout
+    drop(old_handle.cmd_tx);
+    if let Some(th) = old_handle.thread_handle {
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let join_thread = std::thread::spawn(move || {
+            let _ = th.join();
+            let _ = done_tx.send(());
+        });
+        match done_rx.recv_timeout(std::time::Duration::from_millis(500)) {
+            Ok(_) => { let _ = join_thread.join(); }
+            Err(_) => {
+                log::warn!(target: "notesage::acp", "Reconnect: old agent thread did not exit within 500ms, abandoning");
+            }
+        }
+    }
+
+    // 4. Spawn a fresh agent with the same config
+    let working_dir = old_handle.working_directory.clone();
+    let result = acp_agent_spawn(
+        app,
+        state.clone(),
+        network_proxy_state,
+        old_handle.agent_binary,
+        Some(old_handle.agent_args),
+        AgentRole::Interactive,
+        working_dir.clone(),
+        Some(old_handle.env_vars),
+        Some(old_handle.sandbox_enabled),
+        Some(old_handle.sandbox_writable_paths),
+        Some(old_handle.network_sandbox_enabled),
+        old_handle.network_allowed_domains,
+        Some(old_handle.kernel_network_deny),
+        // env_vars above already carries the keychain-resolved values from the
+        // original spawn — no connection_id/env_var_keys re-resolution needed.
+        None,
+        None,
+        // Preserve the same direct-localhost confinement (llama-server port) on reconnect.
+        Some(old_handle.extra_localhost_ports),
+    ).await?;
+
+    // 5. Re-authenticate (best-effort, same as initial spawn)
+    if let Err(auth_err) = acp_agent_authenticate(
+        state.clone(),
+        result.instance_id.clone(),
+        None,
+    ).await {
+        let msg = auth_err.to_string();
+        if !msg.to_lowercase().contains("not implemented") {
+            log::warn!(target: "notesage::acp", "Reconnect: auth failed: {}", msg);
+            return Err(format!("Reconnect auth failed: {}", msg));
+        }
+    }
+
+    // 6. Load the existing session.
+    // MCP re-attachment on crash-recovery reconnect is a follow-up: reconnect
+    // doesn't carry the renderer's current MCP set, so we reload with none here.
+    // The normal restore path (`restoreOrCreateAcpSession`) re-sends the current
+    // servers; reconnect is the rarer crash-recovery edge (#11 known follow-up).
+    let _session = acp_session_load(
+        state,
+        result.instance_id.clone(),
+        session_id,
+        working_dir,
+        None,
+    ).await
+    .map_err(|e| format!("Reconnect session/load failed: {}", e))?;
+
+    log::info!(target: "notesage::acp", "Reconnect succeeded: old={} new={}", instance_id, result.instance_id);
+
+    Ok(result)
+}
+
+// ---------------------------------------------------------------------------
+// Smoke test (task #12) — bounded end-to-end verification of the Local Agent
+// chain: bundled server health → agent spawn → session/new → one short prompt
+// → teardown. Used by the setup flow (#16) to gate "ready" and by routing (#13)
+// to decide whether to fall back to direct local chat.
+// ---------------------------------------------------------------------------
+
+/// Per-stage timeout budgets. The prompt budget is generous because the FIRST
+/// prompt on a cold llama-server pays the model-load cost before any token.
+const SMOKE_HEALTH_TIMEOUT_SECS: u64 = 5;
+const SMOKE_SPAWN_TIMEOUT_SECS: u64 = 45;
+const SMOKE_SESSION_TIMEOUT_SECS: u64 = 30;
+const SMOKE_PROMPT_TIMEOUT_SECS: u64 = 180;
+
+/// A trivial prompt that should elicit a one-token reply on any working model.
+const SMOKE_PROMPT: &str = "Reply with the single word: ok";
+
+/// Probe the bundled llama-server `/health`. `Ok(())` only when a port is bound
+/// AND the endpoint returns success within the budget; otherwise a stage error.
+async fn smoke_check_local_health(
+    local_state: &crate::commands::local_inference::LocalInferenceState,
+) -> Result<(), String> {
+    let port = local_state
+        .current_port()
+        .await
+        .ok_or_else(|| "Local AI server is not running".to_string())?;
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(SMOKE_HEALTH_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Failed to build HTTP client: {e}"))?;
+    let url = format!("http://127.0.0.1:{}/health", port);
+    let healthy = client
+        .get(&url)
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false);
+    if healthy {
+        Ok(())
+    } else {
+        Err(format!("Local AI server on port {port} is not responding to /health"))
+    }
+}
+
+/// Bounded end-to-end smoke test of the Local Agent chain. Always tears the
+/// probe agent down before returning (success or failure). Never panics — every
+/// stage maps to a `SmokeTestReport` with the failing stage + error string.
+///
+/// When `require_local_server` is true (the Local Agent preset case) the bundled
+/// llama-server must be healthy first; otherwise the health stage is skipped so
+/// the same command can verify any ACP agent.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn acp_agent_smoke_test(
+    app: AppHandle,
+    state: State<'_, AcpState>,
+    network_proxy_state: State<'_, crate::commands::network_proxy::NetworkProxyState>,
+    local_state: State<'_, crate::commands::local_inference::LocalInferenceState>,
+    agent_binary: String,
+    agent_args: Option<Vec<String>>,
+    working_directory: String,
+    env_vars: Option<HashMap<String, String>>,
+    connection_id: Option<String>,
+    env_var_keys: Option<Vec<String>>,
+    sandbox_enabled: Option<bool>,
+    sandbox_paths: Option<Vec<String>>,
+    network_sandbox_enabled: Option<bool>,
+    network_allowed_domains: Option<Vec<String>>,
+    kernel_network_deny: Option<bool>,
+    extra_localhost_ports: Option<Vec<u16>>,
+    require_local_server: Option<bool>,
+) -> Result<SmokeTestReport, String> {
+    let started = std::time::Instant::now();
+    let elapsed = |s: &std::time::Instant| s.elapsed().as_millis() as u64;
+    let fail = |stage: SmokeStage, err: String, s: &std::time::Instant| SmokeTestReport {
+        ok: false,
+        stage,
+        error: Some(err),
+        elapsed_ms: elapsed(s),
+    };
+
+    // Stage 1 — bundled server health (preset only).
+    if require_local_server.unwrap_or(false) {
+        if let Err(e) = smoke_check_local_health(&local_state).await {
+            return Ok(fail(SmokeStage::Health, e, &started));
+        }
+    }
+
+    // Stage 2 — spawn + initialize.
+    let spawn = tokio::time::timeout(
+        std::time::Duration::from_secs(SMOKE_SPAWN_TIMEOUT_SECS),
+        acp_agent_spawn(
+            app,
+            state.clone(),
+            network_proxy_state,
+            agent_binary,
+            agent_args,
+            AgentRole::Interactive,
+            working_directory.clone(),
+            env_vars,
+            sandbox_enabled,
+            sandbox_paths,
+            network_sandbox_enabled,
+            network_allowed_domains,
+            kernel_network_deny,
+            connection_id,
+            env_var_keys,
+            extra_localhost_ports,
+        ),
+    )
+    .await;
+    let instance_id = match spawn {
+        Ok(Ok(result)) => result.instance_id,
+        Ok(Err(e)) => return Ok(fail(SmokeStage::Spawn, e, &started)),
+        Err(_) => {
+            return Ok(fail(
+                SmokeStage::Spawn,
+                format!("Agent spawn timed out after {SMOKE_SPAWN_TIMEOUT_SECS}s"),
+                &started,
+            ))
+        }
+    };
+
+    // From here on, always stop the probe agent before returning. `stop_then`
+    // does the best-effort teardown then hands back the report. (A closure that
+    // captures `State` can't be used here — the async return-type lifetime won't
+    // outlive the borrow — so the teardown is inlined at each exit instead.)
+
+    // Best-effort authenticate (mirror spawn; most local agents have no auth).
+    if let Err(auth_err) = acp_agent_authenticate(state.clone(), instance_id.clone(), None).await {
+        let msg = auth_err.to_lowercase();
+        if !msg.contains("not implemented") && !msg.contains("no authentication methods") {
+            let _ = acp_agent_stop(state.clone(), instance_id).await;
+            return Ok(fail(SmokeStage::Spawn, format!("Authentication failed: {auth_err}"), &started));
+        }
+    }
+
+    // Stage 3 — session/new.
+    let session = tokio::time::timeout(
+        std::time::Duration::from_secs(SMOKE_SESSION_TIMEOUT_SECS),
+        acp_session_new(state.clone(), instance_id.clone(), working_directory.clone(), None),
+    )
+    .await;
+    let session_id = match session {
+        Ok(Ok(s)) => s.session_id,
+        Ok(Err(e)) => {
+            let _ = acp_agent_stop(state.clone(), instance_id).await;
+            return Ok(fail(SmokeStage::Session, e, &started));
+        }
+        Err(_) => {
+            let _ = acp_agent_stop(state.clone(), instance_id).await;
+            return Ok(fail(
+                SmokeStage::Session,
+                format!("session/new timed out after {SMOKE_SESSION_TIMEOUT_SECS}s"),
+                &started,
+            ));
+        }
+    };
+
+    // Stage 4 — one short prompt (pays cold model-load cost on first call).
+    let prompt = tokio::time::timeout(
+        std::time::Duration::from_secs(SMOKE_PROMPT_TIMEOUT_SECS),
+        acp_session_prompt(
+            state.clone(),
+            instance_id.clone(),
+            session_id,
+            SMOKE_PROMPT.to_string(),
+            None,
+        ),
+    )
+    .await;
+    let prompt_failure = match prompt {
+        Ok(Ok(())) => None,
+        Ok(Err(e)) => Some(fail(SmokeStage::Prompt, e, &started)),
+        Err(_) => Some(fail(
+            SmokeStage::Prompt,
+            format!("prompt timed out after {SMOKE_PROMPT_TIMEOUT_SECS}s (model may still be loading)"),
+            &started,
+        )),
+    };
+
+    // Single teardown for both the success and prompt-failure paths.
+    let _ = acp_agent_stop(state.clone(), instance_id).await;
+
+    Ok(prompt_failure.unwrap_or(SmokeTestReport {
+        ok: true,
+        stage: SmokeStage::Done,
+        error: None,
+        elapsed_ms: elapsed(&started),
+    }))
+}
+
+/// Create a new ACP session.
+#[tauri::command]
+pub async fn acp_session_new(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    working_directory: String,
+    // Enabled, scope-matching, capability-gated MCP servers from the renderer
+    // (task #11). `None` keeps the legacy no-MCP behavior for callers that don't
+    // pass it. Built here (keychain secrets resolved) before the agent thread.
+    mcp_servers: Option<Vec<AcpMcpServerInput>>,
+) -> Result<SessionResult, String> {
+    let mcp_servers = build_acp_mcp_servers(mcp_servers.unwrap_or_default()).await;
+
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    }; // lock released here
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+
+    cmd_tx
+        .send(AgentCmd::NewSession {
+            working_directory,
+            mcp_servers,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    let result = reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to new_session".to_string())??;
+
+    Ok(result)
+}
+
+/// Load an existing ACP session.
+#[tauri::command]
+pub async fn acp_session_load(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    working_directory: String,
+    // MCP servers for the reloaded session (task #11). ACP treats this as the
+    // complete list for the loaded session, so the renderer re-sends the current
+    // set. `None` keeps the legacy no-MCP behavior.
+    mcp_servers: Option<Vec<AcpMcpServerInput>>,
+) -> Result<SessionResult, String> {
+    let mcp_servers = build_acp_mcp_servers(mcp_servers.unwrap_or_default()).await;
+
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    }; // lock released here
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+
+    cmd_tx
+        .send(AgentCmd::LoadSession {
+            session_id,
+            working_directory,
+            mcp_servers,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    let result = reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to load_session".to_string())??;
+
+    Ok(result)
+}
+
+/// Send a prompt to an ACP session. Blocks until the agent completes the turn.
+/// Session updates are emitted as `acp-session-update` Tauri events.
+/// Permission requests are emitted as `acp-permission-request` events.
+///
+/// Message identity is agent-assigned: `agent_message_chunk` updates carry an
+/// optional `messageId` (`ContentChunk.message_id`) grouping the chunks of one
+/// message — there is no client-supplied message id in ACP 0.14.
+#[tauri::command]
+pub async fn acp_session_prompt(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    content: String,
+    images: Option<Vec<crate::commands::ai::ImageData>>,
+) -> Result<(), String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    }; // lock released here
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+
+    cmd_tx
+        .send(AgentCmd::Prompt {
+            session_id,
+            content,
+            images,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    // 30-minute timeout — prompts can take very long for research tasks with many
+    // tool calls, web fetches, and file reads. The frontend has a 60s unresponsive
+    // timer (reset by each ACP event) for actual hangs; this backend timeout is
+    // only a hard ceiling to prevent truly abandoned prompts from leaking forever.
+    tokio::time::timeout(std::time::Duration::from_secs(1800), reply_rx)
+        .await
+        .map_err(|_| "Prompt timed out after 30 minutes — the agent may be hung or crashed".to_string())?
+        .map_err(|_| "Agent thread did not respond to prompt (channel dropped — agent likely crashed)".to_string())?
+}
+
+/// Check whether the agent supports image content in prompts.
+#[tauri::command]
+pub async fn acp_supports_images(
+    state: State<'_, AcpState>,
+    instance_id: String,
+) -> Result<bool, String> {
+    let agents = state.agents.lock().await;
+    let handle = agents
+        .get(&instance_id)
+        .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+    Ok(handle.supports_images)
+}
+
+/// Cancel the current prompt in an ACP session.
+#[tauri::command]
+pub async fn acp_session_cancel(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+) -> Result<(), String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    }; // lock released here
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+
+    cmd_tx
+        .send(AgentCmd::Cancel {
+            session_id,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to cancel".to_string())?
+}
+
+/// Set the session mode for an ACP agent.
+#[tauri::command]
+pub async fn acp_session_set_mode(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    mode_id: String,
+) -> Result<(), String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(AgentCmd::SetMode {
+            session_id,
+            mode_id,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to set_mode".to_string())?
+}
+
+/// Set a session config option for an ACP agent.
+#[tauri::command]
+pub async fn acp_session_set_config_option(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    option_id: String,
+    value_id: String,
+) -> Result<(), String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(AgentCmd::SetConfigOption {
+            session_id,
+            option_id,
+            value_id,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to set_config_option".to_string())?
+}
+
+/// Close an ACP session. Best-effort — agents may not support this.
+/// Capability-gated on `session_capabilities.close` from the frontend.
+#[tauri::command]
+pub async fn acp_session_close(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+) -> Result<(), String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(AgentCmd::CloseSession { session_id, reply: reply_tx })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to close_session".to_string())?
+}
+
+/// List the agent's sessions, optionally filtered by `cwd` and paginated via `cursor`.
+/// Capability-gated on `session_capabilities.list` from the frontend.
+#[tauri::command]
+pub async fn acp_session_list(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    cwd: Option<String>,
+    cursor: Option<String>,
+) -> Result<AcpListResult, String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(AgentCmd::ListSessions { cwd, cursor, reply: reply_tx })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to list_sessions".to_string())?
+}
+
+/// Resume an existing ACP session. Lightweight alternative to `session/load` when the
+/// agent still has the session in memory. Capability-gated on `session_capabilities.resume`.
+#[tauri::command]
+pub async fn acp_session_resume(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    working_directory: String,
+) -> Result<SessionResult, String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(AgentCmd::ResumeSession {
+            session_id,
+            working_directory,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    let result = reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to resume_session".to_string())??;
+
+    Ok(result)
+}
+
+/// Fork an existing ACP session, returning a new session ID that inherits the agent's state.
+/// Capability-gated on `session_capabilities.fork` from the frontend.
+#[tauri::command]
+pub async fn acp_session_fork(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    session_id: String,
+    working_directory: String,
+) -> Result<SessionResult, String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    };
+
+    let (reply_tx, reply_rx) = oneshot::channel();
+    cmd_tx
+        .send(AgentCmd::ForkSession {
+            session_id,
+            working_directory,
+            reply: reply_tx,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    let result = reply_rx
+        .await
+        .map_err(|_| "Agent thread did not respond to fork_session".to_string())??;
+
+    Ok(result)
+}
+
+/// Respond to a permission request from an ACP agent.
+/// Pass `option_id: None` to cancel the permission request.
+#[tauri::command]
+pub async fn acp_permission_respond(
+    state: State<'_, AcpState>,
+    instance_id: String,
+    request_id: String,
+    option_id: Option<String>,
+) -> Result<(), String> {
+    let cmd_tx = {
+        let agents = state.agents.lock().await;
+        let handle = agents
+            .get(&instance_id)
+            .ok_or_else(|| format!("No agent found with instance_id: {}", instance_id))?;
+        handle.cmd_tx.clone()
+    }; // lock released here
+
+    cmd_tx
+        .send(AgentCmd::PermissionRespond {
+            request_id,
+            option_id,
+        })
+        .await
+        .map_err(|_| "Agent thread is no longer running".to_string())?;
+
+    Ok(())
+}

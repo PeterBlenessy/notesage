@@ -54,6 +54,7 @@ let mockSessionInfo: AcpSessionInfo = {
   modes: null,
   configOptions: null,
   usage: null,
+  lastTurnUsage: null,
   commands: [],
 };
 const sessionInfoListeners = new Set<() => void>();
@@ -516,7 +517,7 @@ describe('CommandBarContext', () => {
     mockShowAgentModePicker = false;
     mockGoalFiles = [];
     mockAcpAgent = { instanceId: null, connectionId: null, chatSessionId: null };
-    mockSessionInfo = { modes: null, configOptions: null, usage: null, commands: [] };
+    mockSessionInfo = { modes: null, configOptions: null, usage: null, lastTurnUsage: null, commands: [] };
     sessionInfoListeners.clear();
     setCmdBarPinnedMock.mockReset();
     setRoutingMock.mockReset();
@@ -1171,6 +1172,7 @@ describe('CommandBarContext', () => {
         modes: { currentModeId: 'auto', availableModes: [] },
         configOptions: null,
         usage: null,
+        lastTurnUsage: null,
         commands: [],
       };
 
@@ -1218,6 +1220,7 @@ describe('CommandBarContext', () => {
         modes: { currentModeId: 'auto', availableModes: [] },
         configOptions: null,
         usage: null,
+        lastTurnUsage: null,
         commands: [],
       };
 
@@ -1260,6 +1263,7 @@ describe('CommandBarContext', () => {
         modes: { currentModeId: 'auto', availableModes: [] },
         configOptions: null,
         usage: null,
+        lastTurnUsage: null,
         commands: [],
       };
 
