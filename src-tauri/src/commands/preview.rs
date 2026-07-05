@@ -99,15 +99,22 @@ pub async fn render_markdown_preview(
     project_root: Option<String>,
     theme: String,
 ) -> Result<String, String> {
-    let raw = fs::read_to_string(&path)
-        .map_err(|e| format!("Failed to read file {}: {}", path, e))?;
-    let body = strip_frontmatter(&raw);
-    Ok(markdown_to_html(
-        body,
-        &theme,
-        project_root.as_deref(),
-        None,
-    ))
+    // The blocking file read and the CPU-bound comrak render both belong on
+    // the blocking pool — running them inline stalled the async runtime for
+    // the duration of a large-file render (audit batch 3 fix #8).
+    tokio::task::spawn_blocking(move || {
+        let raw = fs::read_to_string(&path)
+            .map_err(|e| format!("Failed to read file {}: {}", path, e))?;
+        let body = strip_frontmatter(&raw);
+        Ok(markdown_to_html(
+            body,
+            &theme,
+            project_root.as_deref(),
+            None,
+        ))
+    })
+    .await
+    .map_err(|e| format!("Markdown preview task failed: {}", e))?
 }
 
 #[cfg(test)]

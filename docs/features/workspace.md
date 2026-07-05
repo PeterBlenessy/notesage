@@ -146,7 +146,6 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 | --- | --- |
 | `src/components/sidebar/quiet/QuietSidebar.tsx` | Flat-section sidebar (Pinned / Projects / Folders / Recent / Tags / Mentions) |
 | `src/components/sidebar/quiet/FolderPeek.tsx` | Inline `→`-expand one-level peek on a focused project/folder row |
-| `src/components/sidebar/FileTreeItem.tsx` | Individual tree node (used inside the inline peek) |
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |
 | `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler (routes by `externalChangeDiffReview`) |
 | `src/hooks/useFileRenameSync.ts` | Rename sync: open-tab path rewrites, Save-Now toast, path-keyed sidecar migration |

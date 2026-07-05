@@ -1,7 +1,8 @@
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+#[cfg(target_os = "macos")]
+use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::sync::{watch, Mutex};
 
@@ -268,51 +269,3 @@ pub fn parse_violation_message(msg: &str) -> (String, String) {
     ("unknown".to_string(), msg.to_string())
 }
 
-// ---------------------------------------------------------------------------
-// Tauri commands
-// ---------------------------------------------------------------------------
-
-/// Register an agent PID for sandbox violation monitoring.
-/// Lazily starts the log stream monitor on first registration.
-#[tauri::command]
-pub async fn sandbox_monitor_register_pid(
-    app: AppHandle,
-    state: State<'_, SandboxMonitorState>,
-    instance_id: String,
-    agent_id: String,
-    pid: u32,
-) -> Result<(), String> {
-    state.agent_pids.lock().await.insert(pid, (instance_id.clone(), agent_id.clone()));
-
-    log::info!(target: "notesage::sandbox_monitor",
-        "Registered PID {} for {} ({})", pid, agent_id, instance_id
-    );
-
-    // Start the monitor if not already running
-    let mut running = state.running.lock().await;
-    if !*running {
-        *running = true;
-
-        let pids = Arc::clone(&state.agent_pids);
-        let shutdown_rx = state.shutdown_rx.lock().await.clone();
-        let app_clone = app.clone();
-
-        #[cfg(target_os = "macos")]
-        tokio::spawn(async move {
-            run_log_stream(app_clone, pids, shutdown_rx).await;
-        });
-    }
-
-    Ok(())
-}
-
-/// Unregister an agent PID from sandbox violation monitoring.
-#[tauri::command]
-pub async fn sandbox_monitor_unregister_pid(
-    state: State<'_, SandboxMonitorState>,
-    pid: u32,
-) -> Result<(), String> {
-    state.agent_pids.lock().await.remove(&pid);
-    log::info!(target: "notesage::sandbox_monitor", "Unregistered PID {}", pid);
-    Ok(())
-}

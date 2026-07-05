@@ -14,12 +14,9 @@ vi.mock('@/stores/chat-store', () => ({
   ),
 }));
 
-// Loading is now sourced from the foreground-conversation run state (task #4),
-// not the global `chat-store.isLoading`. Drive it via a controllable mock.
-const mockForegroundLoading = { value: false };
-vi.mock('@/hooks/useSessionManager', () => ({
-  useForegroundLoading: () => mockForegroundLoading.value,
-}));
+// Loading is prop-driven (`isActivelyStreaming`) — ChatMessage no longer
+// subscribes to `useForegroundLoading()`, so a loading flip only re-renders
+// the last message (render-perf finding #3). No useSessionManager mock needed.
 
 vi.mock('@tauri-apps/plugin-opener', () => ({
   openUrl: vi.fn(),
@@ -44,7 +41,6 @@ const makeMessage = (overrides: Partial<ChatMessageType> = {}): ChatMessageType 
 describe('ChatMessage — resend/edit buttons', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockForegroundLoading.value = false;
   });
 
   it('shows edit and resend buttons for user messages (non-collapsed)', () => {
@@ -124,12 +120,11 @@ describe('ChatMessage — resend/edit buttons', () => {
     expect(screen.queryByLabelText('Resend message')).toBeNull();
   });
 
-  it('does not show action buttons while loading', () => {
-    mockForegroundLoading.value = true;
-
+  it('does not show action buttons while the message is actively streaming', () => {
     render(
       <ChatMessage
         message={makeMessage({ role: 'user' })}
+        isActivelyStreaming
         onEdit={() => {}}
         onResend={() => {}}
       />
@@ -137,7 +132,33 @@ describe('ChatMessage — resend/edit buttons', () => {
 
     expect(screen.queryByLabelText('Edit message')).toBeNull();
     expect(screen.queryByLabelText('Resend message')).toBeNull();
+    expect(screen.queryByLabelText('Delete message')).toBeNull();
+  });
 
-    mockForegroundLoading.value = false;
+  it('shows action buttons when not streaming (prop-driven, no hook subscription)', () => {
+    render(
+      <ChatMessage
+        message={makeMessage({ role: 'user' })}
+        isActivelyStreaming={false}
+        onEdit={() => {}}
+        onResend={() => {}}
+      />
+    );
+
+    expect(screen.getByLabelText('Edit message')).toBeDefined();
+    expect(screen.getByLabelText('Resend message')).toBeDefined();
+    expect(screen.getByLabelText('Delete message')).toBeDefined();
+  });
+
+  it('shows the streaming indicator on an actively streaming empty assistant message', () => {
+    const { container } = render(
+      <ChatMessage
+        message={makeMessage({ role: 'assistant', content: '' })}
+        isActivelyStreaming
+      />
+    );
+
+    // Empty assistant message + active stream → pulsing typing dots.
+    expect(container.querySelectorAll('.animate-pulse').length).toBeGreaterThan(0);
   });
 });

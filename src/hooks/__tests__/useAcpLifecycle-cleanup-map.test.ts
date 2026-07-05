@@ -3,6 +3,7 @@ import {
   cleanupKeyFor,
   runConvCleanup,
   runAllConvCleanups,
+  registerConvCleanup,
   type CleanupMap,
 } from '@/hooks/useAcpLifecycle';
 
@@ -52,6 +53,63 @@ describe('runConvCleanup (review #3)', () => {
     const a = vi.fn();
     runConvCleanup(new Map([['conv-A', a]]), 'conv-A');
     expect(a).toHaveBeenCalledWith(undefined);
+  });
+});
+
+describe('registerConvCleanup (deep-review #4b)', () => {
+  it('runs the stale cleanup before overwriting the entry', () => {
+    // A plain `map.set` overwrite leaked the previous closure — its listeners
+    // stayed live alongside the new registration and double-wrote stream
+    // events. Registration must tear the stale one down first.
+    const stale = vi.fn();
+    const fresh = vi.fn();
+    const map: CleanupMap = new Map([['conv-A', stale]]);
+
+    const hadStale = registerConvCleanup(map, 'conv-A', fresh);
+
+    expect(hadStale).toBe(true);
+    expect(stale).toHaveBeenCalledTimes(1);
+    expect(fresh).not.toHaveBeenCalled(); // the NEW cleanup is registered, not run
+    expect(map.get('conv-A')).toBe(fresh);
+  });
+
+  it('registers without running anything when no stale entry exists', () => {
+    const fresh = vi.fn();
+    const map: CleanupMap = new Map();
+
+    expect(registerConvCleanup(map, 'conv-B', fresh)).toBe(false);
+    expect(fresh).not.toHaveBeenCalled();
+    expect(map.get('conv-B')).toBe(fresh);
+  });
+
+  it('survives a stale cleanup that deregisters itself by key (buildAcpChatCleanup clearSelf)', () => {
+    // buildAcpChatCleanup's `clearSelf` deletes its own key when run. The
+    // stale entry is removed BEFORE it runs and the fresh one is set AFTER,
+    // so the self-deregistration cannot clobber the new registration.
+    const map: CleanupMap = new Map();
+    const stale = vi.fn(() => { map.delete('conv-A'); });
+    map.set('conv-A', stale);
+    const fresh = vi.fn();
+
+    registerConvCleanup(map, 'conv-A', fresh);
+
+    expect(stale).toHaveBeenCalledTimes(1);
+    expect(map.get('conv-A')).toBe(fresh);
+  });
+
+  it('scopes to the named conversation only', () => {
+    const staleA = vi.fn();
+    const otherB = vi.fn();
+    const map: CleanupMap = new Map([
+      ['conv-A', staleA],
+      ['conv-B', otherB],
+    ]);
+
+    registerConvCleanup(map, 'conv-A', vi.fn());
+
+    expect(staleA).toHaveBeenCalledTimes(1);
+    expect(otherB).not.toHaveBeenCalled();
+    expect(map.get('conv-B')).toBe(otherB);
   });
 });
 

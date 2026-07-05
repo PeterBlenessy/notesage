@@ -98,6 +98,35 @@ async function cleanupTxnDir(txnDir: string): Promise<void> {
   }
 }
 
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+function isTransactionEntry(v: unknown): v is RenameTransactionEntry {
+  return (
+    isRecord(v) &&
+    typeof v.oldSidecar === 'string' &&
+    typeof v.newSidecar === 'string' &&
+    typeof v.stagingFile === 'string'
+  );
+}
+
+/**
+ * Runtime guard for a manifest read back from disk during crash recovery.
+ * A crash can leave `manifest.json` half-written — valid JSON of the wrong
+ * shape must trigger the same cleanup path as unparseable JSON, not a
+ * TypeError on `manifest.entries.length`.
+ */
+export function isRenameTransactionManifest(v: unknown): v is RenameTransactionManifest {
+  return (
+    isRecord(v) &&
+    typeof v.txnId === 'string' &&
+    typeof v.phase === 'string' &&
+    Array.isArray(v.entries) &&
+    v.entries.every(isTransactionEntry)
+  );
+}
+
 // ---------------------------------------------------------------------------
 // executeRenameTransaction
 // ---------------------------------------------------------------------------
@@ -163,8 +192,8 @@ export async function executeRenameTransaction(
     // Update originalPath in the sidecar envelope if present
     let updatedContent = content;
     try {
-      const parsed = JSON.parse(content) as { originalPath?: string; comments?: unknown[] };
-      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      const parsed: unknown = JSON.parse(content);
+      if (isRecord(parsed)) {
         parsed.originalPath = input.newFilePath;
         updatedContent = JSON.stringify(parsed, null, 2);
       }
@@ -296,7 +325,15 @@ async function recoverSingleTransaction(txnDir: string): Promise<void> {
 
   let manifest: RenameTransactionManifest;
   try {
-    manifest = JSON.parse(raw) as RenameTransactionManifest;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isRenameTransactionManifest(parsed)) {
+      // Half-written manifest (valid JSON, wrong shape) — same recovery as a
+      // corrupted manifest: staging is discarded, old sidecars stay intact.
+      log.warn('rename-transaction', `invalid manifest shape in ${txnDir} — cleaning up`);
+      await cleanupTxnDir(txnDir);
+      return;
+    }
+    manifest = parsed;
   } catch {
     await cleanupTxnDir(txnDir);
     return;
@@ -364,8 +401,8 @@ async function directMigrate(inputs: SidecarMigrationInput[]): Promise<void> {
       // Update originalPath if present
       let updatedContent = content;
       try {
-        const parsed = JSON.parse(content) as { originalPath?: string; comments?: unknown[] };
-        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        const parsed: unknown = JSON.parse(content);
+        if (isRecord(parsed)) {
           parsed.originalPath = input.newFilePath;
           updatedContent = JSON.stringify(parsed, null, 2);
         }

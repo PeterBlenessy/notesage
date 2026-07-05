@@ -33,6 +33,7 @@ import { ConnectAgent } from './ConnectAgent';
 import { ConnectCustomAgent } from './ConnectCustomAgent';
 import type { Connection, ProviderOption } from '@/lib/ai/connections';
 import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
+import type { AgentUpdateInfo } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
 
 type AddFlowState =
@@ -84,7 +85,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
     setCheckingUpdates(true);
     const minDelay = new Promise((r) => setTimeout(r, 1000));
     let toastMsg: (() => void) | null = null;
-    const check = invoke<{ agent_id: string; current_version: string; latest_version: string }[]>('agent_check_updates', { force })
+    const check = invoke<AgentUpdateInfo[]>('agent_check_updates', { force })
       .then((updates) => {
         const map: Record<string, { currentVersion: string; latestVersion: string }> = {};
         for (const u of updates) {

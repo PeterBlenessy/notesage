@@ -15,7 +15,7 @@ export interface ChatMessageInput {
   content: string;
 }
 
-export interface GenerateStructuredOptions {
+export interface GenerateStructuredOptions<T = unknown> {
   schema: JsonSchema;
   /** Optional schema name surfaced to the model — defaults to `"response"`. */
   schemaName?: string;
@@ -27,6 +27,14 @@ export interface GenerateStructuredOptions {
   temperature?: number;
   maxTokens?: number;
   baseUrl?: string;
+  /**
+   * Optional runtime type guard applied to the parsed model output. The
+   * schema constraint is only token-level for `local_bundled` / compatible
+   * providers — other providers may emit valid JSON of the wrong shape.
+   * When provided and the guard fails, the promise rejects with a
+   * descriptive error (same path as the invalid-JSON rejection).
+   */
+  validate?: (v: unknown) => v is T;
 }
 
 /**
@@ -55,7 +63,7 @@ export function buildJsonSchemaResponseFormat(
  * provider for those cases.
  */
 export async function generateStructured<T = unknown>(
-  options: GenerateStructuredOptions
+  options: GenerateStructuredOptions<T>
 ): Promise<T> {
   const responseFormat = buildJsonSchemaResponseFormat(options.schema, options.schemaName);
 
@@ -81,8 +89,19 @@ export async function generateStructured<T = unknown>(
     if (resolved) return;
     resolved = true;
     try {
-      const parsed = JSON.parse(collected) as T;
-      resolve(parsed);
+      const parsed: unknown = JSON.parse(collected);
+      if (options.validate && !options.validate(parsed)) {
+        reject(
+          new Error(
+            `Structured generation output failed validation against the expected shape. ` +
+              `Raw output: ${collected.slice(0, 200)}`
+          )
+        );
+        return;
+      }
+      // Documented cast site: without a caller-supplied validator we trust the
+      // provider's schema constraint (GBNF/XGrammar for local providers).
+      resolve(parsed as T);
     } catch (err) {
       reject(
         new Error(

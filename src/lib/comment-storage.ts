@@ -41,7 +41,16 @@ export function parseSidecar(raw: string): SidecarData {
   if (Array.isArray(parsed)) {
     return { comments: parsed as Comment[] };
   }
-  return parsed as SidecarData;
+  // Envelope branch: the sidecar is user-visible JSON on disk — guard that
+  // `.comments` is actually an array before handing it to consumers.
+  if (typeof parsed === 'object' && parsed !== null) {
+    const o = parsed as { originalPath?: unknown; comments?: unknown };
+    return {
+      ...(typeof o.originalPath === 'string' ? { originalPath: o.originalPath } : {}),
+      comments: Array.isArray(o.comments) ? (o.comments as Comment[]) : [],
+    };
+  }
+  return { comments: [] };
 }
 
 /** Serialize a sidecar. Writes the envelope format when `originalFilePath` is provided, plain array otherwise. */

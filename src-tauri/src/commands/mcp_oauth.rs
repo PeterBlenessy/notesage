@@ -19,7 +19,7 @@
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::net::{IpAddr, Ipv6Addr};
+use std::net::IpAddr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -156,27 +156,6 @@ pub fn build_authorize_url(
     Ok(url.to_string())
 }
 
-/// True when an IPv6 address falls in a range we must never reach from an
-/// externally-influenced URL: loopback, unspecified, link-local (`fe80::/10`),
-/// or unique-local (`fc00::/7`). The std lib exposes `is_loopback`/
-/// `is_unspecified` but the latter two ranges have no stable helpers, so we
-/// inspect the leading bits directly.
-fn ipv6_is_dangerous(addr: &Ipv6Addr) -> bool {
-    if addr.is_loopback() || addr.is_unspecified() {
-        return true;
-    }
-    let seg0 = addr.segments()[0];
-    // fe80::/10 — link-local unicast.
-    if seg0 & 0xffc0 == 0xfe80 {
-        return true;
-    }
-    // fc00::/7 — unique-local addresses.
-    if seg0 & 0xfe00 == 0xfc00 {
-        return true;
-    }
-    false
-}
-
 /// SSRF guard for every externally-influenced URL (the MCP `server_url`, the
 /// discovered authorization servers, and the authorization/token endpoints
 /// drawn from attacker-controllable metadata).
@@ -213,20 +192,14 @@ fn validate_external_url(raw: &str) -> Result<(), String> {
         return Err(format!("Refusing to use loopback hostname {}", raw));
     }
 
-    // If the host is an IP literal, block dangerous ranges. `host_str()`
-    // keeps the brackets on an IPv6 literal (`[::1]`), so strip them first.
+    // If the host is an IP literal, block dangerous ranges via the shared
+    // SSRF blocklist (audit batch 3 fix #10 — this module's private copy had
+    // drifted behind `link_preview`'s: it was missing CGNAT, broadcast,
+    // documentation ranges, and 0.0.0.0/8). `host_str()` keeps the brackets
+    // on an IPv6 literal (`[::1]`), so strip them first.
     let ip_candidate = lower.strip_prefix('[').and_then(|s| s.strip_suffix(']')).unwrap_or(&lower);
     if let Ok(ip) = ip_candidate.parse::<IpAddr>() {
-        let dangerous = match ip {
-            IpAddr::V4(v4) => {
-                v4.is_loopback()
-                    || v4.is_private()
-                    || v4.is_link_local()
-                    || v4.is_unspecified()
-            }
-            IpAddr::V6(v6) => ipv6_is_dangerous(&v6),
-        };
-        if dangerous {
+        if super::net_guard::is_blocked_ip(ip) {
             return Err(format!("Refusing to use internal/reserved IP address {}", raw));
         }
     }
@@ -831,6 +804,18 @@ mod tests {
         assert!(validate_external_url("https://[fe80::1]").is_err()); // link-local
         assert!(validate_external_url("https://[fc00::1]").is_err()); // unique-local
         assert!(validate_external_url("https://[fd12:3456::1]").is_err()); // unique-local
+    }
+
+    #[test]
+    fn validate_external_url_uses_shared_superset_blocklist() {
+        // Regression lock for audit batch 3 fix #10: these ranges were missing
+        // from this module's old private blocklist and are only rejected
+        // because validation now routes through the shared `net_guard` list.
+        assert!(validate_external_url("https://100.64.0.1/token").is_err()); // CGNAT
+        assert!(validate_external_url("https://255.255.255.255/x").is_err()); // broadcast
+        assert!(validate_external_url("https://192.0.2.1/x").is_err()); // documentation
+        assert!(validate_external_url("https://0.1.2.3/x").is_err()); // 0.0.0.0/8
+        assert!(validate_external_url("https://[::ffff:127.0.0.1]/x").is_err()); // v4-mapped loopback
     }
 
     #[test]

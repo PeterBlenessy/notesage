@@ -44,6 +44,7 @@ import {
   type McpEnvValue,
 } from '@/stores/mcp-store';
 import { useMcpOperations, type McpValidationResult, type McpValidateInput } from '@/hooks/useMcpOperations';
+import { filterValidMcpConfigs, extractMcpServersRecord } from '@/lib/mcp/config-guards';
 import { McpCatalog } from './McpCatalog';
 import { cn } from '@/lib/utils';
 
@@ -906,7 +907,8 @@ const IMPORT_SOURCES: ImportSource[] = [
   { id: 'vscode', label: 'VS Code', icon: 'VS' },
 ];
 
-function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+// Exported for tests (malformed-import validation coverage).
+export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [availableSources, setAvailableSources] = useState<string[]>([]);
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [discoveredServers, setDiscoveredServers] = useState<McpServerEntry[]>([]);
@@ -931,15 +933,16 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
     setSelectedIds(new Set());
 
     try {
-      const configs = await invoke<Array<{
-        id: string;
-        name: string;
-        command: string;
-        args: string[];
-        env: Record<string, string>;
-        source: string;
-        enabled: boolean;
-      }>>('mcp_import_configs', { source: sourceId });
+      // Configs were parsed by Rust from OTHER TOOLS' config files (Claude
+      // Desktop / Cursor / VS Code) — validate each entry at runtime instead
+      // of asserting the shape with an `invoke<...>` type parameter.
+      const raw = await invoke<unknown>('mcp_import_configs', { source: sourceId });
+      const { configs, skipped } = filterValidMcpConfigs(raw, `mcp_import_configs (${sourceId})`);
+      if (skipped > 0) {
+        toast.warning(
+          `Skipped ${skipped} malformed server entr${skipped === 1 ? 'y' : 'ies'} from ${sourceId}`,
+        );
+      }
 
       const entries: McpServerEntry[] = configs.map((c) => ({
         id: c.id,
@@ -980,13 +983,15 @@ function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (op
       // Read existing global config
       const home = await invoke<string>('get_home_dir');
       const configPath = `${home}/.notesage/mcp.json`;
-      let existing: Record<string, { command: string; args: string[]; env: Record<string, unknown> }> = {};
+      let existing: Record<string, unknown> = {};
       try {
         const content = await invoke<string>('read_file', { path: configPath });
-        const parsed = JSON.parse(content);
-        existing = parsed.mcpServers ?? {};
+        // The file is user-editable — a half-written or hand-edited envelope
+        // must degrade to an empty record, not crash the import.
+        const parsed: unknown = JSON.parse(content);
+        existing = extractMcpServersRecord(parsed);
       } catch {
-        // File doesn't exist
+        // File doesn't exist or contains invalid JSON
       }
 
       // Merge

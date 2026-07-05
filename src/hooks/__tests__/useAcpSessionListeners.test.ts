@@ -545,4 +545,136 @@ describe('setupAcpChatListeners', () => {
     });
   });
 
+  // -------------------------------------------------------------------------
+  // Session-id gate (deep-review batch1 finding #4a)
+  //
+  // A single agent instance is reused across sessions within a conversation
+  // (chatSessionId is swapped on the agent object, not the instance), so the
+  // instanceId gate alone lets a stale listener receive a newer session's
+  // chunks. The gate is conservative: it only rejects when BOTH the listener
+  // and the payload carry a session id and they differ — a missing id on
+  // either side falls back to the instanceId-only gate.
+  // -------------------------------------------------------------------------
+  describe('session-id gate (#4a)', () => {
+    it('ignores a session update whose sessionId does not match the bound session', async () => {
+      const { unlisten, unlistenPermission, getStreamedContent } = await setupAcpChatListeners({
+        ...makeDeps(),
+        sessionId: 'sess-current',
+      });
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-other',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'bleed' },
+        },
+      });
+
+      expect(getStreamedContent()).toBe('');
+      expect(getAssistantMessage()?.content).toBe('');
+      expect(getAssistantMessage()?.segments ?? []).toHaveLength(0);
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('processes a session update whose sessionId matches the bound session', async () => {
+      const { unlisten, unlistenPermission, getStreamedContent } = await setupAcpChatListeners({
+        ...makeDeps(),
+        sessionId: 'sess-current',
+      });
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-current',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'hello' },
+        },
+      });
+
+      expect(getStreamedContent()).toBe('hello');
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('falls back to the instanceId gate when the payload carries no sessionId', async () => {
+      const { unlisten, unlistenPermission, getStreamedContent } = await setupAcpChatListeners({
+        ...makeDeps(),
+        sessionId: 'sess-current',
+      });
+
+      // No sessionId on the payload (older/custom agents) — must still pass.
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'legit' },
+        },
+      });
+
+      expect(getStreamedContent()).toBe('legit');
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('falls back to the instanceId gate when the listener has no bound sessionId', async () => {
+      // Legacy caller — no sessionId in deps (pre-session listener setup).
+      const { unlisten, unlistenPermission, getStreamedContent } = await setupAcpChatListeners(makeDeps());
+
+      emitMockEvent('acp-session-update', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-any',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: 'legacy' },
+        },
+      });
+
+      expect(getStreamedContent()).toBe('legacy');
+
+      unlisten();
+      unlistenPermission();
+    });
+
+    it('ignores a permission request whose sessionId does not match the bound session', async () => {
+      usePermissionStore.getState().clearAll();
+
+      let responded = false;
+      setMockInvokeHandler('acp_permission_respond', () => {
+        responded = true;
+        return undefined;
+      });
+
+      const { unlisten, unlistenPermission } = await setupAcpChatListeners({
+        ...makeDeps(),
+        sessionId: 'sess-current',
+        pathFilterRoots: ['/Users/test/project'],
+      });
+
+      emitMockEvent('acp-permission-request', {
+        instanceId: INSTANCE_ID,
+        sessionId: 'sess-other',
+        requestId: 'req-stale',
+        toolCall: {
+          kind: 'write',
+          title: 'write /Users/test/project/out.txt',
+          rawInput: JSON.stringify({ file_path: '/Users/test/project/out.txt' }),
+        },
+        options: [{ optionId: 'allow_once', kind: 'allow_once', name: 'Allow once' }],
+      });
+
+      // Neither a respond (deny/approve) nor a UI card — the event belongs to
+      // another session's listener.
+      expect(responded).toBe(false);
+      expect(usePermissionStore.getState().requests).toHaveLength(0);
+
+      unlisten();
+      unlistenPermission();
+    });
+  });
+
 });

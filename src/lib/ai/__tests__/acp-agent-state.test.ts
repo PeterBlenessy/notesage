@@ -350,6 +350,65 @@ describe('ensureAcpAgent', () => {
     expect(spawnCount).toBe(2);
   });
 
+  it('includes persisted "always" domains in the proxy allowlist at spawn (network sandbox)', async () => {
+    // Regression lock for the "Allow Always is session-only" audit finding:
+    // a domain the user approved with Allow Always (persisted in
+    // permission-store.domainAlwaysAllowed) must reach the proxy's static
+    // allowlist at agent spawn, so the user is never re-prompted for it
+    // in a later session.
+    setupDefaultHandlers();
+    let lastSpawnArgs: Record<string, unknown> | null = null;
+    setMockInvokeHandler('acp_agent_spawn', (args) => {
+      lastSpawnArgs = args as Record<string, unknown>;
+      return { instance_id: 'inst-net' };
+    });
+
+    // Import the store AFTER vi.resetModules() so it's the same instance
+    // acp-agent-state reads from.
+    const { usePermissionStore } = await import('@/stores/permission-store');
+    usePermissionStore.setState({ domainAlwaysAllowed: {}, domainSessionAllowed: {} });
+    usePermissionStore
+      .getState()
+      .allowDomain('conn-net', 'api.custom.dev', 'always', null);
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    const connection = makeConnection({ id: 'conn-net', networkSandboxEnabled: true });
+    const result = await mod.ensureAcpAgent(connection, '/tmp');
+    expect(result).toBe('inst-net');
+
+    const domains = lastSpawnArgs!.networkAllowedDomains as string[];
+    // Persisted always-domain included…
+    expect(domains).toContain('api.custom.dev');
+    // …alongside the provider's built-in allowlist (claude-agent-acp).
+    expect(domains).toContain('api.anthropic.com');
+  });
+
+  it('does not leak persisted domains from OTHER connections into the spawn allowlist', async () => {
+    setupDefaultHandlers();
+    let lastSpawnArgs: Record<string, unknown> | null = null;
+    setMockInvokeHandler('acp_agent_spawn', (args) => {
+      lastSpawnArgs = args as Record<string, unknown>;
+      return { instance_id: 'inst-net-2' };
+    });
+
+    const { usePermissionStore } = await import('@/stores/permission-store');
+    usePermissionStore.setState({ domainAlwaysAllowed: {}, domainSessionAllowed: {} });
+    usePermissionStore
+      .getState()
+      .allowDomain('conn-other', 'other-conn.example.com', 'always', null);
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+
+    const connection = makeConnection({ id: 'conn-net-2', networkSandboxEnabled: true });
+    await mod.ensureAcpAgent(connection, '/tmp');
+
+    const domains = lastSpawnArgs!.networkAllowedDomains as string[];
+    expect(domains).not.toContain('other-conn.example.com');
+  });
+
   // --- Local Agent preset: endpoint-config respawn (#10) ---
 
   function makePresetConnection(overrides: Partial<Connection> = {}): Connection {

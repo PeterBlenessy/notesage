@@ -9,6 +9,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import type { ProviderOption } from '@/lib/ai/connections';
 import type { AcpSpawnResult, AuthEnvVar, AuthMethodInfo } from '@/lib/ai/acp-utils';
+import type { AgentAvailability, BinaryResolution } from '@/lib/tauri';
 import { CONNECTION_TIMEOUT_MS, withTimeout, getInstallGuide, getAuthGuide, SetupGuideView } from './connection-utils';
 
 type AgentPhase = 'checking' | 'not_installed' | 'installing' | 'not_authenticated' | 'env_var_auth' | 'connecting' | 'authenticating' | 'connected' | 'error';
@@ -67,7 +68,7 @@ export function ConnectAgent({
 
       try {
         const avail = await withTimeout(
-          invoke<{ installed: boolean; path: string | null }>('acp_agent_check_availability', {
+          invoke<AgentAvailability>('acp_agent_check_availability', {
             agentId: binary,
           }),
           CONNECTION_TIMEOUT_MS,
@@ -78,9 +79,9 @@ export function ConnectAgent({
 
         // Also check binary source via new resolver
         try {
-          const resolution = await invoke<{ path: string; source: string; version: string | null } | null>('agent_resolve_binary', { agentId: binary });
+          const resolution = await invoke<BinaryResolution | null>('agent_resolve_binary', { agentId: binary });
           if (resolution) {
-            setBinarySource(resolution.source as 'managed' | 'system');
+            setBinarySource(resolution.source);
           }
         } catch {
           // Non-critical — source tracking is informational
