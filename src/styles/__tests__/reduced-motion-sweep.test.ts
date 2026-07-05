@@ -123,7 +123,10 @@ describe('Reduced-motion sweep (#86) — component-level guards', () => {
   }> = [
     {
       name: 'FloatingCommandBar lift + transition (cmdbar)',
-      file: 'src/components/cmd/FloatingCommandBar.tsx',
+      // The bar's visual chrome (lift + transition classes) was extracted
+      // into the `useCommandBarGeometry` hook (deep-review refactor #9);
+      // the `useReducedMotion()` gate lives there now.
+      file: 'src/components/cmd/useCommandBarGeometry.ts',
       requireUseReducedMotion: true,
     },
     {
