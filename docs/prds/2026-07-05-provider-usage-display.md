@@ -6,7 +6,7 @@
 | **Status** | Draft |
 | **Priority** | Medium |
 | **Impact** | Every provider gets a context indicator, and users see rate-limit warnings and account state — without Notesage ever touching provider secrets |
-| **Tasks** | — (not yet planned) |
+| **Tasks** | [provider-usage-display-tasks](../tasks/2026-07-05-provider-usage-display-tasks.md) |
 | **Phase** | Phase 1 (wire consumption + indicator) · Phase 2 (Settings surface) |
 
 ## Problem
