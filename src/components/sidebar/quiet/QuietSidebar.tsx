@@ -24,6 +24,7 @@ import {
   SIDEBAR_DEFAULT_WIDTH,
 } from "@/stores/settings-store";
 import { isAnyCustomizePopoverOpen } from "@/lib/sidebar-context-menu-state";
+import { useGitRepoDetection } from "@/hooks/useGitRepoDetection";
 import type { FileEntry } from "@/lib/tauri";
 import { PinnedSection } from "./PinnedSection";
 import { ProjectsSection } from "./ProjectsSection";
@@ -140,6 +141,11 @@ export function QuietSidebar({
   onOpenSettings?: () => void;
 }) {
   const [filter, setFilter] = useState<string>("");
+  // Populate git-store repo detection for every sidebar root (projects +
+  // explorer folders) — one `git_is_repo` probe per root per session, so
+  // the row indicators / context-menu git actions derive from store state
+  // without any per-row IPC.
+  useGitRepoDetection();
   const setPendingCreateProject = useQuietSidebarStore(
     (s) => s.setPendingCreateProject,
   );

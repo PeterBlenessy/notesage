@@ -13,6 +13,9 @@ import {
   type ExplorerFolder,
 } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { useGitStore } from "@/stores/git-store";
+import { useSettingsStore } from "@/stores/settings-store";
+import { useDiffReviewStore } from "@/stores/diff-review-store";
 import type { FileEntry } from "@/lib/tauri";
 
 // Spy openFile so we can assert child file activation routes through it.
@@ -397,5 +400,100 @@ describe("FoldersSection (sidebar-simplification task #9)", () => {
       (row) => row.getAttribute("tabindex") === "0",
     );
     expect(tabbable.length).toBeGreaterThanOrEqual(1);
+  });
+
+  // Branch diff review re-wire — repo-backed top-level explorer folders get
+  // "Compare branch…" in their inline context menu (FoldersSection has its
+  // own menu, separate from SidebarContextMenu).
+  describe("Compare branch… (branch diff review)", () => {
+    function seedFolderRepo(path: string, isGitRepo: boolean) {
+      useSettingsStore.setState({
+        gitEnabled: true,
+      } as unknown as Parameters<typeof useSettingsStore.setState>[0]);
+      useGitStore.setState({
+        repos: {
+          [path]: {
+            isGitRepo,
+            currentBranch: "main",
+            fileStatuses: [],
+            fileStatusMap: new Map(),
+            isLoading: false,
+            statusError: false,
+          },
+        },
+      });
+    }
+
+    beforeEach(() => {
+      useGitStore.setState({ repos: {} });
+      useSettingsStore.setState({
+        gitEnabled: false,
+      } as unknown as Parameters<typeof useSettingsStore.setState>[0]);
+      useDiffReviewStore.setState({
+        compareBranch: null,
+        baseBranch: null,
+        changedFiles: [],
+        reviewActive: false,
+        isLoading: false,
+        error: null,
+      });
+    });
+
+    it("shows Compare branch… on a repo-backed folder row", () => {
+      seedFolderRepo("/Users/me/code/alpha", true);
+      setExplorerFolders([
+        { path: "/Users/me/code/alpha", fileTree: [] },
+      ]);
+      renderWithProviders(<FoldersSection />);
+
+      fireEvent.contextMenu(screen.getByRole("treeitem"));
+      expect(screen.getByText("Compare branch…")).toBeTruthy();
+    });
+
+    it("hides Compare branch… on non-repo folder rows", () => {
+      seedFolderRepo("/Users/me/code/alpha", false);
+      setExplorerFolders([
+        { path: "/Users/me/code/alpha", fileTree: [] },
+      ]);
+      renderWithProviders(<FoldersSection />);
+
+      fireEvent.contextMenu(screen.getByRole("treeitem"));
+      // Menu itself is open (Remove is always there)…
+      expect(screen.getByText("Remove from sidebar")).toBeTruthy();
+      // …but the git action is suppressed.
+      expect(screen.queryByText("Compare branch…")).toBeNull();
+    });
+
+    it("hides Compare branch… when git integration is disabled", () => {
+      seedFolderRepo("/Users/me/code/alpha", true);
+      useSettingsStore.setState({
+        gitEnabled: false,
+      } as unknown as Parameters<typeof useSettingsStore.setState>[0]);
+      setExplorerFolders([
+        { path: "/Users/me/code/alpha", fileTree: [] },
+      ]);
+      renderWithProviders(<FoldersSection />);
+
+      fireEvent.contextMenu(screen.getByRole("treeitem"));
+      expect(screen.getByText("Remove from sidebar")).toBeTruthy();
+      expect(screen.queryByText("Compare branch…")).toBeNull();
+    });
+
+    it("shows End branch review while a review is active", () => {
+      seedFolderRepo("/Users/me/code/alpha", true);
+      useDiffReviewStore.setState({
+        reviewActive: true,
+        baseBranch: "main",
+        compareBranch: "feature/x",
+      });
+      setExplorerFolders([
+        { path: "/Users/me/code/alpha", fileTree: [] },
+      ]);
+      renderWithProviders(<FoldersSection />);
+
+      fireEvent.contextMenu(screen.getByRole("treeitem"));
+      expect(screen.getByText("End branch review")).toBeTruthy();
+      expect(screen.queryByText("Compare branch…")).toBeNull();
+    });
   });
 });
