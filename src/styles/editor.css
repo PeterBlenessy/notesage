@@ -2041,3 +2041,17 @@ mark.dom-find-highlight-active {
   opacity: 1;
   transition: opacity 200ms ease;
 }
+
+/* ----------------------------------------------------------------
+   Image drag-drop target — applied by useEditorImageDrop to the
+   editor scroll area while an image file drag is over it. The
+   outline carries an affordance ("this surface accepts the drop"),
+   so it uses --color-border-strong (WCAG 1.4.11 3:1), neutral only.
+   ---------------------------------------------------------------- */
+
+.editor-image-drop-target {
+  outline: 2px dashed var(--color-border-strong);
+  outline-offset: -4px;
+  border-radius: 8px;
+  transition: outline-color 150ms ease-in-out;
+}

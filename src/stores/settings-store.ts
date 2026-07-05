@@ -97,8 +97,6 @@ interface SettingsStore {
    * for silent tool execution. Default false.
    */
   requireAllToolConfirmations: boolean;
-  /** Web search provider for client-side search tool */
-  searchProvider: 'duckduckgo';
   /** @deprecated Use logLevel instead. Kept for migration. */
   debugLogging?: boolean;
   logLevel: LogLevel;
@@ -509,7 +507,6 @@ export const useSettingsStore = create<SettingsStore>()(
       skillManagement: false,
       toolCallingEnabled: true,
       requireAllToolConfirmations: false,
-      searchProvider: 'duckduckgo' as const,
       logLevel: 'warn',
       autoCheckUpdates: true,
       lastUpdateCheck: null,
@@ -931,7 +928,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 24,
+      version: 25,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -1208,6 +1205,13 @@ export const useSettingsStore = create<SettingsStore>()(
               ),
             );
           }
+        }
+        if (version < 25) {
+          // Dead-code cleanup — `searchProvider` was a literal with no setter
+          // and no consumer (DuckDuckGo is the only web-search backend, wired
+          // directly in the Rust `web_search` command). Drop the persisted key
+          // so the name is free for future reuse.
+          delete state.searchProvider;
         }
         return state;
       },

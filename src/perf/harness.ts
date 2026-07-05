@@ -28,6 +28,7 @@ import CodeBlockLowlight from "@tiptap/extension-code-block-lowlight";
 import Image from "@tiptap/extension-image";
 import { common, createLowlight } from "lowlight";
 import { Markdown } from "tiptap-markdown";
+import { getEditorStorage, type EditorStorageMarkdown } from "@/lib/editor-storage";
 
 // ---------------------------------------------------------------------------
 // Standard document sizes (in KB)
@@ -136,8 +137,15 @@ export function createTestEditor(content: string): Editor {
  * Get the serialized markdown from a tiptap editor instance.
  */
 export function getMarkdown(editor: Editor): string {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (editor.storage as any).markdown.getMarkdown();
+  const mdStorage = getEditorStorage<EditorStorageMarkdown>(editor, "markdown");
+  if (!mdStorage?.getMarkdown) {
+    // Test-harness boundary: fail loudly — silently returning "" would make
+    // serialize benchmarks measure nothing and pass vacuously.
+    throw new Error(
+      "tiptap-markdown storage is missing getMarkdown() — is the Markdown extension configured?"
+    );
+  }
+  return mdStorage.getMarkdown();
 }
 
 // ---------------------------------------------------------------------------

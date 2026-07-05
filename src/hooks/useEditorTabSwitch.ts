@@ -163,6 +163,14 @@ export function useEditorTabSwitch({
       // any new work. New controller per activation; the .then/.catch handlers
       // close over `abortController` and bail if `signal.aborted`.
       abortInFlightRef.current?.abort();
+      // Clear the preview dedup marker alongside the abort. Tauri invokes
+      // can't be cancelled, so an aborted activation's preview call may still
+      // be in flight — its result will be dropped by the signal check, but
+      // its `.finally` hasn't run yet. Without this clear, a fast A→B→A
+      // switch hits the `previewInFlightRef.current === tabIdOnEntry` guard
+      // on the second A and early-returns, leaving the tab stuck on its
+      // preview/loading state. The `.finally` clear remains as a backstop.
+      previewInFlightRef.current = null;
       const abortController = new AbortController();
       abortInFlightRef.current = abortController;
 
@@ -718,6 +726,31 @@ export function useEditorTabSwitch({
         runPostLoad(false);
       }
   }, [activeTab?.id, editor, activeTab, saveOutgoingTabScroll, restoreScrollRatio, externalChanges, updateTabContent, clearExternalChange, setScrollToTag, setScrollToText, projectPath, isProgrammaticScroll, savedSuggestionsRef, scrollAreaRef, lastLoadedTabId, cachedEditorStatesRef, setImageDialogOpen]);
+
+  // Unmount-only cleanup for the tab-switch pipeline. This deliberately does
+  // NOT live as a cleanup return on the main effect above: that effect's deps
+  // include per-render callbacks (`updateTabContent`, `externalChanges`, …),
+  // so it re-fires frequently and relies on the `activeTab.id ===
+  // lastLoadedTabId.current` early-return to no-op — React would run an
+  // unconditional cleanup BEFORE each such re-fire, spuriously aborting the
+  // current tab's in-flight hydration with nothing restarting it. A separate
+  // mount-scoped effect fires its cleanup only when the hook (i.e. the
+  // Editor) unmounts, which is exactly when the in-flight parse/hydrate
+  // chain must stop writing to the soon-to-be-destroyed editor.
+  //
+  // The load-tracking refs are reset too so a remount with surviving refs
+  // (React StrictMode's dev double-mount) re-runs the pipeline instead of
+  // early-returning against the pipeline this cleanup just aborted.
+  useEffect(() => {
+    return () => {
+      abortInFlightRef.current?.abort();
+      abortInFlightRef.current = null;
+      previewInFlightRef.current = null;
+      lastLoadedTabId.current = null;
+      lastLoadedFilePathRef.current = null;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Scroll to tag when scrollToTag is set on the already-active tab (same-tab jump)
   useEffect(() => {

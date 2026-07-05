@@ -1111,62 +1111,56 @@ listen<{ old_path: string; new_path: string; is_directory: boolean }>('file-rena
 
 ## Research Operations
 
-Located in `src-tauri/src/commands/file.rs`
+Located in `src-tauri/src/index/mod.rs` (part of the SQLite document index — the legacy filesystem-scanning `search_research` command was removed when research search moved to the index).
 
-### search_research
+### index_search_research
 
-Searches research files (.md) in given directories by parsing YAML frontmatter and matching against query/tag filters. Designed for real-time command palette filtering.
+Searches indexed research files across the given project scopes, matching against title/URL/snippet (`query`) and tags (`tag`). SQL-backed (per-scope `index.db`), designed for real-time command palette filtering (ResearchMode, `?` prefix).
 
 ```rust
 #[tauri::command]
-pub async fn search_research(
-    dirs: Vec<String>,
+pub async fn index_search_research(
+    state: tauri::State<'_, IndexState>,
+    project_paths: Vec<String>,
     query: Option<String>,
     tag: Option<String>,
     limit: Option<usize>,
-) -> Result<Vec<ResearchSearchResult>, String>
+) -> Result<Vec<ResearchResult>, String>
 ```
 
 **Parameters:**
 
-- `dirs`: Array of directory paths to search (e.g., project `research/` paths)
-- `query`: Optional case-insensitive substring to match against title, body, source URL, and tags
-- `tag`: Optional exact tag match (case-insensitive) against the tags array
+- `project_paths`: Project roots whose index databases to query (`camelCase` `projectPaths` over IPC)
+- `query`: Optional substring matched against title, source URL, and snippet (SQL `LIKE`)
+- `tag`: Optional substring matched against the research entry's tags (SQL `LIKE`)
 - `limit`: Maximum results to return (default 50)
 
 **Returns:**
 
-- `Ok(Vec<ResearchSearchResult>)`: Matched files sorted by relevance descending
+- `Ok(Vec<ResearchResult>)`: Matched entries sorted by `date_saved` descending
 - `Err(String)`: Error message
 
-**ResearchSearchResult struct:**
+**ResearchResult struct** (`src-tauri/src/index/queries.rs`; frontend type `IndexResearchResult` in `src/lib/tauri.ts`):
 
 ```rust
-#[derive(Serialize, Deserialize, Clone)]
-pub struct ResearchSearchResult {
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ResearchResult {
     pub file: String,
     pub title: String,
     pub tags: Vec<String>,
     pub source_url: String,
     pub snippet: String,
-    pub relevance: f32,
     pub date_saved: String,
     pub word_count: usize,
+    pub project_name: Option<String>,
 }
 ```
-
-**Relevance scoring:**
-
-- Title match: 1.0
-- Tag match: 0.8
-- URL match: 0.6
-- Body match: 0.5
 
 **Frontend usage:**
 
 ```typescript
-const results = await tauriApi.searchResearch(
-  ['/path/to/project/research', '/Users/me/Notesage/research'],
+const results = await tauriApi.indexSearchResearch(
+  ['/path/to/project', '/Users/me/Notesage'],  // project roots (not research/ subdirs)
   'climate policy',  // query
   'climate',         // tag
   20                 // limit
@@ -1412,8 +1406,9 @@ Located in `src-tauri/src/commands/mcp.rs` and `mcp_oauth.rs`. See `docs/feature
 | `mcp_start_server` | `(config: McpServerConfig) -> McpServerInfo` | Connect (stdio spawn or http) → `initialize` → discover tools; register in `McpState`. Resolves secret env refs from the keychain at spawn. |
 | `mcp_validate_server` | `(config) -> McpValidationResult` | Dry run (connect → handshake → `tools/list` → stop) without registering. Returns `{ ok, tools, server_info, error, error_kind, stderr_tail }`; `error_kind` ∈ `binary_not_found \| spawn_failed \| init_failed \| timeout`. |
 | `mcp_stop_server` / `mcp_restart_server` | `(server_id)` | Lifecycle. http servers have no child process. |
-| `mcp_list_tools` / `mcp_call_tool` | `(server_id, …)` | Tools from a running server. |
-| `mcp_get_server_status` | `() -> Vec<McpServerInfo>` | Snapshot of all servers. |
+| `mcp_list_tools` | `(server_id, refresh?)` | Cache-first read-through: returns the handle's cached tools when non-empty; live `tools/list` (updating the cache) when empty or `refresh: true`. |
+| `mcp_call_tool` | `(server_id, …)` | Call a tool on a running server. |
+| `mcp_get_server_status` | `() -> Vec<McpServerInfo>` | Snapshot of all servers. Wired to the Settings > MCP "Refresh status" button, which reconciles each card's running/stopped/tool-count state. |
 | `mcp_catalog_list` | `() -> Vec<McpCatalogItem>` | Curated catalog manifest (embedded `mcp-catalog.json`). |
 | `mcp_discover_configs` / `mcp_import_configs` / `mcp_save_config` / `mcp_check_import_sources` | — | Read/import/write `mcp.json`; import sources (Claude Desktop, Cursor, VS Code). |
 | `mcp_oauth_authorize` | `(server_id, server_url, scope?) -> OAuthStatus` | Full browser OAuth: discovery (RFC 9728→8414) → DCR (RFC 7591) → PKCE → loopback callback → token exchange → keychain store. |

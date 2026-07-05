@@ -149,4 +149,50 @@ describe('generateStructured', () => {
     // 'GLOBAL_NOISEFOREIGN_NOISE{"ok":true}' and JSON.parse would throw.
     expect(result).toEqual({ ok: true });
   });
+
+  // Fix: `JSON.parse(collected) as T` trusted LLM output. An optional runtime
+  // guard now validates the parsed shape at the trust boundary.
+  it('resolves when the caller-supplied validator accepts the parsed output', async () => {
+    setMockInvokeHandler('ai_chat_stream', (args) => {
+      const sid = sidOf(args);
+      queueMicrotask(() => {
+        emitMockEvent(streamEvent('ai-stream-chunk', sid), '{"title":"Hi"}');
+        emitMockEvent(streamEvent('ai-stream-done', sid), undefined);
+      });
+    });
+
+    const isTitled = (v: unknown): v is { title: string } =>
+      typeof v === 'object' && v !== null && typeof (v as { title?: unknown }).title === 'string';
+
+    const result = await generateStructured<{ title: string }>({
+      schema: { type: 'object' },
+      messages: [{ role: 'user', content: 'hi' }],
+      provider: 'local_bundled',
+      validate: isTitled,
+    });
+    expect(result).toEqual({ title: 'Hi' });
+  });
+
+  it('rejects with a descriptive error when output is valid JSON of the wrong shape', async () => {
+    setMockInvokeHandler('ai_chat_stream', (args) => {
+      const sid = sidOf(args);
+      queueMicrotask(() => {
+        // Valid JSON, but not the shape the caller expects.
+        emitMockEvent(streamEvent('ai-stream-chunk', sid), '{"totally":"different"}');
+        emitMockEvent(streamEvent('ai-stream-done', sid), undefined);
+      });
+    });
+
+    const isTitled = (v: unknown): v is { title: string } =>
+      typeof v === 'object' && v !== null && typeof (v as { title?: unknown }).title === 'string';
+
+    await expect(
+      generateStructured<{ title: string }>({
+        schema: { type: 'object' },
+        messages: [{ role: 'user', content: 'hi' }],
+        provider: 'local_bundled',
+        validate: isTitled,
+      })
+    ).rejects.toThrow(/failed validation/);
+  });
 });

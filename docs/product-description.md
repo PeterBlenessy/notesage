@@ -92,7 +92,7 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 
 **Goal:** Move from "feature-rich IDE" to "premium native writing tool" — single floating composer for chat/commands/search, ambient agent orb instead of activity rail, flat curated sidebar with summonable tree overlay, fade-on-type chrome.
 
-- Phase 1 (opt-in preview) shipped in v0.39.0 — `QuietLayout`, `FloatingCommandBar`, `AgentOrb`, `QuietSidebar` with Pinned / Projects / Recent / Tags / Mentions sections, `TreeOverlay` (`⌘⇧E`), `FolderPeek`, `FocusPill`, `StatusTray`, accent picker (Default / Orange / Blue / System), Quiet chrome presets (Relaxed / Default / Aggressive), Settings v2 shell
+- Phase 1 (opt-in preview) shipped in v0.39.0 — `QuietLayout`, `FloatingCommandBar`, `AgentOrb`, `QuietSidebar` with Pinned / Projects / Folders / Recent / Tags / Mentions sections, `TreeOverlay` (`⌘⇧E`; later removed in sidebar-simplification task #20 — guard test `no-tree-overlay.test.ts`), `FolderPeek`, `FocusPill`, `StatusTray`, accent picker (Default / Orange / Blue / System), Quiet chrome presets (Relaxed / Default / Aggressive), Settings v2 shell
 - Phase 2 (default-on for new installs)
 - Phase 3 (Classic Layout deletion) — issue #325, PRD `docs/prds/2026-05-22-classic-layout-removal.md`. Removed `Layout.tsx`, `TabBar`, `ChatPanel`, `ChatFooter`, `ActivityStrip`, `CommandPalette`, `NewNoteDialog`, `NewProjectDialog`, `KeyboardShortcutsDialog`, `PreviewInvitation`, `RevertInvitation`, and the legacy `SettingsDialog`. Quiet Composer is the only shell.
 - PRD: `docs/prds/2026-04-21-ui-refresh.md`

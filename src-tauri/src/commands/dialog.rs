@@ -38,23 +38,47 @@ pub async fn open_file_dialog(
     }
 }
 
+/// Build the osascript argv for opening Terminal.app and running `command`.
+///
+/// The command is passed as an argv-bound AppleScript argument (`item 1 of
+/// argv`) instead of being interpolated into the script source (audit batch 3
+/// fix #2). The old approach escaped for two quoting layers at once —
+/// shell-style single-quote escaping that was never wrapped in single quotes,
+/// followed by a separate double-quote escape into the AppleScript literal —
+/// which was incoherent and mangled commands containing quotes/backslashes.
+/// With argv binding there is exactly zero escaping: osascript hands the
+/// string to AppleScript verbatim, and `do script` passes it to Terminal
+/// unchanged. The trailing `--` keeps a command starting with `-` from being
+/// parsed as an osascript option.
+// Only invoked from the macOS branch below (and from tests on every platform),
+// so non-macOS check builds would otherwise flag it dead.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn osascript_run_in_terminal_args(command: &str) -> Vec<String> {
+    [
+        "-e",
+        "on run argv",
+        "-e",
+        "tell application \"Terminal\" to activate",
+        "-e",
+        "tell application \"Terminal\" to do script (item 1 of argv)",
+        "-e",
+        "end run",
+        "--",
+        command,
+    ]
+    .iter()
+    .map(|s| s.to_string())
+    .collect()
+}
+
 /// Open Terminal.app and run a command. Used for agent authentication flows
 /// where the CLI needs interactive terminal access (e.g., browser OAuth).
 #[tauri::command]
 pub async fn run_in_terminal(command: String) -> Result<(), String> {
-    // Sanitize: escape single quotes for AppleScript
-    let escaped = command.replace('\\', "\\\\").replace('\'', "'\\''");
-
     #[cfg(target_os = "macos")]
     {
         std::process::Command::new("osascript")
-            .args([
-                "-e",
-                &format!(
-                    "tell application \"Terminal\"\n  activate\n  do script \"{}\"\nend tell",
-                    escaped.replace('"', "\\\"")
-                ),
-            ])
+            .args(osascript_run_in_terminal_args(&command))
             .spawn()
             .map_err(|e| format!("Failed to open Terminal: {}", e))?;
         Ok(())
@@ -62,6 +86,44 @@ pub async fn run_in_terminal(command: String) -> Result<(), String> {
 
     #[cfg(not(target_os = "macos"))]
     {
+        let _ = command;
         Err("run_in_terminal is only supported on macOS".to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_is_bound_as_verbatim_argv_not_interpolated() {
+        // Quotes, backslashes, and shell metacharacters must survive
+        // untouched — no escaping layer is applied anywhere.
+        let gnarly = r#"cd "/tmp/my dir" && echo 'it\'s' \\ "double" $HOME; gemini"#;
+        let args = osascript_run_in_terminal_args(gnarly);
+        assert_eq!(args.last().map(String::as_str), Some(gnarly));
+        // The command must never appear inside any -e script source.
+        for pair in args.chunks(2) {
+            if pair[0] == "-e" {
+                assert!(
+                    !pair[1].contains("gemini"),
+                    "command text leaked into script source: {}",
+                    pair[1]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn argv_shape_binds_command_after_double_dash() {
+        let args = osascript_run_in_terminal_args("-rf --looks-like-a-flag");
+        // `--` must directly precede the command so a leading dash can't be
+        // parsed as an osascript option.
+        let dd = args.iter().position(|a| a == "--").expect("has --");
+        assert_eq!(args[dd + 1], "-rf --looks-like-a-flag");
+        assert_eq!(args.len(), dd + 2, "command is the final argument");
+        // The script itself consumes argv, not an interpolated literal.
+        assert!(args.iter().any(|a| a.contains("item 1 of argv")));
+        assert!(args.iter().any(|a| a == "on run argv"));
     }
 }

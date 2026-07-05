@@ -12,7 +12,7 @@ import { ChartRenderer } from "./ChartRenderer";
 import { ChartEditorPanel } from "./ChartEditorPanel";
 import { BlockSizeControls } from "@/components/editor/BlockSizeControls";
 import { loadChart } from "@/lib/chart-storage";
-import type { ChartData } from "@/lib/chart-types";
+import { isChartData, type ChartData } from "@/lib/chart-types";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { cn } from "@/lib/utils";
@@ -47,7 +47,10 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
   const inlineData = useMemo(() => {
     if (!chartJson) return null;
     try {
-      return JSON.parse(chartJson) as ChartData;
+      // The attribute round-trips through markdown and can be edited by hand
+      // (or by an agent) — validate the shape instead of asserting it.
+      const parsed: unknown = JSON.parse(chartJson);
+      return isChartData(parsed) ? parsed : null;
     } catch {
       return null;
     }

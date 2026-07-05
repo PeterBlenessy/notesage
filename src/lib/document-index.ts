@@ -7,6 +7,18 @@ export interface DocumentIndex {
 }
 
 /**
+ * Runtime guard for `doc-index.json` read from disk. The file lives inside
+ * the user's project and can be hand-edited or corrupted — a wrong shape
+ * must degrade to an empty index, not crash consumers indexing `entries`.
+ */
+export function isDocumentIndex(v: unknown): v is DocumentIndex {
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
+  const entries = (v as Record<string, unknown>).entries;
+  if (typeof entries !== 'object' || entries === null || Array.isArray(entries)) return false;
+  return Object.values(entries).every((path) => typeof path === 'string');
+}
+
+/**
  * Recursively collect all .md file paths from a file tree.
  */
 function collectMarkdownFiles(entries: FileEntry[]): string[] {
@@ -112,7 +124,8 @@ export async function loadDocumentIndex(projectRoot: string): Promise<DocumentIn
       return { entries: {} };
     }
     const raw = await tauriApi.readFile(filePath);
-    return JSON.parse(raw) as DocumentIndex;
+    const parsed: unknown = JSON.parse(raw);
+    return isDocumentIndex(parsed) ? parsed : { entries: {} };
   } catch {
     // Expected: index file may not exist yet or contain invalid JSON
     return { entries: {} };

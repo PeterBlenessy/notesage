@@ -36,6 +36,7 @@ vi.mock('@/lib/tauri', () => ({
 import {
   executeRenameTransaction,
   recoverIncompleteTransactions,
+  isRenameTransactionManifest,
   RENAME_TXN_DIR,
   type RenameTransactionManifest,
   type TransactionPhase,
@@ -425,6 +426,115 @@ describe('recoverIncompleteTransactions — no-op when no transactions pending',
     mockListDirectory.mockResolvedValue([]);
 
     await expect(recoverIncompleteTransactions(NOTES_ROOT)).resolves.not.toThrow();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// isRenameTransactionManifest guard
+// ---------------------------------------------------------------------------
+
+describe('isRenameTransactionManifest', () => {
+  const validManifest: RenameTransactionManifest = {
+    txnId: 'txn-1',
+    phase: 'committing',
+    entries: [{ oldSidecar: '/a.json', newSidecar: '/b.json', stagingFile: '/txn/entry-0.json' }],
+    createdAt: 123,
+  };
+
+  it('accepts a valid manifest (including empty entries)', () => {
+    expect(isRenameTransactionManifest(validManifest)).toBe(true);
+    expect(isRenameTransactionManifest({ ...validManifest, entries: [] })).toBe(true);
+  });
+
+  it('rejects junk primitives', () => {
+    expect(isRenameTransactionManifest(null)).toBe(false);
+    expect(isRenameTransactionManifest(undefined)).toBe(false);
+    expect(isRenameTransactionManifest(42)).toBe(false);
+    expect(isRenameTransactionManifest('manifest')).toBe(false);
+    expect(isRenameTransactionManifest([validManifest])).toBe(false);
+  });
+
+  it('rejects wrong-shape objects', () => {
+    expect(isRenameTransactionManifest({})).toBe(false);
+    expect(isRenameTransactionManifest({ ...validManifest, txnId: 42 })).toBe(false);
+    expect(isRenameTransactionManifest({ ...validManifest, phase: null })).toBe(false);
+    expect(isRenameTransactionManifest({ ...validManifest, entries: 'nope' })).toBe(false);
+    expect(
+      isRenameTransactionManifest({ ...validManifest, entries: [{ oldSidecar: '/a.json' }] }),
+    ).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Half-written manifest recovery (valid JSON, wrong shape)
+// ---------------------------------------------------------------------------
+
+describe('recoverIncompleteTransactions — half-written manifest (valid JSON, wrong shape)', () => {
+  function setupTxnDir(txnId: string, manifestContent: string) {
+    const txnDir = `${TXN_BASE}/${txnId}`;
+    const manifestPath = `${txnDir}/manifest.json`;
+    mockListDirectory.mockImplementation(async (p: string) => {
+      if (p === TXN_BASE) {
+        return [{ name: txnId, path: txnDir, is_directory: true, hidden: false }];
+      }
+      return [];
+    });
+    mockPathExists.mockImplementation(async (p: string) => p === txnDir || p === manifestPath);
+    mockReadFile.mockImplementation(async (p: string) => {
+      if (p === manifestPath) return manifestContent;
+      return '{}';
+    });
+    return { txnDir };
+  }
+
+  it('cleans up and returns instead of crashing on a manifest missing entries', async () => {
+    // Crash mid-write can truncate the manifest: valid JSON, wrong shape.
+    const { txnDir } = setupTxnDir('txn-truncated', JSON.stringify({ txnId: 'txn-truncated', phase: 'committing' }));
+
+    const deletedPaths: string[] = [];
+    mockDeletePath.mockImplementation(async (p: string) => { deletedPaths.push(p); });
+    const writtenFiles: string[] = [];
+    mockWriteFile.mockImplementation(async (p: string) => { writtenFiles.push(p); });
+
+    // Before the guard this was a TypeError on `manifest.entries.length`.
+    await expect(recoverIncompleteTransactions(NOTES_ROOT)).resolves.not.toThrow();
+
+    expect(deletedPaths).toContain(txnDir);
+    expect(writtenFiles).toHaveLength(0);
+  });
+
+  it('cleans up on wrong-typed fields (txnId number, entries not an array)', async () => {
+    const { txnDir } = setupTxnDir(
+      'txn-wrong-types',
+      JSON.stringify({ txnId: 42, phase: 'committing', entries: 'nope', createdAt: 1 }),
+    );
+
+    const deletedPaths: string[] = [];
+    mockDeletePath.mockImplementation(async (p: string) => { deletedPaths.push(p); });
+
+    await expect(recoverIncompleteTransactions(NOTES_ROOT)).resolves.not.toThrow();
+    expect(deletedPaths).toContain(txnDir);
+  });
+
+  it('cleans up when entries contain malformed items', async () => {
+    const { txnDir } = setupTxnDir(
+      'txn-bad-entries',
+      JSON.stringify({
+        txnId: 'txn-bad-entries',
+        phase: 'committing',
+        entries: [{ oldSidecar: '/a.json' }], // missing newSidecar + stagingFile
+        createdAt: 1,
+      }),
+    );
+
+    const deletedPaths: string[] = [];
+    mockDeletePath.mockImplementation(async (p: string) => { deletedPaths.push(p); });
+    const writtenFiles: string[] = [];
+    mockWriteFile.mockImplementation(async (p: string) => { writtenFiles.push(p); });
+
+    await expect(recoverIncompleteTransactions(NOTES_ROOT)).resolves.not.toThrow();
+    expect(deletedPaths).toContain(txnDir);
+    expect(writtenFiles).toHaveLength(0);
   });
 });
 

@@ -1,28 +1,31 @@
 /**
  * @vitest-environment jsdom
  *
- * Tests for `useEditorImageDrop` — the hook that wires Tauri drag-drop
- * events to the Tiptap editor so users can drag images from Finder into
- * the editor and have them inserted at the drop position.
+ * Tests for `useEditorImageDrop` — the hook that wires HTML5 file drag-drop
+ * events to the Tiptap editor so users can drag images from Finder into the
+ * editor and have them inserted.
  *
- * Acceptance criteria being tested (issue #165):
+ * NOTE — event-source contract change: the app ships with
+ * `dragDropEnabled: false` (tauri.conf.json), so Tauri's native
+ * `onDragDropEvent` channel never fires. The hook listens for DOM drag
+ * events scoped to the editor container instead. These tests simulate
+ * DOM DragEvents (jsdom has no DragEvent constructor, so plain Events are
+ * decorated with a `dataTransfer` object).
+ *
+ * Acceptance criteria (issue #165, adapted to the DOM event source):
  *   - Supported image files (.png, .jpg, .gif, .webp) trigger an insert
- *   - Drop-target CSS class is added while a drag is in progress and removed
- *     when the drag leaves or the drop completes
- *   - Non-image files (e.g. .zip) show a toast error
+ *   - Drop-target CSS class is added while an image drag is over the
+ *     container and removed when the drag leaves or the drop completes
+ *   - Non-image files show a toast error
  *   - Dropped images go through the compressImage pipeline
- *   - The hook cleans up Tauri event listeners on unmount
+ *   - Drops OUTSIDE the container are left untouched (command bar, sidebar)
+ *   - Listeners are removed on unmount
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-// Pull in the Tauri and toast mocks
 import '@/test/tauri-mock';
-// emitMockEvent and getListenerCount are available but not used directly in these tests
-// (drag-drop events are simulated via the captured onDragDropEvent handler instead)
-// setMockInvokeHandler is available for future tests that need it
-import type {} from '@/test/tauri-mock';
 
 // ---- Module mocks ----------------------------------------------------------
 
@@ -31,23 +34,6 @@ import type {} from '@/test/tauri-mock';
 const mockCompressImage = vi.fn();
 vi.mock('@/lib/image-compress', () => ({
   compressImage: (...args: unknown[]) => mockCompressImage(...args),
-}));
-
-// Mock the Tauri webview module — getCurrentWebview is used to listen for drag
-// events.
-const mockOnDragDropEvent = vi.fn();
-vi.mock('@tauri-apps/api/webview', () => ({
-  getCurrentWebview: () => ({
-    onDragDropEvent: mockOnDragDropEvent,
-  }),
-}));
-
-// Mock tauriApi so we can inject fake binary data for read_binary_file.
-const mockReadBinaryFile = vi.fn();
-vi.mock('@/lib/tauri', () => ({
-  tauriApi: {
-    readBinaryFile: (...args: unknown[]) => mockReadBinaryFile(...args),
-  },
 }));
 
 // Mock toast
@@ -60,58 +46,65 @@ import { useEditorImageDrop } from '../useEditorImageDrop';
 
 /** Minimal Tiptap editor stub covering the subset the hook uses. */
 function makeEditorStub() {
-  const insertContentMock = vi.fn().mockReturnValue(true);
   const chainMock = {
     focus: vi.fn().mockReturnThis(),
-    insertContent: insertContentMock,
+    insertContent: vi.fn().mockReturnThis(),
+    insertContentAt: vi.fn().mockReturnThis(),
     run: vi.fn().mockReturnValue(true),
   };
   return {
     chain: vi.fn(() => chainMock),
     isDestroyed: false,
-    // expose chain mock for assertion
+    // No `view` — exercises the selection-fallback insert path.
     _chainMock: chainMock,
-    _insertContentMock: insertContentMock,
   };
 }
 
-/** Simulate a fake DragDropEvent payload in the Tauri-event shape. */
-type DragDropPayload =
-  | { type: 'enter'; paths: string[]; position: { x: number; y: number } }
-  | { type: 'over'; position: { x: number; y: number } }
-  | { type: 'drop'; paths: string[]; position: { x: number; y: number } }
-  | { type: 'leave' };
+interface FakeDataTransfer {
+  types: string[];
+  items: Array<{ kind: string; type: string }>;
+  files: File[];
+}
 
-/**
- * Capture the onDragDropEvent handler registered by the hook and fire a
- * simulated event. Returns a helper function to fire events.
- */
-function setupDragDropEmitter() {
-  let capturedHandler: ((event: { payload: DragDropPayload }) => void) | null = null;
+function makeImageFile(name: string, type: string): File {
+  return new File([new Uint8Array(16)], name, { type });
+}
 
-  (mockOnDragDropEvent as Mock).mockImplementation(
-    (handler: (event: { payload: DragDropPayload }) => void) => {
-      capturedHandler = handler;
-      // Return a promise that resolves to an unlisten function (Tauri contract)
-      return Promise.resolve(() => {
-        capturedHandler = null;
-      });
-    },
-  );
+function fileTransfer(files: File[]): FakeDataTransfer {
+  return {
+    types: ['Files'],
+    items: files.map((f) => ({ kind: 'file', type: f.type })),
+    files,
+  };
+}
 
-  function emit(payload: DragDropPayload) {
-    capturedHandler?.({ payload });
-  }
+/** Dispatch a synthetic drag event with an attached dataTransfer. */
+function fireDragEvent(
+  target: EventTarget,
+  type: 'dragenter' | 'dragover' | 'dragleave' | 'dragend' | 'drop',
+  dataTransfer: FakeDataTransfer | null,
+  coords: { clientX?: number; clientY?: number } = {},
+): void {
+  const event = new Event(type, { bubbles: true, cancelable: true });
+  Object.assign(event, { dataTransfer, clientX: coords.clientX ?? 0, clientY: coords.clientY ?? 0 });
+  target.dispatchEvent(event);
+}
 
-  return emit;
+/** Flush the async drop-processing microtasks. */
+async function flushDrop(): Promise<void> {
+  await act(async () => {
+    await new Promise((r) => setTimeout(r, 0));
+  });
 }
 
 // ---- Test setup ------------------------------------------------------------
 
+let container: HTMLDivElement;
+let outside: HTMLDivElement;
+
 beforeEach(() => {
   vi.clearAllMocks();
 
-  // Default: compressImage returns a minimal ImageAttachment
   mockCompressImage.mockResolvedValue({
     id: 'img-test',
     data: 'base64data',
@@ -121,119 +114,128 @@ beforeEach(() => {
     size: 1024,
   });
 
-  // Default: readBinaryFile returns dummy bytes
-  mockReadBinaryFile.mockResolvedValue(new Array(1024).fill(0));
+  container = document.createElement('div');
+  outside = document.createElement('div');
+  document.body.appendChild(container);
+  document.body.appendChild(outside);
 });
 
 afterEach(() => {
+  container.remove();
+  outside.remove();
   vi.clearAllMocks();
 });
+
+function renderDropHook(editor: ReturnType<typeof makeEditorStub>) {
+  return renderHook(() =>
+    useEditorImageDrop(
+      editor as unknown as Parameters<typeof useEditorImageDrop>[0],
+      { current: container },
+    ),
+  );
+}
 
 // ---- Tests -----------------------------------------------------------------
 
 describe('useEditorImageDrop', () => {
-  it('registers a drag-drop listener on mount', async () => {
-    setupDragDropEmitter();
+  it('adds the drop-target CSS class when an image drag enters the container', () => {
     const editor = makeEditorStub();
-
-    const { unmount } = renderHook(() =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      useEditorImageDrop(editor as any),
-    );
-
-    // Give the async mount effect time to register the listener
-    await act(async () => {});
-
-    expect(mockOnDragDropEvent).toHaveBeenCalledOnce();
-
-    unmount();
-  });
-
-  it('adds the drop-target CSS class to the container when a drag enters with an image path', async () => {
-    const emit = setupDragDropEmitter();
-    const editor = makeEditorStub();
-
-    // Attach a DOM element that the hook will add the class to
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-
-    renderHook(() =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      useEditorImageDrop(editor as any, container),
-    );
-
-    await act(async () => {});
+    renderDropHook(editor);
 
     act(() => {
-      emit({ type: 'enter', paths: ['/Users/me/photo.png'], position: { x: 0, y: 0 } });
+      fireDragEvent(container, 'dragenter', fileTransfer([makeImageFile('photo.png', 'image/png')]));
     });
 
     expect(container.classList.contains('editor-image-drop-target')).toBe(true);
-
-    document.body.removeChild(container);
   });
 
-  it('removes the drop-target CSS class when the drag leaves', async () => {
-    const emit = setupDragDropEmitter();
+  it('removes the drop-target CSS class when the drag leaves', () => {
     const editor = makeEditorStub();
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-
-    renderHook(() =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      useEditorImageDrop(editor as any, container),
-    );
-
-    await act(async () => {});
+    renderDropHook(editor);
+    const dt = fileTransfer([makeImageFile('photo.png', 'image/png')]);
 
     act(() => {
-      emit({ type: 'enter', paths: ['/Users/me/photo.png'], position: { x: 0, y: 0 } });
+      fireDragEvent(container, 'dragenter', dt);
     });
     expect(container.classList.contains('editor-image-drop-target')).toBe(true);
 
     act(() => {
-      emit({ type: 'leave' });
+      fireDragEvent(container, 'dragleave', dt);
     });
     expect(container.classList.contains('editor-image-drop-target')).toBe(false);
+  });
 
-    document.body.removeChild(container);
+  it('does not flicker the class across nested enter/leave (counter-based)', () => {
+    const editor = makeEditorStub();
+    renderDropHook(editor);
+    const child = document.createElement('p');
+    container.appendChild(child);
+    const dt = fileTransfer([makeImageFile('photo.png', 'image/png')]);
+
+    act(() => {
+      fireDragEvent(container, 'dragenter', dt);
+      fireDragEvent(child, 'dragenter', dt); // nested boundary
+      fireDragEvent(container, 'dragleave', dt); // leaving outer for inner
+    });
+    // Still inside the child — class must remain.
+    expect(container.classList.contains('editor-image-drop-target')).toBe(true);
+
+    act(() => {
+      fireDragEvent(child, 'dragleave', dt);
+    });
+    expect(container.classList.contains('editor-image-drop-target')).toBe(false);
   });
 
   it('inserts the image into the editor when a supported image file is dropped', async () => {
-    const emit = setupDragDropEmitter();
     const editor = makeEditorStub();
+    renderDropHook(editor);
+    const file = makeImageFile('photo.png', 'image/png');
 
-    renderHook(() =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      useEditorImageDrop(editor as any),
-    );
-
-    await act(async () => {});
-
-    await act(async () => {
-      emit({ type: 'drop', paths: ['/Users/me/photo.png'], position: { x: 0, y: 0 } });
-      // Let async drop handling complete
-      await new Promise((r) => setTimeout(r, 0));
+    act(() => {
+      fireDragEvent(container, 'drop', fileTransfer([file]));
     });
+    await flushDrop();
 
-    // readBinaryFile should have been called with the dropped path
-    expect(mockReadBinaryFile).toHaveBeenCalledWith('/Users/me/photo.png');
-
-    // compressImage should have received a Blob
+    // compressImage received the dropped File
     expect(mockCompressImage).toHaveBeenCalledOnce();
+    expect(mockCompressImage.mock.calls[0][0]).toBe(file);
 
-    // The editor should have received the image via chain().insertContent().run()
-    const chain = editor.chain();
-    expect(chain.focus).toHaveBeenCalled();
-    expect(chain.insertContent).toHaveBeenCalledWith(
+    // The editor received the image via chain().focus().insertContent().run()
+    expect(editor._chainMock.focus).toHaveBeenCalled();
+    expect(editor._chainMock.insertContent).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'image' }),
     );
   });
 
-  it('supports .jpg, .gif, and .webp extensions', async () => {
-    const extensions = ['.jpg', '.jpeg', '.gif', '.webp'];
+  it('inserts at the drop coordinates when the editor view can resolve them', async () => {
+    const editor = makeEditorStub();
+    const posAtCoords = vi.fn().mockReturnValue({ pos: 42, inside: 0 });
+    (editor as unknown as { view: unknown }).view = { posAtCoords };
+    renderDropHook(editor);
 
-    for (const ext of extensions) {
+    act(() => {
+      fireDragEvent(container, 'drop', fileTransfer([makeImageFile('p.png', 'image/png')]), {
+        clientX: 10,
+        clientY: 20,
+      });
+    });
+    await flushDrop();
+
+    expect(posAtCoords).toHaveBeenCalledWith({ left: 10, top: 20 });
+    expect(editor._chainMock.insertContentAt).toHaveBeenCalledWith(
+      42,
+      expect.objectContaining({ type: 'image' }),
+    );
+  });
+
+  it('supports .jpg, .gif, and .webp MIME types', async () => {
+    const cases: Array<[string, string]> = [
+      ['photo.jpg', 'image/jpeg'],
+      ['photo.gif', 'image/gif'],
+      ['photo.webp', 'image/webp'],
+    ];
+
+    for (const [name, type] of cases) {
       vi.clearAllMocks();
       mockCompressImage.mockResolvedValue({
         id: 'img-test',
@@ -243,152 +245,144 @@ describe('useEditorImageDrop', () => {
         height: 100,
         size: 1024,
       });
-      mockReadBinaryFile.mockResolvedValue(new Array(1024).fill(0));
 
-      const emit = setupDragDropEmitter();
       const editor = makeEditorStub();
+      const { unmount } = renderDropHook(editor);
 
-      const { unmount } = renderHook(() =>
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        useEditorImageDrop(editor as any),
-      );
-
-      await act(async () => {});
-
-      await act(async () => {
-        emit({
-          type: 'drop',
-          paths: [`/Users/me/photo${ext}`],
-          position: { x: 0, y: 0 },
-        });
-        await new Promise((r) => setTimeout(r, 0));
+      act(() => {
+        fireDragEvent(container, 'drop', fileTransfer([makeImageFile(name, type)]));
       });
+      await flushDrop();
 
-      expect(mockReadBinaryFile).toHaveBeenCalledWith(`/Users/me/photo${ext}`);
       expect(mockCompressImage).toHaveBeenCalledOnce();
+      expect(editor._chainMock.insertContent).toHaveBeenCalled();
 
       unmount();
     }
   });
 
-  it('shows a toast error and does NOT call readBinaryFile for non-image files', async () => {
-    const emit = setupDragDropEmitter();
+  it('shows a toast error and does NOT insert for non-image files', async () => {
     const editor = makeEditorStub();
+    renderDropHook(editor);
 
-    renderHook(() =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      useEditorImageDrop(editor as any),
-    );
-
-    await act(async () => {});
-
-    await act(async () => {
-      emit({ type: 'drop', paths: ['/Users/me/document.zip'], position: { x: 0, y: 0 } });
-      await new Promise((r) => setTimeout(r, 0));
+    act(() => {
+      fireDragEvent(
+        container,
+        'drop',
+        fileTransfer([makeImageFile('document.zip', 'application/zip')]),
+      );
     });
+    await flushDrop();
 
-    // No binary read for unsupported file
-    expect(mockReadBinaryFile).not.toHaveBeenCalled();
-    // No image insert
     expect(mockCompressImage).not.toHaveBeenCalled();
-    // Toast error shown
+    expect(editor._chainMock.insertContent).not.toHaveBeenCalled();
     expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('not supported'));
   });
 
   it('removes the drop-target class after a drop completes', async () => {
-    const emit = setupDragDropEmitter();
     const editor = makeEditorStub();
-    const container = document.createElement('div');
-    document.body.appendChild(container);
+    renderDropHook(editor);
+    const dt = fileTransfer([makeImageFile('photo.png', 'image/png')]);
 
-    renderHook(() =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      useEditorImageDrop(editor as any, container),
-    );
-
-    await act(async () => {});
-
-    // Enter drag
     act(() => {
-      emit({ type: 'enter', paths: ['/Users/me/photo.png'], position: { x: 0, y: 0 } });
+      fireDragEvent(container, 'dragenter', dt);
     });
     expect(container.classList.contains('editor-image-drop-target')).toBe(true);
 
-    // Drop
-    await act(async () => {
-      emit({ type: 'drop', paths: ['/Users/me/photo.png'], position: { x: 0, y: 0 } });
-      await new Promise((r) => setTimeout(r, 0));
+    act(() => {
+      fireDragEvent(container, 'drop', dt);
     });
+    await flushDrop();
 
-    // Class should be removed after drop
     expect(container.classList.contains('editor-image-drop-target')).toBe(false);
-
-    document.body.removeChild(container);
   });
 
-  it('does not add drop-target class for non-image drags', async () => {
-    const emit = setupDragDropEmitter();
+  it('does not add the drop-target class for non-image drags', () => {
     const editor = makeEditorStub();
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-
-    renderHook(() =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      useEditorImageDrop(editor as any, container),
-    );
-
-    await act(async () => {});
+    renderDropHook(editor);
 
     act(() => {
-      emit({ type: 'enter', paths: ['/Users/me/document.pdf'], position: { x: 0, y: 0 } });
+      fireDragEvent(
+        container,
+        'dragenter',
+        fileTransfer([makeImageFile('document.pdf', 'application/pdf')]),
+      );
     });
 
-    // No highlight for non-image drag
     expect(container.classList.contains('editor-image-drop-target')).toBe(false);
-
-    document.body.removeChild(container);
   });
 
-  it('unregisters the drag-drop listener on unmount', async () => {
-    let unlistenCalled = false;
-    (mockOnDragDropEvent as Mock).mockResolvedValue(() => {
-      unlistenCalled = true;
-    });
-
+  it('ignores drops outside the container (command bar / sidebar keep their handlers)', async () => {
     const editor = makeEditorStub();
-    const { unmount } = renderHook(() =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      useEditorImageDrop(editor as any),
-    );
+    renderDropHook(editor);
 
-    await act(async () => {});
+    act(() => {
+      fireDragEvent(outside, 'drop', fileTransfer([makeImageFile('photo.png', 'image/png')]));
+    });
+    await flushDrop();
 
+    expect(mockCompressImage).not.toHaveBeenCalled();
+    expect(editor._chainMock.insertContent).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('ignores drags without OS files (sidebar row drags with a custom MIME)', async () => {
+    const editor = makeEditorStub();
+    renderDropHook(editor);
+    const dt: FakeDataTransfer = {
+      types: ['application/x-notesage-file'],
+      items: [],
+      files: [],
+    };
+
+    act(() => {
+      fireDragEvent(container, 'dragenter', dt);
+      fireDragEvent(container, 'drop', dt);
+    });
+    await flushDrop();
+
+    expect(container.classList.contains('editor-image-drop-target')).toBe(false);
+    expect(mockCompressImage).not.toHaveBeenCalled();
+    expect(toast.error).not.toHaveBeenCalled();
+  });
+
+  it('removes listeners on unmount', async () => {
+    const editor = makeEditorStub();
+    const { unmount } = renderDropHook(editor);
     unmount();
 
-    // Give cleanup a tick to run
-    await act(async () => {});
+    act(() => {
+      fireDragEvent(container, 'drop', fileTransfer([makeImageFile('photo.png', 'image/png')]));
+    });
+    await flushDrop();
 
-    expect(unlistenCalled).toBe(true);
+    expect(mockCompressImage).not.toHaveBeenCalled();
   });
 
   it('does not insert when the editor is destroyed', async () => {
-    const emit = setupDragDropEmitter();
     const editor = makeEditorStub();
-    editor.isDestroyed = true; // simulate destroyed editor
+    editor.isDestroyed = true;
+    renderDropHook(editor);
 
-    renderHook(() =>
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      useEditorImageDrop(editor as any),
-    );
-
-    await act(async () => {});
-
-    await act(async () => {
-      emit({ type: 'drop', paths: ['/Users/me/photo.png'], position: { x: 0, y: 0 } });
-      await new Promise((r) => setTimeout(r, 0));
+    act(() => {
+      fireDragEvent(container, 'drop', fileTransfer([makeImageFile('photo.png', 'image/png')]));
     });
+    await flushDrop();
 
-    // Nothing should happen for a destroyed editor
-    expect(mockReadBinaryFile).not.toHaveBeenCalled();
+    expect(mockCompressImage).not.toHaveBeenCalled();
+  });
+
+  it('toasts (but keeps going) when a single image fails to compress', async () => {
+    const editor = makeEditorStub();
+    renderDropHook(editor);
+    mockCompressImage.mockRejectedValueOnce(new Error('boom'));
+
+    act(() => {
+      fireDragEvent(container, 'drop', fileTransfer([makeImageFile('bad.png', 'image/png')]));
+    });
+    await flushDrop();
+
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('bad.png'));
+    expect(editor._chainMock.insertContent).not.toHaveBeenCalled();
   });
 });

@@ -82,11 +82,19 @@ The workspace tree is exposed through the flat `QuietSidebar` (`src/components/s
 - Git identity configuration UI when `user.name`/`user.email` missing
 - Status refresh on save, commit, branch switch, and window focus
 
+**Git repo indicator (Quiet sidebar):**
+
+- Repo-backed project / explorer-folder rows show a small `GitBranch` badge in `SidebarRowIndicators` (neutral grey, tooltip = current branch when known, else "Git repository")
+- Shown only while git integration is enabled (Settings > Projects > "Enable git")
+- Repo detection for sidebar roots is populated once per root per session by `useGitRepoDetection` (mounted from `QuietSidebar`): one `git_is_repo` probe per root, plus a status + branch seed for repos. After that, the existing debounced refresh paths (`refreshGitForPath` from file ops and the watcher) keep git-store fresh — rows derive purely from store state, no IPC per row render
+
 **Git branch diff review:**
 
-- Compare current branch against any other branch via the `BranchDiffSelector` dropdown
-- ProseMirror decorations showing additions (green) and deletions (red)
-- Per-hunk accept/reject through inline controls on each decoration; end review from the same dropdown
+- Started from the sidebar: right-click a repo-backed project / folder row → "Compare branch…" opens a branch picker (Popover + `command` list anchored to the row) listing local branches minus the checked-out one
+- Selecting a branch calls `diff-review-store.startReview(repoPath, currentBranch, selectedBranch)` — the checked-out branch is the base (its line ranges map onto the open document), the picked branch is the incoming compare side
+- ProseMirror decorations showing additions (green) and deletions (red) via the shared `InlineDiff` layer; per-hunk accept/reject through inline controls on each decoration (accepts save the file)
+- While a review is active, a persistent `DiffReviewPill` floats over the editor's top-right ("Reviewing \<branch\>" · Accept all · End); the row's context menu shows "End branch review" in place of "Compare branch…"
+- External modify events during an active review route to the silent auto-reload path (`useFileWatcher`) so external-change hunks never fight the branch review for the `InlineDiff` decoration layer
 
 ## External Change Detection & Review
 
@@ -138,7 +146,6 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 | --- | --- |
 | `src/components/sidebar/quiet/QuietSidebar.tsx` | Flat-section sidebar (Pinned / Projects / Folders / Recent / Tags / Mentions) |
 | `src/components/sidebar/quiet/FolderPeek.tsx` | Inline `→`-expand one-level peek on a focused project/folder row |
-| `src/components/sidebar/FileTreeItem.tsx` | Individual tree node (used inside the inline peek) |
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |
 | `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler (routes by `externalChangeDiffReview`) |
 | `src/hooks/useFileRenameSync.ts` | Rename sync: open-tab path rewrites, Save-Now toast, path-keyed sidecar migration |
@@ -155,6 +162,11 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 | `src/components/settings/LockProjectDialog.tsx` | Settings > Project lock-creation dialog |
 | `src-tauri/src/commands/file.rs` | File operations |
 | `src-tauri/src/commands/git.rs` | Git operations |
+| `src/hooks/useGitRepoDetection.ts` | Once-per-root git repo detection for sidebar roots (populates git-store) |
+| `src/components/git/BranchComparePopover.tsx` | Branch picker for the sidebar "Compare branch…" action |
+| `src/stores/diff-review-store.ts` | Branch diff review session state (changed files, per-hunk resolution) |
+| `src/hooks/useDiffReview.ts` | Maps git hunks to inline diff decorations; accept-all / per-hunk handlers |
+| `src/components/editor/DiffReviewPill.tsx` | Persistent "Reviewing \<branch\>" affordance while a review is active |
 | `src-tauri/src/commands/watcher.rs` | Filesystem watcher |
 | `src-tauri/src/commands/dialog.rs` | Native dialogs |
 

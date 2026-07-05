@@ -7,7 +7,7 @@ import { useCommentStore } from '@/stores/comment-store';
 import { getEditorRef } from '@/lib/editor-bridge';
 import { findTextInDoc } from '@/lib/pm-text-search';
 import { setCommentDecorations } from '@/components/editor/extensions/comment-mark';
-import type { SkillContent, ScriptResult, ArgMapping } from '@/lib/tauri';
+import type { SkillContent, ScriptResult, ArgMapping, PptxTemplateInfo, WebSearchResult } from '@/lib/tauri';
 import type { ToolResult } from '@/lib/ai/types';
 import { isToolCallAllowed, isPathAllowed } from '@/lib/ai/path-filter';
 import { hashPath } from '@/lib/comment-storage';
@@ -243,7 +243,7 @@ export async function executeToolCall(
       case 'web_search': {
         const query = args.query as string;
         if (!query) throw new Error('Missing required argument: query');
-        const results = await invoke<Array<{ title: string; url: string; snippet: string }>>(
+        const results = await invoke<WebSearchResult[]>(
           'web_search',
           { query, maxResults: 5 }
         );
@@ -523,7 +523,7 @@ export async function executeToolCall(
 
           let templateList = 'Built-in templates: simple, business, report';
           try {
-            const customTemplates = await invoke<Array<{ name: string }>>('list_pptx_templates', {
+            const customTemplates = await invoke<PptxTemplateInfo[]>('list_pptx_templates', {
               projectRoot: project?.path ?? null,
             });
             if (customTemplates.length > 0) {

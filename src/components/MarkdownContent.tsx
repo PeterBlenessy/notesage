@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { cn } from '@/lib/utils';
 import { useEditorStore } from '@/stores/editor-store';
@@ -27,6 +27,26 @@ async function handleLinkClick(e: React.MouseEvent<HTMLAnchorElement>, href: str
   await handleLinkNavigation(href, openTab, roots);
 }
 
+// Hoisted to module scope: both the plugin array and the components map were
+// previously allocated per render, defeating ReactMarkdown's own memoization
+// and churning garbage in the chat list. The `a` handler reads stores via
+// getState() at click time (see handleLinkClick above), so it closes over
+// nothing render-scoped — safe to share a single instance across all renders.
+const REMARK_PLUGINS = [remarkGfm];
+
+const MARKDOWN_COMPONENTS: Components = {
+  a: ({ href, children, ...props }) => (
+    <a
+      {...props}
+      href={href}
+      onClick={(e) => href && handleLinkClick(e, href)}
+      className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground transition-colors cursor-pointer"
+    >
+      {children}
+    </a>
+  ),
+};
+
 function MarkdownContentImpl({ content, className }: MarkdownContentProps) {
   return (
     <div
@@ -35,21 +55,7 @@ function MarkdownContentImpl({ content, className }: MarkdownContentProps) {
         className,
       )}
     >
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={{
-          a: ({ href, children, ...props }) => (
-            <a
-              {...props}
-              href={href}
-              onClick={(e) => href && handleLinkClick(e, href)}
-              className="underline decoration-muted-foreground/40 underline-offset-2 hover:decoration-foreground transition-colors cursor-pointer"
-            >
-              {children}
-            </a>
-          ),
-        }}
-      >
+      <ReactMarkdown remarkPlugins={REMARK_PLUGINS} components={MARKDOWN_COMPONENTS}>
         {content}
       </ReactMarkdown>
     </div>

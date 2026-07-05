@@ -66,20 +66,14 @@ impl LocalInferenceState {
     /// Blocking stop — called from RunEvent::Exit
     pub fn stop_sync(&self) {
         // Stop both the main chat server and the completion server.
-        // SIGTERM → 500ms → SIGKILL for each, then clean up PID files.
+        // SIGTERM → short wait → SIGKILL for each, then clean up PID files.
         for (slot, label, pid_filename) in [
             (&self.server_pid, "chat", ".server.pid"),
             (&self.completion_server_pid, "completion", ".completion.pid"),
         ] {
             if let Ok(mut pid_guard) = slot.lock() {
                 if let Some(pid) = pid_guard.take() {
-                    let _ = std::process::Command::new("kill")
-                        .args(["-15", &pid.to_string()])
-                        .output();
-                    std::thread::sleep(std::time::Duration::from_millis(500));
-                    let _ = std::process::Command::new("kill")
-                        .args(["-9", &pid.to_string()])
-                        .output();
+                    super::process_guard::terminate_with_escalation(pid);
                     log::info!(target: "notesage::local_ai", "Stopped {} server (pid {})", label, pid);
                 }
             }
@@ -449,13 +443,14 @@ pub async fn start_local_server(
     Ok(port)
 }
 
-/// Kill the server process by stored PID
+/// Kill the server process by stored PID. Uses the shared SIGTERM → short
+/// wait → SIGKILL escalation (audit batch 3 fix #4) — the health-check
+/// teardown previously sent only SIGTERM, which a stuck cold-load could
+/// ignore, leaving the model's port and RAM held.
 fn kill_server_process(state: &LocalInferenceState) {
     if let Ok(mut pid_guard) = state.server_pid.lock() {
         if let Some(pid) = pid_guard.take() {
-            let _ = std::process::Command::new("kill")
-                .args(["-15", &pid.to_string()])
-                .output();
+            super::process_guard::terminate_with_escalation(pid);
         }
     }
     let pid_file = state.models_dir.join(".server.pid");
@@ -551,10 +546,22 @@ pub fn kill_orphaned_servers() {
         let pid_file = models_dir.join(pid_filename);
         if let Ok(pid_str) = std::fs::read_to_string(&pid_file) {
             if let Ok(pid) = pid_str.trim().parse::<u32>() {
-                let _ = std::process::Command::new("kill")
-                    .args(["-15", &pid.to_string()])
-                    .output();
-                log::info!(target: "notesage::local_ai", "Killed orphaned {} llama-server (pid {})", label, pid);
+                // PID-reuse guard (audit batch 3 fix #3): after a crash or
+                // reboot the recorded PID may belong to an unrelated process.
+                // Only signal it when its command line still looks like a
+                // llama-server; otherwise skip the kill and just drop the
+                // stale PID file.
+                let cmdline = super::process_guard::process_cmdline(pid);
+                if super::process_guard::should_signal_pid(cmdline.as_deref(), "llama-server") {
+                    super::process_guard::terminate_with_escalation(pid);
+                    log::info!(target: "notesage::local_ai", "Killed orphaned {} llama-server (pid {})", label, pid);
+                } else {
+                    log::info!(
+                        target: "notesage::local_ai",
+                        "Skipping orphaned {} PID {} — process is gone or no longer a llama-server ({:?})",
+                        label, pid, cmdline
+                    );
+                }
             }
             let _ = std::fs::remove_file(&pid_file);
         }
@@ -741,14 +748,12 @@ pub async fn get_completion_server_status(
     })
 }
 
-/// Kill the completion server process by stored PID (SIGTERM only —
-/// `stop_sync` is the SIGKILL path used at app exit).
+/// Kill the completion server process by stored PID, with the shared
+/// SIGTERM → short wait → SIGKILL escalation (audit batch 3 fix #4).
 fn kill_completion_server_process(state: &LocalInferenceState) {
     if let Ok(mut pid_guard) = state.completion_server_pid.lock() {
         if let Some(pid) = pid_guard.take() {
-            let _ = std::process::Command::new("kill")
-                .args(["-15", &pid.to_string()])
-                .output();
+            super::process_guard::terminate_with_escalation(pid);
         }
     }
     let pid_file = state.models_dir.join(".completion.pid");

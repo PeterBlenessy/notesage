@@ -6,7 +6,6 @@ import { log } from "@/lib/logger";
 
 interface UseTrayEventsOptions {
   onNewNote: () => void;
-  onQuickNote: () => void;
   onOpenActions: () => void;
   onOpenFile: (path: string) => void;
 }
@@ -17,7 +16,6 @@ interface UseTrayEventsOptions {
  */
 export function useTrayEvents({
   onNewNote,
-  onQuickNote,
   onOpenActions,
   onOpenFile,
 }: UseTrayEventsOptions) {
@@ -29,42 +27,40 @@ export function useTrayEvents({
   }, []);
 
   useEffect(() => {
+    // Mounted-flag pattern (see `useSandboxViolations`): registration is
+    // async, so a cleanup that races it must immediately unlisten any
+    // late-resolving registrations instead of leaking them. Registrations
+    // run concurrently via Promise.all — no partial-push window between
+    // sequential awaits.
+    let mounted = true;
     const unlisteners: (() => void)[] = [];
 
     const setup = async () => {
-      unlisteners.push(
-        await listen("tray-new-note", () => {
+      const registered = await Promise.all([
+        listen("tray-new-note", () => {
           log.debug("tray", "Tray: new note");
           onNewNote();
-        })
-      );
-
-      unlisteners.push(
-        await listen("tray-quick-note", () => {
-          log.debug("tray", "Tray: quick note");
-          onQuickNote();
-        })
-      );
-
-      unlisteners.push(
-        await listen("tray-open-actions", () => {
+        }),
+        listen("tray-open-actions", () => {
           log.debug("tray", "Tray: open actions");
           onOpenActions();
-        })
-      );
-
-      unlisteners.push(
-        await listen<string>("tray-open-file", (event) => {
+        }),
+        listen<string>("tray-open-file", (event) => {
           log.debug("tray", "Tray: open file", event.payload);
           onOpenFile(event.payload);
-        })
-      );
+        }),
+      ]);
+      for (const fn of registered) {
+        if (mounted) unlisteners.push(fn);
+        else fn(); // Already unmounted — clean up immediately
+      }
     };
 
     setup().catch((e) => log.warn("tray", "Failed to set up tray listeners", e));
 
     return () => {
+      mounted = false;
       unlisteners.forEach((fn) => fn());
     };
-  }, [onNewNote, onQuickNote, onOpenActions, onOpenFile]);
+  }, [onNewNote, onOpenActions, onOpenFile]);
 }

@@ -22,6 +22,7 @@ import { useCommentEditorSync } from "@/hooks/useCommentEditorSync";
 import { useCopilotCompletion } from "@/hooks/useCopilotCompletion";
 import { useCopilotCompletionCM } from "@/hooks/useCopilotCompletionCM";
 import { useLocalCompletion } from "@/hooks/useLocalCompletion";
+import { useEditorImageDrop } from "@/hooks/useEditorImageDrop";
 import { useEditorKeyBindings } from "@/hooks/useEditorKeyBindings";
 import { useFileWatcherIntegration } from "@/hooks/useFileWatcherIntegration";
 import { useEditorTabSwitch } from "@/hooks/useEditorTabSwitch";
@@ -61,6 +62,7 @@ import { EditorViewerContainer } from "./EditorViewerContainer";
 import { EditorEmptyState } from "./EditorEmptyState";
 import { BubbleMenu } from "./BubbleMenu";
 import { FindBar } from "./FindBar";
+import { DiffReviewPill } from "./DiffReviewPill";
 import { TranscriptionOverlay } from "./TranscriptionOverlay";
 import { CommentPopover } from "./CommentPopover";
 import { DatePickerPopover } from "./DatePickerPopover";
@@ -291,7 +293,10 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   useTypewriterScroll(editor, scrollAreaRef);
 
   const { exportPdf, exportPptx, isExporting } = useExportOperations(editor);
-  useDiffReview(editor);
+  // Branch diff review — the hook drives the inline diff decorations via its
+  // own effects; the returned state + handlers feed the DiffReviewPill
+  // (persistent "review is running" affordance) rendered below.
+  const diffReview = useDiffReview(editor);
   const { settings: pageSettings, updateSettings: updatePageSettings } = usePageSettings(editor);
   const [hfEditState, setHfEditState] = useState<{ type: 'header' | 'footer'; page: number; zoneElement: HTMLDivElement } | null>(null);
   const hfEditStateRef = useRef(hfEditState);
@@ -301,6 +306,9 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   useCopilotCompletion(editor);
   useCopilotCompletionCM(cmView);
   useLocalCompletion(editor);
+  // Finder → editor image drops (HTML5 drag events, scoped to the editor's
+  // scroll area so command-bar / sidebar drops keep their own handlers).
+  useEditorImageDrop(editor, scrollAreaRef);
 
   // Expose editor instance for tool executor access (comment tools, etc.)
   useEffect(() => {
@@ -673,6 +681,20 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
                 variant="pill"
               />
             </div>
+          )}
+          {/*
+            Branch diff review pill — persistent affordance while a review
+            session is active (started from the sidebar's "Compare branch…"
+            context-menu action). Top-right so it never collides with the
+            centred pill toolbar. Hidden in focus mode with the rest of the
+            chrome; the sidebar context menu still offers "End branch review".
+          */}
+          {diffReview.reviewActive && !focusMode && (
+            <DiffReviewPill
+              compareBranch={diffReview.compareBranch}
+              onAcceptAll={() => void diffReview.handleAcceptAll()}
+              onEnd={diffReview.endReview}
+            />
           )}
           {findBarOpen && activeTab?.fileType === "markdown" && (
             <FindBar

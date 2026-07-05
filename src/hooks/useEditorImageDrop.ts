@@ -1,150 +1,200 @@
 /**
- * useEditorImageDrop — wires Tauri drag-drop events to the Tiptap editor so
- * users can drag image files from Finder into the editor and have them
- * inserted at the drop position.
+ * useEditorImageDrop — wires OS file drag-drop to the Tiptap editor so users
+ * can drag image files from Finder into the editor and have them inserted at
+ * the drop position.
  *
- * Supported image extensions: .png, .jpg, .jpeg, .gif, .webp
+ * Event source: HTML5 DOM drag events, NOT Tauri's `onDragDropEvent`. The app
+ * ships with `dragDropEnabled: false` in tauri.conf.json (see commit 83f0fb0f
+ * "disable Tauri native DnD") because the command bar, sidebar, and file-tree
+ * all rely on HTML5 drag-and-drop — with Tauri's native handler enabled, the
+ * webview swallows OS file drops and none of those surfaces receive them. The
+ * original version of this hook listened on the (dead) Tauri event channel;
+ * it now listens for DOM drops scoped to the editor container.
+ *
+ * Scoping / conflict guard: listeners are installed at the document capture
+ * phase but only act when the event target sits inside the supplied container
+ * ref. Drops on the command bar (image attachments), the sidebar (file-row
+ * reordering), or anywhere else keep their current behavior untouched. Drags
+ * WITHOUT OS files (e.g. sidebar rows stamped with a custom MIME) are ignored
+ * even inside the editor.
+ *
+ * Supported image types: png, jpeg, gif, webp.
  *
  * Drop-target visual feedback: adds/removes the `editor-image-drop-target`
- * CSS class on the supplied container element while an image drag is in
- * progress.
+ * CSS class on the container element while an image-file drag is over it
+ * (counter-based enter/leave tracking, same approach as the rest of the app).
  *
- * Non-image files: shows a `toast.error` and does nothing else.
+ * Non-image file drops on the editor: shows a `toast.error` and nothing else.
  *
  * Dropped images go through the same `compressImage` pipeline used by the
  * paste handler so they receive the same resizing and JPEG conversion.
  */
 
-import { useEffect } from 'react';
+import { useEffect, type RefObject } from 'react';
 import type { Editor } from '@tiptap/react';
-import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { toast } from 'sonner';
 import { compressImage } from '@/lib/image-compress';
-import { tauriApi } from '@/lib/tauri';
+import { log } from '@/lib/logger';
 
-const SUPPORTED_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+const SUPPORTED_IMAGE_MIME_TYPES = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+]);
 const DROP_TARGET_CLASS = 'editor-image-drop-target';
 
-function getExtension(filePath: string): string {
-  const lastDot = filePath.lastIndexOf('.');
-  if (lastDot === -1) return '';
-  return filePath.slice(lastDot).toLowerCase();
+function isSupportedImageFile(file: File): boolean {
+  return SUPPORTED_IMAGE_MIME_TYPES.has(file.type);
 }
 
-function isImagePath(filePath: string): boolean {
-  return SUPPORTED_IMAGE_EXTENSIONS.has(getExtension(filePath));
+/** True when the in-flight drag carries at least one OS file. */
+function dragHasFiles(dt: DataTransfer | null): boolean {
+  if (!dt) return false;
+  return Array.from(dt.types ?? []).includes('Files');
 }
 
 /**
- * Hook that listens for Tauri drag-drop events and inserts dropped image files
- * into the Tiptap editor.
+ * True when the in-flight drag carries at least one image file. During drag
+ * (before drop) only `items` metadata is available; when the engine doesn't
+ * expose item types, fall back to "has files" so the highlight still shows.
+ */
+function dragHasImageFiles(dt: DataTransfer | null): boolean {
+  if (!dt || !dragHasFiles(dt)) return false;
+  const items = dt.items ? Array.from(dt.items) : [];
+  const fileItems = items.filter((i) => i.kind === 'file');
+  if (fileItems.length === 0) return true; // metadata unavailable — assume maybe-image
+  return fileItems.some((i) => SUPPORTED_IMAGE_MIME_TYPES.has(i.type));
+}
+
+/**
+ * Hook that listens for OS file drops on the editor container and inserts
+ * dropped image files into the Tiptap editor.
  *
- * @param editor  — The active Tiptap Editor instance (or null if not yet mounted).
- * @param container — Optional DOM element to receive the `editor-image-drop-target`
- *                    CSS class while a drag is in progress.
+ * @param editor — The active Tiptap Editor instance (or null if not yet mounted).
+ * @param containerRef — Ref to the editor's content container. Receives the
+ *                       `editor-image-drop-target` CSS class while an image
+ *                       drag is over it, and scopes which drops this hook
+ *                       handles. Read live per event, so the container may
+ *                       mount/unmount freely (e.g. non-markdown viewers).
  */
 export function useEditorImageDrop(
   editor: Editor | null,
-  container?: HTMLElement | null,
+  containerRef?: RefObject<HTMLElement | null>,
 ): void {
   useEffect(() => {
-    let unlistenFn: (() => void) | null = null;
+    // Counter-based enter/leave tracking: dragenter/dragleave fire on every
+    // element boundary inside the container, so a plain add/remove flickers.
+    let dragDepth = 0;
 
-    async function setupListener() {
-      const unlisten = await getCurrentWebview().onDragDropEvent(async (event) => {
-        const { payload } = event;
+    const container = (): HTMLElement | null => containerRef?.current ?? null;
 
-        if (payload.type === 'enter') {
-          // Highlight the container if any of the dragged paths are images
-          if (container && payload.paths.some(isImagePath)) {
-            container.classList.add(DROP_TARGET_CLASS);
-          }
-          return;
-        }
+    const insideContainer = (event: DragEvent): boolean => {
+      const el = container();
+      return !!el && event.target instanceof Node && el.contains(event.target);
+    };
 
-        if (payload.type === 'leave') {
-          container?.classList.remove(DROP_TARGET_CLASS);
-          return;
-        }
+    const clearHighlight = () => {
+      dragDepth = 0;
+      container()?.classList.remove(DROP_TARGET_CLASS);
+    };
 
-        if (payload.type === 'drop') {
-          // Always remove highlight on drop
-          container?.classList.remove(DROP_TARGET_CLASS);
+    const handleDragEnter = (event: DragEvent) => {
+      if (!insideContainer(event)) return;
+      if (!dragHasImageFiles(event.dataTransfer)) return;
+      dragDepth += 1;
+      container()?.classList.add(DROP_TARGET_CLASS);
+    };
 
-          if (!editor || editor.isDestroyed) return;
+    const handleDragOver = (event: DragEvent) => {
+      if (!insideContainer(event)) return;
+      if (!dragHasFiles(event.dataTransfer)) return;
+      // Without preventDefault the browser never fires `drop` for file drags.
+      event.preventDefault();
+    };
 
-          const { paths } = payload;
+    const handleDragLeave = (event: DragEvent) => {
+      if (!insideContainer(event)) return;
+      if (!dragHasImageFiles(event.dataTransfer)) return;
+      dragDepth -= 1;
+      if (dragDepth <= 0) clearHighlight();
+    };
 
-          // Validate: all paths must be images (we only support single-file drops
-          // but handle multi-drop gracefully by checking the first non-image)
-          const imagePaths = paths.filter(isImagePath);
-          const nonImagePaths = paths.filter((p) => !isImagePath(p));
+    const handleDragEnd = () => clearHighlight();
 
-          if (nonImagePaths.length > 0 && imagePaths.length === 0) {
-            // Only non-image files were dropped
-            toast.error(
-              `File type not supported. Only images (.png, .jpg, .gif, .webp) can be dropped into the editor.`,
-            );
-            return;
-          }
+    const handleDrop = (event: DragEvent) => {
+      if (!insideContainer(event)) {
+        // A drop elsewhere still ends any drag we were highlighting.
+        clearHighlight();
+        return;
+      }
+      clearHighlight();
 
-          if (imagePaths.length === 0) {
-            toast.error(
-              `File type not supported. Only images (.png, .jpg, .gif, .webp) can be dropped into the editor.`,
-            );
-            return;
-          }
+      const files = event.dataTransfer?.files;
+      if (!files || files.length === 0) return; // not an OS file drop — leave it alone
 
-          // Process each image (typically one)
-          for (const imagePath of imagePaths) {
-            try {
-              // Read raw bytes from disk via Tauri IPC
-              const bytes = await tauriApi.readBinaryFile(imagePath);
+      // This is an OS file drop on the editor — claim it before ProseMirror's
+      // own drop handling sees it.
+      event.preventDefault();
+      event.stopPropagation();
 
-              // Determine MIME type from extension for Blob construction
-              const ext = getExtension(imagePath);
-              const mimeType =
-                ext === '.png'
-                  ? 'image/png'
-                  : ext === '.gif'
-                    ? 'image/gif'
-                    : ext === '.webp'
-                      ? 'image/webp'
-                      : 'image/jpeg';
+      if (!editor || editor.isDestroyed) return;
 
-              // Convert number[] to Uint8Array → Blob
-              const blob = new Blob([new Uint8Array(bytes)], { type: mimeType });
+      const allFiles = Array.from(files);
+      const imageFiles = allFiles.filter(isSupportedImageFile);
 
-              // Run through the same compress pipeline as paste
-              const attachment = await compressImage(blob);
+      if (imageFiles.length === 0) {
+        toast.error(
+          'File type not supported. Only images (.png, .jpg, .gif, .webp) can be dropped into the editor.',
+        );
+        return;
+      }
 
-              // Insert into the editor
-              editor
-                .chain()
-                .focus()
-                .insertContent({
-                  type: 'image',
-                  attrs: {
-                    src: `data:${attachment.mimeType};base64,${attachment.data}`,
-                  },
-                })
-                .run();
-            } catch (err) {
-              console.error('[useEditorImageDrop] Failed to insert image:', imagePath, err);
-              toast.error(`Failed to insert image: ${imagePath}`);
+      // Insert at the drop position when the live editor view can resolve the
+      // coordinates; fall back to the current selection otherwise.
+      const coords = { left: event.clientX, top: event.clientY };
+
+      void (async () => {
+        for (const file of imageFiles) {
+          try {
+            // Same compress pipeline as paste (resize + JPEG conversion).
+            const attachment = await compressImage(file, { name: file.name });
+            const node = {
+              type: 'image',
+              attrs: {
+                src: `data:${attachment.mimeType};base64,${attachment.data}`,
+              },
+            };
+
+            const pos = editor.view?.posAtCoords?.(coords)?.pos;
+            if (typeof pos === 'number') {
+              editor.chain().focus().insertContentAt(pos, node).run();
+            } else {
+              editor.chain().focus().insertContent(node).run();
             }
+          } catch (err) {
+            log.error('editor', `Failed to insert dropped image: ${file.name}`, err);
+            toast.error(`Failed to insert image: ${file.name}`);
           }
         }
-      });
+      })();
+    };
 
-      unlistenFn = unlisten;
-    }
-
-    setupListener();
+    // Capture phase so the editor claims image-file drops before ProseMirror's
+    // own DOM handlers run; non-file drags fall through untouched.
+    document.addEventListener('dragenter', handleDragEnter, true);
+    document.addEventListener('dragover', handleDragOver, true);
+    document.addEventListener('dragleave', handleDragLeave, true);
+    document.addEventListener('dragend', handleDragEnd, true);
+    document.addEventListener('drop', handleDrop, true);
 
     return () => {
-      unlistenFn?.();
+      document.removeEventListener('dragenter', handleDragEnter, true);
+      document.removeEventListener('dragover', handleDragOver, true);
+      document.removeEventListener('dragleave', handleDragLeave, true);
+      document.removeEventListener('dragend', handleDragEnd, true);
+      document.removeEventListener('drop', handleDrop, true);
+      clearHighlight();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor]);
+  }, [editor, containerRef]);
 }

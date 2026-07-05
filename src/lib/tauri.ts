@@ -100,6 +100,38 @@ export interface SmokeTestParams {
 }
 
 // ---------------------------------------------------------------------------
+// Managed agent binary types (agent_manager.rs)
+// ---------------------------------------------------------------------------
+
+/** Where an agent binary was resolved from (mirrors Rust `BinaryResolution`). */
+export interface AgentBinaryResolution {
+  path: string;
+  source: 'managed' | 'system';
+  version: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// MCP IPC types (mcp.rs) — mirror the Rust structs returned over IPC.
+// Structurally compatible with the frontend `McpToolInfo` in mcp-store.
+// ---------------------------------------------------------------------------
+
+export interface McpToolInfoIpc {
+  name: string;
+  description: string | null;
+  input_schema: Record<string, unknown>;
+  server_id: string;
+}
+
+/** Subset of Rust `McpServerInfo` the status-refresh flow consumes. */
+export interface McpServerInfoIpc {
+  id: string;
+  name: string;
+  status: 'stopped' | 'starting' | 'running' | 'error';
+  error: string | null;
+  tools: McpToolInfoIpc[];
+}
+
+// ---------------------------------------------------------------------------
 // Skill & Agent types
 // ---------------------------------------------------------------------------
 
@@ -180,6 +212,42 @@ export interface AgentInstruction {
   priority: number;
 }
 
+/** Mirrors the Rust `AgentAvailability` struct (`acp_binary.rs`) — result of `acp_agent_check_availability`. */
+export interface AgentAvailability {
+  installed: boolean;
+  path: string | null;
+  version: string | null;
+}
+
+/** Mirrors the Rust `BinaryResolution` struct (`agent_manager.rs`) — result of `agent_resolve_binary`. */
+export interface BinaryResolution {
+  path: string;
+  /** Rust `BinarySource`, serialized snake_case. */
+  source: 'managed' | 'system';
+  version: string | null;
+}
+
+/** Mirrors the Rust `AgentUpdateInfo` struct (`agent_manager.rs`) — entries of `agent_check_updates`. */
+export interface AgentUpdateInfo {
+  agent_id: string;
+  current_version: string;
+  latest_version: string;
+  repo: string;
+}
+
+/** Mirrors the Rust `SearchResult` struct (`web_search.rs`) — entries of `web_search`. */
+export interface WebSearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+/** Mirrors the Rust `MigrateFolderResult` struct (`export.rs`) — result of `migrate_user_content_paths`. */
+export interface MigrateFolderResult {
+  migrated: number;
+  collisions: string[];
+}
+
 // ---------------------------------------------------------------------------
 // ACP (Agent Client Protocol) types
 // ---------------------------------------------------------------------------
@@ -200,6 +268,33 @@ export interface CopilotToolResultPayload {
   content: string | Array<{ value: string }>;
   is_error?: boolean;
   status?: string;
+}
+
+/** Mirrors the Rust `CopilotStatus` struct (`copilot_lsp.rs`) — result of `copilot_lsp_status`. */
+export interface CopilotStatus {
+  authenticated: boolean;
+  message: string;
+  /** Rust `CopilotStatusKind`, serialized PascalCase. */
+  kind: 'Normal' | 'Error' | 'Warning' | 'Inactive';
+}
+
+/** Mirrors the Rust `SignInResponse` struct (`copilot_lsp.rs`) — result of `copilot_lsp_sign_in`. */
+export interface CopilotSignInResponse {
+  user_code: string;
+  verification_uri: string;
+}
+
+/** Conversation handle returned by `copilot_lsp_conversation_create` / `_turn`. */
+export interface CopilotConversationRef {
+  conversationId: string;
+  turnId: string;
+}
+
+/** Mirrors the Rust `CopilotModel` struct (`copilot_models.rs`) — entries of `copilot_lsp_conversation_models`. */
+export interface CopilotModel {
+  id: string;
+  name: string;
+  provider: string;
 }
 
 export interface IndexTagOccurrence {
@@ -911,8 +1006,8 @@ export const tauriApi = {
    * Returns the number of migrated items and any collision sub-directory
    * names (where the destination already had existing content).
    */
-  async migrateUserContentPaths(folderPath: string): Promise<{ migrated: number; collisions: string[] }> {
-    return await invoke<{ migrated: number; collisions: string[] }>(
+  async migrateUserContentPaths(folderPath: string): Promise<MigrateFolderResult> {
+    return await invoke<MigrateFolderResult>(
       "migrate_user_content_paths",
       { folderPath },
     );
@@ -1575,11 +1670,11 @@ export const tauriApi = {
 
   // Copilot LSP conversation operations
   copilotLspConversationCreate(message: string, model?: string, tools?: Array<{ name: string; description: string; inputSchema: unknown }>, docUri?: string, docLanguageId?: string) {
-    return invoke<{ conversationId: string; turnId: string }>('copilot_lsp_conversation_create', { message, model: model ?? null, tools: tools ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null });
+    return invoke<CopilotConversationRef>('copilot_lsp_conversation_create', { message, model: model ?? null, tools: tools ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null });
   },
 
   copilotLspConversationTurn(conversationId: string, message: string, model?: string, docUri?: string, docLanguageId?: string) {
-    return invoke<{ conversationId: string; turnId: string }>('copilot_lsp_conversation_turn', { conversationId, message, model: model ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null });
+    return invoke<CopilotConversationRef>('copilot_lsp_conversation_turn', { conversationId, message, model: model ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null });
   },
 
   copilotLspConversationDestroy(conversationId: string) {
@@ -1587,7 +1682,7 @@ export const tauriApi = {
   },
 
   copilotLspConversationModels() {
-    return invoke<Array<{ id: string; name: string; provider: string }>>('copilot_lsp_conversation_models');
+    return invoke<CopilotModel[]>('copilot_lsp_conversation_models');
   },
 
   copilotLspContextResponse(requestId: string, context: CopilotContextPayload | null | unknown[]) {
@@ -1634,5 +1729,49 @@ export const tauriApi = {
   // Phase 2 runtime calibration loop to track peak RAM during a generation.
   getLocalServerRss(): Promise<number> {
     return invoke<number>('get_local_server_rss');
+  },
+
+  // --- Managed agent binaries (agent_manager.rs) ---
+
+  /** Remove a Notesage-managed agent binary (~/.notesage/agents/bin/<agentId>)
+   *  and its version entry. Connection settings are untouched. */
+  async agentUninstall(agentId: string): Promise<void> {
+    await invoke('agent_uninstall', { agentId });
+  },
+
+  /** Resolve where an agent binary comes from (managed install vs PATH).
+   *  `null` when the binary can't be found at all. */
+  async agentResolveBinary(agentId: string): Promise<AgentBinaryResolution | null> {
+    return await invoke<AgentBinaryResolution | null>('agent_resolve_binary', { agentId });
+  },
+
+  // --- Copilot LSP auth ---
+
+  /** Sign out of GitHub Copilot via the LSP. Errors if the LSP is not running. */
+  async copilotLspSignOut(): Promise<void> {
+    await invoke('copilot_lsp_sign_out');
+  },
+
+  // --- MCP servers (mcp.rs) ---
+
+  /** Cache-first tool listing for a registered MCP server. Returns the cached
+   *  tools when non-empty; live-queries the server (and updates the backend
+   *  cache) when the cache is empty or `refresh` is true. */
+  async mcpListTools(serverId: string, refresh = false): Promise<McpToolInfoIpc[]> {
+    return await invoke<McpToolInfoIpc[]>('mcp_list_tools', { serverId, refresh });
+  },
+
+  /** Snapshot of every MCP server registered in the backend (status, error,
+   *  cached tools). Servers that were never started do not appear. */
+  async mcpGetServerStatus(): Promise<McpServerInfoIpc[]> {
+    return await invoke<McpServerInfoIpc[]>('mcp_get_server_status');
+  },
+
+  // --- File-backed store (store.rs) ---
+
+  /** Batch-read multiple `~/.notesage/state/<key>.json` files in one IPC call.
+   *  Missing keys are omitted from the result map. */
+  async storeReadBatch(keys: string[]): Promise<Record<string, string>> {
+    return await invoke<Record<string, string>>('store_read_batch', { keys });
   },
 };

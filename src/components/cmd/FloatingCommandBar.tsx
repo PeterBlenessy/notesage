@@ -53,8 +53,6 @@ import {
   registerSendImageHandler,
   unregisterSendImageHandler,
 } from "@/lib/ai/vision";
-// AttachmentStrip is no longer used here — chips render inline next
-// to the textarea (live-test 2026-04-25).
 import {
   ResendProviderDialog,
   type ResendProviderChoice,
@@ -352,9 +350,8 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // #126 parity — image attachments. Paste, drag-drop, and the file
   // picker all dump ImageAttachments into this state; `handleSend` then
   // hands them to `sendChatMessage` where the Rust backend serializes
-  // them per-provider. Cleared on successful send. The shared
-  // `AttachmentStrip` component handles thumbnail rendering (see the
-  // render block below the input).
+  // them per-provider. Cleared on successful send. The `AttachmentChips`
+  // component handles thumbnail rendering inline next to the textarea.
   const [pendingAttachments, setPendingAttachments] = useState<
     ImageAttachment[]
   >([]);
@@ -2315,12 +2312,9 @@ function ExpandedContent({
         </div>
       ) : null}
 
-      {/* Live-test 2026-04-25 #151 — input row container. The
-          `AttachmentStrip` (image thumbnails) used to render OUTSIDE
-          this border-t boundary, which made it visually a sibling of
-          the bar's chrome instead of part of the input area. Moving
-          it inside the same border-t container groups attachments +
-          input + send button as one block (AttachmentStrip → textarea
+      {/* Live-test 2026-04-25 #151 — input row container. Attachment
+          thumbnails render INSIDE this border-t boundary so attachments +
+          input + send button group as one block (attachments → textarea
           → send).
 
           Paste / drag-drop handlers stay on this OUTER container so

@@ -326,6 +326,105 @@ impl AcpState {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Orphan PID files (audit batch 3 fix #9)
+//
+// Startup used to `pkill -f claude-agent-acp` / `codex-acp` system-wide, which
+// kills matching processes belonging to OTHER apps (a user's own terminal
+// Claude Code session, another editor's ACP integration). Instead, every spawn
+// records its child PID + binary in `~/.notesage/agents/pids/<instance>.pid`
+// (the same PID-file discipline llama-server uses), the agent thread removes
+// the file on clean exit, and startup kills only PIDs whose current command
+// line still matches the recorded binary (see `process_guard`).
+// ---------------------------------------------------------------------------
+
+fn acp_pid_dir() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_default()
+        .join(".notesage")
+        .join("agents")
+        .join("pids")
+}
+
+/// Record a spawned agent's PID and binary for startup orphan cleanup.
+/// Best-effort — a failure to write just means the old behavior (no record).
+fn write_acp_pid_file(instance_id: &str, pid: u32, agent_binary: &str) {
+    let dir = acp_pid_dir();
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    let _ = std::fs::write(
+        dir.join(format!("{}.pid", instance_id)),
+        format!("{}\n{}\n", pid, agent_binary),
+    );
+}
+
+/// Parse a PID-file body (`<pid>\n<binary>\n`) into its parts. Returns `None`
+/// when the pid line is missing/non-numeric or the binary line is empty —
+/// a record we can't verify must never be signalled.
+fn parse_acp_pid_file(content: &str) -> Option<(u32, String)> {
+    let mut lines = content.lines();
+    let pid = lines.next()?.trim().parse::<u32>().ok()?;
+    let binary = lines.next()?.trim();
+    if pid == 0 || binary.is_empty() {
+        return None;
+    }
+    Some((pid, binary.to_string()))
+}
+
+/// Remove the PID file for a finished agent, but only when it still records
+/// `pid` — a reconnect reuses the instance id, so the OLD thread's late
+/// cleanup must not delete the NEW spawn's record.
+fn remove_acp_pid_file(instance_id: &str, pid: u32) {
+    if pid == 0 {
+        return;
+    }
+    let path = acp_pid_dir().join(format!("{}.pid", instance_id));
+    let recorded = std::fs::read_to_string(&path)
+        .ok()
+        .and_then(|c| parse_acp_pid_file(&c).map(|(p, _)| p));
+    if recorded == Some(pid) {
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
+/// Kill orphaned ACP agent subprocesses recorded by previous sessions.
+/// Called once at app startup from `lib.rs` setup. Each PID is verified
+/// against its recorded binary before being signalled (PID-reuse guard); the
+/// PID file is removed either way.
+pub fn kill_orphaned_acp_agents() {
+    let Ok(entries) = std::fs::read_dir(acp_pid_dir()) else {
+        return; // no dir yet — nothing was ever recorded
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("pid") {
+            continue;
+        }
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            if let Some((pid, binary)) = parse_acp_pid_file(&content) {
+                let binary = binary.as_str();
+                let cmdline = super::process_guard::process_cmdline(pid);
+                if super::process_guard::should_signal_pid(cmdline.as_deref(), binary) {
+                    super::process_guard::terminate_with_escalation(pid);
+                    log::info!(
+                        target: "notesage::acp",
+                        "Killed orphaned ACP agent (pid {}, binary {})",
+                        pid, binary
+                    );
+                } else {
+                    log::info!(
+                        target: "notesage::acp",
+                        "Skipping orphaned ACP PID {} — process is gone or no longer matches {} ({:?})",
+                        pid, binary, cmdline
+                    );
+                }
+            }
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+}
+
 /// Handle held in AcpState for each running agent.
 /// Communication with the agent thread is done via the command channel.
 struct AgentHandle {
@@ -627,6 +726,10 @@ fn run_agent_thread(
         // Always capture PID for recovery/shutdown SIGKILL
         if let Some(pid) = child.id() {
             captured_pid_inner.store(pid, std::sync::atomic::Ordering::Relaxed);
+
+            // Record PID + binary for verified orphan cleanup at next startup
+            // (replaces the system-wide `pkill -f` — audit batch 3 fix #9).
+            write_acp_pid_file(&sandbox_instance_id, pid, &agent_binary);
 
             // Register PID for sandbox violation monitoring (if sandboxed)
             if sandbox_enabled {
@@ -1282,6 +1385,15 @@ fn run_agent_thread(
             };
         }
     }
+
+    // Remove the orphan-cleanup PID record — the child is dead (command loop
+    // exit drops the Child with kill_on_drop). PID-guarded so a reconnect's
+    // fresh record for the same instance id is never deleted by the old
+    // thread's late cleanup.
+    remove_acp_pid_file(
+        &proxy_instance_id,
+        captured_pid.load(std::sync::atomic::Ordering::Relaxed),
+    );
 
     // Clean up sandbox profile temp file
     if sandbox_enabled {
@@ -2266,12 +2378,37 @@ pub async fn acp_permission_respond(
 #[cfg(test)]
 mod tests {
     use super::{
-        build_acp_mcp_servers, extract_model_info, AcpMcpServerInput, AuthEnvVar, AuthMethodInfo,
-        SmokeStage, SmokeTestReport,
+        build_acp_mcp_servers, extract_model_info, parse_acp_pid_file, AcpMcpServerInput,
+        AuthEnvVar, AuthMethodInfo, SmokeStage, SmokeTestReport,
     };
     use super::super::mcp::{McpEnvValue, McpTransport};
     use agent_client_protocol::schema::McpServer;
     use std::collections::HashMap;
+
+    // --- orphan PID-file records (audit batch 3 fix #9) ---
+
+    #[test]
+    fn pid_file_round_trips_pid_and_binary() {
+        let content = "12345\n/Users/x/.notesage/agents/bin/claude-agent-acp\n";
+        assert_eq!(
+            parse_acp_pid_file(content),
+            Some((
+                12345,
+                "/Users/x/.notesage/agents/bin/claude-agent-acp".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn pid_file_rejects_unverifiable_records() {
+        // Records that can't be identity-verified must parse to None so the
+        // startup cleanup never signals them.
+        assert_eq!(parse_acp_pid_file(""), None);
+        assert_eq!(parse_acp_pid_file("not-a-pid\n/bin/agent\n"), None);
+        assert_eq!(parse_acp_pid_file("12345\n"), None); // missing binary line
+        assert_eq!(parse_acp_pid_file("12345\n   \n"), None); // blank binary
+        assert_eq!(parse_acp_pid_file("0\n/bin/agent\n"), None); // pid 0
+    }
 
     fn stdio_input(name: &str, command: &str) -> AcpMcpServerInput {
         AcpMcpServerInput {

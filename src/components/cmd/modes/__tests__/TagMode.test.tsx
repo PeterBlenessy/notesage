@@ -3,6 +3,7 @@
 import '@/test/tauri-mock';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  act,
   renderWithProviders,
   screen,
   fireEvent,
@@ -203,6 +204,9 @@ describe('TagMode', () => {
     renderWithProviders(<TagMode filter="" onPick={onPick} />);
 
     await waitFor(() => expect(screen.getByText('second')).toBeTruthy());
+    // Flush the passive effect that re-registers the window keydown handler
+    // with the non-empty results closure (stale-closure flake on loaded CI).
+    await act(async () => {});
 
     fireEvent.keyDown(window, { key: 'ArrowDown' });
     fireEvent.keyDown(window, { key: 'Enter' });

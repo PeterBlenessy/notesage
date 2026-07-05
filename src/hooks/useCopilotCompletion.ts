@@ -50,6 +50,9 @@ export function useCopilotCompletion(editor: Editor | null) {
   const docVersion = useRef(0);
   const completionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRequestedPos = useRef<string | null>(null);
+  // Monotonic request counter — a slow response is discarded when a newer
+  // request was issued while it was in flight (mirrors useLocalCompletion).
+  const requestId = useRef(0);
 
   // -------------------------------------------------------------------------
   // LSP lifecycle: start/stop based on connection + working directory
@@ -148,6 +151,10 @@ export function useCopilotCompletion(editor: Editor | null) {
   const notesRootPath = useSettingsStore((s) => s.notesRootPath);
   const homeDir = useSettingsStore((s) => s.homeDir);
   const completionsOnOutOfScope = useSettingsStore((s) => s.completionsOnOutOfScope);
+  // Subscribed (not `getState()`) so toggling the setting re-renders this hook
+  // and re-arms the effects/callbacks below — a `getState()` read in a dep
+  // array is evaluated once per render and never subscribes.
+  const inlineCompletionsDisabled = useSettingsStore((s) => s.inlineCompletionsDisabled);
   const resolvedNotesRoot =
     notesRootPath && notesRootPath.startsWith('~')
       ? homeDir
@@ -242,7 +249,7 @@ export function useCopilotCompletion(editor: Editor | null) {
       if (!editor || !lspReady) return;
 
       // Don't request if completions disabled for this tab
-      if (useSettingsStore.getState().inlineCompletionsDisabled) return;
+      if (inlineCompletionsDisabled) return;
 
       // Don't request if selection is not collapsed, or inline diff is active
       const { selection } = editor.state;
@@ -263,14 +270,27 @@ export function useCopilotCompletion(editor: Editor | null) {
       if (posKey === lastRequestedPos.current) return;
       lastRequestedPos.current = posKey;
 
+      // Capture the request anchor + a monotonic id so a slow response can't
+      // paint stale ghost text after a newer request (or a cursor move) has
+      // superseded it — request N resolving after N+1 must be discarded.
+      const requestedPos = pos;
+      const thisRequest = ++requestId.current;
+
       try {
         const result = await requestCopilotCompletion(filePath, line, character, version);
+
+        // Discard if a newer request was issued while we were waiting
+        if (thisRequest !== requestId.current) return;
 
         // The editor state may have changed while we were waiting
         if (!editor.isFocused || editor.isDestroyed) return;
 
+        // Discard if the cursor moved off the request anchor — the completion
+        // was computed for a position that no longer matches the caret.
+        const currentPos = editor.state.selection.$from.pos;
+        if (currentPos !== requestedPos) return;
+
         if (result) {
-          const currentPos = editor.state.selection.$from.pos;
           setGhostText(editor, {
             text: result.text,
             from: currentPos,
@@ -286,7 +306,7 @@ export function useCopilotCompletion(editor: Editor | null) {
         // Expected: completion requests may fail when LSP is restarting or document changed
       }
     },
-    [editor, lspReady, useSettingsStore.getState().inlineCompletionsDisabled]
+    [editor, lspReady, inlineCompletionsDisabled]
   );
 
   useEffect(() => {
@@ -319,7 +339,7 @@ export function useCopilotCompletion(editor: Editor | null) {
       }).catch(() => {});
 
       // Skip completion request if disabled for this tab
-      if (useSettingsStore.getState().inlineCompletionsDisabled) return;
+      if (inlineCompletionsDisabled) return;
 
       // Debounce completion request: wait 150ms after typing stops.
       // Await didChange completion before requesting to avoid stale document version.
@@ -341,17 +361,17 @@ export function useCopilotCompletion(editor: Editor | null) {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editor, connection?.id, lspReady, isSourceMode, activeTab?.filePath, requestCompletion, selectedProjectPaths, resolvedNotesRoot, completionsOnOutOfScope]);
+  }, [editor, connection?.id, lspReady, isSourceMode, activeTab?.filePath, requestCompletion, selectedProjectPaths, resolvedNotesRoot, completionsOnOutOfScope, inlineCompletionsDisabled]);
 
   // -------------------------------------------------------------------------
   // Clear ghost text when completions are disabled for the active tab
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    if (editor && useSettingsStore.getState().inlineCompletionsDisabled && hasActiveGhostText(editor)) {
+    if (editor && inlineCompletionsDisabled && hasActiveGhostText(editor)) {
       clearGhostText(editor);
     }
-  }, [editor, useSettingsStore.getState().inlineCompletionsDisabled]);
+  }, [editor, inlineCompletionsDisabled]);
 
   // -------------------------------------------------------------------------
   // Accept tracking: when ghost text is accepted via Tab, notify LSP

@@ -14,7 +14,7 @@ Streaming AI responses.
 
 **Direct API path:**
 
-1. User types message in ChatInput
+1. User types message in the `FloatingCommandBar` composer
 2. Frontend calls `useChatStore.addMessage(userMessage)`
 3. Hook calls Tauri command `ai_chat_stream(messages, provider, apiKey, tools)`
 4. Rust makes streaming HTTP request (SSE)
@@ -191,7 +191,7 @@ Research workflow built on the Skills & Agents Platform.
 
 **Research file format:** Standard markdown with YAML frontmatter (`source_url`, `title`, `author`, `date_saved`, `tags`, `word_count`). Stored in `research/` (project) or `~/Notesage/research/` (global).
 
-**Searching:** `Cmd+4` (or type `?` in command palette) opens research search mode. Real-time filtering via native Rust `search_research` command.
+**Searching:** `Cmd+4` (or type `?` in command palette) opens research search mode. Real-time filtering via the SQLite-index-backed `index_search_research` Tauri command.
 
 **Citing:** Three citation formats (inline links, footnotes, academic). Citation format persisted per-project.
 
@@ -269,8 +269,7 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 
 | File | Purpose |
 | --- | --- |
-| `src/components/cmd/FloatingCommandBar.tsx` | Floating composer / pinned right-edge panel — the chat surface |
-| `src/components/chat/ChatInput.tsx` | Message input (/ for skills, @ for agents) |
+| `src/components/cmd/FloatingCommandBar.tsx` | Floating composer / pinned right-edge panel — the chat surface and message input (prefix-mode pickers — `/` skills, `@` references, etc. — live in `src/components/cmd/modes/`) |
 | `src/components/chat/ChatMessageList.tsx` | Conversation stream (segments, branches, tool calls) |
 | `src/components/chat/PermissionCard.tsx` | ACP tool call approval |
 | `src/components/chat/ToolCallPermissionCard.tsx` | Direct API tool call approval |
@@ -290,7 +289,7 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 | `src/lib/ai/project-lock.ts` | `ProjectLockViolation` + lock lookup utilities |
 | `src/components/chat/ResendProviderDialog.tsx` | Provider-mismatch confirmation dialog for resend / edit |
 | `src/components/chat/BranchSwitcher.tsx` | Branch switcher popover at branch points |
-| `src/components/chat/AttachmentStrip.tsx` | Image attachment thumbnails with remove buttons |
+| `src/components/cmd/AttachmentChips.tsx` | Attachment chip strip above the command-bar input (file / person / comment / task / research chips; image attachments render as thumbnails in the same strip) |
 | `src/components/settings/ApprovalsSettings.tsx` | Privacy > Approvals panel (revoke / bulk revoke) |
 | `src/lib/ai/vision.ts` | Vision capability detection + editor→chat image event bus |
 | `src/lib/image-compress.ts` | Client-side image compression pipeline |

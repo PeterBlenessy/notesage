@@ -308,7 +308,6 @@ pub fn run() {
             agent_resolve_binary,
             agent_install,
             agent_uninstall,
-            agent_install_node_runtime,
             agent_check_updates,
             agent_update,
             commands::local_agent::local_agent_write_config,
@@ -441,8 +440,6 @@ pub fn run() {
             check_llama_server_available,
             // Model metadata
             get_model_metadata,
-            fetch_hf_metadata,
-            parse_gguf_metadata,
             get_runtime_model_metadata,
             // Hardware-aware model recommendation
             model_fit::hardware::detect_hardware_profile,
@@ -455,9 +452,6 @@ pub fn run() {
             network_domain_respond,
             network_proxy_status,
             network_default_domains,
-            // Sandbox violation monitoring
-            sandbox_monitor_register_pid,
-            sandbox_monitor_unregister_pid,
             // Secure credential storage
             store_credential,
             get_credential,
@@ -487,12 +481,11 @@ pub fn run() {
             log::set_max_level(log::LevelFilter::Warn);
 
             // Kill orphaned agent processes from previous sessions that weren't cleaned up
-            // (e.g. app was force-quit or crashed).
-            for pattern in &["claude-agent-acp", "codex-acp"] {
-                let _ = std::process::Command::new("pkill")
-                    .args(["-f", pattern])
-                    .output();
-            }
+            // (e.g. app was force-quit or crashed). PID-file based with identity
+            // verification — the old system-wide `pkill -f claude-agent-acp` also
+            // killed matching processes owned by OTHER apps (a terminal Claude Code
+            // session, another editor's ACP agent).
+            acp::kill_orphaned_acp_agents();
             // Kill orphaned llama-server by PID file — NOT pkill, which would kill
             // llama-server instances from other apps (Ollama, LM Studio, etc.) and
             // race with the frontend's auto-start after app updates.

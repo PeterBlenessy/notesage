@@ -2,7 +2,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@/test/tauri-mock';
-import { renderHook } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { useLocalCompletion } from '@/hooks/useLocalCompletion';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -1320,6 +1320,62 @@ describe('useLocalCompletion', () => {
       // With the escape hatch on, the provider IS called for an out-of-scope tab.
       expect(mockOllamaFim).toHaveBeenCalled();
 
+      unmount();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Deep-review batch1 finding #3 — `inlineCompletionsDisabled` must be a
+  // store SUBSCRIPTION, not a `getState()` read in a dep array (which is
+  // evaluated once per render and never subscribes, so flipping the setting
+  // didn't re-arm the effects until an unrelated re-render).
+  // -------------------------------------------------------------------------
+
+  describe('deep-review #3 — reactive inlineCompletionsDisabled subscription', () => {
+    it('clears active ghost text when the setting flips at runtime WITHOUT a manual rerender', () => {
+      const conn = makeConnection();
+      setupRouting(conn, 'codellama');
+      mockHasActiveGhostText = true;
+      const editor = makeMockEditor();
+
+      const { unmount } = renderHook(() => useLocalCompletion(editor as unknown as import('@tiptap/core').Editor));
+      mockClearGhostText.mockClear();
+
+      // Flip with NO rerender() call — the hook must re-render via its own
+      // store subscription and re-run the clear-ghost-text effect.
+      act(() => {
+        useSettingsStore.setState({ inlineCompletionsDisabled: true });
+      });
+
+      expect(mockClearGhostText).toHaveBeenCalledWith(editor);
+      unmount();
+    });
+
+    it('stops issuing completion requests after the setting flips at runtime', async () => {
+      const conn = makeConnection();
+      setupRouting(conn, 'codellama');
+      mockOllamaFim.mockResolvedValue('completion');
+      const editor = makeMockEditor('Hello ');
+
+      const { unmount } = renderHook(() => useLocalCompletion(editor as unknown as import('@tiptap/core').Editor));
+
+      act(() => {
+        useSettingsStore.setState({ inlineCompletionsDisabled: true });
+      });
+
+      // The flip re-rendered the hook and re-registered the update handler with
+      // the new setting — drive the LATEST registration (what the editor would
+      // actually call after `editor.off` removed the stale one).
+      const updateHandler = editor.on.mock.calls
+        .filter((call: unknown[]) => call[0] === 'update')
+        .pop()?.[1] as () => void;
+      expect(updateHandler).toBeDefined();
+
+      updateHandler();
+      await vi.advanceTimersByTimeAsync(300);
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(mockOllamaFim).not.toHaveBeenCalled();
       unmount();
     });
   });
