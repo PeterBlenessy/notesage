@@ -21,9 +21,10 @@ vi.mock('@/lib/logger', () => ({
   },
 }));
 
-// `resetUnresponsiveTimer` reaches back into the lifecycle module. Stub it — we're
-// testing the dispatcher in isolation.
-vi.mock('@/hooks/useAcpLifecycle', () => ({
+// `resetUnresponsiveTimer` reaches into the unresponsive-monitor runtime. Stub
+// it — we're testing the dispatcher in isolation. (Import path updated when the
+// timer moved from `useAcpLifecycle` to `acp/unresponsive-monitor`.)
+vi.mock('@/hooks/acp/unresponsive-monitor', () => ({
   resetUnresponsiveTimer: vi.fn(),
 }));
 
