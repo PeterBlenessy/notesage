@@ -26,6 +26,7 @@ import { canReauthenticate } from '@/lib/ai/reauth';
 import { isLocalAgentPreset, resolveAgentLaunch, resolveLocalAgentEndpoint } from '@/lib/ai/acp-agent-state';
 import { GooseAttribution } from './GooseAttribution';
 import { ReauthDialog } from './ReauthDialog';
+import { ConnectionUsageDetail } from './ConnectionUsageDetail';
 
 const AUTH_BADGES: Record<string, string> = {
   api_key: 'API Key',
@@ -365,6 +366,14 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
               {AUTH_BADGES[connection.authMethod] ?? connection.authMethod}
             </span>
+            {/* Plan-ish pill (provider-usage-display #10) — surfaced when the
+                account tier is known. `freeAccount` is detected at runtime for
+                agent connections; a paid/plan signal may join it in Phase 3. */}
+            {connection.freeAccount && (
+              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
+                Free account
+              </span>
+            )}
           </div>
           {/* Transparency: the Local Agent preset is powered by Goose — credit
               it (with a link) on the connection card too, not just at setup. */}
@@ -425,6 +434,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
 
         {/* Right: action buttons */}
         <div className="flex items-center gap-1 shrink-0">
+          <ConnectionUsageDetail connection={connection} />
           <Button
             variant="ghost"
             size="icon"

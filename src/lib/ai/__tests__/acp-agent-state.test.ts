@@ -120,8 +120,14 @@ describe('ensureAcpAgent', () => {
     mod.setSessionConfigOptions([
       { id: 'reasoning_effort', name: 'Reasoning Effort', category: 'thought_level', currentValue: 'high' },
     ]);
+    mod.updateUsage({
+      contextUsed: 4200,
+      contextSize: 200_000,
+      rateLimit: { status: 'allowed_warning', rateLimitType: 'five_hour', resetsAt: 1_751_700_000 },
+    });
     expect(mod.getSessionInfo().modes?.currentModeId).toBe('acceptEdits');
     expect(mod.getSessionInfo().configOptions?.length).toBe(1);
+    expect(mod.getSessionInfo().usage?.rateLimit?.status).toBe('allowed_warning');
 
     const connA = makeConnection({ id: 'conn-a' });
     const connB = makeConnection({ id: 'conn-b' });
@@ -132,10 +138,38 @@ describe('ensureAcpAgent', () => {
     expect(mod.getSessionInfo().modes?.currentModeId).toBe('acceptEdits');
 
     // Connection change MUST clear sessionInfo so stale modes/configOptions
-    // from the prior agent don't leak into the new agent's command bar.
+    // from the prior agent don't leak into the new agent's command bar —
+    // including usage with its rate-limit state (provider-usage-display #3:
+    // a stale rate-limit warning from the previous provider is worse than none).
     await mod.ensureAcpAgent(connB, '/tmp');
     expect(mod.getSessionInfo().modes).toBeNull();
     expect(mod.getSessionInfo().configOptions).toBeNull();
+    expect(mod.getSessionInfo().usage).toBeNull();
+  });
+
+  it('agent stop clears usage including rate-limit state (provider-usage-display #3)', async () => {
+    setupDefaultHandlers();
+    setMockInvokeHandler('acp_agent_spawn', () => ({ instance_id: 'inst-usage' }));
+
+    const mod = await import('../acp-agent-state');
+    mod.clearAcpAgent();
+    await mod.ensureAcpAgent(makeConnection(), '/tmp');
+
+    mod.updateUsage({
+      contextUsed: 1000,
+      contextSize: 200_000,
+      cost: { amount: 0.42, currency: 'USD' },
+      rateLimit: { status: 'allowed_warning', rateLimitType: 'seven_day', utilization: 91 },
+    });
+    mod.setLastTurnUsage({ totalTokens: 1500, inputTokens: 1000, outputTokens: 500 });
+    expect(mod.getSessionInfo().usage?.rateLimit?.utilization).toBe(91);
+    expect(mod.getSessionInfo().usage?.cost?.amount).toBe(0.42);
+    expect(mod.getSessionInfo().lastTurnUsage?.totalTokens).toBe(1500);
+
+    mod.stopAcpAgent();
+
+    expect(mod.getSessionInfo().usage).toBeNull();
+    expect(mod.getSessionInfo().lastTurnUsage).toBeNull();
   });
 
   it('throws after exceeding max retry depth instead of infinite recursion', async () => {
