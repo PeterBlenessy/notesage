@@ -1,26 +1,49 @@
+// ---------------------------------------------------------------------------
+// ACP chat lifecycle orchestrator.
+//
+// Composes the extracted ACP runtime modules (`src/hooks/acp/*`) into the
+// chat-facing operations: prompt send, crash retry with session restore, and
+// cancel. The per-conversation stream-cleanup map is owned here (one per
+// mounted hook); module-level runtime state lives in its own owners:
+//   - unresponsive timer + recovery callbacks → `acp/unresponsive-monitor`
+//   - eager session creation + promise lock   → `acp/useEagerAcpSession`
+//   - workspace respawn / agent-exit guards   → `acp/useAcpAgentGuards`
+//   - inline single-turn generation           → `acp/inline-generate`
+// ---------------------------------------------------------------------------
+
 import { useCallback, useEffect, useRef } from 'react';
 import { useChatStore, selectProjectPaths, selectPendingProjectSwitch, getSessionIdForLeaf, sliceThreadBySegment } from '@/stores/chat-store';
 import { getThreadResilient } from '@/lib/chat-tree';
 import { usePermissionStore } from '@/stores/permission-store';
 import type { ChatMessage, ImageAttachment } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
-import { setAgentModels } from '@/lib/ai/connections';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
 import { isAcpConnectionError, friendlyAcpError } from '@/lib/ai/errors';
 import { isAuthError, canReauthenticate, reauthenticateAgent } from '@/lib/ai/reauth';
 import { toast } from 'sonner';
-import { tauriApi } from '@/lib/tauri';
-import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useConnectionsStore } from '@/stores/connections-store';
-import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload, AcpSpawnResult } from '@/lib/ai/acp-utils';
-import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
+import type { AcpSessionResult, AcpSessionUpdatePayload, AcpSpawnResult } from '@/lib/ai/acp-utils';
 import { buildAcpMcpServerInputs } from '@/lib/ai/acp-mcp';
 import { buildAttachmentActivities, getChatSandboxScope, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
-import { getAcpAgent, getAllAcpAgentEntries, stopAcpAgent, stopAllAcpAgents, ensureAcpAgent, updateAcpAgentInstanceId, setSessionModes, setSessionConfigOptions, updateCurrentMode, updateConfigOptionValue, setAvailableCommands, backfillAcpCapabilities, resolveConfiguredModeId, DEFAULT_AGENT_KEY } from '@/lib/ai/acp-agent-state';
-import { useSessionRunStore, ACTIVE_STATUSES } from '@/stores/session-run-store';
+import { getAcpAgent, stopAcpAgent, ensureAcpAgent, updateAcpAgentInstanceId, type AcpAgentState } from '@/lib/ai/acp-agent-state';
+import { getHomeDir } from '@/hooks/agent-task/home-dir';
+import {
+  acpUnresponsiveMonitor,
+  startUnresponsiveTimer,
+  clearUnresponsiveTimer,
+  UNRESPONSIVE_TIMEOUT_MS,
+} from '@/hooks/acp/unresponsive-monitor';
+import { cleanupKeyFor, runConvCleanup, runAllConvCleanups, registerConvCleanup, type CleanupMap } from '@/hooks/acp/conv-cleanup';
+import { cacheAgentModels, applyFreshSessionConfig } from '@/hooks/acp/session-config';
+import { useEagerAcpSession } from '@/hooks/acp/useEagerAcpSession';
+import { useAcpWorkspaceRespawn, useAcpAgentExitWatcher } from '@/hooks/acp/useAcpAgentGuards';
+import { acpGenerateTextOnce } from '@/hooks/acp/inline-generate';
+import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
+import { useAgentStatusStore } from '@/stores/agent-status-store';
+import { runStarted, runAttachInstance, runError, runIdle } from '@/lib/ai/session-run';
 
 /**
  * The ACP agent bound to the foreground (active) conversation, if any.
@@ -34,71 +57,6 @@ import { useSessionRunStore, ACTIVE_STATUSES } from '@/stores/session-run-store'
  */
 function foregroundAgent() {
   return getAcpAgent(useChatStore.getState().activeConversationId ?? undefined);
-}
-import { setupAcpChatListeners, buildAcpChatCleanup } from '@/hooks/useAcpSessionListeners';
-import { useAgentStatusStore } from '@/stores/agent-status-store';
-import { runStarted, runAttachInstance, runError, runIdle } from '@/lib/ai/session-run';
-
-/**
- * Re-apply the conversation's remembered ACP permission mode (or, for a fresh
- * session, the connection default) to a newly created or restored session.
- *
- * A sandbox-scope change respawns the agent and creates a fresh session that
- * resets to the agent's own default mode (e.g. Claude Code → 'default' = Read
- * Only). Without this, the picker's mode silently reverts after the user picked
- * "Agent". The pick is persisted per-conversation (`chat-store.agentModeId`) and
- * re-asserted here so it survives every respawn. Must be called immediately after
- * `setSessionModes(session.modes)` at each session-creation site.
- *
- * @param restored True when `session` came from session/load|resume (it already
- *   carries the agent's remembered mode, so we don't impose the connection
- *   default — but an explicit per-conversation pick still wins).
- */
-export function reapplySessionMode(
-  instanceId: string,
-  session: AcpSessionResult,
-  connection: Connection | null,
-  restored: boolean,
-): void {
-  if (!session.modes || !session.session_id) return;
-  const state = useChatStore.getState();
-  const convMode = state.conversations.find((c) => c.id === state.activeConversationId)?.agentModeId;
-  // On restore, only an explicit per-conversation pick wins (don't impose the
-  // connection default over the agent's restored mode); on a fresh session, fall
-  // back to the connection default via the shared precedence resolver.
-  const targetMode = restored ? convMode : resolveConfiguredModeId(convMode, connection);
-  if (!targetMode || targetMode === session.modes.currentModeId) return;
-  updateCurrentMode(targetMode);
-  tauriApi.acpSessionSetMode(instanceId, session.session_id, targetMode).catch((err) => {
-    log.debug('ai', `ACP re-apply mode failed: ${String(err)}`);
-  });
-}
-
-/**
- * Apply the connection's configured model to a fresh ACP session.
- *
- * ACP 0.14 removed the dedicated `session/set_model` request; model selection is
- * a session config option with category `"model"`. Agents without such an option
- * have no model selector — skip silently (debug log), never fail the send.
- */
-export async function applyConnectionModelOption(
-  instanceId: string,
-  session: AcpSessionResult,
-  model: string | undefined,
-): Promise<void> {
-  if (!model || !session.session_id) return;
-  const modelOption = session.config_options?.find((opt) => opt.category === 'model');
-  if (!modelOption) {
-    log.debug('ai', 'ACP model default skipped: agent reports no model-category config option');
-    return;
-  }
-  try {
-    await tauriApi.acpSessionSetConfigOption(instanceId, session.session_id, modelOption.id, model);
-    updateConfigOptionValue(modelOption.id, model);
-  } catch (err) {
-    // Agent may reject an unknown model id — not fatal, proceed without it.
-    log.debug('ai', `ACP set model config option failed: ${String(err)}`);
-  }
 }
 
 /**
@@ -152,139 +110,102 @@ function resolveActiveSessionId(fallback: string | null): string | null {
 // Re-export for backward compatibility
 export { stopAcpAgent } from '@/lib/ai/acp-agent-state';
 export { truncateDetail, formatAcpToolName } from '@/lib/ai/acp-utils';
-
-// Lazy-resolved home directory for path filtering. Stable per OS session;
-// memoised so the path-filter hot path doesn't await Tauri IPC every prompt.
-let _homeDir: string | null = null;
-async function getHomeDirCached(): Promise<string> {
-  if (!_homeDir) {
-    _homeDir = await tauriApi.getHomeDir();
-  }
-  return _homeDir;
-}
-
-/**
- * In-flight promise for the eager session-creation effect. React 18 strict mode
- * and store rehydration can each trigger the effect multiple times at startup;
- * without this lock all firings would race and create redundant ACP sessions.
- * Subsequent callers await the first one instead of duplicating the work.
- */
-let eagerSessionPromise: Promise<void> | null = null;
+export { reapplySessionMode, applyConnectionModelOption } from '@/hooks/acp/session-config';
+export {
+  startUnresponsiveTimer,
+  resetUnresponsiveTimer,
+  clearUnresponsiveTimer,
+  getRetryCallback,
+  getKeepWaitingCallback,
+} from '@/hooks/acp/unresponsive-monitor';
+export {
+  cleanupKeyFor,
+  runConvCleanup,
+  runAllConvCleanups,
+  registerConvCleanup,
+  type CleanupMap,
+} from '@/hooks/acp/conv-cleanup';
 
 // ---------------------------------------------------------------------------
-// Unresponsiveness detection timer (60s inactivity → recovery)
-// ---------------------------------------------------------------------------
-
-// 5 minutes — agents can have long gaps between events (thinking, web fetches,
-// large file reads). The backend health check confirms aliveness; this timer
-// only catches genuinely hung agents, not slow ones.
-const UNRESPONSIVE_TIMEOUT_MS = 300_000;
-
-/** Module-level timer ID so useAcpSessionListeners can reset it. */
-let unresponsiveTimerId: ReturnType<typeof setTimeout> | null = null;
-
-/** Callback to invoke when the timer fires. Set by the hook. */
-let onUnresponsiveCallback: (() => void) | null = null;
-
-/** Module-level retry callback — set by the hook, callable from UI components. */
-let retryCallback: (() => Promise<void>) | null = null;
-export function getRetryCallback(): (() => Promise<void>) | null {
-  return retryCallback;
-}
-
-/** Module-level keep-waiting callback — set by the hook, callable from UI components. */
-let keepWaitingCallback: (() => void) | null = null;
-export function getKeepWaitingCallback(): (() => void) | null {
-  return keepWaitingCallback;
-}
-
-/** Start (or restart) the unresponsiveness timer. */
-export function startUnresponsiveTimer(): void {
-  clearUnresponsiveTimer();
-  if (!onUnresponsiveCallback) return;
-  unresponsiveTimerId = setTimeout(() => {
-    unresponsiveTimerId = null;
-    onUnresponsiveCallback?.();
-  }, UNRESPONSIVE_TIMEOUT_MS);
-}
-
-/** Reset the timer (called on every acp-session-update event). */
-export function resetUnresponsiveTimer(): void {
-  if (unresponsiveTimerId !== null) {
-    startUnresponsiveTimer();
-  }
-}
-
-/** Clear the timer (called on prompt completion, cancel, or unmount). */
-export function clearUnresponsiveTimer(): void {
-  if (unresponsiveTimerId !== null) {
-    clearTimeout(unresponsiveTimerId);
-    unresponsiveTimerId = null;
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Per-conversation stream cleanups (review #3)
+// Turn helpers shared by the prompt-send and retry paths
 // ---------------------------------------------------------------------------
 
 /**
- * Registry key for a conversation's stream-cleanup closure. Mirrors the ACP
- * agent registry's own key (`conversationId ?? DEFAULT_AGENT_KEY`) so the
- * cleanup map and the agent map share keys — the agent-exited handler can map an
- * exited instance back to its registry key and clean up the matching stream.
- *
- * A single `cleanupRef` previously let a second conversation's send overwrite
- * the first's cleanup: the first's listeners leaked, and the first's completion
- * ran the second's cleanup, tearing down the second's live stream. A
- * per-conversation map keyed by this fixes it (review #3).
+ * Create a fresh chat session on the agent, attach it to the registry entry,
+ * record it on the active segment, and cache the agent-reported models.
  */
-export function cleanupKeyFor(conversationId: string | null | undefined): string {
-  return conversationId ?? DEFAULT_AGENT_KEY;
+async function startFreshChatSession(
+  instanceId: string,
+  cwd: string,
+  agent: AcpAgentState,
+  connection: Connection | null,
+  projectPaths: string[],
+): Promise<AcpSessionResult> {
+  const session = await invoke<AcpSessionResult>('acp_session_new', {
+    instanceId,
+    workingDirectory: cwd,
+    mcpServers: buildAcpMcpServerInputs(agent.capabilities, projectPaths),
+  });
+  agent.chatSessionId = session.session_id;
+  // Track session in the segment
+  useChatStore.getState().setSegmentSessionId(session.session_id);
+  // Cache available models from the agent for the config dialog
+  cacheAgentModels(connection, session);
+  return session;
 }
 
-export type CleanupMap = Map<string, (cancelled?: boolean) => void>;
+type ChatListenerDeps = Parameters<typeof setupAcpChatListeners>[0];
 
-/** Run + deregister the cleanup for one conversation (no-op if none registered). */
-export function runConvCleanup(map: CleanupMap, conversationId: string | null | undefined, cancelled?: boolean): void {
-  const key = cleanupKeyFor(conversationId);
-  const fn = map.get(key);
-  if (fn) {
-    map.delete(key);
-    fn(cancelled);
-  }
-}
-
-/** Run + deregister every conversation's cleanup (unmount / agent-stop-all). */
-export function runAllConvCleanups(map: CleanupMap, cancelled?: boolean): void {
-  const fns = [...map.values()];
-  map.clear();
-  for (const fn of fns) fn(cancelled);
+interface AttachTurnListenersArgs {
+  cleanupMap: CleanupMap;
+  instanceId: string;
+  /**
+   * Session this turn prompts on — the listeners gate on it so a session swap
+   * on the shared agent instance (or an overlapping send) can't bleed another
+   * session's chunks into this message (finding #4a).
+   */
+  sessionId: string | null;
+  assistantMessageId: number;
+  conversationId: string | undefined;
+  listenerDeps: Omit<ChatListenerDeps, 'instanceId' | 'sessionId'>;
+  /** Run key re-asserted when a stale cleanup ran — resolved lazily at re-assert time. */
+  resolveRunKey: () => string | null | undefined;
+  setLoading: (loading: boolean) => void;
+  setActiveTool: (tool: string | null) => void;
+  finalizeSegments: ChatListenerDeps['finalizeSegments'];
+  setMessageInterrupted: (messageId: number, convId?: string | null) => void;
 }
 
 /**
- * Register a conversation's stream cleanup, running any STALE entry for the
- * same conversation first. A plain `map.set` overwrite leaked the previous
- * closure — its listeners stayed live alongside the new registration and both
- * passed the instanceId gate, double-writing stream events (deep-review
- * finding #4b). The stale closure only tears down ITS OWN listeners/state;
- * the new cleanup being registered is untouched.
- *
- * Returns whether a stale cleanup ran, so the caller can re-assert per-send
- * state the stale closure cleared as a side effect (loading flag, run entry).
+ * Set up the full chat listeners for a turn and register their cleanup in the
+ * per-conversation map. If a stale cleanup for the same conversation ran as a
+ * side effect of registration (it clears the loading flag and the run entry),
+ * re-assert what THIS turn established.
  */
-export function registerConvCleanup(
-  map: CleanupMap,
-  conversationId: string | null | undefined,
-  cleanup: (cancelled?: boolean) => void,
-): boolean {
-  const key = cleanupKeyFor(conversationId);
-  const stale = map.get(key);
-  if (stale) {
-    map.delete(key);
-    stale();
+async function attachTurnListeners(args: AttachTurnListenersArgs): Promise<void> {
+  const { cleanupMap, instanceId, sessionId, assistantMessageId, conversationId } = args;
+  const listeners = await setupAcpChatListeners({ ...args.listenerDeps, instanceId, sessionId });
+  const hadStale = registerConvCleanup(
+    cleanupMap,
+    conversationId,
+    buildAcpChatCleanup(
+      listeners,
+      instanceId,
+      assistantMessageId,
+      () => cleanupMap.delete(cleanupKeyFor(conversationId)),
+      args.setLoading,
+      args.setActiveTool,
+      args.finalizeSegments,
+      args.setMessageInterrupted,
+      conversationId ?? null,
+    ),
+  );
+  if (hadStale) {
+    // The stale cleanup cleared the loading flag and this conversation's
+    // run entry as side effects — re-assert what THIS turn established.
+    args.setLoading(true);
+    runStarted(args.resolveRunKey(), 'acp', { instanceId });
   }
-  map.set(key, cleanup);
-  return stale !== undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -305,7 +226,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
   // turn, keyed by `cleanupKeyFor(conversationId)`. Replaces the single
   // `cleanupRef` that corrupted under concurrent sessions.
   const cleanupRefs = useRef<CleanupMap>(new Map());
-  const eagerUnlistenRef = useRef<(() => void) | null>(null);
 
   // Tear down every in-flight stream on unmount so concurrent sessions don't
   // leak listeners when the hook is destroyed (the old single `cleanupRef` had
@@ -354,15 +274,19 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
   // Register the unresponsive callback so the timer can trigger recovery
   useEffect(() => {
-    onUnresponsiveCallback = () => {
+    acpUnresponsiveMonitor.setOnUnresponsive(() => {
       log.warn('ai', `ACP agent unresponsive for ${UNRESPONSIVE_TIMEOUT_MS / 1000}s, checking status`);
       recoveryCallbackRef.current?.();
-    };
+    });
     return () => {
-      onUnresponsiveCallback = null;
+      acpUnresponsiveMonitor.setOnUnresponsive(null);
       clearUnresponsiveTimer();
     };
   }, []);
+
+  // Stop button escalation timer: 5s after cancel, if no response → SIGKILL + recovery
+  const cancelEscalationRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelEscalationListenerRef = useRef<(() => void) | null>(null);
 
   // Clean up cancel escalation timer and listener on unmount (Bug #2)
   useEffect(() => {
@@ -376,317 +300,15 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     };
   }, []);
 
-  // Respawn agent when workspace folders change (sandbox paths need updating).
-  //
-  // Task #29: before tearing down the agent, gracefully cancel any in-flight
-  // turn and drain pending permission requests. Without this, a stale
-  // permission prompt can linger in the UI pointing at a session tied to a
-  // dead agent — approving it races against the new agent's spawn and either
-  // no-ops or hits the wrong instance. Ordering matters:
-  //   1. Cancel the active ACP turn (tells the agent to stop streaming).
-  //   2. Deny pending permissions for this instance (fire-and-forget; the
-  //      store is then drained so the UI doesn't render dead cards).
-  //   3. `stopAcpAgent()` — now the SIGTERM is the cleanup, not a mid-turn
-  //      interrupt that dumps errors into the logs.
-  const workspaceProjects = useWorkspaceStore((s) => s.projects);
-  const workspaceExplorerFolders = useWorkspaceStore((s) => s.explorerFolders);
-  const prevWorkspaceKeyRef = useRef('');
-  useEffect(() => {
-    const key = [
-      ...workspaceProjects.map((p) => p.path),
-      ...workspaceExplorerFolders.map((f) => f.path),
-    ].sort().join('|');
+  // Respawn every live agent when the workspace folders change (the Seatbelt
+  // sandbox scope is derived from the workspace); listen for agent process
+  // death events.
+  useAcpWorkspaceRespawn(cleanupRefs.current, setLoading, setActiveTool);
+  useAcpAgentExitWatcher(cleanupRefs.current);
 
-    // A workspace folder change invalidates the Seatbelt sandbox of EVERY live
-    // agent (each writable scope is derived from the workspace), so every
-    // registry entry must be torn down and respawned — not just the foreground
-    // one (task #2: the registry may now hold several concurrent agents).
-    const liveEntries = getAllAcpAgentEntries();
-    if (prevWorkspaceKeyRef.current && prevWorkspaceKeyRef.current !== key && liveEntries.length > 0) {
-      log.info('ai', `Workspace folders changed — restarting ${liveEntries.length} agent(s) for updated sandbox`);
-
-      const permStore = usePermissionStore.getState();
-      const runs = useSessionRunStore.getState().runs;
-      let anyTurnActive = false;
-
-      for (const [conversationId, agent] of liveEntries) {
-        const instanceId = agent.instanceId;
-        const sessionId = agent.chatSessionId;
-        const pendingForInstance = permStore.requests.filter((r) => r.instanceId === instanceId);
-        // Per-conversation run-state, NOT the global `isLoading` (which a
-        // background completion could have just cleared, so it no longer tells us
-        // whether THIS agent's turn is active under concurrency).
-        const runStatus = runs[conversationId]?.status;
-        const turnActive = (runStatus !== undefined && ACTIVE_STATUSES.includes(runStatus)) || pendingForInstance.length > 0;
-        if (!turnActive) continue;
-        anyTurnActive = true;
-
-        // 1. Cancel the ACP turn if a session is active. Agent may be dying
-        //    already — swallow rejections rather than throwing into React.
-        if (sessionId) {
-          invoke('acp_session_cancel', { instanceId, sessionId }).catch((err) => {
-            log.warn('ai', `acp_session_cancel during workspace change failed: ${String(err)}`);
-          });
-        }
-
-        // 2. Deny every pending permission waiter on this instance, then
-        //    drain the store. `acp_permission_respond` resolves the agent-
-        //    side future; `clearRequestsForInstance` drops the UI cards.
-        for (const req of pendingForInstance) {
-          invoke('acp_permission_respond', {
-            instanceId,
-            requestId: req.requestId,
-            optionId: null,
-          }).catch(() => {
-            // Expected: fire-and-forget deny during context reset.
-          });
-        }
-        permStore.clearRequestsForInstance(instanceId);
-
-        // 3. Tear down THIS conversation's in-flight chat listeners (review #3 —
-        //    each affected conversation, not just whatever the old single
-        //    cleanupRef happened to hold). `cancelled` marks its message
-        //    interrupted and clears its run.
-        runConvCleanup(cleanupRefs.current, conversationId, true);
-      }
-
-      if (anyTurnActive) {
-        // 4. Surface a toast so the user knows why the stream stopped. The
-        //    stable id prevents duplicate toasts if two workspace changes
-        //    fire back-to-back.
-        toast.info('Context reset: workspace changed, previous turn cancelled', {
-          id: 'acp-workspace-context-reset',
-        });
-
-        clearUnresponsiveTimer();
-        setLoading(false);
-        setActiveTool(null);
-      }
-
-      stopAllAcpAgents();
-    }
-    prevWorkspaceKeyRef.current = key;
-  }, [workspaceProjects, workspaceExplorerFolders, setLoading, setActiveTool]);
-
-  // Listen for agent process death events
-  useEffect(() => {
-    // Mounted-flag pattern (see `useSandboxViolations`): `listen()` resolves
-    // asynchronously, so an unmount racing the registration must unlisten
-    // the late registration immediately instead of leaking it.
-    let mounted = true;
-    let unlisten: (() => void) | null = null;
-
-    listen<{ instanceId: string; exitCode: number | null }>('acp-agent-exited', (event) => {
-      // Match the exited process against any registered agent — the registry
-      // may hold several concurrent instances (task #2), not just one. Pair it
-      // with its conversation key so we tear down only THAT conversation's
-      // stream (review #3), not whatever the old single cleanupRef held.
-      const owner = getAllAcpAgentEntries().find(([, a]) => a.instanceId === event.payload.instanceId);
-      if (!owner) return;
-      const [ownerConversationId] = owner;
-
-      log.warn('ai', `ACP agent process exited (code: ${event.payload.exitCode})`);
-      useAgentStatusStore.getState().setStatus('exited', event.payload.exitCode);
-
-      // Clean up if we're mid-prompt
-      clearUnresponsiveTimer();
-      runConvCleanup(cleanupRefs.current, ownerConversationId);
-    }).then((fn) => {
-      if (mounted) unlisten = fn;
-      else fn(); // Already unmounted — clean up immediately
-    });
-
-    return () => {
-      mounted = false;
-      unlisten?.();
-    };
-  }, []);
-
-  // ---------------------------------------------------------------------------
   // Eager session creation — spawn agent + create session as soon as chat is
   // opened with an ACP connection, so mode picker populates before first message.
-  // If the active conversation has a stored sessionId, try session/load first
-  // to restore agent-side conversation context.
-  // ---------------------------------------------------------------------------
-  useEffect(() => {
-    if (!effectiveConnection || effectiveConnection.authMethod !== 'agent_managed') return;
-
-    // Look up the conversation we should be attached to. Its id is the registry
-    // key for this conversation's ACP agent (task #2).
-    const eagerConvId = activeConversationId ?? undefined;
-    const targetConv = useChatStore.getState().conversations.find((c) => c.id === activeConversationId);
-    const targetSessionId = targetConv?.acpSessionId;
-    const eagerAgent = getAcpAgent(eagerConvId);
-
-    // Skip only when the agent is already attached to the right session. This lets
-    // switching conversations re-trigger restoration for the new conversation's
-    // stored session (otherwise a chat switch leaves the agent on the previous
-    // conversation's session and prompts go to the wrong timeline).
-    if (eagerAgent?.chatSessionId && targetSessionId && eagerAgent.chatSessionId === targetSessionId) return;
-    // Brand-new conversations have no stored session — keep whatever session the
-    // agent currently has; the prompt-send path creates a fresh one on first message.
-    if (eagerAgent?.chatSessionId && !targetSessionId) return;
-    // Skip if another firing of this effect is already doing the work (React strict
-    // mode + hydration state changes can fire this effect multiple times at startup;
-    // without the lock, all firings race to create/resume redundantly).
-    if (eagerSessionPromise) return;
-
-    // Cleanup-race guard: the IIFE below only reaches its `await listen(...)`
-    // after long awaits (hydration, agent spawn, session restore). If this
-    // effect firing is cleaned up during that window (conversation switch,
-    // unmount), the late-resolving listener must be unlistened immediately
-    // instead of being stored in a ref that cleanup already drained.
-    let active = true;
-
-    eagerSessionPromise = (async () => {
-      try {
-        // Wait for the persisted chat-store to rehydrate. The tauri-storage backend
-        // is async, so the initial in-memory `conversations` array is empty — without
-        // this gate, `storedSessionId` reads undefined and we never attempt resume/load.
-        // See `docs/prds/2026-04-17-acp-session-lifecycle-completeness.md` for context.
-        const persistApi = (useChatStore as unknown as { persist?: { hasHydrated?: () => boolean; onFinishHydration?: (cb: () => void) => () => void } }).persist;
-        if (persistApi?.hasHydrated && !persistApi.hasHydrated()) {
-          await new Promise<void>((resolve) => {
-            const unsub = persistApi.onFinishHydration?.(() => { unsub?.(); resolve(); });
-            // Safety net in case hydration has already completed between the check and the subscribe.
-            if (persistApi.hasHydrated?.()) { unsub?.(); resolve(); }
-          });
-        }
-
-        // Re-read project paths from the store after hydration — the `selectedProjectPaths`
-        // closure value was captured when the effect dispatched (pre-hydration), and is
-        // stale once the persist middleware populates `conversations`. Using the stale
-        // value spawns the agent with an empty scope, which then triggers a respawn
-        // later when any caller fires with the hydrated scope. Task #6d diagnostic.
-        const freshPaths = selectProjectPaths(useChatStore.getState());
-        const cwd = freshPaths[0] || '/tmp';
-        const sandboxScope = getChatSandboxScope(
-          { projectPaths: freshPaths },
-          effectiveConnection,
-          useSettingsStore.getState().crossProjectMode,
-        );
-        // Re-read the active conversation after hydration — it may have changed
-        // while awaiting. This is the registry key the spawned agent binds to.
-        const convId = useChatStore.getState().activeConversationId ?? undefined;
-        log.info('ai', `[eager] activeConversationId=${convId} freshPaths=[${freshPaths.join('|')}] scope=[${sandboxScope.join('|')}] closurePaths=[${selectedProjectPaths.join('|')}]`);
-        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, sandboxScope, 'eager', { conversationId: convId });
-
-        // Re-read the target session after the async hydration/spawn waits — the
-        // active conversation may have changed while we were waiting.
-        const conv = useChatStore.getState().conversations
-          .find(c => c.id === useChatStore.getState().activeConversationId);
-        const storedSessionId = conv?.acpSessionId;
-        const agent = getAcpAgent(convId);
-
-        // If the agent is already attached to the right session, nothing to do.
-        if (agent?.chatSessionId && storedSessionId && agent.chatSessionId === storedSessionId) return;
-        // If the conversation has no stored session and the agent has any current session,
-        // keep it — new chats shouldn't disturb the agent's current session.
-        if (agent?.chatSessionId && !storedSessionId) return;
-
-        const session: AcpSessionResult = await restoreOrCreateAcpSession({
-          instanceId,
-          cwd,
-          storedSessionId,
-          capabilities: agent?.capabilities,
-          mcpServers: buildAcpMcpServerInputs(agent?.capabilities, freshPaths),
-        });
-
-        const boundAgent = getAcpAgent(convId);
-        if (!boundAgent) return;
-
-        boundAgent.chatSessionId = session.session_id;
-        useChatStore.getState().setSegmentSessionId(session.session_id);
-
-        // Cache models
-        if (session.available_models.length > 0 && effectiveConnection) {
-          setAgentModels(
-            effectiveConnection.id,
-            session.available_models.map((m) => ({
-              modelId: m.model_id,
-              name: m.name,
-              description: m.description,
-            })),
-            session.current_model,
-          );
-        }
-
-        // Register a lightweight listener for init-time session notifications
-        // (available_commands_update, session_info_update, etc.) that fire before
-        // the full chat listeners are set up on first prompt.
-        const eagerUnlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
-          if (event.payload.instanceId !== instanceId) return;
-          const { update } = event.payload;
-          if (update.sessionUpdate === 'available_commands_update') {
-            const rawCommands = (update.availableCommands ?? update.available_commands) as Array<Record<string, unknown>> | undefined;
-            if (Array.isArray(rawCommands)) {
-              const commands = rawCommands.map(cmd => ({
-                name: String(cmd.name ?? ''),
-                description: String(cmd.description ?? ''),
-                inputHint: typeof cmd.inputHint === 'string' ? cmd.inputHint : undefined,
-              }));
-              setAvailableCommands(commands);
-            }
-          } else if (update.sessionUpdate === 'current_mode_update' && typeof update.currentModeId === 'string') {
-            updateCurrentMode(update.currentModeId);
-            // Persist agent-initiated mode changes too, so a later restore re-applies
-            // the latest actual mode rather than a stale user pick.
-            useChatStore.getState().setConversationMode(update.currentModeId);
-          } else if (update.sessionUpdate === 'config_option_update') {
-            const configId = update.optionId ?? update.option_id;
-            const value = update.selectedValueId ?? update.selected_value_id ?? update.value;
-            if (typeof configId === 'string' && typeof value === 'string') updateConfigOptionValue(configId, value);
-          }
-        });
-        // This effect firing was cleaned up while the listen was in flight —
-        // drop the late registration now; nothing will unlisten it later.
-        if (!active) {
-          eagerUnlisten();
-          return;
-        }
-        // Store unlisten so cleanup can call it
-        const prevEagerUnlisten = eagerUnlistenRef.current;
-        eagerUnlistenRef.current = eagerUnlisten;
-        prevEagerUnlisten?.();
-
-        // Populate mode picker and config options
-        log.info('ai', `ACP eager session modes: ${JSON.stringify(session.modes)}`);
-        setSessionModes(session.modes ?? null);
-        setSessionConfigOptions(session.config_options ?? null);
-        backfillAcpCapabilities(effectiveConnection?.id, session);
-
-        // Re-apply the conversation's remembered mode (or, for fresh sessions, the
-        // connection default). Listeners aren't active yet for the eager session, so
-        // the optimistic local update inside the helper is what the picker reads.
-        const restored = session.session_id === storedSessionId;
-        reapplySessionMode(instanceId, session, effectiveConnection, restored);
-
-        // Apply remaining configured defaults only for fresh sessions. A restoration hit
-        // returns the agent's existing config — don't overwrite it.
-        if (!restored) {
-          const defaults = effectiveConnection.acpDefaults;
-          if (defaults?.thinkingEffort && session.session_id) {
-            updateConfigOptionValue('reasoning_effort', defaults.thinkingEffort);
-            tauriApi.acpSessionSetConfigOption(instanceId, session.session_id, 'reasoning_effort', defaults.thinkingEffort).catch(() => {});
-          }
-          void applyConnectionModelOption(instanceId, session, effectiveConnection.config?.model);
-        }
-      } catch (err) {
-        log.debug('ai', `ACP eager session creation failed (non-fatal): ${String(err)}`);
-      }
-    })().finally(() => {
-      eagerSessionPromise = null;
-    });
-
-    return () => {
-      // Flag first so an in-flight IIFE's late `listen` resolution unlistens
-      // itself instead of repopulating the ref after this cleanup ran.
-      active = false;
-      // Tear down the init-time session listener.
-      eagerUnlistenRef.current?.();
-      eagerUnlistenRef.current = null;
-    };
-  }, [effectiveConnection, selectedProjectPaths, activeConversationId]);
+  const { stopEagerListener } = useEagerAcpSession({ effectiveConnection, selectedProjectPaths, activeConversationId });
 
   /** Keep waiting for the agent — dismiss the banner and restart the timer. */
   const keepWaiting = useCallback(() => {
@@ -718,82 +340,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
   const acpGenerateText = useCallback(
     async (prompt: string): Promise<string> => {
       if (!effectiveConnection) throw new Error('No ACP connection');
-
-      // Inline actions reuse the active conversation's agent (its registry key).
-      const conversationId = useChatStore.getState().activeConversationId ?? undefined;
-
-      const attemptGenerate = async (): Promise<string> => {
-        const cwd = selectedProjectPaths[0] || '/tmp';
-        const inlineSandboxPaths = cwd !== '/tmp' ? [cwd] : [];
-        const instanceId = await ensureAcpAgent(effectiveConnection, cwd, inlineSandboxPaths, 'inline', { conversationId });
-
-        const session = await invoke<AcpSessionResult>('acp_session_new', {
-          instanceId,
-          workingDirectory: cwd,
-          mcpServers: buildAcpMcpServerInputs(getAcpAgent(conversationId)?.capabilities, selectedProjectPaths),
-        });
-
-        let result = '';
-        const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
-          if (event.payload.instanceId !== instanceId) return;
-          const { update } = event.payload;
-          const chunkContent = Array.isArray(update.content) ? undefined : update.content;
-          if (
-            update.sessionUpdate === 'agent_message_chunk' &&
-            chunkContent?.type === 'text' &&
-            chunkContent.text
-          ) {
-            result += chunkContent.text;
-          }
-        });
-
-        const unlistenPermission = await listen<AcpPermissionRequestPayload>('acp-permission-request', (event) => {
-          if (event.payload.instanceId !== instanceId) return;
-          const payload = event.payload;
-          let firstOptionId: string | null = null;
-          if (Array.isArray(payload.options) && payload.options.length > 0) {
-            const opt = payload.options[0] as Record<string, unknown>;
-            firstOptionId = typeof opt === 'string' ? opt : String(opt?.id ?? '');
-          }
-          invoke('acp_permission_respond', {
-            instanceId,
-            requestId: payload.requestId,
-            optionId: firstOptionId,
-          }).catch(() => {}); // Expected: fire-and-forget permission response, agent may have exited
-        });
-
-        try {
-          const fullPrompt = `${acpSystemMessage}\n\n${prompt}`;
-          await invoke('acp_session_prompt', {
-            instanceId,
-            sessionId: session.session_id,
-            content: fullPrompt,
-          });
-          return result;
-        } finally {
-          unlisten();
-          unlistenPermission();
-        }
-      };
-
-      try {
-        return await attemptGenerate();
-      } catch (error) {
-        if (isAcpConnectionError(error)) {
-          log.warn('ai', `ACP inline action connection error, retrying: ${String(error)}`);
-          stopAcpAgent(conversationId);
-          try {
-            return await attemptGenerate();
-          } catch (retryError) {
-            stopAcpAgent(conversationId);
-            log.error('ai', 'ACP inline action retry also failed', retryError);
-            throw new Error(friendlyAcpError(retryError, effectiveConnection?.label || effectiveConnection?.provider));
-          }
-        }
-        stopAcpAgent(conversationId);
-        log.error('ai', 'ACP inline action error', error);
-        throw new Error(friendlyAcpError(error, effectiveConnection?.label || effectiveConnection?.provider));
-      }
+      return acpGenerateTextOnce(effectiveConnection, acpSystemMessage, selectedProjectPaths, prompt);
     },
     [effectiveConnection, acpSystemMessage, selectedProjectPaths]
   );
@@ -871,7 +418,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         useSettingsStore.getState().crossProjectMode,
       );
       const pathFilterRoots = sandboxScope;
-      const homeDir = await getHomeDirCached();
+      const homeDir = await getHomeDir();
       // Active project for scoped auto-allow lookup (#6b). Use the first selected
       // project — multi-select edge cases (where the tool acts on a file in one of
       // several roots) are an open question; first-selected is a reasonable default.
@@ -942,74 +489,35 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         }
 
         if (!agent.chatSessionId) {
-          const session = await invoke<AcpSessionResult>('acp_session_new', {
-            instanceId,
-            workingDirectory: cwd,
-            mcpServers: buildAcpMcpServerInputs(agent.capabilities, selectedProjectPaths),
-          });
-          agent.chatSessionId = session.session_id;
+          const session = await startFreshChatSession(instanceId, cwd, agent, effectiveConnection, selectedProjectPaths);
           isNewSession = true;
-
-          // Track session in the segment
-          useChatStore.getState().setSegmentSessionId(session.session_id);
-
-          // Cache available models from the agent for the config dialog
-          if (session.available_models.length > 0 && effectiveConnection) {
-            setAgentModels(
-              effectiveConnection.id,
-              session.available_models.map((m) => ({
-                modelId: m.model_id,
-                name: m.name,
-                description: m.description,
-              })),
-              session.current_model,
-            );
-          }
 
           // Store session modes and config options for UI rendering
           log.info('ai', `ACP session modes: ${JSON.stringify(session.modes)}`);
           log.info('ai', `ACP session config_options: ${JSON.stringify(session.config_options)}`);
-          setSessionModes(session.modes ?? null);
-          setSessionConfigOptions(session.config_options ?? null);
-          backfillAcpCapabilities(effectiveConnection?.id, session);
-          // Fresh session (respawn on scope change / new conversation / new segment)
-          // resets to the agent default — re-assert the conversation's remembered mode.
-          reapplySessionMode(instanceId, session, effectiveConnection ?? null, false);
-
-          // Set model via the model-category config option (replaces CLI arg injection)
-          await applyConnectionModelOption(instanceId, session, effectiveConnection?.config?.model);
+          await applyFreshSessionConfig(instanceId, session, effectiveConnection ?? null);
         }
 
         // Full chat listeners now take over — stop the eager listener
-        eagerUnlistenRef.current?.();
-        eagerUnlistenRef.current = null;
+        stopEagerListener();
 
         // Session this turn prompts on — the listeners gate on it so a session
         // swap on the shared agent instance (or an overlapping send) can't
         // bleed another session's chunks into this message (finding #4a).
         const promptSessionId = resolveActiveSessionId(agent.chatSessionId);
-        const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId, sessionId: promptSessionId });
-        const hadStale = registerConvCleanup(
-          cleanupRefs.current,
+        await attachTurnListeners({
+          cleanupMap: cleanupRefs.current,
+          instanceId,
+          sessionId: promptSessionId,
+          assistantMessageId,
           conversationId,
-          buildAcpChatCleanup(
-            listeners,
-            instanceId,
-            assistantMessageId,
-            () => cleanupRefs.current.delete(cleanupKeyFor(conversationId)),
-            setLoading,
-            setActiveTool,
-            finalizeSegments,
-            setMessageInterrupted,
-            conversationId ?? null,
-          ),
-        );
-        if (hadStale) {
-          // The stale cleanup cleared the loading flag and this conversation's
-          // run entry as side effects — re-assert what THIS send established.
-          setLoading(true);
-          runStarted(conversationId, 'acp', { instanceId });
-        }
+          listenerDeps,
+          resolveRunKey: () => conversationId,
+          setLoading,
+          setActiveTool,
+          finalizeSegments,
+          setMessageInterrupted,
+        });
 
         try {
           // Prepend system prompt on the first message of a new session
@@ -1126,7 +634,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         setActiveTool(null);
       }
     },
-    [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, addMessage, updateMessage, setMessageError, setMessageInterrupted, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, setLastActivityApprovalMode, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments]
+    [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, stopEagerListener, addMessage, updateMessage, setMessageError, setMessageInterrupted, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, setLastActivityApprovalMode, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments]
   );
 
   /**
@@ -1236,66 +744,28 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       // Create new session if reconnect with session/load failed
       if (isNewSession) {
         const cwd = selectedProjectPaths[0] || '/tmp';
-        const session = await invoke<AcpSessionResult>('acp_session_new', {
-          instanceId,
-          workingDirectory: cwd,
-          mcpServers: buildAcpMcpServerInputs(liveAgent.capabilities, selectedProjectPaths),
-        });
-        liveAgent.chatSessionId = session.session_id;
-        useChatStore.getState().setSegmentSessionId(session.session_id);
-
-        if (session.available_models.length > 0 && effectiveConnection) {
-          setAgentModels(
-            effectiveConnection.id,
-            session.available_models.map((m) => ({
-              modelId: m.model_id,
-              name: m.name,
-              description: m.description,
-            })),
-            session.current_model,
-          );
-        }
-
-        // Store session modes and config options for UI rendering
-        setSessionModes(session.modes ?? null);
-        setSessionConfigOptions(session.config_options ?? null);
-        backfillAcpCapabilities(effectiveConnection?.id, session);
-        // Fresh session on reconnect — re-assert the conversation's remembered mode.
-        reapplySessionMode(instanceId, session, effectiveConnection ?? null, false);
-
-        // Set model via the model-category config option
-        await applyConnectionModelOption(instanceId, session, effectiveConnection?.config?.model);
+        const session = await startFreshChatSession(instanceId, cwd, liveAgent, effectiveConnection, selectedProjectPaths);
+        await applyFreshSessionConfig(instanceId, session, effectiveConnection ?? null);
       }
 
       // Full chat listeners now take over — stop the eager listener
-      eagerUnlistenRef.current?.();
-      eagerUnlistenRef.current = null;
+      stopEagerListener();
 
       // Session this retry prompts on — the listeners gate on it (finding #4a).
       const retrySessionId = resolveActiveSessionId(liveAgent.chatSessionId);
-      // Set up listeners
-      const listeners = await setupAcpChatListeners({ ...listenerDeps, instanceId, sessionId: retrySessionId });
-      const hadStale = registerConvCleanup(
-        cleanupRefs.current,
+      await attachTurnListeners({
+        cleanupMap: cleanupRefs.current,
+        instanceId,
+        sessionId: retrySessionId,
+        assistantMessageId: prompt.assistantMessageId,
         conversationId,
-        buildAcpChatCleanup(
-          listeners,
-          instanceId,
-          prompt.assistantMessageId,
-          () => cleanupRefs.current.delete(cleanupKeyFor(conversationId)),
-          setLoading,
-          setActiveTool,
-          finalizeSegments,
-          setMessageInterrupted,
-          conversationId ?? null,
-        ),
-      );
-      if (hadStale) {
-        // The stale cleanup cleared the loading flag and this conversation's
-        // run entry as side effects — re-assert what THIS retry established.
-        setLoading(true);
-        runStarted(conversationId ?? useChatStore.getState().activeConversationId ?? null, 'acp', { instanceId });
-      }
+        listenerDeps,
+        resolveRunKey: () => conversationId ?? useChatStore.getState().activeConversationId ?? null,
+        setLoading,
+        setActiveTool,
+        finalizeSegments,
+        setMessageInterrupted,
+      });
 
       // Resend the prompt
       const effectiveSystemMessage = buildAcpSystemMessage
@@ -1334,15 +804,11 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       setActiveTool(null);
       runError(conversationId ?? useChatStore.getState().activeConversationId ?? null);
     }
-  }, [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, updateMessage, addMessage, setMessageError, setMessageInterrupted, setLoading, setActiveTool, addActivity, completeLastActivity, completeAllActivities, setLastActivityApprovalMode, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments, resetAssistantMessage]);
+  }, [effectiveConnection, acpSystemMessage, buildAcpSystemMessage, selectedProjectPaths, stopEagerListener, updateMessage, addMessage, setMessageError, setMessageInterrupted, setLoading, setActiveTool, addActivity, completeLastActivity, completeAllActivities, setLastActivityApprovalMode, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments, resetAssistantMessage]);
 
   /**
    * Cancel an active ACP chat session.
    */
-  // Stop button escalation timer: 5s after cancel, if no response → SIGKILL + recovery
-  const cancelEscalationRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const cancelEscalationListenerRef = useRef<(() => void) | null>(null);
-
   const acpCancelChat = useCallback((targetConversationId?: string | null) => {
     // Cancel a SPECIFIC conversation (review #13) — defaults to the foreground
     // one. A single `cleanupRef` + active-only agent lookup meant cancelling
@@ -1436,9 +902,10 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
     setActiveTool(null);
   }, [setLoading, setActiveTool]);
 
-  // Expose callbacks at module level so UI components can call them without prop drilling
-  retryCallback = retryWithRestore;
-  keepWaitingCallback = keepWaiting;
+  // Expose callbacks on the monitor so UI components can call them without
+  // prop drilling (ChatMessageList's AgentStatusBanner wiring).
+  acpUnresponsiveMonitor.setRetryCallback(retryWithRestore);
+  acpUnresponsiveMonitor.setKeepWaitingCallback(keepWaiting);
 
   return { acpGenerateText, acpSendChatMessage, acpCancelChat, keepWaiting, retryWithRestore };
 }

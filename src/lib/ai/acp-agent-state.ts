@@ -8,6 +8,7 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { PROVIDER_OPTIONS, getCapabilities } from '@/lib/ai/connections';
 import type { Connection, ConnectionCredentials, AcpDiscoveredCapabilities } from '@/lib/ai/connections';
 import type { AcpSpawnResult, AcpSessionResult, AcpSessionModeState, AcpSessionConfigOption, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
+import type { ProviderRateLimitInfo, TurnUsage } from '@/lib/ai/usage';
 
 // ---------------------------------------------------------------------------
 // Common mode mapping — maps agent-specific mode IDs to universal display names
@@ -186,6 +187,8 @@ export interface AcpUsageInfo {
   contextUsed: number;
   contextSize: number;
   cost?: { amount: number; currency: string };
+  /** Rate-limit state parsed from `usage_update._meta` (e.g. `_claude/rateLimit`). */
+  rateLimit?: ProviderRateLimitInfo;
 }
 
 export interface AcpAgentCommand {
@@ -198,10 +201,12 @@ export interface AcpSessionInfo {
   modes: AcpSessionModeState | null;
   configOptions: AcpSessionConfigOption[] | null;
   usage: AcpUsageInfo | null;
+  /** Per-turn token breakdown from `acp-turn-usage` (UNSTABLE upstream field). */
+  lastTurnUsage: TurnUsage | null;
   commands: AcpAgentCommand[];
 }
 
-let sessionInfo: AcpSessionInfo = { modes: null, configOptions: null, usage: null, commands: [] };
+let sessionInfo: AcpSessionInfo = { modes: null, configOptions: null, usage: null, lastTurnUsage: null, commands: [] };
 
 /** Listeners notified when session info changes (for React re-renders) */
 const sessionInfoListeners = new Set<() => void>();
@@ -245,13 +250,18 @@ export function updateUsage(usage: AcpUsageInfo): void {
   sessionInfoListeners.forEach(fn => fn());
 }
 
+export function setLastTurnUsage(lastTurnUsage: TurnUsage | null): void {
+  sessionInfo = { ...sessionInfo, lastTurnUsage };
+  sessionInfoListeners.forEach(fn => fn());
+}
+
 export function setAvailableCommands(commands: AcpAgentCommand[]): void {
   sessionInfo = { ...sessionInfo, commands };
   sessionInfoListeners.forEach(fn => fn());
 }
 
 export function clearSessionInfo(): void {
-  sessionInfo = { modes: null, configOptions: null, usage: null, commands: [] };
+  sessionInfo = { modes: null, configOptions: null, usage: null, lastTurnUsage: null, commands: [] };
   sessionInfoListeners.forEach(fn => fn());
 }
 

@@ -76,6 +76,29 @@ impl ClientContext {
         let _ = self.app.emit("acp-session-update", payload);
     }
 
+    /// Forward the end-of-turn token usage (`PromptResponse.usage`, gated behind
+    /// the UNSTABLE `unstable_end_turn_token_usage` feature) to the frontend as
+    /// an `acp-turn-usage` Tauri event. Payload: `{ instanceId, sessionId, usage }`
+    /// with camelCase usage fields (the schema type serializes camelCase).
+    ///
+    /// Strictly best-effort: a serialization failure skips the emit — this must
+    /// never affect the prompt reply path (provider-usage-display #1).
+    pub fn emit_turn_usage(
+        &self,
+        session_id: &str,
+        usage: &agent_client_protocol::schema::Usage,
+    ) {
+        let Ok(usage_json) = serde_json::to_value(usage) else {
+            return;
+        };
+        let payload = serde_json::json!({
+            "instanceId": self.instance_id,
+            "sessionId": session_id,
+            "usage": usage_json,
+        });
+        let _ = self.app.emit("acp-turn-usage", payload);
+    }
+
     /// Register a permission waiter and emit the `acp-permission-request` event.
     /// Returns the receiver the handler awaits for the user's decision. Payload
     /// shape is identical to the pre-0.12 client:

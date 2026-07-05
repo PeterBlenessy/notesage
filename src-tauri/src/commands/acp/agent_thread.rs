@@ -166,6 +166,7 @@ fn handle_prompt(
     sid: String,
     content: String,
     images: Option<Vec<crate::commands::ai::ImageData>>,
+    usage_ctx: ClientContext,
     reply: oneshot::Sender<Result<(), String>>,
 ) {
     let conn = conn.clone();
@@ -191,12 +192,20 @@ fn handle_prompt(
         blocks.push(ContentBlock::Text(TextContent::new(content)));
         let req = PromptRequest::new(SessionId::new(sid), blocks);
         match conn.send_request(req).block_task().await {
-            Ok(_) => {
+            Ok(resp) => {
                 log::info!(
                     target: "notesage::acp",
                     "[{}] Prompt completed in {:.1}s (session={})",
                     prompt_binary, start.elapsed().as_secs_f64(), prompt_sid,
                 );
+                // Best-effort per-turn usage forwarding (UNSTABLE upstream
+                // field; deserializes DefaultOnError so a shape change lands
+                // here as `None`). Emitted BEFORE the reply resolves but
+                // isolated from it — nothing on this path can change the
+                // prompt result.
+                if let Some(usage) = resp.usage.as_ref() {
+                    usage_ctx.emit_turn_usage(&prompt_sid, usage);
+                }
                 let _ = reply.send(Ok(()));
             }
             Err(e) => {
@@ -639,6 +648,9 @@ pub(crate) fn run_agent_thread(
         // Inbound handler context, cloned into each registered handler closure.
         let notif_ctx = client_ctx.clone();
         let perm_ctx = client_ctx.clone();
+        // Cloned into the command loop for best-effort `acp-turn-usage` emits
+        // from prompt responses (provider-usage-display #1).
+        let usage_ctx = client_ctx.clone();
 
         // The command loop and initialize handshake live inside `connect_with`'s
         // closure — the future returned by `connect_with` drives the connection for
@@ -768,7 +780,7 @@ pub(crate) fn run_agent_thread(
                             handle_load_session(&conn, sid, cwd, mcp_servers, reply).await;
                         }
                         AgentCmd::Prompt { session_id: sid, content, images, reply } => {
-                            handle_prompt(&conn, &agent_binary, sid, content, images, reply);
+                            handle_prompt(&conn, &agent_binary, sid, content, images, usage_ctx.clone(), reply);
                         }
                         AgentCmd::Cancel { session_id: sid, reply } => {
                             handle_cancel(&conn, &permission_waiters, sid, reply);
