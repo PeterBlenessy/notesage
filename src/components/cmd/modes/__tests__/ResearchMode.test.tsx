@@ -159,7 +159,7 @@ describe('ResearchMode', () => {
       <ResearchMode filter="" onPick={onPick} />,
     );
     await screen.findByText('First');
-    // findByText can resolve on the DOM mutation BEFORE the passive effect
+    // Regression for PR #516 CI: findByText can resolve on the DOM mutation BEFORE the passive effect
     // that re-registers the document keydown handler with the non-empty
     // results closure has flushed (seen on loaded CI runners). Flush effects
     // so the keys can't hit the stale empty-results handler.
