@@ -161,6 +161,7 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
 
         // Local AI
         local_inference_status: () => ({ running: false, port: null, model: null }),
+        network_proxy_status: () => [],
         stop_local_server: () => null,
         list_local_models: () => [],
         get_system_memory: () => ({ total_bytes: 16_000_000_000, available_bytes: 8_000_000_000 }),

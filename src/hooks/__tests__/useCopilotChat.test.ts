@@ -444,3 +444,272 @@ describe('useCopilotChat — Track 1 leak #16 context-request scope gate', () =>
     }
   });
 });
+
+// ---------------------------------------------------------------------------
+// Intermediate progress — `copilot-chat-step` + `copilot-chat-tool-update`
+//
+// The Rust $/progress handler emits these two events for progress steps and
+// server-side agent-round tool calls. They must materialise as chronological
+// ToolCallSegments (steps: kind 'step'; tool updates: kind = tool name),
+// patched in place as their status advances, with a single tool_result
+// segment on terminal tool status — and events for other conversations must
+// be ignored.
+// ---------------------------------------------------------------------------
+
+describe('useCopilotChat — copilot-chat-step / copilot-chat-tool-update segments', () => {
+  beforeEach(() => {
+    useWorkspaceStore.setState({ explorerFolders: [], projects: [] });
+    useChatStore.setState({ conversations: [], activeConversationId: null });
+    useEditorStore.setState({
+      openDocuments: [],
+      activeTabId: null,
+      recentFiles: [],
+      scrollPositions: {},
+      externalChanges: {},
+      persistedTabs: [],
+      persistedActiveFilePath: null,
+    });
+    useSettingsStore.setState({ homeDir: '/Users/tester', notesRootPath: '/Users/tester/Notesage' });
+
+    setMockInvokeHandler('copilot_lsp_start', () => undefined);
+    setMockInvokeHandler('copilot_lsp_conversation_destroy', () => undefined);
+    vi.spyOn(tauriApi, 'copilotLspStart').mockResolvedValue(undefined);
+    vi.spyOn(tauriApi, 'copilotLspConversationCreate').mockResolvedValue({ conversationId: 'conv-1', turnId: 'turn-1' });
+    vi.spyOn(tauriApi, 'copilotLspConversationDestroy').mockResolvedValue(undefined);
+    vi.spyOn(tauriApi, 'copilotLspDidOpen').mockResolvedValue(undefined);
+  });
+
+  function makeConn(): Connection {
+    return {
+      id: 'conn-copilot-lsp',
+      provider: 'github',
+      authMethod: 'agent_managed',
+      status: 'connected',
+      label: 'Copilot LSP',
+      credentials: { type: 'agent_managed', agentBinary: 'copilot-language-server' },
+      capabilities: ['interactive', 'inline_completion', 'agent_tasks'],
+      createdAt: Date.now(),
+    };
+  }
+
+  async function sendAndGetHelpers() {
+    const { result } = renderHook(() =>
+      useCopilotChat({
+        effectiveConnection: makeConn(),
+        buildComposedSystemMessage: () => 'system',
+        composedSystemMessage: 'system',
+      }),
+    );
+
+    await act(async () => {
+      await result.current.copilotSendChatMessage('hello', [], {}).catch(() => {});
+    });
+
+    const assistantSegments = () => {
+      const state = useChatStore.getState();
+      const conv = state.conversations.find((c) => c.id === state.activeConversationId);
+      const msg = conv?.messages.find((m) => m.role === 'assistant');
+      return msg?.segments ?? [];
+    };
+
+    return { assistantSegments };
+  }
+
+  it('renders a step event as a tool_call segment and patches it in place on status change', async () => {
+    const { assistantSegments } = await sendAndGetHelpers();
+
+    await act(async () => {
+      emitMockEvent('copilot-chat-step', {
+        conversationId: 'conv-1',
+        turnId: 'turn-1',
+        stepId: 'step-1',
+        title: 'Searching codebase',
+        status: 'running',
+      });
+      await Promise.resolve();
+    });
+
+    let segments = assistantSegments();
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({
+      type: 'tool_call',
+      kind: 'step',
+      label: 'Searching codebase',
+      status: 'running',
+    });
+
+    // The LSP re-emits the full steps array on every report — the same step
+    // completing must PATCH the existing segment, not append a duplicate.
+    await act(async () => {
+      emitMockEvent('copilot-chat-step', {
+        conversationId: 'conv-1',
+        turnId: 'turn-1',
+        stepId: 'step-1',
+        title: 'Searching codebase',
+        status: 'completed',
+      });
+      await Promise.resolve();
+    });
+
+    segments = assistantSegments();
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({ type: 'tool_call', kind: 'step', status: 'done' });
+  });
+
+  it('renders a tool-update as a tool_call segment and appends one tool_result on completion', async () => {
+    const { assistantSegments } = await sendAndGetHelpers();
+
+    await act(async () => {
+      emitMockEvent('copilot-chat-tool-update', {
+        conversationId: 'conv-1',
+        turnId: 'turn-1',
+        toolCallId: 'tc-1',
+        name: 'read_file',
+        status: 'running',
+        input: { path: '/tmp/notes.md' },
+        result: null,
+        error: null,
+        progressMessage: null,
+      });
+      await Promise.resolve();
+    });
+
+    let segments = assistantSegments();
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({ type: 'tool_call', kind: 'read_file', status: 'running' });
+
+    await act(async () => {
+      emitMockEvent('copilot-chat-tool-update', {
+        conversationId: 'conv-1',
+        turnId: 'turn-1',
+        toolCallId: 'tc-1',
+        name: 'read_file',
+        status: 'completed',
+        input: { path: '/tmp/notes.md' },
+        result: 'file body',
+        error: null,
+        progressMessage: null,
+      });
+      await Promise.resolve();
+    });
+
+    segments = assistantSegments();
+    expect(segments).toHaveLength(2);
+    expect(segments[0]).toMatchObject({ type: 'tool_call', kind: 'read_file', status: 'done' });
+    expect(segments[1]).toMatchObject({ type: 'tool_result', toolCallId: 'tc-1', result: 'file body' });
+
+    // A re-emitted terminal update (LSP replays the array) must not duplicate
+    // the tool_result segment.
+    await act(async () => {
+      emitMockEvent('copilot-chat-tool-update', {
+        conversationId: 'conv-1',
+        turnId: 'turn-1',
+        toolCallId: 'tc-1',
+        name: 'read_file',
+        status: 'completed',
+        input: { path: '/tmp/notes.md' },
+        result: 'file body',
+        error: null,
+        progressMessage: null,
+      });
+      await Promise.resolve();
+    });
+    expect(assistantSegments()).toHaveLength(2);
+  });
+
+  it('marks a failed tool-update as error and records the error in the result segment', async () => {
+    const { assistantSegments } = await sendAndGetHelpers();
+
+    await act(async () => {
+      emitMockEvent('copilot-chat-tool-update', {
+        conversationId: 'conv-1',
+        turnId: 'turn-1',
+        toolCallId: 'tc-err',
+        name: 'bash',
+        status: 'failed',
+        input: { command: 'exit 1' },
+        result: null,
+        error: 'command failed',
+        progressMessage: null,
+      });
+      await Promise.resolve();
+    });
+
+    const segments = assistantSegments();
+    expect(segments).toHaveLength(2);
+    expect(segments[0]).toMatchObject({ type: 'tool_call', kind: 'bash', status: 'error' });
+    expect(segments[1]).toMatchObject({ type: 'tool_result', toolCallId: 'tc-err', error: 'command failed' });
+  });
+
+  it('ignores step and tool-update events for other conversations', async () => {
+    const { assistantSegments } = await sendAndGetHelpers();
+
+    // Latch our conversation id first (mirrors real event ordering — the
+    // first $/progress event always carries our own conversation id).
+    await act(async () => {
+      emitMockEvent('copilot-chat-step', {
+        conversationId: 'conv-1',
+        stepId: 'step-ours',
+        title: 'Ours',
+        status: 'running',
+      });
+      await Promise.resolve();
+    });
+    expect(assistantSegments()).toHaveLength(1);
+
+    await act(async () => {
+      emitMockEvent('copilot-chat-step', {
+        conversationId: 'conv-OTHER',
+        stepId: 'step-foreign',
+        title: 'Foreign step',
+        status: 'running',
+      });
+      emitMockEvent('copilot-chat-tool-update', {
+        conversationId: 'conv-OTHER',
+        toolCallId: 'tc-foreign',
+        name: 'read_file',
+        status: 'running',
+      });
+      await Promise.resolve();
+    });
+
+    // Still only our own step — nothing from conv-OTHER leaked in.
+    const segments = assistantSegments();
+    expect(segments).toHaveLength(1);
+    expect(segments[0]).toMatchObject({ label: 'Ours' });
+  });
+
+  it('skips tool-updates that mirror a client-executed tool call (no duplicate segment)', async () => {
+    const { assistantSegments } = await sendAndGetHelpers();
+
+    // A client tool call arrives first (conversation/invokeClientTool). Using
+    // a non-auto-allowed tool keeps handleToolCall parked on the permission
+    // card — nothing is pushed yet, but the id is registered synchronously.
+    await act(async () => {
+      emitMockEvent('copilot-tool-call', {
+        requestId: 'req-1',
+        id: 'tc-client',
+        name: 'my_custom_tool',
+        arguments: { x: 1 },
+        conversationId: 'conv-1',
+      });
+      await Promise.resolve();
+    });
+
+    const before = assistantSegments().length;
+
+    // The $/progress round mirrors the same tool call — must be ignored.
+    await act(async () => {
+      emitMockEvent('copilot-chat-tool-update', {
+        conversationId: 'conv-1',
+        toolCallId: 'tc-client',
+        name: 'my_custom_tool',
+        status: 'running',
+        input: { x: 1 },
+      });
+      await Promise.resolve();
+    });
+
+    expect(assistantSegments().length).toBe(before);
+  });
+});

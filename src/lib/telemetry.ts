@@ -111,6 +111,7 @@ export type SettingKey =
   | "title_bar"
   | "inline_completions"
   | "external_change_review"
+  | "typewriter_scrolling"
   | "print_layout"
   | "tool_calling"
   | "cross_project"

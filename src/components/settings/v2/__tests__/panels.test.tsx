@@ -15,6 +15,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import {
   renderWithProviders,
   screen,
+  fireEvent,
   registerDefaultHandlers,
   setMockInvokeHandler,
 } from '@/test/component-harness';
@@ -117,6 +118,22 @@ describe('v2 settings panels', () => {
     expect(screen.getByText('Page Layout')).toBeTruthy();
     expect(screen.getByText('Top toolbar')).toBeTruthy();
     expect(screen.getByText('Page margins')).toBeTruthy();
+  });
+
+  it('EditorSettings renders the Typewriter scrolling toggle and it drives the store', async () => {
+    const { useSettingsStore } = await import('@/stores/settings-store');
+    useSettingsStore.setState({ typewriterScrolling: false });
+    renderWithProviders(<EditorSettings />);
+
+    const toggle = screen.getByLabelText('Typewriter scrolling');
+    expect(toggle).toBeTruthy();
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+
+    fireEvent.click(toggle);
+    expect(useSettingsStore.getState().typewriterScrolling).toBe(true);
+
+    fireEvent.click(toggle);
+    expect(useSettingsStore.getState().typewriterScrolling).toBe(false);
   });
 
   it('EditorSettings preview card reflects current editor font settings', async () => {

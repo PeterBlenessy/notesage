@@ -20,11 +20,18 @@ const THROTTLE_MS = 16;
  * Only active in Quiet Composer floating mode (`cmdBarPinned === false`).
  * Skips if the DOM cmd bar element itself reports `data-cmd-bar-pinned="true"`
  * (defence-in-depth against stale store state during transitions).
+ *
+ * Stands down entirely while typewriter scrolling is enabled: that mode
+ * (`useTypewriterScroll`) already re-centers the caret on every typing
+ * transaction, so it can never linger near the cmd bar — and letting both
+ * hooks issue relative smooth `scrollBy` calls on the same keystroke would
+ * compose additively and overshoot.
  */
 export function useCursorScrollGuard(
   scrollContainerRef: RefObject<HTMLElement | null>,
 ): void {
   const cmdBarPinned = useSettingsStore((s) => s.cmdBarPinned);
+  const typewriterScrolling = useSettingsStore((s) => s.typewriterScrolling);
   const lastFireTime = useRef(0);
 
   const guardScroll = useCallback(() => {
@@ -57,7 +64,7 @@ export function useCursorScrollGuard(
   }, [scrollContainerRef]);
 
   useEffect(() => {
-    if (cmdBarPinned) return;
+    if (cmdBarPinned || typewriterScrolling) return;
 
     const onKeydown = () => {
       const now = Date.now();
@@ -70,5 +77,5 @@ export function useCursorScrollGuard(
     return () => {
       document.removeEventListener("keydown", onKeydown, { capture: true });
     };
-  }, [cmdBarPinned, guardScroll]);
+  }, [cmdBarPinned, typewriterScrolling, guardScroll]);
 }

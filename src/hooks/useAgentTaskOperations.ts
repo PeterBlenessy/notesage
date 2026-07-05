@@ -11,6 +11,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { streamEvent, newStreamId } from '@/lib/ai/stream-events';
 import { formatAcpToolName, truncateDetail, normalizeToolCallContent, hasSessionCapability, formatResourceLinkAsMarkdown } from '@/lib/ai/acp-utils';
+import { mapCopilotProgressStatus, type CopilotStepPayload, type CopilotToolUpdatePayload } from '@/lib/ai/copilot-progress';
 import type { AcpSessionUpdatePayload, AcpPermissionRequestPayload, AcpAgentCapabilities } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
 import { buildAcpMcpServerInputs } from '@/lib/ai/acp-mcp';
@@ -518,6 +519,46 @@ async function startCopilotLspTask(
     cleanup();
   });
 
+  // Intermediate progress: $/progress steps and server-side agent-round tool
+  // calls. The LSP re-emits the full arrays on every report, so dedupe by
+  // (id, status) and only surface actual transitions as activity entries.
+  const seenSteps = new Set<string>();
+  const unlistenStep = await listen<CopilotStepPayload>('copilot-chat-step', (event) => {
+    if (!isOurEvent(event.payload)) return;
+    const current = tasksMap.get(taskId);
+    if (!current || current.status !== 'running') return;
+    const { stepId, title, status } = event.payload;
+    const id = stepId ?? title ?? '';
+    if (!id) return;
+    const key = `${id}:${mapCopilotProgressStatus(status)}`;
+    if (seenSteps.has(key)) return;
+    seenSteps.add(key);
+    const label = (title ?? '').trim() || 'Working…';
+    onActivity?.({ kind: 'step', label, detail: status ?? undefined, event: 'tool_call' });
+  });
+
+  const seenToolUpdates = new Set<string>();
+  const unlistenToolUpdate = await listen<CopilotToolUpdatePayload>('copilot-chat-tool-update', (event) => {
+    if (!isOurEvent(event.payload)) return;
+    const current = tasksMap.get(taskId);
+    if (!current || current.status !== 'running') return;
+    const p = event.payload;
+    if (!p.toolCallId) return;
+    const status = p.error != null ? 'error' : mapCopilotProgressStatus(p.status);
+    const key = `${p.toolCallId}:${status}`;
+    if (seenToolUpdates.has(key)) return;
+    seenToolUpdates.add(key);
+    const name = (p.name ?? '').trim() || 'tool';
+    const detail = typeof p.progressMessage === 'string' && p.progressMessage.trim()
+      ? p.progressMessage
+      : undefined;
+    if (status === 'running') {
+      onActivity?.({ kind: name, label: `Tool: ${name}`, detail, event: 'tool_call' });
+    } else {
+      onActivity?.({ kind: 'tool_result', label: `Tool ${status === 'error' ? 'failed' : 'finished'}: ${name}`, detail, event: 'tool_result' });
+    }
+  });
+
   // Tool call handler — execute tools and respond
   const unlistenToolCall = await listen<{ requestId: string; id: string; name: string; arguments: Record<string, unknown>; conversationId?: string }>('copilot-tool-call', async (event) => {
     if (!isOurEvent(event.payload)) return;
@@ -568,6 +609,8 @@ async function startCopilotLspTask(
     unlistenChunk();
     unlistenThinking();
     unlistenDone();
+    unlistenStep();
+    unlistenToolUpdate();
     unlistenToolCall();
     unlistenConfirm();
     unlistenContext();
