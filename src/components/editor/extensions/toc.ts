@@ -1,8 +1,8 @@
 import { Node, mergeAttributes } from "@tiptap/core";
-import { ReactNodeViewRenderer, NodeViewWrapper } from "@tiptap/react";
+import { ReactNodeViewRenderer, NodeViewWrapper, type ReactNodeViewProps } from "@tiptap/react";
 import { PluginKey } from "@tiptap/pm/state";
 import type { Node as ProseMirrorNode } from "@tiptap/pm/model";
-import { createElement, useEffect, useState, useCallback, memo } from "react";
+import { createElement, useEffect, useState, useCallback, memo, type ComponentType } from "react";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -183,8 +183,9 @@ export const TableOfContents = Node.create({
   },
 
   addNodeView() {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return ReactNodeViewRenderer(TocView as any, {
+    // TocView narrows the node-view props `editor` to the members it uses;
+    // widen back through `unknown` to the renderer's expected component type.
+    return ReactNodeViewRenderer(TocView as unknown as ComponentType<ReactNodeViewProps>, {
       update: ({ oldNode, newNode, updateProps }) => {
         if (oldNode.sameMarkup(newNode)) return true;
         updateProps();

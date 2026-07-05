@@ -7,6 +7,7 @@ import { saveDrawing, saveSvgPreview, loadDrawing, loadLibrary, saveLibrary, imp
 import { exportDrawingToSvg } from "@/lib/excalidraw-export";
 import { tauriApi } from "@/lib/tauri";
 import type { Editor } from "@tiptap/core";
+import type { LibraryItems } from "@excalidraw/excalidraw/types";
 
 // Excalidraw types — use inline type to avoid import issues
 type ExcalidrawAPI = {
@@ -84,11 +85,11 @@ export function DrawingEditor({
   }, []);
 
   // Debounced library save on change
-  const handleLibraryChange = useCallback((items: unknown[]) => {
-    setLibraryItems(items as unknown[]);
+  const handleLibraryChange = useCallback((items: LibraryItems) => {
+    setLibraryItems([...items]);
     if (librarySaveTimerRef.current) clearTimeout(librarySaveTimerRef.current);
     librarySaveTimerRef.current = setTimeout(() => {
-      saveLibrary(items as unknown[]);
+      saveLibrary([...items]);
     }, 500);
   }, []);
 
@@ -280,11 +281,11 @@ export function DrawingEditor({
               }}
               initialData={{
                 ...(initialData as Record<string, unknown> | undefined),
-                // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                libraryItems: libraryItems as any,
+                // Library items come from disk as unvalidated JSON; Excalidraw's
+                // own restore path normalises them. Cast to the exported type.
+                libraryItems: libraryItems as LibraryItems,
               }}
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              onLibraryChange={handleLibraryChange as any}
+              onLibraryChange={handleLibraryChange}
               theme={resolvedTheme}
               UIOptions={{
                 canvasActions: { saveAsImage: true, loadScene: false },

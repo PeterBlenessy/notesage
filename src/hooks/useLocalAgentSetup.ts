@@ -9,7 +9,7 @@
 
 import { useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { tauriApi, type LocalAgentConfig } from '@/lib/tauri';
+import { tauriApi, type BinaryResolution, type LocalAgentConfig } from '@/lib/tauri';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
@@ -23,7 +23,7 @@ const GOOSE_AGENT_ID = 'goose';
 
 /** Resolve the installed Goose binary's absolute path (managed install). */
 async function resolveGoosePath(): Promise<string> {
-  const resolution = await invoke<{ path: string } | null>('agent_resolve_binary', {
+  const resolution = await invoke<BinaryResolution | null>('agent_resolve_binary', {
     agentId: GOOSE_AGENT_ID,
   });
   if (!resolution?.path) {
@@ -94,7 +94,7 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
         await installAgentIfMissing({
           resolveBinaryPath: async () =>
             (
-              await invoke<{ path: string } | null>('agent_resolve_binary', {
+              await invoke<BinaryResolution | null>('agent_resolve_binary', {
                 agentId: GOOSE_AGENT_ID,
               }).catch(() => null)
             )?.path ?? null,

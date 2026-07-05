@@ -15,7 +15,7 @@ import { tauriApi } from '@/lib/tauri';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useConnectionsStore } from '@/stores/connections-store';
-import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
+import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload, AcpSpawnResult } from '@/lib/ai/acp-utils';
 import { restoreOrCreateAcpSession } from '@/lib/ai/acp-session-restore';
 import { buildAcpMcpServerInputs } from '@/lib/ai/acp-mcp';
 import { buildAttachmentActivities, getChatSandboxScope, hasLoadSessionCapability } from '@/lib/ai/acp-utils';
@@ -1168,7 +1168,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
 
       if (supportsLoad && sessionId) {
         try {
-          const result = await invoke<{ instance_id: string }>('acp_agent_reconnect', {
+          const result = await invoke<AcpSpawnResult>('acp_agent_reconnect', {
             instanceId: oldInstanceId,
             sessionId,
           });

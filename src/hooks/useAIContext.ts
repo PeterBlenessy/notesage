@@ -9,6 +9,7 @@ import { useGoalsDiscovery } from '@/hooks/useGoalsDiscovery';
 import { buildGoalsContext, buildProjectHeader, buildFileTreeContext } from '@/lib/ai/context';
 import { isUriInScope, type UriScope } from '@/lib/ai/uri-scope';
 import { buildReActAddendum } from '@/lib/ai/react-prompt';
+import type { AgentContent } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
 
 // ---------------------------------------------------------------------------
@@ -45,7 +46,7 @@ export function useAIContext(): UseAIContextReturn {
     if (agentBody.name === agentName) return;
 
     let cancelled = false;
-    invoke<{ name: string; body: string; path: string }>('read_agent_content', { agentPath: activeAgent.path })
+    invoke<AgentContent>('read_agent_content', { agentPath: activeAgent.path })
       .then((content) => { if (!cancelled) setAgentBody({ name: agentName, body: content.body }); })
       .catch(() => { if (!cancelled) setAgentBody({ name: agentName, body: '' }); }); // Expected: agent file may not exist or be unreadable — fall back to empty body
     return () => { cancelled = true; };

@@ -169,8 +169,18 @@ function isSimpleTable(node: ProseMirrorNode): boolean {
   return simple;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type SerializerState = any;
+/**
+ * Minimal view of tiptap-markdown's serializer state — only the members
+ * `serializeTable` actually uses. tiptap-markdown exposes no public type
+ * for it, so we type the surface we touch instead of `any`.
+ */
+interface SerializerState {
+  inTable: boolean;
+  write(content: string): void;
+  renderInline(node: ProseMirrorNode): void;
+  ensureNewLine(): void;
+  closeBlock(node: ProseMirrorNode): void;
+}
 
 /**
  * Table markdown serializer — override for tiptap-markdown.

@@ -10,7 +10,8 @@ import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle, Shield
 import { LocalAIModelsDialog } from './LocalAIModelsDialog';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
-import { tauriApi } from '@/lib/tauri';
+import { tauriApi, type CopilotStatus, type LocalServerStatus } from '@/lib/tauri';
+import type { AcpSessionResult, AcpSpawnResult } from '@/lib/ai/acp-utils';
 import { canReauthenticate } from '@/lib/ai/reauth';
 import { isLocalAgentPreset, resolveAgentLaunch, resolveLocalAgentEndpoint } from '@/lib/ai/acp-agent-state';
 import { GooseAttribution } from './GooseAttribution';
@@ -128,17 +129,13 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
           }
         } else if (isLsp) {
           // Copilot LSP: check status via LSP protocol (don't use ACP)
-          let status = await invoke<{ authenticated: boolean; message: string; kind: string }>(
-            'copilot_lsp_status'
-          );
+          let status = await invoke<CopilotStatus>('copilot_lsp_status');
 
           // Auto-recover: if the LSP isn't running, restart it and retry
           if (!status.authenticated && status.kind === 'Inactive') {
             const workingDir = useWorkspaceStore.getState().projects[0]?.path ?? '/tmp';
             await invoke('copilot_lsp_start', { workingDirectory: workingDir });
-            status = await invoke<{ authenticated: boolean; message: string; kind: string }>(
-              'copilot_lsp_status'
-            );
+            status = await invoke<CopilotStatus>('copilot_lsp_status');
           }
 
           if (!status.authenticated) {
@@ -155,7 +152,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
             }
           }
 
-          const spawn = await invoke<{ instance_id: string }>('acp_agent_spawn', {
+          const spawn = await invoke<AcpSpawnResult>('acp_agent_spawn', {
             agentBinary: creds.agentBinary,
             agentArgs: args.length > 0 ? args : null,
             role: 'interactive',
@@ -175,11 +172,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
             }
 
             // Create session to get models
-            const session = await invoke<{
-              session_id: string;
-              current_model: string | null;
-              available_models: { model_id: string; name: string; description: string | null }[];
-            }>('acp_session_new', {
+            const session = await invoke<AcpSessionResult>('acp_session_new', {
               instanceId: spawn.instance_id,
               workingDirectory: '/tmp',
             });
@@ -218,7 +211,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
         setHealth('ok');
       } else if (connection.authMethod === 'local_bundled') {
         // Local AI: check if llama-server is actually running
-        const status = await invoke<{ running: boolean; port: number | null }>('get_local_server_status');
+        const status = await invoke<LocalServerStatus>('get_local_server_status');
         if (status.running) {
           updateConnection(connection.id, { status: 'connected' });
           setHealth('ok');

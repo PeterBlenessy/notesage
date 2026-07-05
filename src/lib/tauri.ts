@@ -180,6 +180,42 @@ export interface AgentInstruction {
   priority: number;
 }
 
+/** Mirrors the Rust `AgentAvailability` struct (`acp_binary.rs`) — result of `acp_agent_check_availability`. */
+export interface AgentAvailability {
+  installed: boolean;
+  path: string | null;
+  version: string | null;
+}
+
+/** Mirrors the Rust `BinaryResolution` struct (`agent_manager.rs`) — result of `agent_resolve_binary`. */
+export interface BinaryResolution {
+  path: string;
+  /** Rust `BinarySource`, serialized snake_case. */
+  source: 'managed' | 'system';
+  version: string | null;
+}
+
+/** Mirrors the Rust `AgentUpdateInfo` struct (`agent_manager.rs`) — entries of `agent_check_updates`. */
+export interface AgentUpdateInfo {
+  agent_id: string;
+  current_version: string;
+  latest_version: string;
+  repo: string;
+}
+
+/** Mirrors the Rust `SearchResult` struct (`web_search.rs`) — entries of `web_search`. */
+export interface WebSearchResult {
+  title: string;
+  url: string;
+  snippet: string;
+}
+
+/** Mirrors the Rust `MigrateFolderResult` struct (`export.rs`) — result of `migrate_user_content_paths`. */
+export interface MigrateFolderResult {
+  migrated: number;
+  collisions: string[];
+}
+
 // ---------------------------------------------------------------------------
 // ACP (Agent Client Protocol) types
 // ---------------------------------------------------------------------------
@@ -200,6 +236,33 @@ export interface CopilotToolResultPayload {
   content: string | Array<{ value: string }>;
   is_error?: boolean;
   status?: string;
+}
+
+/** Mirrors the Rust `CopilotStatus` struct (`copilot_lsp.rs`) — result of `copilot_lsp_status`. */
+export interface CopilotStatus {
+  authenticated: boolean;
+  message: string;
+  /** Rust `CopilotStatusKind`, serialized PascalCase. */
+  kind: 'Normal' | 'Error' | 'Warning' | 'Inactive';
+}
+
+/** Mirrors the Rust `SignInResponse` struct (`copilot_lsp.rs`) — result of `copilot_lsp_sign_in`. */
+export interface CopilotSignInResponse {
+  user_code: string;
+  verification_uri: string;
+}
+
+/** Conversation handle returned by `copilot_lsp_conversation_create` / `_turn`. */
+export interface CopilotConversationRef {
+  conversationId: string;
+  turnId: string;
+}
+
+/** Mirrors the Rust `CopilotModel` struct (`copilot_models.rs`) — entries of `copilot_lsp_conversation_models`. */
+export interface CopilotModel {
+  id: string;
+  name: string;
+  provider: string;
 }
 
 export interface IndexTagOccurrence {
@@ -894,8 +957,8 @@ export const tauriApi = {
    * Returns the number of migrated items and any collision sub-directory
    * names (where the destination already had existing content).
    */
-  async migrateUserContentPaths(folderPath: string): Promise<{ migrated: number; collisions: string[] }> {
-    return await invoke<{ migrated: number; collisions: string[] }>(
+  async migrateUserContentPaths(folderPath: string): Promise<MigrateFolderResult> {
+    return await invoke<MigrateFolderResult>(
       "migrate_user_content_paths",
       { folderPath },
     );
@@ -1554,11 +1617,11 @@ export const tauriApi = {
 
   // Copilot LSP conversation operations
   copilotLspConversationCreate(message: string, model?: string, tools?: Array<{ name: string; description: string; inputSchema: unknown }>, docUri?: string, docLanguageId?: string) {
-    return invoke<{ conversationId: string; turnId: string }>('copilot_lsp_conversation_create', { message, model: model ?? null, tools: tools ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null });
+    return invoke<CopilotConversationRef>('copilot_lsp_conversation_create', { message, model: model ?? null, tools: tools ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null });
   },
 
   copilotLspConversationTurn(conversationId: string, message: string, model?: string, docUri?: string, docLanguageId?: string) {
-    return invoke<{ conversationId: string; turnId: string }>('copilot_lsp_conversation_turn', { conversationId, message, model: model ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null });
+    return invoke<CopilotConversationRef>('copilot_lsp_conversation_turn', { conversationId, message, model: model ?? null, docUri: docUri ?? null, docLanguageId: docLanguageId ?? null });
   },
 
   copilotLspConversationDestroy(conversationId: string) {
@@ -1566,7 +1629,7 @@ export const tauriApi = {
   },
 
   copilotLspConversationModels() {
-    return invoke<Array<{ id: string; name: string; provider: string }>>('copilot_lsp_conversation_models');
+    return invoke<CopilotModel[]>('copilot_lsp_conversation_models');
   },
 
   copilotLspContextResponse(requestId: string, context: CopilotContextPayload | null | unknown[]) {
