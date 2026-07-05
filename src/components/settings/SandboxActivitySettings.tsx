@@ -36,8 +36,16 @@ export function SandboxActivitySettings() {
     setLoading(true);
     try {
       const result = await tauriApi.networkProxyStatus();
-      setStatuses(result);
-      setFailed(false);
+      // IPC is a trust boundary: a mocked/misbehaving backend can resolve
+      // with null, and this panel renders inside the settings dialog where
+      // a throw unmounts the whole dialog (leaf-search renders all panels).
+      if (Array.isArray(result)) {
+        setStatuses(result);
+        setFailed(false);
+      } else {
+        setStatuses([]);
+        setFailed(true);
+      }
     } catch {
       setStatuses([]);
       setFailed(true);

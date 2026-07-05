@@ -135,4 +135,14 @@ describe('SandboxActivitySettings', () => {
 
     expect(await screen.findByText('Could not read proxy status.')).toBeTruthy();
   });
+
+  it('treats a non-array IPC result as a failure instead of crashing', async () => {
+    // Regression: the Playwright tauri-mock resolves unhandled commands with
+    // null; trusting the shape crashed the whole settings dialog (PR #519 CI).
+    setMockInvokeHandler('network_proxy_status', () => null);
+
+    renderWithProviders(<SandboxActivitySettings />);
+
+    expect(await screen.findByText('Could not read proxy status.')).toBeTruthy();
+  });
 });
