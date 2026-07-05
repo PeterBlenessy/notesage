@@ -51,6 +51,7 @@ Pending — **requires a Mac with Xcode + Apple signing** (cannot run in this Li
 - Run `tauri ios init` to generate `gen/apple/`, set the Development Team, copy in the staged entitlements/plists.
 - Integrate the staged bridge: register `NotesagePlugin` from Rust (`ios_plugin_binding!` + `register_ios_plugin`) and replace the `NOT_WIRED` stubs in `ios_library.rs::ios_impl` with `run_mobile_plugin` calls (mapping table in `ios/README.md`); add the Share Extension target.
 - On-device validation of every native acceptance criterion (grant persistence, iCloud download, capture from Safari / X, read-only behavior).
+- **CI:** there is currently **no iOS/mobile build job**. `.github/workflows/test.yml` covers desktop only (frontend typecheck+Vitest, Playwright, `cargo test`, real Tauri E2E) — the mobile frontend + Rust are already exercised there, but nothing compiles the iOS target or the Swift. Add a `tauri ios build` job (macOS runner + Apple signing secrets) once `gen/apple/` exists from `tauri ios init`. Note: `.github/` is excluded from cloud-session clones, so this workflow must be added from a normal checkout.
 - v1 reader fidelity follow-ups: in-app EPUB/DOCX/PPTX and full callout/chart/drawing rendering. Markdown/text/image/**PDF** render in-app (PDF reuses the desktop `PdfViewer`); EPUB/DOCX/PPTX show "open on your Mac".
 
 ## Risks & open questions
