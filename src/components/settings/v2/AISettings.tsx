@@ -1,6 +1,7 @@
 import { ConnectionsSettings } from '@/components/settings/ConnectionsSettings';
 import { UseCaseRoutingSettings } from '@/components/settings/UseCaseRoutingSettings';
 import { ApprovalsSettings as LegacyApprovalsSettings } from '@/components/settings/ApprovalsSettings';
+import { SandboxActivitySettings } from '@/components/settings/SandboxActivitySettings';
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -201,6 +202,15 @@ export function AISettings() {
             connections start with kernel enforcement on.
           </p>
         </SettingsHint>
+      </SettingsGroup>
+
+      <SettingsGroup
+        label="Sandbox Activity"
+        description="Read-only view of each running agent's network proxy — port, session-approved domains, and the effective domain allowlist."
+        searchKeywords={['privacy', 'proxy', 'observability']}
+        bare
+      >
+        <SandboxActivitySettings />
       </SettingsGroup>
 
       <SettingsGroup

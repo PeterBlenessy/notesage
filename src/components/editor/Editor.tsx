@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { useScrollPersistence } from "@/hooks/useScrollPersistence";
 import { useEditorResize } from "@/hooks/useEditorResize";
 import { useCursorScrollGuard } from "@/hooks/useCursorScrollGuard";
+import { useTypewriterScroll } from "@/hooks/useTypewriterScroll";
 import { EditorContent } from "@tiptap/react";
 import { EditorStateCache } from "@/lib/editor-state-cache";
 import { useEditorStore } from "@/stores/editor-store";
@@ -283,6 +284,11 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     // Keyed on the path only — re-running on every content edit is pointless.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab?.filePath]);
+
+  // Typewriter scrolling (Settings > Writing) — keeps the caret vertically
+  // centered in the scroll viewport while typing. No-op unless the setting
+  // is on; while on, useCursorScrollGuard stands down (see that hook).
+  useTypewriterScroll(editor, scrollAreaRef);
 
   const { exportPdf, exportPptx, isExporting } = useExportOperations(editor);
   useDiffReview(editor);

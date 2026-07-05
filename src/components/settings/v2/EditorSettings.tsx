@@ -73,6 +73,8 @@ export function EditorSettings() {
   const setToolbarVisible = useSettingsStore((s) => s.setToolbarVisible);
   const showFloatingToolbar = useSettingsStore((s) => s.showFloatingToolbar);
   const setShowFloatingToolbar = useSettingsStore((s) => s.setShowFloatingToolbar);
+  const typewriterScrolling = useSettingsStore((s) => s.typewriterScrolling);
+  const setTypewriterScrolling = useSettingsStore((s) => s.setTypewriterScrolling);
   const externalChangeDiffReview = useSettingsStore((s) => s.externalChangeDiffReview);
   const setExternalChangeDiffReview = useSettingsStore(
     (s) => s.setExternalChangeDiffReview,
@@ -271,6 +273,18 @@ export function EditorSettings() {
               id="floating-toolbar"
               checked={showFloatingToolbar}
               onCheckedChange={setShowFloatingToolbar}
+            />
+          }
+        />
+        <SettingsRow
+          label="Typewriter scrolling"
+          description="Keep the caret vertically centered while typing."
+          htmlFor="typewriter-scrolling"
+          control={
+            <Switch
+              id="typewriter-scrolling"
+              checked={typewriterScrolling}
+              onCheckedChange={(v) => { setTypewriterScrolling(v); trackSettingToggle("typewriter_scrolling", v); }}
             />
           }
         />

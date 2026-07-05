@@ -11,12 +11,18 @@ import { usePermissionStore } from '@/stores/permission-store';
 import { useToolPermissionStore, type ToolCallDecision } from '@/stores/tool-permission-store';
 import { executeToolCall } from '@/lib/tool-executor';
 import { formatToolLabel } from '@/lib/ai/acp-utils';
+import {
+  mapCopilotProgressStatus,
+  stringifyProgressValue,
+  type CopilotStepPayload,
+  type CopilotToolUpdatePayload,
+} from '@/lib/ai/copilot-progress';
 import { friendlyAIError } from '@/lib/ai/errors';
 import { runStarted, runIdle, runError } from '@/lib/ai/session-run';
 import { isUriInScope, type UriScope } from '@/lib/ai/uri-scope';
 import { log } from '@/lib/logger';
 import { toast } from 'sonner';
-import type { ChatMessage, ImageAttachment, ToolCallSegment, ToolDefinition } from '@/lib/ai/types';
+import type { ChatMessage, ImageAttachment, ToolCallSegment, ToolResultSegment, ToolDefinition } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
@@ -378,6 +384,35 @@ export function useCopilotChat({
         let thinkingSegmentIndex = -1;
         let thinkingSegmentContent = '';
 
+        // ---------------------------------------------------------------
+        // Intermediate-progress tracking ($/progress steps + server-side
+        // agent-round tool calls). The LSP re-emits the full steps /
+        // toolCalls arrays on every report, so we key each entry by its id
+        // and only push a segment on first sighting / patch it on change.
+        // ---------------------------------------------------------------
+        /** stepId → { segment index, last rendered snapshot } */
+        const stepSegments = new Map<string, { index: number; label: string; status: ToolCallSegment['status'] }>();
+        /** toolCallId → { segment index, last rendered snapshot } */
+        const toolUpdateSegments = new Map<string, { index: number; label: string; detail?: string; status: ToolCallSegment['status'] }>();
+        /** toolCallIds that already produced a tool_result segment */
+        const resultedToolIds = new Set<string>();
+        /** toolCallIds handled by the CLIENT tool path (`copilot-tool-call` →
+         *  handleToolCall). Those already render their own segments incl.
+         *  permission handling; the round toolCalls in $/progress can mirror
+         *  the same ids, and rendering both would duplicate. */
+        const clientToolIds = new Set<string>();
+
+        /** Segment count for THIS turn's assistant message, read live so
+         *  indices captured at push time stay authoritative. */
+        const segmentCount = (): number => {
+          const state = useChatStore.getState();
+          const conv = state.conversations.find(
+            (c) => c.id === (runConvId ?? state.activeConversationId),
+          );
+          const msg = conv?.messages.find((m) => m.timestamp === assistantMessageId);
+          return msg?.segments?.length ?? 0;
+        };
+
         // Track the conversationId for this turn. For create calls, we learn
         // the ID from the first $/progress event (which arrives before the
         // invoke resolves). For turn calls, we already have it.
@@ -432,6 +467,8 @@ export function useCopilotChat({
           unlistenToolCall,
           unlistenToolConfirmation,
           unlistenContextRequest,
+          unlistenStep,
+          unlistenToolUpdate,
         ] = await Promise.all([
           listen<{ text: string; conversationId?: string }>('copilot-chat-chunk', (event) => {
             if (cancelled || !isOurEvent(event.payload)) return;
@@ -485,6 +522,11 @@ export function useCopilotChat({
               if (cancelled || !isOurEvent(event.payload)) return;
               const { requestId, id, name, arguments: args } = event.payload;
               log.debug('ai', `Copilot tool call received: ${name}`);
+
+              // The $/progress round toolCalls can mirror this same call —
+              // mark it as client-handled so `copilot-chat-tool-update`
+              // doesn't render a duplicate segment for it.
+              clientToolIds.add(id);
 
               toolCallCount++;
               if (toolCallCount > MAX_TOOL_CALLS_PER_TURN) {
@@ -574,6 +616,105 @@ export function useCopilotChat({
               log.error('ai', 'Failed to send context response', err),
             );
           }),
+          // Progress steps (skill resolution, searching, …) → compact
+          // tool_call segments with kind 'step', patched in place as the
+          // step's status advances. Mirrors the ACP plan/thought treatment:
+          // intermediate progress becomes visible instead of dead air.
+          listen<CopilotStepPayload>('copilot-chat-step', (event) => {
+            if (cancelled || !isOurEvent(event.payload)) return;
+            const { stepId, title, status } = event.payload;
+            const key = stepId ?? title ?? '';
+            if (!key) return;
+            const mappedStatus = mapCopilotProgressStatus(status);
+            const label = (title ?? '').trim() || 'Working…';
+            const existing = stepSegments.get(key);
+            if (!existing) {
+              stepSegments.set(key, { index: segmentCount(), label, status: mappedStatus });
+              pushSegment(assistantMessageId, {
+                type: 'tool_call',
+                kind: 'step',
+                label,
+                status: mappedStatus,
+                timestamp: Date.now(),
+              } as ToolCallSegment, runConvId);
+            } else if (existing.status !== mappedStatus || existing.label !== label) {
+              existing.status = mappedStatus;
+              existing.label = label;
+              updateSegment(assistantMessageId, existing.index, {
+                status: mappedStatus,
+                label,
+              }, runConvId);
+            }
+          }),
+          // Server-side agent-round tool calls (editAgentRounds[].toolCalls)
+          // → tool_call segments keyed by toolCallId, patched on status
+          // change; a terminal status with a result/error additionally pushes
+          // one tool_result segment (mirrors the ACP tool_call_update flow).
+          listen<CopilotToolUpdatePayload>('copilot-chat-tool-update', (event) => {
+            if (cancelled || !isOurEvent(event.payload)) return;
+            const p = event.payload;
+            const id = p.toolCallId ?? null;
+            if (!id || clientToolIds.has(id)) return;
+
+            const name = (p.name ?? '').trim() || 'tool';
+            const args = p.input && typeof p.input === 'object'
+              ? (p.input as Record<string, unknown>)
+              : undefined;
+            const status: ToolCallSegment['status'] =
+              p.error != null ? 'error' : mapCopilotProgressStatus(p.status);
+            const label = formatToolLabel(name, args);
+            const detail =
+              (typeof p.progressMessage === 'string' && p.progressMessage.trim())
+                ? p.progressMessage
+                : args && Object.keys(args).length > 0
+                  ? JSON.stringify(args, null, 2)
+                  : undefined;
+
+            const existing = toolUpdateSegments.get(id);
+            if (!existing) {
+              toolUpdateSegments.set(id, { index: segmentCount(), label, detail, status });
+              pushSegment(assistantMessageId, {
+                type: 'tool_call',
+                kind: name,
+                label,
+                detail,
+                status,
+                timestamp: Date.now(),
+              } as ToolCallSegment, runConvId);
+            } else if (
+              existing.status !== status ||
+              existing.label !== label ||
+              existing.detail !== detail
+            ) {
+              existing.status = status;
+              existing.label = label;
+              existing.detail = detail;
+              updateSegment(assistantMessageId, existing.index, {
+                status,
+                label,
+                detail,
+              }, runConvId);
+            }
+
+            // Terminal → one tool_result segment per toolCallId.
+            if (
+              (status === 'done' || status === 'error') &&
+              !resultedToolIds.has(id) &&
+              (p.result != null || p.error != null)
+            ) {
+              resultedToolIds.add(id);
+              pushSegment(assistantMessageId, {
+                type: 'tool_result',
+                toolCallId: id,
+                result: status === 'done' ? stringifyProgressValue(p.result) : undefined,
+                error: status === 'error'
+                  ? stringifyProgressValue(p.error ?? p.result)
+                  : undefined,
+                collapsed: true,
+                timestamp: Date.now(),
+              } as ToolResultSegment, runConvId);
+            }
+          }),
         ]);
 
         const cleanup = () => {
@@ -586,6 +727,8 @@ export function useCopilotChat({
           unlistenToolCall();
           unlistenToolConfirmation();
           unlistenContextRequest();
+          unlistenStep();
+          unlistenToolUpdate();
           if (streamedContent) {
             updateMessage(assistantMessageId, streamedContent, undefined, runConvId);
           }

@@ -345,6 +345,23 @@ export interface ActionItem {
 export type DomainDecision = 'allow_once' | 'allow_session' | 'allow_always' | 'deny';
 
 /**
+ * Per-agent network-proxy status. Matches the Rust `ProxyStatus` struct in
+ * `network_proxy.rs` (`#[serde(rename_all = "camelCase")]`).
+ */
+export interface NetworkProxyStatus {
+  /** ACP spawn instance id (`acp-<ts>-<hash>`) — maps to a live agent in the frontend registry. */
+  instanceId: string;
+  /** Agent binary name the proxy was started for (e.g. `claude-agent-acp`). */
+  agentId: string;
+  /** Proxy listen address, e.g. `127.0.0.1:52301`. */
+  proxyAddr: string;
+  /** Size of the effective allowlist the proxy was started with (built-in + user domains). */
+  allowedDomainCount: number;
+  /** Domains approved via "allow for session" while this proxy has been running. */
+  sessionDomainCount: number;
+}
+
+/**
  * Auth method descriptor from ACP `initialize`. Matches the Rust
  * `AuthMethodInfo` enum shape (externally-tagged union via `type`).
  * See `src/lib/ai/acp-utils.ts` for the canonical definition.
@@ -1164,6 +1181,10 @@ export const tauriApi = {
 
   async networkDefaultDomains(agentId: string): Promise<string[]> {
     return await invoke<string[]>('network_default_domains', { agentId });
+  },
+
+  async networkProxyStatus(): Promise<NetworkProxyStatus[]> {
+    return await invoke<NetworkProxyStatus[]>('network_proxy_status');
   },
 
   // SQLite document index
