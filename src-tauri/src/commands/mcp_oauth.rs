@@ -331,20 +331,63 @@ struct TokenResponse {
     scope: Option<String>,
 }
 
-fn oauth_http_client() -> reqwest::Client {
+/// Max redirect hops for OAuth discovery GETs (matches link_preview's budget).
+const MAX_OAUTH_REDIRECTS: usize = 5;
+
+fn oauth_http_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
+        // Follow redirects manually so every hop is re-validated for SSRF
+        // (security audit 2026-07-05 MEDIUM): with the default policy, a
+        // validated `https://public-host/...` discovery URL could 30x-redirect
+        // to `http://169.254.169.254/…` or an RFC-1918 address unchecked.
+        // Side effect on the POST paths (registration / token exchange /
+        // refresh): a 3xx now surfaces as an HTTP error instead of being
+        // followed — deliberate, since following a credential-bearing POST
+        // redirect would hand the code/secret to the redirect target.
+        .redirect(reqwest::redirect::Policy::none())
         .build()
-        .unwrap_or_default()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))
+}
+
+/// Resolve a redirect `Location` against the current URL and re-validate the
+/// result with `validate_external_url`. Pure so the SSRF property is testable.
+fn next_redirect_target(current: &url::Url, location: &str) -> Result<url::Url, String> {
+    let next = current
+        .join(location)
+        .map_err(|e| format!("Invalid redirect target from {}: {}", current, e))?;
+    validate_external_url(next.as_str())?;
+    Ok(next)
 }
 
 async fn fetch_json<T: DeserializeOwned>(client: &reqwest::Client, url: &str) -> Result<T, String> {
-    let resp = client
-        .get(url)
-        .header("Accept", "application/json")
-        .send()
-        .await
-        .map_err(|e| format!("GET {} failed: {}", url, e))?;
+    // Discovery URLs are attacker-controllable — validate the entry URL and
+    // every redirect hop (the client follows nothing on its own).
+    validate_external_url(url)?;
+    let mut current = url::Url::parse(url).map_err(|e| format!("Invalid URL {}: {}", url, e))?;
+    let mut redirects = 0usize;
+    let resp = loop {
+        let resp = client
+            .get(current.clone())
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| format!("GET {} failed: {}", current, e))?;
+        if resp.status().is_redirection() {
+            if redirects >= MAX_OAUTH_REDIRECTS {
+                return Err(format!("GET {}: too many redirects", url));
+            }
+            let location = resp
+                .headers()
+                .get(reqwest::header::LOCATION)
+                .and_then(|v| v.to_str().ok())
+                .ok_or_else(|| format!("GET {}: redirect without a Location header", current))?;
+            current = next_redirect_target(&current, location)?;
+            redirects += 1;
+            continue;
+        }
+        break resp;
+    };
     if !resp.status().is_success() {
         return Err(format!("GET {} returned HTTP {}", url, resp.status()));
     }
@@ -549,7 +592,7 @@ pub async fn valid_access_token(server_id: &str) -> Option<String> {
         return Some(tokens.access_token);
     }
     let refresh = tokens.refresh_token.clone()?;
-    let client = oauth_http_client();
+    let client = oauth_http_client().ok()?;
     match refresh_with(&client, &tokens, &refresh).await {
         Ok(fresh) => {
             let _ = store_tokens(server_id, &fresh).await;
@@ -571,7 +614,7 @@ pub async fn mcp_oauth_authorize(
     server_url: String,
     scope: Option<String>,
 ) -> Result<OAuthStatus, String> {
-    let client = oauth_http_client();
+    let client = oauth_http_client()?;
 
     let metadata = discover_metadata(&client, &server_url).await?;
     let registration_endpoint = metadata
@@ -828,5 +871,40 @@ mod tests {
             well_known("https://host:8443/path", "oauth-authorization-server"),
             "https://host:8443/.well-known/oauth-authorization-server"
         );
+    }
+
+    // Regression lock (2026-07-05 security audit, MEDIUM): OAuth discovery
+    // fetches must re-validate every redirect hop. The client is built with
+    // `Policy::none()` and each `Location` goes through `next_redirect_target`,
+    // so a validated public HTTPS URL can no longer redirect the request into
+    // link-local / private / loopback space or downgrade to http.
+    #[test]
+    fn redirects_to_internal_or_non_https_targets_are_rejected() {
+        let current = url::Url::parse("https://public.example.com/.well-known/oauth-authorization-server").unwrap();
+        for location in [
+            "http://169.254.169.254/latest/meta-data/", // metadata service, + http downgrade
+            "https://169.254.169.254/x",                // metadata service over https
+            "https://10.0.0.5/token",                   // RFC-1918
+            "https://[::1]/x",                          // v6 loopback
+            "https://localhost/x",                      // loopback by name
+            "http://public.example.com/x",              // scheme downgrade alone
+            "ftp://public.example.com/x",               // non-http scheme
+        ] {
+            assert!(
+                next_redirect_target(&current, location).is_err(),
+                "redirect to {location} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn redirects_to_public_https_targets_are_followed() {
+        let current = url::Url::parse("https://public.example.com/a").unwrap();
+        // Absolute redirect to another public https host.
+        let next = next_redirect_target(&current, "https://other.example.org/b").unwrap();
+        assert_eq!(next.as_str(), "https://other.example.org/b");
+        // Relative redirect resolves against the current URL (stays https).
+        let next = next_redirect_target(&current, "/c/d").unwrap();
+        assert_eq!(next.as_str(), "https://public.example.com/c/d");
     }
 }
