@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.13",
+      "date": "2026-07-05",
+      "previousVersion": "0.48.0-alpha.12",
+      "sections": {},
+      "underTheHood": [
+        "Deep review refactor 1: decompose useAgentTaskOperations (#523)",
+        "refactor(hooks): decompose useAgentTaskOperations into agent-task modules"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.12",
       "date": "2026-07-05",
       "previousVersion": "0.48.0-alpha.11",
