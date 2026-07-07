@@ -1280,6 +1280,52 @@ mod tests {
         assert!(npm_agent_config("not-a-real-agent").is_none());
     }
 
+    // Regression lock (2026-07-05 security audit, HIGH): `agent_uninstall`
+    // derives a delete path as `agents_bin_dir().join(&agent_id)`. Without the
+    // registry gate, `..` traversal and absolute-path ids escape the managed
+    // bin dir and delete arbitrary user-writable files over IPC.
+    #[test]
+    fn managed_agent_id_accepts_only_registry_ids() {
+        for id in [
+            "claude-agent-acp",
+            "codex-acp",
+            "copilot",
+            "copilot-language-server",
+            "gemini",
+            "goose",
+        ] {
+            assert!(is_managed_agent_id(id), "{id} must be a managed agent id");
+        }
+    }
+
+    #[test]
+    fn managed_agent_id_rejects_traversal_and_absolute_paths() {
+        for id in [
+            "../../../.ssh/id_rsa",
+            "..",
+            "goose/../../../etc/hosts",
+            "/etc/hosts",
+            "/absolute/victim/path",
+            "not-a-real-agent",
+            "",
+        ] {
+            assert!(!is_managed_agent_id(id), "{id:?} must be rejected");
+        }
+    }
+
+    #[tokio::test]
+    async fn agent_uninstall_rejects_unregistered_ids_before_touching_the_fs() {
+        let err = agent_uninstall("../../../.ssh/id_rsa".to_string())
+            .await
+            .expect_err("traversal id must be rejected");
+        assert!(err.starts_with("Unknown agent:"), "unexpected error: {err}");
+
+        let err = agent_uninstall("/absolute/victim/path".to_string())
+            .await
+            .expect_err("absolute-path id must be rejected");
+        assert!(err.starts_with("Unknown agent:"), "unexpected error: {err}");
+    }
+
     // Goose (the Local AI agentic-chat preset binary) installs via the
     // GitHub-binary path, NOT npm — it's a self-contained Rust binary with no
     // Node runtime, npm install, or cloud auth, which is why it runs under the
@@ -1520,8 +1566,24 @@ pub async fn agent_update(
     Ok(version)
 }
 
+/// Agent ids are a closed set: only ids present in the npm or GitHub-binary
+/// registries are managed by this module. `agent_uninstall` (and anything else
+/// that turns an id into a path under the managed bin dir) MUST gate on this —
+/// `PathBuf::join` replaces the base on an absolute component and preserves
+/// `..`, so an unvalidated id like `"../../../.ssh/id_rsa"` would escape
+/// `agents_bin_dir()` and delete an arbitrary user-writable file over IPC.
+fn is_managed_agent_id(agent_id: &str) -> bool {
+    npm_agent_config(agent_id).is_some() || github_binary_agent_config(agent_id).is_some()
+}
+
 #[tauri::command]
 pub async fn agent_uninstall(agent_id: String) -> Result<(), String> {
+    if !is_managed_agent_id(&agent_id) {
+        return Err(format!(
+            "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, goose",
+            agent_id
+        ));
+    }
     let bin_path = agents_bin_dir().join(&agent_id);
     if bin_path.exists() {
         std::fs::remove_file(&bin_path)
