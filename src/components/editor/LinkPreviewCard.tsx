@@ -5,8 +5,9 @@ import { tauriApi } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { BlockSizeControls } from "@/components/editor/BlockSizeControls";
 import { useSettingsStore } from "@/stores/settings-store";
+import { hasPreviewConsent, markPreviewConsent } from "@/lib/editor/link-preview-consent";
 
-type CardState = "input" | "loading" | "loaded" | "error";
+type CardState = "input" | "needs-load" | "loading" | "loaded" | "error";
 
 export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProps) {
   const url = node.attrs.url as string;
@@ -18,7 +19,20 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
   const blockWidth = node.attrs.blockWidth as number | null;
   const align = node.attrs.align as string | null;
 
-  const initialState: CardState = !url ? "input" : title ? "loaded" : "loading";
+  // A url-but-no-title node auto-fetches its metadata on render. That's the
+  // intended flow for nodes the user just created (/embed submit, paste-accept
+  // — both record session consent), but a bare `> [!link](url)` deserialized
+  // from disk (incl. agent-authored markdown) would otherwise fire a zero-click
+  // outbound request to an attacker-chosen host on open. Un-consented
+  // pre-populated nodes wait behind a manual "Load preview" affordance instead.
+  // Security audit 2026-07-05 (LOW).
+  const initialState: CardState = !url
+    ? "input"
+    : title
+      ? "loaded"
+      : hasPreviewConsent(url)
+        ? "loading"
+        : "needs-load";
   const [state, setState] = useState<CardState>(initialState);
   const [imgError, setImgError] = useState(false);
   const [faviconError, setFaviconError] = useState(false);
@@ -75,10 +89,19 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
       imageUrl: null,
       faviconUrl: null,
     });
+    // Submitting the /embed input is explicit consent to fetch this URL.
+    markPreviewConsent(trimmed);
     // Set the URL attr — this triggers the fetch useEffect
     const { tr } = editor.state;
     tr.setNodeAttribute(pos, "url", trimmed);
     editor.view.dispatch(tr);
+    setState("loading");
+  };
+
+  // Manual "Load preview" for an un-consented pre-populated node: record
+  // consent and switch to the loading state, which fires the fetch effect.
+  const handleManualLoad = () => {
+    if (url) markPreviewConsent(url);
     setState("loading");
   };
 
@@ -148,6 +171,36 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
             placeholder="Paste or type a URL and press Enter..."
             className="w-full bg-transparent border border-border rounded px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:ring-1 focus:ring-ring"
           />
+        </div>
+      )}
+
+      {/* Needs-load: pre-populated node the user hasn't consented to fetch.
+          Shows the URL with an explicit "Load preview" action rather than
+          firing a zero-click outbound request on render. */}
+      {state === "needs-load" && (
+        <div className="border border-border rounded-lg p-4">
+          <div className="flex items-center gap-2 min-w-0">
+            <Globe className="w-4 h-4 text-muted-foreground shrink-0" strokeWidth={1.5} />
+            <span
+              className="text-sm text-foreground truncate cursor-pointer hover:underline"
+              onClick={handleClick}
+              title={url}
+            >
+              {url}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 mt-2">
+            <button
+              type="button"
+              onClick={handleManualLoad}
+              className="text-xs font-medium text-foreground border border-border rounded px-2.5 py-1 transition-colors duration-150 hover:bg-muted outline-none focus:ring-1 focus:ring-ring"
+            >
+              Load preview
+            </button>
+            <span className="text-xs text-muted-foreground/70">
+              Fetches metadata from the linked site
+            </span>
+          </div>
         </div>
       )}
 

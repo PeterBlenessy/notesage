@@ -38,6 +38,8 @@ pub fn is_blocked_ip(ip: IpAddr) -> bool {
                 || v6.is_unspecified()
                 || (seg[0] & 0xfe00) == 0xfc00 // fc00::/7 unique-local
                 || (seg[0] & 0xffc0) == 0xfe80 // fe80::/10 link-local
+                || (seg[0] == 0x2001 && seg[1] == 0x0db8) // 2001:db8::/32 documentation
+                || (seg[0] == 0x0064 && seg[1] == 0xff9b) // 64:ff9b::/96 NAT64 (well-known prefix)
         }
     }
 }
@@ -85,6 +87,8 @@ mod tests {
             "::ffff:127.0.0.1", // v4-mapped loopback
             "::ffff:10.0.0.1",  // v4-mapped private
             "::ffff:169.254.169.254", // v4-mapped metadata
+            "2001:db8::1",      // documentation range
+            "64:ff9b::1",       // NAT64 well-known prefix
         ] {
             assert!(
                 is_blocked_ip(ip.parse::<IpAddr>().unwrap()),
