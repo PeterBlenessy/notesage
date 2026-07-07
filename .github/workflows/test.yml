@@ -68,6 +68,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: npm dependency audit
+        # Fails the job on a high/critical advisory in the npm tree (the Rust
+        # tree is covered by the separate `cargo-audit` job). Tree confirmed
+        # clean 2026-07-05 (docs/audits/2026-07-05-dependencies.md); overrides
+        # in package.json hold the prior fixes. High threshold so a new moderate
+        # doesn't block merge before it's triaged.
+        run: pnpm audit --audit-level=high --prod
+
       - name: TypeScript type check
         run: pnpm typecheck
 
@@ -242,11 +250,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: check-changes
     if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
-    # Advisory for now: surfaces RustSec advisories on the backend dependency
-    # tree without blocking merge. Flip `continue-on-error` to false once the
-    # tree is confirmed clean (security audit LOW — `cargo audit` was not wired
-    # into CI; the JS tree is covered by `pnpm audit`, the Rust tree was not).
-    continue-on-error: true
+    # Blocking as of 2026-07-05: the backend dependency tree was confirmed clean
+    # (0 vulnerabilities — docs/audits/2026-07-05-dependencies.md), so this job
+    # now fails on any RustSec *vulnerability*. `cargo audit` does NOT fail on
+    # unmaintained/unsound *warnings* (currently 22, all deep-transitive gtk-rs
+    # / typst), so flipping to blocking won't cause false reds — to also gate on
+    # warnings later, add `[advisories] ignore = [...]` in src-tauri/audit.toml.
     steps:
       - uses: actions/checkout@v6
 
