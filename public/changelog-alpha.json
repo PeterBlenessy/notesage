@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.14",
+      "date": "2026-07-07",
+      "previousVersion": "0.48.0-alpha.13",
+      "sections": {
+        "fixes": [
+          "fix(security): reject unregistered agent ids in agent_uninstall (path traversal) (#536)",
+          "fix(security): mcp_oauth redirect SSRF + mcp command wrapper bypass + CI audit gating (#537)"
+        ]
+      },
+      "underTheHood": [
+        "fix(security): harden mcp_oauth redirects + mcp command guard, gate CI audits",
+        "fix(security): reject unregistered agent ids in agent_uninstall"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.13",
       "date": "2026-07-05",
       "previousVersion": "0.48.0-alpha.12",
