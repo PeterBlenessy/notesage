@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.16",
+      "date": "2026-07-08",
+      "previousVersion": "0.48.0-alpha.15",
+      "sections": {
+        "fixes": [
+          "fix(security): gate zero-click link-preview fetch, narrow process cap, extend IPv6 blocklist (#538)"
+        ]
+      },
+      "underTheHood": [
+        "chore(deps): bump @tiptap/* 3.23.6 → 3.27.3 (#540)",
+        "chore(deps): bump @tiptap/* 3.23.6 → 3.27.3",
+        "fix(security): gate zero-click link-preview fetch, narrow process cap, extend IPv6 blocklist"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.15",
       "date": "2026-07-08",
       "previousVersion": "0.48.0-alpha.14",
