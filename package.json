@@ -104,7 +104,7 @@
     "markdown-it-sup": "^2.0.0",
     "markdown-it-task-lists": "^2.1.1",
     "mermaid": "^11.15.0",
-    "pdfjs-dist": "^5.7.284",
+    "pdfjs-dist": "^6.1.200",
     "picomatch": "^4.0.4",
     "radix-ui": "^1.4.3",
     "react": "^19.2.6",
