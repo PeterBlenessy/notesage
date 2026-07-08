@@ -3,6 +3,7 @@ import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { ReactNodeViewRenderer } from "@tiptap/react";
 import { LinkPreviewCard } from "../LinkPreviewCard";
 import { track } from "@/lib/telemetry";
+import { markPreviewConsent } from "@/lib/editor/link-preview-consent";
 
 const URL_RE = /^https?:\/\/\S+$/;
 const linkPreviewPasteKey = new PluginKey("linkPreviewPaste");
@@ -271,7 +272,9 @@ export const LinkPreview = Node.create({
             // Show floating prompt below the cursor
             const coords = view.coordsAtPos($from.pos);
             showPastePrompt(coords, text, () => {
-              // Accept: replace paragraph with link preview
+              // Accept: replace paragraph with link preview. Accepting the
+              // prompt is explicit consent to fetch this URL's metadata.
+              markPreviewConsent(text);
               extensionThis.editor.commands.insertLinkPreview({ url: text });
             });
 
