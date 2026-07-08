@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.15",
+      "date": "2026-07-08",
+      "previousVersion": "0.48.0-alpha.14",
+      "sections": {
+        "fixes": [
+          "fix(security): mcp_oauth redirect SSRF + mcp command wrapper bypass + CI audit gating (#537)",
+          "fix(deps): bump crossbeam-epoch 0.9.18 → 0.9.20 (RUSTSEC-2026-0204) (#542)"
+        ]
+      },
+      "underTheHood": [
+        "fix(deps): bump crossbeam-epoch 0.9.18 → 0.9.20 (RUSTSEC-2026-0204)"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.14",
       "date": "2026-07-07",
       "previousVersion": "0.48.0-alpha.13",
