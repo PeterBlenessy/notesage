@@ -199,6 +199,19 @@ describe('tauri default capability permissions', () => {
     expect(clipboardPerms).toEqual(['clipboard-manager:allow-read-text']);
   });
 
+  it('grants process:allow-restart only (no JS-driven exit)', () => {
+    // `relaunch()` after an update install (useAutoUpdate) needs restart; the
+    // renderer never calls `exit()`. `process:default` bundles allow-exit +
+    // allow-restart, handing any WebView JS a self-DoS `exit()` primitive with
+    // no legitimate use. Lock the surface to restart only so a future edit
+    // can't quietly re-grant exit. Security audit 2026-07-05 (LOW).
+    const cap = loadDefaultCapability();
+    const processPerms = cap.permissions
+      .map((perm) => (typeof perm === 'string' ? perm : perm.identifier))
+      .filter((id) => id.startsWith('process:'));
+    expect(processPerms).toEqual(['process:allow-restart']);
+  });
+
   it('keeps http:default narrowly scoped to the GitHub release endpoints', () => {
     // Telemetry must NOT widen the JS HTTP surface — all telemetry egress is
     // Rust-side `reqwest`, which Tauri capabilities don't govern. This locks the
