@@ -3,6 +3,19 @@
 **App version:** 0.48.0-alpha.12 (was 0.36.0 at last audit, `2026-04-18-dependencies.md`)
 **Node:** v22.22.2 · **pnpm:** 10.33.0 · **Rust:** 1.94.1 (cargo 1.94.1) · **cargo-audit:** 0.22.2 (installed during this run; advisory-db 1,156 advisories)
 
+## Resolution (hygiene items actioned, merged 2026-07-07/08)
+
+The report found **0 vulnerabilities** at audit time; the items below are the hygiene follow-ups, and their disposition:
+
+| Item | Disposition |
+| --- | --- |
+| CI: flip `cargo-audit` to blocking + add `pnpm audit` | ✅ [#537](https://github.com/PeterBlenessy/notesage/pull/537) |
+| Batch-bump `@tiptap/*` (was 4 minors behind) | ✅ [#540](https://github.com/PeterBlenessy/notesage/pull/540) — 3.23.6 → 3.27.3 |
+| `pdfjs-dist` 5 → 6 (only npm major; parser attack surface) | ✅ [#541](https://github.com/PeterBlenessy/notesage/pull/541) — 5.7.284 → 6.1.200 |
+| `reqwest` 0.12/0.13 de-dup | ⏭️ Not actionable — investigated; the split is structural in the upstream Tauri plugin ecosystem (`tauri-plugin-http` on 0.12, `tauri-plugin-updater` on 0.13, `sentry` pinned). A direct-dep bump would not collapse the duplicate. Will resolve when the plugins align upstream. |
+
+**Note (surfaced *after* this audit):** on 2026-07-06 — the day after this report — **RUSTSEC-2026-0204** was disclosed against `crossbeam-epoch 0.9.18` (invalid pointer dereference; transitive via rayon → typst). The now-blocking `cargo audit` CI gate ([#537](https://github.com/PeterBlenessy/notesage/pull/537)) caught it, and it was fixed in ✅ [#542](https://github.com/PeterBlenessy/notesage/pull/542) — bump to `0.9.20`. This is why the "0 vulnerabilities" headline was accurate on 2026-07-05 but not two days later.
+
 ## Summary
 
 | Metric | Value | vs 2026-04-18 |
