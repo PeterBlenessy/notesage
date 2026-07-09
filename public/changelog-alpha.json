@@ -1,6 +1,50 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.16",
+      "date": "2026-07-08",
+      "previousVersion": "0.48.0-alpha.15",
+      "sections": {
+        "fixes": [
+          "fix(security): gate zero-click link-preview fetch, narrow process cap, extend IPv6 blocklist (#538)"
+        ]
+      },
+      "underTheHood": [
+        "chore(deps): bump @tiptap/* 3.23.6 → 3.27.3 (#540)",
+        "chore(deps): bump @tiptap/* 3.23.6 → 3.27.3",
+        "fix(security): gate zero-click link-preview fetch, narrow process cap, extend IPv6 blocklist"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.15",
+      "date": "2026-07-08",
+      "previousVersion": "0.48.0-alpha.14",
+      "sections": {
+        "fixes": [
+          "fix(security): mcp_oauth redirect SSRF + mcp command wrapper bypass + CI audit gating (#537)",
+          "fix(deps): bump crossbeam-epoch 0.9.18 → 0.9.20 (RUSTSEC-2026-0204) (#542)"
+        ]
+      },
+      "underTheHood": [
+        "fix(deps): bump crossbeam-epoch 0.9.18 → 0.9.20 (RUSTSEC-2026-0204)"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.14",
+      "date": "2026-07-07",
+      "previousVersion": "0.48.0-alpha.13",
+      "sections": {
+        "fixes": [
+          "fix(security): reject unregistered agent ids in agent_uninstall (path traversal) (#536)",
+          "fix(security): mcp_oauth redirect SSRF + mcp command wrapper bypass + CI audit gating (#537)"
+        ]
+      },
+      "underTheHood": [
+        "fix(security): harden mcp_oauth redirects + mcp command guard, gate CI audits",
+        "fix(security): reject unregistered agent ids in agent_uninstall"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.13",
       "date": "2026-07-05",
       "previousVersion": "0.48.0-alpha.12",
