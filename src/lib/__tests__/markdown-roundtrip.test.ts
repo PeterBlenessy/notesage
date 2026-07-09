@@ -35,13 +35,15 @@ import { Callout } from "@/components/editor/extensions/callout";
 import { Drawing } from "@/components/editor/extensions/drawing";
 import { Chart } from "@/components/editor/extensions/chart";
 import { LinkPreview } from "@/components/editor/extensions/link-preview";
+import { MermaidBlock } from "@/components/editor/extensions/mermaid";
 import { PageBreakNode } from "@/components/editor/extensions/page-break-node";
 import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
 import markdownitSub from "markdown-it-sub";
 import markdownitSup from "markdown-it-sup";
-import { convertCalloutsToHtml, convertDrawingsToHtml, convertChartsToHtml, convertLinkPreviewsToHtml, convertPageBreaksToHtml, convertInlineChartsToHtml, convertInlineDrawingsToHtml, convertDataUriImagesToHtml, restorePageBreaks } from "@/lib/markdown";
+import { convertCalloutsToHtml, convertDrawingsToHtml, convertChartsToHtml, convertLinkPreviewsToHtml, convertMermaidToHtml, convertPageBreaksToHtml, convertInlineChartsToHtml, convertInlineDrawingsToHtml, convertDataUriImagesToHtml, restorePageBreaks } from "@/lib/markdown";
 import { serializeTable } from "@/components/editor/extensions/table-markdown";
+import { workerExtensions } from "@/workers/worker-extensions";
 
 // ---------------------------------------------------------------------------
 // jsdom bootstrap — ProseMirror needs a global DOM
@@ -149,6 +151,7 @@ function createTestEditor(content: string): Editor {
       Drawing,
       Chart,
       LinkPreview,
+      MermaidBlock,
       PageBreakNode,
       Subscript.extend({
         addStorage() {
@@ -181,7 +184,7 @@ function createTestEditor(content: string): Editor {
         },
       }),
     ],
-    content: convertDataUriImagesToHtml(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertPageBreaksToHtml(convertLinkPreviewsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(content)))))))),
+    content: convertDataUriImagesToHtml(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertPageBreaksToHtml(convertLinkPreviewsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(convertMermaidToHtml(content))))))))),
     editable: false,
   });
 }
@@ -241,4 +244,50 @@ describe("Markdown round-trip", () => {
       expect(normalized1).toBe(normalizedInput);
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// Drift guard: the round-trip editor's extension list is hand-maintained here
+// (it can't just import `workerExtensions` — that array omits the `Markdown`
+// extension and the per-node serialize-storage overrides this test needs). So
+// this guard catches the failure mode the 2026-07-08 test-coverage audit found:
+// a custom NODE added to production `workerExtensions` (e.g. MermaidBlock, which
+// was silently missing) that never gets a round-trip fixture. If this fails,
+// either add the node + a fixture to the round-trip editor above, or — if the
+// node genuinely isn't markdown-round-tripped as a persisted node (like the TOC
+// node, which is materialized from HTML comments) — add it to the allowlist
+// below with a reason.
+// ---------------------------------------------------------------------------
+
+describe("Round-trip editor covers every production custom node", () => {
+  // Production custom nodes that are intentionally NOT serialized as a persisted
+  // node through this round-trip editor. Each needs a justification.
+  const NOT_ROUNDTRIPPED_AS_NODE = new Set<string>([
+    // The table-of-contents is stored as an HTML-comment marker in markdown and
+    // rematerialized on load (convertTocToHtml / restoreTocComments), not as a
+    // serialized node — so it has no place in the node round-trip editor.
+    "tableOfContents",
+  ]);
+
+  it("includes every custom node from workerExtensions (or allowlists it)", () => {
+    const editor = createTestEditor("");
+    const schemaNodes = new Set(Object.keys(editor.schema.nodes));
+    editor.destroy();
+
+    // Custom node-typed extensions declared for the production worker schema.
+    const productionNodeNames = workerExtensions
+      .filter((ext) => (ext as { type?: string }).type === "node")
+      .map((ext) => (ext as { name: string }).name);
+
+    const missing = productionNodeNames.filter(
+      (name) => !schemaNodes.has(name) && !NOT_ROUNDTRIPPED_AS_NODE.has(name),
+    );
+
+    expect(
+      missing,
+      `Custom production node(s) not represented in the markdown round-trip gate: ${missing.join(
+        ", ",
+      )}. Add the extension + a fixture above, or allowlist with a reason.`,
+    ).toEqual([]);
+  });
 });
