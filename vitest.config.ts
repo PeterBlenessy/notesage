@@ -42,6 +42,28 @@ export default defineConfig({
       provider: 'istanbul',
       reporter: ['text', 'json-summary', 'html'],
       reportsDirectory: './coverage',
+      // `all: true` + an explicit `include` instrument EVERY source file, not
+      // just the ones a test happens to import. Without this, Istanbul reports
+      // only imported files, so the baseline covered ~11% of the tree (72 of
+      // 628 files) and a security-relevant module could ship at 0% coverage
+      // while the headline % looked healthy (2026-07-08 test-coverage audit,
+      // HIGH). Uncovered files now count as 0% instead of being invisible.
+      all: true,
+      include: ['src/**/*.{ts,tsx}'],
+      exclude: [
+        'src/**/*.test.{ts,tsx}',
+        'src/**/__tests__/**',
+        'src/test/**',            // test-only infrastructure (mocks, harness)
+        'src/perf/**',            // perf benchmarks run under vitest.perf.config
+        'src/**/*.d.ts',
+        'src/vite-env.d.ts',
+        'src/main.tsx',           // app entry point — not unit-testable
+      ],
+      // Thresholds stay at 0: with the full tree now visible, overall coverage
+      // is honestly low, so a hard threshold would block unrelated PRs today.
+      // Per-file regression on CHANGED files is enforced separately by
+      // scripts/coverage-check.sh (which now also flags new-but-uncovered
+      // files). Raising these is a follow-up policy decision.
       thresholds: {
         perFile: true,
         lines: 0,
