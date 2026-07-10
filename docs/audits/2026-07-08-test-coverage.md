@@ -4,7 +4,20 @@
 
 **Headline:** the *test suite* is large, mature, and — for security boundaries — genuinely strong. The *coverage gate*, however, is effectively non-enforcing: Istanbul instruments only files a test imports (72 of 628 source files ≈ 11%), all thresholds are 0, and `coverage-check.sh` is warning-only and silently skips files absent from the baseline. So the healthy-looking baseline % overstates protection, and every untested module below is invisible to the metric.
 
-**Follow-up (2026-07-10):** coverage for several of the §2 untested refactor-split modules has since landed — chat message renderers (#551), the FloatingCommandBar split hooks + resize handles (#552), and the `settings/mcp/` dialogs + `cmd/context/` pills (#553). Still open: the two systemic findings (coverage gate §3, round-trip extension array §2/rec 3) plus `activity/cards/`, the agent-task/acp fail/cancel branches, the `markdown-html-converters.ts` node-id/annotation converters, and the `editor-store` v1→v2 fixture.
+**Follow-up (2026-07-10):** nearly every finding below has since been actioned by a batch of coverage PRs:
+
+| Finding | Resolved by |
+| --- | --- |
+| §3 / rec 1–2 — coverage gate effectively non-enforcing | **#549** (instrument the full tree + flag new-but-uncovered files) |
+| §2 / rec 3 — round-trip "#1 gate" hand-lists extensions (Mermaid escapes) | **#546** |
+| §2 / rec 4 — `markdown-html-converters.ts` node-id/annotation converters | **#548** |
+| §2 / rec 5 — agent-task / acp extracted-function fail/cancel branches | **#547** |
+| rec 6 — `cmd/` FloatingCommandBar split hooks + resize handles | **#552** |
+| rec 7 — `chat/message/` segment renderers | **#551** |
+| rec 8 — `settings/mcp/` dialogs + `cmd/context/` pills | **#553** |
+| rec 9 — `editor-store` v1→v2 migration fixture | **#550** |
+
+**Still open:** the `activity/cards/` render logic (§2 table) — the one refactor-split directory still without a dedicated test.
 
 ---
 
@@ -94,21 +107,21 @@ The coverage gate is **effectively non-enforcing**, so the baseline overstates p
 
 ### Fix now — coverage gate (HIGH, both ~S)
 
-1. **Close the instrumentation gap.** Add `coverage.all: true` + `include: ['src/**/*.{ts,tsx}']` to `vitest.config.ts` so uninstrumented files count as 0% instead of being invisible; regenerate the baseline. This alone surfaces every §2 gap as a measurable number and lets `coverage-check.sh` see new files.
-2. **Flag new-but-uncovered files in `coverage-check.sh`.** Change the `if (!baseEntry || !currEntry) continue;` branch so a changed file present in `current` but absent from `baseline` is reported (new files should arrive *with* coverage, not be silently skipped). Optionally flip the observation-period `exit 0` to `exit 1`.
+1. ✅ **Done — #549.** **Close the instrumentation gap.** Add `coverage.all: true` + `include: ['src/**/*.{ts,tsx}']` to `vitest.config.ts` so uninstrumented files count as 0% instead of being invisible; regenerate the baseline. This alone surfaces every §2 gap as a measurable number and lets `coverage-check.sh` see new files.
+2. ✅ **Done — #549.** **Flag new-but-uncovered files in `coverage-check.sh`.** Change the `if (!baseEntry || !currEntry) continue;` branch so a changed file present in `current` but absent from `baseline` is reported (new files should arrive *with* coverage, not be silently skipped). Optionally flip the observation-period `exit 0` to `exit 1`.
 
 ### High-value coverage to add
 
-3. **Single-source the round-trip extension array (MEDIUM, ~S).** Make `markdown-roundtrip.test.ts` import `workerExtensions` instead of hand-listing extensions — immediately brings `MermaidBlock` (and any future node) under the "#1 spec gate." Mermaid parse/serialize can silently break with no gate today.
-4. **Unit-test the node-id + annotation converters in `markdown-html-converters.ts` (MEDIUM, ~M).** `stripNodeIdComments`/`injectNodeIdComments`/`applyNodeIdsToEditor` + the annotation trio manipulate HTML comments embedded in saved markdown — a bug corrupts files on save with no current test. Add inject→strip→equal round-trip assertions.
-5. **Direct tests for agent-task/acp extracted functions (MEDIUM, ~M).** `run-task.ts` fail/cancel branches, `task-registry.ts` idempotent cleanup + jobId scoping, `acp/conv-cleanup.ts` per-conversation routing, `acp/session-config.ts` `applyFreshSessionConfig`. Now pure/near-pure; today only happy paths get integration coverage via parent hooks — a jobId mismatch or partial failure would ship silently.
+3. ✅ **Done — #546.** **Single-source the round-trip extension array (MEDIUM, ~S).** Make `markdown-roundtrip.test.ts` import `workerExtensions` instead of hand-listing extensions — immediately brings `MermaidBlock` (and any future node) under the "#1 spec gate." Mermaid parse/serialize can silently break with no gate today.
+4. ✅ **Done — #548.** **Unit-test the node-id + annotation converters in `markdown-html-converters.ts` (MEDIUM, ~M).** `stripNodeIdComments`/`injectNodeIdComments`/`applyNodeIdsToEditor` + the annotation trio manipulate HTML comments embedded in saved markdown — a bug corrupts files on save with no current test. Add inject→strip→equal round-trip assertions.
+5. ✅ **Done — #547.** **Direct tests for agent-task/acp extracted functions (MEDIUM, ~M).** `run-task.ts` fail/cancel branches, `task-registry.ts` idempotent cleanup + jobId scoping, `acp/conv-cleanup.ts` per-conversation routing, `acp/session-config.ts` `applyFreshSessionConfig`. Now pure/near-pure; today only happy paths get integration coverage via parent hooks — a jobId mismatch or partial failure would ship silently.
 
 ### Nice-to-have
 
 6. ✅ **Done — #552.** **`src/components/cmd/` split hooks (LOW-MED, ~M)** — `useCommandBarGeometry`/`PrefixState`/`BusWiring` + the three `resize/*Handle` components; pure geometry/state logic, cheap with `renderHook`.
 7. ✅ **Done — #551.** **`src/components/chat/message/` renderers (LOW-MED, ~M)** — at least `SegmentRenderer` and `ToolCallLog` (they branch on segment/tool-call shapes).
 8. ✅ **Done — #553.** **`src/components/settings/mcp/` and `cmd/context/` dialogs/pills (LOW, ~M)** — UI validation paths; `CrossProjectScopePill` reflects scope state worth asserting.
-9. **`editor-store` v1→v2 migration fixture (LOW, ~S)** — assert the `version: 2` migrate output from an old-shape fixture.
+9. ✅ **Done — #550.** **`editor-store` v1→v2 migration fixture (LOW, ~S)** — assert the `version: 2` migrate output from an old-shape fixture.
 
 ---
 
