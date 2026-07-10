@@ -185,3 +185,4 @@ Chronological log of major implementation milestones and changes.
 | 179 | [Release v0.48.0-alpha.14](179-release-v0.48.0-alpha.14.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 180 | [Release v0.48.0-alpha.15](180-release-v0.48.0-alpha.15.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 181 | [Release v0.48.0-alpha.16](181-release-v0.48.0-alpha.16.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 182 | [Release v0.48.0-alpha.17](182-release-v0.48.0-alpha.17.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
