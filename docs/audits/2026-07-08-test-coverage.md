@@ -4,6 +4,8 @@
 
 **Headline:** the *test suite* is large, mature, and — for security boundaries — genuinely strong. The *coverage gate*, however, is effectively non-enforcing: Istanbul instruments only files a test imports (72 of 628 source files ≈ 11%), all thresholds are 0, and `coverage-check.sh` is warning-only and silently skips files absent from the baseline. So the healthy-looking baseline % overstates protection, and every untested module below is invisible to the metric.
 
+**Follow-up (2026-07-10):** coverage for several of the §2 untested refactor-split modules has since landed — chat message renderers (#551), the FloatingCommandBar split hooks + resize handles (#552), and the `settings/mcp/` dialogs + `cmd/context/` pills (#553). Still open: the two systemic findings (coverage gate §3, round-trip extension array §2/rec 3) plus `activity/cards/`, the agent-task/acp fail/cancel branches, the `markdown-html-converters.ts` node-id/annotation converters, and the `editor-store` v1→v2 fixture.
+
 ---
 
 ## 1. Test Inventory
@@ -48,11 +50,15 @@ Every security-critical module has a *dedicated, adversarial* test — a genuine
 | `src/components/cmd/context/` | 5 (`ProjectsPicker`, `CrossProjectScopePill`, `ProviderPill`, `ProviderQuickConfig`, `shared`) | 0 | None — `CrossProjectScopePill` surfaces a security-relevant scope state |
 | `src/components/settings/mcp/` | 5 (`AddEditServerDialog`, `ImportDialog`, `McpServerCard`, `ToolRow`, `types`) | 0 | Rust `mcp/validation.rs` covers backend, not this UI |
 
+> **Update (2026-07-10):** `chat/message/` now covered by **#551**; `cmd/context/` and `settings/mcp/` by **#553**. `activity/cards/` remains open.
+
 **FloatingCommandBar split — hooks & resize handles untested:**
 
 - `src/components/cmd/useCommandBarGeometry.ts`, `useCommandBarPrefixState.ts`, `useCommandBarBusWiring.ts` — 0 tests each.
 - `src/components/cmd/resize/{ExpandedResizeHandle,TopResizeHandle,PinnedResizeHandle}.tsx` — 0 tests.
 - (`prefix-modes.ts` **is** covered by `cmd/__tests__/prefix-modes.test.ts`; the `modes/` renderers are well-tested — 21 test files in `src/components/cmd/**`.)
+
+> **Update (2026-07-10):** the split hooks + resize handles are now covered by **#552**.
 
 **Agent-task / ACP orchestrator splits — only indirect coverage (MEDIUM):**
 
@@ -99,9 +105,9 @@ The coverage gate is **effectively non-enforcing**, so the baseline overstates p
 
 ### Nice-to-have
 
-6. **`src/components/cmd/` split hooks (LOW-MED, ~M)** — `useCommandBarGeometry`/`PrefixState`/`BusWiring` + the three `resize/*Handle` components; pure geometry/state logic, cheap with `renderHook`.
-7. **`src/components/chat/message/` renderers (LOW-MED, ~M)** — at least `SegmentRenderer` and `ToolCallLog` (they branch on segment/tool-call shapes).
-8. **`src/components/settings/mcp/` and `cmd/context/` dialogs/pills (LOW, ~M)** — UI validation paths; `CrossProjectScopePill` reflects scope state worth asserting.
+6. ✅ **Done — #552.** **`src/components/cmd/` split hooks (LOW-MED, ~M)** — `useCommandBarGeometry`/`PrefixState`/`BusWiring` + the three `resize/*Handle` components; pure geometry/state logic, cheap with `renderHook`.
+7. ✅ **Done — #551.** **`src/components/chat/message/` renderers (LOW-MED, ~M)** — at least `SegmentRenderer` and `ToolCallLog` (they branch on segment/tool-call shapes).
+8. ✅ **Done — #553.** **`src/components/settings/mcp/` and `cmd/context/` dialogs/pills (LOW, ~M)** — UI validation paths; `CrossProjectScopePill` reflects scope state worth asserting.
 9. **`editor-store` v1→v2 migration fixture (LOW, ~S)** — assert the `version: 2` migrate output from an old-shape fixture.
 
 ---
