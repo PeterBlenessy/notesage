@@ -1187,3 +1187,94 @@ describe('preview state (large-file instant-load Phase 1)', () => {
     expect(useEditorStore.getState().openDocuments.find((t) => t.id === tabId)).toBeUndefined();
   });
 });
+
+// ===========================================================================
+// Persist migration (v0/v1 → v2)
+//
+// The Persistence block above only round-trips the CURRENT persisted shape, so
+// the store's `migrate` function was untested (2026-07-08 test-coverage audit,
+// LOW). These write a RAW old-version blob to storage and rehydrate — exactly
+// what a real upgrade sees in localStorage — exercising each migrate branch.
+// ===========================================================================
+
+/**
+ * Write a raw persisted blob at `version` directly to storage and rehydrate,
+ * driving the store's `migrate(persistedState, version)` path.
+ */
+async function rehydrateFrom(
+  version: number,
+  persistedState: Record<string, unknown>,
+): Promise<void> {
+  useEditorStore.setState(DEFAULTS);
+  localStorageMock.setItem(
+    'notesage-editor',
+    JSON.stringify({ state: persistedState, version }),
+  );
+  await useEditorStore.persist.rehydrate();
+  await waitForPersist();
+}
+
+describe('Persist migration', () => {
+  it('v<2: backfills missing recentFiles.lastAccessedAt in MRU order', async () => {
+    const before = Date.now();
+    await rehydrateFrom(1, {
+      recentFiles: [
+        { path: '/most-recent.md', name: 'most-recent.md' }, // index 0 → ~1m ago
+        { path: '/older.md', name: 'older.md' }, // index 1 → ~2m ago
+      ],
+    });
+
+    const recents = useEditorStore.getState().recentFiles;
+    expect(recents).toHaveLength(2);
+
+    const t0 = recents[0].lastAccessedAt as number;
+    const t1 = recents[1].lastAccessedAt as number;
+    expect(typeof t0).toBe('number');
+    expect(typeof t1).toBe('number');
+    // MRU order preserved as descending timestamps: the most-recent entry gets
+    // the later (larger) stamp, exactly 60s apart, and both are in the past.
+    expect(t0).toBeGreaterThan(t1);
+    expect(t0 - t1).toBe(60_000);
+    expect(t0).toBeLessThan(before);
+  });
+
+  it('v<2: preserves an already-stamped recentFiles entry', async () => {
+    await rehydrateFrom(1, {
+      recentFiles: [
+        { path: '/stamped.md', name: 'stamped.md', lastAccessedAt: 12_345 },
+        { path: '/unstamped.md', name: 'unstamped.md' },
+      ],
+    });
+
+    const recents = useEditorStore.getState().recentFiles;
+    // Existing timestamp untouched; the missing one is backfilled.
+    expect(recents[0].lastAccessedAt).toBe(12_345);
+    expect(typeof recents[1].lastAccessedAt).toBe('number');
+    expect(recents[1].lastAccessedAt).not.toBe(12_345);
+  });
+
+  it('v<1: renames the legacy `tabs` field to `openDocuments`', async () => {
+    const legacyTabs = [
+      { id: 't1', filePath: '/legacy.md', fileName: 'legacy.md', isDirty: false },
+    ];
+    // version 0 runs BOTH migrate branches; recentFiles omitted to prove the
+    // v<2 branch is null-safe when the field is absent.
+    await rehydrateFrom(0, { tabs: legacyTabs });
+
+    const state = useEditorStore.getState();
+    expect(state.openDocuments).toEqual(legacyTabs);
+  });
+
+  it('leaves an already-current (v2) payload untouched', async () => {
+    await rehydrateFrom(2, {
+      recentFiles: [
+        { path: '/kept.md', name: 'kept.md', lastAccessedAt: 999 },
+      ],
+    });
+
+    const recents = useEditorStore.getState().recentFiles;
+    expect(recents).toEqual([
+      { path: '/kept.md', name: 'kept.md', lastAccessedAt: 999 },
+    ]);
+  });
+});

@@ -71,13 +71,29 @@ for (const [key, value] of Object.entries(current)) {
 
 const changedFiles = \`$CHANGED_FILES\`.trim().split('\n').filter(Boolean);
 let regressions = 0;
+let newUncovered = 0;
 let checked = 0;
 
+// Only source files that coverage actually instruments are comparable. With
+// coverage.all=true, every src/**/*.{ts,tsx} (minus the config's exclude list)
+// appears in the current summary \u2014 so a changed source file that is present in
+// CURRENT but absent from the BASELINE is a genuinely new file that arrived
+// without being added to the baseline. Flag it (previously such files were
+// silently skipped, which is how untested modules escaped the gate entirely).
 for (const file of changedFiles) {
   const baseEntry = baseline[file];
   const currEntry = currentNormalized[file];
 
-  if (!baseEntry || !currEntry) continue;
+  // Not instrumented at all (test file, excluded path, deleted, or non-src) \u2014
+  // nothing to compare.
+  if (!currEntry) continue;
+
+  if (!baseEntry) {
+    newUncovered++;
+    const pct = currEntry.lines.pct;
+    console.log('::warning file=' + file + '::New source file not in coverage baseline (' + pct.toFixed(2) + '% lines). Add tests, then run \`pnpm coverage:update-baseline\` to record it.');
+    continue;
+  }
 
   checked++;
   const basePct = baseEntry.lines.pct;
@@ -104,11 +120,16 @@ if (baseline.total && currentNormalized.total) {
 }
 
 console.log('');
-console.log('Checked ' + checked + ' file(s), found ' + regressions + ' regression(s).');
+console.log('Checked ' + checked + ' file(s), found ' + regressions + ' regression(s) and ' + newUncovered + ' new file(s) missing from the baseline.');
 
-if (regressions > 0) {
+if (regressions > 0 || newUncovered > 0) {
   console.log('');
-  console.log('::warning::Coverage regression detected in ' + regressions + ' file(s). Consider adding tests for changed code.');
+  if (regressions > 0) {
+    console.log('::warning::Coverage regression detected in ' + regressions + ' file(s). Consider adding tests for changed code.');
+  }
+  if (newUncovered > 0) {
+    console.log('::warning::' + newUncovered + ' new source file(s) are not in the coverage baseline. Add tests and run \`pnpm coverage:update-baseline\`.');
+  }
   // WARNING-ONLY: exit 0 during observation period.
   // After 2-week observation, change to: process.exit(1);
 }
