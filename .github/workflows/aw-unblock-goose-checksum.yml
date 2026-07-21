@@ -1,0 +1,70 @@
+name: AW — Unblock watcher (Goose checksum, #534)
+
+# Zero-LLM watcher for issue #534 ("Enable Goose download verification
+# when upstream ships a checksum asset"). The issue is `blocked` on an
+# EXTERNAL precondition: the aaif-goose/goose GitHub release publishing
+# a checksum/digest/signature asset. No model can retry its way past
+# that, so the recurring check is plain bash against the GitHub API —
+# an LLM run here would verify the same fact at ~10,000x the cost
+# (which is what happened before the `blocked` state existed: 200+
+# no-op aw-tdd runs on #534).
+#
+# When a checksum asset appears: flip `blocked` → `afk` and comment.
+# The label edit uses GITHUB_TOKEN, so it does NOT fire the sweep's
+# `issues.labeled` trigger (recursion guard) — the 15-minute sweep cron
+# picks the issue up on its next tick instead, which is fine.
+#
+# Delete this workflow when #534 closes.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # weekly, Monday 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check upstream release assets and unblock
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE: "534"
+          REPO: PeterBlenessy/notesage
+          UPSTREAM: aaif-goose/goose
+        run: |
+          set -euo pipefail
+
+          # Only act while the issue is open and actually blocked.
+          STATE=$(gh issue view "$ISSUE" --repo "$REPO" --json state,labels \
+            --jq '{state: .state, blocked: ([.labels[].name] | any(. == "blocked"))}')
+          if [[ $(echo "$STATE" | jq -r '.state') != "OPEN" || $(echo "$STATE" | jq -r '.blocked') != "true" ]]; then
+            echo "Issue #$ISSUE is not open+blocked. Nothing to do."
+            exit 0
+          fi
+
+          TAG=$(gh api "repos/$UPSTREAM/releases/latest" --jq '.tag_name')
+          ASSETS=$(gh api "repos/$UPSTREAM/releases/latest" --jq '.assets[].name')
+          echo "Latest $UPSTREAM release: $TAG"
+          echo "$ASSETS"
+
+          # Same patterns the issue tracks: sha256sums*, *.sha256, *.sig,
+          # plus common checksum/digest manifest names.
+          MATCHES=$(echo "$ASSETS" | grep -iE '(^|[^a-z])(sha256sums|checksums?|digests?)|\.sha256$|\.sig$|\.asc$' || true)
+          if [[ -z "$MATCHES" ]]; then
+            echo "No checksum/digest/signature asset in $TAG. Staying blocked."
+            exit 0
+          fi
+
+          echo "Checksum asset(s) found in $TAG — unblocking #$ISSUE."
+          gh issue edit "$ISSUE" --repo "$REPO" --add-label afk --remove-label blocked
+          {
+            printf '> *Unblocked automatically by the `aw-unblock-goose-checksum` watcher (no LLM involved).*\n\n'
+            printf 'Upstream `%s` release `%s` now ships checksum-looking asset(s):\n\n' "$UPSTREAM" "$TAG"
+            printf '```\n%s\n```\n\n' "$MATCHES"
+            printf 'Removed `blocked`, re-added `afk` — the next sweep tick will hand this to `aw-tdd`, which must confirm the asset'"'"'s actual manifest format per the acceptance criteria.\n'
+          } > /tmp/unblock-comment.md
+          gh issue comment "$ISSUE" --repo "$REPO" --body-file /tmp/unblock-comment.md

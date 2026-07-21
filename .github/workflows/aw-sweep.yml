@@ -283,7 +283,9 @@ jobs:
       candidate: ${{ steps.find.outputs.candidate }}
     steps:
       # TDD candidate = open + `tdd` + `afk` + `refined` + a category,
-      # AND not yet `review`.
+      # AND not yet `review`, AND not `blocked` (gated on an external
+      # precondition the pipeline cannot satisfy — retrying burns an LLM
+      # run per tick for nothing; see #534).
       - name: Find candidate
         id: find
         env:
@@ -299,7 +301,7 @@ jobs:
             --state open \
             --limit 10 \
             --json number,labels \
-            --jq '[.[] | select(([.labels[].name] | any(. == "review")) | not) | select(([.labels[].name] | any(. == "external") | not) or ([.labels[].name] | any(. == "aw-approved"))) | .number] | first(.[])? // empty')
+            --jq '[.[] | select(([.labels[].name] | any(. == "review" or . == "blocked")) | not) | select(([.labels[].name] | any(. == "external") | not) or ([.labels[].name] | any(. == "aw-approved"))) | .number] | first(.[])? // empty')
           if [[ -z "$CAND" ]]; then
             echo "No tdd candidates (or all are external+unapproved). Skipping LLM step."
             echo "candidate=" >> "$GITHUB_OUTPUT"

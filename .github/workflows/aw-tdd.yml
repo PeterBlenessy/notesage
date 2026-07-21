@@ -55,7 +55,8 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       # Precheck: find one eligible issue. Eligibility = `tdd` + `afk` +
-      # `refined` + a category, AND not yet `review`. Event triggers
+      # `refined` + a category, AND not yet `review`, AND not `blocked`
+      # (gated on an external precondition — see #534). Event triggers
       # (issues.labeled) target the specific issue whose afk was added.
       - name: Find candidate
         id: find
@@ -76,11 +77,12 @@ jobs:
             HAS_TDD=$(echo "$LABELS" | jq 'any(. == "tdd")')
             HAS_REFINED=$(echo "$LABELS" | jq 'any(. == "refined")')
             HAS_REVIEW=$(echo "$LABELS" | jq 'any(. == "review")')
+            HAS_BLOCKED=$(echo "$LABELS" | jq 'any(. == "blocked")')
             HAS_CATEGORY=$(echo "$LABELS" | jq 'any(. == "bug" or . == "enhancement" or . == "chore")')
-            if [[ "$HAS_TDD" == "true" && "$HAS_REFINED" == "true" && "$HAS_CATEGORY" == "true" && "$HAS_REVIEW" != "true" ]]; then
+            if [[ "$HAS_TDD" == "true" && "$HAS_REFINED" == "true" && "$HAS_CATEGORY" == "true" && "$HAS_REVIEW" != "true" && "$HAS_BLOCKED" != "true" ]]; then
               echo "candidate=$ISSUE" >> "$GITHUB_OUTPUT"
             else
-              echo "Issue #$ISSUE not eligible (tdd=$HAS_TDD refined=$HAS_REFINED category=$HAS_CATEGORY review=$HAS_REVIEW). Skipping."
+              echo "Issue #$ISSUE not eligible (tdd=$HAS_TDD refined=$HAS_REFINED category=$HAS_CATEGORY review=$HAS_REVIEW blocked=$HAS_BLOCKED). Skipping."
               echo "candidate=" >> "$GITHUB_OUTPUT"
             fi
             exit 0
@@ -92,7 +94,7 @@ jobs:
             --state open \
             --limit 10 \
             --json number,labels \
-            --jq '[.[] | select(([.labels[].name] | any(. == "review")) | not) | .number] | first(.[])? // empty')
+            --jq '[.[] | select(([.labels[].name] | any(. == "review" or . == "blocked")) | not) | .number] | first(.[])? // empty')
           if [[ -z "$ISSUE" ]]; then
             echo "No eligible subtasks. Skipping LLM step."
             echo "candidate=" >> "$GITHUB_OUTPUT"
