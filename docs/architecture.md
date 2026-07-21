@@ -101,7 +101,7 @@ note-sage/
 │   │       ├── typography.rs        # Shared typography helpers (font lookup, fallbacks)
 │   │       ├── table_utils.rs       # Shared table utilities (metadata, aggregation, formatting)
 │   │       └── templates.rs        # PDF + PPTX template loading and parameterization
-│   ├── binaries/           # Bundled sidecar binaries (llama-server + dylibs)
+│   ├── binaries/           # llama-server sidecar (dev: downloaded + dylibs; prod: static) — see docs/llama-server-sidecar.md
 │   ├── model-catalog.json  # Curated LLM model catalog (embedded at compile time)
 │   ├── fonts/              # Bundled fonts (Inter, Source Serif 4, JetBrains Mono)
 │   ├── templates/          # Typst template presets (clean.typ, academic.typ, report.typ)
