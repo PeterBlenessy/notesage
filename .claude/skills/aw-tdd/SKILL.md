@@ -56,6 +56,14 @@ For `aw_applies: with-modification` rules, read "user" as the issue or PR thread
    - `gh issue view N --json state,labels --jq '.state'` — if not `CLOSED`, the dependency is not done.
    - If any blocker is open, post a comment (template below), exit silently. Cron will retry later.
 
+2.5. **Check for unmet EXTERNAL preconditions — flip to `blocked`, never post-and-leave.** Some issues gate implementation on an event outside this repository: an upstream release shipping an asset, a third-party API change, a dependency publishing a version. Signals: the body's `## Assumptions` says the issue "stays dormant until…", an acceptance criterion starts with "Confirmed (at time of implementation) that \<external party\> …", or the `## Problem` states there is nothing to build until upstream acts.
+
+   If such a precondition exists, verify it ONCE (e.g. `gh api` against the upstream repo). If it is still unmet:
+   - Add `blocked`, remove `afk` (`gh issue edit $ISSUE_NUMBER --add-label blocked --remove-label afk`).
+   - Post the blocked-external comment (template below) and exit.
+
+   Do NOT exit leaving `tdd + afk` in place — the sweep cron re-selects any `tdd + afk` issue every 15 minutes, so a post-and-leave exit is an infinite retry loop that burns an LLM run per tick (this is exactly what happened on #534: 200+ no-op runs). `blocked` is excluded by every tdd find-precheck; it is cleared by a human (or a dedicated cheap watcher workflow) re-adding `afk` and removing `blocked` when the precondition is met.
+
 3. **Read the parent issue context.** The subtask title contains `for #<parent>`. Read the parent's body and any sibling subtasks to understand the broader feature.
 
 4. **Read the relevant files.** The subtask body lists `Files likely to change:` — read each, plus their tests, plus 1–2 levels of imports/callers.
@@ -78,6 +86,7 @@ Update the subtask issue's labels at three points:
 - **Start:** remove `afk` (claim it). The agent is now working on it. Post the start comment.
 - **PR opened:** add `review`, remove `tdd`. Post the done comment. (Keep `refined`; `afk` was removed at start.)
 - **Failure:** re-add `afk`. Post the failure comment with the specific failure.
+- **Blocked (external precondition, from Pre-flight 2.5):** add `blocked`, remove `afk`. Post the blocked-external comment. The issue leaves the tdd candidate pool until a human (or a watcher workflow) flips `blocked` back to `afk`.
 
 ## Process: red-green-refactor
 
@@ -192,10 +201,21 @@ Review the draft PR before marking it ready.
 
 <truncated error output, in code block, ~50 lines max>
 
-Reset back to `tdd + afk`. Cron will not auto-retry — investigate and either:
+Reset back to `tdd + afk`. The sweep cron WILL auto-retry (every 15 min; the model escalates to Opus after 2 start attempts). If retrying cannot help, intervene:
 - Fix the issue body / red-test list and let cron pick this up again, or
 - Flip to `hitl` to force human implementation, or
+- Add `blocked` (remove `afk`) if it waits on something outside this repo, or
 - Close as `wontfix` if the issue is no longer relevant.
+```
+
+**Blocked by external precondition (from Pre-flight step 2.5):**
+
+```
+> *Blocked on an external precondition — flipping to `blocked`, no code change.*
+
+<one line: which precondition, how it was verified, e.g. upstream release/asset state as of today>
+
+Added `blocked`, removed `afk` — this issue leaves the tdd candidate pool so cron stops retrying an unmeetable gate. When the precondition is met, remove `blocked` and re-add `afk` to resume.
 ```
 
 **Blocked by depends-on:**

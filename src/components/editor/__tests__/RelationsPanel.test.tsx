@@ -27,6 +27,17 @@ vi.mock("@/lib/logger", () => ({
   PERF: {},
 }));
 
+// jsdom has no ResizeObserver; Radix Tooltip's use-size needs it. The
+// comet-retire test's Escape-close returns focus to the handle (a
+// TooltipTrigger), which mounts tooltip content and trips the lookup.
+if (typeof globalThis.ResizeObserver === "undefined") {
+  globalThis.ResizeObserver = class {
+    observe(): void {}
+    unobserve(): void {}
+    disconnect(): void {}
+  } as unknown as typeof ResizeObserver;
+}
+
 function openDoc(path: string): void {
   useEditorStore.setState({
     openDocuments: [
@@ -201,5 +212,33 @@ describe("RelationsPanel", () => {
     expect(screen.getByText("not created")).toBeTruthy();
     // Unresolved target falls back to its basename label.
     expect(screen.getByText("missing.md")).toBeTruthy();
+  });
+
+  it("retires the comet once the panel has been opened — no replay on close", async () => {
+    openDoc("/p/active.md");
+    setMockInvokeHandler("get_backlinks", () => [backlink]);
+    setMockInvokeHandler("get_outlinks", () => [forwardResolved]);
+
+    render(<RelationsPanel />);
+    const handle = await screen.findByTestId("relations-handle");
+    // Fresh doc-open: the comet announces.
+    expect(
+      document.querySelectorAll(".relations-comet-dot").length,
+    ).toBeGreaterThan(0);
+
+    // Open, then close via Escape. Before the fix, closing REMOUNTED the
+    // comet (the `!open` conditional), restarting the CSS animation from
+    // lap 1 on every open→close cycle.
+    fireEvent.click(handle);
+    await screen.findByTestId("relations-panel");
+    fireEvent.keyDown(document, { key: "Escape" });
+    await waitFor(() => {
+      expect(
+        screen.getByTestId("relations-root").getAttribute("data-state"),
+      ).toBe("closed");
+    });
+
+    // Collapsed again — but the announcement already landed; no comet.
+    expect(document.querySelectorAll(".relations-comet-dot").length).toBe(0);
   });
 });

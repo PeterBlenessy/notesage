@@ -26,9 +26,13 @@
  *
  * Attention cue (comet): while collapsed the handle traces a "comet" around its
  * border — a bright lead dot + a tapering tail of dimmer/smaller dots — for 3
- * laps, then settles ("announce, then quiet"; re-keyed on each doc-open). CSS in
- * globals.css (`.relations-comet-dot` + `offset-path`); the dots are omitted
- * under `useReducedMotion()`, with an @media guard parking a static head.
+ * laps, then settles ("announce, then quiet"; re-keyed on each doc-open). Once
+ * the user has OPENED the panel for a document the cue never replays for that
+ * document — clicking is proof the announcement landed, and the conditional
+ * unmount on open would otherwise restart the CSS animation from lap 1 on
+ * every open→close cycle (the "re-announce forever" bug). CSS in globals.css
+ * (`.relations-comet-dot` + `offset-path`); the dots are omitted under
+ * `useReducedMotion()`, with an @media guard parking a static head.
  *
  * Self-hide: renders `null` when the active document has no relations (or none
  * is open) — no empty handle clutters the column. Loading / error states are
@@ -309,6 +313,12 @@ export function RelationsPanel({
     useDocumentRelations();
   const reducedMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
+  // The document path the user last opened the panel for. Opening is the
+  // strongest proof the comet's announcement landed, so the cue never replays
+  // for that document — without this, the `!open` conditional unmounts the
+  // comet on open and REMOUNTS it on close, restarting the CSS animation from
+  // lap 1 on every open→close cycle. A doc switch (new `path`) re-announces.
+  const [cometSeenPath, setCometSeenPath] = useState<string | null>(null);
 
   const openTab = useEditorStore((s) => s.openTab);
   const projects = useWorkspaceStore((s) => s.projects);
@@ -552,7 +562,13 @@ export function RelationsPanel({
               aria-expanded={open}
               aria-hidden={open || undefined}
               tabIndex={open ? -1 : undefined}
-              onClick={() => setOpen((o) => !o)}
+              onClick={() => {
+                // Opening retires the comet for this document (see
+                // `cometSeenPath`). The handle is pointer-events-none while
+                // open, so this only ever fires from the collapsed face.
+                setCometSeenPath(path);
+                setOpen((o) => !o);
+              }}
               className={cn(
                 "absolute inset-0 z-10 flex flex-col items-center justify-center gap-1",
                 "transition-opacity duration-150 hover:bg-muted/60",
@@ -563,8 +579,12 @@ export function RelationsPanel({
               )}
             >
               {/* Comet attention cue — collapsed only, omitted under reduced
-                  motion. Keyed by `path` so its 3 laps restart on each doc-open. */}
-              {!reducedMotion && !open ? <RelationsComet key={path} /> : null}
+                  motion, and retired for good once the panel has been opened
+                  for this document (`cometSeenPath`). Keyed by `path` so the
+                  3 laps restart on a doc switch. */}
+              {!reducedMotion && !open && cometSeenPath !== path ? (
+                <RelationsComet key={path} />
+              ) : null}
               <Link2
                 className="h-3.5 w-3.5 text-muted-foreground"
                 strokeWidth={1.5}
