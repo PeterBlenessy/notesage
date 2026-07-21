@@ -14,9 +14,14 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { CornerDownRight, CornerUpLeft } from "lucide-react";
+import { toast } from "sonner";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { useDocumentRelations } from "@/hooks/useDocumentRelations";
+import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { tauriApi } from "@/lib/tauri";
+import { tryOpenFile } from "@/lib/link-utils";
 import { cn } from "@/lib/utils";
 import { MarkdownContent } from "@/components/MarkdownContent";
 
@@ -28,6 +33,11 @@ import { MarkdownContent } from "@/components/MarkdownContent";
  * text. YAML frontmatter is stripped before line-counting so markdown previews
  * are actually useful. Non-text extensions render a muted "No preview
  * available" message instead of fetching.
+ *
+ * Markdown files additionally get a compact relations footer ("Linked from" /
+ * "Links to" as clickable name lists, capped per direction) from the link
+ * graph — the sidebar-glance counterpart to the document-scoped
+ * RelationsPanel. See `PreviewRelations` below.
  *
  * Caching: previews are memoized per-path for the component's lifetime via a
  * ref-held `Map`. In-flight fetches set a stale flag so that a second hover
@@ -255,6 +265,162 @@ export function extractPreviewLines(content: string, lineCount: number): string 
 }
 
 // ---------------------------------------------------------------------------
+// PreviewRelations — compact link-graph footer inside the hover popover
+// ---------------------------------------------------------------------------
+
+/**
+ * Max related-document names listed per direction. The hover preview is a
+ * glance, not the panel — the full list (with occurrence context) lives in the
+ * RelationsPanel once the document is open.
+ */
+const RELATIONS_MAX_PER_SECTION = 3;
+
+interface RelationEntry {
+  path: string;
+  label: string;
+  /** Dangling internal target (ADR 0007) — shown muted, not clickable. */
+  unresolved: boolean;
+}
+
+/** Display label for a relation: prefer frontmatter title, else basename. */
+function relationEntryLabel(title: string | null, path: string): string {
+  return title && title.trim().length > 0 ? title : basename(path);
+}
+
+function RelationNameList({
+  icon,
+  label,
+  entries,
+  onNavigate,
+}: {
+  icon: ReactNode;
+  label: string;
+  entries: RelationEntry[];
+  onNavigate: (path: string) => void;
+}) {
+  const shown = entries.slice(0, RELATIONS_MAX_PER_SECTION);
+  const more = entries.length - shown.length;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1 text-[10px] font-semibold tracking-wide text-muted-foreground uppercase">
+        {icon}
+        <span>{label}</span>
+        <span className="text-muted-foreground/60 tabular-nums">
+          {entries.length}
+        </span>
+      </div>
+      {shown.map((entry) =>
+        entry.unresolved ? (
+          <span
+            key={entry.path}
+            className="truncate text-xs italic text-muted-foreground/70"
+          >
+            {entry.label}
+          </span>
+        ) : (
+          <button
+            key={entry.path}
+            type="button"
+            onClick={() => onNavigate(entry.path)}
+            className="truncate text-left text-xs text-foreground hover:text-[var(--color-accent-primary)] transition-colors focus-visible:outline-none focus-visible:underline"
+          >
+            {entry.label}
+          </button>
+        ),
+      )}
+      {more > 0 ? (
+        <span className="text-[11px] text-muted-foreground/70">
+          +{more} more
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Relations footer for the hover preview: "Linked from" / "Links to" as
+ * compact name lists (no occurrence context — that's the RelationsPanel's
+ * job). Mounted ONLY inside the open PopoverContent so the `links.db` query
+ * fires per hover-open, never per sidebar row render. Self-hides when the
+ * document has no relations, while loading, and on error — a hover glance
+ * must never grow states of its own.
+ *
+ * External-URL outlinks are omitted: they aren't navigable from a sidebar
+ * glance and the names are usually raw URLs (noise at tooltip scale).
+ */
+function PreviewRelations({
+  filePath,
+  onNavigated,
+}: {
+  filePath: string;
+  /** Called after a relation click successfully opened a document. */
+  onNavigated: () => void;
+}) {
+  const { backlinks, outlinks, loading, error } = useDocumentRelations(filePath);
+  const openTab = useEditorStore((s) => s.openTab);
+
+  const navigate = useCallback(
+    (targetPath: string) => {
+      void (async () => {
+        if (await tryOpenFile(targetPath, openTab)) {
+          onNavigated();
+          return;
+        }
+        // Unlike the hover fetch (silent by design), a click is an explicit
+        // action and deserves feedback.
+        toast.error(`Could not open: ${basename(targetPath)}`);
+      })();
+    },
+    [openTab, onNavigated],
+  );
+
+  const linkedFrom: RelationEntry[] = backlinks.map((group) => ({
+    path: group.source_path,
+    label: relationEntryLabel(group.source_title, group.source_path),
+    unresolved: false,
+  }));
+  const linksTo: RelationEntry[] = outlinks
+    .filter((row) => row.is_internal)
+    .map((row) => ({
+      path: row.target_path,
+      label: relationEntryLabel(row.target_title, row.target_path),
+      unresolved: !row.resolved,
+    }));
+
+  if (loading || error || (linkedFrom.length === 0 && linksTo.length === 0)) {
+    return null;
+  }
+
+  return (
+    <div
+      data-testid="preview-relations"
+      className="flex flex-col gap-1.5 border-t border-border/60 px-3 py-2"
+    >
+      {linkedFrom.length > 0 ? (
+        <RelationNameList
+          icon={
+            <CornerUpLeft className="h-2.5 w-2.5" strokeWidth={1.5} aria-hidden="true" />
+          }
+          label="Linked from"
+          entries={linkedFrom}
+          onNavigate={navigate}
+        />
+      ) : null}
+      {linksTo.length > 0 ? (
+        <RelationNameList
+          icon={
+            <CornerDownRight className="h-2.5 w-2.5" strokeWidth={1.5} aria-hidden="true" />
+          }
+          label="Links to"
+          entries={linksTo}
+          onNavigate={navigate}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -293,6 +459,11 @@ export function FilePreview({
     new Map(),
   );
 
+  // DOM refs for the trigger wrapper + popover content — the max-open failsafe
+  // consults live `:hover` state on these before force-closing (see below).
+  const triggerWrapRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+
   // Tracks whether the last scheduled open is still valid — set to false when
   // the pointer leaves before the fetch resolves so we don't open a stale
   // popover. Keyed per path so a second hover on the same row still wins.
@@ -320,17 +491,42 @@ export function FilePreview({
   // MAX_OPEN_MS. The user may have moved the cursor away during a
   // main-thread freeze that swallowed the mouseLeave event; this fail-safe
   // dismisses the popover regardless. Cleared on close.
+  //
+  // Relations amendment (2026-07-21): the popover now carries clickable
+  // relation entries, so a user genuinely reading it must not be cut off at
+  // 5s. At fire time we consult the LIVE `:hover` state of the trigger + the
+  // popover content (`matches(":hover")` reflects the real pointer position,
+  // so it stays correct even when the mouseLeave event — and thus
+  // `cursorInsideRef` — was swallowed by a freeze) and re-arm instead of
+  // closing while the cursor is verifiably inside. The failsafe still fires
+  // for its original target: a popover left visible after the cursor moved
+  // away.
   useEffect(() => {
     if (!open) return;
-    if (maxOpenTimerRef.current !== null) {
-      window.clearTimeout(maxOpenTimerRef.current);
-    }
-    maxOpenTimerRef.current = window.setTimeout(() => {
+    const isStillHovered = (): boolean => {
+      try {
+        return Boolean(
+          contentRef.current?.matches(":hover") ||
+            triggerWrapRef.current?.matches(":hover"),
+        );
+      } catch {
+        return false;
+      }
+    };
+    const tick = () => {
+      if (isStillHovered()) {
+        maxOpenTimerRef.current = window.setTimeout(tick, MAX_OPEN_MS);
+        return;
+      }
       maxOpenTimerRef.current = null;
       activePathRef.current = null;
       setOpen(false);
       setState({ status: "idle" });
-    }, MAX_OPEN_MS);
+    };
+    if (maxOpenTimerRef.current !== null) {
+      window.clearTimeout(maxOpenTimerRef.current);
+    }
+    maxOpenTimerRef.current = window.setTimeout(tick, MAX_OPEN_MS);
     return () => {
       if (maxOpenTimerRef.current !== null) {
         window.clearTimeout(maxOpenTimerRef.current);
@@ -338,6 +534,18 @@ export function FilePreview({
       }
     };
   }, [open]);
+
+  // Immediate close shared by interact-outside, Escape, and relation-click
+  // navigation: cancel the grace timer and reset to idle in one step.
+  const closeNow = useCallback(() => {
+    if (closeTimerRef.current !== null) {
+      window.clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    activePathRef.current = null;
+    setOpen(false);
+    setState({ status: "idle" });
+  }, []);
 
   const loadPreview = useCallback(
     async (path: string) => {
@@ -506,6 +714,7 @@ export function FilePreview({
     <Popover open={open}>
       <PopoverTrigger asChild>
         <div
+          ref={triggerWrapRef}
           onMouseEnter={handleMouseEnter}
           onMouseLeave={handleMouseLeave}
           onContextMenu={handleContextMenu}
@@ -516,6 +725,7 @@ export function FilePreview({
         </div>
       </PopoverTrigger>
       <PopoverContent
+        ref={contentRef}
         role="tooltip"
         aria-label={`File preview — ${name}`}
         side={side}
@@ -542,24 +752,8 @@ export function FilePreview({
         // freeze during large-file hydration). Radix fires onInteractOutside
         // BEFORE the click reaches the underlying element so this doesn't
         // interfere with row-click-to-open.
-        onInteractOutside={() => {
-          if (closeTimerRef.current !== null) {
-            window.clearTimeout(closeTimerRef.current);
-            closeTimerRef.current = null;
-          }
-          activePathRef.current = null;
-          setOpen(false);
-          setState({ status: "idle" });
-        }}
-        onEscapeKeyDown={() => {
-          if (closeTimerRef.current !== null) {
-            window.clearTimeout(closeTimerRef.current);
-            closeTimerRef.current = null;
-          }
-          activePathRef.current = null;
-          setOpen(false);
-          setState({ status: "idle" });
-        }}
+        onInteractOutside={closeNow}
+        onEscapeKeyDown={closeNow}
         // Honor prefers-reduced-motion. Expose a data attribute so the
         // render-time JS hook can be observed in tests / inspector; the
         // actual animation suppression is handled by Tailwind's
@@ -663,6 +857,14 @@ export function FilePreview({
             )
           )}
         </div>
+        {/* Relations footer — compact "Linked from" / "Links to" name lists
+            from the link graph (OKF wiki-navigation). Markdown files only
+            (relations only exist for those). Mounted here — inside the open
+            PopoverContent — so the links.db query fires per hover-open, never
+            per sidebar row. Self-hides when the doc has no relations. */}
+        {shouldRenderMarkdown(filePath) ? (
+          <PreviewRelations filePath={filePath} onNavigated={closeNow} />
+        ) : null}
         {/* No bottom bar — mockup-L had a "Click to open · ⌘click for new
             tab" hint, but live-test feedback 2026-04-24 said it's
             noise. Click + ⌘-click are the expected verbs for any file

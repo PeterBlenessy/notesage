@@ -31,6 +31,8 @@ import {
   extractPreviewParts,
   splitFrontmatter,
 } from "../FilePreview";
+import { useEditorStore } from "@/stores/editor-store";
+import type { BacklinkGroup, LinkRow } from "@/lib/tauri";
 
 // ---------------------------------------------------------------------------
 // matchMedia stub — FilePreview reads `prefers-reduced-motion` via
@@ -441,5 +443,167 @@ describe("FilePreview — hover behavior", () => {
 
     const tooltip = screen.getByRole("tooltip");
     expect(tooltip.getAttribute("data-reduced-motion")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Relations footer
+// ---------------------------------------------------------------------------
+
+describe("FilePreview — relations footer", () => {
+  const backlink = (sourcePath: string, title: string | null): BacklinkGroup => ({
+    source_path: sourcePath,
+    source_title: title,
+    source_type: null,
+    source_description: null,
+    occurrences: [{ link_text: "x", context: "ctx" }],
+  });
+
+  const outlink = (
+    targetPath: string,
+    title: string | null,
+    resolved = true,
+  ): LinkRow => ({
+    source_path: "/docs/notes.md",
+    target_path: targetPath,
+    link_text: "x",
+    context: "ctx",
+    is_internal: true,
+    resolved,
+    target_title: title,
+    target_type: null,
+    target_description: null,
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    reducedMotion = false;
+    installMatchMedia();
+    clearMockInvokeHandlers();
+    setMockInvokeHandler("read_file", async () => "line1\nline2\nline3");
+    setMockInvokeHandler("get_backlinks", () => []);
+    setMockInvokeHandler("get_outlinks", () => []);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    clearMockInvokeHandlers();
+  });
+
+  /** Hover the trigger and settle both the read_file and links.db fetches. */
+  async function hoverAndSettle() {
+    fireEvent.mouseEnter(getTrigger());
+    await advance(800);
+    // Extra microtask flushes for the relations hook's Promise.all chain.
+    await advance(0);
+  }
+
+  it("shows compact Linked from / Links to name lists for markdown files", async () => {
+    setMockInvokeHandler("get_backlinks", () => [
+      backlink("/p/source.md", "Source Doc"),
+    ]);
+    setMockInvokeHandler("get_outlinks", () => [
+      outlink("/p/orders.md", "Orders Table"),
+      outlink("/p/missing.md", null, false),
+    ]);
+
+    renderWithProviders(
+      <FilePreview filePath="/docs/notes.md">
+        <button>Trigger</button>
+      </FilePreview>,
+    );
+    await hoverAndSettle();
+
+    expect(screen.getByTestId("preview-relations")).toBeTruthy();
+    expect(screen.getByText("Linked from")).toBeTruthy();
+    expect(screen.getByText("Links to")).toBeTruthy();
+    // Names only — no occurrence context at tooltip scale.
+    expect(screen.getByText("Source Doc")).toBeTruthy();
+    expect(screen.getByText("Orders Table")).toBeTruthy();
+    expect(screen.queryByText(/ctx/)).toBeNull();
+    // Unresolved (dangling) target renders as a non-clickable muted span.
+    const unresolved = screen.getByText("missing.md");
+    expect(unresolved.tagName).toBe("SPAN");
+    // Resolved target is a clickable button.
+    expect(screen.getByText("Orders Table").tagName).toBe("BUTTON");
+  });
+
+  it("omits the footer entirely when the document has no relations", async () => {
+    renderWithProviders(
+      <FilePreview filePath="/docs/notes.md">
+        <button>Trigger</button>
+      </FilePreview>,
+    );
+    await hoverAndSettle();
+
+    // The preview body still renders; the relations footer self-hides.
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+    expect(screen.queryByTestId("preview-relations")).toBeNull();
+  });
+
+  it("does not query the link graph for non-markdown files", async () => {
+    const backlinksSpy = vi.fn(() => []);
+    setMockInvokeHandler("get_backlinks", backlinksSpy);
+
+    renderWithProviders(
+      <FilePreview filePath="/docs/data.json">
+        <button>Trigger</button>
+      </FilePreview>,
+    );
+    await hoverAndSettle();
+
+    expect(screen.getByRole("tooltip")).toBeTruthy();
+    expect(screen.queryByTestId("preview-relations")).toBeNull();
+    expect(backlinksSpy).not.toHaveBeenCalled();
+  });
+
+  it("caps each direction at 3 names with a +N more overflow line", async () => {
+    setMockInvokeHandler("get_backlinks", () => [
+      backlink("/p/a.md", "Doc A"),
+      backlink("/p/b.md", "Doc B"),
+      backlink("/p/c.md", "Doc C"),
+      backlink("/p/d.md", "Doc D"),
+      backlink("/p/e.md", "Doc E"),
+    ]);
+
+    renderWithProviders(
+      <FilePreview filePath="/docs/notes.md">
+        <button>Trigger</button>
+      </FilePreview>,
+    );
+    await hoverAndSettle();
+
+    expect(screen.getByText("Doc A")).toBeTruthy();
+    expect(screen.getByText("Doc C")).toBeTruthy();
+    expect(screen.queryByText("Doc D")).toBeNull();
+    expect(screen.getByText("+2 more")).toBeTruthy();
+  });
+
+  it("clicking a relation opens the document and closes the popover", async () => {
+    setMockInvokeHandler("get_outlinks", () => [
+      outlink("/p/orders.md", "Orders Table"),
+    ]);
+    const openTabSpy = vi.fn();
+    const originalOpenTab = useEditorStore.getState().openTab;
+    useEditorStore.setState({ openTab: openTabSpy });
+
+    try {
+      renderWithProviders(
+        <FilePreview filePath="/docs/notes.md">
+          <button>Trigger</button>
+        </FilePreview>,
+      );
+      await hoverAndSettle();
+
+      fireEvent.click(screen.getByText("Orders Table"));
+      await advance(0);
+
+      expect(openTabSpy).toHaveBeenCalled();
+      expect(openTabSpy.mock.calls[0][0]).toBe("/p/orders.md");
+      // Successful navigation closes the popover immediately.
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    } finally {
+      useEditorStore.setState({ openTab: originalOpenTab });
+    }
   });
 });
