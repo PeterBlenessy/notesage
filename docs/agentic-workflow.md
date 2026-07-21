@@ -121,7 +121,11 @@ Labels are the state of the system.
 
 **Categories** (set by aw-triage, immutable): `bug`, `enhancement`, `chore`.
 
-**Execution gates** (on any tdd-ready issue, mutually exclusive): `hitl`, `afk`.
+**Execution gates** (on any tdd-ready issue, mutually exclusive): `hitl`, `afk`, `blocked`.
+
+- `hitl` — waits for a human to approve (flip to `afk`) before code is written.
+- `afk` — autonomous implementation; the sweep cron and event triggers pick it up.
+- `blocked` — waits on an **external precondition** the pipeline cannot satisfy (an upstream release shipping an asset, a third-party API change). Set by `aw-tdd`'s pre-flight (step 2.5) or by the operator; excluded by every tdd find-precheck so cron never burns retry runs on it (post-and-leave retries on #534 produced 200+ no-op LLM runs before this state existed). Cleared by a human — or a cheap non-LLM watcher workflow (see `aw-unblock-goose-checksum.yml`) — removing `blocked` and re-adding `afk` when the precondition is met. Distinct from `Depends on: #N` (an in-repo issue dependency, which cron retries because the pipeline itself resolves the blocker).
 
 **Closed states**: `wontfix`, `duplicate`.
 
