@@ -21,20 +21,22 @@
 
 ## M0 — De-risking spikes (hard gate)
 
-### #1 — Spike: Bun-binary parity (RPC + extension loading)
+### #1 — Spike: Bun-binary parity (RPC + extension loading) ✅
 
 **Description:** Download `pi-darwin-arm64.tar.gz` from a pinned `earendil-works/pi` release, verify against `SHA256SUMS`, extract (archive is a *folder*: executable + wasm + native bindings + themes — note co-location requirements). Confirm the Bun-compiled binary (a) runs `--mode rpc` with correct LF-delimited JSONL framing for `new_session`/`prompt`/`abort`, and (b) loads a trivial TypeScript extension from `PI_CODING_AGENT_DIR/extensions/` identically to the npm build. Record the tested pi version. Acceptance: written finding (pass/fail + caveats) for the research doc (#4).
 **Complexity:** M **Category:** backend **Dependencies:** — **Files:** `docs/research/2026-07-29-pi-spikes.md` (section)
+**Result (2026-07-29, pi v0.80.6 linux-x64):** PASS — checksum verify, folder-tarball, RPC framing, TS extension loading, dummy-key custom provider all confirmed live. Key correction: `PI_CODING_AGENT_DIR` layout is FLAT (no `agent/` nesting); pi also probes `GET /v1/models` on the baseUrl. See research doc.
 
 ### #2 — Spike: zero-network under Seatbelt with PI_OFFLINE=1 ⚠️ macOS-executed
 
 **Description:** Two halves. **(a) Author (agent session, any OS):** a self-contained harness — script that downloads/verifies the pinned pi binary, generates a deny-all-network Seatbelt profile with a single localhost port allow (reuse the Goose profile shape), starts a **stub OpenAI-compatible server** on that port (no llama-server / no model needed — confinement is about sockets, not inference), runs a prompt turn via `sandbox-exec`, and asserts: turn completes, zero non-localhost connection attempts (capture via profile violations / `log stream`), no hang or spawn-time delay from blocked version-check/telemetry. Include variants: with `HTTP_PROXY`/`HTTPS_PROXY` set (does undici route the localhost call into the proxy?), and with the `NO_PROXY=localhost,127.0.0.1` / env-strip mitigation. **(b) Execute (macOS):** run on a GitHub Actions `macos` runner (preferred — wire as a manually-dispatched workflow) or the operator's Mac; record output. Optional follow-up on the operator's Mac: one pass against the real bundled llama-server. Acceptance: recorded macOS run + the exact spawn-env recipe #16 will use.
 **Complexity:** L **Category:** backend **Dependencies:** #1 **Files:** `scripts/spikes/pi-seatbelt-spike.sh`, `.github/workflows/spike-pi-seatbelt.yml`, `docs/research/2026-07-29-pi-spikes.md` (section)
 
-### #3 — Spike: extension_ui_request permission round-trip
+### #3 — Spike: extension_ui_request permission round-trip ✅
 
 **Description:** Minimal blocking `tool_call` extension raising `ctx.ui.confirm`. Confirm in `--mode rpc`: the `extension_ui_request` event surfaces on stdout while the tool is blocked; a delayed `extension_ui_response` resumes/blocks correctly; a never-answered request can be terminated via `abort` without wedging the session (the 30s auto-deny prerequisite). Acceptance: finding + event-shape transcript for #9/#13.
 **Complexity:** M **Category:** backend **Dependencies:** #1 **Files:** `docs/research/2026-07-29-pi-spikes.md` (section)
+**Result (2026-07-29, pi v0.80.6 linux-x64):** PASS with load-bearing caveat — allow/deny/cancel round-trips verified (`ctx.hasUI === true` in RPC mode); **`abort` with an unanswered UI request WEDGES the session**. #9's deny/timeout path MUST answer the request (`extension_ui_response {cancelled:true}`) before any abort. See research doc.
 
 ### #4 — Consolidate spike findings + go/no-go
 
