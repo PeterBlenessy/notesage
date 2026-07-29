@@ -15,7 +15,7 @@
 - **#9 (permission translation) is the trickiest correctness surface** — a wedged `extension_ui_request` blocks the tool call forever. The abort path verified in spike #3 is the safety net; #9's tests must cover deny, timeout-abort, and mid-request session cancel.
 - **#15/#17 touch shared infrastructure** (`agent_manager.rs` GitHub-binary path, `sandbox.rs` profile generation) — regression locks are part of the task, not optional; Goose suites must stay green.
 - **MCP side-channel decision (#14):** bridge → extension config transport (env var vs RPC side-channel) is decided during #14 against the pinned pi version; the non-negotiable is asserted by test — no secrets on disk.
-- **Seatbelt-dependent tasks (#2, #22)** need a real macOS run; Linux/CI covers everything else via stubs and fakes.
+- **Seatbelt-dependent tasks (#2, #22) cannot execute in a Linux agent session.** Split per the repo's existing convention (cf. `cargo check` stubs locally vs `cargo test` on macOS CI, and Goose's "live macOS run" gate): the agent session **authors** a self-contained harness (script + profile + assertions); **execution** happens on a GitHub Actions `macos` runner where possible, or the operator's Mac for the full live run. A Seatbelt task is not "done" until the macOS run's output is recorded.
 
 ---
 
@@ -26,10 +26,10 @@
 **Description:** Download `pi-darwin-arm64.tar.gz` from a pinned `earendil-works/pi` release, verify against `SHA256SUMS`, extract (archive is a *folder*: executable + wasm + native bindings + themes — note co-location requirements). Confirm the Bun-compiled binary (a) runs `--mode rpc` with correct LF-delimited JSONL framing for `new_session`/`prompt`/`abort`, and (b) loads a trivial TypeScript extension from `PI_CODING_AGENT_DIR/extensions/` identically to the npm build. Record the tested pi version. Acceptance: written finding (pass/fail + caveats) for the research doc (#4).
 **Complexity:** M **Category:** backend **Dependencies:** — **Files:** `docs/research/2026-07-29-pi-spikes.md` (section)
 
-### #2 — Spike: zero-network under Seatbelt with PI_OFFLINE=1
+### #2 — Spike: zero-network under Seatbelt with PI_OFFLINE=1 ⚠️ macOS-executed
 
-**Description:** Run the pi binary with `PI_OFFLINE=1`, a localhost `models.json` provider against a live bundled llama-server, and the Goose-preset Seatbelt profile (deny-all network + llama port). Complete a full agentic turn with zero violations in `sandbox_monitor`. Explicitly test whether injected `HTTP_PROXY`/`HTTPS_PROXY` cause pi's undici stack to route the llama call into the proxy; if so, validate the `NO_PROXY=localhost,127.0.0.1` / env-strip mitigation. Requires real macOS. Acceptance: finding + the exact spawn-env recipe #16 will use.
-**Complexity:** L **Category:** backend **Dependencies:** #1 **Files:** `docs/research/2026-07-29-pi-spikes.md` (section)
+**Description:** Two halves. **(a) Author (agent session, any OS):** a self-contained harness — script that downloads/verifies the pinned pi binary, generates a deny-all-network Seatbelt profile with a single localhost port allow (reuse the Goose profile shape), starts a **stub OpenAI-compatible server** on that port (no llama-server / no model needed — confinement is about sockets, not inference), runs a prompt turn via `sandbox-exec`, and asserts: turn completes, zero non-localhost connection attempts (capture via profile violations / `log stream`), no hang or spawn-time delay from blocked version-check/telemetry. Include variants: with `HTTP_PROXY`/`HTTPS_PROXY` set (does undici route the localhost call into the proxy?), and with the `NO_PROXY=localhost,127.0.0.1` / env-strip mitigation. **(b) Execute (macOS):** run on a GitHub Actions `macos` runner (preferred — wire as a manually-dispatched workflow) or the operator's Mac; record output. Optional follow-up on the operator's Mac: one pass against the real bundled llama-server. Acceptance: recorded macOS run + the exact spawn-env recipe #16 will use.
+**Complexity:** L **Category:** backend **Dependencies:** #1 **Files:** `scripts/spikes/pi-seatbelt-spike.sh`, `.github/workflows/spike-pi-seatbelt.yml`, `docs/research/2026-07-29-pi-spikes.md` (section)
 
 ### #3 — Spike: extension_ui_request permission round-trip
 
@@ -138,10 +138,10 @@
 
 ## Verification & docs
 
-### #22 — End-to-end verification on real macOS Seatbelt
+### #22 — End-to-end verification on real macOS Seatbelt ⚠️ macOS-executed
 
-**Description:** The PRD's live gates, one pass: staged setup → smoke test green under real Seatbelt; permission flow (allow / deny / 30s timeout) through PermissionCard without wedging; one MCP stdio tool call; teardown leaves no orphaned pi/bridge process (app exit + conversation close); Goose preset re-verified unaffected. Record results in the tasks file; append perf notes per CLAUDE.md if startup paths were touched (expected: none — setup stays lazy).
-**Complexity:** L **Category:** both **Dependencies:** #9, #11, #17, #19, #20 **Files:** —
+**Description:** The PRD's live gates, one pass. **Author (agent session):** a step-by-step runbook + as much automation as ports to macOS CI (the real-Seatbelt `#[ignore]` cargo tests extended for the pi profile run there; the interactive app flow does not). **Execute (operator's Mac, mirroring Goose's live-run gate):** staged setup → smoke test green under real Seatbelt; permission flow (allow / deny / 30s timeout) through PermissionCard without wedging; one MCP stdio tool call; teardown leaves no orphaned pi/bridge process (app exit + conversation close); Goose preset re-verified unaffected. Record results in this file; append perf notes per CLAUDE.md if startup paths were touched (expected: none — setup stays lazy). Not "done" until the operator run is recorded.
+**Complexity:** L **Category:** both **Dependencies:** #9, #11, #17, #19, #20 **Files:** `docs/tasks/2026-07-29-pi-local-agent-preset-tasks.md` (runbook + results)
 
 ### #23 — Docs + quality-gates sweep
 
