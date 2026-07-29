@@ -1,6 +1,22 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.20",
+      "date": "2026-07-29",
+      "previousVersion": "0.48.0-alpha.19",
+      "sections": {
+        "features": [
+          "feat: queue messages sent during ongoing agent work instead of interrupting (#563)"
+        ]
+      },
+      "underTheHood": [
+        "chore(deps): Bump dompurify from 3.4.11 to 3.4.12 in the npm_and_yarn group across 1 directory (#561)",
+        "chore(deps): resolve new npm audit advisories blocking CI",
+        "feat: queue messages sent during ongoing agent work instead of interrupting",
+        "chore(deps): Bump dompurify in the npm_and_yarn group across 1 directory"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.19",
       "date": "2026-07-21",
       "previousVersion": "0.48.0-alpha.18",
