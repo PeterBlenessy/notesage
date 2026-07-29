@@ -93,7 +93,7 @@
     "cmdk": "^1.1.1",
     "diff-match-patch": "^1.0.5",
     "docx-preview": "^0.3.7",
-    "dompurify": "^3.4.11",
+    "dompurify": "^3.4.12",
     "jszip": "^3.10.1",
     "linkedom": "^0.18.12",
     "lowlight": "^3.3.0",
@@ -166,7 +166,9 @@
       "undici@^6": ">=6.27.0 <7",
       "undici@^7": ">=7.28.0 <8",
       "js-yaml": ">=4.2.0",
-      "@babel/core": ">=7.29.6 <8"
+      "@babel/core": ">=7.29.6 <8",
+      "immutable": ">=4.3.9",
+      "linkify-it": ">=5.0.2 <6"
     }
   }
 }
