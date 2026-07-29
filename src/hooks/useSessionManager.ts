@@ -4,6 +4,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useChatStore, selectConversationTitle } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSessionRunStore, ACTIVE_STATUSES, type SessionRunStatus } from '@/stores/session-run-store';
+import { useMessageQueueStore } from '@/stores/message-queue-store';
 import { processSendQueue, dropQueuedSend } from '@/lib/ai/session-run';
 import { notifyBackgroundSession } from '@/lib/notifications';
 
@@ -94,6 +95,13 @@ export function useSessionManager(): void {
           dropQueuedSend(id); // also drop a parked send for a deleted conversation
           runStore.clearRun(id);
         }
+      }
+      // Queued messages can outlive their run entry (the run finished while
+      // the conversation was backgrounded, so the queue waits for the user to
+      // switch back) — sweep the queue store's keys independently of `runs`.
+      const queueStore = useMessageQueueStore.getState();
+      for (const id of Object.keys(queueStore.queues)) {
+        if (!live.has(id)) queueStore.clearQueue(id);
       }
     };
     // Reconcile once on mount, then only when a conversation is removed — a

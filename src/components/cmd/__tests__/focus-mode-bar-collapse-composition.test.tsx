@@ -155,7 +155,11 @@ vi.mock("@/hooks/useAIOperations", () => ({
 vi.mock("@/stores/chat-store", () => ({
   useChatStore: Object.assign(
     vi.fn(() => []),
-    { getState: () => ({ setActiveConversation: vi.fn() }) },
+    {
+      getState: () => ({ activeConversationId: null, setActiveConversation: vi.fn() }),
+      // useMessageQueueDrain subscribes at mount — no-op unsubscribe here.
+      subscribe: () => () => {},
+    },
   ),
   selectMessages: vi.fn(() => []),
   selectProjectPaths: vi.fn(() => []),

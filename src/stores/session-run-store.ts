@@ -48,9 +48,11 @@ export const ACTIVE_STATUSES: readonly SessionRunStatus[] = [
   'awaiting_permission',
 ];
 
-/** Statuses that represent a run that was in flight (including queued, which
- *  was an intent that never got its slot). Flipped to `error` on rehydrate. */
-const INFLIGHT_STATUSES: readonly SessionRunStatus[] = [
+/** Statuses that represent a run that is (or intends to be) in flight —
+ *  including `queued`, which is an intent that hasn't got its slot yet.
+ *  Flipped to `error` on rehydrate; also the gate for same-conversation
+ *  message queueing (`selectIsInFlight` below). */
+export const INFLIGHT_STATUSES: readonly SessionRunStatus[] = [
   'queued',
   'running',
   'awaiting_permission',
@@ -182,4 +184,16 @@ export function selectUnwatchedRunning(
 /** Count of slot-occupying runs — the concurrency cap counts against this (#5). */
 export function selectLiveCount(state: Pick<SessionRunStore, 'runs'>): number {
   return selectRunningSessions(state).length;
+}
+
+/** Whether a conversation's run is in flight (queued / running / awaiting a
+ *  permission decision). Gates same-conversation message queueing: a send into
+ *  an in-flight conversation is parked in `message-queue-store` instead of
+ *  interrupting the ongoing work. */
+export function selectIsInFlight(
+  state: Pick<SessionRunStore, 'runs'>,
+  conversationId: string,
+): boolean {
+  const status = state.runs[conversationId]?.status;
+  return status !== undefined && INFLIGHT_STATUSES.includes(status);
 }

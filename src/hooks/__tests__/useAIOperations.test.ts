@@ -12,7 +12,8 @@ import { useChatStore } from '@/stores/chat-store';
 import { useProjectMetadataStore, type ProjectMetadata } from '@/stores/project-metadata-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSessionRunStore } from '@/stores/session-run-store';
-import { processSendQueue, __resetSendQueue } from '@/lib/ai/session-run';
+import { useMessageQueueStore, selectQueuedMessages } from '@/stores/message-queue-store';
+import { processSendQueue, __resetSendQueue, isSendQueued } from '@/lib/ai/session-run';
 import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
@@ -276,6 +277,109 @@ describe('useAIOperations', () => {
 
       expect(mockDirectSendChatMessage).toHaveBeenCalledTimes(1);
       expect(useSessionRunStore.getState().runs['conv-E']?.status).toBeUndefined();
+    });
+  });
+
+  // ---- message queueing during agent work ----
+  //
+  // A send into a conversation whose run is already in flight must NOT
+  // interrupt the ongoing work (the streaming paths tear down the previous
+  // same-conversation stream on send). It parks in `message-queue-store`;
+  // `useMessageQueueDrain` (tested separately) dispatches it at run end.
+
+  describe('message queueing (in-flight conversation)', () => {
+    beforeEach(() => {
+      useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+      useMessageQueueStore.setState({ queues: {} });
+      __resetSendQueue();
+      useSettingsStore.setState({ maxConcurrentSessions: 2 });
+    });
+
+    const seedActiveConv = (id = 'conv-E') => {
+      const conn = makeConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      useRoutingStore.setState({
+        routing: {
+          interactive: { connectionId: conn.id },
+          agent_tasks: { connectionId: null },
+          inline_completion: { connectionId: null },
+        },
+      });
+      useChatStore.setState({
+        conversations: [{ id, title: '', messages: [], createdAt: 0, updatedAt: 0, projectPaths: [], segments: [], activeSegmentIndex: 0, activeLeafId: null }] as never,
+        activeConversationId: id,
+      });
+    };
+
+    it('queues instead of routing while the conversation is running', async () => {
+      seedActiveConv();
+      useSessionRunStore.getState().setRun('conv-E', { status: 'running' });
+
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => { await result.current.sendChatMessage('follow-up', []); });
+
+      // The running stream is untouched — no path send fired.
+      expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
+      const queued = selectQueuedMessages(useMessageQueueStore.getState(), 'conv-E');
+      expect(queued.map((m) => m.content)).toEqual(['follow-up']);
+      // The run stays `running` — it was not flipped to `queued` or torn down.
+      expect(useSessionRunStore.getState().runs['conv-E']?.status).toBe('running');
+    });
+
+    it('queues while the conversation is awaiting a permission decision', async () => {
+      seedActiveConv();
+      useSessionRunStore.getState().setRun('conv-E', { status: 'awaiting_permission' });
+
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => { await result.current.sendChatMessage('while blocked', []); });
+
+      expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
+      expect(selectQueuedMessages(useMessageQueueStore.getState(), 'conv-E')).toHaveLength(1);
+    });
+
+    it('accumulates multiple sends FIFO with their opts preserved', async () => {
+      seedActiveConv();
+      useSessionRunStore.getState().setRun('conv-E', { status: 'running' });
+
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => {
+        await result.current.sendChatMessage('first', []);
+        await result.current.sendChatMessage('second', [], { displayContent: '/skill second', skillName: 'skill' });
+      });
+
+      const queued = selectQueuedMessages(useMessageQueueStore.getState(), 'conv-E');
+      expect(queued.map((m) => m.content)).toEqual(['first', 'second']);
+      expect(queued[1].opts).toMatchObject({ displayContent: '/skill second', skillName: 'skill' });
+    });
+
+    it('message-queues a second send while the first is cap-queued (no thunk replacement)', async () => {
+      seedActiveConv();
+      // Fill the cap so the first send parks as a cap thunk.
+      useSessionRunStore.getState().setRun('conv-A', { status: 'running' });
+      useSessionRunStore.getState().setRun('conv-B', { status: 'running' });
+
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => { await result.current.sendChatMessage('first (cap-parked)', []); });
+      expect(isSendQueued('conv-E')).toBe(true);
+      expect(useSessionRunStore.getState().runs['conv-E']?.status).toBe('queued');
+
+      // Second send while cap-queued lands in the MESSAGE queue — it must not
+      // replace the parked thunk (which would silently lose the first message).
+      await act(async () => { await result.current.sendChatMessage('second (msg-queued)', []); });
+      expect(isSendQueued('conv-E')).toBe(true);
+      const queued = selectQueuedMessages(useMessageQueueStore.getState(), 'conv-E');
+      expect(queued.map((m) => m.content)).toEqual(['second (msg-queued)']);
+      expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
+    });
+
+    it('sends immediately when the conversation has no in-flight run', async () => {
+      seedActiveConv();
+
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => { await result.current.sendChatMessage('normal', []); });
+
+      expect(mockDirectSendChatMessage).toHaveBeenCalledTimes(1);
+      expect(selectQueuedMessages(useMessageQueueStore.getState(), 'conv-E')).toHaveLength(0);
     });
   });
 

@@ -11,6 +11,8 @@ import {
 } from '@/test/component-harness';
 import FloatingCommandBar from '@/components/cmd/FloatingCommandBar';
 import { emitCmdBarEvent } from '@/lib/cmd-bar-events';
+import { useMessageQueueStore } from '@/stores/message-queue-store';
+import { useSessionRunStore } from '@/stores/session-run-store';
 
 // ---------------------------------------------------------------------------
 // Mock useReducedMotion — flipped per-test via mockReturnValue
@@ -177,14 +179,19 @@ vi.mock('@/components/cmd/modes/FileMode', () => ({
 const sendChatMessageMock = vi.fn<(content: string, messages: unknown[], opts?: unknown) => Promise<void>>(
   () => Promise.resolve(),
 );
+const cancelChatMock = vi.fn();
 
 vi.mock('@/hooks/useAIOperations', () => ({
   useAIOperations: () => ({
     sendChatMessage: sendChatMessageMock,
     generateText: vi.fn(),
-    cancelChat: vi.fn(),
+    cancelChat: cancelChatMock,
   }),
 }));
+
+// Mutable so the queued-message tests can point the bar at a conversation
+// (same pattern as the settings-store mock above).
+let mockActiveConversationId: string | null = null;
 
 vi.mock('@/stores/chat-store', () => {
   // State surface for the selectors used by FloatingCommandBar. Keep
@@ -192,6 +199,7 @@ vi.mock('@/stores/chat-store', () => {
   // via store API; history mode (#118) reads `selectProjectPaths`.
   const state = {
     isLoading: false,
+    get activeConversationId() { return mockActiveConversationId; },
     setActiveConversation: vi.fn(),
   };
   function useChatStore<T>(selector: (s: typeof state) => T): T {
@@ -200,6 +208,8 @@ vi.mock('@/stores/chat-store', () => {
   return {
     useChatStore: Object.assign(useChatStore, {
       getState: () => state,
+      // useMessageQueueDrain subscribes at mount — no-op unsubscribe here.
+      subscribe: () => () => {},
     }),
     selectMessages: () => [],
     // #118 — the history-mode selector is a pure projection of
@@ -245,6 +255,11 @@ describe('FloatingCommandBar', () => {
     setCmdBarExpandedHeightMock.mockReset();
     sendChatMessageMock.mockReset();
     sendChatMessageMock.mockImplementation(() => Promise.resolve());
+    cancelChatMock.mockReset();
+    // Reset the (real) queue + run stores used by the queued-message strip.
+    mockActiveConversationId = null;
+    useMessageQueueStore.setState({ queues: {} });
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
     // Clean DOM between tests — portals leak otherwise
     document.body.innerHTML = '';
     // Also clean the CSS variables that resize handles set on <html>
@@ -1057,6 +1072,77 @@ describe('FloatingCommandBar', () => {
       const bar = document.body.querySelector('[data-cmd-bar]') as HTMLElement | null;
       expect(bar).toBeTruthy();
       expect(bar!.getAttribute('style')).toContain('--cmd-bar-expanded-height');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Message queueing (queue-during-agent-work) — the strip renders messages
+  // parked behind the watched conversation's in-flight run, × withdraws one,
+  // and Stop clears the queue back into the composer instead of dropping it.
+  // -------------------------------------------------------------------------
+
+  describe('message queueing (queue-during-agent-work)', () => {
+    const expand = () => fireEvent.click(screen.getByText(/press ⌘k to ask/i));
+
+    it('renders the queued strip for the watched conversation and withdraws on ×', () => {
+      mockActiveConversationId = 'conv-Q';
+      act(() => {
+        // Run in flight — otherwise the drain hook (correctly) dispatches the
+        // queued message at mount and the strip has nothing to show.
+        useSessionRunStore.getState().setRun('conv-Q', { status: 'running' });
+        useMessageQueueStore.getState().enqueue('conv-Q', { content: 'queued follow-up' });
+      });
+
+      renderWithProviders(<FloatingCommandBar />);
+      expand();
+
+      expect(screen.getByText('queued follow-up')).toBeTruthy();
+      expect(screen.getByText('Queued')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: /remove queued message/i }));
+      expect(screen.queryByText('queued follow-up')).toBeNull();
+      expect(useMessageQueueStore.getState().queues['conv-Q']).toBeUndefined();
+    });
+
+    it('shows displayContent (not the expanded body) for skill sends', () => {
+      mockActiveConversationId = 'conv-Q';
+      act(() => {
+        useSessionRunStore.getState().setRun('conv-Q', { status: 'running' });
+        useMessageQueueStore.getState().enqueue('conv-Q', {
+          content: 'long expanded skill body',
+          opts: { displayContent: '/summarize doc', skillName: 'summarize' },
+        });
+      });
+
+      renderWithProviders(<FloatingCommandBar />);
+      expand();
+
+      expect(screen.getByText('/summarize doc')).toBeTruthy();
+      expect(screen.queryByText('long expanded skill body')).toBeNull();
+    });
+
+    it('Stop clears the queue back into the composer and cancels the run', () => {
+      mockActiveConversationId = 'conv-Q';
+      act(() => {
+        // Run in flight → the bar shows the Stop affordance.
+        useSessionRunStore.getState().setRun('conv-Q', { status: 'running' });
+        useMessageQueueStore.getState().enqueue('conv-Q', { content: 'first queued' });
+        useMessageQueueStore.getState().enqueue('conv-Q', { content: 'second queued' });
+      });
+
+      renderWithProviders(<FloatingCommandBar />);
+      expand();
+
+      fireEvent.click(screen.getByRole('button', { name: /stop generation/i }));
+
+      // Queue cleared BEFORE cancel (so the drain can't fire them), text
+      // restored into the input so nothing typed is lost.
+      expect(useMessageQueueStore.getState().queues['conv-Q']).toBeUndefined();
+      const input = screen.getByRole('combobox') as HTMLTextAreaElement;
+      expect(input.value).toBe('first queued\nsecond queued');
+      expect(cancelChatMock).toHaveBeenCalledTimes(1);
+      // Nothing auto-dispatched.
+      expect(sendChatMessageMock).not.toHaveBeenCalled();
     });
   });
 });
