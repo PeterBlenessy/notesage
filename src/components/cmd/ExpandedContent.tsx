@@ -4,6 +4,7 @@ import {
   ArrowUp,
   BookOpen,
   CheckSquare,
+  Clock,
   FileText,
   Hash,
   ImagePlus,
@@ -15,6 +16,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import type { ChatMessage as ChatMessageType, ImageAttachment } from "@/lib/ai/types";
+import type { QueuedMessage } from "@/stores/message-queue-store";
 import { compressImage } from "@/lib/image-compress";
 import { ChatHistoryView } from "@/components/chat/ChatHistoryView";
 import { ContextPill } from "@/components/chat/ContextPill";
@@ -137,6 +139,11 @@ export interface ExpandedContentProps {
   onStop: () => void;
   /** #126 — fire the send pipeline (click-to-send button). */
   onSend: () => void;
+  /** Messages queued behind the watched conversation's in-flight run
+   *  (queue-during-agent-work). Rendered as a strip above the input. */
+  queuedMessages?: QueuedMessage[];
+  /** Remove a queued message by id before it dispatches (strip × button). */
+  onRemoveQueued?: (id: string) => void;
   /** #118 — 'chat' shows the stream, 'history' shows past conversations. */
   chatView: "chat" | "history";
   /** #118 — select a conversation from the history list. */
@@ -192,6 +199,8 @@ export function ExpandedContent({
   pendingAgentSwitch,
   onStop,
   onSend,
+  queuedMessages,
+  onRemoveQueued,
   chatView,
   onSelectConversation,
   selectedProjectPaths,
@@ -243,6 +252,58 @@ export function ExpandedContent({
           appear OUTSIDE the input box. They're now rendered inside
           the unified attachments strip below (same div as chips +
           image thumbnails) so everything attached lives together. */}
+
+      {/* Queued-message strip (queue-during-agent-work). Messages sent while
+          the watched conversation's run was in flight park here until the run
+          finishes — each row shows the queued text with a × to withdraw it
+          before dispatch. Hidden while a prefix picker owns the tray. */}
+      {!activePrefix && queuedMessages && queuedMessages.length > 0 ? (
+        <div
+          data-queued-messages
+          className="border-t border-border px-3 py-1.5 flex flex-col gap-1"
+        >
+          {queuedMessages.map((message) => (
+            <div
+              key={message.id}
+              className="flex items-center gap-1.5 min-w-0 text-xs text-muted-foreground"
+            >
+              <Clock
+                className="h-3 w-3 shrink-0"
+                strokeWidth={1.5}
+                aria-hidden="true"
+              />
+              <span className="flex-1 truncate">
+                {message.opts?.displayContent ?? message.content}
+              </span>
+              <span className="shrink-0 rounded bg-muted px-1 py-px text-[10px] font-medium">
+                Queued
+              </span>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={() => onRemoveQueued?.(message.id)}
+                      aria-label="Remove queued message"
+                      className={cn(
+                        "shrink-0 rounded-sm p-0.5",
+                        "text-muted-foreground hover:text-foreground hover:bg-muted",
+                        "transition-colors",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                      )}
+                    >
+                      <X className="h-3 w-3" strokeWidth={1.5} aria-hidden="true" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs max-w-[220px]">
+                    Remove queued message
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {/* #127 parity — edit-mode banner. Appears above the input when the
        *  user clicked Edit on a previous user message. Clicking the × or
@@ -591,7 +652,9 @@ export function ExpandedContent({
                 ? "Resolve project context change first…"
                 : pendingAgentSwitch
                   ? "Resolve provider change first…"
-                  : "Ask, search, or type / for skills…"
+                  : isLoading
+                    ? "Working — messages queue until it finishes…"
+                    : "Ask, search, or type / for skills…"
             }
             className={cn(
               "flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground",

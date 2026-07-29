@@ -32,6 +32,7 @@ Streaming AI responses.
 
 **Features:**
 
+- **Message queueing during agent work:** sending while the watched conversation's run is in flight no longer interrupts the ongoing work (both streaming paths used to tear down the previous same-conversation stream on send). The message parks in `message-queue-store` (enqueued inside `useAIOperations.sendChatMessage`, so composer sends, quick replies, and resends all queue uniformly) and renders as a "Queued" strip above the composer input with a per-row × to withdraw it. `useMessageQueueDrain` (mounted from the always-mounted `FloatingCommandBar`) dispatches queued messages FIFO — one per run completion, with a freshly recomputed thread so the finished run's messages are included as history — only for the foreground conversation (a backgrounded queue waits until the user switches back), and never while a provider/project switch prompt is pending. Pressing Stop halts everything: the queue is cleared BEFORE the run is cancelled (so the drain can't fire it) and the queued text is restored into the composer input so nothing typed is lost. Queues are transient (not persisted) and are dropped when their conversation is deleted.
 - Message resend: one-click resend of any user message. If the message's original `connectionId` differs from the current command bar provider, a `ResendProviderDialog` asks "Resend with original" vs "Resend with current" before sending. `aiLock` on the selected project disables the non-matching option.
 - Message edit: click edit on a user message to pre-fill the input, modify and send as a new branch. "Editing message" banner with cancel (X or Escape). Same provider-mismatch dialog as resend fires at send time when the original `connectionId` differs.
 - Quick reply chips: AI responses can include `<quick-replies>` tags with suggested follow-ups
@@ -285,6 +286,8 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 | `src/lib/transcription/render-transcript.ts` | `TranscriptSegment[]` → transcript note (paragraphs + segments in frontmatter) |
 | `src/lib/transcription/bundle.ts` | Recording-bundle folder creation + move-to-project |
 | `src/stores/chat-store.ts` | Chat conversation state, branching, `sliceThreadBySegment`, scoped approvals migration |
+| `src/stores/message-queue-store.ts` | Per-conversation FIFO of messages sent while the conversation's run was in flight (queue-during-agent-work) |
+| `src/hooks/useMessageQueueDrain.ts` | Dispatches queued messages (fresh thread, FIFO, foreground-only) when the run finishes |
 | `src/lib/chat-tree.ts` | Tree traversal utilities (getThread, getChildren, getBranches, getLeaves) |
 | `src/lib/ai/project-lock.ts` | `ProjectLockViolation` + lock lookup utilities |
 | `src/components/chat/ResendProviderDialog.tsx` | Provider-mismatch confirmation dialog for resend / edit |
