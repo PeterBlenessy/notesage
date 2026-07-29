@@ -6,7 +6,7 @@
 | **Status** | Draft |
 | **Priority** | Medium |
 | **Impact** | A second fully-offline Local Agent preset (pi) beside Goose — same one-click setup, same kernel-enforced zero-network guarantee — unlocking pi's checksummed releases, structured edit diffs, auto-compaction, and SKILL.md interop |
-| **Tasks** | — (not yet planned) |
+| **Tasks** | [pi-local-agent-preset-tasks](../tasks/2026-07-29-pi-local-agent-preset-tasks.md) |
 | **Phase** | Privacy-First Local AI |
 
 ## Problem
