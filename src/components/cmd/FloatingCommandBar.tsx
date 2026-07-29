@@ -12,6 +12,11 @@ import {
 import { useChatContext } from "@/hooks/useChatContext";
 import { useAIOperations } from "@/hooks/useAIOperations";
 import { useForegroundLoading } from "@/hooks/useSessionManager";
+import { useMessageQueueDrain } from "@/hooks/useMessageQueueDrain";
+import {
+  useMessageQueueStore,
+  selectQueuedMessages,
+} from "@/stores/message-queue-store";
 import { useRoutingStore } from "@/stores/routing-store";
 import { ResendProviderDialog } from "@/components/chat/ResendProviderDialog";
 import {
@@ -134,6 +139,45 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
   // state, not the global flag — so switching to an idle chat while another
   // streams in the background shows the right send/stop affordance (task #4).
   const isLoading = useForegroundLoading();
+
+  // Message queueing (queue-during-agent-work): a send while the watched
+  // conversation's run is in flight no longer interrupts the run — it parks in
+  // `message-queue-store` (enqueued inside `sendChatMessage`) and the drain
+  // hook dispatches it once the run finishes. The bar renders the queued
+  // strip above the input and lets the user remove entries pre-dispatch.
+  useMessageQueueDrain(sendChatMessage);
+  const activeConversationId = useChatStore((s) => s.activeConversationId);
+  const queuedMessages = useMessageQueueStore((s) =>
+    selectQueuedMessages(s, activeConversationId),
+  );
+  const removeQueuedFromStore = useMessageQueueStore((s) => s.removeQueued);
+  const handleRemoveQueued = useCallback(
+    (id: string) => {
+      if (activeConversationId) removeQueuedFromStore(activeConversationId, id);
+    },
+    [activeConversationId, removeQueuedFromStore],
+  );
+
+  // Stop halts everything: the running turn AND its queued follow-ups. The
+  // queued text is restored into the composer (not silently dropped) so
+  // nothing the user typed is lost. Queue is cleared BEFORE `cancelChat` —
+  // cancellation flips the run idle synchronously, and the drain subscription
+  // would otherwise fire the queued messages the user just tried to stop.
+  const handleStop = useCallback(() => {
+    const convId = useChatStore.getState().activeConversationId;
+    if (convId) {
+      const drained = useMessageQueueStore.getState().clearQueue(convId);
+      if (drained.length > 0) {
+        const restored = drained
+          .map((m) => m.opts?.displayContent ?? m.content)
+          .join("\n");
+        setInputValue((prev) =>
+          prev.trim().length > 0 ? `${prev}\n${restored}` : restored,
+        );
+      }
+    }
+    cancelChat();
+  }, [cancelChat]);
 
   // Live-test 2026-04-26 audit gap #10 — input + send must be disabled
   // while either an AgentSwitchCard or a pending-project-switch prompt
@@ -638,8 +682,10 @@ function FloatingCommandBar({ isPinned: isPinnedProp }: FloatingCommandBarProps)
           switchPending={switchPending}
           pendingProjectSwitch={Boolean(pendingProjectSwitch)}
           pendingAgentSwitch={Boolean(pendingAgentSwitch)}
-          onStop={cancelChat}
+          onStop={handleStop}
           onSend={handleSend}
+          queuedMessages={queuedMessages}
+          onRemoveQueued={handleRemoveQueued}
           chatView={chatView}
           onSelectConversation={handleSelectConversation}
           selectedProjectPaths={selectedProjectPaths}

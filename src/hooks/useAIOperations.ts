@@ -14,8 +14,9 @@ import { useCopilotChat } from '@/hooks/useCopilotChat';
 import { findLockConflict, ProjectLockViolation, describeLockTarget } from '@/lib/ai/project-lock';
 import { track, providerKind, type AiPath } from '@/lib/telemetry';
 import { useSettingsStore } from '@/stores/settings-store';
-import { useSessionRunStore } from '@/stores/session-run-store';
-import { hasSessionCapacity, enqueueSend, dropQueuedSend } from '@/lib/ai/session-run';
+import { useSessionRunStore, selectIsInFlight } from '@/stores/session-run-store';
+import { useMessageQueueStore } from '@/stores/message-queue-store';
+import { hasSessionCapacity, enqueueSend, dropQueuedSend, isSendQueued } from '@/lib/ai/session-run';
 import type { Connection } from '@/lib/ai/connections';
 
 // Re-export ACP utilities for external consumers
@@ -169,6 +170,25 @@ export function useAIOperations() {
   const sendChatMessage = useCallback(
     async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }) => {
       assertLockAllowsSend();
+
+      // Message queueing (queue-during-agent-work): a send into a conversation
+      // whose run is already in flight must NOT interrupt the ongoing work —
+      // both streaming paths tear down the previous same-conversation stream on
+      // send. Park the message instead; `useMessageQueueDrain` dispatches it
+      // (recomputing the thread, since the finishing run appended messages)
+      // once the run reaches a terminal state. Checked BEFORE telemetry so the
+      // `ai_chat_sent` event fires once, at actual dispatch. The `isSendQueued`
+      // check is belt-and-braces for a cap-parked thunk whose run entry drifted.
+      const inFlightConv = useChatStore.getState().activeConversationId;
+      if (
+        inFlightConv &&
+        (selectIsInFlight(useSessionRunStore.getState(), inFlightConv) ||
+          isSendQueued(inFlightConv))
+      ) {
+        useMessageQueueStore.getState().enqueue(inFlightConv, { content, opts });
+        return;
+      }
+
       const chatPath = aiPathFor(effectiveConnection);
       track('ai_chat_sent', {
         path: chatPath,
