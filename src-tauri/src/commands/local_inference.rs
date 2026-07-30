@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
 use super::constants;
 use super::model_management::{find_model_entry, find_available_port, resolve_llama_server_binary};
+use super::gguf_parser::parse_gguf_header;
 use super::thinking_tags::{get_thinking_tags_for_custom_model, strip_thinking_tags_for_model};
 use super::ai_streaming::stream_event;
 
@@ -106,6 +107,70 @@ fn clamp_context_to_model(requested: u32, model_max: Option<u64>, model_id: &str
         }
         _ => requested,
     }
+}
+
+/// Fraction of total RAM the model + its KV cache may occupy. The rest is left
+/// for the OS, the app, and everything else the user is running — this is a
+/// desktop editor, not a dedicated inference box.
+const RAM_BUDGET_FRACTION: f64 = 0.70;
+
+/// Grow the context window to the largest size that plausibly fits this model on
+/// this machine, bounded by what the model was actually trained for.
+///
+/// Deliberately conservative and one-directional: it only ever grows past
+/// `floor`, never below it. `floor` is a size already proven to work, so an
+/// estimate that comes out too small costs an opportunity, never a regression.
+///
+/// The KV estimate treats attention as classic multi-head (`block_count ×
+/// embedding_length`), which OVERSTATES real cost for two common cases:
+///   - GQA models share KV across query heads (Qwen3, Llama 3) — often 4-8x less
+///   - hybrid/sliding-window models keep full KV on only a few layers. Measured:
+///     Gemma 4 E4B holds full context on 4 of 42 layers, so 128K costs ~1.1 GB
+///     where a conventional 8B model costs ~8 GB
+///
+/// Overstating is the safe direction: it under-grows rather than over-committing
+/// memory and triggering an OOM mid-task. Reading the true KV geometry needs
+/// `attention.head_count_kv` / `key_length` / sliding-window params, which the
+/// GGUF parser does not extract today — worth doing if the headroom left on the
+/// table proves significant in practice.
+fn fit_context_to_ram(
+    requested: u32,
+    floor: u32,
+    model_max: Option<u64>,
+    weights_bytes: u64,
+    total_ram_bytes: u64,
+    block_count: Option<u64>,
+    embedding_length: Option<u64>,
+) -> u32 {
+    // Without the model's shape there is nothing to estimate from — honour the
+    // caller rather than guess.
+    let (Some(blocks), Some(embd)) = (block_count, embedding_length) else {
+        return requested;
+    };
+    if blocks == 0 || embd == 0 || total_ram_bytes == 0 {
+        return requested;
+    }
+
+    // K and V, one byte per element at the q8_0 cache type the server is
+    // started with.
+    let kv_bytes_per_token = 2u64.saturating_mul(blocks).saturating_mul(embd);
+    if kv_bytes_per_token == 0 {
+        return requested;
+    }
+
+    let budget = (total_ram_bytes as f64 * RAM_BUDGET_FRACTION) as u64;
+    let kv_budget = budget.saturating_sub(weights_bytes);
+    let affordable = u32::try_from(kv_budget / kv_bytes_per_token).unwrap_or(u32::MAX);
+
+    // Never shrink below the proven floor or below what was asked for; only
+    // grow. The model's trained window is the hard ceiling.
+    let mut target = requested.max(floor).max(affordable);
+    if let Some(max) = model_max {
+        if max > 0 {
+            target = target.min(u32::try_from(max).unwrap_or(target));
+        }
+    }
+    target
 }
 
 /// Drain one of the server's pipes for the life of the process, logging each
@@ -382,11 +447,42 @@ pub async fn start_local_server(
         return Err(format!("Model file not found: {}. Download it first.", entry.filename));
     }
 
-    // Never ask for more context than the model was trained for. The catalog
-    // records each model's real window and nothing used to consult it, so a
-    // caller's request went through verbatim — asking a 4K model for 32K wastes
-    // KV memory at best and degrades output at worst.
+    // Size the context to this model on this machine, rather than to a constant.
+    //
+    // Two directions, both previously missing. Down: never ask for more than the
+    // model was trained for — `model-catalog.json` has always recorded each
+    // model's real window and nothing consulted it, so a caller's number went
+    // through verbatim. Up: a flat floor leaves capable models idling — a
+    // sliding-window model like Gemma 4 E4B can hold 128K for roughly the memory
+    // a conventional 8B spends on 16K, and pinning it to the floor wastes that.
     let ctx_len = clamp_context_to_model(ctx_len, entry.context_length, &model_id);
+    let ctx_len = {
+        let total_ram = sysinfo::System::new_with_specifics(
+            sysinfo::RefreshKind::nothing().with_memory(sysinfo::MemoryRefreshKind::everything()),
+        )
+        .total_memory();
+        // Attention shape comes from the GGUF header; a parse failure simply
+        // means no growth, which is why the estimate is opportunistic.
+        let header = parse_gguf_header(&model_path).ok();
+        let grown = fit_context_to_ram(
+            ctx_len,
+            ctx_len,
+            entry.context_length,
+            entry.ram_required_bytes,
+            total_ram,
+            header.as_ref().and_then(|h| h.block_count),
+            header.as_ref().and_then(|h| h.embedding_length),
+        );
+        if grown != ctx_len {
+            log::info!(
+                target: "notesage::local_ai",
+                "Growing context for '{}' from {} to {} — fits this machine's RAM within the model's {} window",
+                model_id, ctx_len, grown,
+                entry.context_length.map(|c| c.to_string()).unwrap_or_else(|| "unknown".into()),
+            );
+        }
+        grown
+    };
 
     // Find available port
     let port = find_available_port(8090)
@@ -1866,5 +1962,69 @@ mod tests {
         // worse than trusting the caller.
         assert_eq!(clamp_context_to_model(32768, None, "custom"), 32768);
         assert_eq!(clamp_context_to_model(32768, Some(0), "zero"), 32768);
+    }
+
+    // --- adaptive context sizing ---
+
+    const GB: u64 = 1024 * 1024 * 1024;
+
+    #[test]
+    fn context_grows_to_use_available_ram() {
+        // Small model, lots of RAM: should climb well past the floor.
+        let grown = fit_context_to_ram(
+            32768, 32768, Some(131072),
+            2 * GB,      // weights
+            64 * GB,     // total RAM
+            Some(28), Some(1536),
+        );
+        assert!(grown > 32768, "expected growth past the floor, got {grown}");
+        assert!(grown <= 131072, "must not exceed the model window, got {grown}");
+    }
+
+    #[test]
+    fn growth_never_exceeds_the_models_trained_window() {
+        // Enormous RAM must not produce a context the model cannot use.
+        let grown = fit_context_to_ram(
+            32768, 32768, Some(32768),
+            1 * GB, 512 * GB,
+            Some(28), Some(1536),
+        );
+        assert_eq!(grown, 32768, "the model window is a hard ceiling");
+    }
+
+    #[test]
+    fn a_constrained_machine_never_shrinks_below_the_proven_floor() {
+        // THE regression guard. The floor is a size already known to work, so a
+        // pessimistic estimate on a tight machine must cost opportunity, never
+        // break a setup that functioned before.
+        let grown = fit_context_to_ram(
+            32768, 32768, Some(131072),
+            20 * GB,   // weights nearly fill the budget
+            24 * GB,   // tight machine
+            Some(80), Some(8192),
+        );
+        assert_eq!(grown, 32768, "must not size below the proven floor");
+    }
+
+    #[test]
+    fn an_unparsable_model_shape_honours_the_caller() {
+        // No GGUF header fields → nothing to estimate from → leave it alone.
+        assert_eq!(
+            fit_context_to_ram(16384, 32768, Some(131072), 2 * GB, 64 * GB, None, None),
+            16384
+        );
+        assert_eq!(
+            fit_context_to_ram(16384, 32768, Some(131072), 2 * GB, 64 * GB, Some(0), Some(0)),
+            16384
+        );
+    }
+
+    #[test]
+    fn an_explicit_larger_request_is_respected() {
+        // A caller asking for more than the floor keeps it, subject to the window.
+        let out = fit_context_to_ram(
+            65536, 32768, Some(131072), 2 * GB, 8 * GB, Some(28), Some(1536),
+        );
+        assert!(out >= 65536, "an explicit request must not be reduced, got {out}");
     }
 }
