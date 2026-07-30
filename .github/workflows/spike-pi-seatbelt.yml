@@ -17,7 +17,7 @@ jobs:
     runs-on: macos-14
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - name: Run Seatbelt spike
         env:
@@ -28,6 +28,7 @@ jobs:
 
       - name: Upload spike output
         if: always()
+        # TODO: bump to actions/upload-artifact@v5 when available on Node 24 — https://github.com/actions/upload-artifact/releases
         uses: actions/upload-artifact@v4
         with:
           name: pi-seatbelt-spike-output
