@@ -167,10 +167,13 @@ note-sage/
 │   ├── tests/              # Test specs (editor, external-changes, navigation, performance, startup, tabs)
 │   ├── fixtures/           # Real filesystem test project
 │   └── helpers/            # Setup, actions, timing utilities
+├── bridges/                # Self-contained sidecar bridges (own package + vitest, Bun-compiled)
+│   └── pi-acp/             # notesage-pi-acp — ACP↔pi-RPC bridge for the pi Local Agent preset (src/ + extensions/)
 ├── scripts/                # Build and test scripts
 │   ├── coverage-check.sh   # Coverage regression detection vs baseline
 │   ├── update-coverage-baseline.js # Generate coverage-baseline.json from Istanbul output
 │   ├── contrast-audit.ts   # WCAG contrast audit for design-system palette (`pnpm audit:contrast`)
+│   ├── spikes/             # De-risking spike harnesses (e.g. pi-seatbelt-spike.sh)
 │   └── run-real-e2e.sh     # Full real E2E orchestrator (app + driver lifecycle)
 ├── docs/                   # Documentation
 │   ├── features/           # Feature-specific docs (editor, ai-providers, ai-workflows, etc.)

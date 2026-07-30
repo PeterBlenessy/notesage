@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-07-29 |
-| **Status** | Not started |
+| **Status** | In progress — #1,#3,#5–#21 done; #2,#22 macOS-execution gates pending; #23 docs+gates |
 | **PRD** | [pi-local-agent-preset](../prds/2026-07-29-pi-local-agent-preset.md) |
 | **Total** | 23 tasks: 5S, 12M, 6L |
 | **Suggested order** | M0 spikes (#1–#4, hard gate) → Bridge (#5–#12) → Extensions (#13–#14) → Backend integration (#15–#17) → State (#18–#19) → UI (#20–#21) → Verification & docs (#22–#23) |
