@@ -56,7 +56,7 @@
 **Description:** Spawn `pi --mode rpc` in its own process group with the caller-supplied env; LF-delimited JSONL encoder/decoder with request-id correlation; awaited teardown (SIGTERM → grace → SIGKILL process group) on ACP transport close or signal so `kill_on_drop` on the bridge can never orphan pi. Unit tests against a scripted fake pi (a small stdio stub replaying golden JSONL). Acceptance: no orphan after abrupt parent kill (test asserts via process-group probe).
 **Complexity:** L **Category:** frontend **Dependencies:** #5 **Files:** `bridges/pi-acp/src/pi-process.ts`, `bridges/pi-acp/src/jsonl.ts`, `bridges/pi-acp/test/fake-pi.ts`
 
-### #7 — Bridge: ACP handshake + session lifecycle
+### #7 — Bridge: ACP handshake + session lifecycle ✅ (via official @agentclientprotocol/sdk 1.3.0; sessionId = pi sessionFile path; ACP fork → pi clone)
 
 **Description:** ACP agent-side JSON-RPC on the bridge's stdio: `initialize` (static capabilities: `sessions: { load, fork }`, `mcp.stdio`, `promptCapabilities.images`), `session/new` → `new_session` (cwd), `session/load` → `switch_session`, `session/fork` → `fork`, `session/cancel` → `abort`. Match the ACP 0.14.0 surface `acp.rs` speaks. Golden-transcript tests with the fake pi.
 **Complexity:** L **Category:** frontend **Dependencies:** #6 **Files:** `bridges/pi-acp/src/acp-server.ts`, `bridges/pi-acp/src/sessions.ts`
