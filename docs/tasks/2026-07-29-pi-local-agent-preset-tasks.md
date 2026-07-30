@@ -51,7 +51,7 @@
 **Description:** New in-repo TypeScript package: strict tsconfig, vitest suite wiring, `bun build --compile` script per platform (darwin arm64/x64, linux arm64/x64), lint hooked into repo scripts. CI job runs the package tests. Acceptance: `pnpm --filter pi-acp test` green on a hello-world module; compiled binary starts and exits cleanly.
 **Complexity:** M **Category:** frontend **Dependencies:** #4 **Files:** `bridges/pi-acp/package.json`, `bridges/pi-acp/tsconfig.json`, `bridges/pi-acp/src/index.ts`, `.github/workflows/test.yml`
 
-### #6 — Bridge: pi child-process management
+### #6 — Bridge: pi child-process management ✅
 
 **Description:** Spawn `pi --mode rpc` in its own process group with the caller-supplied env; LF-delimited JSONL encoder/decoder with request-id correlation; awaited teardown (SIGTERM → grace → SIGKILL process group) on ACP transport close or signal so `kill_on_drop` on the bridge can never orphan pi. Unit tests against a scripted fake pi (a small stdio stub replaying golden JSONL). Acceptance: no orphan after abrupt parent kill (test asserts via process-group probe).
 **Complexity:** L **Category:** frontend **Dependencies:** #5 **Files:** `bridges/pi-acp/src/pi-process.ts`, `bridges/pi-acp/src/jsonl.ts`, `bridges/pi-acp/test/fake-pi.ts`
@@ -76,7 +76,7 @@
 **Description:** After `agent_end`, call `get_session_stats` and emit ACP `usage_update` (tokens; cost omitted for local). Degrade silently on missing/changed stats shape — never fail a turn over usage. Test: stats present and absent.
 **Complexity:** S **Category:** frontend **Dependencies:** #7 **Files:** `bridges/pi-acp/src/usage.ts`
 
-### #11 — Bridge: live integration test against real pi
+### #11 — Bridge: live integration test against real pi 🚧 (first slice landed with #6: PI_BINARY-gated prompt-turn test, verified green against real pi v0.80.6 on linux-x64)
 
 **Description:** Opt-in integration suite (skipped unless `PI_BINARY` env set, mirroring the perf/real-e2e opt-in pattern): real pi binary + a mock OpenAI-compatible HTTP server; drive initialize → session/new → prompt → tool call with permission → response end-to-end through the bridge. This is the churn tripwire re-run whenever the pi pin moves.
 **Complexity:** M **Category:** frontend **Dependencies:** #8, #9, #10 **Files:** `bridges/pi-acp/test/integration.test.ts`, `bridges/pi-acp/test/mock-openai.ts`
