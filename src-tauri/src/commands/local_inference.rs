@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use super::constants;
 use super::model_management::{find_model_entry, find_available_port, resolve_llama_server_binary};
 use super::thinking_tags::{get_thinking_tags_for_custom_model, strip_thinking_tags_for_model};
@@ -40,6 +40,98 @@ pub struct LocalInferenceState {
     completion_server_pid: std::sync::Mutex<Option<u32>>,
     completion_port: tokio::sync::Mutex<Option<u16>>,
     completion_model: tokio::sync::Mutex<Option<String>>,
+    /// Rolling tail of the server's own log output (newest last, capped at
+    /// `LOG_TAIL_CAPACITY`).
+    ///
+    /// The server used to be spawned with piped stdout/stderr that nothing read
+    /// until the process exited (`wait_with_output`), so for the entire life of
+    /// a session llama.cpp's diagnostics were invisible — and on a clean exit
+    /// they were dropped unread. Everything the engine says about context
+    /// overflow, slot state and truncation lives here instead, which is exactly
+    /// what you need when an agent "just stops" mid-task.
+    log_tail: std::sync::Mutex<std::collections::VecDeque<String>>,
+}
+
+/// How many llama-server log lines to retain. Bounded on purpose: the previous
+/// implementation accumulated the entire session's output in memory, on a
+/// machine already spending most of its RAM on model weights.
+const LOG_TAIL_CAPACITY: usize = 400;
+
+/// Substrings that mark a llama-server stderr line as worth surfacing above
+/// debug level.
+///
+/// llama-server writes its ordinary startup banner and per-request timings to
+/// stderr too, so "came from stderr" alone is not a signal — promoting every
+/// line would bury the real ones. These are the patterns that actually explain
+/// a degraded or truncated turn: the context filling up, the KV cache running
+/// out of room, or the engine giving up on a request.
+const SERVER_PROBLEM_MARKERS: &[&str] = &[
+    "error",
+    "failed",
+    "out of memory",
+    "context full",
+    "exceeds",
+    "truncat",   // "truncating", "truncated"
+    "shifting",  // context shift — the engine silently dropping oldest tokens
+    "slot released", // a slot dropped mid-request
+    "kv cache",
+    "cannot",
+    "unable to",
+];
+
+/// Case-insensitive check against `SERVER_PROBLEM_MARKERS`.
+fn looks_like_server_problem(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    SERVER_PROBLEM_MARKERS.iter().any(|m| lower.contains(m))
+}
+
+/// Clamp a requested `--ctx-size` to what the model was actually trained for.
+///
+/// `model-catalog.json` records `context_length` per model and it was surfaced
+/// to the UI but never consulted when starting the server, so a caller's number
+/// went through verbatim. Requesting more than the model supports costs KV
+/// memory for a window the model cannot use well. An unknown limit (custom
+/// models carry no catalog entry) passes through untouched — guessing a ceiling
+/// would be worse than honouring the caller.
+fn clamp_context_to_model(requested: u32, model_max: Option<u64>, model_id: &str) -> u32 {
+    match model_max {
+        Some(max) if max > 0 && u64::from(requested) > max => {
+            let clamped = u32::try_from(max).unwrap_or(requested);
+            log::info!(
+                target: "notesage::local_ai",
+                "Clamping context for '{}' from {} to the model's trained window of {}",
+                model_id, requested, clamped
+            );
+            clamped
+        }
+        _ => requested,
+    }
+}
+
+/// Drain one of the server's pipes for the life of the process, logging each
+/// line and retaining it in the bounded tail.
+///
+/// Generic over the pipe because `ChildStdout` and `ChildStderr` are distinct
+/// types. Ends when the pipe closes (i.e. the server exits).
+fn spawn_log_drain<R>(reader: R, is_stderr: bool, app: AppHandle)
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+{
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    tokio::spawn(async move {
+        let mut lines = BufReader::new(reader).lines();
+        while let Ok(Some(line)) = lines.next_line().await {
+            if line.trim().is_empty() {
+                continue;
+            }
+            if is_stderr && looks_like_server_problem(&line) {
+                log::warn!(target: "notesage::llama_server", "{}", line);
+            } else {
+                log::debug!(target: "notesage::llama_server", "{}", line);
+            }
+            app.state::<LocalInferenceState>().push_log_line(line);
+        }
+    });
 }
 
 impl LocalInferenceState {
@@ -60,6 +152,33 @@ impl LocalInferenceState {
             completion_server_pid: std::sync::Mutex::new(None),
             completion_port: tokio::sync::Mutex::new(None),
             completion_model: tokio::sync::Mutex::new(None),
+            log_tail: std::sync::Mutex::new(std::collections::VecDeque::new()),
+        }
+    }
+
+    /// Record one line of server output, evicting the oldest past the cap.
+    pub fn push_log_line(&self, line: String) {
+        if let Ok(mut tail) = self.log_tail.lock() {
+            if tail.len() == LOG_TAIL_CAPACITY {
+                tail.pop_front();
+            }
+            tail.push_back(line);
+        }
+    }
+
+    /// Snapshot of the retained server log, oldest first.
+    pub fn log_tail_snapshot(&self) -> Vec<String> {
+        self.log_tail
+            .lock()
+            .map(|tail| tail.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Drop retained output. Called when a server starts so a new run's log is
+    /// not read as belonging to the previous model.
+    pub fn clear_log_tail(&self) {
+        if let Ok(mut tail) = self.log_tail.lock() {
+            tail.clear();
         }
     }
 
@@ -263,6 +382,12 @@ pub async fn start_local_server(
         return Err(format!("Model file not found: {}. Download it first.", entry.filename));
     }
 
+    // Never ask for more context than the model was trained for. The catalog
+    // records each model's real window and nothing used to consult it, so a
+    // caller's request went through verbatim — asking a 4K model for 32K wastes
+    // KV memory at best and degrades output at worst.
+    let ctx_len = clamp_context_to_model(ctx_len, entry.context_length, &model_id);
+
     // Find available port
     let port = find_available_port(8090)
         .ok_or("Could not find an available port in range 8090-8189")?;
@@ -281,6 +406,20 @@ pub async fn start_local_server(
         "--n-gpu-layers", &gpu.to_string(),
         "--host", "127.0.0.1",
     ]);
+
+    // Quantize the KV cache (f16 → q8_0, both verified in this build's allowed
+    // values). The cache scales with context, and context is what agentic work
+    // is starved of: at q8_0 it costs roughly half the memory, which is what
+    // makes a large agentic window affordable on the same machine. Flash
+    // attention is left at its default of `auto` — this build already enables it
+    // where supported, so forcing it on would only risk models that can't use it.
+    cmd.args(["--cache-type-k", "q8_0", "--cache-type-v", "q8_0"]);
+
+    // Reuse the cached prompt prefix across turns. An agent resends a growing
+    // conversation every turn; with reuse at 0 (the default) each turn
+    // re-prefills the entire context from scratch, and the cost compounds
+    // exactly as the task gets longer — the case that matters most here.
+    cmd.args(["--cache-reuse", "256"]);
 
     // Enable Jinja2 template engine for models that support tool calling.
     // Required for llama-server to process tool definitions in chat requests.
@@ -357,7 +496,7 @@ pub async fn start_local_server(
         }
     }
 
-    let child = cmd
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to start llama-server: {}", e))?;
 
@@ -373,17 +512,35 @@ pub async fn start_local_server(
     let pid_file = state.models_dir.join(".server.pid");
     let _ = std::fs::write(&pid_file, pid.to_string());
 
-    // Spawn a task to wait for the child (prevents zombie) and drain output
+    // Stream the server's output line by line for the whole of its life, rather
+    // than buffering it all until exit (`wait_with_output`) and dropping it on a
+    // clean exit. llama.cpp reports context overflow, slot state and truncation
+    // on stderr — precisely what is needed when an agent stops mid-task — and
+    // none of it used to be visible while the server was running.
+    //
+    // Routine chatter goes to debug (llama-server logs per request); anything
+    // that looks like a failure is promoted so it surfaces at default log level.
+    // Every line is retained in the bounded tail regardless of level.
+    state.clear_log_tail();
+    if let Some(out) = child.stdout.take() {
+        spawn_log_drain(out, false, app.clone());
+    }
+    if let Some(err) = child.stderr.take() {
+        spawn_log_drain(err, true, app.clone());
+    }
+
+    // Reap the child (prevents a zombie) once its pipes are drained above.
     tokio::spawn(async move {
-        let output = child.wait_with_output().await;
-        match output {
-            Ok(out) => {
-                if !out.status.success() {
-                    let stderr = String::from_utf8_lossy(&out.stderr);
-                    log::warn!(target: "notesage::llama_server", "Process exited with {}: {}", out.status, stderr);
-                } else {
-                    log::info!(target: "notesage::llama_server", "Process exited normally");
-                }
+        match child.wait().await {
+            Ok(status) if status.success() => {
+                log::info!(target: "notesage::llama_server", "Process exited normally");
+            }
+            Ok(status) => {
+                log::warn!(
+                    target: "notesage::llama_server",
+                    "Process exited with {} — see the preceding notesage::llama_server lines for the server's own output",
+                    status
+                );
             }
             Err(e) => {
                 log::warn!(target: "notesage::llama_server", "Failed to wait for process: {}", e);
@@ -479,6 +636,19 @@ pub async fn stop_local_server(
 
     log::info!(target: "notesage::local_ai", "Stopped local inference server");
     Ok(())
+}
+
+/// The retained tail of llama-server's own log output, oldest line first.
+///
+/// This is the engine's account of what happened — context overflow, KV-cache
+/// pressure, truncation, slot errors — which is the first thing worth reading
+/// when a local agent stops mid-task and the ACP stop reason alone doesn't
+/// explain it. Capped at `LOG_TAIL_CAPACITY` lines and cleared on server start.
+#[tauri::command]
+pub async fn get_local_server_log(
+    state: State<'_, LocalInferenceState>,
+) -> Result<Vec<String>, String> {
+    Ok(state.log_tail_snapshot())
 }
 
 #[tauri::command]
@@ -1604,5 +1774,97 @@ mod tests {
             "expected at least one model with supports_fim: true — the \
              completion server (item #8) has nothing to load otherwise"
         );
+    }
+
+    // --- server log retention (silent-inference-failure fix) ---
+    //
+    // The server's output used to be buffered until the process exited and then
+    // dropped on a clean exit, so llama.cpp's own account of a degraded turn was
+    // never visible. These cover the two properties that keeps honest: the tail
+    // is bounded, and the lines that explain a failure get promoted above debug.
+
+    #[test]
+    fn log_tail_is_bounded_and_keeps_the_newest_lines() {
+        let state = LocalInferenceState::new();
+        for i in 0..(LOG_TAIL_CAPACITY + 50) {
+            state.push_log_line(format!("line {i}"));
+        }
+        let tail = state.log_tail_snapshot();
+        assert_eq!(
+            tail.len(),
+            LOG_TAIL_CAPACITY,
+            "the tail must stay bounded — the old code held the whole session in memory"
+        );
+        // Oldest evicted, newest retained: a diagnostic is only useful if it is
+        // the tail around the failure, not the startup banner.
+        assert_eq!(tail.first().unwrap(), "line 50");
+        assert_eq!(tail.last().unwrap(), &format!("line {}", LOG_TAIL_CAPACITY + 49));
+    }
+
+    #[test]
+    fn clearing_the_tail_prevents_reading_a_previous_model_run_as_current() {
+        let state = LocalInferenceState::new();
+        state.push_log_line("from the previous model".to_string());
+        state.clear_log_tail();
+        assert!(state.log_tail_snapshot().is_empty());
+    }
+
+    #[test]
+    fn lines_explaining_a_degraded_turn_are_promoted_above_debug() {
+        // Representative of what llama.cpp actually emits when a turn is cut
+        // short or silently truncated — the whole reason the log is retained.
+        for line in [
+            "srv  update_slots: the prompt exceeds the context size",
+            "context full, shifting KV cache",
+            "ERROR: failed to decode batch",
+            "slot released: kv cache is full",
+            "ggml_metal: out of memory",
+            "truncating input to fit context",
+        ] {
+            assert!(
+                looks_like_server_problem(line),
+                "should surface above debug: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn routine_startup_and_timing_chatter_stays_at_debug() {
+        // llama-server writes its banner and per-request timings to stderr too,
+        // so promoting everything from stderr would bury the real signals.
+        for line in [
+            "build: 9000 (abcdef) with clang",
+            "llama_model_loader: loaded meta data",
+            "main: server is listening on http://127.0.0.1:8080",
+            "prompt eval time = 123.45 ms / 100 tokens",
+        ] {
+            assert!(
+                !looks_like_server_problem(line),
+                "should stay at debug: {line}"
+            );
+        }
+    }
+
+    // --- context sizing (agentic starvation fix) ---
+
+    #[test]
+    fn context_is_clamped_to_the_model_trained_window() {
+        // Asking a 4K model for a 32K agentic window wastes KV memory on a
+        // window the model cannot use.
+        assert_eq!(clamp_context_to_model(32768, Some(4096), "small"), 4096);
+    }
+
+    #[test]
+    fn a_request_within_the_model_window_passes_through() {
+        assert_eq!(clamp_context_to_model(16384, Some(131072), "big"), 16384);
+        assert_eq!(clamp_context_to_model(4096, Some(4096), "exact"), 4096);
+    }
+
+    #[test]
+    fn an_unknown_model_window_honours_the_caller() {
+        // Custom models carry no catalog entry; inventing a ceiling would be
+        // worse than trusting the caller.
+        assert_eq!(clamp_context_to_model(32768, None, "custom"), 32768);
+        assert_eq!(clamp_context_to_model(32768, Some(0), "zero"), 32768);
     }
 }
