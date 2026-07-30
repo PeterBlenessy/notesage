@@ -58,16 +58,21 @@ export interface PptxTemplateInfo {
  * via env vars — no config file is written. See `src-tauri/.../local_agent.rs`.
  */
 export interface LocalAgentConfig {
+  /** Which preset engine this config is for. */
+  agent: 'goose' | 'pi';
   configPath: string;
-  /** Env vars (Goose provider + XDG isolation paths) the spawn must inject to
-   *  point Goose at the bundled server and isolate its config tree. The only
-   *  key is a dummy the local server ignores — never real secrets. */
+  /** Env vars the spawn must inject (Goose: provider + XDG isolation; pi:
+   *  PI_OFFLINE + PI_CODING_AGENT_DIR + NO_PROXY). The only key ever present
+   *  is a dummy the local server ignores — never real secrets. */
   env: Record<string, string>;
   /** `<port>:<modelId>` — changes when the server port or active model changes. */
   configKey: string;
   /** The bundled server port the config points at (for the Seatbelt allow). */
   port: number;
   modelId: string;
+  /** pi only: args for the bridge after `--` (provider/model/session-dir).
+   *  Empty for Goose. */
+  piArgs: string[];
 }
 
 /** Stage the smoke test reached. `done` = success; otherwise the failed stage. */
@@ -233,6 +238,10 @@ export interface AgentUpdateInfo {
   current_version: string;
   latest_version: string;
   repo: string;
+  /** True when upstream is past the exact-tested version pin — NOT installable
+   *  until a Notesage release moves the pin (UI shows "held back"). Always
+   *  false for npm agents and unpinned GitHub-binary agents. */
+  held_back?: boolean;
 }
 
 /** Mirrors the Rust `SearchResult` struct (`web_search.rs`) — entries of `web_search`. */
@@ -1066,8 +1075,8 @@ export const tauriApi = {
    * by `ensureAcpAgent` for `localAgentPreset` connections (tasks #8/#10).
    * Rejects when the bundled server is not running / has no active model.
    */
-  async localAgentWriteConfig(): Promise<LocalAgentConfig> {
-    return await invoke<LocalAgentConfig>("local_agent_write_config");
+  async localAgentWriteConfig(agent?: 'goose' | 'pi'): Promise<LocalAgentConfig> {
+    return await invoke<LocalAgentConfig>("local_agent_write_config", { agent: agent ?? null });
   },
 
   /**

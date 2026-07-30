@@ -78,7 +78,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   const [oaiLabel, setOaiLabel] = useState('');
 
   // Agent update checking
-  const [agentUpdates, setAgentUpdates] = useState<Record<string, { currentVersion: string; latestVersion: string }>>({});
+  const [agentUpdates, setAgentUpdates] = useState<Record<string, { currentVersion: string; latestVersion: string; heldBack?: boolean }>>({});
   const [checkingUpdates, setCheckingUpdates] = useState(false);
 
   const checkForUpdates = useCallback((force = false) => {
@@ -87,9 +87,9 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
     let toastMsg: (() => void) | null = null;
     const check = invoke<AgentUpdateInfo[]>('agent_check_updates', { force })
       .then((updates) => {
-        const map: Record<string, { currentVersion: string; latestVersion: string }> = {};
+        const map: Record<string, { currentVersion: string; latestVersion: string; heldBack?: boolean }> = {};
         for (const u of updates) {
-          map[u.agent_id] = { currentVersion: u.current_version, latestVersion: u.latest_version };
+          map[u.agent_id] = { currentVersion: u.current_version, latestVersion: u.latest_version, heldBack: u.held_back };
         }
         setAgentUpdates(map);
         if (force) {

@@ -104,7 +104,7 @@ export interface ConnectionConfig {
   // (the existing keychain-backed EnvVar flow); config is plain persisted state.
   binaryPath?: string;            // Absolute path to the agent binary
   binaryArgs?: string[];          // Launch args (e.g. ["acp"])
-  localAgentPreset?: 'goose';  // Marks preset-managed connections (Local Agent setup flow)
+  localAgentPreset?: 'goose' | 'pi';  // Marks preset-managed connections (Local Agent setup flow; engine per PRD 2026-07-29-pi-local-agent-preset)
 }
 
 // --- ACP Capabilities (discovered at connection registration) ---

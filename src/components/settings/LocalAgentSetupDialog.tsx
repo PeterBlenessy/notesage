@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -24,14 +25,19 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { isLocalAgentPreset } from '@/lib/ai/acp-agent-state';
 import { useLocalAgentSetup } from '@/hooks/useLocalAgentSetup';
 import { recommendToolCallingModel } from '@/lib/ai/local-agent-model';
-import { GooseAttribution } from './GooseAttribution';
+import { LocalAgentAttribution } from './LocalAgentAttribution';
 import type { LocalAgentActiveStage } from '@/stores/local-ai-store';
 import { cn } from '@/lib/utils';
 
 const GB = 1024 ** 3;
 
 /** Agent id used for the Goose managed install (mirrors useLocalAgentSetup). */
-const GOOSE_AGENT_ID = 'goose';
+/** Managed-install agent ids whose download progress the dialog bar tracks,
+ *  per engine. pi installs two artifacts (pi + the bridge). */
+const ENGINE_AGENT_IDS: Record<'goose' | 'pi', string[]> = {
+  goose: ['goose'],
+  pi: ['pi', 'notesage-pi-acp'],
+};
 
 /** Ordered active stages with user-facing labels. */
 const STAGES: { key: LocalAgentActiveStage; label: string }[] = [
@@ -113,6 +119,10 @@ export function LocalAgentSetupDialog() {
   );
   const [chosenModel, setChosenModel] = useState<string | null>(null);
   const effectiveModel = chosenModel ?? setup.modelId ?? recommended;
+  // Engine choice — Goose (default) or pi. Reset to idle happens per-engine in
+  // the setup hook (a distinct preset connection per engine), so switching here
+  // before starting just changes which engine `start` installs and wires.
+  const [engine, setEngine] = useState<'goose' | 'pi'>('goose');
 
   // Goose binary download percent (0–100) from `agent-install-progress`. The
   // backend emits bytes downloaded / content-length during the GitHub-binary
@@ -136,7 +146,7 @@ export function LocalAgentSetupDialog() {
       'agent-install-progress',
       (event) => {
         const p = event.payload;
-        if (p.agent_id !== GOOSE_AGENT_ID) return;
+        if (!ENGINE_AGENT_IDS[engine].includes(p.agent_id)) return;
         if (p.phase === 'downloading') {
           setAgentProgress(p.total > 0 ? Math.round((p.progress / p.total) * 100) : null);
         } else {
@@ -153,7 +163,7 @@ export function LocalAgentSetupDialog() {
       cancelled = true;
       unlisten?.();
     };
-  }, [open]);
+  }, [open, engine]);
 
   const running = ['detecting', 'downloading', 'configuring', 'verifying'].includes(setup.stage);
   const isReady = setup.stage === 'ready';
@@ -166,7 +176,7 @@ export function LocalAgentSetupDialog() {
     systemMemory.total_bytes < 8 * GB;
 
   const handleStart = () => {
-    void start(effectiveModel ?? undefined);
+    void start(effectiveModel ?? undefined, engine);
   };
 
   // Per-stage download progress for the model (0–100), if a download is active.
@@ -188,6 +198,39 @@ export function LocalAgentSetupDialog() {
             Runs an agent on your Mac against the bundled local model — no API keys, no cloud account.
           </DialogDescription>
         </DialogHeader>
+
+        {/* Engine picker — only before the flow starts or after failure. */}
+        {(setup.stage === 'idle' || isFailed) && (
+          <div className="space-y-2">
+            <Label className="text-sm font-medium text-foreground">Engine</Label>
+            <RadioGroup
+              value={engine}
+              onValueChange={(v) => setEngine(v as 'goose' | 'pi')}
+              disabled={running}
+              className="gap-2"
+            >
+              {[
+                { id: 'goose' as const, name: 'Goose', desc: 'Default. Agentic AI Foundation (AAIF).' },
+                { id: 'pi' as const, name: 'pi', desc: 'Alternative engine by earendil-works.' },
+              ].map((e) => (
+                <label
+                  key={e.id}
+                  htmlFor={`engine-${e.id}`}
+                  className={cn(
+                    'flex items-start gap-2.5 rounded-md border px-3 py-2 cursor-pointer transition-colors duration-150',
+                    engine === e.id ? 'border-border-strong bg-muted/40' : 'border-border hover:bg-muted/20',
+                  )}
+                >
+                  <RadioGroupItem value={e.id} id={`engine-${e.id}`} className="mt-0.5" />
+                  <span className="space-y-0.5">
+                    <span className="text-sm font-medium text-foreground block">{e.name}</span>
+                    <span className="text-xs text-muted-foreground block">{e.desc}</span>
+                  </span>
+                </label>
+              ))}
+            </RadioGroup>
+          </div>
+        )}
 
         {/* Model picker — only meaningful before the flow starts or after failure. */}
         {(setup.stage === 'idle' || isFailed) && (
@@ -250,7 +293,7 @@ export function LocalAgentSetupDialog() {
           </div>
         )}
 
-        <GooseAttribution />
+        <LocalAgentAttribution engine={engine} />
 
         <DialogFooter>
           {isReady ? (

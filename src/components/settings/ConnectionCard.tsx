@@ -24,7 +24,7 @@ import { tauriApi, type CopilotStatus, type LocalServerStatus } from '@/lib/taur
 import type { AcpSessionResult, AcpSpawnResult } from '@/lib/ai/acp-utils';
 import { canReauthenticate } from '@/lib/ai/reauth';
 import { isLocalAgentPreset, resolveAgentLaunch, resolveLocalAgentEndpoint } from '@/lib/ai/acp-agent-state';
-import { GooseAttribution } from './GooseAttribution';
+import { LocalAgentAttribution } from './LocalAgentAttribution';
 import { ReauthDialog } from './ReauthDialog';
 import { ConnectionUsageDetail } from './ConnectionUsageDetail';
 
@@ -64,6 +64,9 @@ export interface AgentUpdateAvailable {
   agentId: string;
   currentVersion: string;
   latestVersion: string;
+  /** Upstream is past the exact-tested version pin — not installable here.
+   *  Renders as an informational "held back" line, not a clickable update. */
+  heldBack?: boolean;
 }
 
 interface ConnectionCardProps {
@@ -375,10 +378,15 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               </span>
             )}
           </div>
-          {/* Transparency: the Local Agent preset is powered by Goose — credit
-              it (with a link) on the connection card too, not just at setup. */}
+          {/* Transparency: the Local Agent preset is powered by an open-source
+              engine (Goose or pi) — credit it (with a link) on the connection
+              card too, not just at setup. */}
           {isLocalAgentPreset(connection) && (
-            <GooseAttribution compact className="mt-0.5" />
+            <LocalAgentAttribution
+              engine={connection.config?.localAgentPreset === 'pi' ? 'pi' : 'goose'}
+              compact
+              className="mt-0.5"
+            />
           )}
           {/* Badge row wraps to multiple lines so capability + sandbox
               + network + update pills don't overflow the card on
@@ -414,7 +422,15 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
                 Managed
               </span>
             )}
-            {updateAvailable && (
+            {updateAvailable && updateAvailable.heldBack && (
+              <span
+                className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0"
+                title={`v${updateAvailable.latestVersion} is available upstream but not yet tested with Notesage — it will install when a Notesage update includes it.`}
+              >
+                Update held back
+              </span>
+            )}
+            {updateAvailable && !updateAvailable.heldBack && (
               <button
                 onClick={handleUpdate}
                 disabled={updating}
