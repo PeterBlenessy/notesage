@@ -611,7 +611,20 @@ pub async fn acp_agent_smoke_test(
     )
     .await;
     let prompt_failure = match prompt {
-        Ok(Ok(())) => None,
+        // Any returned stop reason means the ACP round trip works, which is all
+        // this stage claims to prove — a small local model can legitimately hit
+        // `max_tokens` even on the smoke prompt, and failing setup for that would
+        // be wrong. Still logged: a `refusal` here is worth seeing in the log.
+        Ok(Ok(stop_reason)) => {
+            if stop_reason != "end_turn" {
+                log::warn!(
+                    target: "notesage::acp",
+                    "Smoke-test prompt ended with stop_reason={} (round trip OK, not failing setup)",
+                    stop_reason,
+                );
+            }
+            None
+        }
         Ok(Err(e)) => Some(fail(SmokeStage::Prompt, e, &started)),
         Err(_) => Some(fail(
             SmokeStage::Prompt,
@@ -718,6 +731,12 @@ pub async fn acp_session_load(
 /// Message identity is agent-assigned: `agent_message_chunk` updates carry an
 /// optional `messageId` (`ContentChunk.message_id`) grouping the chunks of one
 /// message — there is no client-supplied message id in ACP 0.14.
+///
+/// Returns the turn's ACP stop reason as a snake_case string (`end_turn`,
+/// `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`, or `unknown`).
+/// Anything other than `end_turn` means the agent stopped before finishing its
+/// work; callers MUST surface that, otherwise an agent that exhausted its token
+/// or turn budget mid-task is indistinguishable from one that completed.
 #[tauri::command]
 pub async fn acp_session_prompt(
     state: State<'_, AcpState>,
@@ -725,7 +744,7 @@ pub async fn acp_session_prompt(
     session_id: String,
     content: String,
     images: Option<Vec<crate::commands::ai::ImageData>>,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let cmd_tx = {
         let agents = state.agents.lock().await;
         let handle = agents
