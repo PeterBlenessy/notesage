@@ -68,10 +68,40 @@ export function isEarlyStop(reason: string | null | undefined): boolean {
 }
 
 /**
+ * Stop reasons the agent can simply be told to carry on from.
+ *
+ * `max_tokens` and `max_turn_requests` are budget limits: the agent still holds
+ * its session, it just ran out of room in that turn, so a follow-up prompt
+ * resumes the work. `refusal` is not resumable — the agent decided not to do it,
+ * and re-asking is nagging. `cancelled` was the user's own decision.
+ */
+export function isResumableStop(reason: string | null | undefined): boolean {
+  return reason === 'max_tokens' || reason === 'max_turn_requests';
+}
+
+/** The message sent when the user takes the offered continuation. */
+export const CONTINUE_REPLY = 'Continue where you left off.';
+
+/**
  * Render the notice as a markdown blockquote so it reads as meta-commentary
  * about the turn rather than as more model output.
+ *
+ * For a resumable stop the notice carries a `<quick-replies>` block, which the
+ * existing chip UI renders as a one-click continuation — the agent keeps its
+ * session, so the follow-up picks up the work rather than restarting it.
+ * `TextSegmentView` strips the tag from the rendered text, so it never shows up
+ * as literal markup.
+ *
+ * Deliberately NOT automatic: when the stop was caused by a genuinely exhausted
+ * context rather than an output cap, continuing hits the same wall immediately,
+ * and an unattended retry loop would burn the turn budget in a circle. A click
+ * keeps a human in that decision.
  */
 export function formatStopReasonNotice(reason: string | null | undefined): string | null {
   const description = describeStopReason(reason);
-  return description === null ? null : `\n\n> ⚠️ ${description}`;
+  if (description === null) return null;
+  const notice = `\n\n> ⚠️ ${description}`;
+  return isResumableStop(reason)
+    ? `${notice}\n\n<quick-replies>\n${CONTINUE_REPLY}\n</quick-replies>`
+    : notice;
 }

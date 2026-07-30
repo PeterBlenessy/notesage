@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { describeStopReason, isEarlyStop, formatStopReasonNotice } from '../stop-reason';
+import {
+  describeStopReason,
+  isEarlyStop,
+  formatStopReasonNotice,
+  isResumableStop,
+  CONTINUE_REPLY,
+} from '../stop-reason';
+import { parseQuickReplies } from '@/components/chat/QuickReplies';
 
 // The bug these lock in: an ACP agent that abandons a long multi-file task
 // (token budget exhausted, per-turn request cap hit) reported nothing at all,
@@ -84,5 +91,56 @@ describe('formatStopReasonNotice', () => {
     // Appended to a message that may already end mid-sentence; without the
     // blank line the notice would fuse into the model's last paragraph.
     expect(formatStopReasonNotice('refusal')?.startsWith('\n\n')).toBe(true);
+  });
+});
+
+describe('continuing a turn that ran out of room', () => {
+  it.each(['max_tokens', 'max_turn_requests'])('offers to continue after %s', (reason) => {
+    expect(isResumableStop(reason)).toBe(true);
+    const notice = formatStopReasonNotice(reason);
+    // The existing chip UI parses this tag out of message content.
+    expect(notice).toContain('<quick-replies>');
+    expect(notice).toContain(CONTINUE_REPLY);
+  });
+
+  it('does not offer to continue after a refusal — that is nagging, not resuming', () => {
+    expect(isResumableStop('refusal')).toBe(false);
+    expect(formatStopReasonNotice('refusal')).not.toContain('<quick-replies>');
+  });
+
+  it.each(['end_turn', 'cancelled'])('offers nothing at all for %s', (reason) => {
+    expect(isResumableStop(reason)).toBe(false);
+    expect(formatStopReasonNotice(reason)).toBeNull();
+  });
+
+  it('does not offer to continue for an unrecognised reason', () => {
+    // We cannot know whether continuing is meaningful, so report but don't act.
+    expect(isResumableStop('some_future_reason')).toBe(false);
+    expect(formatStopReasonNotice('some_future_reason')).not.toContain('<quick-replies>');
+  });
+
+  it('puts the continuation on its own line so the chip parser sees one option', () => {
+    const notice = formatStopReasonNotice('max_tokens')!;
+    const inner = notice.match(/<quick-replies>\s*([\s\S]*?)\s*<\/quick-replies>/)?.[1];
+    expect(inner?.split('\n').filter((l) => l.trim()).length).toBe(1);
+  });
+
+  // The notice is produced here but consumed by the chip parser in the chat UI.
+  // Asserting the shape in isolation would pass even if the two disagreed, so
+  // run the real parser over the real output.
+  it('produces a block the actual chip parser turns into exactly one chip', () => {
+    const assistantContent = `Here is what I did so far.${formatStopReasonNotice('max_tokens')}`;
+    const parsed = parseQuickReplies(assistantContent);
+
+    expect(parsed.replies).toEqual([CONTINUE_REPLY]);
+    // And the raw tag must not survive into the rendered text.
+    expect(parsed.strippedContent).not.toContain('quick-replies');
+    expect(parsed.strippedContent).toContain('Here is what I did so far.');
+    expect(parsed.strippedContent).toContain('ran out of tokens');
+  });
+
+  it('leaves no chip for a non-resumable stop when run through the real parser', () => {
+    const parsed = parseQuickReplies(`Done.${formatStopReasonNotice('refusal')}`);
+    expect(parsed.replies).toEqual([]);
   });
 });
