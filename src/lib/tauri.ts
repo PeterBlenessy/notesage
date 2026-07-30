@@ -1633,6 +1633,17 @@ export const tauriApi = {
     return await invoke<LocalServerStatus>("get_local_server_status");
   },
 
+  /**
+   * Retained tail of llama-server's own log, oldest line first (capped backend
+   * side, cleared when a server starts). This is the inference engine's account
+   * of a degraded turn — context exhausted, KV cache full, request truncated —
+   * which is the first thing to read when a local agent stops mid-task and the
+   * ACP stop reason alone doesn't explain it.
+   */
+  async getLocalServerLog(): Promise<string[]> {
+    return await invoke<string[]>("get_local_server_log");
+  },
+
   // Dedicated FIM (`/infill`) server — runs alongside the main chat server
   // without `--jinja` so tool calling on chat AND fast native FIM on
   // completions can coexist. See item #8 in `docs/features/ai-providers.md`.
