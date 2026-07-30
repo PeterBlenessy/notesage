@@ -17,11 +17,19 @@ const RAM_BUDGET_FRACTION = 0.7;
  * Local Agent preset. An agent's system prompt + tool schemas run several
  * thousand tokens — at the store's chat default of 4096 the very first agentic
  * turn fails with "request exceeds the available context size", so the smoke
- * test (and all agentic chat) is dead on arrival. 16384 clears the system
- * prompt with headroom for tool definitions and a few turns. Confirmed
- * empirically: 4096 fails, 16384 completes a turn.
+ * test (and all agentic chat) is dead on arrival.
+ *
+ * Raised from 16384: that cleared the system prompt and a few turns, but a real
+ * task over several files exhausts it, and the agent then stops partway (an ACP
+ * `max_tokens` stop, which the UI now reports instead of ending in silence).
+ *
+ * 32768 is affordable because the server quantizes its KV cache to q8_0 — at
+ * 32K that measured 476 MiB against 896 MiB at f16, so the larger window costs
+ * *less* memory than the old 16K default did before quantization. The backend
+ * clamps this down per model (`clamp_context_to_model`), so asking for more than
+ * a small model supports is safe: it gets the model's real window, not this.
  */
-export const LOCAL_AGENT_MIN_CONTEXT = 16384;
+export const LOCAL_AGENT_MIN_CONTEXT = 32768;
 
 /**
  * Resolve the context window to start the Local Agent's bundled server with.
