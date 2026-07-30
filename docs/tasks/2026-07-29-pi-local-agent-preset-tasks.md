@@ -117,24 +117,24 @@
 
 ## State management
 
-### #18 — Types + connection model
+### #18 — Types + connection model ✅ (localAgentPreset union widened additively; LocalAgentConfig gains agent+piArgs; AgentUpdateInfo gains held_back)
 
 **Description:** Widen `localAgentPreset` to `'goose' | 'pi'` across `connections.ts` and comparison sites; `LocalAgentConfig` TS type gains `agent` + `bridgePath`; `tauriApi.localAgentWriteConfig(agent?)`. Verify persist rehydration of existing `'goose'` connections is untouched (no migration needed — additive union). `pnpm typecheck` gate.
 **Complexity:** S **Category:** frontend **Dependencies:** #16 **Files:** `src/lib/ai/connections.ts`, `src/lib/tauri.ts`, `src/stores/connections-store.ts`
 
-### #19 — pi setup-flow deps for `runLocalAgentSetup`
+### #19 — pi setup-flow deps for `runLocalAgentSetup` ✅ (per-engine install of pi+bridge; connection spawns the bridge with --pi-bin; ensureAcpAgent appends live pi args after --; smoke test uses composed args)
 
 **Description:** Supply pi-flavored `LocalAgentSetupDeps`: `installAgent` installs pi + bridge (both via `installAgentIfMissing` semantics), `writeConfig` passes `agent: 'pi'`, `createPresetConnection` builds the `custom_acp` connection with `binaryPath` = bridge binary, `binaryArgs: []`, `localAgentPreset: 'pi'`, empty network allowlist + kernel deny + llama port (mirroring the Goose connection shape in `acp-agent-state.ts`). The driver, rollback gate, and smoke test are reused unchanged — add unit tests for the pi deps only.
 **Complexity:** M **Category:** frontend **Dependencies:** #15, #18 **Files:** `src/hooks/useLocalAgentSetup.ts`, `src/lib/ai/acp-agent-state.ts`
 
 ## UI
 
-### #20 — Engine choice in the Local Agent setup entry points
+### #20 — Engine choice in the Local Agent setup entry points ✅ (shadcn RadioGroup engine picker in the setup dialog; per-engine attribution via new LocalAgentAttribution; progress listener tracks pi's two artifacts)
 
 **Description:** Add-Connection Local Agent card + `LocalAgentSetupDialog` gain an engine selector (Goose default, pi alternative) using shadcn primitives (survey `RadioGroup` / segmented `Tabs` first per design system), one-line description + attribution per engine ("powered by pi, an open-source agent by Mario Zechner / earendil-works" mirroring the Goose attribution). Strict-neutral palette, both themes, `TooltipProvider` where tooltips appear. Stage/progress/error/retry UI shared unchanged.
 **Complexity:** M **Category:** frontend **Dependencies:** #19 **Files:** `src/components/settings/LocalAgentSetupDialog.tsx`, Add-Connection card component
 
-### #21 — Settings connection card: engine + version + held-back state
+### #21 — Settings connection card: engine + version + held-back state ✅ (engine-specific attribution; muted non-clickable "Update held back" pill when upstream is past the exact-tested pin)
 
 **Description:** Connection card for a `localAgentPreset` connection shows the engine name and installed agent/bridge versions; when `agent_check_updates` reports an upstream version outside the tested range, render a muted "update held back (untested)" line — informational, not an error. Both themes.
 **Complexity:** S **Category:** frontend **Dependencies:** #15, #18 **Files:** `src/components/settings/ConnectionsSettings.tsx` (or per-card component)
