@@ -100,7 +100,7 @@
 
 ## M3 — Backend integration
 
-### #15 — Managed-install registry: pi + bridge entries, checksum + version ceiling ⚠️ shared infra
+### #15 — Managed-install registry: pi + bridge entries, checksum + version ceiling ⚠️ shared infra ✅ (per-agent checksum_asset — hard verify for pi/bridge, Goose stays record-only; exact pin 0.80.6 with install clamp + held_back in check_updates; folder-tarball Tree install with tar-slip/total-size guards + symlinked bin; cargo check green, unit tests run in macOS CI)
 
 **Description:** `agent_manager.rs`: make the checksum asset per-agent (`GithubBinaryAgentConfig.checksum_asset: Option<&'static str>`; pi/bridge `Some("SHA256SUMS")` → hard-fail verify before extraction, Goose stays `None` digest-record-only) and add `max_version: Option<&'static str>` enforced in install AND `agent_check_updates` ("held back" state). Registry entries for `pi` (`earendil-works/pi`, folder-tarball extraction — multiple files co-located, unlike Goose's single binary) and `notesage-pi-acp` (Notesage releases). Lock tests mirroring `goose_installs_via_github_binary`: repo, asset names per platform, checksum asset, pin range, tamper → explicit failure. Goose install tests stay green.
 **Complexity:** L **Category:** backend **Dependencies:** #4, #12 **Files:** `src-tauri/src/commands/agent_manager.rs`

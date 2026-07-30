@@ -90,17 +90,11 @@ fn find_sha256_for_file(shasums: &str, filename: &str) -> Option<String> {
     None
 }
 
-/// Checksum asset name published alongside GitHub release binaries, if any.
-///
-/// TODO(audit batch 3 fix #6b): Goose releases do not have a checksum asset
-/// pattern we could verify without guessing, so GitHub-binary installs are
-/// currently *recorded* (SHA-256 of the downloaded archive is computed and
-/// logged) but not *verified*. When upstream publishes a stable checksum
-/// asset (e.g. `sha256sums.txt`), set this to `Some("…")` and
-/// `do_github_binary_install` will fetch it from the same release and verify
-/// the archive digest before extraction — the verification path is already
-/// wired below.
-const GITHUB_BINARY_CHECKSUM_ASSET: Option<&str> = None;
+// Checksum verification for GitHub-binary installs is configured PER AGENT via
+// `GithubBinaryAgentConfig.checksum_asset` (audit batch 3 fix #6b): pi and the
+// notesage-pi-acp bridge publish checksum manifests and are hard-verified;
+// Goose still publishes none, so its digest is recorded (audit trail) but not
+// verified until upstream ships a stable checksum asset.
 
 // ---------------------------------------------------------------------------
 // Types
@@ -207,6 +201,15 @@ fn npm_agent_config(agent_id: &str) -> Option<NpmAgentConfig> {
 // needs no Node runtime, no npm install, and no cloud auth — so it runs cleanly
 // under the strict `(deny default)` Seatbelt sandbox where OpenCode could not.
 struct GithubBinaryAgentConfig {
+    /// Checksum manifest asset on the same release (`<hash>  <file>` lines).
+    /// `Some` → the archive digest MUST match before extraction (hard fail);
+    /// `None` → digest recorded to the log only (Goose — no upstream asset).
+    checksum_asset: Option<&'static str>,
+    /// Exact-tested version ceiling (no leading `v`). Installs are clamped to
+    /// this version and `agent_check_updates` reports newer upstream releases
+    /// as held back instead of installable. Guards fast-moving 0.x upstreams
+    /// (pi) whose RPC/extension surface we pin against.
+    max_version: Option<&'static str>,
     /// `owner/repo` on GitHub.
     repo: &'static str,
     /// Executable name inside the release archive AND the managed bin filename.
@@ -228,6 +231,31 @@ fn github_binary_agent_config(agent_id: &str) -> Option<GithubBinaryAgentConfig>
             // The version whose ACP surface this integration was built against
             // and empirically verified under the strict sandbox.
             min_version: "1.37.0",
+            max_version: None,
+            checksum_asset: None, // no stable upstream checksum asset (yet)
+        }),
+        "pi" => Some(GithubBinaryAgentConfig {
+            // pi (pi.dev) — the pi Local Agent preset binary (PRD
+            // 2026-07-29-pi-local-agent-preset). Bun-compiled folder-tarball
+            // (`pi-{os}-{arch}.tar.gz`, executable at `pi/pi` with co-located
+            // wasm/theme assets). Exact-tested pin: the bridge + extensions
+            // were verified against this version's RPC/extension surface;
+            // weekly 0.x releases upstream make an open ceiling unsafe.
+            repo: "earendil-works/pi",
+            bin_name: "pi",
+            min_version: "0.80.6",
+            max_version: Some("0.80.6"),
+            checksum_asset: Some("SHA256SUMS"),
+        }),
+        "notesage-pi-acp" => Some(GithubBinaryAgentConfig {
+            // The ACP<->pi-RPC bridge, published on Notesage's own releases
+            // (bridges/pi-acp, compiled per platform by the release workflow).
+            // Versioned in lockstep with the app; updates ride app releases.
+            repo: "PeterBlenessy/notesage",
+            bin_name: "notesage-pi-acp",
+            min_version: "0.1.0",
+            max_version: None,
+            checksum_asset: Some("notesage-pi-acp-SHA256SUMS"),
         }),
         _ => None,
     }
@@ -245,6 +273,65 @@ fn goose_asset_name(os: &str, arch: &str) -> Result<&'static str, String> {
         ("linux", "arm64") => Ok("goose-aarch64-unknown-linux-gnu.tar.gz"),
         ("linux", "x64") => Ok("goose-x86_64-unknown-linux-gnu.tar.gz"),
         _ => Err(format!("Goose has no prebuilt binary for {}-{}", os, arch)),
+    }
+}
+
+/// Rust target triple for the notesage-pi-acp bridge asset naming (matches
+/// `bridges/pi-acp/scripts/build-binaries.sh`).
+fn rust_triple(os: &str, arch: &str) -> Result<&'static str, String> {
+    match (os, arch) {
+        ("darwin", "arm64") => Ok("aarch64-apple-darwin"),
+        ("darwin", "x64") => Ok("x86_64-apple-darwin"),
+        ("linux", "arm64") => Ok("aarch64-unknown-linux-gnu"),
+        ("linux", "x64") => Ok("x86_64-unknown-linux-gnu"),
+        _ => Err(format!("No prebuilt binary for {}-{}", os, arch)),
+    }
+}
+
+/// How a GitHub-binary agent's archive is laid out and installed.
+enum ArchiveInstall {
+    /// Archive contains a single executable file (matched by basename inside
+    /// the archive) installed to `agents/bin/<bin_name>`.
+    SingleBinary { archive_basename: String },
+    /// Archive is a directory tree that must stay co-located (pi: executable +
+    /// wasm + themes). Extracted to `agents/dist/<agent_id>/`, with
+    /// `agents/bin/<bin_name>` symlinked to `bin_rel` inside the tree.
+    Tree { bin_rel: &'static str },
+}
+
+/// Per-agent release asset + install layout. pi uses `pi-{os}-{arch}.tar.gz`
+/// naming (NOT rust triples — verified against earendil-works/pi v0.80.6);
+/// Goose and the bridge use `{name}-{triple}.tar.gz`.
+fn github_binary_asset(
+    agent_id: &str,
+    os: &str,
+    arch: &str,
+) -> Result<(String, ArchiveInstall), String> {
+    match agent_id {
+        "goose" => Ok((
+            goose_asset_name(os, arch)?.to_string(),
+            ArchiveInstall::SingleBinary { archive_basename: "goose".to_string() },
+        )),
+        "pi" => {
+            let asset = match (os, arch) {
+                ("darwin", "arm64") => "pi-darwin-arm64.tar.gz",
+                ("darwin", "x64") => "pi-darwin-x64.tar.gz",
+                ("linux", "arm64") => "pi-linux-arm64.tar.gz",
+                ("linux", "x64") => "pi-linux-x64.tar.gz",
+                _ => return Err(format!("pi has no prebuilt binary for {}-{}", os, arch)),
+            };
+            Ok((asset.to_string(), ArchiveInstall::Tree { bin_rel: "pi/pi" }))
+        }
+        "notesage-pi-acp" => {
+            let triple = rust_triple(os, arch)?;
+            Ok((
+                format!("notesage-pi-acp-{}.tar.gz", triple),
+                ArchiveInstall::SingleBinary {
+                    archive_basename: format!("notesage-pi-acp-{}", triple),
+                },
+            ))
+        }
+        _ => Err(format!("{} is not a GitHub-binary agent", agent_id)),
     }
 }
 
@@ -305,6 +392,12 @@ fn agents_bin_dir() -> PathBuf {
 
 fn agents_lib_dir() -> PathBuf {
     agents_base_dir().join("lib")
+}
+
+/// Root for folder-tarball agents (pi): the whole archive tree is kept
+/// co-located under `dist/<agent_id>/` and `bin/<bin_name>` symlinks into it.
+fn agents_dist_dir() -> PathBuf {
+    agents_base_dir().join("dist")
 }
 
 fn versions_file_path() -> PathBuf {
@@ -526,7 +619,7 @@ async fn do_agent_install(app: &AppHandle, agent_id: &str) -> Result<Option<Stri
         return do_github_binary_install(app, agent_id, &gh_config).await;
     }
     Err(format!(
-        "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, goose",
+        "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, goose, pi, notesage-pi-acp",
         agent_id
     ))
 }
@@ -998,7 +1091,12 @@ fn install_extracted_binary(bin_name: &str, data: &[u8]) -> Result<(), String> {
 /// the format (`.zip` → zip crate, `.tar.gz` → flate2+tar). Path traversal is
 /// guarded (zip `enclosed_name`, tar component check) — same hardening as the
 /// Node.js runtime extractor.
-fn extract_and_install_binary(asset: &str, bin_name: &str, data: &[u8]) -> Result<(), String> {
+fn extract_named_binary(
+    asset: &str,
+    archive_basename: &str,
+    dest_bin_name: &str,
+    data: &[u8],
+) -> Result<(), String> {
     if asset.ends_with(".zip") {
         let mut archive = zip::ZipArchive::new(std::io::Cursor::new(data))
             .map_err(|e| format!("Failed to open zip: {}", e))?;
@@ -1011,7 +1109,7 @@ fn extract_and_install_binary(asset: &str, bin_name: &str, data: &[u8]) -> Resul
                 Some(p) => p,
                 None => continue,
             };
-            if file.is_file() && name.file_name().and_then(|n| n.to_str()) == Some(bin_name) {
+            if file.is_file() && name.file_name().and_then(|n| n.to_str()) == Some(archive_basename) {
                 // The zip header's size field is attacker-controlled — clamp
                 // the pre-allocation hint and cap the bytes actually read
                 // (audit batch 3 fix #5).
@@ -1024,13 +1122,13 @@ fn extract_and_install_binary(asset: &str, bin_name: &str, data: &[u8]) -> Resul
                 if buf.len() as u64 > MAX_EXTRACTED_FILE_BYTES {
                     return Err(format!(
                         "'{}' in archive {} exceeds the {} byte extraction limit",
-                        bin_name, asset, MAX_EXTRACTED_FILE_BYTES
+                        archive_basename, asset, MAX_EXTRACTED_FILE_BYTES
                     ));
                 }
-                return install_extracted_binary(bin_name, &buf);
+                return install_extracted_binary(dest_bin_name, &buf);
             }
         }
-        Err(format!("'{}' not found in archive {}", bin_name, asset))
+        Err(format!("'{}' not found in archive {}", archive_basename, asset))
     } else if asset.ends_with(".tar.gz") || asset.ends_with(".tgz") {
         use flate2::read::GzDecoder;
         use tar::Archive;
@@ -1053,7 +1151,7 @@ fn extract_and_install_binary(asset: &str, bin_name: &str, data: &[u8]) -> Resul
                 continue;
             }
             if entry.header().entry_type().is_file()
-                && path.file_name().and_then(|n| n.to_str()) == Some(bin_name)
+                && path.file_name().and_then(|n| n.to_str()) == Some(archive_basename)
             {
                 // Gzip-bomb guard: cap the decompressed bytes read into
                 // memory (audit batch 3 fix #5).
@@ -1065,16 +1163,132 @@ fn extract_and_install_binary(asset: &str, bin_name: &str, data: &[u8]) -> Resul
                 if buf.len() as u64 > MAX_EXTRACTED_FILE_BYTES {
                     return Err(format!(
                         "'{}' in archive {} exceeds the {} byte extraction limit",
-                        bin_name, asset, MAX_EXTRACTED_FILE_BYTES
+                        archive_basename, asset, MAX_EXTRACTED_FILE_BYTES
                     ));
                 }
-                return install_extracted_binary(bin_name, &buf);
+                return install_extracted_binary(dest_bin_name, &buf);
             }
         }
-        Err(format!("'{}' not found in archive {}", bin_name, asset))
+        Err(format!("'{}' not found in archive {}", archive_basename, asset))
     } else {
         Err(format!("Unsupported archive format: {}", asset))
     }
+}
+
+/// Extract a whole archive tree to `agents/dist/<agent_id>/` (wiping any
+/// previous install) and symlink `agents/bin/<bin_name>` to `bin_rel` inside
+/// it. Same tar-slip and size-cap hardening as the single-binary path, plus a
+/// total-bytes cap across the tree; unix mode bits are preserved so the
+/// executable and any bundled helpers keep their permissions.
+fn extract_tree_and_install(
+    agent_id: &str,
+    bin_name: &str,
+    bin_rel: &str,
+    asset: &str,
+    data: &[u8],
+) -> Result<(), String> {
+    if !(asset.ends_with(".tar.gz") || asset.ends_with(".tgz")) {
+        return Err(format!("Unsupported archive format for tree install: {}", asset));
+    }
+    ensure_agent_dirs()?;
+    let dest_root = agents_dist_dir().join(agent_id);
+    if dest_root.exists() {
+        std::fs::remove_dir_all(&dest_root)
+            .map_err(|e| format!("Failed to clear {}: {}", dest_root.display(), e))?;
+    }
+    std::fs::create_dir_all(&dest_root)
+        .map_err(|e| format!("Failed to create {}: {}", dest_root.display(), e))?;
+
+    use flate2::read::GzDecoder;
+    use tar::Archive;
+    const MAX_TREE_BYTES: u64 = 1024 * 1024 * 1024; // 1 GiB across the tree
+    let mut total: u64 = 0;
+    let mut archive = Archive::new(GzDecoder::new(std::io::Cursor::new(data)));
+    for entry in archive.entries().map_err(|e| format!("Tar error: {}", e))? {
+        let mut entry = entry.map_err(|e| format!("Tar entry error: {}", e))?;
+        let path = entry
+            .path()
+            .map_err(|e| format!("Tar path error: {}", e))?
+            .to_path_buf();
+        // Reject traversal/absolute components (tar-slip guard).
+        if path.components().any(|c| {
+            matches!(
+                c,
+                std::path::Component::ParentDir
+                    | std::path::Component::RootDir
+                    | std::path::Component::Prefix(_)
+            )
+        }) {
+            continue;
+        }
+        let out = dest_root.join(&path);
+        let entry_type = entry.header().entry_type();
+        if entry_type.is_dir() {
+            std::fs::create_dir_all(&out)
+                .map_err(|e| format!("Failed to create {}: {}", out.display(), e))?;
+            continue;
+        }
+        if !entry_type.is_file() {
+            continue; // no symlinks/devices from the archive (hardening)
+        }
+        if let Some(parent) = out.parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
+        }
+        let mut buf = Vec::new();
+        let mut limited =
+            std::io::Read::take(&mut entry, MAX_EXTRACTED_FILE_BYTES.saturating_add(1));
+        std::io::copy(&mut limited, &mut buf).map_err(|e| format!("Tar read error: {}", e))?;
+        if buf.len() as u64 > MAX_EXTRACTED_FILE_BYTES {
+            return Err(format!(
+                "'{}' in archive {} exceeds the {} byte extraction limit",
+                path.display(),
+                asset,
+                MAX_EXTRACTED_FILE_BYTES
+            ));
+        }
+        total = total.saturating_add(buf.len() as u64);
+        if total > MAX_TREE_BYTES {
+            return Err(format!(
+                "Archive {} exceeds the {} byte total extraction limit",
+                asset, MAX_TREE_BYTES
+            ));
+        }
+        std::fs::write(&out, &buf).map_err(|e| format!("Failed to write {}: {}", out.display(), e))?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(mode) = entry.header().mode() {
+                let _ = std::fs::set_permissions(&out, std::fs::Permissions::from_mode(mode & 0o777));
+            }
+        }
+    }
+
+    let bin_target = dest_root.join(bin_rel);
+    if !bin_target.is_file() {
+        return Err(format!(
+            "'{}' not found in archive {} after extraction",
+            bin_rel, asset
+        ));
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bin_target, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| format!("Failed to chmod {}: {}", bin_target.display(), e))?;
+    }
+
+    let link = agents_bin_dir().join(bin_name);
+    if link.exists() || link.symlink_metadata().is_ok() {
+        let _ = std::fs::remove_file(&link);
+    }
+    #[cfg(unix)]
+    std::os::unix::fs::symlink(&bin_target, &link)
+        .map_err(|e| format!("Failed to link {}: {}", link.display(), e))?;
+    #[cfg(not(unix))]
+    return Err("Tree installs are not supported on this platform".to_string());
+    #[cfg(unix)]
+    Ok(())
 }
 
 async fn do_github_binary_install(
@@ -1083,10 +1297,17 @@ async fn do_github_binary_install(
     config: &GithubBinaryAgentConfig,
 ) -> Result<Option<String>, String> {
     let (os, arch) = detect_platform()?;
-    let asset = goose_asset_name(os, arch)?;
+    let (asset, layout) = github_binary_asset(agent_id, os, arch)?;
+    let asset = asset.as_str();
 
-    // Resolve the latest version and enforce the minimum pin before downloading.
-    let version = fetch_github_latest_release(config.repo).await?;
+    // Resolve the latest release, enforce the minimum pin, and clamp to the
+    // exact-tested ceiling when one is configured (fast-moving upstreams: a
+    // newer release than the pin is installed AT the pin, never past it).
+    let latest = fetch_github_latest_release(config.repo).await?;
+    let version = match config.max_version {
+        Some(max) if version_at_least(&latest, max) && latest != max => max.to_string(),
+        _ => latest,
+    };
     if !version_at_least(&version, config.min_version) {
         return Err(format!(
             "{} v{} is below the minimum supported version v{}",
@@ -1142,12 +1363,11 @@ async fn do_github_binary_install(
     .map_err(|e| format!("{} download failed: {}", agent_id, e))?;
 
     // Integrity (audit batch 3 fix #6b): always compute + record the archive
-    // digest; verify it against a release checksum asset when one is
-    // configured (see GITHUB_BINARY_CHECKSUM_ASSET — currently None because
-    // Goose publishes no stable checksum asset we could rely on without
-    // guessing, so the digest is logged as an audit trail instead).
+    // digest; when the agent's config names a checksum asset, verification is
+    // a HARD gate (pi, notesage-pi-acp) — otherwise digest-record-only (Goose,
+    // which publishes no stable checksum asset).
     let digest = sha256_hex(&data);
-    if let Some(checksum_asset) = GITHUB_BINARY_CHECKSUM_ASSET {
+    if let Some(checksum_asset) = config.checksum_asset {
         let checksum_url = format!(
             "https://github.com/{}/releases/download/v{}/{}",
             config.repo, version, checksum_asset
@@ -1191,9 +1411,17 @@ async fn do_github_binary_install(
         },
     );
 
-    extract_and_install_binary(asset, config.bin_name, &data)?;
+    match &layout {
+        ArchiveInstall::SingleBinary { archive_basename } => {
+            extract_named_binary(asset, archive_basename, config.bin_name, &data)?;
+        }
+        ArchiveInstall::Tree { bin_rel } => {
+            extract_tree_and_install(agent_id, config.bin_name, bin_rel, asset, &data)?;
+        }
+    }
 
-    // Verify the binary is present after extraction.
+    // Verify the binary is present after extraction (follows the symlink for
+    // tree installs).
     let bin_path = agents_bin_dir().join(config.bin_name);
     if !bin_path.exists() {
         return Err(format!(
@@ -1356,6 +1584,143 @@ mod tests {
         assert!(github_binary_agent_config("not-a-real-agent").is_none());
     }
 
+    // pi Local Agent preset (PRD 2026-07-29-pi-local-agent-preset): lock the
+    // repo, checksum asset, and — critically — the EXACT-tested version pin.
+    // pi ships multiple 0.x releases a week; the bridge + shipped extensions
+    // are verified against this version's RPC/extension surface only. Moving
+    // the pin is a deliberate release action (re-run the PI_BINARY-gated
+    // integration suite), never a drive-by edit.
+    #[test]
+    fn pi_installs_via_github_binary_with_exact_pin_and_checksum() {
+        let gh = github_binary_agent_config("pi").expect("pi must be a GitHub-binary agent");
+        assert_eq!(gh.repo, "earendil-works/pi");
+        assert_eq!(gh.bin_name, "pi");
+        assert_eq!(gh.min_version, "0.80.6");
+        assert_eq!(gh.max_version, Some("0.80.6"), "pi keeps an exact-tested pin");
+        assert_eq!(gh.checksum_asset, Some("SHA256SUMS"), "pi installs are checksum-verified");
+        assert!(npm_agent_config("pi").is_none());
+    }
+
+    #[test]
+    fn bridge_installs_from_notesage_releases_with_checksum() {
+        let gh = github_binary_agent_config("notesage-pi-acp")
+            .expect("bridge must be a GitHub-binary agent");
+        assert_eq!(gh.repo, "PeterBlenessy/notesage");
+        assert_eq!(gh.bin_name, "notesage-pi-acp");
+        // Scoped checksum asset name — matches bridges/pi-acp/scripts/build-binaries.sh.
+        assert_eq!(gh.checksum_asset, Some("notesage-pi-acp-SHA256SUMS"));
+        assert!(npm_agent_config("notesage-pi-acp").is_none());
+    }
+
+    #[test]
+    fn pi_asset_names_use_pi_platform_convention_not_triples() {
+        // Verified against earendil-works/pi v0.80.6 release assets.
+        let (asset, layout) = github_binary_asset("pi", "darwin", "arm64").unwrap();
+        assert_eq!(asset, "pi-darwin-arm64.tar.gz");
+        assert!(matches!(layout, ArchiveInstall::Tree { bin_rel: "pi/pi" }));
+        let (asset, _) = github_binary_asset("pi", "linux", "x64").unwrap();
+        assert_eq!(asset, "pi-linux-x64.tar.gz");
+        // Windows assets exist upstream but the preset doesn't support them.
+        assert!(github_binary_asset("pi", "windows", "x64").is_err());
+    }
+
+    #[test]
+    fn bridge_asset_names_use_rust_triples_with_per_platform_basename() {
+        let (asset, layout) = github_binary_asset("notesage-pi-acp", "darwin", "arm64").unwrap();
+        assert_eq!(asset, "notesage-pi-acp-aarch64-apple-darwin.tar.gz");
+        match layout {
+            ArchiveInstall::SingleBinary { archive_basename } => {
+                assert_eq!(archive_basename, "notesage-pi-acp-aarch64-apple-darwin");
+            }
+            _ => panic!("bridge must be a single-binary install"),
+        }
+    }
+
+    #[test]
+    fn goose_asset_resolution_unchanged_by_dispatcher() {
+        let (asset, layout) = github_binary_asset("goose", "darwin", "arm64").unwrap();
+        assert_eq!(asset, "goose-aarch64-apple-darwin.tar.gz");
+        assert!(matches!(
+            layout,
+            ArchiveInstall::SingleBinary { ref archive_basename } if archive_basename == "goose"
+        ));
+    }
+
+    #[test]
+    fn goose_remains_digest_record_only_with_no_ceiling() {
+        let gh = github_binary_agent_config("goose").unwrap();
+        assert_eq!(gh.checksum_asset, None);
+        assert_eq!(gh.max_version, None);
+    }
+
+    #[test]
+    fn tree_install_extracts_colocated_files_and_links_binary() {
+        use flate2::write::GzEncoder;
+        use flate2::Compression;
+        // Build an in-memory pi-style folder tarball: pi/pi (exec), pi/x.wasm,
+        // plus a traversal entry that must be skipped.
+        let mut builder = tar::Builder::new(GzEncoder::new(Vec::new(), Compression::default()));
+        let add = |b: &mut tar::Builder<GzEncoder<Vec<u8>>>, path: &str, data: &[u8], mode: u32| {
+            let mut h = tar::Header::new_gnu();
+            h.set_size(data.len() as u64);
+            h.set_mode(mode);
+            h.set_cksum();
+            b.append_data(&mut h, path, data).unwrap();
+        };
+        add(&mut builder, "pi/pi", b"#!/bin/sh\necho pi\n", 0o755);
+        add(&mut builder, "pi/photon.wasm", b"wasmbytes", 0o644);
+        add(&mut builder, "../evil.txt", b"nope", 0o644);
+        let data = builder.into_inner().unwrap().finish().unwrap();
+
+        // Redirect HOME so agents_* dirs land in a temp sandbox.
+        let tmp = std::env::temp_dir().join(format!("ns-tree-install-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        let old_home = std::env::var_os("HOME");
+        std::env::set_var("HOME", &tmp);
+
+        let result = extract_tree_and_install("pi", "pi", "pi/pi", "pi-linux-x64.tar.gz", &data);
+
+        let dist = agents_dist_dir().join("pi");
+        let link = agents_bin_dir().join("pi");
+        let checks = result.and_then(|_| {
+            if !dist.join("pi/pi").is_file() || !dist.join("pi/photon.wasm").is_file() {
+                return Err("co-located files missing".into());
+            }
+            if dist.join("../evil.txt").exists() || tmp.join("evil.txt").exists() {
+                return Err("tar-slip entry escaped".into());
+            }
+            let target = std::fs::read_link(&link).map_err(|e| e.to_string())?;
+            if target != dist.join("pi/pi") {
+                return Err(format!("symlink points at {}", target.display()));
+            }
+            Ok(())
+        });
+
+        // Restore HOME before asserting so a failure can't poison other tests.
+        match old_home {
+            Some(h) => std::env::set_var("HOME", h),
+            None => std::env::remove_var("HOME"),
+        }
+        let _ = std::fs::remove_dir_all(&tmp);
+        checks.expect("tree install must extract, guard traversal, and link the binary");
+    }
+
+    #[test]
+    fn version_clamp_installs_at_the_pin_never_past_it() {
+        // Mirrors the clamp logic in do_github_binary_install.
+        let clamp = |latest: &str, max: Option<&str>| -> String {
+            match max {
+                Some(m) if version_at_least(latest, m) && latest != m => m.to_string(),
+                _ => latest.to_string(),
+            }
+        };
+        assert_eq!(clamp("0.81.0", Some("0.80.6")), "0.80.6"); // newer upstream → pin
+        assert_eq!(clamp("0.80.6", Some("0.80.6")), "0.80.6"); // at the pin
+        assert_eq!(clamp("0.80.5", Some("0.80.6")), "0.80.5"); // below the pin (min gate catches too-old)
+        assert_eq!(clamp("2.0.0", None), "2.0.0"); // no ceiling (goose)
+    }
+
     #[test]
     fn goose_asset_name_uses_rust_target_triples() {
         // macOS assets use the Rust target-triple naming + .tar.gz, NOT the
@@ -1462,14 +1827,14 @@ deadbeef  short-hash.tar.gz
 
     #[test]
     fn extract_and_install_rejects_unknown_format() {
-        assert!(extract_and_install_binary("thing.rar", "goose", b"data").is_err());
+        assert!(extract_named_binary("thing.rar", "goose", "goose", b"data").is_err());
     }
 
     #[test]
     fn unknown_agent_install_error_lists_goose() {
         // do_agent_install's error message must advertise goose as supported.
         let msg = format!(
-            "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, goose",
+            "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, goose, pi, notesage-pi-acp",
             "bogus"
         );
         assert!(msg.contains("goose"));
@@ -1486,6 +1851,12 @@ pub struct AgentUpdateInfo {
     pub current_version: String,
     pub latest_version: String,
     pub repo: String,
+    /// True when upstream is newer than the exact-tested `max_version` ceiling:
+    /// the update is NOT installable until a Notesage release moves the pin
+    /// (UI renders "held back", task #21). Additive — npm agents are always
+    /// `false`.
+    #[serde(default)]
+    pub held_back: bool,
 }
 
 #[tauri::command]
@@ -1530,11 +1901,17 @@ pub async fn agent_check_updates(force: Option<bool>) -> Result<Vec<AgentUpdateI
         match latest_result {
             Ok(latest) => {
                 if latest != entry.version {
+                    // Past the exact-tested ceiling → report as held back, not
+                    // installable (agent_update would clamp to the pin anyway).
+                    let held_back = github_binary_agent_config(agent_id)
+                        .and_then(|c| c.max_version)
+                        .is_some_and(|max| version_at_least(&latest, max) && latest != max);
                     updates.push(AgentUpdateInfo {
                         agent_id: agent_id.clone(),
                         current_version: entry.version.clone(),
                         latest_version: latest,
                         repo,
+                        held_back,
                     });
                 }
             }
@@ -1580,14 +1957,22 @@ fn is_managed_agent_id(agent_id: &str) -> bool {
 pub async fn agent_uninstall(agent_id: String) -> Result<(), String> {
     if !is_managed_agent_id(&agent_id) {
         return Err(format!(
-            "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, goose",
+            "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, goose, pi, notesage-pi-acp",
             agent_id
         ));
     }
     let bin_path = agents_bin_dir().join(&agent_id);
-    if bin_path.exists() {
+    // `exists()` follows symlinks (false for a dangling tree-install link) —
+    // check the link itself so uninstall always clears it.
+    if bin_path.symlink_metadata().is_ok() {
         std::fs::remove_file(&bin_path)
             .map_err(|e| format!("Failed to remove {}: {}", bin_path.display(), e))?;
+    }
+    // Tree installs (pi) keep their archive tree under dist/<agent_id>.
+    let dist = agents_dist_dir().join(&agent_id);
+    if dist.exists() {
+        std::fs::remove_dir_all(&dist)
+            .map_err(|e| format!("Failed to remove {}: {}", dist.display(), e))?;
     }
 
     let mut versions = read_versions();
