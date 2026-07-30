@@ -9,7 +9,8 @@
 // The pi child inherits this process's env (PI_OFFLINE, PI_CODING_AGENT_DIR,
 // provider config all come from the Notesage spawn env, task #16).
 
-export const BRIDGE_VERSION = "0.1.0";
+export { BRIDGE_VERSION } from "./version";
+import { BRIDGE_VERSION } from "./version";
 
 export interface BridgeOptions {
   /** Absolute path to the pi executable (inside its extracted release folder). */

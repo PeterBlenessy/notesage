@@ -39,6 +39,14 @@ function handle(cmd) {
   if (process.env.FAKE_PI_STRAY_STDOUT === '1') console.log('stray diagnostic line');
   switch (cmd.type) {
     case 'prompt': {
+      if (process.env.FAKE_PI_HANG_TURN === '1') {
+        // Turn that never settles on its own — abort resolves it (models a
+        // long-running real turn for the cancel test).
+        send({ type: 'response', command: 'prompt', success: true, ...(cmd.id ? { id: cmd.id } : {}) });
+        send({ type: 'agent_start' });
+        hangingTurn = true;
+        break;
+      }
       send({ type: 'response', command: 'prompt', success: true, ...(cmd.id ? { id: cmd.id } : {}) });
       send({ type: 'agent_start' });
       send({ type: 'turn_start' });
@@ -53,11 +61,45 @@ function handle(cmd) {
     }
     case 'abort':
       send({ type: 'response', command: 'abort', success: true, ...(cmd.id ? { id: cmd.id } : {}) });
+      if (hangingTurn) {
+        hangingTurn = false;
+        send({ type: 'agent_end', messages: [] });
+        send({ type: 'agent_settled' });
+      }
+      break;
+    case 'new_session':
+      sessionCounter++;
+      currentSession = `/fake/sessions/s${sessionCounter}.jsonl`;
+      send({ type: 'response', command: 'new_session', success: true, data: { cancelled: false }, ...(cmd.id ? { id: cmd.id } : {}) });
+      break;
+    case 'get_session_stats':
+      send({
+        type: 'response', command: 'get_session_stats', success: true,
+        data: { sessionFile: currentSession, sessionId: `id-${sessionCounter}`, userMessages: 0, assistantMessages: 0 },
+        ...(cmd.id ? { id: cmd.id } : {}),
+      });
+      break;
+    case 'switch_session':
+      if (typeof cmd.sessionPath === 'string') {
+        currentSession = cmd.sessionPath;
+        send({ type: 'response', command: 'switch_session', success: true, data: { cancelled: false }, ...(cmd.id ? { id: cmd.id } : {}) });
+      } else {
+        send({ type: 'response', command: 'switch_session', success: false, error: 'missing sessionPath', ...(cmd.id ? { id: cmd.id } : {}) });
+      }
+      break;
+    case 'clone':
+      sessionCounter++;
+      currentSession = `/fake/sessions/s${sessionCounter}.jsonl`;
+      send({ type: 'response', command: 'clone', success: true, data: { cancelled: false }, ...(cmd.id ? { id: cmd.id } : {}) });
       break;
     default:
       send({ type: 'response', command: cmd.type, success: true, ...(cmd.id ? { id: cmd.id } : {}) });
   }
 }
+
+let sessionCounter = 0;
+let currentSession = '/fake/sessions/s0.jsonl';
+let hangingTurn = false;
 
 // Keep alive until stdin closes (mirrors pi: exits when the host goes away).
 process.stdin.on('end', () => process.exit(0));
