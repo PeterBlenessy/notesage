@@ -105,12 +105,12 @@
 **Description:** `agent_manager.rs`: make the checksum asset per-agent (`GithubBinaryAgentConfig.checksum_asset: Option<&'static str>`; pi/bridge `Some("SHA256SUMS")` → hard-fail verify before extraction, Goose stays `None` digest-record-only) and add `max_version: Option<&'static str>` enforced in install AND `agent_check_updates` ("held back" state). Registry entries for `pi` (`earendil-works/pi`, folder-tarball extraction — multiple files co-located, unlike Goose's single binary) and `notesage-pi-acp` (Notesage releases). Lock tests mirroring `goose_installs_via_github_binary`: repo, asset names per platform, checksum asset, pin range, tamper → explicit failure. Goose install tests stay green.
 **Complexity:** L **Category:** backend **Dependencies:** #4, #12 **Files:** `src-tauri/src/commands/agent_manager.rs`
 
-### #16 — `local_agent_write_config` pi variant
+### #16 — `local_agent_write_config` pi variant ✅ (flat layout per spike #1; extensions embedded via include_str! from the bridge package; env per spike #2 recipe incl. NO_PROXY defense-in-depth; piArgs returned for the bridge `--` passthrough)
 
 **Description:** Add the `agent: Option<String>` discriminator (`None` → goose, back-compat). pi variant writes under `~/.notesage/agents/pi/`: `agent/models.json` (provider `local`, `baseUrl: http://localhost:<port>/v1`, `api: "openai-completions"`, dummy key, active catalog model), `agent/settings.json` (`enableInstallTelemetry: false`, skill paths → Notesage skill dirs), both extensions from embedded assets (`include_str!`). Returned env per spike-#2 recipe: `PI_OFFLINE=1`, `PI_CODING_AGENT_DIR`, `NO_PROXY` as validated. Same `<port>:<modelId>` config key. Unit tests mirror the Goose suite: port/model substitution, isolation under the notesage subtree, telemetry off, extension files present, regeneration idempotent.
 **Complexity:** M **Category:** backend **Dependencies:** #4, #13, #14 **Files:** `src-tauri/src/commands/local_agent.rs`
 
-### #17 — Sandbox regression-lock for the pi preset ⚠️ shared infra
+### #17 — Sandbox regression-lock for the pi preset ⚠️ shared infra ✅ (zero Bucket C grants for `pi`/`notesage-pi-acp` basenames locked by test; exact-{proxy, llama} port lock already agent-agnostic; sandbox.rs production code unchanged as predicted)
 
 **Description:** Extend the Seatbelt tests: the pi-preset profile allows exactly {proxy port, llama-server port} on localhost and nothing else; the whole pi footprint resolves under the `.notesage` write-allow (no new Bucket C rows). Reuse/extend the Goose regression-lock rather than duplicating. `sandbox.rs` changes expected to be nil-to-minimal — the test IS the deliverable.
 **Complexity:** S **Category:** backend **Dependencies:** #16 **Files:** `src-tauri/src/commands/sandbox.rs` (tests)

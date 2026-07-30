@@ -91,32 +91,126 @@ fn build_goose_env(port: u16, model_id: &str) -> HashMap<String, String> {
     env
 }
 
+/// Base directory for the pi preset's isolated config tree. pi's
+/// `PI_CODING_AGENT_DIR` layout is FLAT (models.json, settings.json,
+/// extensions/ directly under the dir — verified in spike #1), and everything
+/// lives inside the `.notesage` Seatbelt write-allow.
+fn pi_base_dir() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_default()
+        .join(".notesage")
+        .join("agents")
+        .join("pi")
+}
+
+/// The two Notesage-shipped pi extensions, embedded at compile time from the
+/// bridge package and (re)written on every config generation so extension
+/// updates ride app updates and a user's own pi install is never touched.
+const PI_EXT_PERMISSION_GATE: &str =
+    include_str!("../../../bridges/pi-acp/extensions/permission-gate.ts");
+const PI_EXT_MCP_TOOLS: &str = include_str!("../../../bridges/pi-acp/extensions/mcp-tools.ts");
+
+/// pi `models.json` content for the live bundled server. Dummy key — pi's
+/// custom-provider docs prescribe a placeholder for keyless local servers;
+/// the bundled llama-server ignores Authorization (verified: `Bearer dummy`
+/// arrives and is ignored, spike #1).
+fn pi_models_json(port: u16, model_id: &str, context_window: u32) -> serde_json::Value {
+    serde_json::json!({
+        "providers": {
+            "local": {
+                "name": "Notesage Local AI",
+                "baseUrl": format!("http://localhost:{}/v1", port),
+                "api": "openai-completions",
+                "apiKey": "dummy",
+                "models": [
+                    {
+                        "id": model_id,
+                        "name": model_id,
+                        "contextWindow": context_window,
+                        "maxTokens": 4096
+                    }
+                ]
+            }
+        }
+    })
+}
+
+/// pi `settings.json`: default provider/model (belt-and-braces with the
+/// bridge's `-- --provider local --model <id>` args) and install telemetry
+/// off (PI_OFFLINE=1 already disables all startup network; this pins the
+/// setting so a future env regression can't silently re-enable it).
+fn pi_settings_json(model_id: &str) -> serde_json::Value {
+    serde_json::json!({
+        "defaultProvider": "local",
+        "defaultModel": model_id,
+        "enableInstallTelemetry": false
+    })
+}
+
+/// Env for the BRIDGE spawn (inherited by pi): offline hard-off for startup
+/// network, the isolated flat config dir, and NO_PROXY as defense-in-depth
+/// (spike #2 pre-answer: pi ignores HTTP(S)_PROXY entirely, but the injected
+/// proxy vars cost nothing to neutralize explicitly).
+fn build_pi_env() -> HashMap<String, String> {
+    let base = pi_base_dir();
+    let mut env = HashMap::new();
+    env.insert("PI_OFFLINE".to_string(), "1".to_string());
+    env.insert(
+        "PI_CODING_AGENT_DIR".to_string(),
+        base.to_string_lossy().to_string(),
+    );
+    env.insert("NO_PROXY".to_string(), "localhost,127.0.0.1".to_string());
+    env.insert("no_proxy".to_string(), "localhost,127.0.0.1".to_string());
+    env
+}
+
+/// Args the frontend appends to the bridge spawn (`notesage-pi-acp --pi-bin
+/// <pi> -- <these>`): provider/model selection against the live server plus a
+/// sessions dir inside the isolated tree. The `--pi-bin` half is resolved
+/// frontend-side from the managed install.
+fn build_pi_args(model_id: &str) -> Vec<String> {
+    vec![
+        "--provider".to_string(),
+        "local".to_string(),
+        "--model".to_string(),
+        model_id.to_string(),
+        "--session-dir".to_string(),
+        pi_base_dir().join("sessions").to_string_lossy().to_string(),
+    ]
+}
+
 /// Result of generating the Local Agent config.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalAgentConfig {
-    /// Base directory of the Goose preset's isolated XDG tree. No config file is
-    /// written for Goose — kept for API compatibility with the frontend type.
+    /// Which preset engine this config is for (`goose` | `pi`).
+    pub agent: String,
+    /// Base directory of the preset's isolated tree (Goose: XDG root, no file
+    /// written; pi: flat PI_CODING_AGENT_DIR with generated files).
     pub config_path: String,
-    /// Env vars the spawn must inject to point Goose at the bundled server and
-    /// isolate its config tree. Secrets are never included (the only key is a
-    /// dummy the local server ignores) — this is path/provider config only.
+    /// Env vars the spawn must inject. Secrets are never included (the only
+    /// key is a dummy the local server ignores) — path/provider config only.
     pub env: HashMap<String, String>,
     /// Respawn trigger key (`<port>:<model-id>`) — the frontend stores this and
     /// regenerates + respawns when it changes (#10).
     pub config_key: String,
-    /// The bundled server port the env points at.
+    /// The bundled server port the config points at.
     pub port: u16,
-    /// The model id wired into the env (`GOOSE_MODEL`).
+    /// The model id wired in.
     pub model_id: String,
+    /// pi only: args for the bridge after `--` (provider/model/session-dir).
+    /// Empty for Goose.
+    pub pi_args: Vec<String>,
 }
 
-/// Generate the Goose env from the LIVE bundled server state. No file is
-/// written — Goose is configured purely via the returned `env` map. The XDG
-/// base dirs ARE created so Goose can write into them under the sandbox.
+/// Generate the Local Agent config for the requested engine from the LIVE
+/// bundled server state. `agent` is `None`/`"goose"` (env-only, back-compat)
+/// or `"pi"` (writes the flat PI_CODING_AGENT_DIR tree: models.json,
+/// settings.json, the two shipped extensions, sessions dir).
 #[tauri::command]
 pub async fn local_agent_write_config(
     state: State<'_, LocalInferenceState>,
+    agent: Option<String>,
 ) -> Result<LocalAgentConfig, String> {
     let port = state
         .current_port()
@@ -127,22 +221,72 @@ pub async fn local_agent_write_config(
         .await
         .ok_or_else(|| "Local AI server has no active model".to_string())?;
 
-    let base = local_agent_base_dir();
-    // Create the four XDG dirs so Goose can write into them under the Seatbelt
-    // sandbox (they fall under the `.notesage` write-allow). No config file.
-    for sub in ["config", "data", "state", "cache"] {
-        let dir = base.join(sub);
-        std::fs::create_dir_all(&dir)
-            .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
-    }
+    match agent.as_deref().unwrap_or("goose") {
+        "goose" => {
+            let base = local_agent_base_dir();
+            // Create the four XDG dirs so Goose can write into them under the
+            // Seatbelt sandbox (the `.notesage` write-allow). No config file.
+            for sub in ["config", "data", "state", "cache"] {
+                let dir = base.join(sub);
+                std::fs::create_dir_all(&dir)
+                    .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
+            }
+            Ok(LocalAgentConfig {
+                agent: "goose".to_string(),
+                config_path: base.to_string_lossy().to_string(),
+                env: build_goose_env(port, &model_id),
+                config_key: config_key(port, &model_id),
+                port,
+                model_id,
+                pi_args: Vec::new(),
+            })
+        }
+        "pi" => {
+            let context_window = state.current_context().await.unwrap_or(4096);
+            let base = pi_base_dir();
+            for sub in ["extensions", "sessions"] {
+                let dir = base.join(sub);
+                std::fs::create_dir_all(&dir)
+                    .map_err(|e| format!("Failed to create {}: {}", dir.display(), e))?;
+            }
+            let write = |name: &str, content: String| -> Result<(), String> {
+                let path = base.join(name);
+                std::fs::write(&path, content)
+                    .map_err(|e| format!("Failed to write {}: {}", path.display(), e))
+            };
+            write(
+                "models.json",
+                serde_json::to_string_pretty(&pi_models_json(port, &model_id, context_window))
+                    .map_err(|e| e.to_string())?,
+            )?;
+            write(
+                "settings.json",
+                serde_json::to_string_pretty(&pi_settings_json(&model_id))
+                    .map_err(|e| e.to_string())?,
+            )?;
+            // (Re)write the shipped extensions every generation — versioned
+            // with the app, never user-edited in place.
+            write(
+                &format!("extensions{}permission-gate.ts", std::path::MAIN_SEPARATOR),
+                PI_EXT_PERMISSION_GATE.to_string(),
+            )?;
+            write(
+                &format!("extensions{}mcp-tools.ts", std::path::MAIN_SEPARATOR),
+                PI_EXT_MCP_TOOLS.to_string(),
+            )?;
 
-    Ok(LocalAgentConfig {
-        config_path: base.to_string_lossy().to_string(),
-        env: build_goose_env(port, &model_id),
-        config_key: config_key(port, &model_id),
-        port,
-        model_id,
-    })
+            Ok(LocalAgentConfig {
+                agent: "pi".to_string(),
+                config_path: base.to_string_lossy().to_string(),
+                env: build_pi_env(),
+                config_key: config_key(port, &model_id),
+                port,
+                model_id: model_id.clone(),
+                pi_args: build_pi_args(&model_id),
+            })
+        }
+        other => Err(format!("Unknown local agent preset: {}", other)),
+    }
 }
 
 #[cfg(test)]
@@ -218,5 +362,63 @@ mod tests {
         assert_eq!(config_key(8090, "m"), "8090:m");
         assert_ne!(config_key(8090, "m"), config_key(8091, "m"));
         assert_ne!(config_key(8090, "m"), config_key(8090, "n"));
+    }
+
+    // --- pi preset (PRD 2026-07-29-pi-local-agent-preset, task #16) ---
+
+    #[test]
+    fn pi_models_json_targets_live_server_with_dummy_key() {
+        let v = pi_models_json(8137, "qwen3-8b", 16384);
+        let p = &v["providers"]["local"];
+        assert_eq!(p["baseUrl"], "http://localhost:8137/v1");
+        assert_eq!(p["api"], "openai-completions");
+        assert_eq!(p["apiKey"], "dummy");
+        assert_eq!(p["models"][0]["id"], "qwen3-8b");
+        assert_eq!(p["models"][0]["contextWindow"], 16384);
+        // Port flows through on regeneration.
+        assert_eq!(
+            pi_models_json(8190, "m", 4096)["providers"]["local"]["baseUrl"],
+            "http://localhost:8190/v1"
+        );
+    }
+
+    #[test]
+    fn pi_settings_pin_defaults_and_disable_install_telemetry() {
+        let v = pi_settings_json("qwen3-8b");
+        assert_eq!(v["defaultProvider"], "local");
+        assert_eq!(v["defaultModel"], "qwen3-8b");
+        assert_eq!(v["enableInstallTelemetry"], false);
+    }
+
+    #[test]
+    fn pi_env_is_offline_and_isolated_under_notesage_tree() {
+        let env = build_pi_env();
+        assert_eq!(env.get("PI_OFFLINE").map(String::as_str), Some("1"));
+        let base = pi_base_dir().to_string_lossy().to_string();
+        assert_eq!(env.get("PI_CODING_AGENT_DIR"), Some(&base));
+        assert!(base.contains(".notesage"), "pi tree must live under .notesage");
+        // Defense-in-depth: spike #2 pre-answered that pi ignores HTTP(S)_PROXY,
+        // but the injected proxy vars are neutralized for localhost anyway.
+        assert_eq!(env.get("NO_PROXY").map(String::as_str), Some("localhost,127.0.0.1"));
+        assert_eq!(env.get("no_proxy").map(String::as_str), Some("localhost,127.0.0.1"));
+    }
+
+    #[test]
+    fn pi_args_select_provider_model_and_isolated_sessions_dir() {
+        let args = build_pi_args("qwen3-8b");
+        assert_eq!(&args[0..4], &["--provider", "local", "--model", "qwen3-8b"]);
+        assert_eq!(args[4], "--session-dir");
+        assert!(args[5].starts_with(&pi_base_dir().to_string_lossy().to_string()));
+    }
+
+    #[test]
+    fn shipped_pi_extensions_are_embedded_from_the_bridge_package() {
+        // Regression lock on the include_str! wiring: a moved/renamed
+        // extension file breaks the build, and the embedded bodies must be the
+        // real implementations, not stubs.
+        assert!(PI_EXT_PERMISSION_GATE.contains("__NOTESAGE_PERMISSION__"));
+        assert!(PI_EXT_PERMISSION_GATE.contains("tool_call"));
+        assert!(PI_EXT_MCP_TOOLS.contains("NOTESAGE_MCP_SERVERS"));
+        assert!(PI_EXT_MCP_TOOLS.contains("tools/call"));
     }
 }

@@ -288,6 +288,13 @@ impl LocalInferenceState {
         self.active_model.lock().await.clone()
     }
 
+    /// The context length the running server was started with, or `None`.
+    /// Consumed by the pi Local Agent config (`local_agent.rs`) so pi's
+    /// compaction thresholds match the real window.
+    pub async fn current_context(&self) -> Option<u32> {
+        *self.active_context.lock().await
+    }
+
     /// Get models directory path.
     pub fn models_dir(&self) -> &std::path::Path {
         &self.models_dir
