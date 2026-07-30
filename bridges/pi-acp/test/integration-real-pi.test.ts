@@ -9,10 +9,16 @@
 // PiProcess, asserting the event lifecycle recorded in spike #1.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createServer, type Server } from "node:http";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import type { RequestPermissionResponse } from "@agentclientprotocol/sdk";
+import { PiAcpAgent } from "../src/acp-server";
 import { PiProcess } from "../src/pi-process";
+import { PiRpc } from "../src/pi-rpc";
+
+const EXT_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "extensions");
 
 const PI_BINARY = process.env.PI_BINARY;
 const d = describe.skipIf(!PI_BINARY);
@@ -34,7 +40,17 @@ function startStub(): Promise<void> {
       res.writeHead(200, { "content-type": "text/event-stream" });
       const send = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);
       const base = { id: "c1", object: "chat.completion.chunk", created: 1, model: "stub-model" };
-      send({ ...base, choices: [{ index: 0, delta: { role: "assistant", content: "Hello from stub." }, finish_reason: "stop" }] });
+      // Tool-call turn: when the user asks to write AND there's no tool
+      // result yet in this transcript, emit a `write` tool call; else text.
+      const wantsWrite = body.includes("WRITE_THE_FILE") && !body.includes('"role":"tool"');
+      if (wantsWrite) {
+        const target = join(piHome, "tool-out.txt");
+        send({ ...base, choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "call_int_1", type: "function", function: { name: "write", arguments: "" } }] }, finish_reason: null }] });
+        send({ ...base, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ path: target, content: "written by real pi" }) } }] }, finish_reason: null }] });
+        send({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] });
+      } else {
+        send({ ...base, choices: [{ index: 0, delta: { role: "assistant", content: "Hello from stub." }, finish_reason: "stop" }] });
+      }
       res.write("data: [DONE]\n\n");
       res.end();
     });
@@ -103,4 +119,48 @@ d("real pi integration", () => {
     await pi.stop();
     expect(pi.isAlive).toBe(false);
   }, 40_000);
+
+  function makeAgent(decide: () => Promise<RequestPermissionResponse>): PiAcpAgent {
+    return new PiAcpAgent({
+      spawnPi: (cwd, onEvent) =>
+        new PiRpc({
+          piBin: PI_BINARY!,
+          args: ["--provider", "local", "--model", "stub-model", "--session-dir", join(piHome, "sessions")],
+          cwd,
+          env: { ...process.env, PI_OFFLINE: "1", PI_CODING_AGENT_DIR: piHome, NO_COLOR: "1" },
+          onEvent,
+        }),
+      requestPermission: (_sid, _ask) => decide(),
+    });
+  }
+
+  it("REAL permission-gate extension: allow executes the write, deny blocks it", async () => {
+    // Install the shipped gate into the real pi home (what task #16 will do).
+    mkdirSync(join(piHome, "extensions"), { recursive: true });
+    copyFileSync(join(EXT_DIR, "permission-gate.ts"), join(piHome, "extensions", "permission-gate.ts"));
+    const target = join(piHome, "tool-out.txt");
+
+    // Allow path.
+    const allowAgent = makeAgent(async () => ({ outcome: { outcome: "selected", optionId: "allow_once" } }));
+    try {
+      const { sessionId } = await allowAgent.newSession({ cwd: piHome, mcpServers: [] });
+      const res = await allowAgent.prompt({ sessionId, prompt: [{ type: "text", text: "WRITE_THE_FILE please" }] });
+      expect(res.stopReason).toBe("end_turn");
+      expect(existsSync(target)).toBe(true);
+    } finally {
+      await allowAgent.shutdown();
+    }
+
+    // Deny path (fresh pi process + fresh target).
+    rmSync(target, { force: true });
+    const denyAgent = makeAgent(async () => ({ outcome: { outcome: "selected", optionId: "reject_once" } }));
+    try {
+      const { sessionId } = await denyAgent.newSession({ cwd: piHome, mcpServers: [] });
+      const res = await denyAgent.prompt({ sessionId, prompt: [{ type: "text", text: "WRITE_THE_FILE please" }] });
+      expect(res.stopReason).toBe("end_turn"); // denied tool, turn still completes
+      expect(existsSync(target)).toBe(false);
+    } finally {
+      await denyAgent.shutdown();
+    }
+  }, 90_000);
 });

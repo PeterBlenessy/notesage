@@ -66,7 +66,7 @@
 **Description:** `message_update` `text_delta`/`thinking_delta` → `agent_message_chunk`/`agent_thought_chunk`; `tool_execution_start/update/end` → `tool_call`/`tool_call_update` with status mapping, `formatToolLabel`-compatible kinds, and structured edit results (path/oldText/newText) emitted as ACP `Diff` content so `DiffContentView` renders natively. `prompt` carries image attachments. Tests: golden fixtures per segment type.
 **Complexity:** L **Category:** frontend **Dependencies:** #7 **Files:** `bridges/pi-acp/src/translate.ts`, `bridges/pi-acp/test/fixtures/`
 
-### #9 — Bridge: permission translation ⚠️ correctness-critical
+### #9 — Bridge: permission translation ⚠️ correctness-critical ✅ (deny/timeout answers the UI request before any abort per spike #3; safety timeout for a hung ACP client; unknown UI requests fail-safe cancelled)
 
 **Description:** Intercept `extension_ui_request` from the permission-gate extension → ACP `session/request_permission` with the standard tiered options; map the ACP outcome back to `extension_ui_response`. Handle: deny, allow variants, ACP-side timeout/auto-deny → respond deny + (if the turn is wedged) `abort`, and session cancel racing an open request. Tests cover all four paths against the fake pi using the spike-#3 event shapes.
 **Complexity:** L **Category:** frontend **Dependencies:** #7, #13 **Files:** `bridges/pi-acp/src/permissions.ts`
@@ -88,7 +88,7 @@
 
 ## M2 — pi extensions (shipped by Notesage)
 
-### #13 — Permission-gate extension
+### #13 — Permission-gate extension ✅ (verified live inside real pi v0.80.6: allow executes, deny blocks, no-UI blocks by default)
 
 **Description:** TypeScript pi extension: blocking `pi.on("tool_call", …)` for write/execute tools (read-only tools pass through, mirroring the direct-API auto-allow split) → `ctx.ui.confirm` with tool name + args summary; handler errors block fail-safe. Stateless — tiered "always/session" approval is answered Notesage-side via `ScopedApproval`. Embedded as a build asset; unit-tested in the bridge package's harness with the spike-#3 shapes.
 **Complexity:** M **Category:** frontend **Dependencies:** #4 **Files:** `bridges/pi-acp/extensions/permission-gate.ts`

@@ -32,6 +32,7 @@ import {
   type PromptResponse,
 } from "@agentclientprotocol/sdk";
 import { PiRpc, type PiRpcOptions } from "./pi-rpc";
+import { PermissionBroker, type AcpPermissionAsk } from "./permissions";
 import { PiEventTranslator, type SessionUpdate } from "./translate";
 import { BRIDGE_VERSION } from "./version";
 
@@ -40,10 +41,15 @@ export type SpawnPi = (cwd: string | undefined, onEvent: (e: Record<string, unkn
 export interface PiAcpAgentOptions {
   /** Factory for the pi child (indirection = fake pi in tests). */
   spawnPi: SpawnPi;
-  /** Raw hook: every non-response pi event (diagnostics, #9 permission gate). */
+  /** Raw hook: every non-response pi event (diagnostics). */
   onPiEvent?: (e: Record<string, unknown>) => void;
   /** Translated ACP session updates (#8) for the active session. */
   onSessionUpdate?: (sessionId: string, update: SessionUpdate) => void;
+  /** ACP session/request_permission round-trip (#9). Absent → every gated
+   *  tool call is denied (fail-safe for a host that never wires it). */
+  requestPermission?: (sessionId: string, ask: AcpPermissionAsk) => Promise<import("@agentclientprotocol/sdk").RequestPermissionResponse>;
+  /** Broker safety timeout override (tests). */
+  permissionSafetyTimeoutMs?: number;
 }
 
 export function defaultSpawnPi(piBin: string, extraArgs: string[] = [], env?: NodeJS.ProcessEnv): SpawnPi {
@@ -58,6 +64,7 @@ export class PiAcpAgent implements Agent {
   private cancelling = false;
 
   private readonly translator: PiEventTranslator;
+  private broker: PermissionBroker | null = null;
 
   constructor(private readonly opts: PiAcpAgentOptions) {
     this.translator = new PiEventTranslator((update) => {
@@ -67,8 +74,22 @@ export class PiAcpAgent implements Agent {
 
   private ensurePi(cwd?: string): PiRpc {
     if (!this.pi || !this.pi.isAlive) {
+      const broker = new PermissionBroker(
+        async (ask) => {
+          if (!this.opts.requestPermission || !this.activeSession) {
+            return { outcome: { outcome: "cancelled" } };
+          }
+          return this.opts.requestPermission(this.activeSession, ask);
+        },
+        (response) => {
+          this.pi?.notify({ type: "extension_ui_response", ...response });
+        },
+        this.opts.permissionSafetyTimeoutMs,
+      );
+      this.broker = broker;
       this.pi = this.opts.spawnPi(cwd, (e) => {
-        this.translator.handle(e);
+        const consumed = broker.handle(e);
+        if (!consumed) this.translator.handle(e);
         this.opts.onPiEvent?.(e);
       });
       this.activeSession = null;
@@ -160,9 +181,9 @@ export class PiAcpAgent implements Agent {
     void params;
     if (!this.pi?.isAlive) return;
     this.cancelling = true;
-    // NOTE (#9, spike #3): once the permission gate lands, any outstanding
-    // extension_ui_request MUST be answered (cancelled: true) BEFORE abort —
-    // abort with a pending UI request wedges pi.
+    // Spike-#3 rule: answer every outstanding extension_ui_request BEFORE
+    // abort — abort with a pending UI request wedges pi.
+    this.broker?.cancelAll();
     await this.pi.request({ type: "abort" }).catch(() => {});
   }
 

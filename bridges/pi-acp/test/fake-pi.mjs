@@ -38,7 +38,39 @@ process.stdin.on('data', (d) => {
 function handle(cmd) {
   if (process.env.FAKE_PI_STRAY_STDOUT === '1') console.log('stray diagnostic line');
   switch (cmd.type) {
+    case 'extension_ui_response': {
+      if (pendingGate && cmd.id === pendingGate.uiId) {
+        const allowed = cmd.value === 'Allow';
+        const gate = pendingGate;
+        pendingGate = null;
+        if (allowed) {
+          send({ type: 'tool_execution_end', toolCallId: gate.toolCallId, toolName: 'write', result: { content: [{ type: 'text', text: 'wrote file' }], details: {} }, isError: false });
+        } else {
+          send({ type: 'tool_execution_end', toolCallId: gate.toolCallId, toolName: 'write', result: { content: [{ type: 'text', text: 'Tool call denied' }], details: {} }, isError: true });
+        }
+        send({ type: 'agent_end', messages: [] });
+        send({ type: 'agent_settled' });
+      }
+      break;
+    }
     case 'prompt': {
+      if (process.env.FAKE_PI_GATED_TOOL === '1') {
+        // Mirrors spike #3: tool starts, the gate extension raises a select
+        // with the Notesage permission marker, and the turn only proceeds
+        // once the host answers the extension_ui_response.
+        send({ type: 'response', command: 'prompt', success: true, ...(cmd.id ? { id: cmd.id } : {}) });
+        send({ type: 'agent_start' });
+        const toolCallId = 'call_gated_1';
+        const uiId = 'ui-req-1';
+        pendingGate = { toolCallId, uiId };
+        send({ type: 'tool_execution_start', toolCallId, toolName: 'write', args: { path: '/p/x.txt', content: 'hi' } });
+        send({
+          type: 'extension_ui_request', id: uiId, method: 'select',
+          title: `__NOTESAGE_PERMISSION__${JSON.stringify({ toolCallId, toolName: 'write' })}`,
+          options: ['Allow', 'Deny'],
+        });
+        break;
+      }
       if (process.env.FAKE_PI_HANG_TURN === '1') {
         // Turn that never settles on its own — abort resolves it (models a
         // long-running real turn for the cancel test).
@@ -100,6 +132,7 @@ function handle(cmd) {
 let sessionCounter = 0;
 let currentSession = '/fake/sessions/s0.jsonl';
 let hangingTurn = false;
+let pendingGate = null;
 
 // Keep alive until stdin closes (mirrors pi: exits when the host goes away).
 process.stdin.on('end', () => process.exit(0));

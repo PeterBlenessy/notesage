@@ -48,6 +48,8 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
         onSessionUpdate: (sessionId, update) => {
           void conn.sessionUpdate({ sessionId, update });
         },
+        requestPermission: (sessionId, ask) =>
+          conn.requestPermission({ sessionId, toolCall: ask.toolCall, options: ask.options }),
       });
       return agent;
     },
