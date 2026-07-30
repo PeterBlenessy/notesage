@@ -10,7 +10,7 @@
 
 **Risks / open questions**
 
-- **#1–#4 are a HARD GATE.** Any spike failure stops the initiative with a documented finding — do not "work around" a failed spike (per PRD Goals #1). No M1+ task may start before #4 lands.
+- **#1–#4 are a HARD GATE — amended 2026-07-30.** Spikes #1/#3 PASSED and #2's Linux-observable half all points to pass, so the operator authorized proceeding with M1+ **at-risk** while #2's macOS execution is pending. The gate moves from build-blocker to **merge-blocker**: #2's recorded Seatbelt run (and #4's go/no-go) remain required before #22 and before any merge. A late #2 failure still stops the initiative (sunk build cost accepted).
 - **pi 0.x churn:** every task that touches pi behavior must record the exact pi version it was verified against; the pin range in #15 is derived from those records, not guessed.
 - **#9 (permission translation) is the trickiest correctness surface** — a wedged `extension_ui_request` blocks the tool call forever. The abort path verified in spike #3 is the safety net; #9's tests must cover deny, timeout-abort, and mid-request session cancel.
 - **#15/#17 touch shared infrastructure** (`agent_manager.rs` GitHub-binary path, `sandbox.rs` profile generation) — regression locks are part of the task, not optional; Goose suites must stay green.
@@ -46,7 +46,7 @@
 
 ## M1 — `notesage-pi-acp` bridge
 
-### #5 — Scaffold `bridges/pi-acp` package
+### #5 — Scaffold `bridges/pi-acp` package ✅
 
 **Description:** New in-repo TypeScript package: strict tsconfig, vitest suite wiring, `bun build --compile` script per platform (darwin arm64/x64, linux arm64/x64), lint hooked into repo scripts. CI job runs the package tests. Acceptance: `pnpm --filter pi-acp test` green on a hello-world module; compiled binary starts and exits cleanly.
 **Complexity:** M **Category:** frontend **Dependencies:** #4 **Files:** `bridges/pi-acp/package.json`, `bridges/pi-acp/tsconfig.json`, `bridges/pi-acp/src/index.ts`, `.github/workflows/test.yml`
