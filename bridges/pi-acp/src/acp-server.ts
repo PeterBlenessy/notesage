@@ -32,6 +32,7 @@ import {
   type PromptResponse,
 } from "@agentclientprotocol/sdk";
 import { PiRpc, type PiRpcOptions } from "./pi-rpc";
+import { PiEventTranslator, type SessionUpdate } from "./translate";
 import { BRIDGE_VERSION } from "./version";
 
 export type SpawnPi = (cwd: string | undefined, onEvent: (e: Record<string, unknown>) => void) => PiRpc;
@@ -39,8 +40,10 @@ export type SpawnPi = (cwd: string | undefined, onEvent: (e: Record<string, unkn
 export interface PiAcpAgentOptions {
   /** Factory for the pi child (indirection = fake pi in tests). */
   spawnPi: SpawnPi;
-  /** Hook for the translate layer (#8); receives every non-response event. */
+  /** Raw hook: every non-response pi event (diagnostics, #9 permission gate). */
   onPiEvent?: (e: Record<string, unknown>) => void;
+  /** Translated ACP session updates (#8) for the active session. */
+  onSessionUpdate?: (sessionId: string, update: SessionUpdate) => void;
 }
 
 export function defaultSpawnPi(piBin: string, extraArgs: string[] = [], env?: NodeJS.ProcessEnv): SpawnPi {
@@ -54,11 +57,20 @@ export class PiAcpAgent implements Agent {
   private activeSession: string | null = null;
   private cancelling = false;
 
-  constructor(private readonly opts: PiAcpAgentOptions) {}
+  private readonly translator: PiEventTranslator;
+
+  constructor(private readonly opts: PiAcpAgentOptions) {
+    this.translator = new PiEventTranslator((update) => {
+      if (this.activeSession) this.opts.onSessionUpdate?.(this.activeSession, update);
+    });
+  }
 
   private ensurePi(cwd?: string): PiRpc {
     if (!this.pi || !this.pi.isAlive) {
-      this.pi = this.opts.spawnPi(cwd, (e) => this.opts.onPiEvent?.(e));
+      this.pi = this.opts.spawnPi(cwd, (e) => {
+        this.translator.handle(e);
+        this.opts.onPiEvent?.(e);
+      });
       this.activeSession = null;
     }
     return this.pi;

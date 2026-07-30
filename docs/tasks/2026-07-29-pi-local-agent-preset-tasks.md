@@ -61,7 +61,7 @@
 **Description:** ACP agent-side JSON-RPC on the bridge's stdio: `initialize` (static capabilities: `sessions: { load, fork }`, `mcp.stdio`, `promptCapabilities.images`), `session/new` → `new_session` (cwd), `session/load` → `switch_session`, `session/fork` → `fork`, `session/cancel` → `abort`. Match the ACP 0.14.0 surface `acp.rs` speaks. Golden-transcript tests with the fake pi.
 **Complexity:** L **Category:** frontend **Dependencies:** #6 **Files:** `bridges/pi-acp/src/acp-server.ts`, `bridges/pi-acp/src/sessions.ts`
 
-### #8 — Bridge: streaming + tool-call translation
+### #8 — Bridge: streaming + tool-call translation ✅
 
 **Description:** `message_update` `text_delta`/`thinking_delta` → `agent_message_chunk`/`agent_thought_chunk`; `tool_execution_start/update/end` → `tool_call`/`tool_call_update` with status mapping, `formatToolLabel`-compatible kinds, and structured edit results (path/oldText/newText) emitted as ACP `Diff` content so `DiffContentView` renders natively. `prompt` carries image attachments. Tests: golden fixtures per segment type.
 **Complexity:** L **Category:** frontend **Dependencies:** #7 **Files:** `bridges/pi-acp/src/translate.ts`, `bridges/pi-acp/test/fixtures/`

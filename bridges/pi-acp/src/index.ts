@@ -11,6 +11,7 @@
 
 export { BRIDGE_VERSION } from "./version";
 import { BRIDGE_VERSION } from "./version";
+import type { PiAcpAgent } from "./acp-server";
 
 export interface BridgeOptions {
   /** Absolute path to the pi executable (inside its extracted release folder). */
@@ -25,13 +26,51 @@ export function parseArgs(argv: string[]): BridgeOptions {
   return { piBin };
 }
 
+export async function main(argv: string[] = process.argv.slice(2)): Promise<void> {
+  const { AgentSideConnection, ndJsonStream } = await import("@agentclientprotocol/sdk");
+  const { Readable, Writable } = await import("node:stream");
+  const { PiAcpAgent: PiAcpAgentImpl } = await import("./acp-server");
+  const { PiRpc } = await import("./pi-rpc");
+
+  const { piBin } = parseArgs(argv);
+  let agent!: PiAcpAgent;
+  const conn = new AgentSideConnection(
+    () => {
+      agent = new PiAcpAgentImpl({
+        spawnPi: (cwd, onEvent) =>
+          new PiRpc({
+            piBin,
+            cwd,
+            env: process.env,
+            onEvent,
+            onStderr: (t) => process.stderr.write(`[pi] ${t}`),
+          }),
+        onSessionUpdate: (sessionId, update) => {
+          void conn.sessionUpdate({ sessionId, update });
+        },
+      });
+      return agent;
+    },
+    ndJsonStream(
+      Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
+      Readable.toWeb(process.stdin) as ReadableStream<Uint8Array>,
+    ),
+  );
+
+  // Orphan-proofing: any exit path tears the pi child down (awaited group kill).
+  const shutdown = async (code: number) => {
+    await agent?.shutdown().catch(() => {});
+    process.exit(code);
+  };
+  process.on("SIGTERM", () => void shutdown(0));
+  process.on("SIGINT", () => void shutdown(0));
+  process.stdin.on("close", () => void shutdown(0));
+}
+
 if (import.meta.main) {
   if (process.argv.includes("--version")) {
     console.log(BRIDGE_VERSION);
     process.exit(0);
   }
-  parseArgs(process.argv.slice(2));
-  // Tasks #6-#10: start AcpServer on stdio, spawn PiProcess, connect translate layer.
-  console.error("notesage-pi-acp: bridge core not yet implemented (tasks #6-#10)");
-  process.exit(1);
+  void main();
 }
