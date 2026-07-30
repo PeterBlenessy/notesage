@@ -1337,9 +1337,22 @@ async fn do_github_binary_install(
         .header("User-Agent", "notesage")
         .send()
         .await
-        .map_err(|e| format!("{} download failed: {}", agent_id, e))?;
+        .map_err(|e| {
+            log::warn!(target: "notesage::agent_manager", "{} download request failed: {} (url={})", agent_id, e, url);
+            format!("{} download failed: {}", agent_id, e)
+        })?;
     if !resp.status().is_success() {
-        return Err(format!("{} download returned {}", agent_id, resp.status()));
+        let status = resp.status();
+        // Developer-facing detail (incl. the exact url that failed) goes to the
+        // backend log; the returned string stays short for the UI layer, which
+        // maps it to a friendly toast. A 404 here almost always means the asset
+        // isn't published on the resolved release yet (e.g. the notesage-pi-acp
+        // bridge before a Notesage release ships it).
+        log::warn!(
+            target: "notesage::agent_manager",
+            "{} download returned {} (url={})", agent_id, status, url
+        );
+        return Err(format!("{} download returned {}", agent_id, status));
     }
 
     let data = download_capped(resp, MAX_DOWNLOAD_BYTES, |downloaded, total| {
