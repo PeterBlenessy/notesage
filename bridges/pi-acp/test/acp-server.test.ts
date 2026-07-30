@@ -81,6 +81,19 @@ describe("PiAcpAgent", () => {
     expect(res.stopReason).toBe("cancelled");
   });
 
+  it("emits a usage_update after the turn (task #10)", async () => {
+    const updates: Record<string, unknown>[] = [];
+    const agent = new PiAcpAgent({
+      spawnPi: (cwd, onEvent) => new PiRpc({ piBin: FAKE_PI, cwd, env: process.env, onEvent }),
+      onSessionUpdate: (_sid, u) => updates.push(u as unknown as Record<string, unknown>),
+    });
+    agents.push(agent);
+    const { sessionId } = await agent.newSession({ cwd: "/tmp", mcpServers: [] });
+    await agent.prompt({ sessionId, prompt: [{ type: "text", text: "hi" }] });
+    const usage = updates.find((u) => u.sessionUpdate === "usage_update");
+    expect(usage).toMatchObject({ used: 1234, size: 8192, cost: { amount: 0, currency: "USD" } });
+  });
+
   it("forwards non-response pi events to onPiEvent (translate hook)", async () => {
     const events: Record<string, unknown>[] = [];
     const agent = makeAgent({}, (e) => events.push(e));

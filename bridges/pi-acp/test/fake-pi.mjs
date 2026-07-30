@@ -107,7 +107,12 @@ function handle(cmd) {
     case 'get_session_stats':
       send({
         type: 'response', command: 'get_session_stats', success: true,
-        data: { sessionFile: currentSession, sessionId: `id-${sessionCounter}`, userMessages: 0, assistantMessages: 0 },
+        data: {
+          sessionFile: currentSession, sessionId: `id-${sessionCounter}`, userMessages: 0, assistantMessages: 0,
+          tokens: { input: 500, output: 100, cacheRead: 0, cacheWrite: 0, total: 600 },
+          cost: 0,
+          contextUsage: { tokens: 1234, contextWindow: 8192, percent: 15 },
+        },
         ...(cmd.id ? { id: cmd.id } : {}),
       });
       break;

@@ -71,7 +71,7 @@
 **Description:** Intercept `extension_ui_request` from the permission-gate extension → ACP `session/request_permission` with the standard tiered options; map the ACP outcome back to `extension_ui_response`. Handle: deny, allow variants, ACP-side timeout/auto-deny → respond deny + (if the turn is wedged) `abort`, and session cancel racing an open request. Tests cover all four paths against the fake pi using the spike-#3 event shapes.
 **Complexity:** L **Category:** frontend **Dependencies:** #7, #13 **Files:** `bridges/pi-acp/src/permissions.ts`
 
-### #10 — Bridge: usage reporting (best-effort)
+### #10 — Bridge: usage reporting (best-effort) ✅ (pi contextUsage → ACP usage_update {used,size,cost})
 
 **Description:** After `agent_end`, call `get_session_stats` and emit ACP `usage_update` (tokens; cost omitted for local). Degrade silently on missing/changed stats shape — never fail a turn over usage. Test: stats present and absent.
 **Complexity:** S **Category:** frontend **Dependencies:** #7 **Files:** `bridges/pi-acp/src/usage.ts`
@@ -81,7 +81,7 @@
 **Description:** Opt-in integration suite (skipped unless `PI_BINARY` env set, mirroring the perf/real-e2e opt-in pattern): real pi binary + a mock OpenAI-compatible HTTP server; drive initialize → session/new → prompt → tool call with permission → response end-to-end through the bridge. This is the churn tripwire re-run whenever the pi pin moves.
 **Complexity:** M **Category:** frontend **Dependencies:** #8, #9, #10 **Files:** `bridges/pi-acp/test/integration.test.ts`, `bridges/pi-acp/test/mock-openai.ts`
 
-### #12 — Release CI: compile + publish bridge binaries
+### #12 — Release CI: compile + publish bridge binaries ✅ (bun-compiled linux-x64 binary verified locally: 38 MB single file, --version OK; checksum asset scoped as `notesage-pi-acp-SHA256SUMS` — #15 must configure that exact name)
 
 **Description:** Release workflow job: `bun build --compile` per platform, tarball each (`notesage-pi-acp-{triple}.tar.gz`), generate `SHA256SUMS`, attach to the Notesage GitHub release. Version = app version (lockstep per PRD). Acceptance: dry-run workflow produces all four assets + checksum file.
 **Complexity:** M **Category:** backend **Dependencies:** #5 **Files:** `.github/workflows/release.yml`, `bridges/pi-acp/scripts/build-binaries.sh`

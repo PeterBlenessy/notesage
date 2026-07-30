@@ -34,6 +34,7 @@ import {
 import { PiRpc, type PiRpcOptions } from "./pi-rpc";
 import { PermissionBroker, type AcpPermissionAsk } from "./permissions";
 import { PiEventTranslator, type SessionUpdate } from "./translate";
+import { usageUpdateFromStats } from "./usage";
 import { BRIDGE_VERSION } from "./version";
 
 export type SpawnPi = (cwd: string | undefined, onEvent: (e: Record<string, unknown>) => void) => PiRpc;
@@ -174,6 +175,12 @@ export class PiAcpAgent implements Agent {
     });
     await settled;
     if (!pi.isAlive) throw new Error("pi exited during the turn");
+
+    // Best-effort usage report (#10) — never delays or fails the turn result
+    // beyond the single stats round-trip; a shape mismatch degrades silently.
+    const usage = await usageUpdateFromStats(pi);
+    if (usage && this.activeSession) this.opts.onSessionUpdate?.(this.activeSession, usage);
+
     return { stopReason: this.cancelling ? "cancelled" : "end_turn" };
   }
 
