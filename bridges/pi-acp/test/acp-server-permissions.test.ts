@@ -23,7 +23,7 @@ function makeAgent(
   const updates: SessionUpdate[] = [];
   const asked: number[] = [];
   const agent = new PiAcpAgent({
-    spawnPi: (cwd, onEvent) =>
+    spawnPi: ({ cwd }, onEvent) =>
       new PiRpc({ piBin: FAKE_PI, cwd, env: { ...process.env, FAKE_PI_GATED_TOOL: "1" }, onEvent }),
     onSessionUpdate: (_sid, u) => updates.push(u),
     requestPermission: (_sid, _ask) => {

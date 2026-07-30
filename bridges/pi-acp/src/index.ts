@@ -37,11 +37,11 @@ export async function main(argv: string[] = process.argv.slice(2)): Promise<void
   const conn = new AgentSideConnection(
     () => {
       agent = new PiAcpAgentImpl({
-        spawnPi: (cwd, onEvent) =>
+        spawnPi: ({ cwd, extraEnv }, onEvent) =>
           new PiRpc({
             piBin,
             cwd,
-            env: process.env,
+            env: { ...process.env, ...(extraEnv ?? {}) },
             onEvent,
             onStderr: (t) => process.stderr.write(`[pi] ${t}`),
           }),

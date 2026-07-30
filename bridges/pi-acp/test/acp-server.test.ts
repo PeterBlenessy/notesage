@@ -10,7 +10,7 @@ let agents: PiAcpAgent[] = [];
 
 function makeAgent(extraEnv: Record<string, string> = {}, onPiEvent?: (e: Record<string, unknown>) => void): PiAcpAgent {
   const agent = new PiAcpAgent({
-    spawnPi: (cwd, onEvent) =>
+    spawnPi: ({ cwd }, onEvent) =>
       new PiRpc({ piBin: FAKE_PI, cwd, env: { ...process.env, ...extraEnv }, onEvent }),
     onPiEvent,
   });
@@ -84,7 +84,7 @@ describe("PiAcpAgent", () => {
   it("emits a usage_update after the turn (task #10)", async () => {
     const updates: Record<string, unknown>[] = [];
     const agent = new PiAcpAgent({
-      spawnPi: (cwd, onEvent) => new PiRpc({ piBin: FAKE_PI, cwd, env: process.env, onEvent }),
+      spawnPi: ({ cwd }, onEvent) => new PiRpc({ piBin: FAKE_PI, cwd, env: process.env, onEvent }),
       onSessionUpdate: (_sid, u) => updates.push(u as unknown as Record<string, unknown>),
     });
     agents.push(agent);

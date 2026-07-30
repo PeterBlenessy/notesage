@@ -93,7 +93,7 @@
 **Description:** TypeScript pi extension: blocking `pi.on("tool_call", …)` for write/execute tools (read-only tools pass through, mirroring the direct-API auto-allow split) → `ctx.ui.confirm` with tool name + args summary; handler errors block fail-safe. Stateless — tiered "always/session" approval is answered Notesage-side via `ScopedApproval`. Embedded as a build asset; unit-tested in the bridge package's harness with the spike-#3 shapes.
 **Complexity:** M **Category:** frontend **Dependencies:** #4 **Files:** `bridges/pi-acp/extensions/permission-gate.ts`
 
-### #14 — MCP tools extension
+### #14 — MCP tools extension ✅ (env-only handoff `NOTESAGE_MCP_SERVERS`; no-secrets-on-disk asserted by test; verified live in real pi with a fake MCP stdio server through the permission gate)
 
 **Description:** TypeScript pi extension registering the session's MCP servers' tools with pi and proxying calls (stdio servers spawned by the extension inherit pi's sandbox). Server configs — keychain secrets already resolved by `build_acp_mcp_servers` — reach the extension from the bridge via the transport decided here (env var JSON vs RPC side-channel, evaluated against the pinned pi version). **Hard requirement asserted by test: no secret ever written to disk** (scan the generated config tree after a session). Bridge consumes ACP `session/new` `mcp_servers` unchanged.
 **Complexity:** L **Category:** frontend **Dependencies:** #7, #13 **Files:** `bridges/pi-acp/extensions/mcp-tools.ts`, `bridges/pi-acp/src/mcp-handoff.ts`

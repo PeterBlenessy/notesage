@@ -43,7 +43,12 @@ function startStub(): Promise<void> {
       // Tool-call turn: when the user asks to write AND there's no tool
       // result yet in this transcript, emit a `write` tool call; else text.
       const wantsWrite = body.includes("WRITE_THE_FILE") && !body.includes('"role":"tool"');
-      if (wantsWrite) {
+      const wantsMcp = body.includes("USE_MCP_ECHO") && !body.includes('"role":"tool"');
+      if (wantsMcp) {
+        send({ ...base, choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "call_mcp_1", type: "function", function: { name: "mcp_fake_echo", arguments: "" } }] }, finish_reason: null }] });
+        send({ ...base, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ text: "hello-mcp" }) } }] }, finish_reason: null }] });
+        send({ ...base, choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] });
+      } else if (wantsWrite) {
         const target = join(piHome, "tool-out.txt");
         send({ ...base, choices: [{ index: 0, delta: { role: "assistant", tool_calls: [{ index: 0, id: "call_int_1", type: "function", function: { name: "write", arguments: "" } }] }, finish_reason: null }] });
         send({ ...base, choices: [{ index: 0, delta: { tool_calls: [{ index: 0, function: { arguments: JSON.stringify({ path: target, content: "written by real pi" }) } }] }, finish_reason: null }] });
@@ -120,17 +125,21 @@ d("real pi integration", () => {
     expect(pi.isAlive).toBe(false);
   }, 40_000);
 
-  function makeAgent(decide: () => Promise<RequestPermissionResponse>): PiAcpAgent {
+  function makeAgent(
+    decide: () => Promise<RequestPermissionResponse>,
+    onSessionUpdate?: (sid: string, u: import("../src/translate").SessionUpdate) => void,
+  ): PiAcpAgent {
     return new PiAcpAgent({
-      spawnPi: (cwd, onEvent) =>
+      spawnPi: ({ cwd, extraEnv }, onEvent) =>
         new PiRpc({
           piBin: PI_BINARY!,
           args: ["--provider", "local", "--model", "stub-model", "--session-dir", join(piHome, "sessions")],
           cwd,
-          env: { ...process.env, PI_OFFLINE: "1", PI_CODING_AGENT_DIR: piHome, NO_COLOR: "1" },
+          env: { ...process.env, ...(extraEnv ?? {}), PI_OFFLINE: "1", PI_CODING_AGENT_DIR: piHome, NO_COLOR: "1" },
           onEvent,
         }),
       requestPermission: (_sid, _ask) => decide(),
+      onSessionUpdate,
     });
   }
 
@@ -161,6 +170,46 @@ d("real pi integration", () => {
       expect(existsSync(target)).toBe(false);
     } finally {
       await denyAgent.shutdown();
+    }
+  }, 90_000);
+
+  it("REAL mcp-tools extension: MCP tool discovered, gated, called via env-only secret handoff", async () => {
+    mkdirSync(join(piHome, "extensions"), { recursive: true });
+    copyFileSync(join(EXT_DIR, "permission-gate.ts"), join(piHome, "extensions", "permission-gate.ts"));
+    copyFileSync(join(EXT_DIR, "mcp-tools.ts"), join(piHome, "extensions", "mcp-tools.ts"));
+    const fakeMcp = join(dirname(fileURLToPath(import.meta.url)), "fake-mcp-server.mjs");
+
+    const updates: import("../src/translate").SessionUpdate[] = [];
+    const agent = makeAgent(
+      async () => ({ outcome: { outcome: "selected", optionId: "allow_once" } }),
+      (_sid, u) => updates.push(u),
+    );
+    try {
+      const { sessionId } = await agent.newSession({
+        cwd: piHome,
+        mcpServers: [
+          {
+            name: "fake",
+            command: process.execPath,
+            args: [fakeMcp],
+            env: [{ name: "FAKE_MCP_SECRET", value: "resolved-from-keychain" }],
+          },
+        ],
+      });
+      const res = await agent.prompt({ sessionId, prompt: [{ type: "text", text: "USE_MCP_ECHO now" }] });
+      expect(res.stopReason).toBe("end_turn");
+      // The MCP tool executed and returned its content — including proof the
+      // secret env reached the server process via the spawn env.
+      const toolEnd = updates.filter((u) => u.sessionUpdate === "tool_call_update").at(-1);
+      expect(JSON.stringify(toolEnd)).toContain("mcp-echo:hello-mcp:secret-present");
+      // Secrets discipline: nothing under the pi home may contain the secret.
+      const { execSync } = await import("node:child_process");
+      const grep = execSync(
+        `grep -r "resolved-from-keychain" ${JSON.stringify(piHome)} --include='*' -l || true`,
+      ).toString().trim();
+      expect(grep).toBe("");
+    } finally {
+      await agent.shutdown();
     }
   }, 90_000);
 });

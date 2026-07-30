@@ -28,16 +28,23 @@ import {
   type LoadSessionResponse,
   type NewSessionRequest,
   type NewSessionResponse,
+  type McpServer,
   type PromptRequest,
   type PromptResponse,
 } from "@agentclientprotocol/sdk";
+import { mcpEnvFor, mcpKeyFor } from "./mcp-handoff";
 import { PiRpc, type PiRpcOptions } from "./pi-rpc";
 import { PermissionBroker, type AcpPermissionAsk } from "./permissions";
 import { PiEventTranslator, type SessionUpdate } from "./translate";
 import { usageUpdateFromStats } from "./usage";
 import { BRIDGE_VERSION } from "./version";
 
-export type SpawnPi = (cwd: string | undefined, onEvent: (e: Record<string, unknown>) => void) => PiRpc;
+export interface SpawnPiOptions {
+  cwd?: string;
+  /** Extra env for the pi child (MCP handoff — NOTESAGE_MCP_SERVERS). */
+  extraEnv?: Record<string, string>;
+}
+export type SpawnPi = (opts: SpawnPiOptions, onEvent: (e: Record<string, unknown>) => void) => PiRpc;
 
 export interface PiAcpAgentOptions {
   /** Factory for the pi child (indirection = fake pi in tests). */
@@ -54,8 +61,14 @@ export interface PiAcpAgentOptions {
 }
 
 export function defaultSpawnPi(piBin: string, extraArgs: string[] = [], env?: NodeJS.ProcessEnv): SpawnPi {
-  return (cwd, onEvent) =>
-    new PiRpc({ piBin, args: extraArgs, env, cwd, onEvent } satisfies PiRpcOptions);
+  return ({ cwd, extraEnv }, onEvent) =>
+    new PiRpc({
+      piBin,
+      args: extraArgs,
+      env: { ...(env ?? process.env), ...(extraEnv ?? {}) },
+      cwd,
+      onEvent,
+    } satisfies PiRpcOptions);
 }
 
 export class PiAcpAgent implements Agent {
@@ -66,6 +79,9 @@ export class PiAcpAgent implements Agent {
 
   private readonly translator: PiEventTranslator;
   private broker: PermissionBroker | null = null;
+  /** MCP handoff snapshot the live pi child was spawned with (its extension
+   *  reads the env at startup) — a different set requires a respawn. */
+  private currentMcpKey: string | null = null;
 
   constructor(private readonly opts: PiAcpAgentOptions) {
     this.translator = new PiEventTranslator((update) => {
@@ -73,8 +89,14 @@ export class PiAcpAgent implements Agent {
     });
   }
 
-  private ensurePi(cwd?: string): PiRpc {
+  private async ensurePi(cwd?: string, mcpServers?: McpServer[]): Promise<PiRpc> {
+    const mcpKey = mcpKeyFor(mcpServers);
+    if (this.pi?.isAlive && mcpServers !== undefined && this.currentMcpKey !== null && this.currentMcpKey !== mcpKey) {
+      await this.pi.stop();
+      this.pi = null;
+    }
     if (!this.pi || !this.pi.isAlive) {
+      if (mcpServers !== undefined) this.currentMcpKey = mcpKey;
       const broker = new PermissionBroker(
         async (ask) => {
           if (!this.opts.requestPermission || !this.activeSession) {
@@ -88,7 +110,7 @@ export class PiAcpAgent implements Agent {
         this.opts.permissionSafetyTimeoutMs,
       );
       this.broker = broker;
-      this.pi = this.opts.spawnPi(cwd, (e) => {
+      this.pi = this.opts.spawnPi({ cwd, extraEnv: mcpEnvFor(mcpServers) }, (e) => {
         const consumed = broker.handle(e);
         if (!consumed) this.translator.handle(e);
         this.opts.onPiEvent?.(e);
@@ -129,7 +151,7 @@ export class PiAcpAgent implements Agent {
   }
 
   async newSession(params: NewSessionRequest): Promise<NewSessionResponse> {
-    const pi = this.ensurePi(params.cwd);
+    const pi = await this.ensurePi(params.cwd, params.mcpServers);
     await pi.request({ type: "new_session" });
     const sessionId = await this.currentSessionId(pi);
     this.activeSession = sessionId;
@@ -137,13 +159,13 @@ export class PiAcpAgent implements Agent {
   }
 
   async loadSession(params: LoadSessionRequest): Promise<LoadSessionResponse> {
-    const pi = this.ensurePi(params.cwd);
+    const pi = await this.ensurePi(params.cwd, params.mcpServers);
     await this.activate(pi, params.sessionId);
     return {};
   }
 
   async unstable_forkSession(params: ForkSessionRequest): Promise<ForkSessionResponse> {
-    const pi = this.ensurePi(params.cwd ?? undefined);
+    const pi = await this.ensurePi(params.cwd ?? undefined);
     await this.activate(pi, params.sessionId);
     await pi.request({ type: "clone" });
     const sessionId = await this.currentSessionId(pi);
@@ -152,7 +174,7 @@ export class PiAcpAgent implements Agent {
   }
 
   async prompt(params: PromptRequest): Promise<PromptResponse> {
-    const pi = this.ensurePi();
+    const pi = await this.ensurePi();
     await this.activate(pi, params.sessionId);
     this.cancelling = false;
 
