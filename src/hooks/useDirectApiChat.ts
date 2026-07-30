@@ -16,6 +16,7 @@ import { friendlyAIError } from '@/lib/ai/errors';
 import { formatToolLabel, buildAttachmentActivities } from '@/lib/ai/acp-utils';
 import { ToolCallHistory, buildToolResultContent } from '@/lib/ai/tool-feedback';
 import { trimMessagesToBudget, localBundledTrimBudget } from '@/lib/ai/context-trim';
+import { budgetToolDefinitions, toolBudgetForContext } from '@/lib/ai/tool-budget';
 import { streamEvent, newStreamId } from '@/lib/ai/stream-events';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { runStarted, runRunning, runAwaitingPermission, runIdle, runError } from '@/lib/ai/session-run';
@@ -638,6 +639,30 @@ export function useDirectApiChat({
         if (toolCallingEnabled) {
           // All tools available to all agents — user controls access via permission system
           tools = useSkillStore.getState().getToolDefinitions();
+          // Cap the schemas against a local model's window. JSON Schema is
+          // verbose and this overhead is paid on every turn, so an unbounded
+          // tool list can eat a large share of a 32K context before the user's
+          // message is even considered. Cloud windows are big enough that the
+          // cap would only ever remove capability, so it applies to the bundled
+          // server alone.
+          if (tools.length > 0 && resolved.provider === 'local_bundled') {
+            const contextLength = useLocalAIStore.getState().contextLength;
+            const { tools: fitted, dropped, estimatedTokens } = budgetToolDefinitions(
+              tools,
+              toolBudgetForContext(contextLength),
+            );
+            if (dropped.length > 0) {
+              // Never a silent cap — a truncated tool list otherwise looks
+              // identical to a model that simply chose not to use them.
+              log.warn('ai', 'Tool schemas exceeded the local context budget', {
+                kept: fitted.length,
+                dropped,
+                estimatedTokens,
+                contextLength,
+              });
+            }
+            tools = fitted;
+          }
           if (tools.length === 0) tools = undefined;
         }
 
