@@ -7,10 +7,18 @@ describe("scaffold", () => {
   });
 
   it("parses --pi-bin", () => {
-    expect(parseArgs(["--pi-bin", "/opt/pi/pi"])).toEqual({ piBin: "/opt/pi/pi" });
+    expect(parseArgs(["--pi-bin", "/opt/pi/pi"])).toEqual({ piBin: "/opt/pi/pi", piArgs: [] });
   });
 
-  it("rejects a missing --pi-bin", () => {
+  it("passes everything after -- to pi", () => {
+    expect(parseArgs(["--pi-bin", "/opt/pi/pi", "--", "--provider", "local", "--model", "m"])).toEqual({
+      piBin: "/opt/pi/pi",
+      piArgs: ["--provider", "local", "--model", "m"],
+    });
+  });
+
+  it("rejects a missing --pi-bin (even when present only after --)", () => {
     expect(() => parseArgs([])).toThrow(/--pi-bin/);
+    expect(() => parseArgs(["--", "--pi-bin", "/x"])).toThrow(/--pi-bin/);
   });
 });

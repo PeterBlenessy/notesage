@@ -76,7 +76,7 @@
 **Description:** After `agent_end`, call `get_session_stats` and emit ACP `usage_update` (tokens; cost omitted for local). Degrade silently on missing/changed stats shape — never fail a turn over usage. Test: stats present and absent.
 **Complexity:** S **Category:** frontend **Dependencies:** #7 **Files:** `bridges/pi-acp/src/usage.ts`
 
-### #11 — Bridge: live integration test against real pi 🚧 (first slice landed with #6: PI_BINARY-gated prompt-turn test, verified green against real pi v0.80.6 on linux-x64)
+### #11 — Bridge: live integration test against real pi ✅ (PI_BINARY-gated suite + BRIDGE_BINARY-gated compiled-binary E2E: ACP client over stdio → Bun binary → real pi → stub LLM, incl. gated write, MCP, usage, teardown. Caught the missing --provider/--model passthrough — bridge CLI now takes `-- <pi args>`)
 
 **Description:** Opt-in integration suite (skipped unless `PI_BINARY` env set, mirroring the perf/real-e2e opt-in pattern): real pi binary + a mock OpenAI-compatible HTTP server; drive initialize → session/new → prompt → tool call with permission → response end-to-end through the bridge. This is the churn tripwire re-run whenever the pi pin moves.
 **Complexity:** M **Category:** frontend **Dependencies:** #8, #9, #10 **Files:** `bridges/pi-acp/test/integration.test.ts`, `bridges/pi-acp/test/mock-openai.ts`
