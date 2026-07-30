@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-07-29 |
-| **Status** | In progress — #1,#3,#5–#21 done; #2,#22 macOS-execution gates pending; #23 docs+gates |
+| **Status** | In progress — #1–#21,#23 done (M0 gate GREEN: all spikes pass); only #22 (in-app live E2E, operator-run) remains |
 | **PRD** | [pi-local-agent-preset](../prds/2026-07-29-pi-local-agent-preset.md) |
 | **Total** | 23 tasks: 5S, 12M, 6L |
 | **Suggested order** | M0 spikes (#1–#4, hard gate) → Bridge (#5–#12) → Extensions (#13–#14) → Backend integration (#15–#17) → State (#18–#19) → UI (#20–#21) → Verification & docs (#22–#23) |
@@ -31,7 +31,7 @@
 
 **Description:** Two halves. **(a) Author (agent session, any OS):** a self-contained harness — script that downloads/verifies the pinned pi binary, generates a deny-all-network Seatbelt profile with a single localhost port allow (reuse the Goose profile shape), starts a **stub OpenAI-compatible server** on that port (no llama-server / no model needed — confinement is about sockets, not inference), runs a prompt turn via `sandbox-exec`, and asserts: turn completes, zero non-localhost connection attempts (capture via profile violations / `log stream`), no hang or spawn-time delay from blocked version-check/telemetry. Include variants: with `HTTP_PROXY`/`HTTPS_PROXY` set (does undici route the localhost call into the proxy?), and with the `NO_PROXY=localhost,127.0.0.1` / env-strip mitigation. **(b) Execute (macOS):** run on a GitHub Actions `macos` runner (preferred — wire as a manually-dispatched workflow) or the operator's Mac; record output. Optional follow-up on the operator's Mac: one pass against the real bundled llama-server. Acceptance: recorded macOS run + the exact spawn-env recipe #16 will use.
 **Complexity:** L **Category:** backend **Dependencies:** #1 **Files:** `scripts/spikes/pi-seatbelt-spike.sh`, `.github/workflows/spike-pi-seatbelt.yml`, `docs/research/2026-07-29-pi-spikes.md` (section)
-**Status (2026-07-29):** 🚧 authoring half DONE (harness + workflow committed; driver/stub validated unsandboxed on Linux). Proxy question pre-answered on Linux: pi ignores `HTTP(S)_PROXY` entirely — `NO_PROXY` demoted to defense-in-depth. **Remaining: dispatch the `spike-pi-seatbelt` workflow on macOS (or run the script on a Mac) and record output in the research doc.**
+**Result (2026-07-30, pi v0.80.6 darwin-arm64):** ✅ PASS on the operator's Mac. Full agentic turn under the deny-all Seatbelt profile (baseline 1538 ms), TS extension loaded under the sandbox, zero non-localhost traffic. Correction to the Linux pre-answer: pi DOES honor `HTTP(S)_PROXY` on macOS — `NO_PROXY` is REQUIRED, not defense-in-depth (task #16 ships it; comments/test corrected). See research doc.
 
 ### #3 — Spike: extension_ui_request permission round-trip ✅
 
@@ -39,7 +39,7 @@
 **Complexity:** M **Category:** backend **Dependencies:** #1 **Files:** `docs/research/2026-07-29-pi-spikes.md` (section)
 **Result (2026-07-29, pi v0.80.6 linux-x64):** PASS with load-bearing caveat — allow/deny/cancel round-trips verified (`ctx.hasUI === true` in RPC mode); **`abort` with an unanswered UI request WEDGES the session**. #9's deny/timeout path MUST answer the request (`extension_ui_response {cancelled:true}`) before any abort. See research doc.
 
-### #4 — Consolidate spike findings + go/no-go
+### #4 — Consolidate spike findings + go/no-go ✅ (all three spikes PASS on pi v0.80.6; GO recorded in the research doc)
 
 **Description:** Assemble `docs/research/2026-07-29-pi-spikes.md` (standard research-doc header + pipeline table linking PRD and this tasks file), record the pinned pi version and go/no-go per spike, update the PRD Status row. On any no-go: stop, document, close out the tasks file as Abandoned.
 **Complexity:** S **Category:** both **Dependencies:** #1, #2, #3 **Files:** `docs/research/2026-07-29-pi-spikes.md`, `docs/prds/2026-07-29-pi-local-agent-preset.md`

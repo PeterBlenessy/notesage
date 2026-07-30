@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-07-29 |
-| **Status** | Implemented (Linux gates green) — pending macOS execution gates: spike #2 Seatbelt run + #22 live E2E before merge |
+| **Status** | Implemented — M0 gate GREEN (all spikes pass, #2 verified on macOS 2026-07-30); only #22 in-app live E2E (operator-run) remains before merge |
 | **Priority** | Medium |
 | **Impact** | A second fully-offline Local Agent preset (pi) beside Goose — same one-click setup, same kernel-enforced zero-network guarantee — unlocking pi's checksummed releases, structured edit diffs, auto-compaction, and SKILL.md interop |
 | **Tasks** | [pi-local-agent-preset-tasks](../tasks/2026-07-29-pi-local-agent-preset-tasks.md) |

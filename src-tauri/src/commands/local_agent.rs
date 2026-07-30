@@ -148,9 +148,15 @@ fn pi_settings_json(model_id: &str) -> serde_json::Value {
 }
 
 /// Env for the BRIDGE spawn (inherited by pi): offline hard-off for startup
-/// network, the isolated flat config dir, and NO_PROXY as defense-in-depth
-/// (spike #2 pre-answer: pi ignores HTTP(S)_PROXY entirely, but the injected
-/// proxy vars cost nothing to neutralize explicitly).
+/// network, the isolated flat config dir, and NO_PROXY.
+///
+/// NO_PROXY is REQUIRED on macOS, not merely defensive (spike #2, verified on
+/// macOS 2026-07-30): pi's undici stack DOES honor `HTTP(S)_PROXY` for the
+/// localhost llama-server call, so with our per-agent proxy vars injected and
+/// no NO_PROXY, the model call routes into the domain-filtering proxy and the
+/// turn stalls. `NO_PROXY=localhost,127.0.0.1` makes pi hit the kernel-allowed
+/// llama port directly (same posture as Goose). The earlier Linux spike run
+/// wrongly concluded pi ignored proxy vars — corrected by the macOS run.
 fn build_pi_env() -> HashMap<String, String> {
     let base = pi_base_dir();
     let mut env = HashMap::new();
@@ -397,9 +403,11 @@ mod tests {
         let base = pi_base_dir().to_string_lossy().to_string();
         assert_eq!(env.get("PI_CODING_AGENT_DIR"), Some(&base));
         assert!(base.contains(".notesage"), "pi tree must live under .notesage");
-        // Defense-in-depth: spike #2 pre-answered that pi ignores HTTP(S)_PROXY,
-        // but the injected proxy vars are neutralized for localhost anyway.
+        // REQUIRED on macOS (spike #2, verified 2026-07-30): pi honors
+        // HTTP(S)_PROXY for the localhost llama call, so NO_PROXY is what keeps
+        // the model call off the domain-filtering proxy. Not optional.
         assert_eq!(env.get("NO_PROXY").map(String::as_str), Some("localhost,127.0.0.1"));
+        assert_eq!(env.get("no_proxy").map(String::as_str), Some("localhost,127.0.0.1"));
         assert_eq!(env.get("no_proxy").map(String::as_str), Some("localhost,127.0.0.1"));
     }
 
