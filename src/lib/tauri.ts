@@ -1141,13 +1141,19 @@ export const tauriApi = {
     return await invoke<AcpSessionResult>("acp_session_fork", { instanceId, sessionId, workingDirectory });
   },
 
+  /**
+   * Send a prompt to an ACP session. Resolves with the turn's stop reason
+   * (`end_turn`, `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`,
+   * `unknown`) — see `@/lib/ai/stop-reason`. Anything but `end_turn` means the
+   * agent stopped before finishing; callers must not treat it as success.
+   */
   async acpSessionPrompt(
     instanceId: string,
     sessionId: string,
     content: string,
     images?: Array<{ data: string; mime_type: string }>,
-  ): Promise<void> {
-    await invoke("acp_session_prompt", {
+  ): Promise<string> {
+    return invoke<string>("acp_session_prompt", {
       instanceId,
       sessionId,
       content,

@@ -20,6 +20,7 @@ import { buildAcpMcpServerInputs } from '@/lib/ai/acp-mcp';
 import { ensureAcpAgent, getAcpAgent, stopAcpAgent, TASK_AGENT_KEY } from '@/lib/ai/acp-agent-state';
 import { isToolCallAllowed } from '@/lib/ai/path-filter';
 import { log } from '@/lib/logger';
+import { describeStopReason } from '@/lib/ai/stop-reason';
 import { agentTaskRegistry } from './task-registry';
 import { runAgentTask, type TaskCallbacks, type TaskMeta } from './run-task';
 import { getHomeDir } from './home-dir';
@@ -269,7 +270,21 @@ export async function startAcpTask(
       handle.registerCleanup(() => { unlisten(); unlistenPermission(); });
 
       tauriApi.acpSessionPrompt(instanceId, session.session_id, prompt)
-        .then(() => {
+        .then((stopReason) => {
+          // A delegated task that exhausted its token or step budget used to be
+          // reported as plainly "completed", so a truncated reply looked final.
+          // The task did end, so it still completes — but the early stop is
+          // recorded in the activity log where the user can see it.
+          const notice = describeStopReason(stopReason);
+          if (notice) {
+            log.warn('ai', 'ACP agent task ended early', { stopReason, taskId });
+            useActivityStore.getState().appendActivity(taskId, {
+              label: 'Agent stopped before finishing',
+              detail: notice,
+              status: 'error',
+              timestamp: Date.now(),
+            });
+          }
           const t = agentTaskRegistry.getTask(taskId);
           if (t && t.status === 'running') {
             handle.complete({ notify: true });

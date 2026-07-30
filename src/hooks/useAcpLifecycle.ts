@@ -21,6 +21,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
 import { isAcpConnectionError, friendlyAcpError } from '@/lib/ai/errors';
+import { formatStopReasonNotice } from '@/lib/ai/stop-reason';
 import { isAuthError, canReauthenticate, reauthenticateAgent } from '@/lib/ai/reauth';
 import { toast } from 'sonner';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -226,6 +227,30 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
   // turn, keyed by `cleanupKeyFor(conversationId)`. Replaces the single
   // `cleanupRef` that corrupted under concurrent sessions.
   const cleanupRefs = useRef<CleanupMap>(new Map());
+
+  /**
+   * Append an end-of-turn notice (e.g. "the agent ran out of tokens") to an
+   * assistant message.
+   *
+   * Dual-writes exactly as the streaming path in `useAcpSessionListeners` does:
+   * `segments` drive rendering, while `content` stays the canonical flat text
+   * that search reads. Writing only the segment would render the notice but
+   * leave it unsearchable. The streamed text lives in the listener's closure,
+   * not here, so `content` is read back from the store and extended.
+   */
+  const appendTurnNotice = useCallback(
+    // `convId` mirrors the store's own `convId?: string | null` — an absent id
+    // means "the active conversation", which is how every other call here works.
+    (messageId: number, notice: string, convId?: string | null) => {
+      const state = useChatStore.getState();
+      const targetId = convId ?? state.activeConversationId;
+      const conv = state.conversations.find((c) => c.id === targetId);
+      const existing = conv?.messages.find((m) => m.timestamp === messageId)?.content ?? '';
+      updateMessage(messageId, existing + notice, undefined, convId);
+      appendTextSegment(messageId, notice, convId);
+    },
+    [updateMessage, appendTextSegment],
+  );
 
   // Tear down every in-flight stream on unmount so concurrent sessions don't
   // leak listeners when the hook is destroyed (the old single `cleanupRef` had
@@ -540,12 +565,21 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           const acpImages = opts?.attachments?.length
             ? opts.attachments.map(a => ({ data: a.data, mime_type: a.mimeType }))
             : null;
-          await invoke('acp_session_prompt', {
+          // The stop reason is the only signal that separates "the agent
+          // finished" from "the agent gave up partway" (token budget exhausted,
+          // per-turn step cap hit). Surfacing it is what keeps a long multi-file
+          // task from ending in silence with no indication it was unfinished.
+          const stopReason = await invoke<string>('acp_session_prompt', {
             instanceId,
             sessionId: promptSessionId,
             content: promptContent,
             images: acpImages,
           });
+          const notice = formatStopReasonNotice(stopReason);
+          if (notice) {
+            log.warn('ai', 'ACP turn ended early', { stopReason, conversationId });
+            appendTurnNotice(assistantMessageId, notice, conversationId);
+          }
         } finally {
           clearUnresponsiveTimer();
           runConvCleanup(cleanupRefs.current, conversationId);
@@ -784,12 +818,19 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         const retryImages = prompt.attachments?.length
           ? prompt.attachments.map(a => ({ data: a.data, mime_type: a.mimeType }))
           : null;
-        await invoke('acp_session_prompt', {
+        const stopReason = await invoke<string>('acp_session_prompt', {
           instanceId,
           sessionId: retrySessionId,
           content: promptContent,
           images: retryImages,
         });
+        // Same early-stop surfacing as the initial send — a retried turn can
+        // exhaust its budget just as easily, and silence would be just as wrong.
+        const notice = formatStopReasonNotice(stopReason);
+        if (notice) {
+          log.warn('ai', 'ACP turn ended early after retry', { stopReason, conversationId });
+          appendTurnNotice(prompt.assistantMessageId, notice, conversationId);
+        }
       } finally {
         clearUnresponsiveTimer();
         runConvCleanup(cleanupRefs.current, conversationId);
