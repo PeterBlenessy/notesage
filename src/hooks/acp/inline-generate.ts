@@ -12,6 +12,8 @@ import { log } from '@/lib/logger';
 import { useChatStore } from '@/stores/chat-store';
 import type { Connection } from '@/lib/ai/connections';
 import { isAcpConnectionError, friendlyAcpError } from '@/lib/ai/errors';
+import { describeStopReason } from '@/lib/ai/stop-reason';
+import { toast } from 'sonner';
 import type { AcpSessionResult, AcpSessionUpdatePayload, AcpPermissionRequestPayload } from '@/lib/ai/acp-utils';
 import { buildAcpMcpServerInputs } from '@/lib/ai/acp-mcp';
 import { getAcpAgent, stopAcpAgent, ensureAcpAgent } from '@/lib/ai/acp-agent-state';
@@ -71,11 +73,19 @@ export async function acpGenerateTextOnce(
 
     try {
       const fullPrompt = `${acpSystemMessage}\n\n${prompt}`;
-      await invoke('acp_session_prompt', {
+      const stopReason = await invoke<string>('acp_session_prompt', {
         instanceId,
         sessionId: session.session_id,
         content: fullPrompt,
       });
+      // This path's text goes straight into the document as a suggestion, so the
+      // notice CANNOT be appended to `result` — it would land in the user's
+      // prose. Warn out-of-band instead, before they accept a truncated edit.
+      const notice = describeStopReason(stopReason);
+      if (notice) {
+        log.warn('ai', 'ACP inline generation ended early', { stopReason });
+        toast.warning('The suggestion may be incomplete', { description: notice });
+      }
       return result;
     } finally {
       unlisten();
