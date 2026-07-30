@@ -254,7 +254,12 @@ pub(crate) enum AgentCmd {
         session_id: String,
         content: String,
         images: Option<Vec<crate::commands::ai::ImageData>>,
-        reply: oneshot::Sender<Result<(), String>>,
+        /// The turn's ACP `StopReason`, serialized snake_case (`end_turn`,
+        /// `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`).
+        /// Carried back so the UI can explain a turn that ended for any reason
+        /// other than completion — dropping it made those look identical to a
+        /// clean finish.
+        reply: oneshot::Sender<Result<String, String>>,
     },
     Cancel {
         session_id: String,

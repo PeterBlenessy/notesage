@@ -319,3 +319,69 @@ fn extract_model_info_reads_model_category_config_option() {
     assert!(current.is_none());
     assert!(available.is_empty());
 }
+
+// --- turn stop reasons (silent-turn-end fix) ---
+//
+// The stop reason is the only thing distinguishing "the agent finished" from
+// "the agent ran out of tokens or turn requests mid-task". These strings are a
+// wire contract the frontend switches on to decide whether to tell the user the
+// turn was cut short — renaming one silently restores the silent-stop bug.
+
+#[test]
+fn stop_reason_str_maps_every_known_variant_to_its_wire_string() {
+    use super::agent_thread::stop_reason_str;
+    use agent_client_protocol::schema::StopReason;
+
+    assert_eq!(stop_reason_str(StopReason::EndTurn), "end_turn");
+    assert_eq!(stop_reason_str(StopReason::MaxTokens), "max_tokens");
+    assert_eq!(stop_reason_str(StopReason::MaxTurnRequests), "max_turn_requests");
+    assert_eq!(stop_reason_str(StopReason::Refusal), "refusal");
+    assert_eq!(stop_reason_str(StopReason::Cancelled), "cancelled");
+}
+
+#[test]
+fn stop_reason_wire_strings_match_the_schema_serde_representation() {
+    // The mapping is hand-written (so the exact strings are visible and
+    // testable) but it MUST agree with the schema's own snake_case serde
+    // rename — otherwise the frontend and the protocol disagree.
+    use super::agent_thread::stop_reason_str;
+    use agent_client_protocol::schema::StopReason;
+
+    for reason in [
+        StopReason::EndTurn,
+        StopReason::MaxTokens,
+        StopReason::MaxTurnRequests,
+        StopReason::Refusal,
+        StopReason::Cancelled,
+    ] {
+        let via_serde = serde_json::to_string(&reason).unwrap();
+        let via_serde = via_serde.trim_matches('"');
+        assert_eq!(
+            stop_reason_str(reason),
+            via_serde,
+            "hand-written mapping drifted from the schema's serde representation",
+        );
+    }
+}
+
+#[test]
+fn only_end_turn_means_the_agent_actually_finished() {
+    // Guards the semantic the UI depends on: every other reason is an early
+    // stop the user must be told about.
+    use super::agent_thread::stop_reason_str;
+    use agent_client_protocol::schema::StopReason;
+
+    let early_stops = [
+        StopReason::MaxTokens,
+        StopReason::MaxTurnRequests,
+        StopReason::Refusal,
+        StopReason::Cancelled,
+    ];
+    for reason in early_stops {
+        assert_ne!(
+            stop_reason_str(reason),
+            "end_turn",
+            "an early stop must never be reported as a completed turn",
+        );
+    }
+}
