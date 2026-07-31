@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { Sparkles, Terminal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSkillStore, type SkillEntry } from '@/stores/skill-store';
+import { getSessionInfo, subscribeSessionInfo } from '@/lib/ai/acp-agent-state';
 
 /**
  * SkillMode — picker dropdown for the `/skill-name` prefix mode in the
@@ -11,7 +12,11 @@ import { useSkillStore, type SkillEntry } from '@/stores/skill-store';
  * follow-up commit after all 6 mode pickers (#14–#19) land.
  *
  * Behaviour:
- *   - Reads available skills via `useSkillStore.getActiveSkills()`.
+ *   - Reads available skills via `useSkillStore.getActiveSkills()`, and the
+ *     connected ACP agent's own commands from session state. Agent commands
+ *     were already captured from `available_commands_update` but had no
+ *     reader, so nothing the agent offered was reachable — including the only
+ *     compaction control an ACP agent has, since it owns its own context.
  *   - `/` (empty filter) lists EVERY skill, alphabetically. `/s` lists every
  *     skill whose name starts with "s", alphabetically. No cap — the parent
  *     picker tray (`flex-1 min-h-0 overflow-y-auto`) scrolls, and the parent's
@@ -69,6 +74,38 @@ function filterSkills(skills: SkillEntry[], filter: string): SkillEntry[] {
   return [...matched].sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * A row in the picker: either a Notesage skill or a command the connected ACP
+ * agent advertises (`/compact`, `/clear`, …).
+ *
+ * Agent commands arrive over `available_commands_update` and were already being
+ * stored in session state — they simply had no reader, so nothing the agent
+ * offered was ever reachable. Notably that includes the only compaction control
+ * available for an ACP agent, since the agent owns its own context window and
+ * the protocol exposes no other way to ask it to compact.
+ */
+type PickerRow =
+  | { kind: 'skill'; key: string; name: string; description?: string }
+  | { kind: 'agent'; key: string; name: string; description?: string };
+
+function filterAgentCommands(
+  commands: { name: string; description: string }[],
+  filter: string,
+): PickerRow[] {
+  const trimmed = filter.trim().toLowerCase();
+  const matched = trimmed
+    ? commands.filter((c) => c.name.toLowerCase().startsWith(trimmed))
+    : commands;
+  return [...matched]
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map((c) => ({
+      kind: 'agent' as const,
+      key: `agent:${c.name}`,
+      name: c.name,
+      description: c.description || undefined,
+    }));
+}
+
 function SkillMode({
   filter,
   onPick,
@@ -90,7 +127,25 @@ function SkillMode({
     () => useSkillStore.getState().getActiveSkills(),
     [skills, enabledOverrides],
   );
-  const results = useMemo(() => filterSkills(allSkills, filter), [allSkills, filter]);
+  // Commands advertised by the connected ACP agent. `getSessionInfo` returns a
+  // stable reference until the session actually changes, so it is safe as a
+  // `useSyncExternalStore` snapshot (same pattern as AcpSessionControls).
+  const sessionInfo = useSyncExternalStore(subscribeSessionInfo, getSessionInfo);
+  const agentCommands = sessionInfo.commands;
+
+  const results = useMemo<PickerRow[]>(() => {
+    const skillRows: PickerRow[] = filterSkills(allSkills, filter).map((s) => ({
+      kind: 'skill' as const,
+      key: s.path,
+      name: s.name,
+      description: s.description,
+    }));
+    // Skills first, agent commands after. Grouping rather than interleaving
+    // keeps the first-Enter target predictable: with no agent connected the
+    // list is byte-for-byte what it was, and an agent command can never
+    // displace the skill a user was reaching for.
+    return [...skillRows, ...filterAgentCommands(agentCommands, filter)];
+  }, [allSkills, agentCommands, filter]);
   const [activeIndex, setActiveIndex] = useState(0);
 
   // Reset highlight to the top whenever the filter or result count shifts so
@@ -151,10 +206,13 @@ function SkillMode({
       <div
         id={listboxId}
         role="listbox"
-        aria-label="Skill picker"
+        aria-label="Skill and agent command picker"
         className="rounded-md border border-border bg-popover p-3 text-sm text-muted-foreground shadow-md outline-none"
       >
-        No skills match
+        {/* Only mention agent commands when an agent is actually offering
+            some — otherwise the message names a category that does not exist
+            for this user. */}
+        {agentCommands.length > 0 ? 'No skills or agent commands match' : 'No skills match'}
       </div>
     );
   }
@@ -163,20 +221,25 @@ function SkillMode({
     <div
       id={listboxId}
       role="listbox"
-      aria-label="Skill picker"
+      aria-label="Skill and agent command picker"
       className="overflow-hidden rounded-md border border-border bg-popover shadow-md outline-none"
     >
-      {results.map((skill, i) => {
+      {results.map((row, i) => {
         const active = i === activeIndex;
+        // Terminal for an agent command, Sparkles for a skill — the two run in
+        // different places (the agent's own process vs Notesage), so which one
+        // will act on the command should be visible before pressing Enter.
+        const Icon = row.kind === 'agent' ? Terminal : Sparkles;
         return (
           <button
             type="button"
-            key={skill.path}
+            key={row.key}
             id={`${listboxId}-opt-${i}`}
             role="option"
             aria-selected={active}
             data-active={active ? 'true' : 'false'}
-            onClick={() => onPick(skill.name)}
+            data-kind={row.kind}
+            onClick={() => onPick(row.name)}
             onMouseEnter={() => setActiveIndex(i)}
             className={cn(
               // Density (live-test 2026-04-26).
@@ -186,7 +249,7 @@ function SkillMode({
                 : 'text-foreground hover:bg-muted/60',
             )}
           >
-            <Sparkles
+            <Icon
               className={cn(
                 'mt-[3px] size-3 shrink-0',
                 'text-muted-foreground',
@@ -195,12 +258,12 @@ function SkillMode({
               aria-hidden
             />
             <span className="flex min-w-0 flex-col">
-              <span className="truncate font-medium">{skill.name}</span>
-              {skill.description ? (
+              <span className="truncate font-medium">{row.name}</span>
+              {row.description ? (
                 <span
                   className="truncate text-xs text-muted-foreground"
                 >
-                  {skill.description}
+                  {row.description}
                 </span>
               ) : null}
             </span>
