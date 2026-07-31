@@ -5,6 +5,7 @@ import {
   formatStopReasonNotice,
   isResumableStop,
   CONTINUE_REPLY,
+  toTelemetryStopReason,
 } from '../stop-reason';
 import { parseQuickReplies } from '@/components/chat/QuickReplies';
 
@@ -142,5 +143,49 @@ describe('continuing a turn that ran out of room', () => {
   it('leaves no chip for a non-resumable stop when run through the real parser', () => {
     const parsed = parseQuickReplies(`Done.${formatStopReasonNotice('refusal')}`);
     expect(parsed.replies).toEqual([]);
+  });
+});
+
+describe('toTelemetryStopReason', () => {
+  it.each(['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled'])(
+    'passes the known reason %s through unchanged',
+    (reason) => {
+      expect(toTelemetryStopReason(reason)).toBe(reason);
+    },
+  );
+
+  it('collapses anything unrecognised to "unknown"', () => {
+    // A newer backend could emit a variant this build does not know. Reporting
+    // it verbatim would put an unbounded value into the usage taxonomy, which
+    // the PII contract forbids.
+    expect(toTelemetryStopReason('some_future_reason')).toBe('unknown');
+    expect(toTelemetryStopReason('unknown')).toBe('unknown');
+  });
+
+  it.each([undefined, null, ''])('collapses %p to "unknown" rather than omitting it', (reason) => {
+    expect(toTelemetryStopReason(reason)).toBe('unknown');
+  });
+
+  it('only ever returns a member of the closed telemetry enum', () => {
+    // The guarantee the taxonomy depends on: no input produces a novel value.
+    const allowed = new Set([
+      'end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled', 'unknown',
+    ]);
+    const inputs = [
+      'end_turn', 'max_tokens', 'refusal', 'cancelled', 'unknown', 'max_turn_requests',
+      'wildly_new', '', 'END_TURN', '../etc/passwd', '{"a":1}', undefined, null,
+    ];
+    for (const input of inputs) {
+      expect(allowed.has(toTelemetryStopReason(input))).toBe(true);
+    }
+  });
+
+  it('maps every reason the notice layer knows about', () => {
+    // Drift lock: describeStopReason and the telemetry enum are separate
+    // unions over the same protocol. If one gains a case the other must too,
+    // or a real reason starts reporting as "unknown".
+    for (const reason of ['end_turn', 'max_tokens', 'max_turn_requests', 'refusal', 'cancelled']) {
+      expect(toTelemetryStopReason(reason)).not.toBe('unknown');
+    }
   });
 });
