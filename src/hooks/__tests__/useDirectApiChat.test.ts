@@ -13,6 +13,8 @@ import { useToolPermissionStore } from '@/stores/tool-permission-store';
 import { invoke } from '@tauri-apps/api/core';
 import { streamEvent } from '@/lib/ai/stream-events';
 import { useSessionRunStore } from '@/stores/session-run-store';
+import { useLocalAIStore } from '@/stores/local-ai-store';
+import type { ChatMessage } from '@/lib/ai/types';
 import type { ResolvedCredentials } from '@/lib/ai/credentials';
 
 // The hook generates a unique per-request streamId and emits/listens on
@@ -848,5 +850,86 @@ describe('useDirectApiChat — backend cancel (audit C2)', () => {
     const cancelCall = vi.mocked(invoke).mock.calls.find(([cmd]) => cmd === 'ai_chat_stream_cancel');
     expect(cancelCall).toBeDefined();
     expect((cancelCall![1] as { streamId?: string }).streamId).toBe(sid);
+  });
+});
+
+
+describe('useDirectApiChat — context compaction at the turn boundary', () => {
+  // Trimming deletes the oldest rounds outright; compaction summarizes them
+  // first so the agent keeps the narrative instead of rediscovering it. The
+  // compaction call must happen at the START of a turn — never inside the tool
+  // loop, which is mid-task and where compaction is known to do harm.
+
+  /** History long enough that the budget forces a compaction. Passed to
+   *  sendChatMessage directly — it takes prior turns as an argument. */
+  function longHistory(rounds: number): ChatMessage[] {
+    const out: ChatMessage[] = [];
+    for (let i = 0; i < rounds; i++) {
+      out.push({ role: 'user', content: `question ${i} ${'x'.repeat(3000)}`, timestamp: Date.now() + i * 2 } as ChatMessage);
+      out.push({ role: 'assistant', content: `answer ${i} ${'y'.repeat(3000)}`, timestamp: Date.now() + i * 2 + 1 } as ChatMessage);
+    }
+    return out;
+  }
+
+  beforeEach(() => {
+    useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
+    useChatStore.getState().clearMessages();
+    // A small window is what makes compaction necessary at all.
+    useLocalAIStore.setState({ contextLength: 4096 });
+    setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
+      setTimeout(() => emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null), 0);
+    });
+    setMockInvokeHandler('ai_chat', async () => 'Earlier: edited parser.ts; the null-deref was fixed.');
+    vi.mocked(invoke).mockClear();
+  });
+
+  it('summarizes the overflow and sends the summary instead of dropping it', async () => {
+    const { result } = renderDirectApiChat({ provider: 'local_bundled' });
+
+    await act(async () => {
+      await result.current.sendChatMessage('what did we decide?', longHistory(8));
+    });
+
+    const compactionCall = vi.mocked(invoke).mock.calls.find(([cmd]) => cmd === 'ai_chat');
+    expect(compactionCall).toBeDefined();
+
+    const streamCall = vi.mocked(invoke).mock.calls.find(([cmd]) => cmd === 'ai_chat_stream');
+    const sent = (streamCall![1] as { messages: Array<{ role: string; content: string }> }).messages;
+    // The summary survives as context the model can still see.
+    expect(sent.some((m) => m.content?.includes('edited parser.ts'))).toBe(true);
+  });
+
+  it('does not compact a short conversation — that would spend a call for nothing', async () => {
+    useChatStore.getState().clearMessages();
+    const { result } = renderDirectApiChat({ provider: 'local_bundled' });
+
+    await act(async () => {
+      await result.current.sendChatMessage('hi', []);
+    });
+
+    expect(vi.mocked(invoke).mock.calls.find(([cmd]) => cmd === 'ai_chat')).toBeUndefined();
+  });
+
+  it('leaves cloud providers alone — their windows do not need it', async () => {
+    const { result } = renderDirectApiChat({ provider: 'anthropic' });
+
+    await act(async () => {
+      await result.current.sendChatMessage('what did we decide?', longHistory(8));
+    });
+
+    expect(vi.mocked(invoke).mock.calls.find(([cmd]) => cmd === 'ai_chat')).toBeUndefined();
+  });
+
+  it('still sends the turn when the summarizer fails', async () => {
+    // A failed summarization must degrade to a plain trim, never cost the turn.
+    setMockInvokeHandler('ai_chat', async () => { throw new Error('model unavailable'); });
+    const { result } = renderDirectApiChat({ provider: 'local_bundled' });
+
+    await act(async () => {
+      await result.current.sendChatMessage('what did we decide?', longHistory(8));
+    });
+
+    const streamCall = vi.mocked(invoke).mock.calls.find(([cmd]) => cmd === 'ai_chat_stream');
+    expect(streamCall).toBeDefined();
   });
 });
