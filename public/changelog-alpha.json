@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.22",
+      "date": "2026-07-31",
+      "previousVersion": "0.48.0-alpha.21",
+      "sections": {
+        "features": [
+          "feat(acp): surface agent slash commands in the / menu (#567)"
+        ]
+      },
+      "underTheHood": [
+        "feat(acp): surface agent slash commands in the / menu"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.21",
       "date": "2026-07-31",
       "previousVersion": "0.48.0-alpha.20",
