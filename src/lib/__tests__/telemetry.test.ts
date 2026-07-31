@@ -110,6 +110,28 @@ describe("track() gating", () => {
     expect(Object.keys(args?.props ?? {}).sort()).toEqual(["path", "provider_kind"]);
   });
 
+  it("ai_turn_ended carries only how the turn finished, never what it was doing", async () => {
+    // The whole point of this event is field visibility into agents running out
+    // of room. It must not become a channel for prompt or file content.
+    mockState.telemetryUsageEnabled = true;
+    track("ai_turn_ended", {
+      path: "acp",
+      provider_kind: "agent_managed",
+      stop_reason: "max_tokens",
+    });
+    await flush();
+    const args = invoke.mock.calls[0]?.[1] as
+      | { name: string; props: Record<string, string> }
+      | undefined;
+    expect(args?.name).toBe("ai_turn_ended");
+    expect(Object.keys(args?.props ?? {}).sort()).toEqual([
+      "path",
+      "provider_kind",
+      "stop_reason",
+    ]);
+    expect(args?.props.stop_reason).toBe("max_tokens");
+  });
+
   it("never throws into the caller even if the IPC rejects", async () => {
     mockState.telemetryUsageEnabled = true;
     invoke.mockImplementationOnce(() => Promise.reject(new Error("transport down")));

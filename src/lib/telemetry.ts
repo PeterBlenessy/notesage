@@ -83,7 +83,27 @@ export type ItemSource = "user" | "project";
  * deliberately when instrumenting a new surface rather than passing free text.
  * Only values with a live `track("feature_used", …)` call site belong here.
  */
-export type FeatureName = "focus_mode" | "cmd_bar_pin" | "recording";
+export type FeatureName =
+  | "focus_mode"
+  | "cmd_bar_pin"
+  | "recording";
+
+/**
+ * Why an agent turn ended (`ai_turn_ended`). Mirrors the ACP `StopReason` wire
+ * strings, plus `unknown` for a variant newer than the build.
+ *
+ * Closed, low-cardinality, and carries nothing about *what* the turn was doing —
+ * only how it finished. This is the field signal for the question the local-agent
+ * work was built around: how often does an agent actually run out of room for
+ * real users, rather than for one person on one task.
+ */
+export type AiStopReason =
+  | "end_turn"
+  | "max_tokens"
+  | "max_turn_requests"
+  | "refusal"
+  | "cancelled"
+  | "unknown";
 
 /**
  * Rich block kinds (block_inserted). Only rich/embedded blocks are tracked —
@@ -155,6 +175,12 @@ export interface TelemetryEventProps {
   app_launched: { version: string; os: string; channel: "stable" | "alpha" };
   document_opened: { format: DocumentFormat };
   ai_chat_sent: { path: AiPath; provider_kind: ProviderKind };
+  /**
+   * How an agent turn finished. Complements `ai_chat_sent`, which fires at send
+   * and so cannot know the outcome. Only emitted for ACP turns, which are the
+   * ones that report a stop reason at all.
+   */
+  ai_turn_ended: { path: AiPath; provider_kind: ProviderKind; stop_reason: AiStopReason };
   ai_action_used: { action: AiAction };
   export_performed: { format: ExportFormat; template: ExportTemplate };
   connection_added: { provider_kind: ProviderKind };

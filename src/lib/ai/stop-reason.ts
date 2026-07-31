@@ -68,6 +68,27 @@ export function isEarlyStop(reason: string | null | undefined): boolean {
 }
 
 /**
+ * Coerce a raw stop reason to the closed telemetry enum.
+ *
+ * The backend value is a string, and a build newer than this one could emit a
+ * variant we do not know. Reporting it verbatim would put an unbounded value
+ * into the usage taxonomy, which the PII contract forbids — everything
+ * unrecognised (including absent) collapses to `unknown`.
+ */
+export function toTelemetryStopReason(reason: string | null | undefined): AcpStopReason {
+  switch (reason) {
+    case 'end_turn':
+    case 'max_tokens':
+    case 'max_turn_requests':
+    case 'refusal':
+    case 'cancelled':
+      return reason;
+    default:
+      return 'unknown';
+  }
+}
+
+/**
  * Stop reasons the agent can simply be told to carry on from.
  *
  * `max_tokens` and `max_turn_requests` are budget limits: the agent still holds
