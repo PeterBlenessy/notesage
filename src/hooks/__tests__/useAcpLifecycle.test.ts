@@ -26,6 +26,19 @@ vi.mock('@/lib/logger', () => ({
 vi.mock('@/lib/tauri', () => ({
   tauriApi: {
     getHomeDir: vi.fn().mockResolvedValue('/Users/test'),
+    // The session-restore chain runs before every prompt. Without these the
+    // send fails on an undefined function long before reaching the prompt, so
+    // any assertion about the assistant's turn would be testing the error path.
+    acpSessionNew: vi.fn().mockResolvedValue({
+      session_id: 'sess-mock',
+      available_models: [],
+      current_model: null,
+      modes: null,
+      config_options: null,
+    }),
+    acpSessionLoad: vi.fn().mockResolvedValue(undefined),
+    acpSessionResume: vi.fn().mockResolvedValue(undefined),
+    acpSessionList: vi.fn().mockResolvedValue({ sessions: [], next_cursor: null }),
   },
 }));
 
@@ -38,24 +51,34 @@ vi.mock('@/hooks/useAcpSessionListeners', () => ({
   buildAcpChatCleanup: vi.fn().mockReturnValue(vi.fn()),
 }));
 
-vi.mock('@/lib/ai/acp-agent-state', () => ({
-  acpAgent: null,
-  DEFAULT_AGENT_KEY: '__default__',
-  getAcpAgent: vi.fn(() => null),
-  getAllAcpAgents: vi.fn(() => []),
-  getAllAcpAgentEntries: vi.fn(() => []),
-  stopAcpAgent: vi.fn(),
-  stopAllAcpAgents: vi.fn(),
-  ensureAcpAgent: vi.fn().mockResolvedValue('test-instance-id'),
-  updateAcpAgentInstanceId: vi.fn(),
-  clearAcpAgent: vi.fn(),
-}));
+// Spread the real module and stub ONLY the agent-process lifecycle.
+//
+// An exhaustive hand-written mock silently rots: the module keeps gaining
+// exports (session-info writers, capability backfill), and the first one the
+// send path touches throws "No export is defined" — which the hook catches and
+// turns into a generic agent error. A test asserting anything about the turn
+// then asserts on that error instead, and passes or fails for the wrong reason.
+vi.mock('@/lib/ai/acp-agent-state', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/ai/acp-agent-state')>();
+  return {
+    ...actual,
+    acpAgent: null,
+    getAcpAgent: vi.fn(() => null),
+    getAllAcpAgents: vi.fn(() => []),
+    getAllAcpAgentEntries: vi.fn(() => []),
+    stopAcpAgent: vi.fn(),
+    stopAllAcpAgents: vi.fn(),
+    ensureAcpAgent: vi.fn().mockResolvedValue('test-instance-id'),
+    updateAcpAgentInstanceId: vi.fn(),
+    clearAcpAgent: vi.fn(),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // Import the hook under test AFTER mocks are configured
 // ---------------------------------------------------------------------------
 
-import { useAcpLifecycle } from '@/hooks/useAcpLifecycle';
+import { useAcpLifecycle, buildAcpHistoryBlock, ACP_HISTORY_BUDGET_CHARS } from '@/hooks/useAcpLifecycle';
 import type { Connection } from '@/lib/ai/connections';
 
 // Get mutable reference to the mocked module
@@ -452,5 +475,135 @@ describe('useAcpLifecycle', () => {
       const attachments = (userMsg?.activities ?? []).filter((a) => a.kind === 'attachment');
       expect(attachments).toHaveLength(0);
     });
+  });
+
+  describe('acpSendChatMessage — early turn stops (silent-stop fix)', () => {
+    // The pure helper and the Rust mapping are unit-tested elsewhere; what those
+    // cannot catch is the wiring — that the hook reads the resolved stop reason
+    // at all. Before the fix the prompt's result was discarded entirely, and a
+    // turn abandoned at the token budget looked exactly like a completed one.
+    async function sendWithStopReason(stopReason: unknown) {
+      vi.useRealTimers();
+      setMockInvokeHandler('acp_session_new', () => ({
+        session_id: 'sess-stop-reason',
+        available_models: [],
+        current_model: null,
+        modes: null,
+        config_options: null,
+      }));
+      setMockInvokeHandler('acp_session_prompt', () => stopReason);
+
+      useChatStore.getState().clearMessages();
+      setMockAgent({
+        instanceId: 'inst-stop-reason',
+        connectionId: 'conn-test',
+        sandboxScopeKey: '',
+        configKey: '',
+        chatSessionId: null,
+      });
+
+      const { result } = renderHook(() =>
+        useAcpLifecycle({
+          effectiveConnection: makeConnection(),
+          acpSystemMessage: 'sys',
+        })
+      );
+
+      await act(async () => {
+        try {
+          await result.current.acpSendChatMessage('do a long task', []);
+        } catch {
+          // downstream pipeline is out of scope
+        }
+      });
+
+      const conv = useChatStore.getState().conversations[0];
+      return conv?.messages.find((m) => m.role === 'assistant');
+    }
+
+    it('tells the user when the agent ran out of tokens, and offers to continue', async () => {
+      const assistant = await sendWithStopReason('max_tokens');
+      expect(assistant?.content ?? '').toMatch(/ran out of tokens/i);
+      // The chip parser reads the tag out of `content`, so the dual-write to
+      // content — not just the segment — is what makes the offer reachable.
+      expect(assistant?.content ?? '').toContain('<quick-replies>');
+    });
+
+    it('stays silent on a clean finish', async () => {
+      const assistant = await sendWithStopReason('end_turn');
+      expect(assistant?.content ?? '').not.toMatch(/stopped before finishing/i);
+      expect(assistant?.content ?? '').not.toContain('<quick-replies>');
+    });
+
+    it('stays silent when the backend reports no reason at all', async () => {
+      // An older backend (or any caller returning nothing) must not produce a
+      // bogus "stopped for reason: undefined" notice on every single turn.
+      const assistant = await sendWithStopReason(undefined);
+      expect(assistant?.content ?? '').not.toMatch(/stopped before finishing/i);
+    });
+
+    it('reports a refusal but does not offer to continue', async () => {
+      const assistant = await sendWithStopReason('refusal');
+      expect(assistant?.content ?? '').toMatch(/declined/i);
+      expect(assistant?.content ?? '').not.toContain('<quick-replies>');
+    });
+  });
+});
+
+describe('buildAcpHistoryBlock — bounded injection', () => {
+  // Each message was already capped at 2000 chars, but the message COUNT was
+  // not, so a long conversation produced a single prompt of tens of thousands
+  // of tokens on every new session. On a local agent that is unconditionally
+  // too large — and self-perpetuating, since each retry rebuilds it.
+
+  function seedThread(rounds: number, chars = 1500): void {
+    const store = useChatStore.getState();
+    store.clearMessages();
+    for (let i = 0; i < rounds; i++) {
+      store.addMessage({ role: 'user', content: `u${i} ${'x'.repeat(chars)}`, timestamp: 1000 + i * 2 });
+      store.addMessage({ role: 'assistant', content: `a${i} ${'y'.repeat(chars)}`, timestamp: 1001 + i * 2 });
+    }
+  }
+
+  it('stays within its budget however long the conversation is', () => {
+    seedThread(80);
+    const block = buildAcpHistoryBlock([]);
+    // Budget plus the wrapper; the point is bounded, not exact.
+    expect(block.length).toBeLessThan(ACP_HISTORY_BUDGET_CHARS * 1.2);
+  });
+
+  it('keeps the most recent messages, which is what "continue" depends on', () => {
+    seedThread(80);
+    const block = buildAcpHistoryBlock([]);
+    expect(block).toContain('a79');   // newest
+    expect(block).not.toContain('u0 '); // oldest, dropped
+  });
+
+  it('says how much it dropped rather than silently omitting it', () => {
+    seedThread(80);
+    const block = buildAcpHistoryBlock([]);
+    expect(block).toMatch(/earlier messages? omitted/i);
+  });
+
+  it('adds no elision notice when everything fits', () => {
+    seedThread(2, 50);
+    const block = buildAcpHistoryBlock([]);
+    expect(block).not.toMatch(/omitted/i);
+    expect(block).toContain('u0');
+  });
+
+  it('keeps at least one message even when a single message exceeds the budget', () => {
+    // A block containing only "N omitted" would carry no context at all. The
+    // survivor is the NEWEST message, which is the assistant's, since the walk
+    // runs backwards from the recent end.
+    seedThread(1, 5000);
+    const block = buildAcpHistoryBlock([], 10);
+    expect(block).toContain('Assistant');
+    expect(block).toMatch(/1 earlier message omitted/i);
+  });
+
+  it('is empty when there is nothing prior', () => {
+    useChatStore.getState().clearMessages();
+    expect(buildAcpHistoryBlock([])).toBe('');
   });
 });

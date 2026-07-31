@@ -155,6 +155,25 @@ async fn handle_load_session(
     }
 }
 
+/// ACP `StopReason` → the snake_case wire string the frontend switches on.
+///
+/// Mirrors the schema's own `#[serde(rename_all = "snake_case")]` rather than
+/// serializing through serde_json, so the exact strings the UI depends on are
+/// visible and unit-testable here. `StopReason` is `#[non_exhaustive]`: an
+/// unknown future variant degrades to `"unknown"`, which the frontend treats as
+/// "ended for an unrecognised reason" rather than as a clean finish.
+pub(crate) fn stop_reason_str(reason: StopReason) -> String {
+    match reason {
+        StopReason::EndTurn => "end_turn",
+        StopReason::MaxTokens => "max_tokens",
+        StopReason::MaxTurnRequests => "max_turn_requests",
+        StopReason::Refusal => "refusal",
+        StopReason::Cancelled => "cancelled",
+        _ => "unknown",
+    }
+    .to_string()
+}
+
 /// Prompt runs in a detached task so the command loop stays responsive for
 /// `Cancel` and `PermissionRespond` while the agent processes the prompt.
 /// `ConnectionTo` is Send + Clone, so a plain `tokio::spawn` suffices; using it
@@ -167,7 +186,7 @@ fn handle_prompt(
     content: String,
     images: Option<Vec<crate::commands::ai::ImageData>>,
     usage_ctx: ClientContext,
-    reply: oneshot::Sender<Result<(), String>>,
+    reply: oneshot::Sender<Result<String, String>>,
 ) {
     let conn = conn.clone();
     let prompt_binary = agent_binary.to_string();
@@ -193,11 +212,26 @@ fn handle_prompt(
         let req = PromptRequest::new(SessionId::new(sid), blocks);
         match conn.send_request(req).block_task().await {
             Ok(resp) => {
-                log::info!(
-                    target: "notesage::acp",
-                    "[{}] Prompt completed in {:.1}s (session={})",
-                    prompt_binary, start.elapsed().as_secs_f64(), prompt_sid,
-                );
+                // The stop reason is the ONLY signal distinguishing a completed
+                // turn from one the agent abandoned because it ran out of tokens
+                // or turn requests. Logging an unconditional "completed" here (and
+                // replying `Ok(())`) made an abandoned long task look exactly like
+                // a clean finish, both in the log and in the UI.
+                let stop_reason = stop_reason_str(resp.stop_reason);
+                let elapsed = start.elapsed().as_secs_f64();
+                if resp.stop_reason == StopReason::EndTurn {
+                    log::info!(
+                        target: "notesage::acp",
+                        "[{}] Prompt completed in {:.1}s (session={}, stop_reason={})",
+                        prompt_binary, elapsed, prompt_sid, stop_reason,
+                    );
+                } else {
+                    log::warn!(
+                        target: "notesage::acp",
+                        "[{}] Prompt ended early after {:.1}s (session={}, stop_reason={}) — the agent did not finish its work",
+                        prompt_binary, elapsed, prompt_sid, stop_reason,
+                    );
+                }
                 // Best-effort per-turn usage forwarding (UNSTABLE upstream
                 // field; deserializes DefaultOnError so a shape change lands
                 // here as `None`). Emitted BEFORE the reply resolves but
@@ -206,7 +240,7 @@ fn handle_prompt(
                 if let Some(usage) = resp.usage.as_ref() {
                     usage_ctx.emit_turn_usage(&prompt_sid, usage);
                 }
-                let _ = reply.send(Ok(()));
+                let _ = reply.send(Ok(stop_reason));
             }
             Err(e) => {
                 log::error!(

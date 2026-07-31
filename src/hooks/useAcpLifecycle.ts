@@ -21,6 +21,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
 import { isAcpConnectionError, friendlyAcpError } from '@/lib/ai/errors';
+import { formatStopReasonNotice, toTelemetryStopReason } from '@/lib/ai/stop-reason';
+import { track, providerKind } from '@/lib/telemetry';
 import { isAuthError, canReauthenticate, reauthenticateAgent } from '@/lib/ai/reauth';
 import { toast } from 'sonner';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -60,6 +62,17 @@ function foregroundAgent() {
 }
 
 /**
+ * Total size ceiling for the injected conversation history, in characters.
+ *
+ * ~24k chars is roughly 6k tokens at the usual chars/token heuristic — enough
+ * for a meaningful recap, small enough to leave a 32K local window mostly free
+ * for the actual work. Cloud agents have far more room and are unaffected in
+ * practice; the bound exists because the unbounded version broke the smallest
+ * window, and an unbounded prompt is not defensible on any of them.
+ */
+export const ACP_HISTORY_BUDGET_CHARS = 24_000;
+
+/**
  * Build the `<conversation-history>` preamble injected when a NEW ACP session
  * starts mid-conversation — the first message of a fresh session, OR a
  * crash-retry that fell back to a fresh session (session/load unsupported or
@@ -70,8 +83,20 @@ function foregroundAgent() {
  * can't collapse it to a single message), slices it to the active segment for
  * provider context isolation, and excludes the message pair currently being
  * (re)sent (passed as `excludeTimestamps`).
+ *
+ * BOUNDED by total size, not just per message. Each message was already capped
+ * at 2000 chars, but the message COUNT was not, so a long conversation produced
+ * a single prompt of tens of thousands of tokens. On a local agent that is
+ * unconditionally too large, and self-perpetuating: the turn stops at
+ * `max_tokens` and every retry rebuilds the same oversized block. The newest
+ * messages are kept — "continue from where you left off" depends on the recent
+ * end — and anything dropped is stated in the block rather than silently
+ * omitted, so the agent knows its view is partial.
  */
-export function buildAcpHistoryBlock(excludeTimestamps: number[]): string {
+export function buildAcpHistoryBlock(
+  excludeTimestamps: number[],
+  budgetChars: number = ACP_HISTORY_BUDGET_CHARS,
+): string {
   const store = useChatStore.getState();
   const conv = store.conversations.find((c) => c.id === store.activeConversationId);
   const segment = store.getActiveSegment();
@@ -84,13 +109,35 @@ export function buildAcpHistoryBlock(excludeTimestamps: number[]): string {
     (m) => (m.timestamp === undefined || !exclude.has(m.timestamp)) && m.role !== 'system-status' && m.content,
   );
   if (priorMessages.length === 0) return '';
-  const lines = priorMessages.map((m) => {
+  const render = (m: ChatMessage) => {
     const prefix = m.role === 'user' ? 'User' : 'Assistant';
     const truncated = m.content.length > 2000 ? m.content.slice(0, 2000) + '\n... (truncated)' : m.content;
     const suffix = m.interrupted ? ' [interrupted]' : '';
     return `${prefix}${suffix}: ${truncated}`;
-  });
-  return `\n\n<conversation-history>\nThe following is the prior conversation in this session. The user may ask you to continue from where you left off.\n\n${lines.join('\n\n')}\n</conversation-history>`;
+  };
+
+  // Walk backwards from the newest so the recent end always survives, then
+  // restore chronological order.
+  const kept: string[] = [];
+  let used = 0;
+  let omitted = 0;
+  for (let i = priorMessages.length - 1; i >= 0; i--) {
+    const line = render(priorMessages[i]);
+    // Always keep at least one message: a block that says only "N omitted"
+    // carries no context at all.
+    if (kept.length > 0 && used + line.length > budgetChars) {
+      omitted = i + 1;
+      break;
+    }
+    kept.unshift(line);
+    used += line.length;
+  }
+
+  const elision =
+    omitted > 0
+      ? `\n\n[${omitted} earlier message${omitted === 1 ? '' : 's'} omitted to fit the context window.]`
+      : '';
+  return `\n\n<conversation-history>\nThe following is the prior conversation in this session. The user may ask you to continue from where you left off.${elision}\n\n${kept.join('\n\n')}\n</conversation-history>`;
 }
 
 /**
@@ -226,6 +273,51 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
   // turn, keyed by `cleanupKeyFor(conversationId)`. Replaces the single
   // `cleanupRef` that corrupted under concurrent sessions.
   const cleanupRefs = useRef<CleanupMap>(new Map());
+
+  /**
+   * Append an end-of-turn notice (e.g. "the agent ran out of tokens") to an
+   * assistant message.
+   *
+   * Dual-writes exactly as the streaming path in `useAcpSessionListeners` does:
+   * `segments` drive rendering, while `content` stays the canonical flat text
+   * that search reads. Writing only the segment would render the notice but
+   * leave it unsearchable. The streamed text lives in the listener's closure,
+   * not here, so `content` is read back from the store and extended.
+   */
+  /**
+   * Report how a turn finished, coerced to the closed telemetry enum.
+   *
+   * Defined once because both the initial send and the crash-retry path end a
+   * turn, and a retry that quietly went unreported would bias the very
+   * statistic this exists to measure.
+   */
+  const trackTurnEnded = useCallback(
+    (stopReason: string | null | undefined) => {
+      track('ai_turn_ended', {
+        path: 'acp',
+        provider_kind: providerKind(
+          effectiveConnection?.provider ?? '',
+          effectiveConnection?.authMethod ?? '',
+        ),
+        stop_reason: toTelemetryStopReason(stopReason),
+      });
+    },
+    [effectiveConnection],
+  );
+
+  const appendTurnNotice = useCallback(
+    // `convId` mirrors the store's own `convId?: string | null` — an absent id
+    // means "the active conversation", which is how every other call here works.
+    (messageId: number, notice: string, convId?: string | null) => {
+      const state = useChatStore.getState();
+      const targetId = convId ?? state.activeConversationId;
+      const conv = state.conversations.find((c) => c.id === targetId);
+      const existing = conv?.messages.find((m) => m.timestamp === messageId)?.content ?? '';
+      updateMessage(messageId, existing + notice, undefined, convId);
+      appendTextSegment(messageId, notice, convId);
+    },
+    [updateMessage, appendTextSegment],
+  );
 
   // Tear down every in-flight stream on unmount so concurrent sessions don't
   // leak listeners when the hook is destroyed (the old single `cleanupRef` had
@@ -540,12 +632,25 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           const acpImages = opts?.attachments?.length
             ? opts.attachments.map(a => ({ data: a.data, mime_type: a.mimeType }))
             : null;
-          await invoke('acp_session_prompt', {
+          // The stop reason is the only signal that separates "the agent
+          // finished" from "the agent gave up partway" (token budget exhausted,
+          // per-turn step cap hit). Surfacing it is what keeps a long multi-file
+          // task from ending in silence with no indication it was unfinished.
+          const stopReason = await invoke<string>('acp_session_prompt', {
             instanceId,
             sessionId: promptSessionId,
             content: promptContent,
             images: acpImages,
           });
+          // How the turn finished, in aggregate. `ai_chat_sent` fires at send
+          // and cannot know the outcome; this is the only signal for how often
+          // agents actually run out of room in the field.
+          trackTurnEnded(stopReason);
+          const notice = formatStopReasonNotice(stopReason);
+          if (notice) {
+            log.warn('ai', 'ACP turn ended early', { stopReason, conversationId });
+            appendTurnNotice(assistantMessageId, notice, conversationId);
+          }
         } finally {
           clearUnresponsiveTimer();
           runConvCleanup(cleanupRefs.current, conversationId);
@@ -784,12 +889,20 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         const retryImages = prompt.attachments?.length
           ? prompt.attachments.map(a => ({ data: a.data, mime_type: a.mimeType }))
           : null;
-        await invoke('acp_session_prompt', {
+        const stopReason = await invoke<string>('acp_session_prompt', {
           instanceId,
           sessionId: retrySessionId,
           content: promptContent,
           images: retryImages,
         });
+        // Same early-stop surfacing as the initial send — a retried turn can
+        // exhaust its budget just as easily, and silence would be just as wrong.
+        trackTurnEnded(stopReason);
+        const notice = formatStopReasonNotice(stopReason);
+        if (notice) {
+          log.warn('ai', 'ACP turn ended early after retry', { stopReason, conversationId });
+          appendTurnNotice(prompt.assistantMessageId, notice, conversationId);
+        }
       } finally {
         clearUnresponsiveTimer();
         runConvCleanup(cleanupRefs.current, conversationId);
