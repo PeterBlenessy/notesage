@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { compareByVerdict } from '@/lib/ai/model-fit';
 import { AddCustomModelDialog } from './AddCustomModelDialog';
 import { CompletionServerSection } from './CompletionServerSection';
+import { ServerLogDialog } from './ServerLogDialog';
 import { ModelCard } from './ModelCard';
 import { Button } from '@/components/ui/button';
 import {
@@ -336,6 +337,9 @@ export function LocalAISettings() {
               </Button>
             </>
           )}
+          {/* Available whenever there is something to read — including after a
+              crash, which is exactly when the engine's own output matters. */}
+          <ServerLogDialog />
         </div>
       </div>
 

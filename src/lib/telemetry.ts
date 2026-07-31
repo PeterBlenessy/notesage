@@ -86,7 +86,10 @@ export type ItemSource = "user" | "project";
 export type FeatureName =
   | "focus_mode"
   | "cmd_bar_pin"
-  | "recording";
+  | "recording"
+  // Fired when a turn's history was summarized instead of trimmed, so the
+  // frequency of local models outgrowing their window is visible in aggregate.
+  | "context_compaction";
 
 /**
  * Why an agent turn ended (`ai_turn_ended`). Mirrors the ACP `StopReason` wire

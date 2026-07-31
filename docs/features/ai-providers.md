@@ -289,6 +289,20 @@ When a tool call errors or the user denies permission, `buildToolResultContent` 
 - **Ollama:** Same format as OpenAI. Requires models with function calling support (Qwen3, Llama 3.1+, Mistral).
 - **Local bundled:** Same format as OpenAI via `/v1/chat/completions`. Requires `--jinja` flag on llama-server (added automatically when `supports_tool_calling` is true in model catalog). Tool calls stream incrementally in `delta.tool_calls` (requires llama.cpp b9000+ via the toolParser compatibility layer from PR #16531). The version pin is enforced by `llama_cpp_version_is_at_least_b9000`; downgrading would re-introduce the bug where tool calls error or land in the `reasoning` field instead of `tool_calls`.
 
+  **Tool calls are already grammar-constrained — do not add a GBNF layer.** Malformed tool calls are widely cited as the top failure mode for local agents, so this was investigated; `--jinja` already covers it. Verified empirically against the bundled binary (`--verbose`, Gemma 4 E4B): llama.cpp compiles the declared tool schemas into a GBNF grammar and applies it during decoding.
+
+  ```
+  Grammar (tool_calls): root ::= tool-call
+  Grammar lazy: true
+  Grammar trigger token: 48 (`<|tool_call>`)
+
+  root ::= tool-call
+  tool-call ::= "<|tool_call>" (tool-read-file) "<tool_call|>"
+  tool-read-file ::= ("call:" "read_file" "{") ((tool-read-file-arg-path) …)? "}"
+  ```
+
+  The grammar is **lazy**: free-form reasoning is unconstrained, and the constraint activates only once the model emits the trigger token — after which the output cannot be anything but a schema-valid call for a declared tool. Two limits follow from that, and neither is fixable with a grammar: a model whose template declares no tool-call tokens gets no constraint at all (hence the `supports_tool_calling` gate), and a model that simply never emits the trigger token produces prose instead of a call, which is a capability problem, not a formatting one.
+
 **Permission model:**
 
 - Read-only tools (`read_file`, `read_skill_content`, `list_directory`, `web_search`) are auto-allowed
