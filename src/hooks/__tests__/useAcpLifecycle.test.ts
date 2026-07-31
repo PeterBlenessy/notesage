@@ -78,7 +78,7 @@ vi.mock('@/lib/ai/acp-agent-state', async (importOriginal) => {
 // Import the hook under test AFTER mocks are configured
 // ---------------------------------------------------------------------------
 
-import { useAcpLifecycle } from '@/hooks/useAcpLifecycle';
+import { useAcpLifecycle, buildAcpHistoryBlock, ACP_HISTORY_BUDGET_CHARS } from '@/hooks/useAcpLifecycle';
 import type { Connection } from '@/lib/ai/connections';
 
 // Get mutable reference to the mocked module
@@ -547,5 +547,63 @@ describe('useAcpLifecycle', () => {
       expect(assistant?.content ?? '').toMatch(/declined/i);
       expect(assistant?.content ?? '').not.toContain('<quick-replies>');
     });
+  });
+});
+
+describe('buildAcpHistoryBlock — bounded injection', () => {
+  // Each message was already capped at 2000 chars, but the message COUNT was
+  // not, so a long conversation produced a single prompt of tens of thousands
+  // of tokens on every new session. On a local agent that is unconditionally
+  // too large — and self-perpetuating, since each retry rebuilds it.
+
+  function seedThread(rounds: number, chars = 1500): void {
+    const store = useChatStore.getState();
+    store.clearMessages();
+    for (let i = 0; i < rounds; i++) {
+      store.addMessage({ role: 'user', content: `u${i} ${'x'.repeat(chars)}`, timestamp: 1000 + i * 2 });
+      store.addMessage({ role: 'assistant', content: `a${i} ${'y'.repeat(chars)}`, timestamp: 1001 + i * 2 });
+    }
+  }
+
+  it('stays within its budget however long the conversation is', () => {
+    seedThread(80);
+    const block = buildAcpHistoryBlock([]);
+    // Budget plus the wrapper; the point is bounded, not exact.
+    expect(block.length).toBeLessThan(ACP_HISTORY_BUDGET_CHARS * 1.2);
+  });
+
+  it('keeps the most recent messages, which is what "continue" depends on', () => {
+    seedThread(80);
+    const block = buildAcpHistoryBlock([]);
+    expect(block).toContain('a79');   // newest
+    expect(block).not.toContain('u0 '); // oldest, dropped
+  });
+
+  it('says how much it dropped rather than silently omitting it', () => {
+    seedThread(80);
+    const block = buildAcpHistoryBlock([]);
+    expect(block).toMatch(/earlier messages? omitted/i);
+  });
+
+  it('adds no elision notice when everything fits', () => {
+    seedThread(2, 50);
+    const block = buildAcpHistoryBlock([]);
+    expect(block).not.toMatch(/omitted/i);
+    expect(block).toContain('u0');
+  });
+
+  it('keeps at least one message even when a single message exceeds the budget', () => {
+    // A block containing only "N omitted" would carry no context at all. The
+    // survivor is the NEWEST message, which is the assistant's, since the walk
+    // runs backwards from the recent end.
+    seedThread(1, 5000);
+    const block = buildAcpHistoryBlock([], 10);
+    expect(block).toContain('Assistant');
+    expect(block).toMatch(/1 earlier message omitted/i);
+  });
+
+  it('is empty when there is nothing prior', () => {
+    useChatStore.getState().clearMessages();
+    expect(buildAcpHistoryBlock([])).toBe('');
   });
 });

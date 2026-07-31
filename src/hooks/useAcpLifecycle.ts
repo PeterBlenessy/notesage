@@ -61,6 +61,17 @@ function foregroundAgent() {
 }
 
 /**
+ * Total size ceiling for the injected conversation history, in characters.
+ *
+ * ~24k chars is roughly 6k tokens at the usual chars/token heuristic — enough
+ * for a meaningful recap, small enough to leave a 32K local window mostly free
+ * for the actual work. Cloud agents have far more room and are unaffected in
+ * practice; the bound exists because the unbounded version broke the smallest
+ * window, and an unbounded prompt is not defensible on any of them.
+ */
+export const ACP_HISTORY_BUDGET_CHARS = 24_000;
+
+/**
  * Build the `<conversation-history>` preamble injected when a NEW ACP session
  * starts mid-conversation — the first message of a fresh session, OR a
  * crash-retry that fell back to a fresh session (session/load unsupported or
@@ -71,8 +82,20 @@ function foregroundAgent() {
  * can't collapse it to a single message), slices it to the active segment for
  * provider context isolation, and excludes the message pair currently being
  * (re)sent (passed as `excludeTimestamps`).
+ *
+ * BOUNDED by total size, not just per message. Each message was already capped
+ * at 2000 chars, but the message COUNT was not, so a long conversation produced
+ * a single prompt of tens of thousands of tokens. On a local agent that is
+ * unconditionally too large, and self-perpetuating: the turn stops at
+ * `max_tokens` and every retry rebuilds the same oversized block. The newest
+ * messages are kept — "continue from where you left off" depends on the recent
+ * end — and anything dropped is stated in the block rather than silently
+ * omitted, so the agent knows its view is partial.
  */
-export function buildAcpHistoryBlock(excludeTimestamps: number[]): string {
+export function buildAcpHistoryBlock(
+  excludeTimestamps: number[],
+  budgetChars: number = ACP_HISTORY_BUDGET_CHARS,
+): string {
   const store = useChatStore.getState();
   const conv = store.conversations.find((c) => c.id === store.activeConversationId);
   const segment = store.getActiveSegment();
@@ -85,13 +108,35 @@ export function buildAcpHistoryBlock(excludeTimestamps: number[]): string {
     (m) => (m.timestamp === undefined || !exclude.has(m.timestamp)) && m.role !== 'system-status' && m.content,
   );
   if (priorMessages.length === 0) return '';
-  const lines = priorMessages.map((m) => {
+  const render = (m: ChatMessage) => {
     const prefix = m.role === 'user' ? 'User' : 'Assistant';
     const truncated = m.content.length > 2000 ? m.content.slice(0, 2000) + '\n... (truncated)' : m.content;
     const suffix = m.interrupted ? ' [interrupted]' : '';
     return `${prefix}${suffix}: ${truncated}`;
-  });
-  return `\n\n<conversation-history>\nThe following is the prior conversation in this session. The user may ask you to continue from where you left off.\n\n${lines.join('\n\n')}\n</conversation-history>`;
+  };
+
+  // Walk backwards from the newest so the recent end always survives, then
+  // restore chronological order.
+  const kept: string[] = [];
+  let used = 0;
+  let omitted = 0;
+  for (let i = priorMessages.length - 1; i >= 0; i--) {
+    const line = render(priorMessages[i]);
+    // Always keep at least one message: a block that says only "N omitted"
+    // carries no context at all.
+    if (kept.length > 0 && used + line.length > budgetChars) {
+      omitted = i + 1;
+      break;
+    }
+    kept.unshift(line);
+    used += line.length;
+  }
+
+  const elision =
+    omitted > 0
+      ? `\n\n[${omitted} earlier message${omitted === 1 ? '' : 's'} omitted to fit the context window.]`
+      : '';
+  return `\n\n<conversation-history>\nThe following is the prior conversation in this session. The user may ask you to continue from where you left off.${elision}\n\n${kept.join('\n\n')}\n</conversation-history>`;
 }
 
 /**
