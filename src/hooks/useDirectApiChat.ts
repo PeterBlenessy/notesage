@@ -17,6 +17,19 @@ import { formatToolLabel, buildAttachmentActivities } from '@/lib/ai/acp-utils';
 import { ToolCallHistory, buildToolResultContent } from '@/lib/ai/tool-feedback';
 import { trimMessagesToBudget, localBundledTrimBudget } from '@/lib/ai/context-trim';
 import { budgetToolDefinitions, toolBudgetForContext } from '@/lib/ai/tool-budget';
+import {
+  planCompaction,
+  buildCompactionPrompt,
+  applyCompaction,
+  isCompactionWorthwhile,
+} from '@/lib/ai/compaction';
+
+/**
+ * Ceiling for the compaction summary itself. Generous enough to preserve paths
+ * and error text, small enough that the note cannot recreate the overflow it
+ * exists to prevent.
+ */
+const COMPACTION_MAX_TOKENS = 700;
 import { streamEvent, newStreamId } from '@/lib/ai/stream-events';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { runStarted, runRunning, runAwaitingPermission, runIdle, runError } from '@/lib/ai/session-run';
@@ -229,6 +242,56 @@ export function useDirectApiChat({
             });
           }
           return result.messages;
+        };
+
+        /**
+         * Compaction-aware variant of `trimForProvider`, used ONLY at the start
+         * of a user turn.
+         *
+         * Trimming deletes the oldest rounds; compaction summarizes them first,
+         * so the agent keeps the narrative — which files it touched, what it
+         * ruled out, which error it already diagnosed — instead of rediscovering
+         * it. That costs one generation call, which is why it is deliberately
+         * NOT used inside the tool loop: a continuation is mid-task, and
+         * compacting there both stalls the loop and lands exactly when the
+         * model's context is most fragile. The turn boundary is the closest
+         * thing this path has to the "compact at a task boundary" rule; the
+         * tool loop keeps the cheap synchronous trim.
+         *
+         * Any failure degrades to that same trim — a summarizer that errors or
+         * returns nothing must never cost the user their turn.
+         */
+        const compactForProvider = async (msgs: ChatMessage[]): Promise<ChatMessage[]> => {
+          if (resolved?.provider !== 'local_bundled') return msgs;
+          const ctxLen = useLocalAIStore.getState().contextLength;
+          const budget = localBundledTrimBudget(ctxLen);
+          const plan = planCompaction(msgs, budget);
+          if (!isCompactionWorthwhile(plan)) return trimForProvider(msgs);
+
+          try {
+            const summary = await invoke<string>('ai_chat', {
+              messages: [
+                { role: 'user', content: buildCompactionPrompt(plan.toCompact) },
+              ],
+              provider: 'local_bundled',
+              apiKey: null,
+              ollamaUrl: null,
+              model: null,
+              temperature: 0.2, // summarizing, not composing
+              maxTokens: COMPACTION_MAX_TOKENS,
+              baseUrl: null,
+            });
+            const compacted = applyCompaction(plan, summary);
+            log.info(PERF.context, 'compact', {
+              summarized: plan.toCompact.length,
+              kept: plan.toKeep.length,
+              budgetTokens: budget,
+            });
+            return compacted;
+          } catch (error) {
+            log.warn('ai', 'Context compaction failed, falling back to trim', error);
+            return trimForProvider(msgs);
+          }
         };
 
         // Segment tracking for thinking blocks
@@ -666,8 +729,12 @@ export function useDirectApiChat({
           if (tools.length === 0) tools = undefined;
         }
 
+        // Turn boundary — the one place compaction is appropriate. Inside the
+        // tool loop below, the cheap synchronous trim is used instead.
+        const outboundMessages = await compactForProvider(conversationMessages);
+
         await invoke('ai_chat_stream', {
-          messages: mapMessagesForRust(trimForProvider(conversationMessages)),
+          messages: mapMessagesForRust(outboundMessages),
           provider: resolved.provider,
           connectionId: resolved.connectionId,
           ollamaUrl: resolved.ollamaUrl,
