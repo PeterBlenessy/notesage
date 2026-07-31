@@ -3,7 +3,7 @@
 //
 // Blocks every non-read-only tool call until the host approves. In RPC mode
 // the ctx.ui.select() surfaces as an extension_ui_request on stdout, which the
-// notesage-pi-acp bridge translates to ACP session/request_permission (task
+// notesage-acp-pi bridge translates to ACP session/request_permission (task
 // #9); the answer flows back as extension_ui_response. Fail-safe on every
 // path: no UI (-p mode), handler error, or a cancelled request all BLOCK.
 //

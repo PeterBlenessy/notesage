@@ -1430,16 +1430,16 @@ mod tests {
         // the pi preset's processes get NO Bucket C $HOME grants — the whole
         // footprint (PI_CODING_AGENT_DIR, sessions, extensions) lives under
         // the `.notesage` write-allow, so any future "helpful" grant for the
-        // `pi` or `notesage-pi-acp` basenames would silently widen the
+        // `pi` or `notesage-acp-pi` basenames would silently widen the
         // maximal-confinement guarantee. The network side is covered by the
         // existing exact-{proxy, llama} port lock, which is agent-agnostic.
         #[test]
         fn pi_preset_binaries_get_no_bucket_c_home_grants() {
             for binary in [
                 "pi",
-                "notesage-pi-acp",
+                "notesage-acp-pi",
                 "/Users/peter/.notesage/agents/bin/pi",
-                "/Users/peter/.notesage/agents/bin/notesage-pi-acp",
+                "/Users/peter/.notesage/agents/bin/notesage-acp-pi",
             ] {
                 let entries = agent_config_entries(binary);
                 assert!(

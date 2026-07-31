@@ -44,7 +44,7 @@
 **Description:** Assemble `docs/research/2026-07-29-pi-spikes.md` (standard research-doc header + pipeline table linking PRD and this tasks file), record the pinned pi version and go/no-go per spike, update the PRD Status row. On any no-go: stop, document, close out the tasks file as Abandoned.
 **Complexity:** S **Category:** both **Dependencies:** #1, #2, #3 **Files:** `docs/research/2026-07-29-pi-spikes.md`, `docs/prds/2026-07-29-pi-local-agent-preset.md`
 
-## M1 — `notesage-pi-acp` bridge
+## M1 — `notesage-acp-pi` bridge
 
 ### #5 — Scaffold `bridges/pi-acp` package ✅
 
@@ -81,9 +81,9 @@
 **Description:** Opt-in integration suite (skipped unless `PI_BINARY` env set, mirroring the perf/real-e2e opt-in pattern): real pi binary + a mock OpenAI-compatible HTTP server; drive initialize → session/new → prompt → tool call with permission → response end-to-end through the bridge. This is the churn tripwire re-run whenever the pi pin moves.
 **Complexity:** M **Category:** frontend **Dependencies:** #8, #9, #10 **Files:** `bridges/pi-acp/test/integration.test.ts`, `bridges/pi-acp/test/mock-openai.ts`
 
-### #12 — Release CI: compile + publish bridge binaries ✅ (bun-compiled linux-x64 binary verified locally: 38 MB single file, --version OK; checksum asset scoped as `notesage-pi-acp-SHA256SUMS` — #15 must configure that exact name)
+### #12 — Release CI: compile + publish bridge binaries ✅ (bun-compiled linux-x64 binary verified locally: 38 MB single file, --version OK; checksum asset scoped as `notesage-acp-pi-SHA256SUMS` — #15 must configure that exact name)
 
-**Description:** Release workflow job: `bun build --compile` per platform, tarball each (`notesage-pi-acp-{triple}.tar.gz`), generate `SHA256SUMS`, attach to the Notesage GitHub release. Version = app version (lockstep per PRD). Acceptance: dry-run workflow produces all four assets + checksum file.
+**Description:** Release workflow job: `bun build --compile` per platform, tarball each (`notesage-acp-pi-{triple}.tar.gz`), generate `SHA256SUMS`, attach to the Notesage GitHub release. Version = app version (lockstep per PRD). Acceptance: dry-run workflow produces all four assets + checksum file.
 **Complexity:** M **Category:** backend **Dependencies:** #5 **Files:** `.github/workflows/release.yml`, `bridges/pi-acp/scripts/build-binaries.sh`
 
 ## M2 — pi extensions (shipped by Notesage)
@@ -102,7 +102,7 @@
 
 ### #15 — Managed-install registry: pi + bridge entries, checksum + version ceiling ⚠️ shared infra ✅ (per-agent checksum_asset — hard verify for pi/bridge, Goose stays record-only; exact pin 0.80.6 with install clamp + held_back in check_updates; folder-tarball Tree install with tar-slip/total-size guards + symlinked bin; cargo check green, unit tests run in macOS CI)
 
-**Description:** `agent_manager.rs`: make the checksum asset per-agent (`GithubBinaryAgentConfig.checksum_asset: Option<&'static str>`; pi/bridge `Some("SHA256SUMS")` → hard-fail verify before extraction, Goose stays `None` digest-record-only) and add `max_version: Option<&'static str>` enforced in install AND `agent_check_updates` ("held back" state). Registry entries for `pi` (`earendil-works/pi`, folder-tarball extraction — multiple files co-located, unlike Goose's single binary) and `notesage-pi-acp` (Notesage releases). Lock tests mirroring `goose_installs_via_github_binary`: repo, asset names per platform, checksum asset, pin range, tamper → explicit failure. Goose install tests stay green.
+**Description:** `agent_manager.rs`: make the checksum asset per-agent (`GithubBinaryAgentConfig.checksum_asset: Option<&'static str>`; pi/bridge `Some("SHA256SUMS")` → hard-fail verify before extraction, Goose stays `None` digest-record-only) and add `max_version: Option<&'static str>` enforced in install AND `agent_check_updates` ("held back" state). Registry entries for `pi` (`earendil-works/pi`, folder-tarball extraction — multiple files co-located, unlike Goose's single binary) and `notesage-acp-pi` (Notesage releases). Lock tests mirroring `goose_installs_via_github_binary`: repo, asset names per platform, checksum asset, pin range, tamper → explicit failure. Goose install tests stay green.
 **Complexity:** L **Category:** backend **Dependencies:** #4, #12 **Files:** `src-tauri/src/commands/agent_manager.rs`
 
 ### #16 — `local_agent_write_config` pi variant ✅ (flat layout per spike #1; extensions embedded via include_str! from the bridge package; env per spike #2 recipe incl. NO_PROXY defense-in-depth; piArgs returned for the bridge `--` passthrough)
@@ -110,7 +110,7 @@
 **Description:** Add the `agent: Option<String>` discriminator (`None` → goose, back-compat). pi variant writes under `~/.notesage/agents/pi/`: `agent/models.json` (provider `local`, `baseUrl: http://localhost:<port>/v1`, `api: "openai-completions"`, dummy key, active catalog model), `agent/settings.json` (`enableInstallTelemetry: false`, skill paths → Notesage skill dirs), both extensions from embedded assets (`include_str!`). Returned env per spike-#2 recipe: `PI_OFFLINE=1`, `PI_CODING_AGENT_DIR`, `NO_PROXY` as validated. Same `<port>:<modelId>` config key. Unit tests mirror the Goose suite: port/model substitution, isolation under the notesage subtree, telemetry off, extension files present, regeneration idempotent.
 **Complexity:** M **Category:** backend **Dependencies:** #4, #13, #14 **Files:** `src-tauri/src/commands/local_agent.rs`
 
-### #17 — Sandbox regression-lock for the pi preset ⚠️ shared infra ✅ (zero Bucket C grants for `pi`/`notesage-pi-acp` basenames locked by test; exact-{proxy, llama} port lock already agent-agnostic; sandbox.rs production code unchanged as predicted)
+### #17 — Sandbox regression-lock for the pi preset ⚠️ shared infra ✅ (zero Bucket C grants for `pi`/`notesage-acp-pi` basenames locked by test; exact-{proxy, llama} port lock already agent-agnostic; sandbox.rs production code unchanged as predicted)
 
 **Description:** Extend the Seatbelt tests: the pi-preset profile allows exactly {proxy port, llama-server port} on localhost and nothing else; the whole pi footprint resolves under the `.notesage` write-allow (no new Bucket C rows). Reuse/extend the Goose regression-lock rather than duplicating. `sandbox.rs` changes expected to be nil-to-minimal — the test IS the deliverable.
 **Complexity:** S **Category:** backend **Dependencies:** #16 **Files:** `src-tauri/src/commands/sandbox.rs` (tests)

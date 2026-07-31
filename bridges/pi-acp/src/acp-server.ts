@@ -141,7 +141,7 @@ export class PiAcpAgent implements Agent {
         loadSession: true,
         promptCapabilities: { image: true },
       },
-      agentInfo: { name: "notesage-pi-acp", version: BRIDGE_VERSION },
+      agentInfo: { name: "notesage-acp-pi", version: BRIDGE_VERSION },
     };
   }
 

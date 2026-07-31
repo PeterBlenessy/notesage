@@ -50,7 +50,7 @@ All three must pass before M1 starts. Each produces a written finding in `docs/r
 2. **Zero-network under Seatbelt.** Run the binary with `PI_OFFLINE=1`, a localhost `models.json` provider, and the Goose-preset Seatbelt profile (deny-all network + llama port). Confirm a full agentic turn with no violations in `sandbox_monitor`. Explicitly test that injected `HTTP_PROXY`/`HTTPS_PROXY` env vars don't cause pi's undici stack to route the llama-server call into the proxy (mitigation if it does: strip/`NO_PROXY=localhost` in the spawn env for this preset, mirroring how the llama port bypasses the proxy for Goose).
 3. **Permission round-trip.** A minimal blocking `tool_call` extension raises `ctx.ui.confirm`; confirm the `extension_ui_request` event surfaces on RPC stdout while the tool is blocked, that a delayed `extension_ui_response` resumes/blocks correctly, and that a never-answered request can be aborted (`abort`) without wedging the session — this is what the 30s auto-deny path needs.
 
-### M1 — `notesage-pi-acp` bridge
+### M1 — `notesage-acp-pi` bridge
 
 A TypeScript program, Bun-compiled per platform (same `bun build --compile` technique pi itself uses → self-contained, no Node runtime), living in-repo under `bridges/pi-acp/` and published as a tarball on Notesage's own GitHub releases. It presents ACP (agent side) on its stdio and spawns `pi --mode rpc` as a child.
 
@@ -79,7 +79,7 @@ Both extensions are embedded in the app (versioned with the Notesage release) an
 
 ### M3 — Preset integration (reuse, not rebuild)
 
-- **Install** (`agent_manager.rs`): `pi` + `notesage-pi-acp` entries in the GitHub-binary registry. New capability on that path: `GITHUB_BINARY_CHECKSUM_ASSET` becomes per-agent config; pi verifies against `SHA256SUMS` (hard fail on mismatch), Goose keeps digest-record-only. **Version pin is an exact tested range** (`min_version` + new `max_version`) — `agent_check_updates` refuses pi versions outside the range until a Notesage release moves it.
+- **Install** (`agent_manager.rs`): `pi` + `notesage-acp-pi` entries in the GitHub-binary registry. New capability on that path: `GITHUB_BINARY_CHECKSUM_ASSET` becomes per-agent config; pi verifies against `SHA256SUMS` (hard fail on mismatch), Goose keeps digest-record-only. **Version pin is an exact tested range** (`min_version` + new `max_version`) — `agent_check_updates` refuses pi versions outside the range until a Notesage release moves it.
 - **Config** (`local_agent.rs`): `local_agent_write_config` gains an agent discriminator. The pi variant writes into `~/.notesage/agents/pi/`: `agent/models.json` (provider `local`, `baseUrl: http://localhost:<port>/v1`, `api: "openai-completions"`, `apiKey: "dummy"`, single model entry = active catalog model), `agent/settings.json` (`enableInstallTelemetry: false`, skill paths pointed at Notesage skill dirs), and the two extensions. Spawn env: `PI_OFFLINE=1`, `PI_CODING_AGENT_DIR`, `NO_PROXY=localhost,127.0.0.1` (pending spike 2 findings). Same `<port>:<modelId>` respawn key as Goose.
 - **Sandbox** (`sandbox.rs`): no new Bucket C rows needed — the whole footprint lives under the `.notesage` write-allow. Regression-lock: the pi-preset profile allows exactly {proxy port, llama port} on localhost.
 - **Setup flow**: `runLocalAgentSetup` is already agent-agnostic via deps injection; the pi path supplies pi-flavored `installAgent`/`writeConfig`/`createPresetConnection` deps. Smoke test, rollback-on-failure, and the no-silent-fallback error surfacing apply unchanged.
@@ -101,7 +101,7 @@ localAgentPreset?: 'goose' | 'pi';
 interface LocalAgentConfig {
   // existing fields…
   agent: 'goose' | 'pi';
-  bridgePath?: string;   // pi only: resolved notesage-pi-acp binary
+  bridgePath?: string;   // pi only: resolved notesage-acp-pi binary
 }
 ```
 
@@ -137,7 +137,7 @@ Functional:
 - [ ] `pnpm typecheck`, `pnpm test`, bridge package tests, `cargo check` (stubs) / `cargo test` (CI) green
 - [ ] Sandbox regression-lock: pi-preset profile allows exactly {proxy port, llama-server port} on localhost, nothing else
 - [ ] Checksum verification test: tampered archive → hard install failure with explicit error
-- [ ] Version-range lock tests (repo, bin name, min/max pin) for `pi` and `notesage-pi-acp`, mirroring `goose_installs_via_github_binary`
+- [ ] Version-range lock tests (repo, bin name, min/max pin) for `pi` and `notesage-acp-pi`, mirroring `goose_installs_via_github_binary`
 - [ ] Permission flow end-to-end: write-tool call → PermissionCard → allow/deny/timeout(30s auto-deny) all resolve without wedging the session
 - [ ] MCP: a registered stdio server's tool callable through the pi preset; secrets never written to disk (asserted by test on the generated config tree)
 - [ ] Smoke test green on real macOS Seatbelt (live WebDriver run, same bar as Goose's #23)

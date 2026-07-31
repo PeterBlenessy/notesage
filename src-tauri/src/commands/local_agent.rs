@@ -170,7 +170,7 @@ fn build_pi_env() -> HashMap<String, String> {
     env
 }
 
-/// Args the frontend appends to the bridge spawn (`notesage-pi-acp --pi-bin
+/// Args the frontend appends to the bridge spawn (`notesage-acp-pi --pi-bin
 /// <pi> -- <these>`): provider/model selection against the live server plus a
 /// sessions dir inside the isolated tree. The `--pi-bin` half is resolved
 /// frontend-side from the managed install.

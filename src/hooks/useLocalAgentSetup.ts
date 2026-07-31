@@ -22,9 +22,9 @@ import { log } from '@/lib/logger';
 export type LocalAgentEngine = 'goose' | 'pi';
 
 /** Managed-install agent ids per engine. pi needs BOTH the pi binary and the
- *  notesage-pi-acp bridge (the connection's spawned binary IS the bridge). */
+ *  notesage-acp-pi bridge (the connection's spawned binary IS the bridge). */
 function engineAgentIds(engine: LocalAgentEngine): string[] {
-  return engine === 'pi' ? ['pi', 'notesage-pi-acp'] : ['goose'];
+  return engine === 'pi' ? ['pi', 'notesage-acp-pi'] : ['goose'];
 }
 
 /** Resolve an installed managed binary's absolute path. */
@@ -144,7 +144,7 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
       createPresetConnection: async () => {
         if (engine === 'pi') {
           const piPath = await resolveManagedPath('pi');
-          presetBinaryPath = await resolveManagedPath('notesage-pi-acp');
+          presetBinaryPath = await resolveManagedPath('notesage-acp-pi');
           presetBinaryArgs = ['--pi-bin', piPath];
         } else {
           presetBinaryPath = await resolveManagedPath('goose');

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Compile notesage-pi-acp into self-contained platform binaries (task #12).
+# Compile notesage-acp-pi into self-contained platform binaries (task #12).
 # Same technique pi itself uses: `bun build --compile`. Produces
-#   dist/notesage-pi-acp-<triple>.tar.gz  (single executable at tar root)
+#   dist/notesage-acp-pi-<triple>.tar.gz  (single executable at tar root)
 #   dist/SHA256SUMS
 # Usage: scripts/build-binaries.sh [target ...]
 #   Default targets: all four release platforms. Pass a single Bun target
@@ -28,17 +28,17 @@ rm -rf dist && mkdir -p dist
 for target in "${TARGETS[@]}"; do
   triple="${TRIPLES[$target]:-}"
   [[ -n "$triple" ]] || { echo "ERROR: unknown target $target"; exit 1; }
-  out="dist/notesage-pi-acp-$triple"
+  out="dist/notesage-acp-pi-$triple"
   echo "== $target → $out"
   bun build --compile --target="$target" src/index.ts --outfile "$out"
-  tar -C dist -czf "$out.tar.gz" "notesage-pi-acp-$triple"
+  tar -C dist -czf "$out.tar.gz" "notesage-acp-pi-$triple"
   rm -f "$out"
 done
 
 # Scoped checksum asset name — this lands on the shared Notesage app release,
 # so a bare "SHA256SUMS" could collide with future checksummed assets.
 # agent_manager.rs (task #15) configures this exact name as checksum_asset.
-SUMS="notesage-pi-acp-SHA256SUMS"
+SUMS="notesage-acp-pi-SHA256SUMS"
 (cd dist && shasum -a 256 ./*.tar.gz | sed 's|\./||' > "$SUMS") 2>/dev/null \
   || (cd dist && sha256sum ./*.tar.gz | sed 's|\./||' > "$SUMS")
 echo "== dist/:" && ls -la dist && cat "dist/$SUMS"

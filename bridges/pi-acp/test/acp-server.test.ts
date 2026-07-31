@@ -30,7 +30,7 @@ describe("PiAcpAgent", () => {
     expect(res.protocolVersion).toBe(1);
     expect(res.agentCapabilities?.loadSession).toBe(true);
     expect(res.agentCapabilities?.promptCapabilities?.image).toBe(true);
-    expect(res.agentInfo?.name).toBe("notesage-pi-acp");
+    expect(res.agentInfo?.name).toBe("notesage-acp-pi");
   });
 
   it("newSession returns pi's session file path as the ACP sessionId", async () => {

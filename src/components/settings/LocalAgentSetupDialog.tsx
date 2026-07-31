@@ -38,7 +38,7 @@ const GB = 1024 ** 3;
  *  per engine. pi installs two artifacts (pi + the bridge). */
 const ENGINE_AGENT_IDS: Record<'goose' | 'pi', string[]> = {
   goose: ['goose'],
-  pi: ['pi', 'notesage-pi-acp'],
+  pi: ['pi', 'notesage-acp-pi'],
 };
 
 /** Ordered active stages with user-facing labels. */

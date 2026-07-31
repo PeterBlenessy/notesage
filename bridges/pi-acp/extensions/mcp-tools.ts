@@ -2,7 +2,7 @@
 // local_agent_write_config; not a user-editable file.
 //
 // Reads stdio MCP server configs from the NOTESAGE_MCP_SERVERS env var
-// (JSON: [{name, command, args, env}] — placed there by the notesage-pi-acp
+// (JSON: [{name, command, args, env}] — placed there by the notesage-acp-pi
 // bridge from ACP session/new, so resolved secrets never touch disk), spawns
 // each server as a child of pi (inheriting pi's sandbox), performs the MCP
 // initialize handshake, and registers every discovered tool with pi.
@@ -99,7 +99,7 @@ class McpStdioClient {
     await this.request("initialize", {
       protocolVersion: "2024-11-05",
       capabilities: {},
-      clientInfo: { name: "notesage-pi-acp", version: "0.1.0" },
+      clientInfo: { name: "notesage-acp-pi", version: "0.1.0" },
     });
     this.notify("notifications/initialized");
     const res = (await this.request("tools/list", {})) as { tools?: McpTool[] };

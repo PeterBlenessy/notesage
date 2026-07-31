@@ -92,7 +92,7 @@ fn find_sha256_for_file(shasums: &str, filename: &str) -> Option<String> {
 
 // Checksum verification for GitHub-binary installs is configured PER AGENT via
 // `GithubBinaryAgentConfig.checksum_asset` (audit batch 3 fix #6b): pi and the
-// notesage-pi-acp bridge publish checksum manifests and are hard-verified;
+// notesage-acp-pi bridge publish checksum manifests and are hard-verified;
 // Goose still publishes none, so its digest is recorded (audit trail) but not
 // verified until upstream ships a stable checksum asset.
 
@@ -247,15 +247,15 @@ fn github_binary_agent_config(agent_id: &str) -> Option<GithubBinaryAgentConfig>
             max_version: Some("0.80.6"),
             checksum_asset: Some("SHA256SUMS"),
         }),
-        "notesage-pi-acp" => Some(GithubBinaryAgentConfig {
+        "notesage-acp-pi" => Some(GithubBinaryAgentConfig {
             // The ACP<->pi-RPC bridge, published on Notesage's own releases
             // (bridges/pi-acp, compiled per platform by the release workflow).
             // Versioned in lockstep with the app; updates ride app releases.
             repo: "PeterBlenessy/notesage",
-            bin_name: "notesage-pi-acp",
+            bin_name: "notesage-acp-pi",
             min_version: "0.1.0",
             max_version: None,
-            checksum_asset: Some("notesage-pi-acp-SHA256SUMS"),
+            checksum_asset: Some("notesage-acp-pi-SHA256SUMS"),
         }),
         _ => None,
     }
@@ -276,7 +276,7 @@ fn goose_asset_name(os: &str, arch: &str) -> Result<&'static str, String> {
     }
 }
 
-/// Rust target triple for the notesage-pi-acp bridge asset naming (matches
+/// Rust target triple for the notesage-acp-pi bridge asset naming (matches
 /// `bridges/pi-acp/scripts/build-binaries.sh`).
 fn rust_triple(os: &str, arch: &str) -> Result<&'static str, String> {
     match (os, arch) {
@@ -322,12 +322,12 @@ fn github_binary_asset(
             };
             Ok((asset.to_string(), ArchiveInstall::Tree { bin_rel: "pi/pi" }))
         }
-        "notesage-pi-acp" => {
+        "notesage-acp-pi" => {
             let triple = rust_triple(os, arch)?;
             Ok((
-                format!("notesage-pi-acp-{}.tar.gz", triple),
+                format!("notesage-acp-pi-{}.tar.gz", triple),
                 ArchiveInstall::SingleBinary {
-                    archive_basename: format!("notesage-pi-acp-{}", triple),
+                    archive_basename: format!("notesage-acp-pi-{}", triple),
                 },
             ))
         }
@@ -619,7 +619,7 @@ async fn do_agent_install(app: &AppHandle, agent_id: &str) -> Result<Option<Stri
         return do_github_binary_install(app, agent_id, &gh_config).await;
     }
     Err(format!(
-        "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, goose, pi, notesage-pi-acp",
+        "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, goose, pi, notesage-acp-pi",
         agent_id
     ))
 }
@@ -1346,7 +1346,7 @@ async fn do_github_binary_install(
         // Developer-facing detail (incl. the exact url that failed) goes to the
         // backend log; the returned string stays short for the UI layer, which
         // maps it to a friendly toast. A 404 here almost always means the asset
-        // isn't published on the resolved release yet (e.g. the notesage-pi-acp
+        // isn't published on the resolved release yet (e.g. the notesage-acp-pi
         // bridge before a Notesage release ships it).
         log::warn!(
             target: "notesage::agent_manager",
@@ -1377,7 +1377,7 @@ async fn do_github_binary_install(
 
     // Integrity (audit batch 3 fix #6b): always compute + record the archive
     // digest; when the agent's config names a checksum asset, verification is
-    // a HARD gate (pi, notesage-pi-acp) — otherwise digest-record-only (Goose,
+    // a HARD gate (pi, notesage-acp-pi) — otherwise digest-record-only (Goose,
     // which publishes no stable checksum asset).
     let digest = sha256_hex(&data);
     if let Some(checksum_asset) = config.checksum_asset {
@@ -1616,13 +1616,13 @@ mod tests {
 
     #[test]
     fn bridge_installs_from_notesage_releases_with_checksum() {
-        let gh = github_binary_agent_config("notesage-pi-acp")
+        let gh = github_binary_agent_config("notesage-acp-pi")
             .expect("bridge must be a GitHub-binary agent");
         assert_eq!(gh.repo, "PeterBlenessy/notesage");
-        assert_eq!(gh.bin_name, "notesage-pi-acp");
+        assert_eq!(gh.bin_name, "notesage-acp-pi");
         // Scoped checksum asset name — matches bridges/pi-acp/scripts/build-binaries.sh.
-        assert_eq!(gh.checksum_asset, Some("notesage-pi-acp-SHA256SUMS"));
-        assert!(npm_agent_config("notesage-pi-acp").is_none());
+        assert_eq!(gh.checksum_asset, Some("notesage-acp-pi-SHA256SUMS"));
+        assert!(npm_agent_config("notesage-acp-pi").is_none());
     }
 
     #[test]
@@ -1639,11 +1639,11 @@ mod tests {
 
     #[test]
     fn bridge_asset_names_use_rust_triples_with_per_platform_basename() {
-        let (asset, layout) = github_binary_asset("notesage-pi-acp", "darwin", "arm64").unwrap();
-        assert_eq!(asset, "notesage-pi-acp-aarch64-apple-darwin.tar.gz");
+        let (asset, layout) = github_binary_asset("notesage-acp-pi", "darwin", "arm64").unwrap();
+        assert_eq!(asset, "notesage-acp-pi-aarch64-apple-darwin.tar.gz");
         match layout {
             ArchiveInstall::SingleBinary { archive_basename } => {
-                assert_eq!(archive_basename, "notesage-pi-acp-aarch64-apple-darwin");
+                assert_eq!(archive_basename, "notesage-acp-pi-aarch64-apple-darwin");
             }
             _ => panic!("bridge must be a single-binary install"),
         }
@@ -1847,7 +1847,7 @@ deadbeef  short-hash.tar.gz
     fn unknown_agent_install_error_lists_goose() {
         // do_agent_install's error message must advertise goose as supported.
         let msg = format!(
-            "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, goose, pi, notesage-pi-acp",
+            "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, goose, pi, notesage-acp-pi",
             "bogus"
         );
         assert!(msg.contains("goose"));
@@ -1970,7 +1970,7 @@ fn is_managed_agent_id(agent_id: &str) -> bool {
 pub async fn agent_uninstall(agent_id: String) -> Result<(), String> {
     if !is_managed_agent_id(&agent_id) {
         return Err(format!(
-            "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, goose, pi, notesage-pi-acp",
+            "Unknown agent: {}. Supported: claude-agent-acp, codex-acp, copilot, copilot-language-server, gemini, goose, pi, notesage-acp-pi",
             agent_id
         ));
     }

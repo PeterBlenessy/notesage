@@ -1,11 +1,11 @@
-// notesage-pi-acp entry point.
+// notesage-acp-pi entry point.
 //
 // Bun-compiles to a self-contained binary (task #12) that Notesage spawns as a
 // `custom_acp` agent: ACP JSON-RPC on this process's stdio, a `pi --mode rpc`
 // child underneath. Wiring lands with tasks #6-#10; the scaffold only fixes
 // the CLI contract so the Rust side can pin its spawn shape early.
 //
-// Usage: notesage-pi-acp --pi-bin <path-to-pi-executable> [-- <pi args...>]
+// Usage: notesage-acp-pi --pi-bin <path-to-pi-executable> [-- <pi args...>]
 // Everything after `--` is passed to the pi child verbatim (after its
 // hardcoded `--mode rpc`) — Notesage uses this for `--provider local
 // --model <id>` selection. The pi child inherits this process's env
@@ -29,7 +29,7 @@ export function parseArgs(argv: string[]): BridgeOptions {
   const piArgs = sep >= 0 ? argv.slice(sep + 1) : [];
   const i = own.indexOf("--pi-bin");
   const piBin = i >= 0 ? own[i + 1] : undefined;
-  if (!piBin) throw new Error("notesage-pi-acp: missing required --pi-bin <path>");
+  if (!piBin) throw new Error("notesage-acp-pi: missing required --pi-bin <path>");
   return { piBin, piArgs };
 }
 

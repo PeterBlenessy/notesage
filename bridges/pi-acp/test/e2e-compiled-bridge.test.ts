@@ -3,7 +3,7 @@
 //
 // Opt-in: needs BOTH env vars (built artifacts are not present in normal CI):
 //   PI_BINARY      path to the real pi executable
-//   BRIDGE_BINARY  path to a bun-compiled notesage-pi-acp binary
+//   BRIDGE_BINARY  path to a bun-compiled notesage-acp-pi binary
 //                  (scripts/build-binaries.sh bun-linux-x64 → extract dist tar)
 //
 // Covers: initialize handshake → session/new → streamed prompt turn →
@@ -140,7 +140,7 @@ d("compiled bridge E2E (ACP client over stdio)", () => {
     );
 
     const init = await conn.initialize({ protocolVersion: 1, clientCapabilities: {} });
-    expect(init.agentInfo?.name).toBe("notesage-pi-acp");
+    expect(init.agentInfo?.name).toBe("notesage-acp-pi");
     expect(init.agentCapabilities?.loadSession).toBe(true);
 
     const { sessionId } = await conn.newSession({ cwd: piHome, mcpServers: [] });
