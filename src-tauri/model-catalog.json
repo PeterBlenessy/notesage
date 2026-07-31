@@ -20,10 +20,15 @@
     "supports_fim": false,
     "supports_tool_calling": true,
     "supports_thinking": true,
-    "thinking_tags": { "open": "<think>", "close": "</think>" },
+    "thinking_tags": {
+      "open": "<think>",
+      "close": "</think>"
+    },
     "supports_vision": false,
     "multilingual": true,
-    "recommended_for": ["8gb"]
+    "recommended_for": [
+      "8gb"
+    ]
   },
   {
     "id": "smollm2-1.7b",
@@ -48,7 +53,9 @@
     "supports_thinking": false,
     "supports_vision": false,
     "multilingual": false,
-    "recommended_for": ["8gb"]
+    "recommended_for": [
+      "8gb"
+    ]
   },
   {
     "id": "qwen3-1.7b",
@@ -71,10 +78,15 @@
     "supports_fim": false,
     "supports_tool_calling": true,
     "supports_thinking": true,
-    "thinking_tags": { "open": "<think>", "close": "</think>" },
+    "thinking_tags": {
+      "open": "<think>",
+      "close": "</think>"
+    },
     "supports_vision": false,
     "multilingual": true,
-    "recommended_for": ["8gb"]
+    "recommended_for": [
+      "8gb"
+    ]
   },
   {
     "id": "qwen2.5-coder-1.5b",
@@ -99,7 +111,9 @@
     "supports_thinking": false,
     "supports_vision": false,
     "multilingual": false,
-    "recommended_for": ["8gb"]
+    "recommended_for": [
+      "8gb"
+    ]
   },
   {
     "id": "deepseek-r1-distill-1.5b",
@@ -122,10 +136,15 @@
     "supports_fim": false,
     "supports_tool_calling": false,
     "supports_thinking": true,
-    "thinking_tags": { "open": "<think>", "close": "</think>" },
+    "thinking_tags": {
+      "open": "<think>",
+      "close": "</think>"
+    },
     "supports_vision": false,
     "multilingual": false,
-    "recommended_for": ["8gb"]
+    "recommended_for": [
+      "8gb"
+    ]
   },
   {
     "id": "ministral-3-3b",
@@ -150,7 +169,9 @@
     "supports_thinking": false,
     "supports_vision": false,
     "multilingual": true,
-    "recommended_for": ["16gb"]
+    "recommended_for": [
+      "16gb"
+    ]
   },
   {
     "id": "phi-4-mini",
@@ -175,7 +196,9 @@
     "supports_thinking": false,
     "supports_vision": false,
     "multilingual": false,
-    "recommended_for": ["16gb"]
+    "recommended_for": [
+      "16gb"
+    ]
   },
   {
     "id": "phi-4-mini-reasoning",
@@ -198,10 +221,15 @@
     "supports_fim": false,
     "supports_tool_calling": false,
     "supports_thinking": true,
-    "thinking_tags": { "open": "<think>", "close": "</think>" },
+    "thinking_tags": {
+      "open": "<think>",
+      "close": "</think>"
+    },
     "supports_vision": false,
     "multilingual": false,
-    "recommended_for": ["16gb"]
+    "recommended_for": [
+      "16gb"
+    ]
   },
   {
     "id": "gemma-3-4b",
@@ -229,7 +257,9 @@
     "mmproj_url": "https://huggingface.co/lmstudio-community/gemma-3-4b-it-GGUF/resolve/main/mmproj-model-f16.gguf",
     "mmproj_size_bytes": 560000000,
     "multilingual": true,
-    "recommended_for": ["16gb"]
+    "recommended_for": [
+      "16gb"
+    ]
   },
   {
     "id": "gemma-4-e4b",
@@ -252,13 +282,18 @@
     "supports_fim": false,
     "supports_tool_calling": true,
     "supports_thinking": true,
-    "thinking_tags": { "open": "<|channel>thought\n", "close": "<channel|>" },
+    "thinking_tags": {
+      "open": "<|channel>thought\n",
+      "close": "<channel|>"
+    },
     "supports_vision": true,
     "mmproj_filename": "mmproj-google_gemma-4-E4B-it-f16.gguf",
     "mmproj_url": "https://huggingface.co/bartowski/google_gemma-4-E4B-it-GGUF/resolve/main/mmproj-google_gemma-4-E4B-it-f16.gguf",
     "mmproj_size_bytes": 990000000,
     "multilingual": true,
-    "recommended_for": ["32gb"]
+    "recommended_for": [
+      "32gb"
+    ]
   },
   {
     "id": "qwen3-4b",
@@ -281,10 +316,15 @@
     "supports_fim": false,
     "supports_tool_calling": true,
     "supports_thinking": true,
-    "thinking_tags": { "open": "<think>", "close": "</think>" },
+    "thinking_tags": {
+      "open": "<think>",
+      "close": "</think>"
+    },
     "supports_vision": false,
     "multilingual": true,
-    "recommended_for": ["16gb"]
+    "recommended_for": [
+      "16gb"
+    ]
   },
   {
     "id": "qwen2.5-coder-3b",
@@ -309,7 +349,9 @@
     "supports_thinking": false,
     "supports_vision": false,
     "multilingual": false,
-    "recommended_for": ["16gb"]
+    "recommended_for": [
+      "16gb"
+    ]
   },
   {
     "id": "qwen2.5-coder-7b",
@@ -334,7 +376,9 @@
     "supports_thinking": false,
     "supports_vision": false,
     "multilingual": false,
-    "recommended_for": ["32gb"],
+    "recommended_for": [
+      "32gb"
+    ],
     "draft_model_id": "qwen2.5-coder-1.5b"
   },
   {
@@ -358,10 +402,15 @@
     "supports_fim": false,
     "supports_tool_calling": false,
     "supports_thinking": true,
-    "thinking_tags": { "open": "<think>", "close": "</think>" },
+    "thinking_tags": {
+      "open": "<think>",
+      "close": "</think>"
+    },
     "supports_vision": false,
     "multilingual": false,
-    "recommended_for": ["32gb"],
+    "recommended_for": [
+      "32gb"
+    ],
     "draft_model_id": "deepseek-r1-distill-1.5b"
   },
   {
@@ -385,11 +434,50 @@
     "supports_fim": false,
     "supports_tool_calling": true,
     "supports_thinking": true,
-    "thinking_tags": { "open": "<think>", "close": "</think>" },
+    "thinking_tags": {
+      "open": "<think>",
+      "close": "</think>"
+    },
     "supports_vision": false,
     "multilingual": true,
-    "recommended_for": ["32gb"],
+    "recommended_for": [
+      "32gb"
+    ],
     "draft_model_id": "qwen3-1.7b"
+  },
+  {
+    "id": "qwen3.5-9b",
+    "name": "Qwen3.5 9B",
+    "filename": "Qwen3.5-9B-Q4_K_M.gguf",
+    "size_bytes": 5680000000,
+    "ram_required_bytes": 7200000000,
+    "description": "Alibaba. Agentic successor to Qwen3 8B — 256K context, multimodal, tool calling.",
+    "huggingface_url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf",
+    "source": "unsloth",
+    "author": "Qwen",
+    "organization": "Alibaba",
+    "license": "apache-2.0",
+    "parameters": "9B",
+    "architecture": "qwen3_5",
+    "context_length": 262144,
+    "quantization": "Q4_K_M",
+    "hf_repo_id": "unsloth/Qwen3.5-9B-GGUF",
+    "category": "general",
+    "supports_fim": false,
+    "supports_tool_calling": true,
+    "supports_thinking": true,
+    "thinking_tags": {
+      "open": "<think>",
+      "close": "</think>"
+    },
+    "supports_vision": true,
+    "mmproj_filename": "mmproj-F16.gguf",
+    "mmproj_url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/mmproj-F16.gguf",
+    "mmproj_size_bytes": 920000000,
+    "multilingual": true,
+    "recommended_for": [
+      "32gb"
+    ]
   },
   {
     "id": "llama-3.1-8b",
@@ -414,7 +502,9 @@
     "supports_thinking": false,
     "supports_vision": false,
     "multilingual": true,
-    "recommended_for": ["32gb"]
+    "recommended_for": [
+      "32gb"
+    ]
   },
   {
     "id": "gemma-4-27b-a4b",
@@ -437,13 +527,18 @@
     "supports_fim": false,
     "supports_tool_calling": true,
     "supports_thinking": true,
-    "thinking_tags": { "open": "<|channel>thought\n", "close": "<channel|>" },
+    "thinking_tags": {
+      "open": "<|channel>thought\n",
+      "close": "<channel|>"
+    },
     "supports_vision": true,
     "mmproj_filename": "mmproj-gemma-4-26B-A4B-it-f16.gguf",
     "mmproj_url": "https://huggingface.co/ggml-org/gemma-4-26B-A4B-it-GGUF/resolve/main/mmproj-gemma-4-26B-A4B-it-f16.gguf",
     "mmproj_size_bytes": 1190000000,
     "multilingual": true,
-    "recommended_for": ["64gb"]
+    "recommended_for": [
+      "64gb"
+    ]
   },
   {
     "id": "deepseek-r1-distill-14b",
@@ -466,10 +561,15 @@
     "supports_fim": false,
     "supports_tool_calling": false,
     "supports_thinking": true,
-    "thinking_tags": { "open": "<think>", "close": "</think>" },
+    "thinking_tags": {
+      "open": "<think>",
+      "close": "</think>"
+    },
     "supports_vision": false,
     "multilingual": false,
-    "recommended_for": ["64gb"],
+    "recommended_for": [
+      "64gb"
+    ],
     "draft_model_id": "deepseek-r1-distill-1.5b"
   },
   {
@@ -493,10 +593,15 @@
     "supports_fim": false,
     "supports_tool_calling": true,
     "supports_thinking": true,
-    "thinking_tags": { "open": "<think>", "close": "</think>" },
+    "thinking_tags": {
+      "open": "<think>",
+      "close": "</think>"
+    },
     "supports_vision": false,
     "multilingual": true,
-    "recommended_for": ["64gb"],
+    "recommended_for": [
+      "64gb"
+    ],
     "draft_model_id": "qwen3-1.7b"
   }
 ]
