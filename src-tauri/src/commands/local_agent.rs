@@ -429,4 +429,46 @@ mod tests {
         assert!(PI_EXT_MCP_TOOLS.contains("NOTESAGE_MCP_SERVERS"));
         assert!(PI_EXT_MCP_TOOLS.contains("tools/call"));
     }
+
+    #[test]
+    fn embedded_gate_speaks_the_pinned_bridge_wire_protocol() {
+        // `bridges/pi-acp/extensions/` is a VENDORED copy of the extensions in
+        // the notesage-acp-pi repository, and the two halves of this protocol
+        // live in different repos: the bridge prepends these markers, the gate
+        // parses them. Nothing can diff them at build time, so this pins the
+        // literals our embedded copy must carry against the version pinned in
+        // agent_manager.rs.
+        //
+        // Drift is silent in the worst way. Change PERMISSION_MARKER and the
+        // bridge stops recognising the gate's UI request, so every tool call
+        // blocks with no prompt ever reaching the user. Change
+        // BLOCK_REASON_PREFIX and the raw marker leaks into the model's
+        // context as the block reason.
+        assert!(
+            PI_EXT_PERMISSION_GATE.contains(r#"PERMISSION_MARKER = "__NOTESAGE_PERMISSION__""#),
+            "vendored gate lost the permission marker the bridge sends"
+        );
+        assert!(
+            PI_EXT_PERMISSION_GATE.contains(r#"BLOCK_REASON_PREFIX = "__NOTESAGE_BLOCK__""#),
+            "vendored gate lost the block-reason prefix the bridge prepends"
+        );
+        assert!(
+            PI_EXT_PERMISSION_GATE.contains(r#"ALLOW = "Allow""#),
+            "vendored gate lost the allow answer the bridge settles with"
+        );
+    }
+
+    #[test]
+    fn embedded_gate_is_deny_by_default() {
+        // The read-only set is an ALLOW-LIST on purpose: pi's built-ins can
+        // grow, extensions register their own tools, and MCP servers add more.
+        // Flipping this to a deny-list would wave through every tool nobody
+        // thought to name — the failure would be invisible, since a missing
+        // prompt looks exactly like an approved one.
+        assert!(
+            PI_EXT_PERMISSION_GATE.contains(r#"READ_ONLY_TOOLS = new Set(["read", "grep", "find", "ls"])"#),
+            "vendored gate's read-only allow-list changed shape — re-verify it against \
+             pi's built-in tool set (read, bash, edit, write, grep, find, ls) before updating"
+        );
+    }
 }

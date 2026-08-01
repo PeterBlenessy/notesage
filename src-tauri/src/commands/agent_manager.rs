@@ -260,8 +260,12 @@ fn github_binary_agent_config(agent_id: &str) -> Option<GithubBinaryAgentConfig>
             // adapter tracks pi's pre-1.0 RPC and extension surfaces, so a
             // newer adapter built against a newer pi is not safe to pick up
             // automatically; a Notesage release moves this deliberately.
-            min_version: "0.1.0",
-            max_version: Some("0.1.0"),
+            // 0.1.1 adds ACP session modes. The Local Agent mode picker reads
+            // `availableModes` off the session response, so a 0.1.0 bridge
+            // leaves it permanently empty with nothing to explain why — the
+            // pin and the host feature have to move together.
+            min_version: "0.1.1",
+            max_version: Some("0.1.1"),
             checksum_asset: Some("notesage-acp-pi-SHA256SUMS"),
         }),
         _ => None,
@@ -1080,16 +1084,45 @@ async fn fetch_github_latest_release(repo: &str) -> Result<String, String> {
 
 /// Place a single extracted file at `~/.notesage/agents/bin/<bin_name>` with
 /// rwxr-xr-x perms. Shared by the zip and tar.gz extraction branches.
+/// Install a binary via write-to-temp + rename, never a write in place.
+///
+/// `fs::write` onto an existing path truncates and rewrites the SAME inode.
+/// On macOS — mandatory code signing on Apple Silicon — rewriting a binary's
+/// pages underneath its validated signature makes the kernel SIGKILL the next
+/// process launched from it (exit 137, no diagnostic). First installs are
+/// fine; UPDATES are what break, which is the worst shape for it: the agent
+/// worked before the update and dies silently after.
+///
+/// Renaming within the same directory is atomic and produces a fresh inode, so
+/// the running process keeps its old file and the next launch gets the new one.
+/// It also means a failed download can't leave a half-written executable.
 fn install_extracted_binary(bin_name: &str, data: &[u8]) -> Result<(), String> {
     ensure_agent_dirs()?;
-    let dest = agents_bin_dir().join(bin_name);
-    std::fs::write(&dest, data)
-        .map_err(|e| format!("Failed to write {}: {}", dest.display(), e))?;
+    install_binary_at(&agents_bin_dir(), bin_name, data)
+}
+
+/// Directory-injectable core of [`install_extracted_binary`] so the
+/// replace-don't-overwrite property is testable without touching `~/.notesage`.
+fn install_binary_at(dir: &std::path::Path, bin_name: &str, data: &[u8]) -> Result<(), String> {
+    let dest = dir.join(bin_name);
+    // Same directory: rename(2) can't cross filesystems, and $TMPDIR often is one.
+    let staging = dir.join(format!(".{}.incoming", bin_name));
+
+    std::fs::write(&staging, data)
+        .map_err(|e| format!("Failed to write {}: {}", staging.display(), e))?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| format!("Failed to chmod {}: {}", dest.display(), e))?;
+        // Set the mode BEFORE the rename so the binary is never briefly present
+        // at its final path without the executable bit.
+        if let Err(e) = std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o755)) {
+            let _ = std::fs::remove_file(&staging);
+            return Err(format!("Failed to chmod {}: {}", staging.display(), e));
+        }
+    }
+    if let Err(e) = std::fs::rename(&staging, &dest) {
+        let _ = std::fs::remove_file(&staging);
+        return Err(format!("Failed to install {}: {}", dest.display(), e));
     }
     Ok(())
 }
@@ -1632,11 +1665,56 @@ mod tests {
         assert_eq!(gh.bin_name, "notesage-acp-pi");
         // Exact pin: the adapter tracks pi's pre-1.0 RPC and extension
         // surfaces, so picking up a newer build automatically is unsafe.
-        assert_eq!(gh.min_version, "0.1.0");
-        assert_eq!(gh.max_version, Some("0.1.0"), "adapter must be exactly pinned, like pi");
+        // 0.1.1 is the first build advertising ACP session modes; the mode
+        // picker is empty against 0.1.0, so host and pin move together.
+        assert_eq!(gh.min_version, "0.1.1");
+        assert_eq!(gh.max_version, Some("0.1.1"), "adapter must be exactly pinned, like pi");
         // Scoped checksum asset name — matches the adapter's build-binaries.sh.
         assert_eq!(gh.checksum_asset, Some("notesage-acp-pi-SHA256SUMS"));
         assert!(npm_agent_config("notesage-acp-pi").is_none());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn updating_a_binary_replaces_the_file_instead_of_rewriting_it() {
+        // The bug this locks: `fs::write` over an existing binary keeps the
+        // same inode, and macOS SIGKILLs the next process launched from a
+        // binary whose pages changed under its code signature (exit 137, no
+        // diagnostic). Asserting the CONTENT changed would pass against the
+        // broken version — the inode is the property that matters.
+        use std::os::unix::fs::MetadataExt;
+
+        let dir = std::env::temp_dir().join(format!(
+            "notesage-install-test-{}-{}",
+            std::process::id(),
+            line!()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+
+        install_binary_at(&dir, "demo-agent", b"v1").unwrap();
+        let first = std::fs::metadata(dir.join("demo-agent")).unwrap().ino();
+
+        install_binary_at(&dir, "demo-agent", b"v2-longer").unwrap();
+        let second_meta = std::fs::metadata(dir.join("demo-agent")).unwrap();
+
+        assert_ne!(
+            first,
+            second_meta.ino(),
+            "update rewrote the existing inode — a running agent would be SIGKILLed on next launch"
+        );
+        assert_eq!(std::fs::read(dir.join("demo-agent")).unwrap(), b"v2-longer");
+
+        use std::os::unix::fs::PermissionsExt;
+        assert_eq!(
+            second_meta.permissions().mode() & 0o777,
+            0o755,
+            "installed binary must stay executable"
+        );
+
+        // No staging file left behind to be mistaken for an agent binary.
+        assert!(!dir.join(".demo-agent.incoming").exists());
+
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
