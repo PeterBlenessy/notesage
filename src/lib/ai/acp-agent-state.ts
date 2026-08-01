@@ -48,6 +48,10 @@ const MODE_ID_TO_COMMON: Record<string, CommonModeKey> = {
   'read-only': 'read_only',
   // Agent — Copilot's "Agent" is their default working mode (read + edit)
   'https://agentclientprotocol.com/protocol/session-modes#agent': 'agent',
+  // Agent — the pi bridge's prompting mode (notesage-acp-pi advertises the bare
+  // id; it deliberately avoids `auto`, which GOOSE_MODE_DISPLAY reads as Full
+  // Access and would mislabel a prompting mode as an unrestricted one)
+  'agent': 'agent',
   // Agent — can read and edit, asks for risky ops
   'acceptEdits': 'agent',
   'auto': 'agent',

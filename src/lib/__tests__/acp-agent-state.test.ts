@@ -36,6 +36,15 @@ describe('getModeLabel — permission-level common mode mapping', () => {
     expect(getModeLabel(undefined, 'yolo', 'YOLO').name).toBe('Full Access');
   });
 
+  it("maps the pi bridge's bare 'agent' id to Agent", () => {
+    // notesage-acp-pi advertises read-only / agent / full-access. The bare
+    // 'agent' id has to classify, or the sandbox-conflict dialog can't tell a
+    // prompting mode from an unrestricted one. It deliberately does NOT use
+    // 'auto': GOOSE_MODE_DISPLAY reads that as Full Access for any Local Agent
+    // preset, pi included, which would mislabel the safest working mode.
+    expect(getModeLabel(undefined, 'agent', 'Agent').name).toBe('Agent');
+  });
+
   it('maps plan/architect to Plan', () => {
     expect(getModeLabel(undefined, 'plan', 'Plan').name).toBe('Plan');
     expect(getModeLabel(undefined, 'architect', 'Architect').name).toBe('Plan');
