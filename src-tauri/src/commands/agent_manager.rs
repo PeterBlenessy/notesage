@@ -1696,7 +1696,23 @@ mod tests {
         };
         add(&mut builder, "pi/pi", b"#!/bin/sh\necho pi\n", 0o755);
         add(&mut builder, "pi/photon.wasm", b"wasmbytes", 0o644);
-        add(&mut builder, "../evil.txt", b"nope", 0o644);
+
+        // The traversal entry has to be written straight into the header's name
+        // field. `append_data`/`set_path` reject `..` outright ("paths in
+        // archives must not have `..`"), so building the fixture the obvious way
+        // fails while CONSTRUCTING the attack and never reaches the assertion —
+        // which left the extractor's tar-slip guard unexercised. A real
+        // malicious archive is under no such obligation to be well-formed.
+        {
+            let evil = b"../evil.txt";
+            let mut h = tar::Header::new_gnu();
+            h.set_size(4);
+            h.set_mode(0o644);
+            let name = &mut h.as_gnu_mut().expect("gnu header").name;
+            name[..evil.len()].copy_from_slice(evil);
+            h.set_cksum();
+            builder.append(&h, &b"nope"[..]).unwrap();
+        }
         let data = builder.into_inner().unwrap().finish().unwrap();
 
         // Redirect HOME so agents_* dirs land in a temp sandbox.
