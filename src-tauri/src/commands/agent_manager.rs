@@ -248,13 +248,20 @@ fn github_binary_agent_config(agent_id: &str) -> Option<GithubBinaryAgentConfig>
             checksum_asset: Some("SHA256SUMS"),
         }),
         "notesage-acp-pi" => Some(GithubBinaryAgentConfig {
-            // The ACP<->pi-RPC bridge, published on Notesage's own releases
-            // (bridges/pi-acp, compiled per platform by the release workflow).
-            // Versioned in lockstep with the app; updates ride app releases.
-            repo: "PeterBlenessy/notesage",
+            // The ACP<->pi-RPC adapter. It lives in its own repository rather
+            // than riding Notesage's releases: it is a general-purpose adapter
+            // any ACP client can drive, and giving it its own version line is
+            // what makes an exact pin possible at all — while it shipped as an
+            // app-release asset there was no version to pin TO, and installs
+            // resolved whatever the latest app release happened to carry.
+            repo: "PeterBlenessy/notesage-acp-pi",
             bin_name: "notesage-acp-pi",
+            // Exact-tested pin, same treatment as the pi arm above. The
+            // adapter tracks pi's pre-1.0 RPC and extension surfaces, so a
+            // newer adapter built against a newer pi is not safe to pick up
+            // automatically; a Notesage release moves this deliberately.
             min_version: "0.1.0",
-            max_version: None,
+            max_version: Some("0.1.0"),
             checksum_asset: Some("notesage-acp-pi-SHA256SUMS"),
         }),
         _ => None,
@@ -1615,12 +1622,19 @@ mod tests {
     }
 
     #[test]
-    fn bridge_installs_from_notesage_releases_with_checksum() {
+    fn adapter_installs_from_its_own_repo_pinned_and_checksummed() {
         let gh = github_binary_agent_config("notesage-acp-pi")
-            .expect("bridge must be a GitHub-binary agent");
-        assert_eq!(gh.repo, "PeterBlenessy/notesage");
+            .expect("adapter must be a GitHub-binary agent");
+        // Its own repository, not Notesage's releases. While it shipped as an
+        // app-release asset there was no independent version to pin to, so
+        // installs took whatever the latest app release carried.
+        assert_eq!(gh.repo, "PeterBlenessy/notesage-acp-pi");
         assert_eq!(gh.bin_name, "notesage-acp-pi");
-        // Scoped checksum asset name — matches bridges/pi-acp/scripts/build-binaries.sh.
+        // Exact pin: the adapter tracks pi's pre-1.0 RPC and extension
+        // surfaces, so picking up a newer build automatically is unsafe.
+        assert_eq!(gh.min_version, "0.1.0");
+        assert_eq!(gh.max_version, Some("0.1.0"), "adapter must be exactly pinned, like pi");
+        // Scoped checksum asset name — matches the adapter's build-binaries.sh.
         assert_eq!(gh.checksum_asset, Some("notesage-acp-pi-SHA256SUMS"));
         assert!(npm_agent_config("notesage-acp-pi").is_none());
     }
