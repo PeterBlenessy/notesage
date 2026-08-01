@@ -13,7 +13,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
@@ -121,10 +120,10 @@ export function LocalAgentSetupDialog() {
   );
   const [chosenModel, setChosenModel] = useState<string | null>(null);
   const effectiveModel = chosenModel ?? setup.modelId ?? recommended;
-  // Engine choice — Goose (default) or pi. Reset to idle happens per-engine in
-  // the setup hook (a distinct preset connection per engine), so switching here
-  // before starting just changes which engine `start` installs and wires.
-  const [engine, setEngine] = useState<'goose' | 'pi'>('goose');
+  // Which engine to configure is decided by which "Local agent using <engine>"
+  // entry the user picked in Add Connection, and carried on the store. The
+  // dialog no longer asks — by the time it opens, the choice is made.
+  const engine = useLocalAIStore((s) => s.localAgentSetupEngine);
 
   // Goose binary download percent (0–100) from `agent-install-progress`. The
   // backend emits bytes downloaded / content-length during the GitHub-binary
@@ -219,39 +218,6 @@ export function LocalAgentSetupDialog() {
             Runs an agent on your Mac against the bundled local model — no API keys, no cloud account.
           </DialogDescription>
         </DialogHeader>
-
-        {/* Engine picker — only before the flow starts or after failure. */}
-        {(setup.stage === 'idle' || isFailed) && (
-          <div className="space-y-2">
-            <Label className="text-sm font-medium text-foreground">Engine</Label>
-            <RadioGroup
-              value={engine}
-              onValueChange={(v) => setEngine(v as 'goose' | 'pi')}
-              disabled={running}
-              className="gap-2"
-            >
-              {[
-                { id: 'goose' as const, name: 'Goose', desc: 'Default. Agentic AI Foundation (AAIF).' },
-                { id: 'pi' as const, name: 'pi', desc: 'Alternative engine by earendil-works.' },
-              ].map((e) => (
-                <label
-                  key={e.id}
-                  htmlFor={`engine-${e.id}`}
-                  className={cn(
-                    'flex items-start gap-2.5 rounded-md border px-3 py-2 cursor-pointer transition-colors duration-150',
-                    engine === e.id ? 'border-border-strong bg-muted/40' : 'border-border hover:bg-muted/20',
-                  )}
-                >
-                  <RadioGroupItem value={e.id} id={`engine-${e.id}`} className="mt-0.5" />
-                  <span className="space-y-0.5">
-                    <span className="text-sm font-medium text-foreground block">{e.name}</span>
-                    <span className="text-xs text-muted-foreground block">{e.desc}</span>
-                  </span>
-                </label>
-              ))}
-            </RadioGroup>
-          </div>
-        )}
 
         {/* Model picker — only meaningful before the flow starts or after failure. */}
         {(setup.stage === 'idle' || isFailed) && (

@@ -19,7 +19,13 @@ import { runLocalAgentSetup, installAgentIfMissing, type LocalAgentSetupResult }
 import { recommendToolCallingModel, resolveLocalAgentContext } from '@/lib/ai/local-agent-model';
 import { log } from '@/lib/logger';
 
-export type LocalAgentEngine = 'goose' | 'pi';
+// The engine registry lives in `@/lib/ai/local-agent-engines` so the Add
+// Connection menu, this hook and the setup dialog all read one list. Re-exported
+// here because existing call sites import the type from this module.
+import { localAgentLabel, type LocalAgentEngine } from '@/lib/ai/local-agent-engines';
+
+export { localAgentLabel };
+export type { LocalAgentEngine };
 
 /** Managed-install agent ids per engine. pi needs BOTH the pi binary and the
  *  notesage-acp-pi bridge (the connection's spawned binary IS the bridge). */
@@ -164,7 +170,10 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
           provider: 'custom_acp',
           authMethod: 'agent_managed',
           status: 'connected',
-          label: engine === 'pi' ? 'Local Agent (pi)' : 'Local Agent',
+          // Always name the engine, including Goose. Both presets can be set up
+          // at once, and a bare "Local Agent" next to "Local Agent (Pi)" gives
+          // no way to tell which is which in the provider dropdown.
+          label: localAgentLabel(engine),
           credentials: { type: 'agent_managed', agentBinary: presetBinaryPath },
           config: { binaryPath: presetBinaryPath, binaryArgs: presetBinaryArgs, localAgentPreset: engine },
         });

@@ -66,6 +66,10 @@ interface LocalAIStore {
    *  every entry point (#18 empty state, #19 Add Connection, #20 "Fix") opens the
    *  same dialog mounted once at the app root. Non-persisted UI state. */
   localAgentSetupDialogOpen: boolean;
+  /** Which engine the setup dialog should configure. Chosen at the Add
+   *  Connection menu — there are separate entries per engine — so the dialog
+   *  itself no longer asks. Non-persisted UI state. */
+  localAgentSetupEngine: 'goose' | 'pi';
   /**
    * Local Agent setup-flow state machine (task #15). Persisted enough to resume
    * an interrupted flow after relaunch (stage + modelId; the transient `error`
@@ -97,8 +101,9 @@ interface LocalAIStore {
   setLocalAgentSetup: (next: Partial<LocalAgentSetupState> & { stage: LocalAgentSetupStage }) => void;
   /** Reset the setup flow back to `idle` (e.g. user cancels / starts over). */
   resetLocalAgentSetup: () => void;
-  /** Open/close the app-level Local Agent setup dialog (#17). */
-  setLocalAgentSetupDialogOpen: (open: boolean) => void;
+  /** Open/close the app-level Local Agent setup dialog (#17). Pass the engine
+   *  when opening; it is chosen by which Add Connection entry was picked. */
+  setLocalAgentSetupDialogOpen: (open: boolean, engine?: 'goose' | 'pi') => void;
   setModels: (models: LocalModelInfo[]) => void;
   setSystemMemory: (info: SystemMemoryInfo) => void;
   setHardwareProfile: (profile: HardwareProfile | null) => void;
@@ -185,6 +190,7 @@ export const useLocalAIStore = create<LocalAIStore>()(
         serverStatusReason: null,
         serverPort: null,
         localAgentSetupDialogOpen: false,
+        localAgentSetupEngine: 'goose',
         localAgentSetup: { stage: 'idle' },
         completionServerStatus: 'stopped',
         completionServerPort: null,
@@ -229,7 +235,9 @@ export const useLocalAIStore = create<LocalAIStore>()(
             return { localAgentSetup: merged };
           }),
         resetLocalAgentSetup: () => set({ localAgentSetup: { stage: 'idle' } }),
-        setLocalAgentSetupDialogOpen: (open) => set({ localAgentSetupDialogOpen: open }),
+        setLocalAgentSetupDialogOpen: (open, engine) =>
+          set(engine ? { localAgentSetupDialogOpen: open, localAgentSetupEngine: engine }
+                     : { localAgentSetupDialogOpen: open }),
         setModels: (models) => set({ models }),
         setSystemMemory: (info) => set({ systemMemory: info }),
         dismissFirstRun: () => set({ dismissedFirstRun: true }),
