@@ -231,7 +231,10 @@ jobs:
           syms="$(nm -gU "$LIB" 2>/dev/null || true)"
           [ -n "$syms" ] || { echo "nm produced no symbols at all — cannot verify the C ABI"; exit 1; }
           for sym in _notesage_capture_rel_path _notesage_capture_contents _notesage_capture_string_free; do
-            printf '%s\n' "$syms" | grep -q " T $sym$" || { echo "missing exported symbol: $sym"; exit 1; }
+            # `grep -q` exits on first match, which SIGPIPEs printf and — under
+            # pipefail — fails the step precisely when the symbol IS found.
+            # Plain grep with output discarded consumes all input instead.
+            printf '%s\n' "$syms" | grep " T $sym\$" >/dev/null || { echo "missing exported symbol: $sym"; exit 1; }
           done
           echo "All capture C ABI symbols exported."
 
