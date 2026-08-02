@@ -1,18 +1,24 @@
-import { ChevronRight, Folder, FileText, FileImage, FileType, File } from "lucide-react";
+import { ChevronRight, Folder, FileText, FileImage, FileType, FileCode, File } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 
 /** Classify a file by extension for icon + viewer routing. */
-export function classifyFile(name: string): "markdown" | "image" | "text" | "pdf" | "doc" | "other" {
+export function classifyFile(
+  name: string,
+): "markdown" | "image" | "text" | "pdf" | "doc" | "html" | "other" {
   const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
   if (ext === "md" || ext === "markdown") return "markdown";
   if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(ext)) return "image";
   if (ext === "pdf") return "pdf";
   if (["epub", "docx", "pptx"].includes(ext)) return "doc";
+  // Rendered, not shown as source: exported reports are self-contained HTML
+  // whose charts and interactivity are inline scripts. iOS Files shows them as
+  // markup with scripts disabled, which is the gap this reader closes.
+  if (ext === "html" || ext === "htm") return "html";
   // Treated as readable text (code files, txt, csv, json, yaml, etc.)
   if (
     [
-      "txt", "text", "log", "csv", "json", "yaml", "yml", "toml", "xml", "html", "htm",
+      "txt", "text", "log", "csv", "json", "yaml", "yml", "toml", "xml",
       "css", "js", "jsx", "ts", "tsx", "rs", "py", "go", "java", "c", "cpp", "h", "sh",
       "sql", "swift", "kt", "rb", "php",
     ].includes(ext)
@@ -32,6 +38,8 @@ function iconFor(entry: FileEntry) {
     case "pdf":
     case "doc":
       return FileType;
+    case "html":
+      return FileCode;
     case "text":
       return FileText;
     default:

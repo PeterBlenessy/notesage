@@ -57,13 +57,27 @@ in an **App Group** container so the Share Extension can use the same grant.
      | `read_file(relPath)` | `readFile` | `{ text }` |
      | `read_binary(relPath)` | `readBinary` | `{ bytes: u8[] }` |
      | `ensure_downloaded(relPath)` | `ensureDownloaded` | `{ state }` |
-     | `write_capture(input)` | `writeCapture` | `{ relPath }` |
 4. Add a **Share Extension** target (`File → New → Target → Share Extension`):
    - Replace its generated `ShareViewController` with `ShareViewController.swift`.
    - Use `ShareExtension-Info.plist` (URL/text activation rule) and
      `ShareExtension.entitlements` (App Group only).
    - Add `LibraryAccess.swift` to the extension's target membership (it writes
      captures directly, without Tauri).
+   - Link the **capture static library** so the extension can call the shared
+     Rust formatter (see "Capture format" below):
+
+     ```bash
+     cd src-tauri/crates/notesage-capture
+     cargo build --release --target aarch64-apple-ios          # device
+     cargo build --release --target aarch64-apple-ios-sim      # simulator
+     ```
+
+     Then in the extension target: add `libnotesage_capture.a` from
+     `src-tauri/target/<triple>/release/` to "Link Binary With Libraries", and
+     set "Objective-C Bridging Header" to `src-tauri/ios/NotesageCapture.h`.
+     Do **not** link the app's own Rust library here — a share extension has a
+     hard memory budget (~120 MB) and the app crate pulls in the whole Tauri
+     runtime. `notesage-capture` is dependency-free for exactly this reason.
 5. No network entitlements — the app is read-only + link capture and makes
    **no** network calls on device.
 
@@ -86,9 +100,17 @@ and resolve it against the bookmarked root URL.
 
 ## Capture format
 
-The note body/filename are produced by the **shared, unit-tested** Rust
-formatter (`src-tauri/src/commands/capture.rs::build_capture_note`). For the
-Share Extension (a separate process that writes directly without Rust), mirror
-that format — see `ShareViewController.swift` — or, preferably, route the
-extension through the same Rust formatter if you expose it to the extension
-target. The filename rule is `Inbox/YYYY-MM-DD-HHmmss-<slug>.md`.
+**One implementation, in Rust.** The note's filename and contents come from
+`src-tauri/crates/notesage-capture` — a dependency-free crate exposed over a C
+ABI (`NotesageCapture.h`) that `LibraryAccess.writeCapture` calls. The filename
+rule is `Inbox/YYYY-MM-DD-HHmmss-<slug>.md`.
+
+Swift owns only what it must: resolving the security-scoped root, disambiguating
+a same-second filename collision, and the coordinated write. Those need the
+bookmark and `NSFileCoordinator`, which have no Rust equivalent here.
+
+This split is deliberate. The format is shared with what the desktop workflows
+(`download-webpage`, `save-research`) expect from a `type: capture` note, and an
+earlier revision of this branch carried a **second** implementation in Swift.
+Two copies of a format drift silently, and only the Rust one had tests — so the
+tested implementation was not the one that shipped.

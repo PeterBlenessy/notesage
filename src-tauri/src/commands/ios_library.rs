@@ -19,7 +19,6 @@
 use crate::commands::file::FileEntry;
 use serde::{Deserialize, Serialize};
 
-pub use crate::commands::capture::CaptureInput;
 
 /// State of the iCloud library grant.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,21 +169,6 @@ pub async fn ios_ensure_downloaded(rel_path: String) -> Result<DownloadState, St
     }
 }
 
-/// Write a link-only capture note into `Inbox/` under the granted library root.
-/// Returns the relative path written. Never overwrites an existing note.
-#[tauri::command]
-pub async fn ios_write_capture(input: CaptureInput) -> Result<String, String> {
-    #[cfg(target_os = "ios")]
-    {
-        ios_impl::write_capture(input).await
-    }
-    #[cfg(not(target_os = "ios"))]
-    {
-        let _ = input;
-        Err("ios_write_capture is only available on iOS".into())
-    }
-}
-
 // ---------------------------------------------------------------------------
 // iOS-only implementation seam
 // ---------------------------------------------------------------------------
@@ -198,7 +182,6 @@ pub async fn ios_write_capture(input: CaptureInput) -> Result<String, String> {
 #[cfg(target_os = "ios")]
 mod ios_impl {
     use super::*;
-    use crate::commands::capture::build_capture_note;
 
     const NOT_WIRED: &str =
         "iOS native bridge not yet wired — see src-tauri/ios/README.md (run `tauri ios init` and integrate the Swift sources)";
@@ -234,59 +217,6 @@ mod ios_impl {
         Err(NOT_WIRED.into())
     }
 
-    /// Once the bridge resolves the granted root + provides a coordinated
-    /// writer, this builds the note via the shared (tested) formatter and
-    /// writes it. The formatting is already exercised by `capture.rs` tests;
-    /// only the folder resolution + coordinated write remain native work.
-    pub async fn write_capture(input: CaptureInput) -> Result<String, String> {
-        // The pure note content is ready to write the moment the bridge hands
-        // back the granted root. Kept here (rather than discarded) so wiring is
-        // a one-line "resolve root + coordinated-write `note.contents`".
-        let (now_rfc3339, file_stamp) = super::timestamps();
-        let _note = build_capture_note(&input, &now_rfc3339, &file_stamp);
-        Err(NOT_WIRED.into())
-    }
-}
-
-/// Compute the `date_saved` (RFC3339, UTC, seconds precision) and the filename
-/// time stamp (`YYYY-MM-DD-HHmmss`, UTC) from the system clock. Kept dependency
-/// -free (no `chrono`/`time` crate) via a small civil-time conversion.
-#[allow(dead_code)]
-fn timestamps() -> (String, String) {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0) as i64;
-    let (y, mo, d, h, mi, s) = civil_from_unix(secs);
-    (
-        format!("{y:04}-{mo:02}-{d:02}T{h:02}:{mi:02}:{s:02}Z"),
-        format!("{y:04}-{mo:02}-{d:02}-{h:02}{mi:02}{s:02}"),
-    )
-}
-
-/// Convert a Unix timestamp (seconds, UTC) to civil (Y, M, D, h, m, s).
-/// Uses Howard Hinnant's `civil_from_days` algorithm — no external crates.
-#[allow(dead_code)]
-fn civil_from_unix(unix_secs: i64) -> (i64, u32, u32, u32, u32, u32) {
-    let days = unix_secs.div_euclid(86_400);
-    let secs_of_day = unix_secs.rem_euclid(86_400);
-    let h = (secs_of_day / 3600) as u32;
-    let mi = ((secs_of_day % 3600) / 60) as u32;
-    let s = (secs_of_day % 60) as u32;
-
-    // days since 1970-01-01 → civil date
-    let z = days + 719_468;
-    let era = z.div_euclid(146_097);
-    let doe = z.rem_euclid(146_097);
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
-    let year = if m <= 2 { y + 1 } else { y };
-    (year, m, d, h, mi, s)
 }
 
 #[cfg(test)]
@@ -308,10 +238,21 @@ mod tests {
     }
 
     #[test]
-    fn civil_from_unix_known_values() {
-        // 2026-06-28T10:14:00Z = 1782641640
-        assert_eq!(civil_from_unix(1_782_641_640), (2026, 6, 28, 10, 14, 0));
-        // epoch
-        assert_eq!(civil_from_unix(0), (1970, 1, 1, 0, 0, 0));
+    fn every_read_command_path_goes_through_the_sanitizer() {
+        // The guard only holds if it is actually on every path. This asserts
+        // the source shape rather than behaviour because the commands
+        // themselves are `#[cfg(target_os = "ios")]` seams that error off-iOS,
+        // so a missing call could not otherwise be caught on a desktop build.
+        let src = include_str!("ios_library.rs");
+        for cmd in ["ios_list_directory", "ios_read_file", "ios_read_binary", "ios_ensure_downloaded"] {
+            let body_start = src
+                .find(&format!("pub async fn {cmd}("))
+                .unwrap_or_else(|| panic!("{cmd} not found"));
+            let body = &src[body_start..body_start + 400];
+            assert!(
+                body.contains("sanitize_rel_path"),
+                "{cmd} does not sanitize its path — it can escape the granted library root"
+            );
+        }
     }
 }

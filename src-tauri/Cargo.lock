@@ -4876,6 +4876,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "notesage-capture"
+version = "0.1.0"
+
+[[package]]
 name = "notify"
 version = "7.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

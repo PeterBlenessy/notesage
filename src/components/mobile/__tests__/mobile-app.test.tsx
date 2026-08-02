@@ -38,6 +38,9 @@ const ALLOWED = new Set([
   "ios_read_file",
   "ios_read_binary",
   "ios_ensure_downloaded",
+  // Pure render — takes markdown text, returns an HTML fragment. Touches no
+  // filesystem and no library path, so it cannot widen the read surface.
+  "render_markdown_fragment",
 ]);
 
 /** Commands that would mutate the library or reach AI — must never be invoked. */
@@ -64,6 +67,13 @@ describe("mobile read-only browse → read flow", () => {
       { name: "note.md", path: "note.md", is_directory: false, hidden: false },
     ]);
     setMockInvokeHandler("ios_read_file", () => "---\ntitle: T\n---\n\n# Hello Mobile\n\nBody text.");
+    // Markdown is rendered by the Rust (comrak) pipeline, the same one the
+    // desktop preview uses — including stripping frontmatter. The mock stands
+    // in for that command; the real stripping is covered in preview.rs.
+    setMockInvokeHandler(
+      "render_markdown_fragment",
+      () => "<h1>Hello Mobile</h1>\n<p>Body text.</p>",
+    );
 
     renderWithProviders(<Shell />);
 
@@ -81,6 +91,7 @@ describe("mobile read-only browse → read flow", () => {
       { name: "note.md", path: "note.md", is_directory: false, hidden: false },
     ]);
     setMockInvokeHandler("ios_read_file", () => "# Hi");
+    setMockInvokeHandler("render_markdown_fragment", () => "<h1>Hi</h1>");
 
     renderWithProviders(<Shell />);
     fireEvent.click(await screen.findByText("note.md"));
@@ -152,5 +163,56 @@ describe("onboarding", () => {
 
     await waitFor(() => expect(useMobileStore.getState().grantState).toBe("granted"));
     expect(calledCommands()).toContain("ios_pick_library_folder");
+  });
+});
+
+describe("HTML reports", () => {
+  const openHtml = async (fileName = "report.html") => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: fileName, path: fileName, is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler(
+      "ios_read_file",
+      () => "<html><body><h1>Q3</h1><script>renderCharts()</script></body></html>",
+    );
+    renderWithProviders(<Shell />);
+    fireEvent.click(await screen.findByText(fileName));
+    return await screen.findByTitle(fileName);
+  };
+
+  it("renders an exported report instead of showing its markup as text", async () => {
+    // The gap this closes: iOS Files shows a .html report as source with
+    // scripts disabled, so a report with inline charts is unreadable on phone.
+    const frame = await openHtml();
+    expect(frame.tagName).toBe("IFRAME");
+    expect(screen.queryByText(/<script>/)).toBeNull();
+  });
+
+  it("lets the report's own scripts run", async () => {
+    const frame = await openHtml();
+    expect(frame.getAttribute("sandbox")).toContain("allow-scripts");
+  });
+
+  it("keeps the report on an opaque origin so it cannot reach the app", async () => {
+    // `allow-scripts` WITHOUT `allow-same-origin` is the whole security
+    // posture here: the report executes, but has no access to this app's DOM,
+    // storage, or the Tauri IPC bridge. Granting same-origin alongside
+    // allow-scripts would let a document remove its own sandbox entirely.
+    const frame = await openHtml();
+    expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
+  });
+
+  it("loads from a blob URL, not srcdoc, so the report's own styles survive", async () => {
+    // A srcdoc document inherits the host CSP, and Tauri's nonce injection
+    // neutralises 'unsafe-inline' — the report would render unstyled with its
+    // scripts refused. A blob document is its own CSP context in WebKit.
+    const frame = await openHtml();
+    expect(frame.getAttribute("srcdoc")).toBeNull();
+    expect(frame.getAttribute("src") ?? "").toMatch(/^blob:/);
+  });
+
+  it("treats .htm the same as .html", async () => {
+    const frame = await openHtml("legacy.htm");
+    expect(frame.tagName).toBe("IFRAME");
   });
 });

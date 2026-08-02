@@ -1,5 +1,4 @@
 pub mod alpha_update;
-pub mod capture;
 pub mod file;
 pub mod ios_library;
 pub mod dialog;

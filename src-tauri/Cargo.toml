@@ -6,6 +6,15 @@ authors = ["Peter Blenessy"]
 license = "MIT"
 edition = "2021"
 
+
+# `notesage-capture` is a member rather than a plain path dependency: the app
+# binary does NOT link it (captures are written by the iOS Share Extension, a
+# separate process that links its staticlib directly). Making it a workspace
+# member is what puts it in `cargo test`, so the one implementation of the
+# capture-note format stays covered by the same gate as everything else.
+[workspace]
+members = ["crates/notesage-capture"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]

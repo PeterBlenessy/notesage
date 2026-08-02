@@ -1,13 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import Markdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { ChevronLeft, CloudDownload, AlertCircle, FileQuestion } from "lucide-react";
 import { iosReadFile, iosReadBinary, iosEnsureDownloaded } from "@/lib/ios-api";
-import { parseFrontmatter } from "@/lib/frontmatter";
+import { renderMarkdownFragment } from "@/lib/markdown-render";
 import { useMobileStore } from "@/stores/mobile-store";
 import { classifyFile } from "./FileRow";
 import { Button } from "@/components/ui/button";
-import { markdownComponents } from "./markdown-components";
 import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
 
 // Lazy-loaded — pdf.js is heavy (and pulls in browser-only globals like
@@ -22,15 +19,17 @@ type ReaderState =
   | { status: "error"; message: string }
   | { status: "unsupported" }
   | { status: "text"; content: string }
-  | { status: "markdown"; content: string }
+  | { status: "markdown"; html: string }
   | { status: "image"; url: string }
+  | { status: "html"; url: string }
   | { status: "pdf"; filePath: string };
 
 /**
- * Mobile reader (PRD task #14). Renders markdown (react-markdown + GFM), plain
- * text / code, images, and PDFs (lazy-loaded desktop PdfViewer) inline;
- * EPUB/DOCX/PPTX show an unsupported state in v1. iCloud placeholders are
- * downloaded on demand.
+ * Mobile reader (PRD task #14). Renders markdown (via the shared Rust comrak
+ * pipeline, same as the desktop preview), self-contained HTML reports with
+ * their scripts running, plain text / code, images, and PDFs (lazy-loaded
+ * desktop PdfViewer); EPUB/DOCX/PPTX show an unsupported state in v1. iCloud
+ * placeholders are downloaded on demand.
  */
 export function Reader() {
   const openDoc = useMobileStore((s) => s.openDoc);
@@ -63,12 +62,26 @@ export function Reader() {
         setState({ status: "pdf", filePath: relPath });
         return;
       }
+      if (kind === "html") {
+        // Rendered from a blob: URL rather than srcDoc. A srcDoc document
+        // inherits the host CSP, and Tauri's nonce injection neutralises
+        // 'unsafe-inline' — so an exported report's own <style> blocks and
+        // inline <script>s are refused and it renders bare. In WebKit (and so
+        // in WKWebView on iOS) a blob document is its own CSP context, which
+        // is what lets a self-contained report's charts actually run. Same
+        // finding as the desktop HtmlViewer regression (PR #447).
+        const raw = await iosReadFile(relPath);
+        const blob = new Blob([raw], { type: "text/html" });
+        setState({ status: "html", url: URL.createObjectURL(blob) });
+        return;
+      }
       if (kind === "markdown" || kind === "text") {
         const raw = await iosReadFile(relPath);
         if (kind === "markdown") {
-          // Strip YAML frontmatter from the read view (mirrors the editor).
-          const { content } = parseFrontmatter(raw);
-          setState({ status: "markdown", content });
+          // Rendered by the same comrak pipeline as the desktop, so a note
+          // looks the same on both. Frontmatter stripping happens there too.
+          const html = await renderMarkdownFragment(raw);
+          setState({ status: "markdown", html });
         } else {
           setState({ status: "text", content: raw });
         }
@@ -96,9 +109,9 @@ export function Reader() {
     void load();
   }, [load]);
 
-  // Revoke object URLs when the image changes / unmounts.
+  // Revoke object URLs when the image / HTML document changes or unmounts.
   useEffect(() => {
-    if (state.status !== "image") return;
+    if (state.status !== "image" && state.status !== "html") return;
     const url = state.url;
     return () => URL.revokeObjectURL(url);
   }, [state]);
@@ -133,6 +146,20 @@ export function Reader() {
           <Suspense fallback={<ReaderMessage spinner>Loading…</ReaderMessage>}>
             <PdfViewer filePath={state.filePath} fileName={name} />
           </Suspense>
+        </div>
+      ) : state.status === "html" ? (
+        // Scripts run; nothing else does. `allow-scripts` WITHOUT
+        // `allow-same-origin` leaves the document on an opaque origin, so a
+        // report can execute its own charts but cannot reach this app's DOM,
+        // storage, or the Tauri IPC bridge. The document scrolls itself.
+        <div className="min-h-0 flex-1">
+          <iframe
+            key={state.url}
+            src={state.url}
+            title={name}
+            sandbox="allow-scripts"
+            className="h-full w-full border-0 bg-white"
+          />
         </div>
       ) : (
       <div className="flex-1 overflow-y-auto">
@@ -176,11 +203,13 @@ export function Reader() {
         )}
 
         {state.status === "markdown" && (
-          <article className="mx-auto max-w-[720px] px-5 py-8 pb-[max(2rem,env(safe-area-inset-bottom))]">
-            <Markdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-              {state.content}
-            </Markdown>
-          </article>
+          // Safe to inject: the fragment comes from comrak run WITHOUT
+          // `unsafe_`, which strips raw HTML (including <script>) from the
+          // source. Pinned by a Rust test in preview.rs.
+          <article
+            className="ProseMirror prose prose-slate dark:prose-invert mx-auto max-w-[720px] px-5 py-8 pb-[max(2rem,env(safe-area-inset-bottom))]"
+            dangerouslySetInnerHTML={{ __html: state.html }}
+          />
         )}
       </div>
       )}
