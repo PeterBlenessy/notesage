@@ -138,9 +138,7 @@ ppt-rs = "0.2"
 # DOCX export
 docx-rs = "0.4"
 
-# Voice transcription
-whisper-rs = "0.16"
-cpal = "0.17"
+# Voice transcription — desktop only; see the non-iOS target table below.
 
 # E2E testing (optional — only enabled via `--features e2e-testing`)
 tauri-plugin-webdriver = { version = "0.2", optional = true }
@@ -158,6 +156,12 @@ tauri-plugin-sentry = "0.5.0"
 # `2026-06-28-ios-mobile-app.md` § Non-Goals) — there is nothing to lose.
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 tauri-plugin-aptabase = "1.0.0"
+# `whisper-rs` vendors whisper.cpp, whose ggml kernels reference Accelerate
+# symbols (`_vDSP_vsub`, `cblas_*`) that fail to link on iOS; `cpal` drives
+# microphone capture. Mobile ships no recording or transcription (PRD § Non-
+# Goals), so both stay off rather than being dead weight in a read-only reader.
+whisper-rs = "0.16"
+cpal = "0.17"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.16", features = ["metal"] }
