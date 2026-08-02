@@ -131,6 +131,15 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_notification::init());
 
+    // iOS native bridge (security-scoped library access). A plugin crate with
+    // its own Swift Package — see crates/tauri-plugin-notesage-ios — because
+    // that is the only shape where Tauri resolves the Swift `@_cdecl` entry
+    // point at link time.
+    #[cfg(target_os = "ios")]
+    {
+        builder = builder.plugin(tauri_plugin_notesage_ios::init());
+    }
+
     // Desktop-only plugins. `tauri_plugin_window_state` restores window
     // geometry and `tauri_plugin_autostart` installs a LaunchAgent — neither
     // concept exists on iOS, where both crates' APIs are compiled out.

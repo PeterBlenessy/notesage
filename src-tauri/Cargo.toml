@@ -13,7 +13,7 @@ edition = "2021"
 # member is what puts it in `cargo test`, so the one implementation of the
 # capture-note format stays covered by the same gate as everything else.
 [workspace]
-members = ["crates/notesage-capture"]
+members = ["crates/notesage-capture", "crates/tauri-plugin-notesage-ios"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -154,6 +154,9 @@ tauri-plugin-sentry = "0.5.0"
 # for that target, so it fails to compile there. Gated off rather than patched
 # because the mobile app ships no usage telemetry by design (PRD
 # `2026-06-28-ios-mobile-app.md` § Non-Goals) — there is nothing to lose.
+[target.'cfg(target_os = "ios")'.dependencies]
+tauri-plugin-notesage-ios = { path = "crates/tauri-plugin-notesage-ios" }
+
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 tauri-plugin-aptabase = "1.0.0"
 # `whisper-rs` vendors whisper.cpp, whose ggml kernels reference Accelerate
