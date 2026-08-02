@@ -27,7 +27,12 @@ export function MobileApp() {
 
   return (
     <ThemeProvider>
-      <div className="h-screen w-screen overflow-hidden bg-background text-foreground">
+      {/* `fixed inset-0` rather than `h-screen w-screen`: 100vh/100vw disagree
+          with iOS's visual viewport, and a WKWebView sized that way lays out
+          but does not composite until a touch invalidates the layer — the app
+          looks blank until you tap it. Pinning to the viewport avoids vh units
+          altogether. (gaimer, which works, uses no vh units at all.) */}
+      <div className="fixed inset-0 overflow-hidden bg-background text-foreground">
         {grantState === "unknown" ? (
           <Splash />
         ) : grantState === "granted" ? (
