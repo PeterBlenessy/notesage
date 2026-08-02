@@ -207,7 +207,21 @@ export function Reader() {
           // `unsafe_`, which strips raw HTML (including <script>) from the
           // source. Pinned by a Rust test in preview.rs.
           <article
-            className="ProseMirror prose prose-slate dark:prose-invert mx-auto max-w-[720px] px-5 py-8 pb-[max(2rem,env(safe-area-inset-bottom))]"
+            // `.ProseMirror` is reused for typographic parity with the desktop,
+            // but its padding is desktop-sized (6rem each side) and `prose`
+            // caps the measure at 65ch — together they left barely half the
+            // width of a phone for text. The padding is variable-driven, so
+            // retune it here rather than fight the cascade; `max-w-none` drops
+            // the measure cap so the column follows the screen.
+            className="ProseMirror prose prose-slate dark:prose-invert max-w-none pb-[max(2rem,env(safe-area-inset-bottom))]"
+            style={
+              {
+                "--editor-padding-left": "1.25rem",
+                "--editor-padding-right": "1.25rem",
+                "--editor-padding-top": "1.5rem",
+                "--editor-padding-bottom": "1.5rem",
+              } as React.CSSProperties
+            }
             dangerouslySetInnerHTML={{ __html: state.html }}
           />
         )}
