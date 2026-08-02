@@ -175,7 +175,7 @@ jobs:
           retention-days: 14
 
   ios-swift-syntax:
-    name: iOS Swift Syntax
+    name: iOS Native Checks
     runs-on: macos-latest
     needs: check-changes
     if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
@@ -188,21 +188,43 @@ jobs:
       # so before this job, nothing had ever read them. A typo shipped silently
       # and only surfaced at Xcode-integration time, on someone's laptop.
       #
-      # `swiftc -parse` is syntax-only: no type checking, no linking, no Xcode
-      # project, and no toolchain to install (macOS runners ship Swift). It
-      # cannot prove the files build, but it does prove they are Swift.
-      - name: Parse iOS Swift sources
+      # Two tiers, because they are not equally checkable without the generated
+      # Xcode project:
+      #
+      #   LibraryAccess + ShareViewController  →  full -typecheck against the
+      #     real iOS SDK, with the capture bridging header imported. This is a
+      #     genuine compile check: it resolves UIKit, the C ABI declarations,
+      #     and every call site.
+      #
+      #   NotesagePlugin  →  -parse only. It imports the `Tauri` Swift package,
+      #     which does not exist until `tauri ios init` generates the project,
+      #     so a type check would fail on the import rather than on the code.
+      - name: Type-check iOS Swift sources
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          files=(src-tauri/ios/*.swift)
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "No Swift sources found under src-tauri/ios/ — did they move?"
-            exit 1
-          fi
-          echo "Parsing ${#files[@]} file(s):"
-          printf '  %s\n' "${files[@]}"
-          swiftc -parse "${files[@]}"
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios16.0 \
+            -import-objc-header src-tauri/ios/NotesageCapture.h \
+            src-tauri/ios/LibraryAccess.swift \
+            src-tauri/ios/ShareViewController.swift
+          # Syntax-only for the Tauri-dependent plugin bridge.
+          swiftc -parse src-tauri/ios/NotesagePlugin.swift
+
+      # The Share Extension links this static library to call the shared
+      # capture-note formatter. Building it here proves the C ABI compiles for
+      # the device target and exports the symbols Swift expects — the Xcode
+      # integration step then only has to link it.
+      - name: Build capture staticlib for iOS + verify exported symbols
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-apple-ios
+          cargo build --release --target aarch64-apple-ios \
+            --manifest-path src-tauri/crates/notesage-capture/Cargo.toml
+          LIB=src-tauri/target/aarch64-apple-ios/release/libnotesage_capture.a
+          for sym in _notesage_capture_rel_path _notesage_capture_contents _notesage_capture_string_free; do
+            nm -gU "$LIB" | grep -q " T $sym$" || { echo "missing exported symbol: $sym"; exit 1; }
+          done
+          echo "All capture C ABI symbols exported."
 
   rust-tests:
     name: Rust Backend Tests
