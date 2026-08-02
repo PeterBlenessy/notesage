@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
+import { toast } from 'sonner';
 import { Check, CircleDashed, Loader2, ShieldCheck, TriangleAlert, X } from 'lucide-react';
 import {
   Dialog,
@@ -24,14 +25,20 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { isLocalAgentPreset } from '@/lib/ai/acp-agent-state';
 import { useLocalAgentSetup } from '@/hooks/useLocalAgentSetup';
 import { recommendToolCallingModel } from '@/lib/ai/local-agent-model';
-import { GooseAttribution } from './GooseAttribution';
+import { LocalAgentAttribution } from './LocalAgentAttribution';
 import type { LocalAgentActiveStage } from '@/stores/local-ai-store';
 import { cn } from '@/lib/utils';
+import { log } from '@/lib/logger';
 
 const GB = 1024 ** 3;
 
 /** Agent id used for the Goose managed install (mirrors useLocalAgentSetup). */
-const GOOSE_AGENT_ID = 'goose';
+/** Managed-install agent ids whose download progress the dialog bar tracks,
+ *  per engine. pi installs two artifacts (pi + the bridge). */
+const ENGINE_AGENT_IDS: Record<'goose' | 'pi', string[]> = {
+  goose: ['goose'],
+  pi: ['pi', 'notesage-acp-pi'],
+};
 
 /** Ordered active stages with user-facing labels. */
 const STAGES: { key: LocalAgentActiveStage; label: string }[] = [
@@ -113,6 +120,10 @@ export function LocalAgentSetupDialog() {
   );
   const [chosenModel, setChosenModel] = useState<string | null>(null);
   const effectiveModel = chosenModel ?? setup.modelId ?? recommended;
+  // Which engine to configure is decided by which "Local agent using <engine>"
+  // entry the user picked in Add Connection, and carried on the store. The
+  // dialog no longer asks — by the time it opens, the choice is made.
+  const engine = useLocalAIStore((s) => s.localAgentSetupEngine);
 
   // Goose binary download percent (0–100) from `agent-install-progress`. The
   // backend emits bytes downloaded / content-length during the GitHub-binary
@@ -136,7 +147,7 @@ export function LocalAgentSetupDialog() {
       'agent-install-progress',
       (event) => {
         const p = event.payload;
-        if (p.agent_id !== GOOSE_AGENT_ID) return;
+        if (!ENGINE_AGENT_IDS[engine].includes(p.agent_id)) return;
         if (p.phase === 'downloading') {
           setAgentProgress(p.total > 0 ? Math.round((p.progress / p.total) * 100) : null);
         } else {
@@ -153,11 +164,30 @@ export function LocalAgentSetupDialog() {
       cancelled = true;
       unlisten?.();
     };
-  }, [open]);
+  }, [open, engine]);
 
   const running = ['detecting', 'downloading', 'configuring', 'verifying'].includes(setup.stage);
   const isReady = setup.stage === 'ready';
   const isFailed = setup.stage === 'failed';
+
+  // Surface setup failures as a dismissable toast (user-facing) + a log line
+  // carrying the raw backend error (developer-facing, forwarded to the backend
+  // log). The raw string is NOT rendered in the dialog — it's debug detail, not
+  // a user message. Deduped on (stage, error) so a re-render can't re-toast.
+  const lastFailureRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!isFailed) {
+      if (setup.stage === 'idle' || isReady) lastFailureRef.current = null; // allow re-toast on the next attempt
+      return;
+    }
+    const key = `${setup.failedStage ?? ''}:${setup.error ?? ''}`;
+    if (lastFailureRef.current === key) return;
+    lastFailureRef.current = key;
+    log.error('ai', `Local Agent setup failed at ${setup.failedStage ?? 'unknown'} stage: ${setup.error ?? '(no detail)'}`);
+    toast.error('Local Agent setup failed', {
+      description: failureHint(setup.failedStage),
+    });
+  }, [isFailed, isReady, setup.stage, setup.failedStage, setup.error]);
 
   const chosenModelInfo = toolModels.find((m) => m.id === effectiveModel);
   const lowRam =
@@ -166,7 +196,7 @@ export function LocalAgentSetupDialog() {
     systemMemory.total_bytes < 8 * GB;
 
   const handleStart = () => {
-    void start(effectiveModel ?? undefined);
+    void start(effectiveModel ?? undefined, engine);
   };
 
   // Per-stage download progress for the model (0–100), if a download is active.
@@ -243,14 +273,11 @@ export function LocalAgentSetupDialog() {
           })}
         </ul>
 
-        {isFailed && setup.error && (
-          <div className="rounded-md border border-border bg-muted/40 px-3 py-2 space-y-1">
-            <p className="text-xs text-destructive">{setup.error}</p>
-            <p className="text-[11px] text-muted-foreground">{failureHint(setup.failedStage)}</p>
-          </div>
-        )}
+        {/* No raw error string in the dialog — the failed stage is already
+            marked in the checklist above, the actionable hint + full detail go
+            to the toast + log (see the failure effect). Retry is in the footer. */}
 
-        <GooseAttribution />
+        <LocalAgentAttribution engine={engine} />
 
         <DialogFooter>
           {isReady ? (

@@ -2,13 +2,15 @@
 //
 // Component tests for the Local Agent setup dialog (task #17/#21). Covers the
 // rendered states — idle (model picker + Set up), running (Continue in
-// background), failed (error + Retry), ready (Done) — by seeding the store-backed
-// state machine rather than driving the IPC flow.
+// background), failed (Retry, with the error toasted rather than embedded),
+// ready (Done) — by seeding the store-backed state machine rather than driving
+// the IPC flow.
 
 import '@/test/tauri-mock';
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderWithProviders, screen, waitFor, act } from '@/test/component-harness';
 import { emitMockEvent } from '@/test/tauri-mock';
+import { toast } from 'sonner'; // mocked by @/test/tauri-mock
 import { LocalAgentSetupDialog } from '@/components/settings/LocalAgentSetupDialog';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -73,15 +75,23 @@ describe('LocalAgentSetupDialog', () => {
     expect(screen.queryByRole('button', { name: 'Set up' })).toBeNull();
   });
 
-  it('failed: shows the error message and a Retry button', () => {
+  it('failed: offers Retry, and does NOT embed the raw backend error', async () => {
+    // The dialog deliberately does not render the raw error string: backend
+    // messages are developer-facing, not a user message. They go to a toast
+    // plus a log line instead. This test asserted the pre-toast behaviour and
+    // was left behind by that change — the assertion is inverted here rather
+    // than deleted, so the intent stays covered.
     open();
     useLocalAIStore.getState().setLocalAgentSetup({
       stage: 'failed', failedStage: 'verifying', error: 'smoke test timed out',
     });
     renderWithProviders(<LocalAgentSetupDialog />);
-    expect(screen.getByText('smoke test timed out')).toBeTruthy();
+
+    expect(screen.queryByText('smoke test timed out')).toBeNull();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeTruthy();
     expect(screen.getByRole('button', { name: /cancel/i })).toBeTruthy();
+    // The failure is still surfaced — just out of band.
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
   });
 
   it('ready: shows a Done button (when the preset connection exists)', () => {

@@ -19,15 +19,27 @@ import { runLocalAgentSetup, installAgentIfMissing, type LocalAgentSetupResult }
 import { recommendToolCallingModel, resolveLocalAgentContext } from '@/lib/ai/local-agent-model';
 import { log } from '@/lib/logger';
 
-const GOOSE_AGENT_ID = 'goose';
+// The engine registry lives in `@/lib/ai/local-agent-engines` so the Add
+// Connection menu, this hook and the setup dialog all read one list. Re-exported
+// here because existing call sites import the type from this module.
+import { localAgentLabel, type LocalAgentEngine } from '@/lib/ai/local-agent-engines';
 
-/** Resolve the installed Goose binary's absolute path (managed install). */
-async function resolveGoosePath(): Promise<string> {
+export { localAgentLabel };
+export type { LocalAgentEngine };
+
+/** Managed-install agent ids per engine. pi needs BOTH the pi binary and the
+ *  notesage-acp-pi bridge (the connection's spawned binary IS the bridge). */
+function engineAgentIds(engine: LocalAgentEngine): string[] {
+  return engine === 'pi' ? ['pi', 'notesage-acp-pi'] : ['goose'];
+}
+
+/** Resolve an installed managed binary's absolute path. */
+async function resolveManagedPath(agentId: string): Promise<string> {
   const resolution = await invoke<BinaryResolution | null>('agent_resolve_binary', {
-    agentId: GOOSE_AGENT_ID,
+    agentId,
   });
   if (!resolution?.path) {
-    throw new Error('Goose binary not found after install');
+    throw new Error(`${agentId} binary not found after install`);
   }
   return resolution.path;
 }
@@ -39,7 +51,7 @@ export interface UseLocalAgentSetup {
    * Run (or resume / retry) the setup flow. Resolves with the outcome.
    * Pass `modelId` to override the hardware recommendation (dialog model picker).
    */
-  start: (modelId?: string) => Promise<LocalAgentSetupResult>;
+  start: (modelId?: string, engine?: LocalAgentEngine) => Promise<LocalAgentSetupResult>;
   /** Reset the flow back to idle. */
   reset: () => void;
 }
@@ -47,7 +59,10 @@ export interface UseLocalAgentSetup {
 export function useLocalAgentSetup(): UseLocalAgentSetup {
   const setup = useLocalAIStore((s) => s.localAgentSetup);
 
-  const start = useCallback(async (modelOverride?: string): Promise<LocalAgentSetupResult> => {
+  const start = useCallback(async (
+    modelOverride?: string,
+    engine: LocalAgentEngine = 'goose',
+  ): Promise<LocalAgentSetupResult> => {
     const localStore = useLocalAIStore.getState();
     const connStore = useConnectionsStore.getState();
     const routingStore = useRoutingStore.getState();
@@ -55,7 +70,11 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
     // Captured across stages: the generated config (env + llama port) the smoke
     // test needs to spawn Goose against the bundled server in isolation.
     let configResult: LocalAgentConfig | null = null;
+    // The binary the connection spawns: Goose itself, or the pi bridge.
     let presetBinaryPath = '';
+    // Stable (non-live) spawn args: Goose `['acp']`; pi `['--pi-bin', <pi>]`
+    // (the live post-`--` provider/model args come from the endpoint config).
+    let presetBinaryArgs: string[] = [];
     // The connection id this run *created* (vs reused). Only a created one is
     // rolled back on failure — never one the run found already registered.
     let createdConnectionId: string | null = null;
@@ -87,19 +106,23 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
 
       installAgent: async () => {
         // Setup-time skip (resume guard): the GitHub-binary install re-downloads
-        // the ~79 MB tarball every run, so if the Goose binary already resolves
-        // we don't reinstall. Logic lives in the pure `installAgentIfMissing` so
-        // the skip is unit-tested. Updates still go through `agent_update`
+        // the whole tarball every run, so binaries that already resolve are not
+        // reinstalled. Logic lives in the pure `installAgentIfMissing` so the
+        // skip is unit-tested. Updates still go through `agent_update`
         // (→ do_agent_install), which must keep forcing a fresh download.
-        await installAgentIfMissing({
-          resolveBinaryPath: async () =>
-            (
-              await invoke<BinaryResolution | null>('agent_resolve_binary', {
-                agentId: GOOSE_AGENT_ID,
-              }).catch(() => null)
-            )?.path ?? null,
-          install: () => invoke('agent_install', { agentId: GOOSE_AGENT_ID }),
-        });
+        // pi installs two artifacts (pi + the bridge), sequentially — the
+        // progress events already carry per-agent ids for the dialog.
+        for (const agentId of engineAgentIds(engine)) {
+          await installAgentIfMissing({
+            resolveBinaryPath: async () =>
+              (
+                await invoke<BinaryResolution | null>('agent_resolve_binary', {
+                  agentId,
+                }).catch(() => null)
+              )?.path ?? null,
+            install: () => invoke('agent_install', { agentId }),
+          });
+        }
       },
 
       downloadModel: async (modelId) => {
@@ -121,18 +144,25 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
       },
 
       writeConfig: async () => {
-        configResult = await tauriApi.localAgentWriteConfig();
+        configResult = await tauriApi.localAgentWriteConfig(engine);
       },
 
       createPresetConnection: async () => {
-        presetBinaryPath = await resolveGoosePath();
-        // Reuse an existing preset connection if one is already registered.
+        if (engine === 'pi') {
+          const piPath = await resolveManagedPath('pi');
+          presetBinaryPath = await resolveManagedPath('notesage-acp-pi');
+          presetBinaryArgs = ['--pi-bin', piPath];
+        } else {
+          presetBinaryPath = await resolveManagedPath('goose');
+          presetBinaryArgs = ['acp'];
+        }
+        // Reuse an existing preset connection FOR THIS ENGINE if registered.
         const existing = connStore.connections.find(
-          (c) => c.provider === 'custom_acp' && c.config?.localAgentPreset === 'goose',
+          (c) => c.provider === 'custom_acp' && c.config?.localAgentPreset === engine,
         );
         if (existing) {
           connStore.updateConnection(existing.id, {
-            config: { ...existing.config, binaryPath: presetBinaryPath, binaryArgs: ['acp'], localAgentPreset: 'goose' },
+            config: { ...existing.config, binaryPath: presetBinaryPath, binaryArgs: presetBinaryArgs, localAgentPreset: engine },
           });
           return existing.id;
         }
@@ -140,9 +170,12 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
           provider: 'custom_acp',
           authMethod: 'agent_managed',
           status: 'connected',
-          label: 'Local Agent',
+          // Always name the engine, including Goose. Both presets can be set up
+          // at once, and a bare "Local Agent" next to "Local Agent (Pi)" gives
+          // no way to tell which is which in the provider dropdown.
+          label: localAgentLabel(engine),
           credentials: { type: 'agent_managed', agentBinary: presetBinaryPath },
-          config: { binaryPath: presetBinaryPath, binaryArgs: ['acp'], localAgentPreset: 'goose' },
+          config: { binaryPath: presetBinaryPath, binaryArgs: presetBinaryArgs, localAgentPreset: engine },
         });
         // Maximal confinement: the agent only needs the bundled server (allowed
         // via the llama port) — empty network allowlist, kernel deny on (#9).
@@ -174,12 +207,18 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
         const paths = selectProjectPaths(useChatStore.getState());
         const cwd = paths[0] || '/tmp';
         const conn = useConnectionsStore.getState().connections.find(
-          (c) => c.provider === 'custom_acp' && c.config?.localAgentPreset === 'goose',
+          (c) => c.provider === 'custom_acp' && c.config?.localAgentPreset === engine,
         );
         const sandboxPaths = conn ? getChatSandboxScope({ projectPaths: paths }, conn, false) : paths;
+        // pi: append the live post-`--` provider/model args from the config,
+        // exactly like the real spawn path (ensureAcpAgent) does.
+        const smokeArgs =
+          engine === 'pi' && configResult
+            ? [...presetBinaryArgs, '--', ...configResult.piArgs]
+            : presetBinaryArgs;
         return tauriApi.acpAgentSmokeTest({
           agentBinary: presetBinaryPath,
-          agentArgs: ['acp'],
+          agentArgs: smokeArgs,
           workingDirectory: cwd,
           envVars: configResult?.env ?? null,
           sandboxEnabled: true,

@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useConnectionsStore } from '@/stores/connections-store';
+import { LOCAL_AGENT_ENGINES, type LocalAgentEngine } from '@/lib/ai/local-agent-engines';
 import { useRoutingStore } from '@/stores/routing-store';
 import { stopAllAcpAgents } from '@/hooks/useAIOperations';
 import { probeAcpCapabilities, isLocalAgentPreset } from '@/lib/ai/acp-agent-state';
@@ -78,7 +79,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   const [oaiLabel, setOaiLabel] = useState('');
 
   // Agent update checking
-  const [agentUpdates, setAgentUpdates] = useState<Record<string, { currentVersion: string; latestVersion: string }>>({});
+  const [agentUpdates, setAgentUpdates] = useState<Record<string, { currentVersion: string; latestVersion: string; heldBack?: boolean }>>({});
   const [checkingUpdates, setCheckingUpdates] = useState(false);
 
   const checkForUpdates = useCallback((force = false) => {
@@ -87,9 +88,9 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
     let toastMsg: (() => void) | null = null;
     const check = invoke<AgentUpdateInfo[]>('agent_check_updates', { force })
       .then((updates) => {
-        const map: Record<string, { currentVersion: string; latestVersion: string }> = {};
+        const map: Record<string, { currentVersion: string; latestVersion: string; heldBack?: boolean }> = {};
         for (const u of updates) {
-          map[u.agent_id] = { currentVersion: u.current_version, latestVersion: u.latest_version };
+          map[u.agent_id] = { currentVersion: u.current_version, latestVersion: u.latest_version, heldBack: u.held_back };
         }
         setAgentUpdates(map);
         if (force) {
@@ -143,13 +144,20 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   }, [addConnection, autoAssign]);
 
   const openLocalAgentSetup = useLocalAIStore((s) => s.setLocalAgentSetupDialogOpen);
-  // Whether the Local Agent preset is already set up (#19 shows ready state).
-  const localAgentReady = connections.some(
-    (c) => c.provider === 'custom_acp' && c.config?.localAgentPreset === 'goose',
+  // Which Local Agent engines are already set up. Tracked per engine because
+  // both can coexist — the engine is picked here rather than inside the setup
+  // dialog, so an engine that is already configured must not be offered again.
+  const configuredEngines = new Set(
+    connections
+      .filter((c) => c.provider === 'custom_acp' && c.config?.localAgentPreset)
+      .map((c) => c.config?.localAgentPreset as LocalAgentEngine),
   );
-  const handlePickLocalAgent = useCallback(() => {
-    openLocalAgentSetup(true);
-  }, [openLocalAgentSetup]);
+  const handlePickLocalAgent = useCallback(
+    (engine: LocalAgentEngine) => {
+      openLocalAgentSetup(true, engine);
+    },
+    [openLocalAgentSetup],
+  );
 
   const handlePickCustomAgent = useCallback(() => {
     setFlow({ step: 'custom' });
@@ -336,29 +344,47 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                 <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
                   Local
                 </DropdownMenuLabel>
-                <DropdownMenuItem
-                  className="relative flex items-start gap-2.5 py-2 cursor-pointer"
-                  onSelect={handlePickLocalAgent}
-                >
-                  <ShieldCheck
-                    className="w-5 h-5 mt-0.5 shrink-0 text-[var(--color-accent-primary)]"
-                    strokeWidth={1.5}
-                  />
-                  <div className="flex-1 min-w-0">
-                    <span className="text-sm font-medium block truncate">Local Agent</span>
-                    <span className="text-xs text-muted-foreground block truncate">
-                      {localAgentReady
-                        ? 'Private on-device agent — set up'
-                        : 'Private AI — the model runs on your device, no API keys'}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground block truncate">
-                      Powered by Goose, an open-source agent from the Agentic AI Foundation (AAIF)
-                    </span>
-                  </div>
-                  {localAgentReady && (
-                    <Check className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
-                  )}
-                </DropdownMenuItem>
+                {/* One entry per engine. The choice lives here rather than
+                    inside the setup dialog: the user is already choosing what
+                    to add, and an engine they have configured can simply be
+                    struck from the list instead of being offered and refused. */}
+                {LOCAL_AGENT_ENGINES.map((e) => {
+                  const configured = configuredEngines.has(e.id);
+                  return (
+                    <DropdownMenuItem
+                      key={e.id}
+                      className={`relative flex items-start gap-2.5 py-2 ${configured ? 'opacity-50' : 'cursor-pointer'}`}
+                      disabled={configured}
+                      onSelect={() => handlePickLocalAgent(e.id)}
+                    >
+                      <ShieldCheck
+                        className="w-5 h-5 mt-0.5 shrink-0 text-[var(--color-accent-primary)]"
+                        strokeWidth={1.5}
+                      />
+                      <div className="flex-1 min-w-0">
+                        <span className="text-sm font-medium flex items-center gap-1.5">
+                          <span className="truncate">Local agent using {e.name}</span>
+                          {e.beta && (
+                            <span className="rounded-sm border border-border px-1 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground shrink-0">
+                              Beta
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-xs text-muted-foreground block truncate">
+                          {configured
+                            ? 'Already set up'
+                            : 'Private AI — the model runs on your device, no API keys'}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground block truncate">
+                          {e.attribution}
+                        </span>
+                      </div>
+                      {configured && (
+                        <Check className="h-3.5 w-3.5 mt-0.5 text-muted-foreground shrink-0" strokeWidth={1.5} />
+                      )}
+                    </DropdownMenuItem>
+                  );
+                })}
                 {/* Local AI (local_bundled) before Ollama (local). */}
                 {PROVIDER_OPTIONS
                   .filter((o) => o.authMethod === 'local' || o.authMethod === 'local_bundled')

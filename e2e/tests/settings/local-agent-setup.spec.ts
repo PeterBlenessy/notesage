@@ -56,7 +56,7 @@ const SETUP_OVERRIDES: Record<string, unknown> = {
   store_credential: null,
 };
 
-async function openLocalAgentDialog(page: Page) {
+async function openLocalAgentDialog(page: Page, engine: 'Goose' | 'Pi' = 'Goose') {
   // Settings dialog
   await page.keyboard.press('Meta+,');
   await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10000 });
@@ -64,9 +64,11 @@ async function openLocalAgentDialog(page: Page) {
   // AI Providers panel
   await page.getByRole('button', { name: 'AI Providers' }).click();
 
-  // Add → Local Agent
+  // Add → Local agent using <engine>. The menu carries one entry per engine
+  // rather than a single "Local Agent" item: the user is already choosing what
+  // to add, so the engine belongs here rather than inside the setup dialog.
   await page.getByRole('button', { name: 'Add' }).click();
-  await page.getByText('Local Agent', { exact: true }).click();
+  await page.getByRole('menuitem', { name: new RegExp(`Local agent using ${engine}`) }).click();
 
   // The setup dialog is mounted at the app root and appears on top.
   const dialog = page
@@ -81,6 +83,24 @@ test.describe('Local Agent setup — happy path', () => {
     await setupTauriMock(page, { overrides: SETUP_OVERRIDES });
     await page.goto('/');
     await page.waitForLoadState('networkidle');
+  });
+
+  test('Add offers one entry per Local Agent engine, pi marked Beta', async ({ page }) => {
+    // Guards the menu shape directly. When the single "Local Agent" item was
+    // split per engine, the only thing that noticed was the setup test below —
+    // failing on a click timeout, which reads like a hang rather than a
+    // renamed control.
+    await page.keyboard.press('Meta+,');
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10000 });
+    await page.getByRole('button', { name: 'AI Providers' }).click();
+    await page.getByRole('button', { name: 'Add' }).click();
+
+    await expect(page.getByRole('menuitem', { name: /Local agent using Goose/ })).toBeVisible();
+    const pi = page.getByRole('menuitem', { name: /Local agent using Pi/ });
+    await expect(pi).toBeVisible();
+    // pi works against a real pi binary but has never been verified end to end
+    // in the app; the badge is the honest signal for that.
+    await expect(pi).toContainText('Beta');
   });
 
   test('Add → Local Agent → Set up walks to a ready state', async ({ page }) => {

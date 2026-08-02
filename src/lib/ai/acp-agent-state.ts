@@ -48,6 +48,10 @@ const MODE_ID_TO_COMMON: Record<string, CommonModeKey> = {
   'read-only': 'read_only',
   // Agent — Copilot's "Agent" is their default working mode (read + edit)
   'https://agentclientprotocol.com/protocol/session-modes#agent': 'agent',
+  // Agent — the pi bridge's prompting mode (notesage-acp-pi advertises the bare
+  // id; it deliberately avoids `auto`, which GOOSE_MODE_DISPLAY reads as Full
+  // Access and would mislabel a prompting mode as an unrestricted one)
+  'agent': 'agent',
   // Agent — can read and edit, asks for risky ops
   'acceptEdits': 'agent',
   'auto': 'agent',
@@ -343,20 +347,25 @@ export interface LocalAgentEndpoint {
   env: Record<string, string>;
   configKey: string;
   port: number;
+  /** pi only: live post-`--` bridge args (provider/model/session-dir),
+   *  regenerated per resolution so a model switch respawns with fresh args.
+   *  Empty for Goose. */
+  piArgs: string[];
 }
 
 /**
- * Returns true when `connection` is the Local Agent preset (Goose wired to
+ * Returns true when `connection` is a Local Agent preset (Goose or pi wired to
  * the bundled llama-server). Only these connections regenerate config and key
  * their respawn on the live endpoint.
  */
 export function isLocalAgentPreset(connection: Connection): boolean {
-  return connection.provider === 'custom_acp' && connection.config?.localAgentPreset === 'goose';
+  const preset = connection.config?.localAgentPreset;
+  return connection.provider === 'custom_acp' && (preset === 'goose' || preset === 'pi');
 }
 
 /**
  * Resolve the live endpoint config for a preset connection by (re)generating
- * the Goose env against the running bundled server (#8). Returns `null`
+ * the engine config against the running bundled server (#8). Returns `null`
  * for non-preset connections (their `configKey` is always `''`). Throws the
  * backend error verbatim when the server is down / has no model — the caller
  * (#13 routing) is responsible for falling back to direct local chat.
@@ -365,8 +374,10 @@ export async function resolveLocalAgentEndpoint(
   connection: Connection,
 ): Promise<LocalAgentEndpoint | null> {
   if (!isLocalAgentPreset(connection)) return null;
-  const cfg = await invoke<import('@/lib/tauri').LocalAgentConfig>('local_agent_write_config');
-  return { env: cfg.env, configKey: cfg.configKey, port: cfg.port };
+  const cfg = await invoke<import('@/lib/tauri').LocalAgentConfig>('local_agent_write_config', {
+    agent: connection.config?.localAgentPreset ?? null,
+  });
+  return { env: cfg.env, configKey: cfg.configKey, port: cfg.port, piArgs: cfg.piArgs ?? [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -623,8 +634,13 @@ export async function ensureAcpAgent(
 
       // Model selection is done post-session via the model-category session
       // config option (session/set_config_option). CLI args are only used for
-      // non-model flags.
-      const args = [...launch.agentArgs];
+      // non-model flags — EXCEPT the pi preset, whose bridge takes live
+      // provider/model/session-dir args after `--` (regenerated per endpoint
+      // resolution so a model switch respawns with fresh selection).
+      const args = [
+        ...launch.agentArgs,
+        ...(endpoint && endpoint.piArgs.length > 0 ? ['--', ...endpoint.piArgs] : []),
+      ];
 
       // Build network sandbox config if enabled
       const networkSandboxEnabled = connection.networkSandboxEnabled ?? false;

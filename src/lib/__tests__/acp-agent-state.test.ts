@@ -12,7 +12,10 @@ import {
   getModeLabel,
   getCommonModes,
   getCommonMode,
+  backfillAcpCapabilities,
 } from '../ai/acp-agent-state';
+import type { AcpDiscoveredCapabilities } from '../ai/connections';
+import { useConnectionsStore } from '@/stores/connections-store';
 
 beforeEach(() => {
   clearSessionInfo();
@@ -34,6 +37,15 @@ describe('getModeLabel — permission-level common mode mapping', () => {
     expect(getModeLabel(undefined, 'bypassPermissions', 'Bypass').name).toBe('Full Access');
     expect(getModeLabel(undefined, 'full-access', 'Full Access').name).toBe('Full Access');
     expect(getModeLabel(undefined, 'yolo', 'YOLO').name).toBe('Full Access');
+  });
+
+  it("maps the pi bridge's bare 'agent' id to Agent", () => {
+    // notesage-acp-pi advertises read-only / agent / full-access. The bare
+    // 'agent' id has to classify, or the sandbox-conflict dialog can't tell a
+    // prompting mode from an unrestricted one. It deliberately does NOT use
+    // 'auto': GOOSE_MODE_DISPLAY reads that as Full Access for any Local Agent
+    // preset, pi included, which would mislabel the safest working mode.
+    expect(getModeLabel(undefined, 'agent', 'Agent').name).toBe('Agent');
   });
 
   it('maps plan/architect to Plan', () => {
@@ -332,5 +344,93 @@ describe('agent commands', () => {
     setAvailableCommands([{ name: 'test', description: 'Test' }]);
     clearSessionInfo();
     expect(getSessionInfo().commands).toHaveLength(0);
+  });
+});
+
+describe('backfillAcpCapabilities — the path that makes a mode picker appear', () => {
+  // The command-bar picker reads connection.acpCapabilities.availableModes, NOT
+  // the live session response. Every call site mocks this function, so without
+  // these the whole chain from "agent advertises modes" to "picker renders" is
+  // unverified — which is exactly how the pi bridge shipped with an empty
+  // picker and no error explaining it.
+  const CONN = 'conn-backfill-test';
+
+  beforeEach(() => {
+    useConnectionsStore.setState({ connections: [] });
+  });
+
+  const addAgentConnection = (acpCapabilities?: Partial<AcpDiscoveredCapabilities>) => {
+    useConnectionsStore.setState({
+      connections: [
+        {
+          id: CONN,
+          provider: 'custom_acp',
+          authMethod: 'agent_managed',
+          status: 'connected',
+          label: 'Local Agent (Pi)',
+          ...(acpCapabilities ? { acpCapabilities } : {}),
+        } as never,
+      ],
+    });
+  };
+
+  const modesResponse = (ids: string[]) => ({
+    modes: {
+      currentModeId: ids[0],
+      availableModes: ids.map((id) => ({ id, name: id })),
+    },
+  });
+
+  it('populates availableModes from a session response when caps are empty', () => {
+    addAgentConnection();
+    backfillAcpCapabilities(CONN, modesResponse(['read-only', 'agent', 'full-access']));
+    const caps = useConnectionsStore.getState().getConnection(CONN)?.acpCapabilities;
+    expect(caps?.availableModes?.map((m) => m.id)).toEqual(['read-only', 'agent', 'full-access']);
+  });
+
+  it('backfills even when caps were probed recently but carry no modes', () => {
+    // The pi connection's real state: probed at registration, before the
+    // bridge advertised anything. A freshness-only guard would skip it forever
+    // and the picker would never appear.
+    addAgentConnection({ availableModes: [], lastProbed: Date.now() });
+    backfillAcpCapabilities(CONN, modesResponse(['agent']));
+    expect(
+      useConnectionsStore.getState().getConnection(CONN)?.acpCapabilities?.availableModes,
+    ).toHaveLength(1);
+  });
+
+  it('leaves fresh, already-populated caps alone', () => {
+    addAgentConnection({
+      availableModes: [{ id: 'existing', name: 'Existing' }],
+      lastProbed: Date.now(),
+    });
+    backfillAcpCapabilities(CONN, modesResponse(['agent']));
+    expect(
+      useConnectionsStore.getState().getConnection(CONN)?.acpCapabilities?.availableModes?.[0]?.id,
+    ).toBe('existing');
+  });
+
+  it('ignores connections that are not agent-managed', () => {
+    useConnectionsStore.setState({
+      connections: [
+        { id: CONN, provider: 'anthropic', authMethod: 'api_key', status: 'connected', label: 'A' } as never,
+      ],
+    });
+    backfillAcpCapabilities(CONN, modesResponse(['agent']));
+    expect(useConnectionsStore.getState().getConnection(CONN)?.acpCapabilities).toBeUndefined();
+  });
+
+  it('every mode the pi bridge advertises resolves to a usable picker label', () => {
+    // End of the chain: ids advertised → backfilled → labelled. An unmapped id
+    // would fall through to the agent's native name, which is fine, but a
+    // MISmapped one (the `auto` trap) would show the wrong permission level.
+    addAgentConnection();
+    backfillAcpCapabilities(CONN, modesResponse(['read-only', 'agent', 'full-access']));
+    const caps = useConnectionsStore.getState().getConnection(CONN)?.acpCapabilities;
+    expect(caps?.availableModes?.map((m) => getModeLabel(undefined, m.id, m.name).name)).toEqual([
+      'Read Only',
+      'Agent',
+      'Full Access',
+    ]);
   });
 });

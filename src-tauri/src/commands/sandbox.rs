@@ -28,7 +28,9 @@ use super::network_proxy::NetworkSandboxConfig;
 /// and the deny-last sensitive entries apply in full. Users opt in to extra
 /// paths via the connection's writable-paths UI, never via this table.
 #[cfg(target_os = "macos")]
-#[derive(Clone, Debug)]
+// PartialEq so the confinement regression locks can compare the exact grant
+// set for a binary, rather than only counting entries.
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum SandboxEntry {
     /// `$HOME`-relative path, allowed as `(subpath ...)` — recursive.
     Subpath(&'static str),
@@ -1424,6 +1426,51 @@ mod tests {
                     "Absolute path {full_path} must resolve to {expected_subpath} (basename extraction); got {entries:?}"
                 );
             }
+        }
+
+        // Task #17 (PRD 2026-07-29-pi-local-agent-preset) regression lock:
+        // the pi preset's processes get NO Bucket C $HOME grants — the whole
+        // footprint (PI_CODING_AGENT_DIR, sessions, extensions) lives under
+        // the `.notesage` write-allow, so any future "helpful" grant for the
+        // `pi` or `notesage-acp-pi` basenames would silently widen the
+        // maximal-confinement guarantee. The network side is covered by the
+        // existing exact-{proxy, llama} port lock, which is agent-agnostic.
+        #[test]
+        fn pi_preset_binaries_get_no_bucket_c_home_grants() {
+            // `agent_config_entries` always includes `.notesage` — the app's own
+            // config dir, granted to every agent regardless of provider. That is
+            // NOT a Bucket C grant, so asserting the result is empty could never
+            // hold; the property being locked is that the pi binaries add
+            // nothing on top of it.
+            for binary in [
+                "pi",
+                "notesage-acp-pi",
+                "/Users/peter/.notesage/agents/bin/pi",
+                "/Users/peter/.notesage/agents/bin/notesage-acp-pi",
+            ] {
+                let entries = agent_config_entries(binary);
+                assert_eq!(
+                    entries,
+                    vec![SandboxEntry::Subpath(".notesage")],
+                    "{binary} must add ZERO Bucket C entries beyond the shared \
+                     .notesage grant (maximal confinement); got {entries:?}"
+                );
+            }
+        }
+
+        #[test]
+        fn bucket_c_lock_would_catch_a_new_grant() {
+            // Guards the guard: the assertion above is only meaningful if a
+            // per-agent grant would actually show up in the comparison. An agent
+            // that HAS Bucket C entries must not match the pi shape.
+            let claude = agent_config_entries("claude-agent-acp");
+            assert_ne!(
+                claude,
+                vec![SandboxEntry::Subpath(".notesage")],
+                "an agent with Bucket C grants must differ from the pi baseline, \
+                 otherwise the pi lock proves nothing"
+            );
+            assert!(claude.contains(&SandboxEntry::Subpath(".claude")));
         }
     }
 
