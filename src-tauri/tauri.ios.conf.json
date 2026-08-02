@@ -1,6 +1,9 @@
 {
   "$schema": "gen/schemas/mobile-schema.json",
   "bundle": {
-    "externalBin": []
+    "externalBin": [],
+    "iOS": {
+      "minimumSystemVersion": "16.0"
+    }
   }
 }
