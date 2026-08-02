@@ -183,32 +183,33 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      # The iOS native sources under src-tauri/ios/ are integrated by
-      # `tauri ios init` on a Mac and are not part of any build this CI runs —
-      # so before this job, nothing had ever read them. A typo shipped silently
-      # and only surfaced at Xcode-integration time, on someone's laptop.
+      # The iOS native sources are not part of any build this CI runs, so
+      # without this job nothing would ever read them: a typo would surface
+      # only at Xcode-integration time, on someone's laptop.
       #
-      # Two tiers, because they are not equally checkable without the generated
-      # Xcode project:
+      # Two tiers, because they are not equally checkable here:
       #
-      #   LibraryAccess + ShareViewController  →  full -typecheck against the
-      #     real iOS SDK, with the capture bridging header imported. This is a
-      #     genuine compile check: it resolves UIKit, the C ABI declarations,
-      #     and every call site.
+      #   LibraryAccess + LibraryCapture + ShareViewController  →  full
+      #     -typecheck against the real iOS SDK with the capture bridging
+      #     header. None of them import Tauri, so this is a genuine compile
+      #     check: it resolves UIKit, the C ABI, and every call site.
+      #     LibraryAccess comes from the plugin package because LibraryCapture
+      #     extends it — the Share Extension target compiles both together.
       #
-      #   NotesagePlugin  →  -parse only. It imports the `Tauri` Swift package,
-      #     which does not exist until `tauri ios init` generates the project,
-      #     so a type check would fail on the import rather than on the code.
+      #   NotesageIosPlugin  →  -parse only. It imports the `Tauri` Swift
+      #     package, which only exists once Tauri wires the plugin's Swift
+      #     Package into a generated Xcode project, so a type check would fail
+      #     on the import rather than on the code.
       - name: Type-check iOS Swift sources
         run: |
           set -euo pipefail
           SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
           swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios16.0 \
             -import-objc-header src-tauri/ios/NotesageCapture.h \
-            src-tauri/ios/LibraryAccess.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryAccess.swift \
+            src-tauri/ios/LibraryCapture.swift \
             src-tauri/ios/ShareViewController.swift
-          # Syntax-only for the Tauri-dependent plugin bridge.
-          swiftc -parse src-tauri/ios/NotesagePlugin.swift
+          swiftc -parse src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/NotesageIosPlugin.swift
 
       # The Share Extension links this static library to call the shared
       # capture-note formatter. Building it here proves the C ABI compiles for

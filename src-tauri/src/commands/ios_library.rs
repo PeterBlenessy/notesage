@@ -68,13 +68,14 @@ pub fn sanitize_rel_path(rel_path: &str) -> Result<String, String> {
 /// Present the iOS folder picker (pre-pointed at `iCloud Drive/Notesage`) and
 /// persist a security-scoped bookmark for the chosen folder.
 #[tauri::command]
-pub async fn ios_pick_library_folder() -> Result<LibraryGrant, String> {
+pub async fn ios_pick_library_folder(app: tauri::AppHandle) -> Result<LibraryGrant, String> {
     #[cfg(target_os = "ios")]
     {
-        ios_impl::pick_library_folder().await
+        ios_impl::pick_library_folder(&app).await
     }
     #[cfg(not(target_os = "ios"))]
     {
+        let _ = &app;
         Err("ios_pick_library_folder is only available on iOS".into())
     }
 }
@@ -82,13 +83,14 @@ pub async fn ios_pick_library_folder() -> Result<LibraryGrant, String> {
 /// Return the current grant (resolving the persisted bookmark), or `granted:
 /// false` when none exists / the bookmark is stale.
 #[tauri::command]
-pub async fn ios_get_library_grant() -> Result<LibraryGrant, String> {
+pub async fn ios_get_library_grant(app: tauri::AppHandle) -> Result<LibraryGrant, String> {
     #[cfg(target_os = "ios")]
     {
-        ios_impl::get_library_grant().await
+        ios_impl::get_library_grant(&app).await
     }
     #[cfg(not(target_os = "ios"))]
     {
+        let _ = &app;
         Ok(LibraryGrant {
             display_name: String::new(),
             granted: false,
@@ -98,27 +100,29 @@ pub async fn ios_get_library_grant() -> Result<LibraryGrant, String> {
 
 /// Forget the persisted bookmark (used when the user re-grants or signs out).
 #[tauri::command]
-pub async fn ios_clear_library_grant() -> Result<(), String> {
+pub async fn ios_clear_library_grant(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(target_os = "ios")]
     {
-        ios_impl::clear_library_grant().await
+        ios_impl::clear_library_grant(&app).await
     }
     #[cfg(not(target_os = "ios"))]
     {
+        let _ = &app;
         Ok(())
     }
 }
 
 /// List a directory relative to the granted library root.
 #[tauri::command]
-pub async fn ios_list_directory(rel_path: String) -> Result<Vec<FileEntry>, String> {
+pub async fn ios_list_directory(app: tauri::AppHandle, rel_path: String) -> Result<Vec<FileEntry>, String> {
     let rel = sanitize_rel_path(&rel_path)?;
     #[cfg(target_os = "ios")]
     {
-        ios_impl::list_directory(&rel).await
+        ios_impl::list_directory(&app, &rel).await
     }
     #[cfg(not(target_os = "ios"))]
     {
+        let _ = &app;
         let _ = rel;
         Err("ios_list_directory is only available on iOS".into())
     }
@@ -126,14 +130,15 @@ pub async fn ios_list_directory(rel_path: String) -> Result<Vec<FileEntry>, Stri
 
 /// Read a UTF-8 file relative to the granted library root.
 #[tauri::command]
-pub async fn ios_read_file(rel_path: String) -> Result<String, String> {
+pub async fn ios_read_file(app: tauri::AppHandle, rel_path: String) -> Result<String, String> {
     let rel = sanitize_rel_path(&rel_path)?;
     #[cfg(target_os = "ios")]
     {
-        ios_impl::read_file(&rel).await
+        ios_impl::read_file(&app, &rel).await
     }
     #[cfg(not(target_os = "ios"))]
     {
+        let _ = &app;
         let _ = rel;
         Err("ios_read_file is only available on iOS".into())
     }
@@ -141,14 +146,15 @@ pub async fn ios_read_file(rel_path: String) -> Result<String, String> {
 
 /// Read a binary file (PDF/EPUB/DOCX/image) relative to the granted library root.
 #[tauri::command]
-pub async fn ios_read_binary(rel_path: String) -> Result<Vec<u8>, String> {
+pub async fn ios_read_binary(app: tauri::AppHandle, rel_path: String) -> Result<Vec<u8>, String> {
     let rel = sanitize_rel_path(&rel_path)?;
     #[cfg(target_os = "ios")]
     {
-        ios_impl::read_binary(&rel).await
+        ios_impl::read_binary(&app, &rel).await
     }
     #[cfg(not(target_os = "ios"))]
     {
+        let _ = &app;
         let _ = rel;
         Err("ios_read_binary is only available on iOS".into())
     }
@@ -156,14 +162,15 @@ pub async fn ios_read_binary(rel_path: String) -> Result<Vec<u8>, String> {
 
 /// Ensure an iCloud item is downloaded; returns its current download state.
 #[tauri::command]
-pub async fn ios_ensure_downloaded(rel_path: String) -> Result<DownloadState, String> {
+pub async fn ios_ensure_downloaded(app: tauri::AppHandle, rel_path: String) -> Result<DownloadState, String> {
     let rel = sanitize_rel_path(&rel_path)?;
     #[cfg(target_os = "ios")]
     {
-        ios_impl::ensure_downloaded(&rel).await
+        ios_impl::ensure_downloaded(&app, &rel).await
     }
     #[cfg(not(target_os = "ios"))]
     {
+        let _ = &app;
         let _ = rel;
         Err("ios_ensure_downloaded is only available on iOS".into())
     }
@@ -173,50 +180,70 @@ pub async fn ios_ensure_downloaded(rel_path: String) -> Result<DownloadState, St
 // iOS-only implementation seam
 // ---------------------------------------------------------------------------
 //
-// Wired up during `tauri ios init` on a Mac. Each function returns a clear
-// "not yet wired" error so the iOS app COMPILES and RUNS as a scaffold before
-// the Swift bridge (security-scoped bookmark + NSFileCoordinator, see
-// `src-tauri/ios/`) is integrated. Replace the bodies with calls into the
-// Tauri mobile plugin that bridges to the Swift sources.
+// Backed by the `tauri-plugin-notesage-ios` crate, whose Swift Package Tauri
+// wires into the generated Xcode project via `.ios_path()` in its build.rs.
+// That is what makes the `@_cdecl` entry point resolve at link time — the
+// earlier arrangement (loose .swift added to the target by hand) compiled the
+// Swift but left the Rust link with an undefined `init_plugin_*`.
 
 #[cfg(target_os = "ios")]
 mod ios_impl {
-    use super::*;
+    use super::{DownloadState, FileEntry, LibraryGrant};
+    use tauri::AppHandle;
+    use tauri_plugin_notesage_ios::NotesageIosExt;
 
-    const NOT_WIRED: &str =
-        "iOS native bridge not yet wired — see src-tauri/ios/README.md (run `tauri ios init` and integrate the Swift sources)";
-
-    pub async fn pick_library_folder() -> Result<LibraryGrant, String> {
-        Err(NOT_WIRED.into())
+    /// Map the plugin's richer types onto this module's, which are what the
+    /// frontend already consumes.
+    fn grant(g: tauri_plugin_notesage_ios::LibraryGrant) -> LibraryGrant {
+        LibraryGrant { display_name: g.display_name, granted: g.granted }
     }
 
-    pub async fn get_library_grant() -> Result<LibraryGrant, String> {
-        Ok(LibraryGrant {
-            display_name: String::new(),
-            granted: false,
-        })
+    fn entries(v: Vec<tauri_plugin_notesage_ios::FileEntry>) -> Vec<FileEntry> {
+        v.into_iter()
+            .map(|e| FileEntry {
+                name: e.name,
+                path: e.path,
+                is_directory: e.is_directory,
+                children: None,
+                hidden: e.hidden,
+            })
+            .collect()
     }
 
-    pub async fn clear_library_grant() -> Result<(), String> {
-        Err(NOT_WIRED.into())
+    pub async fn pick_library_folder(app: &AppHandle) -> Result<LibraryGrant, String> {
+        app.notesage_ios().pick_library_folder().map(grant).map_err(|e| e.to_string())
     }
 
-    pub async fn list_directory(_rel: &str) -> Result<Vec<FileEntry>, String> {
-        Err(NOT_WIRED.into())
+    pub async fn get_library_grant(app: &AppHandle) -> Result<LibraryGrant, String> {
+        app.notesage_ios().get_library_grant().map(grant).map_err(|e| e.to_string())
     }
 
-    pub async fn read_file(_rel: &str) -> Result<String, String> {
-        Err(NOT_WIRED.into())
+    pub async fn clear_library_grant(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().clear_library_grant().map_err(|e| e.to_string())
     }
 
-    pub async fn read_binary(_rel: &str) -> Result<Vec<u8>, String> {
-        Err(NOT_WIRED.into())
+    pub async fn list_directory(app: &AppHandle, rel: &str) -> Result<Vec<FileEntry>, String> {
+        app.notesage_ios().list_directory(rel).map(entries).map_err(|e| e.to_string())
     }
 
-    pub async fn ensure_downloaded(_rel: &str) -> Result<DownloadState, String> {
-        Err(NOT_WIRED.into())
+    pub async fn read_file(app: &AppHandle, rel: &str) -> Result<String, String> {
+        app.notesage_ios().read_file(rel).map_err(|e| e.to_string())
     }
 
+    pub async fn read_binary(app: &AppHandle, rel: &str) -> Result<Vec<u8>, String> {
+        app.notesage_ios().read_binary(rel).map_err(|e| e.to_string())
+    }
+
+    pub async fn ensure_downloaded(app: &AppHandle, rel: &str) -> Result<DownloadState, String> {
+        app.notesage_ios()
+            .ensure_downloaded(rel)
+            .map(|s| match s {
+                tauri_plugin_notesage_ios::DownloadState::Ready => DownloadState::Ready,
+                tauri_plugin_notesage_ios::DownloadState::Downloading => DownloadState::Downloading,
+                tauri_plugin_notesage_ios::DownloadState::Failed => DownloadState::Failed,
+            })
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[cfg(test)]

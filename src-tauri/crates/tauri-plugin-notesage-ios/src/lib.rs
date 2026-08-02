@@ -1,15 +1,18 @@
 //! iOS-only Tauri plugin backing the mobile reader's library access.
 //!
 //! **Why a plugin crate rather than app-level Swift.** Tauri resolves a Swift
-//! `@_cdecl` entry point only for code it knows about via `.ios_path()` in
+//! `@_cdecl` entry point only for code it knows about through `.ios_path()` in
 //! build.rs. Adding `.swift` files to the generated Xcode target by hand
-//! compiles them, but the Rust half still links first and fails with an
-//! undefined `init_plugin_*` that never mentions Swift. This shape is the
-//! supported one, and it also removes every manual Xcode step.
+//! compiles them, but the Rust half links independently and fails with an
+//! undefined `init_plugin_*` that never mentions Swift. This is the supported
+//! shape, and it removes every manual Xcode step.
 //!
-//! Currently a deliberate spike: one `ping` method, proving the full
-//! React → Rust → Swift → back round-trip links and runs before the real
-//! library-access surface is ported onto it.
+//! Read-only by construction: there is no capture method. The Share Extension
+//! writes captures in its own process, so a write here would widen the app's
+//! surface for something it never does.
+//!
+//! Path safety lives in the caller (`ios_library::sanitize_rel_path`), which
+//! rejects absolute paths and `..` before anything reaches Swift.
 
 use serde::{Deserialize, Serialize};
 use tauri::{
@@ -24,7 +27,7 @@ tauri::ios_plugin_binding!(init_plugin_notesage_ios);
 pub enum Error {
     #[error("{0}")]
     PluginInvoke(String),
-    #[error("the iOS plugin is not available on this platform")]
+    #[error("the iOS library bridge is not available on this platform")]
     Unavailable,
 }
 
@@ -36,19 +39,60 @@ impl Serialize for Error {
 
 pub type Result<T> = std::result::Result<T, Error>;
 
+/// Mirrors `FileEntry` in the app crate. Redeclared rather than shared to keep
+/// this crate dependency-free of the app — the wire shape is what matters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileEntry {
+    pub name: String,
+    pub path: String,
+    pub is_directory: bool,
+    #[serde(default)]
+    pub children: Option<Vec<FileEntry>>,
+    #[serde(default)]
+    pub hidden: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryGrant {
+    pub display_name: String,
+    pub granted: bool,
+}
+
+// Response envelopes — these mirror the dictionaries NotesageIosPlugin.swift
+// passes to `invoke.resolve(...)`.
+#[derive(Deserialize)]
+struct EntriesResponse {
+    entries: Vec<FileEntry>,
+}
+#[derive(Deserialize)]
+struct TextResponse {
+    text: String,
+}
+#[derive(Deserialize)]
+struct BytesResponse {
+    bytes: Vec<u8>,
+}
+#[derive(Deserialize)]
+struct StateResponse {
+    state: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct PingRequest {
-    pub value: String,
+struct RelPathArgs<'a> {
+    rel_path: &'a str,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PingResponse {
-    pub value: String,
+/// iCloud download state for a file that may be a not-yet-downloaded placeholder.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DownloadState {
+    Ready,
+    Downloading,
+    Failed,
 }
 
-/// Handle to the Swift plugin, stored as managed state at setup.
 /// Holds the Swift plugin handle on iOS. Off-iOS it holds an `AppHandle`
 /// rather than `PhantomData<R>` — same shape Tauri's own plugins use, and it
 /// keeps the type `Send + Sync` (which managed state requires) without adding
@@ -58,34 +102,96 @@ pub struct NotesageIos<R: Runtime>(
     #[cfg(not(target_os = "ios"))] tauri::AppHandle<R>,
 );
 
+#[cfg(target_os = "ios")]
 impl<R: Runtime> NotesageIos<R> {
-    pub fn ping(&self, value: impl Into<String>) -> Result<String> {
-        #[cfg(target_os = "ios")]
-        {
-            self.0
-                .run_mobile_plugin::<PingResponse>("ping", PingRequest { value: value.into() })
-                .map(|r| r.value)
-                .map_err(|e| Error::PluginInvoke(e.to_string()))
-        }
-        #[cfg(not(target_os = "ios"))]
-        {
-            let _ = value.into();
-            Err(Error::Unavailable)
-        }
+    fn call<A: Serialize, T: serde::de::DeserializeOwned>(&self, m: &str, args: A) -> Result<T> {
+        self.0
+            .run_mobile_plugin::<T>(m, args)
+            .map_err(|e| Error::PluginInvoke(e.to_string()))
+    }
+
+    pub fn pick_library_folder(&self) -> Result<LibraryGrant> {
+        self.call("pickLibraryFolder", ())
+    }
+
+    pub fn get_library_grant(&self) -> Result<LibraryGrant> {
+        // Never fatal: "no grant yet" is the first-run state, and an error here
+        // would block onboarding rather than show it.
+        Ok(self.call("getLibraryGrant", ()).unwrap_or(LibraryGrant {
+            display_name: String::new(),
+            granted: false,
+        }))
+    }
+
+    pub fn clear_library_grant(&self) -> Result<()> {
+        self.call("clearLibraryGrant", ())
+    }
+
+    pub fn list_directory(&self, rel: &str) -> Result<Vec<FileEntry>> {
+        self.call::<_, EntriesResponse>("listDirectory", RelPathArgs { rel_path: rel })
+            .map(|r| r.entries)
+    }
+
+    pub fn read_file(&self, rel: &str) -> Result<String> {
+        self.call::<_, TextResponse>("readFile", RelPathArgs { rel_path: rel })
+            .map(|r| r.text)
+    }
+
+    pub fn read_binary(&self, rel: &str) -> Result<Vec<u8>> {
+        self.call::<_, BytesResponse>("readBinary", RelPathArgs { rel_path: rel })
+            .map(|r| r.bytes)
+    }
+
+    pub fn ensure_downloaded(&self, rel: &str) -> Result<DownloadState> {
+        let r: StateResponse = self.call("ensureDownloaded", RelPathArgs { rel_path: rel })?;
+        Ok(match r.state.as_str() {
+            "ready" => DownloadState::Ready,
+            "downloading" => DownloadState::Downloading,
+            // Unknown → failure, never silently "ready": a caller that believes
+            // a placeholder is local will read an empty file.
+            _ => DownloadState::Failed,
+        })
     }
 }
 
-/// Round-trip probe: React → Rust → Swift → back. Exists to prove the bridge,
-/// not as a feature — the real surface replaces it once this is verified.
-#[tauri::command]
-async fn ping<R: Runtime>(app: tauri::AppHandle<R>, value: String) -> Result<String> {
-    // `.inner()` — State derefs to &T, and the method lives on NotesageIos.
-    app.state::<NotesageIos<R>>().inner().ping(value)
+#[cfg(not(target_os = "ios"))]
+impl<R: Runtime> NotesageIos<R> {
+    pub fn pick_library_folder(&self) -> Result<LibraryGrant> {
+        Err(Error::Unavailable)
+    }
+    pub fn get_library_grant(&self) -> Result<LibraryGrant> {
+        Ok(LibraryGrant { display_name: String::new(), granted: false })
+    }
+    pub fn clear_library_grant(&self) -> Result<()> {
+        Ok(())
+    }
+    pub fn list_directory(&self, _rel: &str) -> Result<Vec<FileEntry>> {
+        Err(Error::Unavailable)
+    }
+    pub fn read_file(&self, _rel: &str) -> Result<String> {
+        Err(Error::Unavailable)
+    }
+    pub fn read_binary(&self, _rel: &str) -> Result<Vec<u8>> {
+        Err(Error::Unavailable)
+    }
+    pub fn ensure_downloaded(&self, _rel: &str) -> Result<DownloadState> {
+        Err(Error::Unavailable)
+    }
+}
+
+/// Extension trait so the app crate can reach the bridge from an `AppHandle`.
+pub trait NotesageIosExt<R: Runtime> {
+    fn notesage_ios(&self) -> &NotesageIos<R>;
+}
+
+impl<R: Runtime, T: Manager<R>> NotesageIosExt<R> for T {
+    fn notesage_ios(&self) -> &NotesageIos<R> {
+        self.state::<NotesageIos<R>>().inner()
+    }
 }
 
 pub fn init<R: Runtime>() -> TauriPlugin<R> {
     Builder::new("notesage-ios")
-        .invoke_handler(tauri::generate_handler![ping])
         .setup(|app, _api| {
             #[cfg(target_os = "ios")]
             {

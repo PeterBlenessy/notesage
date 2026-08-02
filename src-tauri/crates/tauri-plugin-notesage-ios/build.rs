@@ -1,10 +1,8 @@
-// Commands exposed over the plugin's own IPC namespace. Kept in sync with the
-// `#[tauri::command]` fns in src/lib.rs — `tauri-plugin` generates the
-// permission scaffolding from this list at build time.
-const COMMANDS: &[&str] = &["ping"];
+// No IPC commands of its own: the app crate's `ios_*` commands call this
+// plugin's Rust API directly, so the frontend surface stays exactly as it was
+// and no permission scaffolding is needed for a second command namespace.
+const COMMANDS: &[&str] = &[];
 
 fn main() {
-    tauri_plugin::Builder::new(COMMANDS)
-        .ios_path("ios")
-        .build();
+    tauri_plugin::Builder::new(COMMANDS).ios_path("ios").build();
 }

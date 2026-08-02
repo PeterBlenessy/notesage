@@ -25,71 +25,51 @@ in an **App Group** container so the Share Extension can use the same grant.
 
 ## Wiring steps (on a Mac)
 
-1. `pnpm tauri:ios:init` (`tauri ios init`) — generates `src-tauri/gen/apple/`.
-2. **Signing & capabilities** (Xcode → target → Signing & Capabilities), or copy
-   the staged files here:
-   - App target → add the contents of **`Notesage.entitlements`** (App Group
-     `group.com.notesage.app`; iCloud Documents optional-but-recommended).
-   - Set your Apple **Development Team** (or `TAURI_APPLE_DEVELOPMENT_TEAM` env).
-3. **Wire the Swift bridge as a Tauri mobile plugin.** Add `LibraryAccess.swift`
-   and `NotesagePlugin.swift` to the app target. `NotesagePlugin` is a Tauri
-   `Plugin` subclass that decodes the invoke args and calls `LibraryAccess`; it
-   resolves the exact shapes the Rust commands expect. Then:
-   - Register it from Rust (e.g. in `lib.rs`, iOS-only):
-     ```rust
-     #[cfg(target_os = "ios")]
-     tauri::ios_plugin_binding!(init_plugin_notesage);
-     // in the builder setup, behind #[cfg(target_os = "ios")]:
-     //   app.handle().plugin(tauri::plugin::Builder::new("notesage")
-     //       .setup(|app, api| { api.register_ios_plugin(init_plugin_notesage)?; Ok(()) })
-     //       .build())?;
-     ```
-   - Replace the `NOT_WIRED` stubs in `ios_library.rs::ios_impl` with
-     `app.run_mobile_plugin("<method>", payload)` calls. The plugin methods +
-     resolved shapes are final:
+Most of what this section used to describe is now automatic. The iOS bridge is
+a **plugin crate** — `src-tauri/crates/tauri-plugin-notesage-ios` — whose
+`build.rs` calls `.ios_path("ios")`. That is what makes Tauri add its Swift
+Package to the generated Xcode project *and* resolve the `@_cdecl` entry point
+at link time.
 
-     | Rust command | Plugin method | Resolves |
-     | --- | --- | --- |
-     | `pick_library_folder` | `pickLibraryFolder` | `{ displayName, granted }` |
-     | `get_library_grant` | `getLibraryGrant` | `{ displayName, granted }` |
-     | `clear_library_grant` | `clearLibraryGrant` | — |
-     | `list_directory(relPath)` | `listDirectory` | `{ entries: FileEntry[] }` |
-     | `read_file(relPath)` | `readFile` | `{ text }` |
-     | `read_binary(relPath)` | `readBinary` | `{ bytes: u8[] }` |
-     | `ensure_downloaded(relPath)` | `ensureDownloaded` | `{ state }` |
-4. Add a **Share Extension** target (`File → New → Target → Share Extension`):
-   - Replace its generated `ShareViewController` with `ShareViewController.swift`.
-   - Use `ShareExtension-Info.plist` (URL/text activation rule) and
-     `ShareExtension.entitlements` (App Group only).
-   - Add `LibraryAccess.swift` to the extension's target membership (it writes
-     captures directly, without Tauri).
-   - Link the **capture static library** so the extension can call the shared
-     Rust formatter (see "Capture format" below):
+> Why it matters: loose `.swift` files added to the app target by hand do
+> compile, but the Rust half links independently and fails with an undefined
+> `init_plugin_notesage` that never mentions Swift. An earlier revision of this
+> branch spent a long time on that symptom. Do not re-introduce hand-added
+> Swift; add to the plugin package instead.
 
-     ```bash
-     cd src-tauri/crates/notesage-capture
-     cargo build --release --target aarch64-apple-ios          # device
-     cargo build --release --target aarch64-apple-ios-sim      # simulator
-     ```
-
-     Then in the extension target: add `libnotesage_capture.a` from
-     `src-tauri/target/<triple>/release/` to "Link Binary With Libraries", and
-     set "Objective-C Bridging Header" to `src-tauri/ios/NotesageCapture.h`.
-     Do **not** link the app's own Rust library here — a share extension has a
-     hard memory budget (~120 MB) and the app crate pulls in the whole Tauri
-     runtime. `notesage-capture` is dependency-free for exactly this reason.
-5. No network entitlements — the app is read-only + link capture and makes
-   **no** network calls on device.
-
-### tauri.conf.json additions (apply after init)
-
-```jsonc
-// "bundle": { ... add:
-"iOS": {
-  "developmentTeam": "<TEAM_ID>",      // or set TAURI_APPLE_DEVELOPMENT_TEAM
-  "minimumSystemVersion": "16.0"
-}
+```bash
+pnpm tauri:ios:init                  # generates src-tauri/gen/apple (gitignored)
+pnpm tauri ios build --target aarch64-sim
 ```
+
+The app builds, installs and launches with the library bridge wired. No
+project.yml patching, no manual target membership, no bridging-header setup.
+
+### Still manual: the Share Extension
+
+`tauri ios init` does not create extension targets, so this part is unchanged:
+
+1. `File → New → Target → Share Extension`.
+2. Add `ShareViewController.swift`, `LibraryCapture.swift`, and
+   `LibraryAccess.swift` (from
+   `crates/tauri-plugin-notesage-ios/ios/Sources/`) to that target.
+3. Use `ShareExtension-Info.plist` and `ShareExtension.entitlements`
+   (App Group only).
+4. Link the capture staticlib and set the bridging header:
+
+   ```bash
+   cargo build --release --target aarch64-apple-ios \
+     --manifest-path src-tauri/crates/notesage-capture/Cargo.toml
+   ```
+
+   Add `libnotesage_capture.a` from
+   `src-tauri/target/aarch64-apple-ios/release/` to the extension's "Link
+   Binary With Libraries", and point "Objective-C Bridging Header" at
+   `src-tauri/ios/NotesageCapture.h`. Only the extension links this — the app
+   never captures, which is why `LibraryCapture.swift` is split out of
+   `LibraryAccess.swift`.
+5. Set the Development Team, then build + validate on device: grant
+   persistence, iCloud download, capture from Safari.
 
 ## Path contract
 
