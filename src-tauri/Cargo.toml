@@ -152,6 +152,11 @@ tauri-plugin-deep-link = "2.4.9"
 sentry = "0.42"
 tauri-plugin-sentry = "0.5.0"
 # Telemetry — privacy-first usage analytics (first-party Tauri v2 plugin).
+# NOT available on iOS: the plugin's `sys.rs` leaves `ENGINE_NAME` undefined
+# for that target, so it fails to compile there. Gated off rather than patched
+# because the mobile app ships no usage telemetry by design (PRD
+# `2026-06-28-ios-mobile-app.md` § Non-Goals) — there is nothing to lose.
+[target.'cfg(not(target_os = "ios"))'.dependencies]
 tauri-plugin-aptabase = "1.0.0"
 
 [target.'cfg(target_os = "macos")'.dependencies]

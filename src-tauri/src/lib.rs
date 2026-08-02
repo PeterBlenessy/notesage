@@ -126,15 +126,23 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ));
+        .plugin(tauri_plugin_notification::init());
+
+    // Desktop-only plugins. `tauri_plugin_window_state` restores window
+    // geometry and `tauri_plugin_autostart` installs a LaunchAgent — neither
+    // concept exists on iOS, where both crates' APIs are compiled out.
+    #[cfg(desktop)]
+    {
+        builder = builder
+            .plugin(tauri_plugin_window_state::Builder::new().build())
+            .plugin(tauri_plugin_autostart::init(
+                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                None,
+            ));
+    }
 
     // Telemetry — usage analytics (Aptabase). Registered unconditionally when a
     // build-time key is present; the plugin emits nothing until the frontend
@@ -175,7 +183,15 @@ pub fn run() {
                     "Aptabase key is malformed (expected A-<REGION>-<id>) → tracking disabled."
                 ),
             }
-            builder = builder.plugin(tauri_plugin_aptabase::Builder::new(key).build());
+            // iOS has no aptabase plugin (dependency is gated off in
+            // Cargo.toml — mobile ships no usage telemetry). `key` is still
+            // read above so the diagnostics stay identical across platforms.
+            #[cfg(not(target_os = "ios"))]
+            {
+                builder = builder.plugin(tauri_plugin_aptabase::Builder::new(key).build());
+            }
+            #[cfg(target_os = "ios")]
+            let _ = key;
         }
     }
 
@@ -503,6 +519,7 @@ pub fn run() {
             log::debug!(target: "notesage::lifecycle", "Cleaned up orphaned agent processes");
 
             // Set up system tray
+            #[cfg(desktop)]
             if let Err(e) = tray::setup_tray(app) {
                 log::error!(target: "notesage::tray", "Failed to set up tray: {}", e);
             }

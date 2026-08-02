@@ -30,7 +30,6 @@
     "autostart:default",
     "deep-link:default",
     "sentry:default",
-    "aptabase:allow-track-event",
     "clipboard-manager:allow-read-text"
   ]
 }

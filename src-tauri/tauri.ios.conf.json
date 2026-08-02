@@ -1,0 +1,6 @@
+{
+  "$schema": "gen/schemas/mobile-schema.json",
+  "bundle": {
+    "externalBin": []
+  }
+}

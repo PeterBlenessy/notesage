@@ -541,6 +541,25 @@ pub fn should_sandbox_by_default(binary_path: &str) -> bool {
     Path::new(binary_path).starts_with(&managed_dir)
 }
 
+/// No OS sandbox available on this target.
+///
+/// Reached only on iOS, which cannot spawn subprocesses at all — so the ACP
+/// agent and skill-script paths that call this are unreachable there. Returns
+/// an error rather than silently running unsandboxed: every caller already
+/// documents a degradation path for "sandbox unavailable" (matching a Linux
+/// box without `bwrap`), and the error keeps that behaviour explicit instead
+/// of inventing a fourth, unsandboxed spawn mode.
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+pub fn sandboxed_command(
+    _instance_id: &str,
+    _agent_binary: &str,
+    _writable_paths: &[String],
+    _network_config: Option<&NetworkSandboxConfig>,
+    _kernel_network_deny: bool,
+) -> Result<(String, Vec<String>), String> {
+    Err("OS sandboxing is not available on this platform".to_string())
+}
+
 /// Linux sandbox support via bubblewrap
 #[cfg(target_os = "linux")]
 pub fn sandboxed_command(
