@@ -159,10 +159,35 @@ describe("onboarding", () => {
     setMockInvokeHandler("ios_pick_library_folder", () => ({ displayName: "Notesage", granted: true }));
 
     renderWithProviders(<Onboarding />);
-    fireEvent.click(screen.getByRole("button", { name: "Grant access" }));
+    // The button is named for what the user does — pick a folder. The
+    // permission story is told by the cards above it, not the control.
+    fireEvent.click(screen.getByRole("button", { name: "Select your Notesage folder" }));
 
     await waitFor(() => expect(useMobileStore.getState().grantState).toBe("granted"));
     expect(calledCommands()).toContain("ios_pick_library_folder");
+  });
+
+  it("reports a dismissed picker instead of silently doing nothing", async () => {
+    // Regression lock. A cancelled pick used to resolve with granted:false and
+    // fall through an `if` with no else — so it looked exactly like a dead
+    // button. That ambiguity cost real debugging time when the bridge was
+    // genuinely broken: there was no way to tell the two apart.
+    useMobileStore.setState({ grantState: "ungranted" });
+    setMockInvokeHandler("ios_pick_library_folder", () => ({ displayName: "", granted: false }));
+
+    renderWithProviders(<Onboarding />);
+    fireEvent.click(screen.getByRole("button", { name: "Select your Notesage folder" }));
+
+    await waitFor(() => expect(calledCommands()).toContain("ios_pick_library_folder"));
+    // Still ungranted, and the user was told why rather than left guessing.
+    expect(useMobileStore.getState().grantState).toBe("ungranted");
+    // The Toaster portal isn't mounted in this harness, so assert the call.
+    const { toast } = await import("sonner");
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith(
+        expect.stringMatching(/No folder selected/i),
+      ),
+    );
   });
 });
 

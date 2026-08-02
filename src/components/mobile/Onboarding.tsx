@@ -22,7 +22,13 @@ export function Onboarding() {
     try {
       await pickFolder();
     } catch (err) {
-      toast.error(`Couldn't get access: ${err}`);
+      const message = String(err);
+      // Dismissing the picker is a normal choice, not a failure.
+      if (message.includes("No folder was selected")) {
+        toast.info("No folder selected — tap again to choose your Notesage folder.");
+      } else {
+        toast.error(`Couldn't open your folder: ${err}`);
+      }
     } finally {
       setBusy(false);
     }
@@ -60,7 +66,7 @@ export function Onboarding() {
         onClick={handleGrant}
         disabled={busy}
       >
-        {busy ? "Opening…" : isStale ? "Reconnect folder" : "Grant access"}
+        {busy ? "Opening…" : isStale ? "Select your folder again" : "Select your Notesage folder"}
       </Button>
     </div>
   );

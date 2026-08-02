@@ -1,5 +1,13 @@
 {
   "$schema": "gen/schemas/mobile-schema.json",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "visible": true
+      }
+    ]
+  },
   "bundle": {
     "externalBin": [],
     "iOS": {

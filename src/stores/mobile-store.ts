@@ -103,14 +103,18 @@ export const useMobileStore = create<MobileStore>()(
 
       pickFolder: async () => {
         const grant = await iosPickLibraryFolder();
-        if (grant.granted) {
-          set({
-            grantState: "granted",
-            libraryName: grant.displayName,
-            folderStack: [],
-            openDoc: null,
-          });
+        if (!grant.granted) {
+          // Dismissing the picker resolves without a grant. Reporting it
+          // matters: silently doing nothing is indistinguishable from a broken
+          // button, which is exactly how a genuine bridge failure presented.
+          throw new Error("No folder was selected");
         }
+        set({
+          grantState: "granted",
+          libraryName: grant.displayName,
+          folderStack: [],
+          openDoc: null,
+        });
       },
 
       clearGrant: async () => {
