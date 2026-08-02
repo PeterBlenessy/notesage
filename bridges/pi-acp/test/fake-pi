@@ -1,4 +1,0 @@
-#!/bin/sh
-# Executable wrapper so PiProcess can spawn the fake exactly like the real pi
-# binary (`<bin> --mode rpc ...`); node would otherwise try to parse --mode.
-exec node "$(dirname "$0")/fake-pi.mjs" "$@"

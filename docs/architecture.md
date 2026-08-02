@@ -167,8 +167,8 @@ note-sage/
 │   ├── tests/              # Test specs (editor, external-changes, navigation, performance, startup, tabs)
 │   ├── fixtures/           # Real filesystem test project
 │   └── helpers/            # Setup, actions, timing utilities
-├── bridges/                # Self-contained sidecar bridges (own package + vitest, Bun-compiled)
-│   └── pi-acp/             # notesage-acp-pi — ACP↔pi-RPC bridge for the pi Local Agent preset (src/ + extensions/)
+├── bridges/
+│   └── pi-acp/extensions/  # pi extensions embedded via include_str! — VENDORED from PeterBlenessy/notesage-acp-pi (the bridge's own repo); see its README
 ├── scripts/                # Build and test scripts
 │   ├── coverage-check.sh   # Coverage regression detection vs baseline
 │   ├── update-coverage-baseline.js # Generate coverage-baseline.json from Istanbul output
