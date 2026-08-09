@@ -72,6 +72,13 @@ pub fn run() {
     // registered, so the panic never fired — which is why dev/local builds and
     // earlier alphas were unaffected. `runtime` + `_runtime_guard` are held as
     // locals through the blocking `builder.run(...)` call below.
+    // reqwest 0.13's rustls backend requires a process-default CryptoProvider
+    // and panics "No provider set" when building any client without one. On
+    // desktop the panic lands in a worker thread and hides; on iOS, Tauri's
+    // dev-server proxy builds a client during startup and the panic kills the
+    // app before the first frame. Install ring exactly once, up front.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let runtime = build_app_runtime();
     tauri::async_runtime::set(runtime.handle().clone());
     let _runtime_guard = runtime.enter();
