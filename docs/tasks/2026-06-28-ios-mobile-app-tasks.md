@@ -10,19 +10,19 @@
 
 ## Task status ledger
 
-Legend: ✅ done & validated in-harness · 🟡 staged (source committed, needs Mac to integrate/validate) · ⏳ pending (needs Mac + Apple signing).
+Legend: ✅ done & validated (in-harness, and on-device as of 2026-08-09). All v1 tasks complete.
 
 | # | Task | Status |
 | --- | --- | --- |
-| 1 | Initialize Tauri iOS target + project config | 🟡 partial — `pnpm tauri:ios:init` script + `tauri.conf.json`/signing recipe staged in `ios/README.md`; running `tauri ios init` needs a Mac |
-| 2 | iOS entitlements (App Group, iCloud, share ext) | 🟡 staged — `Notesage.entitlements`, `ShareExtension.entitlements`, `ShareExtension-Info.plist` authored |
-| 3 | Swift bridge: folder picker + security-scoped bookmark | 🟡 staged (`LibraryAccess.swift` + `NotesagePlugin.swift` Tauri bridge) |
-| 4 | Swift bridge: iCloud-aware reads (NSFileCoordinator) | 🟡 staged (`LibraryAccess.swift` + `NotesagePlugin.swift`) |
+| 1 | Initialize Tauri iOS target + project config | ✅ done — `tauri ios init` run; signing wired (`bundle > iOS > developmentTeam`); device + simulator builds working |
+| 2 | iOS entitlements (App Group, iCloud, share ext) | ✅ done — App Group on both targets via `integrate-share-extension.py` (entitlements must flow through xcodegen `properties`, not plist edits) |
+| 3 | Swift bridge: folder picker + security-scoped bookmark | ✅ done — plugin crate `tauri-plugin-notesage-ios`; grant survives restarts + device reboot |
+| 4 | Swift bridge: iCloud-aware reads (NSFileCoordinator) | ✅ done — validated on device; binary reads base64 over IPC (perf) |
 | 5 | iOS Tauri commands: grant lifecycle | ✅ done (`ios_library.rs`) |
 | 6 | iOS Tauri commands: read paths | ✅ done (`ios_library.rs`) |
 | 7 | Capture-note format helper + tests | ✅ done (`capture.rs`) |
-| 8 | iOS command: write capture note | ✅ formatter + command done; 🟡 native write pending wiring |
-| 9 | iOS Share Extension target | 🟡 staged (`ShareViewController.swift` + `ShareExtension-Info.plist` + `ShareExtension.entitlements`) |
+| 8 | iOS command: write capture note | ✅ done — native write via Share Extension validated end-to-end (capture landed in `Inbox/`) |
+| 9 | iOS Share Extension target | ✅ done — wired by `integrate-share-extension.py` (no manual Xcode steps); appears in the share sheet, capture verified |
 | 10 | Platform split + mobile app root | ✅ done (`main.tsx`, `MobileApp.tsx`, `platform.ts`) |
 | 11 | `mobile-store` + grant/navigation state machine | ✅ done (+ tests) |
 | 12 | Onboarding / grant screen | ✅ done (+ tests) |
