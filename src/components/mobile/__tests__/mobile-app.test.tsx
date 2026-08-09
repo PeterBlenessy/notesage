@@ -229,13 +229,19 @@ describe("HTML reports", () => {
     expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
   });
 
-  it("loads from a blob URL, not srcdoc, so the report's own styles survive", async () => {
+  it("loads from a data: URL, not srcdoc or blob:, so the report survives on device", async () => {
     // A srcdoc document inherits the host CSP, and Tauri's nonce injection
     // neutralises 'unsafe-inline' — the report would render unstyled with its
-    // scripts refused. A blob document is its own CSP context in WebKit.
+    // scripts refused. A blob: URL works in dev but is BLANK in the embedded
+    // device build (WKWebView refuses blobs minted from the app's
+    // custom-scheme origin inside a sandboxed iframe). The data: URL carries
+    // the document itself and is its own CSP context.
     const frame = await openHtml();
     expect(frame.getAttribute("srcdoc")).toBeNull();
-    expect(frame.getAttribute("src") ?? "").toMatch(/^blob:/);
+    const src = frame.getAttribute("src") ?? "";
+    expect(src).toMatch(/^data:text\/html;charset=utf-8;base64,/);
+    const decoded = atob(src.split(",")[1]);
+    expect(decoded).toContain("renderCharts()");
   });
 
   it("treats .htm the same as .html", async () => {
