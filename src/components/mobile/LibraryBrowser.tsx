@@ -27,19 +27,33 @@ export function LibraryBrowser() {
   const currentName = folderStack.length === 0 ? libraryName || "Notesage" : folderStack[folderStack.length - 1].name;
 
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  // Drives the refresh icon's spin. Kept spinning for a beat even when the
+  // listing returns instantly — an animation too short to see reads as a dead
+  // button.
+  const [refreshing, setRefreshing] = useState(false);
 
-  const load = useCallback(async () => {
-    setState({ status: "loading" });
+  const load = useCallback(async (viaRefresh = false) => {
+    if (viaRefresh) setRefreshing(true);
+    else setState({ status: "loading" });
+    const spinFloor = viaRefresh ? new Promise((r) => setTimeout(r, 600)) : null;
     try {
       const entries = await iosListDirectory(currentRelPath);
+      // Hidden entries (dotfiles, `.notesage/`, `.git/`) are excluded outright
+      // — mirroring the desktop's default — as defense-in-depth on top of the
+      // native layer's own filter: internal machinery and comment sidecars
+      // must not be one tap away in the browser.
+      const visible = entries.filter((e) => !e.hidden && !e.name.startsWith("."));
       // Folders first, then files, each alphabetical — mirrors desktop order.
-      const sorted = [...entries].sort((a, b) => {
+      const sorted = visible.sort((a, b) => {
         if (a.is_directory !== b.is_directory) return a.is_directory ? -1 : 1;
         return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
       });
       setState({ status: "ready", entries: sorted });
     } catch (err) {
       setState({ status: "error", message: String(err) });
+    } finally {
+      if (spinFloor) await spinFloor;
+      setRefreshing(false);
     }
   }, [currentRelPath]);
 
@@ -59,28 +73,29 @@ export function LibraryBrowser() {
     <div className="flex h-full w-full flex-col bg-background">
       {/* Header: back + title + refresh */}
       <header className="flex items-center gap-2 border-b border-border px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+        {/* 44px (h-11) touch targets — Apple's HIG minimum for tap controls. */}
         {folderStack.length > 0 ? (
           <button
             type="button"
             onClick={() => goBack()}
             aria-label="Back"
-            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
           </button>
         ) : (
-          <div className="flex h-9 w-9 items-center justify-center text-muted-foreground">
+          <div className="flex h-11 w-11 items-center justify-center text-muted-foreground">
             <FolderOpen strokeWidth={1.5} className="h-5 w-5" />
           </div>
         )}
         <h1 className="flex-1 truncate text-base font-semibold text-foreground">{currentName}</h1>
         <button
           type="button"
-          onClick={() => void load()}
+          onClick={() => void load(true)}
           aria-label="Refresh"
-          className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
-          <RefreshCw strokeWidth={1.5} className="h-4 w-4" />
+          <RefreshCw strokeWidth={1.5} className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
         </button>
       </header>
 
