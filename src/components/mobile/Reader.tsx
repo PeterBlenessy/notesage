@@ -116,12 +116,16 @@ export function Reader() {
     return () => URL.revokeObjectURL(url);
   }, [state]);
 
-  // Free cached PDF bytes when the open document changes / unmounts.
+  // Free cached PDF bytes when the open document changes / unmounts. Keyed on
+  // the path, NOT the state object: load() can commit the pdf state twice
+  // (React StrictMode double-invokes the load effect in dev), and a cleanup
+  // keyed on object identity would clear the cache out from under the mounted
+  // PdfViewer on the second commit ("No PDF data available").
+  const pdfPath = state.status === "pdf" ? state.filePath : null;
   useEffect(() => {
-    if (state.status !== "pdf") return;
-    const path = state.filePath;
-    return () => clearBinaryData(path);
-  }, [state]);
+    if (!pdfPath) return;
+    return () => clearBinaryData(pdfPath);
+  }, [pdfPath]);
 
   if (!openDoc) return null;
 
