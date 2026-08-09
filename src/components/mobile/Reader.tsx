@@ -1,5 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { toast } from "sonner";
 import { ChevronLeft, CloudDownload, AlertCircle, FileQuestion } from "lucide-react";
 import { iosReadFile, iosReadBinary, iosEnsureDownloaded } from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
@@ -13,6 +15,31 @@ import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
 const PdfViewer = lazy(() =>
   import("@/components/editor/viewers/PdfViewer").then((m) => ({ default: m.PdfViewer })),
 );
+
+/**
+ * Resolve a relative markdown link against the directory of the current doc.
+ * Returns null when the link would escape the library root — the reader must
+ * never navigate outside the grant.
+ */
+export function resolveRelativeLink(currentRelPath: string, href: string): string | null {
+  const clean = decodeURIComponent(href.split(/[?#]/)[0]);
+  if (!clean) return null;
+  const baseDir = currentRelPath.includes("/")
+    ? currentRelPath.slice(0, currentRelPath.lastIndexOf("/"))
+    : "";
+  const joined = clean.startsWith("/") ? clean.slice(1) : baseDir ? `${baseDir}/${clean}` : clean;
+  const out: string[] = [];
+  for (const seg of joined.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") {
+      if (out.length === 0) return null; // escapes the library root
+      out.pop();
+      continue;
+    }
+    out.push(seg);
+  }
+  return out.length ? out.join("/") : null;
+}
 
 type ReaderState =
   | { status: "loading" }
@@ -35,8 +62,13 @@ type ReaderState =
 export function Reader() {
   const openDoc = useMobileStore((s) => s.openDoc);
   const goBack = useMobileStore((s) => s.goBack);
+  const openDocument = useMobileStore((s) => s.openDocument);
   const [state, setState] = useState<ReaderState>({ status: "loading" });
   const articleRef = useRef<HTMLElement | null>(null);
+  // Raw markdown of the open doc — kept so a theme flip can re-render without
+  // re-reading the file (and without re-fetching PDFs/images at all).
+  const rawMarkdownRef = useRef<string | null>(null);
+  const renderedThemeRef = useRef<"light" | "dark" | null>(null);
 
   // The resolved app theme, tracked via the `.dark` class ThemeProvider owns.
   // Markdown must re-render when it flips: syntect's syntax colors are inline
@@ -102,7 +134,15 @@ export function Reader() {
           // looks the same on both. Frontmatter stripping happens there too.
           // The theme drives syntect's syntax-highlight colors, which are
           // inline styles — without it, code blocks stay light in dark mode.
-          const html = await renderMarkdownFragment(raw, resolvedTheme);
+          // Read the theme from the DOM at call time (not a dependency):
+          // depending on resolvedTheme here made EVERY document kind re-load
+          // on a theme flip — re-downloading an open PDF because the sun set.
+          // The raw source is cached so the theme effect below can re-render
+          // markdown without touching the file again.
+          const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+          const html = await renderMarkdownFragment(raw, theme);
+          rawMarkdownRef.current = raw;
+          renderedThemeRef.current = theme;
           setState({ status: "markdown", html });
         } else {
           setState({ status: "text", content: raw });
@@ -125,11 +165,59 @@ export function Reader() {
       }
       setState({ status: "error", message: String(err) });
     }
-  }, [relPath, kind, resolvedTheme]);
+  }, [relPath, kind]);
 
   useEffect(() => {
+    rawMarkdownRef.current = null;
+    renderedThemeRef.current = null;
     void load();
   }, [load]);
+
+  // Re-render the open MARKDOWN doc when the theme flips — from the cached
+  // raw source, never by re-reading the file. Other kinds are untouched.
+  useEffect(() => {
+    const raw = rawMarkdownRef.current;
+    if (raw === null || renderedThemeRef.current === resolvedTheme) return;
+    let cancelled = false;
+    void (async () => {
+      const html = await renderMarkdownFragment(raw, resolvedTheme);
+      if (cancelled) return;
+      renderedThemeRef.current = resolvedTheme;
+      setState({ status: "markdown", html });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedTheme]);
+
+  // Intercept link taps in the rendered article. Without this, an external
+  // link navigates the app's own WebView (a dead end with no back chrome —
+  // a store-review rejection class) and a relative note link 404s the frame.
+  useEffect(() => {
+    if (state.status !== "markdown") return;
+    const root = articleRef.current;
+    if (!root) return;
+    const onClick = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement).closest?.("a");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href");
+      if (!href) return;
+      e.preventDefault();
+      if (/^(https?:|mailto:)/i.test(href)) {
+        void openUrl(href).catch(() => toast.error("Couldn't open the link"));
+        return;
+      }
+      if (href.startsWith("#")) return; // in-page anchors: no-op in v1
+      const target = resolveRelativeLink(relPath, href);
+      if (!target) {
+        toast.error("This link points outside your library");
+        return;
+      }
+      openDocument({ relPath: target, name: target.split("/").pop() ?? target });
+    };
+    root.addEventListener("click", onClick);
+    return () => root.removeEventListener("click", onClick);
+  }, [state, relPath, openDocument]);
 
   // Revoke the image object URL when the document changes or unmounts.
   useEffect(() => {
@@ -160,7 +248,11 @@ export function Reader() {
     const blocks = Array.from(root.querySelectorAll('pre code[class*="language-mermaid"]'));
     if (blocks.length === 0) return;
     let cancelled = false;
-    let cleanupIds: string[] = [];
+    // The cleanup closure iterates this array by REFERENCE, and ids are pushed
+    // as soon as each diagram registers — populating it only after the loop
+    // finished leaked every already-registered document when the user backed
+    // out mid-render (the htmlpreview store has no eviction).
+    const cleanupIds: string[] = [];
     void (async () => {
       const mermaid = (await import("mermaid")).default;
       if (cancelled) return;
@@ -172,7 +264,6 @@ export function Reader() {
         flowchart: { useMaxWidth: true },
         sequence: { useMaxWidth: true },
       });
-      const registeredIds: string[] = [];
       for (const [i, code] of blocks.entries()) {
         const source = code.textContent ?? "";
         try {
@@ -208,7 +299,7 @@ export function Reader() {
             void invoke("html_preview_unregister", { id }).catch(() => {});
             return;
           }
-          registeredIds.push(id);
+          cleanupIds.push(id);
           const frame = document.createElement("iframe");
           frame.src = `htmlpreview://localhost/${id}`;
           frame.setAttribute("sandbox", "");
@@ -222,7 +313,6 @@ export function Reader() {
           /* leave the code block as readable source */
         }
       }
-      cleanupIds = registeredIds;
     })();
     return () => {
       cancelled = true;
@@ -248,11 +338,12 @@ export function Reader() {
   return (
     <div className="flex h-full w-full flex-col bg-background">
       <header className="flex items-center gap-2 border-b border-border px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
+        {/* 44px (h-11) touch target — Apple's HIG minimum for tap controls. */}
         <button
           type="button"
           onClick={() => goBack()}
           aria-label="Back"
-          className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
         </button>
