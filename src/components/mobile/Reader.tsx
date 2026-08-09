@@ -218,9 +218,21 @@ export function Reader() {
             // stacking prose on top double-applied paragraph/list margins —
             // every line break gained prose's extra 1.25em on top of the
             // editor's own spacing.
+            // The inline `whiteSpace: "normal"` overrides the editor
+            // container's `white-space: pre-wrap` (a ProseMirror requirement).
+            // This is static comrak HTML, and comrak pretty-prints — newlines
+            // between <li> tags and at source-wrap points inside paragraphs.
+            // Under pre-wrap every one of those renders as a literal line
+            // break: phantom mid-paragraph breaks and huge gaps between
+            // bullets. It must be an inline style, not the Tailwind
+            // `whitespace-normal` utility: editor.css is un-layered while
+            // Tailwind v4 utilities live in `@layer utilities`, so the
+            // utility class loses to `.ProseMirror` no matter the order.
+            // <pre> code blocks keep their own UA white-space and are unaffected.
             className="ProseMirror pb-[max(2rem,env(safe-area-inset-bottom))]"
             style={
               {
+                whiteSpace: "normal",
                 "--editor-padding-left": "1.25rem",
                 "--editor-padding-right": "1.25rem",
                 "--editor-padding-top": "1.5rem",
