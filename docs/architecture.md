@@ -19,7 +19,7 @@ Core technical architecture for Notesage. For feature-specific details, see [doc
 
 ```
 note-sage/
-├── src-tauri/              # Rust backend (Tauri)
+├── src-tauri/              # Rust backend (Tauri; workspace crates: notesage-capture — the pure `type: capture` note builder shared with the Share Extension over C ABI — and tauri-plugin-notesage-ios, the iOS library bridge)
 │   ├── src/
 │   │   ├── main.rs
 │   │   ├── lib.rs          # Tauri builder + RunEvent::Exit cleanup hook
@@ -27,7 +27,6 @@ note-sage/
 │   │   │   ├── mod.rs
 │   │   │   ├── file.rs     # File read/write/list/copy operations
 │   │   │   ├── ios_library.rs # iOS-only: security-scoped library reads + share capture (cfg-gated; native bridge staged in src-tauri/ios/)
-│   │   │   ├── capture.rs  # Pure, unit-tested `type: capture` note builder (shared by ios_library + the Share Extension)
 │   │   │   ├── dialog.rs   # Native file/folder dialogs
 │   │   │   ├── ai.rs       # AI provider commands (direct API)
 │   │   │   ├── acp.rs      # ACP agent management (spawn, auth, sessions, permissions, cleanup)

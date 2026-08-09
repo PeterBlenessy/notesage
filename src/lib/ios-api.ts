@@ -19,14 +19,6 @@ export interface IosLibraryGrant {
 
 export type IosDownloadState = "ready" | "downloading" | "failed";
 
-/** Input for a single share-capture. Body is link-only; workflows enrich later. */
-export interface IosCaptureInput {
-  url: string;
-  title?: string;
-  selectionText?: string;
-  tags?: string[];
-}
-
 /** Present the folder picker (pre-pointed at iCloud Drive/Notesage) and persist the grant. */
 export function iosPickLibraryFolder(): Promise<IosLibraryGrant> {
   return invoke<IosLibraryGrant>("ios_pick_library_folder");
@@ -78,7 +70,3 @@ export function iosEnsureDownloaded(relPath: string): Promise<IosDownloadState> 
   return invoke<IosDownloadState>("ios_ensure_downloaded", { relPath });
 }
 
-/** Write a link-only capture note into Inbox/; returns the relative path written. */
-export function iosWriteCapture(input: IosCaptureInput): Promise<string> {
-  return invoke<string>("ios_write_capture", { input });
-}

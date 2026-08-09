@@ -1523,7 +1523,7 @@ const bodyHtml = await invoke<string>('render_markdown_preview', {
 ## iOS Library & Capture Operations
 
 Located in `src-tauri/src/commands/ios_library.rs` (with the pure capture-note
-formatter in `commands/capture.rs`). These back the iOS mobile app — a read-only
+formatter in the `notesage-capture` workspace crate). These back the iOS mobile app — a read-only
 reader over the iCloud-synced Notesage library plus share-sheet link capture
 (PRD `docs/prds/2026-06-28-ios-mobile-app.md`). They are registered on every
 platform so the frontend surface is uniform, but the real work is **iOS-only**:
@@ -1544,7 +1544,6 @@ init` on a Mac — see `src-tauri/ios/README.md`.
 | `ios_read_file` | `(relPath) -> String` | Read a UTF-8 file under the granted root. |
 | `ios_read_binary` | `(relPath) -> Vec<u8>` | Read a binary file (image/PDF/…) under the granted root. |
 | `ios_ensure_downloaded` | `(relPath) -> DownloadState` | Trigger/await iCloud download; returns `ready` \| `downloading` \| `failed`. |
-| `ios_write_capture` | `(input: CaptureInput) -> String` | Write a link-only `type: capture` note into `Inbox/`; returns the relative path. Never overwrites. |
 
 ```rust
 #[serde(rename_all = "camelCase")]
@@ -1552,20 +1551,17 @@ pub struct LibraryGrant { pub display_name: String, pub granted: bool }
 
 #[serde(rename_all = "lowercase")]
 pub enum DownloadState { Ready, Downloading, Failed }
-
-#[serde(rename_all = "camelCase")]
-pub struct CaptureInput {
-    pub url: String,
-    pub title: Option<String>,
-    pub selection_text: Option<String>,
-    pub tags: Vec<String>, // defaults to ["inbox"] when empty
-}
 ```
 
 The capture note format (frontmatter `type: capture` / `source_url` / `title` /
 `date_saved` / `tags`, body = the link plus any shared selection, filename
 `Inbox/YYYY-MM-DD-HHmmss-<slug>.md`) is produced by the shared, unit-tested
-`capture::build_capture_note` and mirrored by the Share Extension's Swift path.
+`notesage-capture` crate, which the Share Extension calls over its C ABI —
+there is no in-app write command; capture happens only in the extension's
+process. On iOS the invoke handler registers ONLY these read commands (plus
+`render_markdown_fragment`, the `html_preview_*` pair, `log_frontend` and
+`set_log_level`) — the desktop's write/exec/credential commands are compiled
+out of the iOS binary.
 
 **Frontend usage** (via `src/lib/ios-api.ts`):
 

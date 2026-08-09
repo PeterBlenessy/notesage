@@ -57,8 +57,11 @@ share-sheet target for capturing links. PRD:
   existing `download-webpage` / `save-research` workflows enrich it. Verified
   end-to-end (share → grant resolution → Rust formatter → coordinated write).
 - **Read-only & private.** The only write path in the whole app is the share
-  capture. The reader never modifies or deletes existing notes — enforced by a
-  regression test that asserts the shell only invokes allowed read commands.
+  capture, which runs in the extension's separate process. Enforced at TWO
+  layers: the iOS binary registers only the mobile reader's commands in its
+  invoke handler (no `write_file`, no `delete_path`, no credential or agent
+  commands — they are compiled out of the iOS target), and a regression test
+  asserts the shell only invokes allowed read commands.
 
 ## Architecture
 
@@ -74,9 +77,10 @@ share-sheet target for capturing links. PRD:
   pre-pointed at `iCloud Drive/Notesage`, so it's a confirm tap. The grant is
   persisted as a security-scoped bookmark in the **App Group** container
   (`group.com.notesage.app`) so the Share Extension resolves the same grant.
-  Note: a grant stored by a build without the App Group entitlement lives in
-  an app-private fallback — after the entitlement landed, users re-select the
-  folder once.
+  Note: a build without the App Group entitlement cannot resolve the shared
+  container at all — `UserDefaults(suiteName:)` yields nothing — so a grant
+  stored before the entitlement landed is simply unreachable and the app falls
+  through to onboarding: users re-select the folder once.
 - **Native layer = a Tauri plugin crate.** The Rust↔Swift bridge is
   `src-tauri/crates/tauri-plugin-notesage-ios` (`.ios_path("ios")` in its
   build.rs), which is the only shape where Tauri links the `@_cdecl` plugin
@@ -86,7 +90,9 @@ share-sheet target for capturing links. PRD:
 - **Command surface.** `ios_pick_library_folder` / `ios_get_library_grant` /
   `ios_clear_library_grant` (grant lifecycle); `ios_list_directory` /
   `ios_read_file` / `ios_read_binary` (base64) / `ios_ensure_downloaded`
-  (iCloud-aware reads); `ios_write_capture` (Inbox write). All `relPath`s are
+  (iCloud-aware reads). There is deliberately NO write command on the app's
+  surface — captures are written by the Share Extension in its own process
+  over the C ABI. All `relPath`s are
   relative to the granted root. See `docs/tauri-commands.md` → "iOS Library &
   Capture Operations".
 - **Capture format.** Produced by the pure, unit-tested
@@ -152,6 +158,6 @@ share-sheet target for capturing links. PRD:
 | `src/lib/ios-api.ts` | Typed wrappers for the iOS Tauri commands (base64 binary decode) |
 | `src/stores/mobile-store.ts` | Grant + navigation state machine |
 | `src-tauri/src/commands/ios_library.rs` | iOS commands (cfg-gated) |
-| `src-tauri/src/commands/capture.rs` | Pure capture-note builder + tests |
+| `src-tauri/crates/notesage-capture/` | Pure capture-note builder + tests (C ABI for the Share Extension) |
 | `src-tauri/crates/tauri-plugin-notesage-ios/` | The Tauri bridge as a plugin crate (`LibraryAccess.swift` + `NotesageIosPlugin.swift` in its Swift package) — wired automatically by `tauri ios init` via `.ios_path()` |
 | `src-tauri/ios/` | Share Extension sources + `integrate-share-extension.py` (extension wiring) + `make-ios-icon.py` (icon set) + wiring README |
