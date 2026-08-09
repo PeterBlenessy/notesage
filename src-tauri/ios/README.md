@@ -5,13 +5,13 @@ Notesage mobile reader + share capture. PRD:
 `docs/prds/2026-06-28-ios-mobile-app.md`. Tasks: #1–#9 in
 `docs/tasks/2026-06-28-ios-mobile-app-tasks.md`.
 
-> **These files are staged, not yet integrated.** The generated iOS project
-> (`src-tauri/gen/apple/`) does not exist until you run `tauri ios init` on a
-> **Mac with Xcode + an Apple Developer signing identity**. Everything here must
-> be wired by hand into that generated project — it cannot be built or validated
-> in a Linux/CI container. The Rust command layer
-> (`src-tauri/src/commands/ios_library.rs`) already compiles on every platform
-> and returns a clear "not yet wired" error until these are integrated.
+> **Status: integrated and device-validated.** The generated iOS project
+> (`src-tauri/gen/apple/`, gitignored) is produced by `tauri ios init` on a
+> Mac; the library bridge wires automatically via the plugin crate, and the
+> Share Extension wires via `integrate-share-extension.py` (below). Nothing
+> here needs hand-editing in Xcode. On non-Mac platforms the Rust command
+> layer still compiles everywhere and the iOS commands return a clear
+> platform error.
 
 ## Why a folder picker at all?
 

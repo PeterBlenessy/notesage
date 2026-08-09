@@ -7,9 +7,8 @@
 // LibraryAccess.swift (add that file to this extension target's membership).
 //
 // PRD: docs/prds/2026-06-28-ios-mobile-app.md (task #9).
-// NOT yet integrated — see src-tauri/ios/README.md. Add a Share Extension
-// target, set its App Group to match the app, and replace its generated
-// ShareViewController with this.
+// Wired into the NotesageShare app-extension target by
+// `src-tauri/ios/integrate-share-extension.py` — see README.md.
 
 import UIKit
 import UniformTypeIdentifiers

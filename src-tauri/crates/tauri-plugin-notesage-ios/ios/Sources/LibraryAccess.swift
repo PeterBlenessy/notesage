@@ -1,13 +1,13 @@
-// LibraryAccess.swift — Notesage iOS library access (reference source).
+// LibraryAccess.swift — Notesage iOS library access.
 //
 // Security-scoped access to the user's `iCloud Drive/Notesage` folder, persisted
 // as a bookmark in the shared App Group so both the app and the Share Extension
 // resolve the same grant. iCloud-aware reads via NSFileCoordinator.
 //
+// Compiled into BOTH targets: the app via this plugin crate's Swift package
+// (wired by `tauri ios init`), and the Share Extension as a direct source
+// (wired by `src-tauri/ios/integrate-share-extension.py`).
 // PRD: docs/prds/2026-06-28-ios-mobile-app.md (tasks #3, #4, #8).
-// NOT yet integrated — see src-tauri/ios/README.md. Set APP_GROUP_ID to the
-// real `group.<bundle-id>` and add this file to both the app and the extension
-// target membership.
 
 import Foundation
 import UIKit
@@ -50,7 +50,14 @@ enum LibraryAccess {
             picker.directoryURL = icloud
         }
         let delegate = PickerDelegate { urls in
-            guard let url = urls.first else { completion(.failure(LibraryAccessError.noGrant)); return }
+            // Cancelling the picker is a routine action, not an error: resolve
+            // granted:false so the frontend shows its friendly "No folder was
+            // selected" path. Rejecting here surfaced a raw NSError string
+            // ("The operation couldn't be completed…") on a simple back-out.
+            guard let url = urls.first else {
+                completion(.success(LibraryGrant(displayName: "", granted: false)))
+                return
+            }
             do {
                 let grant = try persistBookmark(for: url)
                 completion(.success(grant))
@@ -111,14 +118,18 @@ enum LibraryAccess {
         let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys, options: [])
         return urls.compactMap { url in
             let name = url.lastPathComponent
-            if name == ".DS_Store" { return nil }
             let isDir = (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) ?? false
             // iCloud placeholders are named ".<name>.icloud" — present the real name.
             let displayName = name.hasPrefix(".") && name.hasSuffix(".icloud")
                 ? String(name.dropFirst().dropLast(7)) : name
+            // Dotfiles and dot-directories are excluded outright — the mobile
+            // browser has no "show hidden" toggle, and `.notesage/` (comment
+            // sidecars, project metadata) or `.git/` must not be one tap away.
+            // Mirrors the desktop's default-hidden behavior.
+            if displayName.hasPrefix(".") { return nil }
             let relPath = url.path.replacingOccurrences(of: root.path + "/", with: "")
             return FileEntryDTO(name: displayName, path: relPath, is_directory: isDir,
-                                children: nil, hidden: displayName.hasPrefix("."))
+                                children: nil, hidden: false)
         }.sorted { ($0.is_directory ? 0 : 1, $0.name.lowercased()) < ($1.is_directory ? 0 : 1, $1.name.lowercased()) }
     }
 
