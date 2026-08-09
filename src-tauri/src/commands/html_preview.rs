@@ -86,10 +86,21 @@ pub fn handle_request<R: Runtime>(
         .ok()
         .and_then(|docs| docs.get(&id).cloned());
 
+    // SVG ids (`<uuid>.svg`) are served as images — the mobile reader
+    // registers rendered mermaid diagrams here and points an <img> at them,
+    // for the same reason the HTML viewer uses this scheme at all: content
+    // needing its own (empty) CSP context. An <img> refuses a payload served
+    // as text/html, so the mime must follow the id.
+    let mime = if id.ends_with(".svg") {
+        "image/svg+xml"
+    } else {
+        "text/html; charset=utf-8"
+    };
+
     match body {
         Some(html) => Response::builder()
             .status(200)
-            .header("Content-Type", "text/html; charset=utf-8")
+            .header("Content-Type", mime)
             .header("Cache-Control", "no-store")
             .body(html.into_bytes())
             .unwrap_or_else(|_| Response::builder().status(500).body(Vec::new()).unwrap()),

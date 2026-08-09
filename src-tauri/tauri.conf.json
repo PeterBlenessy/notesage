@@ -30,7 +30,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost https: http:; font-src 'self' data:; media-src 'self' blob: data: asset: http://asset.localhost; worker-src 'self' blob:; frame-src 'self' blob: data: htmlpreview: http://htmlpreview.localhost; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost https: http: ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: asset: http://asset.localhost htmlpreview: http://htmlpreview.localhost https: http:; font-src 'self' data:; media-src 'self' blob: data: asset: http://asset.localhost; worker-src 'self' blob:; frame-src 'self' blob: data: htmlpreview: http://htmlpreview.localhost; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost https: http: ws: wss:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'",
       "assetProtocol": {
         "enable": true,
         "scope": {

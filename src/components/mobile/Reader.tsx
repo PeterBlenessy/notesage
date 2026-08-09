@@ -145,6 +145,7 @@ export function Reader() {
     const blocks = Array.from(root.querySelectorAll('pre code[class*="language-mermaid"]'));
     if (blocks.length === 0) return;
     let cancelled = false;
+    let cleanupIds: string[] = [];
     void (async () => {
       const mermaid = (await import("mermaid")).default;
       if (cancelled) return;
@@ -156,6 +157,7 @@ export function Reader() {
         flowchart: { useMaxWidth: true },
         sequence: { useMaxWidth: true },
       });
+      const registeredIds: string[] = [];
       for (const [i, code] of blocks.entries()) {
         const source = code.textContent ?? "";
         try {
@@ -165,26 +167,23 @@ export function Reader() {
           // Inline styles, not Tailwind: editor.css is un-layered and would
           // beat utility classes; inline always wins.
           wrap.style.cssText = "overflow-x:auto;margin:1em 0;max-width:100%";
-          // The SVG goes into an <img>, not innerHTML: mermaid styles the
-          // diagram via a <style> element inside the SVG, and in the embedded
-          // build the app CSP's nonce rewrite refuses injected inline styles
-          // (black boxes, invisible text). An SVG rendered as an image is its
-          // own document — its internal <style> applies, scripts don't run,
-          // and the app CSP doesn't reach inside.
-          const bytes = new TextEncoder().encode(svg);
-          const u8 = bytes as unknown as { toBase64?: () => string };
-          let b64: string;
-          if (u8.toBase64) {
-            b64 = u8.toBase64();
-          } else {
-            let bin = "";
-            for (let j = 0; j < bytes.length; j += 0x8000) {
-              bin += String.fromCharCode(...bytes.subarray(j, j + 0x8000));
-            }
-            b64 = btoa(bin);
+          // The SVG goes into an <img> served from the htmlpreview:// scheme,
+          // not innerHTML and not a data: URL. innerHTML fails because mermaid
+          // styles the diagram via a <style> element inside the SVG, which the
+          // embedded build's CSP nonce rewrite refuses (black boxes, invisible
+          // text); a data: image failed to load at all on device (broken-image
+          // icon). A custom-scheme response is its own document with its own
+          // empty policy — internal styles apply, scripts don't run. The `.svg`
+          // suffix makes the handler serve image/svg+xml.
+          const id = `${crypto.randomUUID()}.svg`;
+          await invoke("html_preview_register", { id, content: svg });
+          if (cancelled) {
+            void invoke("html_preview_unregister", { id }).catch(() => {});
+            return;
           }
+          registeredIds.push(id);
           const img = document.createElement("img");
-          img.src = `data:image/svg+xml;base64,${b64}`;
+          img.src = `htmlpreview://localhost/${id}`;
           img.alt = "Mermaid diagram";
           img.style.cssText = "max-width:100%";
           wrap.appendChild(img);
@@ -193,9 +192,13 @@ export function Reader() {
           /* leave the code block as readable source */
         }
       }
+      cleanupIds = registeredIds;
     })();
     return () => {
       cancelled = true;
+      for (const id of cleanupIds) {
+        void invoke("html_preview_unregister", { id }).catch(() => {});
+      }
     };
   }, [state]);
 
