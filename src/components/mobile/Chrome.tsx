@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Search, X, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -45,7 +46,14 @@ const CORNER: Record<IslandCorner, string> = {
 export const ISLAND_GLASS =
   "rounded-full border border-border/60 bg-background/60 shadow-sm backdrop-blur-xl backdrop-saturate-150";
 
-/** A floating glass island holding one or more controls (~48pt tall). */
+/**
+ * A floating glass island holding one or more controls (~48pt tall).
+ *
+ * Portaled to document.body with `position: fixed` — the same treatment as
+ * the desktop FloatingCommandBar. Islands are chrome, NOT page content: no
+ * page layout, scroll container, zoom or clipping context may ever move,
+ * resize or capture them.
+ */
 export function Island({
   corner,
   className,
@@ -55,17 +63,18 @@ export function Island({
   className?: string;
   children: ReactNode;
 }) {
-  return (
+  return createPortal(
     <div
       className={cn(
-        "absolute z-40 inline-flex items-center gap-0.5 px-0.5 py-0.5",
+        "fixed z-40 inline-flex items-center gap-0.5 px-0.5 py-0.5",
         ISLAND_GLASS,
         CORNER[corner],
         className,
       )}
     >
       {children}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -139,7 +148,7 @@ export function SearchIsland({
   }
 
   return (
-    <Island corner="bottom-center" className="px-2">
+    <Island corner="bottom-center" className="w-[calc(100vw-1.5rem)] max-w-96 px-2">
       <Search strokeWidth={1.5} className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
       <input
         ref={inputRef}
@@ -148,7 +157,7 @@ export function SearchIsland({
         onChange={(e) => onQueryChange(e.target.value)}
         placeholder={placeholder}
         aria-label={placeholder}
-        className="h-11 w-[46vw] max-w-64 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+        className="h-11 w-full min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground"
       />
       {matches && matches.total > 0 && (
         <>
