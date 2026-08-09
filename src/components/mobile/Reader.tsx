@@ -63,16 +63,31 @@ export function Reader() {
         return;
       }
       if (kind === "html") {
-        // Rendered from a blob: URL rather than srcDoc. A srcDoc document
-        // inherits the host CSP, and Tauri's nonce injection neutralises
-        // 'unsafe-inline' — so an exported report's own <style> blocks and
-        // inline <script>s are refused and it renders bare. In WebKit (and so
-        // in WKWebView on iOS) a blob document is its own CSP context, which
-        // is what lets a self-contained report's charts actually run. Same
-        // finding as the desktop HtmlViewer regression (PR #447).
+        // Rendered from a data: URL rather than srcDoc or a blob:. A srcDoc
+        // document inherits the host CSP, and Tauri's nonce injection
+        // neutralises 'unsafe-inline' — so an exported report's own <style>
+        // blocks and inline <script>s are refused and it renders bare (the
+        // desktop HtmlViewer finding, PR #447). A blob: URL works in dev but
+        // renders a BLANK page in the embedded device build: there the app's
+        // origin is Tauri's custom scheme, and WKWebView refuses to load a
+        // blob minted from a custom-scheme origin into a sandboxed iframe.
+        // A data: URL carries the document itself — no origin machinery —
+        // and is its own CSP context like the blob was.
         const raw = await iosReadFile(relPath);
-        const blob = new Blob([raw], { type: "text/html" });
-        setState({ status: "html", url: URL.createObjectURL(blob) });
+        const bytes = new TextEncoder().encode(raw);
+        const u8 = bytes as unknown as { toBase64?: () => string };
+        let b64: string;
+        if (u8.toBase64) {
+          b64 = u8.toBase64();
+        } else {
+          // Chunked btoa fallback (spreading a large array overflows the stack).
+          let bin = "";
+          for (let i = 0; i < bytes.length; i += 0x8000) {
+            bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+          }
+          b64 = btoa(bin);
+        }
+        setState({ status: "html", url: `data:text/html;charset=utf-8;base64,${b64}` });
         return;
       }
       if (kind === "markdown" || kind === "text") {
