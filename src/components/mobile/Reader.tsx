@@ -38,6 +38,22 @@ export function Reader() {
   const [state, setState] = useState<ReaderState>({ status: "loading" });
   const articleRef = useRef<HTMLElement | null>(null);
 
+  // The resolved app theme, tracked via the `.dark` class ThemeProvider owns.
+  // Markdown must re-render when it flips: syntect's syntax colors are inline
+  // styles from the Rust renderer, and mermaid diagrams bake their theme and
+  // background at render time — neither follows a CSS-variable swap.
+  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(() =>
+    document.documentElement.classList.contains("dark") ? "dark" : "light",
+  );
+  useEffect(() => {
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => {
+      setResolvedTheme(root.classList.contains("dark") ? "dark" : "light");
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
   const relPath = openDoc?.relPath ?? "";
   const name = openDoc?.name ?? "";
   const kind = useMemo(() => (name ? classifyFile(name) : "other"), [name]);
@@ -86,8 +102,7 @@ export function Reader() {
           // looks the same on both. Frontmatter stripping happens there too.
           // The theme drives syntect's syntax-highlight colors, which are
           // inline styles — without it, code blocks stay light in dark mode.
-          const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
-          const html = await renderMarkdownFragment(raw, theme);
+          const html = await renderMarkdownFragment(raw, resolvedTheme);
           setState({ status: "markdown", html });
         } else {
           setState({ status: "text", content: raw });
@@ -110,7 +125,7 @@ export function Reader() {
       }
       setState({ status: "error", message: String(err) });
     }
-  }, [relPath, kind]);
+  }, [relPath, kind, resolvedTheme]);
 
   useEffect(() => {
     void load();
@@ -151,7 +166,7 @@ export function Reader() {
       if (cancelled) return;
       mermaid.initialize({
         startOnLoad: false,
-        theme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "default",
+        theme: resolvedTheme === "dark" ? "dark" : "default",
         fontFamily: "var(--font-sans, system-ui, sans-serif)",
         securityLevel: "strict",
         flowchart: { useMaxWidth: true },
