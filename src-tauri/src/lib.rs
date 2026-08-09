@@ -227,7 +227,7 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_webdriver::init());
     }
 
-    builder
+    let builder = builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
@@ -263,7 +263,34 @@ pub fn run() {
         .register_uri_scheme_protocol("htmlpreview", |ctx, request| {
             html_preview::handle_request(ctx, request)
         })
-        .invoke_handler(tauri::generate_handler![
+        ;
+
+    // iOS registers ONLY the mobile reader's command surface. The desktop list
+    // below contains write/exec/credential commands (`write_file`,
+    // `delete_path`, `get_credential`, `acp_agent_spawn`, `run_in_terminal`,
+    // …) that the mobile shell never calls — but "the frontend doesn't call
+    // it" is not a security boundary. Gating them out of the iOS binary makes
+    // the documented read-only posture real at the IPC layer: an XSS-class
+    // bug or compromised dependency in the mobile WebView has no write/exec
+    // commands to reach.
+    #[cfg(target_os = "ios")]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        ios_pick_library_folder,
+        ios_get_library_grant,
+        ios_clear_library_grant,
+        ios_list_directory,
+        ios_read_file,
+        ios_read_binary,
+        ios_ensure_downloaded,
+        render_markdown_fragment,
+        html_preview_register,
+        html_preview_unregister,
+        log_frontend,
+        set_log_level,
+    ]);
+
+    #[cfg(not(target_os = "ios"))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
             open_devtools,
             set_log_level,
             alpha_check,
@@ -514,7 +541,9 @@ pub fn run() {
             tray::show_main_window_command,
             html_preview_register,
             html_preview_unregister,
-        ])
+        ]);
+
+    builder
         .setup(|app| {
             // Log startup at Info before restricting to Warn — this line always appears.
             log::info!(target: "notesage::lifecycle", "Notesage starting up (version {})", app.package_info().version);
