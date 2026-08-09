@@ -45,31 +45,31 @@ pnpm tauri ios build --target aarch64-sim
 The app builds, installs and launches with the library bridge wired. No
 project.yml patching, no manual target membership, no bridging-header setup.
 
-### Still manual: the Share Extension
+### The Share Extension: one script, no Xcode GUI
 
-`tauri ios init` does not create extension targets, so this part is unchanged:
+`tauri ios init` does not create extension targets, but the generated project
+is xcodegen-driven — so the extension is wired declaratively instead of by
+hand:
 
-1. `File → New → Target → Share Extension`.
-2. Add `ShareViewController.swift`, `LibraryCapture.swift`, and
-   `LibraryAccess.swift` (from
-   `crates/tauri-plugin-notesage-ios/ios/Sources/`) to that target.
-3. Use `ShareExtension-Info.plist` and `ShareExtension.entitlements`
-   (App Group only).
-4. Link the capture staticlib and set the bridging header:
+```bash
+python3 src-tauri/ios/integrate-share-extension.py   # after `tauri ios init`; idempotent
+```
 
-   ```bash
-   cargo build --release --target aarch64-apple-ios \
-     --manifest-path src-tauri/crates/notesage-capture/Cargo.toml
-   ```
+The script adds a `NotesageShare` app-extension target to
+`gen/apple/project.yml` (sources: `ShareViewController.swift`,
+`LibraryCapture.swift`, and the plugin package's `LibraryAccess.swift`;
+bridging header `NotesageCapture.h`; a cargo build phase that produces
+`libnotesage_capture.a` for the SDK being built), adds the App Group
+entitlement to the main app (which writes the shared bookmark the extension
+resolves), registers the extension as an embedded dependency of the app
+target, and re-runs `xcodegen generate`. Only the extension links the capture
+staticlib — the app never captures, which is why `LibraryCapture.swift` is
+split out of `LibraryAccess.swift`.
 
-   Add `libnotesage_capture.a` from
-   `src-tauri/target/aarch64-apple-ios/release/` to the extension's "Link
-   Binary With Libraries", and point "Objective-C Bridging Header" at
-   `src-tauri/ios/NotesageCapture.h`. Only the extension links this — the app
-   never captures, which is why `LibraryCapture.swift` is split out of
-   `LibraryAccess.swift`.
-5. Set the Development Team, then build + validate on device: grant
-   persistence, iCloud download, capture from Safari.
+`ShareExtension-Info.plist` and `ShareExtension.entitlements` in this folder
+remain the reference the script's generated files mirror. After running it,
+build + validate on device: grant persistence, iCloud download, capture from
+Safari.
 
 ## Path contract
 
