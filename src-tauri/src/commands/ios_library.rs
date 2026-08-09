@@ -144,9 +144,12 @@ pub async fn ios_read_file(app: tauri::AppHandle, rel_path: String) -> Result<St
     }
 }
 
-/// Read a binary file (PDF/EPUB/DOCX/image) relative to the granted library root.
+/// Read a binary file (PDF/EPUB/DOCX/image) relative to the granted library
+/// root. Returns base64 rather than `Vec<u8>` — a byte vector serializes over
+/// IPC as a JSON number array (~4 bytes of JSON per payload byte), which took
+/// ~10 s and froze the UI for a large PDF. The frontend decodes natively.
 #[tauri::command]
-pub async fn ios_read_binary(app: tauri::AppHandle, rel_path: String) -> Result<Vec<u8>, String> {
+pub async fn ios_read_binary(app: tauri::AppHandle, rel_path: String) -> Result<String, String> {
     let rel = sanitize_rel_path(&rel_path)?;
     #[cfg(target_os = "ios")]
     {
@@ -230,7 +233,7 @@ mod ios_impl {
         app.notesage_ios().read_file(rel).map_err(|e| e.to_string())
     }
 
-    pub async fn read_binary(app: &AppHandle, rel: &str) -> Result<Vec<u8>, String> {
+    pub async fn read_binary(app: &AppHandle, rel: &str) -> Result<String, String> {
         app.notesage_ios().read_binary(rel).map_err(|e| e.to_string())
     }
 

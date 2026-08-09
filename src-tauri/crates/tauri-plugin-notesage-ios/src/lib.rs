@@ -70,8 +70,8 @@ struct TextResponse {
     text: String,
 }
 #[derive(Deserialize)]
-struct BytesResponse {
-    bytes: Vec<u8>,
+struct Base64Response {
+    base64: String,
 }
 #[derive(Deserialize)]
 struct StateResponse {
@@ -137,9 +137,13 @@ impl<R: Runtime> NotesageIos<R> {
             .map(|r| r.text)
     }
 
-    pub fn read_binary(&self, rel: &str) -> Result<Vec<u8>> {
-        self.call::<_, BytesResponse>("readBinary", RelPathArgs { rel_path: rel })
-            .map(|r| r.bytes)
+    /// Returns the file's contents as a base64 string. Deliberately NOT
+    /// `Vec<u8>`: bytes crossing the Swift→Rust→JS JSON hops as a number
+    /// array cost ~4 bytes of JSON per payload byte and freeze the WebView
+    /// main thread parsing it. The frontend decodes base64 natively.
+    pub fn read_binary(&self, rel: &str) -> Result<String> {
+        self.call::<_, Base64Response>("readBinary", RelPathArgs { rel_path: rel })
+            .map(|r| r.base64)
     }
 
     pub fn ensure_downloaded(&self, rel: &str) -> Result<DownloadState> {
@@ -171,7 +175,7 @@ impl<R: Runtime> NotesageIos<R> {
     pub fn read_file(&self, _rel: &str) -> Result<String> {
         Err(Error::Unavailable)
     }
-    pub fn read_binary(&self, _rel: &str) -> Result<Vec<u8>> {
+    pub fn read_binary(&self, _rel: &str) -> Result<String> {
         Err(Error::Unavailable)
     }
     pub fn ensure_downloaded(&self, _rel: &str) -> Result<DownloadState> {

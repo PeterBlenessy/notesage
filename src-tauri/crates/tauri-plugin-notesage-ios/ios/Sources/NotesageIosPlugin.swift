@@ -70,7 +70,11 @@ class NotesageIosPlugin: Plugin {
   @objc public func readBinary(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(RelPathArgs.self)
-      invoke.resolve(["bytes": [UInt8](try LibraryAccess.readBinary(args.relPath))])
+      // Base64, not [UInt8]: a byte array crosses two JSON hops (Swift→Rust,
+      // Rust→JS) as one number per byte — a 10 MB PDF becomes ~40 MB of JSON
+      // parsed on the WebView main thread (seconds of frozen UI). Base64 is a
+      // single contiguous string; the JS side decodes it natively.
+      invoke.resolve(["base64": try LibraryAccess.readBinary(args.relPath).base64EncodedString()])
     } catch { invoke.reject(String(describing: error)) }
   }
 

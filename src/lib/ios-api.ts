@@ -52,10 +52,25 @@ export function iosReadFile(relPath: string): Promise<string> {
   return invoke<string>("ios_read_file", { relPath });
 }
 
-/** Read a binary file (PDF/EPUB/DOCX/image) relative to the granted library root. */
+/**
+ * Read a binary file (PDF/EPUB/DOCX/image) relative to the granted library
+ * root. The wire format is base64, not a byte array: `Vec<u8>` serializes
+ * over the two IPC hops as a JSON number array (~4 bytes of JSON per payload
+ * byte), which froze the UI for seconds on a large PDF.
+ *
+ * Decoding prefers the native `Uint8Array.fromBase64` (Safari 18.2+, so
+ * always present in the iOS 26 WKWebView); the atob loop is a fallback for
+ * test environments. NOT a data-URL fetch — that would need `data:` in the
+ * CSP's connect-src.
+ */
 export async function iosReadBinary(relPath: string): Promise<Uint8Array> {
-  const bytes = await invoke<number[]>("ios_read_binary", { relPath });
-  return Uint8Array.from(bytes);
+  const base64 = await invoke<string>("ios_read_binary", { relPath });
+  const u8 = Uint8Array as unknown as { fromBase64?: (s: string) => Uint8Array };
+  if (u8.fromBase64) return u8.fromBase64(base64);
+  const bin = atob(base64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
 
 /** Ensure an iCloud item is downloaded; returns its current download state. */

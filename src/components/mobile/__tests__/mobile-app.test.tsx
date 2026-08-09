@@ -128,7 +128,9 @@ describe("library browser states", () => {
 describe("reader states", () => {
   it("routes PDFs to the PDF viewer (reads bytes, not the unsupported state)", async () => {
     useMobileStore.setState({ openDoc: { relPath: "doc.pdf", name: "doc.pdf" } });
-    setMockInvokeHandler("ios_read_binary", () => Array.from(new TextEncoder().encode("%PDF-1.4")));
+    // The wire format is base64 (a Vec<u8> would cross IPC as a JSON number
+    // array — see iosReadBinary).
+    setMockInvokeHandler("ios_read_binary", () => btoa("%PDF-1.4"));
     renderWithProviders(<Reader />);
     expect(await screen.findByText("pdf-viewer:doc.pdf")).toBeTruthy();
     expect(calledCommands()).toContain("ios_read_binary");
