@@ -138,9 +138,9 @@ describe("library browser states", () => {
 describe("reader states", () => {
   it("routes PDFs to the PDF viewer (reads bytes, not the unsupported state)", async () => {
     useMobileStore.setState({ openDoc: { relPath: "doc.pdf", name: "doc.pdf" } });
-    // The wire format is base64 (a Vec<u8> would cross IPC as a JSON number
-    // array — see iosReadBinary).
-    setMockInvokeHandler("ios_read_binary", () => btoa("%PDF-1.4"));
+    // The wire format is a raw IPC response — an ArrayBuffer, no JSON
+    // (see iosReadBinary).
+    setMockInvokeHandler("ios_read_binary", () => new TextEncoder().encode("%PDF-1.4").buffer);
     renderWithProviders(<Reader />);
     expect(await screen.findByText("pdf-viewer:doc.pdf")).toBeTruthy();
     expect(calledCommands()).toContain("ios_read_binary");
@@ -358,7 +358,7 @@ describe("links in rendered markdown", () => {
 describe("theme changes", () => {
   it("does NOT re-read a PDF when the theme flips (only markdown re-renders)", async () => {
     useMobileStore.setState({ openDoc: { relPath: "doc.pdf", name: "doc.pdf" } });
-    setMockInvokeHandler("ios_read_binary", () => btoa("%PDF-1.4"));
+    setMockInvokeHandler("ios_read_binary", () => new TextEncoder().encode("%PDF-1.4").buffer);
     renderWithProviders(<Reader />);
     await screen.findByText("pdf-viewer:doc.pdf");
     const readsBefore = calledCommands().filter((c) => c === "ios_read_binary").length;

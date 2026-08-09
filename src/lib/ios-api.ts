@@ -46,23 +46,15 @@ export function iosReadFile(relPath: string): Promise<string> {
 
 /**
  * Read a binary file (PDF/EPUB/DOCX/image) relative to the granted library
- * root. The wire format is base64, not a byte array: `Vec<u8>` serializes
- * over the two IPC hops as a JSON number array (~4 bytes of JSON per payload
- * byte), which froze the UI for seconds on a large PDF.
- *
- * Decoding prefers the native `Uint8Array.fromBase64` (Safari 18.2+, so
- * always present in the iOS 26 WKWebView); the atob loop is a fallback for
- * test environments. NOT a data-URL fetch — that would need `data:` in the
- * CSP's connect-src.
+ * root. The command answers with a RAW IPC response — an ArrayBuffer, no
+ * JSON. Anything JSON-shaped here (a number array, or even base64-in-JSON)
+ * makes the WebView's main thread parse a payload-sized JSON string, which
+ * froze the loading spinner for seconds on large PDFs. The Swift-side base64
+ * is decoded on a Rust worker thread before the bytes reach the WebView.
  */
 export async function iosReadBinary(relPath: string): Promise<Uint8Array> {
-  const base64 = await invoke<string>("ios_read_binary", { relPath });
-  const u8 = Uint8Array as unknown as { fromBase64?: (s: string) => Uint8Array };
-  if (u8.fromBase64) return u8.fromBase64(base64);
-  const bin = atob(base64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+  const buf = await invoke<ArrayBuffer>("ios_read_binary", { relPath });
+  return new Uint8Array(buf);
 }
 
 /** Ensure an iCloud item is downloaded; returns its current download state. */

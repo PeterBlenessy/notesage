@@ -145,15 +145,26 @@ pub async fn ios_read_file(app: tauri::AppHandle, rel_path: String) -> Result<St
 }
 
 /// Read a binary file (PDF/EPUB/DOCX/image) relative to the granted library
-/// root. Returns base64 rather than `Vec<u8>` — a byte vector serializes over
-/// IPC as a JSON number array (~4 bytes of JSON per payload byte), which took
-/// ~10 s and froze the UI for a large PDF. The frontend decodes natively.
+/// root. Returns a RAW IPC response (`tauri::ipc::Response`), not JSON: a
+/// `Vec<u8>` serializes as a JSON number array, and even base64-in-JSON makes
+/// the WebView's main thread parse a payload-sized JSON string — for a large
+/// PDF that froze the loading spinner for seconds. The Swift→Rust hop stays
+/// base64 (the mobile plugin bridge is JSON-only), but that decode happens on
+/// a Rust worker thread; the WebView receives bytes with zero JSON work.
 #[tauri::command]
-pub async fn ios_read_binary(app: tauri::AppHandle, rel_path: String) -> Result<String, String> {
+pub async fn ios_read_binary(
+    app: tauri::AppHandle,
+    rel_path: String,
+) -> Result<tauri::ipc::Response, String> {
     let rel = sanitize_rel_path(&rel_path)?;
     #[cfg(target_os = "ios")]
     {
-        ios_impl::read_binary(&app, &rel).await
+        use base64::Engine as _;
+        let b64 = ios_impl::read_binary(&app, &rel).await?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .map_err(|e| format!("invalid base64 from native layer: {e}"))?;
+        Ok(tauri::ipc::Response::new(bytes))
     }
     #[cfg(not(target_os = "ios"))]
     {

@@ -152,6 +152,7 @@ tauri-plugin-sentry = "0.5.0"
 # Only for installing the process-default CryptoProvider at startup — reqwest
 # 0.13's rustls path panics "No provider set" without one. Ring is already in
 # the tree transitively; this makes it explicit and selectable.
+base64 = "0.22"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 # Telemetry — privacy-first usage analytics (first-party Tauri v2 plugin).
 # NOT available on iOS: the plugin's `sys.rs` leaves `ENGINE_NAME` undefined

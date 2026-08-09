@@ -4810,6 +4810,7 @@ version = "0.1.0"
 dependencies = [
  "agent-client-protocol",
  "agent-client-protocol-schema",
+ "base64 0.22.1",
  "bytes",
  "chrono",
  "chrono-tz",
