@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getContrastVariables, CONTRAST_VARIABLE_NAMES } from "@/lib/contrast";
 
@@ -8,6 +8,20 @@ interface ThemeProviderProps {
 
 export function ThemeProvider({ children }: ThemeProviderProps) {
   const { theme, contrastLevel, tintHue, tintChroma } = useSettingsStore();
+
+  // Re-resolve when the OS appearance changes while theme is "system". The
+  // matchMedia check in the effect below runs once per dependency change, so
+  // without this listener the app keeps whatever appearance it launched with —
+  // most visible on iOS, where the app stays alive across the phone's
+  // light/dark switches (auto sunset switching included).
+  const [systemTick, setSystemTick] = useState(0);
+  useEffect(() => {
+    if (theme !== "system") return;
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    const onChange = () => setSystemTick((t) => t + 1);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, [theme]);
 
   // Why: theme is keyed off `.light` / `.dark` classes on <html> — never a
   // `data-theme` attribute. globals.css uses `@custom-variant dark (&:where(.dark, .dark *))`
@@ -46,7 +60,7 @@ export function ThemeProvider({ children }: ThemeProviderProps) {
         root.style.removeProperty(name);
       }
     };
-  }, [theme, contrastLevel, tintHue, tintChroma]);
+  }, [theme, contrastLevel, tintHue, tintChroma, systemTick]);
 
   return <>{children}</>;
 }
