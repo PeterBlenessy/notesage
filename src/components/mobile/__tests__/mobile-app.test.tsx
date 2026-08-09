@@ -20,6 +20,12 @@ vi.mock("@/components/editor/viewers/PdfViewer", () => ({
   PdfViewer: ({ fileName }: { fileName: string }) => <div>pdf-viewer:{fileName}</div>,
 }));
 
+// The reader opens external links through the opener plugin — capture calls.
+const openUrlMock = vi.fn((_url: string) => Promise.resolve());
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: (url: string) => openUrlMock(url),
+}));
+
 /** Mirrors MobileApp's screen switch without ThemeProvider (avoids matchMedia). */
 function Shell() {
   const openDoc = useMobileStore((s) => s.openDoc);
@@ -41,6 +47,10 @@ const ALLOWED = new Set([
   // Pure render — takes markdown text, returns an HTML fragment. Touches no
   // filesystem and no library path, so it cannot widen the read surface.
   "render_markdown_fragment",
+  // In-memory document store for the sandboxed HTML/mermaid iframes — writes
+  // nothing to the library.
+  "html_preview_register",
+  "html_preview_unregister",
 ]);
 
 /** Commands that would mutate the library or reach AI — must never be invoked. */
@@ -256,5 +266,154 @@ describe("HTML reports", () => {
   it("treats .htm the same as .html", async () => {
     const frame = await openHtml("legacy.htm");
     expect(frame.tagName).toBe("IFRAME");
+  });
+});
+
+describe("folder picker cancellation", () => {
+  it("shows the friendly no-folder message when the picker resolves ungranted", async () => {
+    setMockInvokeHandler("ios_pick_library_folder", () => ({ displayName: "", granted: false }));
+    useMobileStore.setState({ grantState: "ungranted" });
+    renderWithProviders(<Onboarding />);
+    fireEvent.click(screen.getByRole("button", { name: "Select your Notesage folder" }));
+    const { toast } = await import("sonner");
+    await waitFor(() =>
+      expect(toast.info).toHaveBeenCalledWith(expect.stringMatching(/No folder selected/i)),
+    );
+  });
+
+  it("survives a REJECTED picker invoke without leaving the user stuck", async () => {
+    // The native layer resolves granted:false on a routine cancel, but a real
+    // failure (picker unavailable, bookmark write error) still rejects. That
+    // path must surface an error toast and return to a re-tappable button —
+    // the original bug was a raw NSError string here, and the old test suite
+    // never exercised a rejection at all.
+    setMockInvokeHandler("ios_pick_library_folder", () => {
+      throw new Error("bookmark write failed");
+    });
+    useMobileStore.setState({ grantState: "ungranted" });
+    renderWithProviders(<Onboarding />);
+    fireEvent.click(screen.getByRole("button", { name: "Select your Notesage folder" }));
+    const { toast } = await import("sonner");
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(useMobileStore.getState().grantState).toBe("ungranted");
+    // The button is still there for another attempt.
+    expect(screen.getByRole("button", { name: "Select your Notesage folder" })).toBeTruthy();
+  });
+});
+
+describe("hidden entries", () => {
+  it("never renders dotfiles or dot-directories, even if the native layer returns them", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: ".notesage", path: ".notesage", is_directory: true, hidden: true },
+      { name: ".git", path: ".git", is_directory: true, hidden: true },
+      { name: ".secret.md", path: ".secret.md", is_directory: false, hidden: true },
+      { name: "visible.md", path: "visible.md", is_directory: false, hidden: false },
+    ]);
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("visible.md");
+    expect(screen.queryByText(".notesage")).toBeNull();
+    expect(screen.queryByText(".git")).toBeNull();
+    expect(screen.queryByText(".secret.md")).toBeNull();
+  });
+});
+
+describe("links in rendered markdown", () => {
+  const openNote = async (html: string) => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "note.md", path: "docs/note.md", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("ios_read_file", () => "irrelevant");
+    setMockInvokeHandler("render_markdown_fragment", () => html);
+    useMobileStore.setState({ openDoc: { relPath: "docs/note.md", name: "note.md" } });
+    renderWithProviders(<Reader />);
+    await screen.findByText(/link/);
+  };
+
+  it("opens external links in the system browser, never in the app frame", async () => {
+    await openNote('<p><a href="https://example.com/x">ext link</a></p>');
+    fireEvent.click(screen.getByText("ext link"));
+    await waitFor(() => expect(openUrlMock).toHaveBeenCalledWith("https://example.com/x"));
+  });
+
+  it("navigates relative note links inside the library", async () => {
+    await openNote('<p><a href="../other/target.md">rel link</a></p>');
+    fireEvent.click(screen.getByText("rel link"));
+    await waitFor(() =>
+      expect(useMobileStore.getState().openDoc).toEqual({
+        relPath: "other/target.md",
+        name: "target.md",
+      }),
+    );
+  });
+
+  it("refuses links that escape the library root", async () => {
+    await openNote('<p><a href="../../../etc/passwd">bad link</a></p>');
+    fireEvent.click(screen.getByText("bad link"));
+    const { toast } = await import("sonner");
+    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    expect(useMobileStore.getState().openDoc?.relPath).toBe("docs/note.md");
+  });
+});
+
+describe("theme changes", () => {
+  it("does NOT re-read a PDF when the theme flips (only markdown re-renders)", async () => {
+    useMobileStore.setState({ openDoc: { relPath: "doc.pdf", name: "doc.pdf" } });
+    setMockInvokeHandler("ios_read_binary", () => btoa("%PDF-1.4"));
+    renderWithProviders(<Reader />);
+    await screen.findByText("pdf-viewer:doc.pdf");
+    const readsBefore = calledCommands().filter((c) => c === "ios_read_binary").length;
+
+    // Flip the theme class the way ThemeProvider does.
+    document.documentElement.classList.add("dark");
+    await waitFor(() => {
+      // Give the observer a tick; the assertion below is the real check.
+      expect(document.documentElement.classList.contains("dark")).toBe(true);
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    const readsAfter = calledCommands().filter((c) => c === "ios_read_binary").length;
+    expect(readsAfter).toBe(readsBefore);
+    document.documentElement.classList.remove("dark");
+  });
+});
+
+describe("mermaid preview lifecycle", () => {
+  it("unregisters already-registered diagrams when unmounted mid-render", async () => {
+    // Regression lock for a real leak: cleanup ids were only collected after
+    // the whole render loop finished, so backing out while diagram 2 was
+    // still rendering orphaned diagram 1's document in the htmlpreview store
+    // (which has no eviction). Ids must be released as soon as they register.
+    const resolvers: Array<(v: { svg: string }) => void> = [];
+    vi.doMock("mermaid", () => ({
+      default: {
+        initialize: vi.fn(),
+        render: () => new Promise<{ svg: string }>((res) => resolvers.push(res)),
+      },
+    }));
+    const registered: string[] = [];
+    const unregistered: string[] = [];
+    setMockInvokeHandler("html_preview_register", (args) => {
+      registered.push((args as { id: string }).id);
+    });
+    setMockInvokeHandler("html_preview_unregister", (args) => {
+      unregistered.push((args as { id: string }).id);
+    });
+    setMockInvokeHandler("ios_read_file", () => "irrelevant");
+    setMockInvokeHandler(
+      "render_markdown_fragment",
+      () =>
+        '<pre><code class="language-mermaid">a-->b</code></pre>' +
+        '<pre><code class="language-mermaid">c-->d</code></pre>',
+    );
+    useMobileStore.setState({ openDoc: { relPath: "diagrams.md", name: "diagrams.md" } });
+    const { unmount } = renderWithProviders(<Reader />);
+
+    // Let diagram 1 render + register; diagram 2 stays pending.
+    await waitFor(() => expect(resolvers.length).toBeGreaterThanOrEqual(1));
+    resolvers[0]({ svg: '<svg viewBox="0 0 10 10"></svg>' });
+    await waitFor(() => expect(registered.length).toBe(1));
+
+    unmount();
+    await waitFor(() => expect(unregistered).toContain(registered[0]));
+    vi.doUnmock("mermaid");
   });
 });
