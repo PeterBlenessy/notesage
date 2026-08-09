@@ -118,6 +118,14 @@ def patch_project_yml() -> None:
     if not any(d.get("target") == "NotesageShare" for d in deps):
         deps.append({"target": "NotesageShare"})
 
+    # Mirror the app's version keys — Xcode warns when an extension's
+    # CFBundleShortVersionString differs from its containing app's.
+    app_info = app.get("info", {}).get("properties", {})
+    share_info = targets["NotesageShare"]["info"]["properties"]
+    for key in ("CFBundleShortVersionString", "CFBundleVersion"):
+        if key in app_info:
+            share_info[key] = app_info[key]
+
     # The App Group MUST go through the yml's entitlements `properties`, not a
     # direct plist edit: xcodegen REGENERATES the entitlements file on every
     # `xcodegen generate` (empty when no properties are declared), so a plist

@@ -91,4 +91,5 @@ share-sheet target for capturing links. PRD:
 | `src/stores/mobile-store.ts` | Grant + navigation state machine |
 | `src-tauri/src/commands/ios_library.rs` | iOS commands (cfg-gated) |
 | `src-tauri/src/commands/capture.rs` | Pure capture-note builder + tests |
-| `src-tauri/ios/` | Staged native layer: `LibraryAccess.swift` (logic), `NotesagePlugin.swift` (Tauri bridge), `ShareViewController.swift`, `*.entitlements`, `ShareExtension-Info.plist`, wiring README |
+| `src-tauri/crates/tauri-plugin-notesage-ios/` | The Tauri bridge as a plugin crate (`LibraryAccess.swift` + `NotesageIosPlugin.swift` in its Swift package) — wired automatically by `tauri ios init` via `.ios_path()` |
+| `src-tauri/ios/` | Share Extension sources (`ShareViewController.swift`, `LibraryCapture.swift`, entitlements, Info.plist reference) + `integrate-share-extension.py`, the idempotent script that wires the extension target into the generated Xcode project after `tauri ios init` (no manual Xcode steps) |
