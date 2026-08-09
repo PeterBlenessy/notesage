@@ -25,6 +25,25 @@ export function MobileApp() {
     void refreshGrant();
   }, [refreshGrant]);
 
+  // Keep the chrome islands anchored ("sticky"): when the on-screen keyboard
+  // appears, iOS pans the visual viewport to reveal the focused input, which
+  // shoves fixed/absolute chrome offscreen. `interactive-widget=
+  // resizes-content` in the viewport meta prevents most of it; this guard
+  // undoes any residual pan the moment it happens.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const settle = () => {
+      if (window.scrollX !== 0 || window.scrollY !== 0) window.scrollTo(0, 0);
+    };
+    vv.addEventListener("scroll", settle);
+    vv.addEventListener("resize", settle);
+    return () => {
+      vv.removeEventListener("scroll", settle);
+      vv.removeEventListener("resize", settle);
+    };
+  }, []);
+
   return (
     <ThemeProvider>
       {/* `fixed inset-0` rather than `h-screen w-screen`: 100vh/100vw disagree
