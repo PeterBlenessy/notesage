@@ -13,5 +13,8 @@
     "iOS": {
       "minimumSystemVersion": "16.0"
     }
+  },
+  "build": {
+    "beforeBuildCommand": "pnpm build && touch src-tauri/src/lib.rs"
   }
 }

@@ -213,7 +213,12 @@ export function Reader() {
             // width of a phone for text. The padding is variable-driven, so
             // retune it here rather than fight the cascade; `max-w-none` drops
             // the measure cap so the column follows the screen.
-            className="ProseMirror prose prose-slate dark:prose-invert max-w-none pb-[max(2rem,env(safe-area-inset-bottom))]"
+            // `.ProseMirror` alone, no Tailwind `prose`: editor.css is the
+            // complete desktop rendering (headings, lists, tables, code), and
+            // stacking prose on top double-applied paragraph/list margins —
+            // every line break gained prose's extra 1.25em on top of the
+            // editor's own spacing.
+            className="ProseMirror pb-[max(2rem,env(safe-area-inset-bottom))]"
             style={
               {
                 "--editor-padding-left": "1.25rem",
