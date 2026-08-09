@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, CloudDownload, AlertCircle, FileQuestion } from "lucide-react";
 import { iosReadFile, iosReadBinary, iosEnsureDownloaded } from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
@@ -35,6 +35,7 @@ export function Reader() {
   const openDoc = useMobileStore((s) => s.openDoc);
   const goBack = useMobileStore((s) => s.goBack);
   const [state, setState] = useState<ReaderState>({ status: "loading" });
+  const articleRef = useRef<HTMLElement | null>(null);
 
   const relPath = openDoc?.relPath ?? "";
   const name = openDoc?.name ?? "";
@@ -129,6 +130,51 @@ export function Reader() {
     if (state.status !== "image" && state.status !== "html") return;
     const url = state.url;
     return () => URL.revokeObjectURL(url);
+  }, [state]);
+
+  // Render ```mermaid fences into SVG diagrams — parity with the desktop
+  // editor's Mermaid node view, using the same lazily-imported library. The
+  // Rust renderer leaves these fences as code blocks with a
+  // `language-mermaid` class (it only swaps them for SVG when the desktop
+  // passes pre-rendered ones). A diagram that fails to parse keeps its code
+  // block — same graceful degradation as the desktop.
+  useEffect(() => {
+    if (state.status !== "markdown") return;
+    const root = articleRef.current;
+    if (!root) return;
+    const blocks = Array.from(root.querySelectorAll('pre code[class*="language-mermaid"]'));
+    if (blocks.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const mermaid = (await import("mermaid")).default;
+      if (cancelled) return;
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "default",
+        fontFamily: "var(--font-sans, system-ui, sans-serif)",
+        securityLevel: "strict",
+        flowchart: { useMaxWidth: true },
+        sequence: { useMaxWidth: true },
+      });
+      for (const [i, code] of blocks.entries()) {
+        const source = code.textContent ?? "";
+        try {
+          const { svg } = await mermaid.render(`mobile-mermaid-${Date.now()}-${i}`, source);
+          if (cancelled) return;
+          const wrap = document.createElement("div");
+          // Inline styles, not Tailwind: editor.css is un-layered and would
+          // beat utility classes; inline always wins.
+          wrap.style.cssText = "overflow-x:auto;margin:1em 0;max-width:100%";
+          wrap.innerHTML = svg;
+          code.closest("pre")?.replaceWith(wrap);
+        } catch {
+          /* leave the code block as readable source */
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, [state]);
 
   // Free cached PDF bytes when the open document changes / unmounts. Keyed on
@@ -226,6 +272,7 @@ export function Reader() {
           // `unsafe_`, which strips raw HTML (including <script>) from the
           // source. Pinned by a Rust test in preview.rs.
           <article
+            ref={articleRef}
             // `.ProseMirror` is reused for typographic parity with the desktop,
             // but its padding is desktop-sized (6rem each side) and `prose`
             // caps the measure at 65ch — together they left barely half the
