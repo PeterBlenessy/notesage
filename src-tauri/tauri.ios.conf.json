@@ -11,7 +11,8 @@
   "bundle": {
     "externalBin": [],
     "iOS": {
-      "minimumSystemVersion": "16.0"
+      "minimumSystemVersion": "16.0",
+      "developmentTeam": "M39TDQ2D7L"
     }
   }
 }
