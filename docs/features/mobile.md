@@ -5,12 +5,11 @@ share-sheet target for capturing links. PRD:
 `docs/prds/2026-06-28-ios-mobile-app.md`. Tasks:
 `docs/tasks/2026-06-28-ios-mobile-app-tasks.md`.
 
-> **Status: scaffolded.** The frontend shell, the cfg-gated iOS Tauri commands,
-> the pure capture formatter, and reference Swift sources are committed and the
-> frontend is test-covered. The native layer is **not yet built or validated** —
-> that requires `tauri ios init` on a Mac with Xcode + an Apple signing identity
-> (see `src-tauri/ios/README.md`). Until then the iOS commands return a clear
-> "not yet wired" error.
+> **Status: running on device.** Built, signed (ADDABLE AB team) and validated
+> end-to-end on an iPhone 14 Pro: grant flow, reading (markdown / HTML / PDF /
+> images / code), mermaid diagrams, dark mode, share-sheet capture, app icon.
+> The Share Extension is wired by a committed script — no manual Xcode steps
+> remain (see `src-tauri/ios/README.md`).
 
 ## What it does
 
@@ -20,21 +19,43 @@ share-sheet target for capturing links. PRD:
   so a note looks identical on both, callouts and all), plain text/code,
   images, and **PDFs** (the desktop `PdfViewer` — pdf.js canvas with
   zoom/fit/search — lazy-loaded and fed the iOS bytes via the shared binary
-  cache). EPUB/DOCX/PPTX show an "open on your Mac" state in v1.
+  cache). Binary reads cross IPC as **base64** — a `Vec<u8>` serializes as a
+  JSON number array (~4 bytes of JSON per payload byte) and froze the UI for
+  ~10 s on a 113-page PDF; base64 with native `Uint8Array.fromBase64` decoding
+  brings a 10 MB PDF to ~0.5 s. EPUB/DOCX/PPTX show an "open on your Mac"
+  state in v1.
 - **Open exported HTML reports, with their scripts running.** `.html`/`.htm`
-  files render in a sandboxed iframe fed from a `blob:` URL. iOS Files shows a
-  report as markup with scripts disabled, which makes an export with inline
-  charts unreadable on phone; this renders it as intended. The frame carries
+  files render in a sandboxed iframe served from the **`htmlpreview://`
+  custom scheme** — the same mechanism as the desktop HtmlViewer, for the same
+  reason: `srcdoc`, `blob:` AND `data:` documents all inherit the host
+  window's CSP, and the embedded build's nonce injection neutralises
+  `'unsafe-inline'`, so the report's own styles and scripts would be refused
+  (`blob:` additionally renders blank on device — WKWebView refuses blobs
+  minted from the app's custom-scheme origin in a sandboxed frame). Dev builds
+  hide all of this: Vite serves the app with no CSP. The frame carries
   `sandbox="allow-scripts"` **without** `allow-same-origin`, so the report
   executes on an opaque origin and cannot reach the app's DOM, storage, or the
-  Tauri IPC bridge. The `blob:` URL (rather than `srcdoc`) is load-bearing: a
-  `srcdoc` document inherits the host CSP, whose nonce neutralises
-  `'unsafe-inline'`, so the report's own styles and scripts would be refused —
-  the same finding as the desktop HtmlViewer regression (PR #447).
+  Tauri IPC bridge.
+- **Render mermaid diagrams.** ```` ```mermaid ```` fences render as diagrams
+  (same lazily-imported library as the desktop's node view). The SVG ships
+  inside a minimal HTML document served from the `htmlpreview://` scheme,
+  framed by a **fully sandboxed** iframe (`sandbox=""` — a diagram needs no
+  scripts, so it gets none), sized by the SVG's viewBox aspect ratio and
+  painted with the app's computed background. Lighter approaches fail:
+  innerHTML loses the SVG's internal `<style>` to the CSP nonce rewrite;
+  SVG-as-`<img>` hits WebKit's refusal to render `<foreignObject>`, which
+  mermaid emits for composite-state labels. A diagram that fails to parse
+  keeps its readable code block.
+- **Follow the system light/dark appearance — live.** `ThemeProvider` listens
+  for OS appearance changes, and the reader re-renders the open document when
+  the theme class flips (syntect's syntax colors are inline styles from the
+  Rust renderer, and mermaid bakes its theme + background at render time —
+  neither follows a CSS-variable swap).
 - **Capture links via the share sheet.** "Share → Notesage" from Safari, the
   X/Twitter app, or anything that shares a URL writes a link-only
   `type: capture` note into `Inbox/`, which syncs back to the desktop where the
-  existing `download-webpage` / `save-research` workflows enrich it.
+  existing `download-webpage` / `save-research` workflows enrich it. Verified
+  end-to-end (share → grant resolution → Rust formatter → coordinated write).
 - **Read-only & private.** The only write path in the whole app is the share
   capture. The reader never modifies or deletes existing notes — enforced by a
   regression test that asserts the shell only invokes allowed read commands.
@@ -51,29 +72,69 @@ share-sheet target for capturing links. PRD:
   path in the generic iCloud Drive (`com~apple~CloudDocs`). Apple's only
   supported route is a one-time, security-scoped grant via the document picker —
   pre-pointed at `iCloud Drive/Notesage`, so it's a confirm tap. The grant is
-  persisted as a security-scoped bookmark in an App Group container so the Share
-  Extension shares it. (A shared app iCloud container would remove the picker
-  entirely but force a desktop relocation + migration — rejected for v1.)
+  persisted as a security-scoped bookmark in the **App Group** container
+  (`group.com.notesage.app`) so the Share Extension resolves the same grant.
+  Note: a grant stored by a build without the App Group entitlement lives in
+  an app-private fallback — after the entitlement landed, users re-select the
+  folder once.
+- **Native layer = a Tauri plugin crate.** The Rust↔Swift bridge is
+  `src-tauri/crates/tauri-plugin-notesage-ios` (`.ios_path("ios")` in its
+  build.rs), which is the only shape where Tauri links the `@_cdecl` plugin
+  entry point. Swift stays thin: folder picker, bookmark resolution,
+  `NSFileCoordinator` reads. Path sanitization (`..`/absolute rejection)
+  happens in Rust before Swift sees a path.
 - **Command surface.** `ios_pick_library_folder` / `ios_get_library_grant` /
   `ios_clear_library_grant` (grant lifecycle); `ios_list_directory` /
-  `ios_read_file` / `ios_read_binary` / `ios_ensure_downloaded` (iCloud-aware
-  reads); `ios_write_capture` (Inbox write). All `relPath`s are relative to the
-  granted root; the Rust layer rejects absolute paths and `..` traversal. See
-  `docs/tauri-commands.md` → "iOS Library & Capture Operations".
+  `ios_read_file` / `ios_read_binary` (base64) / `ios_ensure_downloaded`
+  (iCloud-aware reads); `ios_write_capture` (Inbox write). All `relPath`s are
+  relative to the granted root. See `docs/tauri-commands.md` → "iOS Library &
+  Capture Operations".
 - **Capture format.** Produced by the pure, unit-tested
   `capture::build_capture_note` (frontmatter `type: capture` / `source_url` /
   `title` / `date_saved` / `tags`; body = the link + any shared selection;
-  filename `Inbox/YYYY-MM-DD-HHmmss-<slug>.md`). The Share Extension mirrors it
-  in Swift.
+  filename `Inbox/YYYY-MM-DD-HHmmss-<slug>.md`). The Share Extension calls the
+  same Rust implementation over a C ABI (`notesage-capture` staticlib +
+  `NotesageCapture.h`) — one format, one implementation, tested once.
+- **Share Extension wiring is scripted.** `tauri ios init` cannot create
+  extension targets; `src-tauri/ios/integrate-share-extension.py` adds the
+  `NotesageShare` app-extension target to the generated xcodegen project
+  (sources, bridging header, a cargo phase building the capture staticlib for
+  the SDK's triple, App Group entitlements on BOTH targets, version keys
+  mirrored from the app) and re-runs `xcodegen generate`. Idempotent — run it
+  after any `tauri ios init`.
+
+## Build & verification pipeline
+
+- **Dev loop:** `npx tauri ios dev "<sim name>" --config '{"build":{...}}'`
+  with a dedicated Vite port; frontend changes hot-reload. Caveats: the
+  `build` section of `tauri.ios.conf.json` is silently ignored (use `--config`
+  inline JSON), and never run `tauri ios build` while a dev session is alive —
+  both CLIs share one `$TMPDIR/<bundle-id>-server-addr` file and the loser
+  panics with "connection refused".
+- **Embedded-simulator harness** (the device-truth gate):
+  `npx tauri ios build --debug --target aarch64-sim` +
+  `xcrun simctl install booted .../arm64-sim/Notesage.app`. `tauri ios dev`
+  serves the app from Vite with **no CSP**, so every CSP-dependent behavior
+  passes in dev and breaks on device; the embedded build reproduces the
+  device's nonce-injected CSP exactly. All the iframe/mermaid findings above
+  were verified in this harness before shipping.
+- **Device install:** `npx tauri ios build --debug --export-method debugging`
+  then `xcrun devicectl device install app --device <udid> .../Notesage.ipa`.
+  Signing: `bundle > iOS > developmentTeam` in `tauri.ios.conf.json`; the
+  first device build needs `-allowProvisioningDeviceRegistration` (via raw
+  xcodebuild) to register a new phone to the team.
+- **App icon:** regenerate with `src-tauri/ios/make-ios-icon.py` — edge-bleeds
+  the desktop master (iOS icons must be full-bleed opaque; a flat fill leaves
+  corner slivers against the logo's gradient) and installs the set into
+  `icons/ios/` + the generated asset catalog.
 
 ## v1 limitations (deferred)
 
 - EPUB/DOCX/PPTX in-app rendering (shown as "open on your Mac"). PDF renders in-app.
-- Chart and drawing blocks (``` ```chart ```, ``` ```excalidraw ```) render as
-  code rather than as diagrams — the comrak pipeline emits them as fenced code
-  and the mobile reader mounts no node-views. Callouts, tables, task lists and
-  syntax highlighting DO render, because the reader shares the desktop's
-  renderer.
+- Chart and drawing blocks (```` ```chart ````, ```` ```excalidraw ````) render
+  as code rather than as diagrams — the comrak pipeline emits them as fenced
+  code and the mobile reader mounts no node-views. Mermaid DOES render (see
+  above); callouts, tables, task lists and syntax highlighting render too.
 - No editing, no AI, no SQLite index, no Android. See the PRD's "Out of Scope".
 
 ## Key files
@@ -84,12 +145,13 @@ share-sheet target for capturing links. PRD:
 | `src/MobileApp.tsx` | iOS root — grant-gated screen switch |
 | `src/components/mobile/Onboarding.tsx` | One-time permission / re-grant screen |
 | `src/components/mobile/LibraryBrowser.tsx` | Push-navigation folder browser |
-| `src/components/mobile/Reader.tsx` | Markdown / HTML / text / image / PDF reader + iCloud download |
-| `src/lib/markdown-render.ts` | `renderMarkdownFragment` — the shared Rust markdown renderer |
+| `src/components/mobile/Reader.tsx` | Markdown / HTML / mermaid / text / image / PDF reader + iCloud download + theme re-render |
+| `src/lib/markdown-render.ts` | `renderMarkdownFragment` — the shared Rust markdown renderer (theme-aware) |
+| `src-tauri/src/commands/html_preview.rs` | `htmlpreview://` scheme store (mime-aware: `.svg` ids serve image/svg+xml) |
 | `src-tauri/crates/notesage-capture/` | The one capture-note formatter; C ABI for the Share Extension |
-| `src/lib/ios-api.ts` | Typed wrappers for the iOS Tauri commands |
+| `src/lib/ios-api.ts` | Typed wrappers for the iOS Tauri commands (base64 binary decode) |
 | `src/stores/mobile-store.ts` | Grant + navigation state machine |
 | `src-tauri/src/commands/ios_library.rs` | iOS commands (cfg-gated) |
 | `src-tauri/src/commands/capture.rs` | Pure capture-note builder + tests |
 | `src-tauri/crates/tauri-plugin-notesage-ios/` | The Tauri bridge as a plugin crate (`LibraryAccess.swift` + `NotesageIosPlugin.swift` in its Swift package) — wired automatically by `tauri ios init` via `.ios_path()` |
-| `src-tauri/ios/` | Share Extension sources (`ShareViewController.swift`, `LibraryCapture.swift`, entitlements, Info.plist reference) + `integrate-share-extension.py`, the idempotent script that wires the extension target into the generated Xcode project after `tauri ios init` (no manual Xcode steps) |
+| `src-tauri/ios/` | Share Extension sources + `integrate-share-extension.py` (extension wiring) + `make-ios-icon.py` (icon set) + wiring README |
