@@ -1,4 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { ChevronLeft, CloudDownload, AlertCircle, FileQuestion } from "lucide-react";
 import { iosReadFile, iosReadBinary, iosEnsureDownloaded } from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
@@ -21,7 +22,7 @@ type ReaderState =
   | { status: "text"; content: string }
   | { status: "markdown"; html: string }
   | { status: "image"; url: string }
-  | { status: "html"; url: string }
+  | { status: "html"; url: string; previewId: string }
   | { status: "pdf"; filePath: string };
 
 /**
@@ -64,31 +65,18 @@ export function Reader() {
         return;
       }
       if (kind === "html") {
-        // Rendered from a data: URL rather than srcDoc or a blob:. A srcDoc
-        // document inherits the host CSP, and Tauri's nonce injection
-        // neutralises 'unsafe-inline' — so an exported report's own <style>
-        // blocks and inline <script>s are refused and it renders bare (the
-        // desktop HtmlViewer finding, PR #447). A blob: URL works in dev but
-        // renders a BLANK page in the embedded device build: there the app's
-        // origin is Tauri's custom scheme, and WKWebView refuses to load a
-        // blob minted from a custom-scheme origin into a sandboxed iframe.
-        // A data: URL carries the document itself — no origin machinery —
-        // and is its own CSP context like the blob was.
+        // Served from the `htmlpreview://` custom scheme — the same mechanism
+        // as the desktop HtmlViewer, for the same reason: srcDoc, blob: AND
+        // data: documents all INHERIT the host window's CSP, and in the
+        // embedded build Tauri's nonce injection neutralises 'unsafe-inline',
+        // so a report's own <style>/<script> blocks are refused and it renders
+        // bare (dev builds hide this — Vite serves the app with no CSP). A
+        // custom-scheme response carries its own empty policy; the
+        // `sandbox="allow-scripts"` attribute is what isolates the document.
         const raw = await iosReadFile(relPath);
-        const bytes = new TextEncoder().encode(raw);
-        const u8 = bytes as unknown as { toBase64?: () => string };
-        let b64: string;
-        if (u8.toBase64) {
-          b64 = u8.toBase64();
-        } else {
-          // Chunked btoa fallback (spreading a large array overflows the stack).
-          let bin = "";
-          for (let i = 0; i < bytes.length; i += 0x8000) {
-            bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-          }
-          b64 = btoa(bin);
-        }
-        setState({ status: "html", url: `data:text/html;charset=utf-8;base64,${b64}` });
+        const id = crypto.randomUUID();
+        await invoke("html_preview_register", { id, content: raw });
+        setState({ status: "html", url: `htmlpreview://localhost/${id}`, previewId: id });
         return;
       }
       if (kind === "markdown" || kind === "text") {
@@ -96,7 +84,10 @@ export function Reader() {
         if (kind === "markdown") {
           // Rendered by the same comrak pipeline as the desktop, so a note
           // looks the same on both. Frontmatter stripping happens there too.
-          const html = await renderMarkdownFragment(raw);
+          // The theme drives syntect's syntax-highlight colors, which are
+          // inline styles — without it, code blocks stay light in dark mode.
+          const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+          const html = await renderMarkdownFragment(raw, theme);
           setState({ status: "markdown", html });
         } else {
           setState({ status: "text", content: raw });
@@ -125,12 +116,21 @@ export function Reader() {
     void load();
   }, [load]);
 
-  // Revoke object URLs when the image / HTML document changes or unmounts.
+  // Revoke the image object URL when the document changes or unmounts.
   useEffect(() => {
-    if (state.status !== "image" && state.status !== "html") return;
+    if (state.status !== "image") return;
     const url = state.url;
     return () => URL.revokeObjectURL(url);
   }, [state]);
+
+  // Free the registered HTML preview document when it changes or unmounts.
+  const htmlPreviewId = state.status === "html" ? state.previewId : null;
+  useEffect(() => {
+    if (!htmlPreviewId) return;
+    return () => {
+      void invoke("html_preview_unregister", { id: htmlPreviewId }).catch(() => {});
+    };
+  }, [htmlPreviewId]);
 
   // Render ```mermaid fences into SVG diagrams — parity with the desktop
   // editor's Mermaid node view, using the same lazily-imported library. The
@@ -165,7 +165,29 @@ export function Reader() {
           // Inline styles, not Tailwind: editor.css is un-layered and would
           // beat utility classes; inline always wins.
           wrap.style.cssText = "overflow-x:auto;margin:1em 0;max-width:100%";
-          wrap.innerHTML = svg;
+          // The SVG goes into an <img>, not innerHTML: mermaid styles the
+          // diagram via a <style> element inside the SVG, and in the embedded
+          // build the app CSP's nonce rewrite refuses injected inline styles
+          // (black boxes, invisible text). An SVG rendered as an image is its
+          // own document — its internal <style> applies, scripts don't run,
+          // and the app CSP doesn't reach inside.
+          const bytes = new TextEncoder().encode(svg);
+          const u8 = bytes as unknown as { toBase64?: () => string };
+          let b64: string;
+          if (u8.toBase64) {
+            b64 = u8.toBase64();
+          } else {
+            let bin = "";
+            for (let j = 0; j < bytes.length; j += 0x8000) {
+              bin += String.fromCharCode(...bytes.subarray(j, j + 0x8000));
+            }
+            b64 = btoa(bin);
+          }
+          const img = document.createElement("img");
+          img.src = `data:image/svg+xml;base64,${b64}`;
+          img.alt = "Mermaid diagram";
+          img.style.cssText = "max-width:100%";
+          wrap.appendChild(img);
           code.closest("pre")?.replaceWith(wrap);
         } catch {
           /* leave the code block as readable source */

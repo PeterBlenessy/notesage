@@ -194,7 +194,9 @@ describe("onboarding", () => {
 });
 
 describe("HTML reports", () => {
+  const registered: Array<{ id: string; content: string }> = [];
   const openHtml = async (fileName = "report.html") => {
+    registered.length = 0;
     setMockInvokeHandler("ios_list_directory", () => [
       { name: fileName, path: fileName, is_directory: false, hidden: false },
     ]);
@@ -202,6 +204,10 @@ describe("HTML reports", () => {
       "ios_read_file",
       () => "<html><body><h1>Q3</h1><script>renderCharts()</script></body></html>",
     );
+    setMockInvokeHandler("html_preview_register", (args) => {
+      registered.push(args as { id: string; content: string });
+    });
+    setMockInvokeHandler("html_preview_unregister", () => {});
     renderWithProviders(<Shell />);
     fireEvent.click(await screen.findByText(fileName));
     return await screen.findByTitle(fileName);
@@ -229,19 +235,22 @@ describe("HTML reports", () => {
     expect(frame.getAttribute("sandbox")).not.toContain("allow-same-origin");
   });
 
-  it("loads from a data: URL, not srcdoc or blob:, so the report survives on device", async () => {
-    // A srcdoc document inherits the host CSP, and Tauri's nonce injection
-    // neutralises 'unsafe-inline' — the report would render unstyled with its
-    // scripts refused. A blob: URL works in dev but is BLANK in the embedded
-    // device build (WKWebView refuses blobs minted from the app's
-    // custom-scheme origin inside a sandboxed iframe). The data: URL carries
-    // the document itself and is its own CSP context.
+  it("serves the document from the htmlpreview:// scheme, not srcdoc/blob/data", async () => {
+    // srcDoc, blob: AND data: documents all inherit the host window's CSP, and
+    // in the embedded build Tauri's nonce injection neutralises
+    // 'unsafe-inline' — the report renders unstyled with its scripts refused
+    // (dev builds hide this: Vite serves the app with no CSP). Only a
+    // custom-scheme response carries its own empty policy. Same mechanism and
+    // reasoning as the desktop HtmlViewer (commands/html_preview.rs).
     const frame = await openHtml();
     expect(frame.getAttribute("srcdoc")).toBeNull();
     const src = frame.getAttribute("src") ?? "";
-    expect(src).toMatch(/^data:text\/html;charset=utf-8;base64,/);
-    const decoded = atob(src.split(",")[1]);
-    expect(decoded).toContain("renderCharts()");
+    expect(src).toMatch(/^htmlpreview:\/\/localhost\//);
+    // The document itself was registered with the backend before the iframe
+    // pointed at it.
+    expect(registered).toHaveLength(1);
+    expect(registered[0].content).toContain("renderCharts()");
+    expect(src.endsWith(registered[0].id)).toBe(true);
   });
 
   it("treats .htm the same as .html", async () => {
