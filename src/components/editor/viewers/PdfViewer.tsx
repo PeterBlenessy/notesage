@@ -18,11 +18,29 @@ import { cn } from "@/lib/utils";
 import * as pdfjsLib from "pdfjs-dist";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
 
-// Configure pdf.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url,
-).toString();
+// Configure pdf.js worker. In embedded builds the app is served from Tauri's
+// custom URI scheme, and WKWebView refuses to spawn a Worker from a
+// custom-scheme URL — pdf.js then silently falls back to its main-thread
+// "fake worker", which freezes the whole UI (spinner included) for the entire
+// parse of a large document. Fetching the bundled worker script and handing
+// pdf.js a blob: URL sidesteps the scheme restriction (`worker-src blob:` is
+// already in the CSP). Falls back to the direct URL where fetch fails (dev
+// server, tests) — those contexts spawn workers from http(s) fine.
+const pdfWorkerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+let workerBlobReady: Promise<void> | null = null;
+function ensureBlobWorker(): Promise<void> {
+  workerBlobReady ??= fetch(pdfWorkerUrl)
+    .then(async (res) => {
+      if (!res.ok) return;
+      const blob = await res.blob();
+      pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(
+        new Blob([blob], { type: "text/javascript" }),
+      );
+    })
+    .catch(() => {});
+  return workerBlobReady;
+}
 
 interface PdfViewerProps {
   filePath: string;
@@ -318,7 +336,11 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
     }
 
     let cancelled = false;
-    const loadTask = pdfjsLib.getDocument({
+    let loadTask: ReturnType<typeof pdfjsLib.getDocument> | null = null;
+    const startLoad = async () => {
+    await ensureBlobWorker();
+    if (cancelled) return;
+    loadTask = pdfjsLib.getDocument({
       data: data.slice(),
       // Disable ReadableStream transport — WKWebView doesn't fully support it
       disableStream: true,
@@ -352,6 +374,8 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
         if (cancelled) return;
         setError(`Failed to load PDF: ${err.message}`);
       });
+    };
+    void startLoad();
 
     return () => {
       cancelled = true;
