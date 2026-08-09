@@ -401,7 +401,11 @@ jobs:
         # (some older Tauri docs use the latter). `scripts/run-real-e2e.sh`
         # looks for `tauri-webdriver` in PATH; install accordingly.
         if: steps.cache-tauri-webdriver.outputs.cache-hit != 'true'
-        run: cargo install tauri-webdriver
+        # --force: the binary can already exist even on a dedicated-cache miss
+        # (a Cargo.lock change rotates this cache's key while the broader Rust
+        # cache still restores ~/.cargo/bin), and cargo refuses to overwrite
+        # without it ("binary `tauri-webdriver` already exists in destination").
+        run: cargo install tauri-webdriver --force
 
       - name: Run real Tauri E2E tests
         run: pnpm test:e2e-real-full
