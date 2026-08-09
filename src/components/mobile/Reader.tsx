@@ -9,8 +9,7 @@ import { useMobileStore } from "@/stores/mobile-store";
 import { classifyFile } from "./FileRow";
 import { Button } from "@/components/ui/button";
 import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
-import { BottomBar, BarButton } from "./BottomBar";
-import { MOBILE_BOTTOM_BAR_CLEARANCE } from "./BottomBar";
+import { Island, ChromeButton, CONTENT_INSETS } from "./Chrome";
 
 // Lazy-loaded — pdf.js is heavy (and pulls in browser-only globals like
 // DOMMatrix), so it's only imported when a PDF is actually opened.
@@ -338,17 +337,35 @@ export function Reader() {
   if (!openDoc) return null;
 
   return (
-    <div className="flex h-full w-full flex-col bg-background">
-      {/* Slim context strip; navigation lives in the floating bottom bar
-          (#581) where a thumb can reach it. */}
-      <header className="flex items-center justify-center px-4 pb-1 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <h1 className="truncate text-sm font-medium text-muted-foreground">{name}</h1>
-      </header>
+    <div className="relative h-full w-full bg-background">
+      {/* Button islands (iOS 26 / Notes layout, #581). For PDFs the viewer's
+          own toolbar pill owns the top row, so back moves to the bottom-left
+          island — the two never collide. Top-right is reserved for share /
+          edit (issue #582, MVP task #6). */}
+      {state.status === "pdf" ? (
+        <Island corner="bottom-left">
+          <ChromeButton label="Back" onClick={() => goBack()}>
+            <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
+          </ChromeButton>
+        </Island>
+      ) : (
+        <>
+          <Island corner="top-left">
+            <ChromeButton label="Back" onClick={() => goBack()}>
+              <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
+            </ChromeButton>
+          </Island>
+          <h1 className="pointer-events-none absolute left-1/2 top-[max(1.25rem,env(safe-area-inset-top))] z-40 max-w-[55vw] -translate-x-1/2 truncate text-sm font-medium text-muted-foreground">
+            {name}
+          </h1>
+        </>
+      )}
 
       {state.status === "pdf" ? (
-        // The PdfViewer owns its own scroll container + toolbar, so it sits in a
-        // plain flex child (no overflow wrapper).
-        <div className="min-h-0 flex-1">
+        // The PdfViewer owns the full screen; its own toolbar pill is the top
+        // chrome (repositioned below the safe area by the .mobile-shell rule
+        // in editor.css).
+        <div className="absolute inset-0">
           <Suspense fallback={<ReaderMessage spinner>Loading…</ReaderMessage>}>
             <PdfViewer filePath={state.filePath} fileName={name} />
           </Suspense>
@@ -357,8 +374,9 @@ export function Reader() {
         // Scripts run; nothing else does. `allow-scripts` WITHOUT
         // `allow-same-origin` leaves the document on an opaque origin, so a
         // report can execute its own charts but cannot reach this app's DOM,
-        // storage, or the Tauri IPC bridge. The document scrolls itself.
-        <div className="min-h-0 flex-1">
+        // storage, or the Tauri IPC bridge. The document scrolls itself,
+        // starting below the top islands.
+        <div className="absolute inset-x-0 bottom-0" style={{ top: "calc(3.75rem + env(safe-area-inset-top))" }}>
           <iframe
             key={state.url}
             src={state.url}
@@ -368,7 +386,7 @@ export function Reader() {
           />
         </div>
       ) : (
-      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: MOBILE_BOTTOM_BAR_CLEARANCE }}>
+      <div className="absolute inset-0 overflow-y-auto" style={CONTENT_INSETS}>
         {state.status === "loading" && <ReaderMessage spinner>Loading…</ReaderMessage>}
 
         {state.status === "downloading" && (
@@ -452,14 +470,6 @@ export function Reader() {
       </div>
       )}
 
-      {/* iOS-style floating bottom toolbar (#581): navigation within thumb
-          reach; content scrolls beneath it. */}
-      <BottomBar>
-        <BarButton label="Back" onClick={() => goBack()}>
-          <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
-        </BarButton>
-        <span className="max-w-[55vw] truncate px-1 text-sm font-medium text-foreground">{name}</span>
-      </BottomBar>
     </div>
   );
 }

@@ -5,7 +5,7 @@ import { iosListDirectory } from "@/lib/ios-api";
 import { useMobileStore } from "@/stores/mobile-store";
 import { FileRow } from "./FileRow";
 import { Button } from "@/components/ui/button";
-import { BottomBar, BarButton, MOBILE_BOTTOM_BAR_CLEARANCE } from "./BottomBar";
+import { Island, ChromeButton, CONTENT_INSETS } from "./Chrome";
 
 type LoadState =
   | { status: "loading" }
@@ -71,36 +71,35 @@ export function LibraryBrowser() {
   };
 
   return (
-    <div className="flex h-full w-full flex-col bg-background">
-      {/* Top area holds context only (iOS large-title style); ACTIONS live in
-          the floating bottom bar (#581) where thumbs can reach them. */}
-      <header className="flex items-center gap-2 px-4 pb-1 pt-[max(0.75rem,env(safe-area-inset-top))]">
-        <h1 className="flex-1 truncate text-2xl font-bold text-foreground">{currentName}</h1>
-      </header>
-
-      {/* Breadcrumb (only when nested) */}
-      {folderStack.length > 0 && (
-        <nav className="flex items-center gap-1 overflow-x-auto border-b border-border px-3 py-1.5 text-xs text-muted-foreground">
-          <button type="button" className="shrink-0 hover:text-foreground" onClick={() => goToDepth(0)}>
-            {libraryName || "Notesage"}
-          </button>
-          {folderStack.map((f, i) => (
-            <span key={f.relPath} className="flex shrink-0 items-center gap-1">
-              <span>/</span>
-              <button
-                type="button"
-                className={i === folderStack.length - 1 ? "text-foreground" : "hover:text-foreground"}
-                onClick={() => goToDepth(i + 1)}
-              >
-                {f.name}
+    <div className="relative h-full w-full bg-background">
+      {/* Full-height scroller — content flows edge to edge and passes UNDER
+          the translucent top/bottom chrome (Apple Notes / Quiet Composer
+          pattern, issue #581). The large title lives IN the content, so it
+          scrolls away like Notes' does. */}
+      <div className="absolute inset-0 overflow-y-auto" style={CONTENT_INSETS}>
+        <div className="px-4 pb-1 pt-2">
+          <h1 className="truncate text-2xl font-bold text-foreground">{currentName}</h1>
+          {folderStack.length > 0 && (
+            <nav className="mt-0.5 flex items-center gap-1 overflow-x-auto text-xs text-muted-foreground">
+              <button type="button" className="shrink-0 hover:text-foreground" onClick={() => goToDepth(0)}>
+                {libraryName || "Notesage"}
               </button>
-            </span>
-          ))}
-        </nav>
-      )}
+              {folderStack.map((f, i) => (
+                <span key={f.relPath} className="flex shrink-0 items-center gap-1">
+                  <span>/</span>
+                  <button
+                    type="button"
+                    className={i === folderStack.length - 1 ? "text-foreground" : "hover:text-foreground"}
+                    onClick={() => goToDepth(i + 1)}
+                  >
+                    {f.name}
+                  </button>
+                </span>
+              ))}
+            </nav>
+          )}
+        </div>
 
-      {/* Body — bottom padding clears the floating bar. */}
-      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: MOBILE_BOTTOM_BAR_CLEARANCE }}>
         {state.status === "loading" && <BrowserSkeleton />}
         {state.status === "error" && <BrowserError message={state.message} onRetry={() => void load()} />}
         {state.status === "ready" &&
@@ -117,24 +116,31 @@ export function LibraryBrowser() {
           ))}
       </div>
 
-      {/* iOS-style floating bottom toolbar (#581). */}
-      <BottomBar>
+      {/* Button islands (iOS 26 / Notes layout): nav top-left, actions
+          top-right, passive status bottom-center. */}
+      <Island corner="top-left">
         {folderStack.length > 0 ? (
-          <BarButton label="Back" onClick={() => goBack()}>
+          <ChromeButton label="Back" onClick={() => goBack()}>
             <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
-          </BarButton>
+          </ChromeButton>
         ) : (
           <div className="flex h-11 w-11 items-center justify-center text-muted-foreground" aria-hidden>
             <FolderOpen strokeWidth={1.5} className="h-5 w-5" />
           </div>
         )}
-        <span className="max-w-[45vw] truncate px-1 text-sm font-medium text-foreground">
-          {currentName}
-        </span>
-        <BarButton label="Refresh" onClick={() => void load(true)}>
+      </Island>
+      <Island corner="top-right">
+        <ChromeButton label="Refresh" onClick={() => void load(true)}>
           <RefreshCw strokeWidth={1.5} className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-        </BarButton>
-      </BottomBar>
+        </ChromeButton>
+      </Island>
+      {state.status === "ready" && (
+        <Island corner="bottom-center" className="px-3 py-1.5">
+          <span className="text-xs text-muted-foreground">
+            {state.entries.length} {state.entries.length === 1 ? "item" : "items"}
+          </span>
+        </Island>
+      )}
     </div>
   );
 }

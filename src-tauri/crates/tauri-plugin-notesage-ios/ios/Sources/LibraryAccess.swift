@@ -22,6 +22,8 @@ struct FileEntryDTO: Codable {
     let is_directory: Bool
     let children: [FileEntryDTO]?
     let hidden: Bool
+    // Files-app-style row metadata (nil when unavailable).
+    let modified: Double?     // seconds since 1970
 }
 enum DownloadState: String, Codable { case ready, downloading, failed }
 
@@ -114,7 +116,7 @@ enum LibraryAccess {
 
     private static func children(of dir: URL, root: URL) throws -> [FileEntryDTO] {
         let fm = FileManager.default
-        let keys: [URLResourceKey] = [.isDirectoryKey, .nameKey]
+        let keys: [URLResourceKey] = [.isDirectoryKey, .nameKey, .contentModificationDateKey]
         let urls = try fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys, options: [])
         return urls.compactMap { url in
             let name = url.lastPathComponent
@@ -128,8 +130,10 @@ enum LibraryAccess {
             // Mirrors the desktop's default-hidden behavior.
             if displayName.hasPrefix(".") { return nil }
             let relPath = url.path.replacingOccurrences(of: root.path + "/", with: "")
+            let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
             return FileEntryDTO(name: displayName, path: relPath, is_directory: isDir,
-                                children: nil, hidden: false)
+                                children: nil, hidden: false,
+                                modified: values?.contentModificationDate?.timeIntervalSince1970)
         }.sorted { ($0.is_directory ? 0 : 1, $0.name.lowercased()) < ($1.is_directory ? 0 : 1, $1.name.lowercased()) }
     }
 

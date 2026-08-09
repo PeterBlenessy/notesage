@@ -50,6 +50,9 @@ pub struct FileEntry {
     pub children: Option<Vec<FileEntry>>,
     #[serde(default)]
     pub hidden: bool,
+    /// Files-app-style row metadata (mobile listings only; absent on desktop).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

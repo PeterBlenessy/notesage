@@ -32,7 +32,7 @@ export function MobileApp() {
           but does not composite until a touch invalidates the layer — the app
           looks blank until you tap it. Pinning to the viewport avoids vh units
           altogether. (gaimer, which works, uses no vh units at all.) */}
-      <div className="fixed inset-0 overflow-hidden bg-background text-foreground">
+      <div className="mobile-shell fixed inset-0 overflow-hidden bg-background text-foreground">
         {grantState === "unknown" ? (
           <Splash />
         ) : grantState === "granted" ? (

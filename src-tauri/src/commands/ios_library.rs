@@ -113,6 +113,9 @@ pub async fn ios_clear_library_grant(app: tauri::AppHandle) -> Result<(), String
 }
 
 /// List a directory relative to the granted library root.
+/// (The native layer already reports Files-app row metadata — size/modified —
+/// which the conversion below drops for now; surfacing it in rows is the
+/// Files-style browser follow-up.)
 #[tauri::command]
 pub async fn ios_list_directory(app: tauri::AppHandle, rel_path: String) -> Result<Vec<FileEntry>, String> {
     let rel = sanitize_rel_path(&rel_path)?;
@@ -212,18 +215,6 @@ mod ios_impl {
         LibraryGrant { display_name: g.display_name, granted: g.granted }
     }
 
-    fn entries(v: Vec<tauri_plugin_notesage_ios::FileEntry>) -> Vec<FileEntry> {
-        v.into_iter()
-            .map(|e| FileEntry {
-                name: e.name,
-                path: e.path,
-                is_directory: e.is_directory,
-                children: None,
-                hidden: e.hidden,
-            })
-            .collect()
-    }
-
     pub async fn pick_library_folder(app: &AppHandle) -> Result<LibraryGrant, String> {
         app.notesage_ios().pick_library_folder().map(grant).map_err(|e| e.to_string())
     }
@@ -234,6 +225,18 @@ mod ios_impl {
 
     pub async fn clear_library_grant(app: &AppHandle) -> Result<(), String> {
         app.notesage_ios().clear_library_grant().map_err(|e| e.to_string())
+    }
+
+    fn entries(v: Vec<tauri_plugin_notesage_ios::FileEntry>) -> Vec<FileEntry> {
+        v.into_iter()
+            .map(|e| FileEntry {
+                name: e.name,
+                path: e.path,
+                is_directory: e.is_directory,
+                children: None,
+                hidden: e.hidden,
+            })
+            .collect()
     }
 
     pub async fn list_directory(app: &AppHandle, rel: &str) -> Result<Vec<FileEntry>, String> {
