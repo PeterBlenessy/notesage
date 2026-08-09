@@ -166,27 +166,42 @@ export function Reader() {
           const wrap = document.createElement("div");
           // Inline styles, not Tailwind: editor.css is un-layered and would
           // beat utility classes; inline always wins.
-          wrap.style.cssText = "overflow-x:auto;margin:1em 0;max-width:100%";
-          // The SVG goes into an <img> served from the htmlpreview:// scheme,
-          // not innerHTML and not a data: URL. innerHTML fails because mermaid
-          // styles the diagram via a <style> element inside the SVG, which the
-          // embedded build's CSP nonce rewrite refuses (black boxes, invisible
-          // text); a data: image failed to load at all on device (broken-image
-          // icon). A custom-scheme response is its own document with its own
-          // empty policy — internal styles apply, scripts don't run. The `.svg`
-          // suffix makes the handler serve image/svg+xml.
-          const id = `${crypto.randomUUID()}.svg`;
-          await invoke("html_preview_register", { id, content: svg });
+          wrap.style.cssText = "margin:1em 0;max-width:100%";
+          // The SVG goes into a fully sandboxed iframe served from the
+          // htmlpreview:// scheme — the same own-empty-policy mechanism as the
+          // HTML reports. Every lighter-weight option fails somewhere:
+          // innerHTML loses the SVG's internal <style> to the embedded
+          // build's CSP nonce rewrite (black boxes); an <img> — whether from
+          // a data: URL or the scheme — hits WebKit's refusal to render
+          // <foreignObject> inside an SVG-as-image, which mermaid emits for
+          // composite-state labels (broken-image icon on exactly the bigger
+          // diagrams). A sandboxed document renders foreignObject fine.
+          // `sandbox=""` (no allowances at all): the diagram needs no
+          // scripts, so it gets none.
+          const ratio = /viewBox="[\d.\s-]*?([\d.]+)\s+([\d.]+)"/.exec(svg);
+          // WebKit gives a sandboxed iframe an opaque white backing —
+          // `background: transparent` in the framed document does nothing —
+          // so paint it with the app's actual computed background instead.
+          const bg = getComputedStyle(root).backgroundColor || "transparent";
+          const doc =
+            `<!doctype html><html><head><meta charset="utf-8">` +
+            `<style>html,body{margin:0;padding:0;background:${bg}}svg{display:block;width:100%;height:auto}</style>` +
+            `</head><body>${svg}</body></html>`;
+          const id = crypto.randomUUID();
+          await invoke("html_preview_register", { id, content: doc });
           if (cancelled) {
             void invoke("html_preview_unregister", { id }).catch(() => {});
             return;
           }
           registeredIds.push(id);
-          const img = document.createElement("img");
-          img.src = `htmlpreview://localhost/${id}`;
-          img.alt = "Mermaid diagram";
-          img.style.cssText = "max-width:100%";
-          wrap.appendChild(img);
+          const frame = document.createElement("iframe");
+          frame.src = `htmlpreview://localhost/${id}`;
+          frame.setAttribute("sandbox", "");
+          frame.title = "Mermaid diagram";
+          frame.style.cssText =
+            "display:block;width:100%;border:0;" +
+            (ratio ? `aspect-ratio:${ratio[1]}/${ratio[2]}` : "height:20rem");
+          wrap.appendChild(frame);
           code.closest("pre")?.replaceWith(wrap);
         } catch {
           /* leave the code block as readable source */
