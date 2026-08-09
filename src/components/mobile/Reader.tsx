@@ -9,6 +9,8 @@ import { useMobileStore } from "@/stores/mobile-store";
 import { classifyFile } from "./FileRow";
 import { Button } from "@/components/ui/button";
 import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
+import { BottomBar, BarButton } from "./BottomBar";
+import { MOBILE_BOTTOM_BAR_CLEARANCE } from "./BottomBar";
 
 // Lazy-loaded — pdf.js is heavy (and pulls in browser-only globals like
 // DOMMatrix), so it's only imported when a PDF is actually opened.
@@ -337,17 +339,10 @@ export function Reader() {
 
   return (
     <div className="flex h-full w-full flex-col bg-background">
-      <header className="flex items-center gap-2 border-b border-border px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
-        {/* 44px (h-11) touch target — Apple's HIG minimum for tap controls. */}
-        <button
-          type="button"
-          onClick={() => goBack()}
-          aria-label="Back"
-          className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
-        </button>
-        <h1 className="flex-1 truncate text-base font-medium text-foreground">{name}</h1>
+      {/* Slim context strip; navigation lives in the floating bottom bar
+          (#581) where a thumb can reach it. */}
+      <header className="flex items-center justify-center px-4 pb-1 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <h1 className="truncate text-sm font-medium text-muted-foreground">{name}</h1>
       </header>
 
       {state.status === "pdf" ? (
@@ -373,7 +368,7 @@ export function Reader() {
           />
         </div>
       ) : (
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: MOBILE_BOTTOM_BAR_CLEARANCE }}>
         {state.status === "loading" && <ReaderMessage spinner>Loading…</ReaderMessage>}
 
         {state.status === "downloading" && (
@@ -456,6 +451,15 @@ export function Reader() {
         )}
       </div>
       )}
+
+      {/* iOS-style floating bottom toolbar (#581): navigation within thumb
+          reach; content scrolls beneath it. */}
+      <BottomBar>
+        <BarButton label="Back" onClick={() => goBack()}>
+          <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
+        </BarButton>
+        <span className="max-w-[55vw] truncate px-1 text-sm font-medium text-foreground">{name}</span>
+      </BottomBar>
     </div>
   );
 }

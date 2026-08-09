@@ -5,6 +5,7 @@ import { iosListDirectory } from "@/lib/ios-api";
 import { useMobileStore } from "@/stores/mobile-store";
 import { FileRow } from "./FileRow";
 import { Button } from "@/components/ui/button";
+import { BottomBar, BarButton, MOBILE_BOTTOM_BAR_CLEARANCE } from "./BottomBar";
 
 type LoadState =
   | { status: "loading" }
@@ -71,32 +72,10 @@ export function LibraryBrowser() {
 
   return (
     <div className="flex h-full w-full flex-col bg-background">
-      {/* Header: back + title + refresh */}
-      <header className="flex items-center gap-2 border-b border-border px-2 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
-        {/* 44px (h-11) touch targets — Apple's HIG minimum for tap controls. */}
-        {folderStack.length > 0 ? (
-          <button
-            type="button"
-            onClick={() => goBack()}
-            aria-label="Back"
-            className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
-          </button>
-        ) : (
-          <div className="flex h-11 w-11 items-center justify-center text-muted-foreground">
-            <FolderOpen strokeWidth={1.5} className="h-5 w-5" />
-          </div>
-        )}
-        <h1 className="flex-1 truncate text-base font-semibold text-foreground">{currentName}</h1>
-        <button
-          type="button"
-          onClick={() => void load(true)}
-          aria-label="Refresh"
-          className="flex h-11 w-11 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <RefreshCw strokeWidth={1.5} className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-        </button>
+      {/* Top area holds context only (iOS large-title style); ACTIONS live in
+          the floating bottom bar (#581) where thumbs can reach them. */}
+      <header className="flex items-center gap-2 px-4 pb-1 pt-[max(0.75rem,env(safe-area-inset-top))]">
+        <h1 className="flex-1 truncate text-2xl font-bold text-foreground">{currentName}</h1>
       </header>
 
       {/* Breadcrumb (only when nested) */}
@@ -120,8 +99,8 @@ export function LibraryBrowser() {
         </nav>
       )}
 
-      {/* Body */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Body — bottom padding clears the floating bar. */}
+      <div className="flex-1 overflow-y-auto" style={{ paddingBottom: MOBILE_BOTTOM_BAR_CLEARANCE }}>
         {state.status === "loading" && <BrowserSkeleton />}
         {state.status === "error" && <BrowserError message={state.message} onRetry={() => void load()} />}
         {state.status === "ready" &&
@@ -137,6 +116,25 @@ export function LibraryBrowser() {
             </ul>
           ))}
       </div>
+
+      {/* iOS-style floating bottom toolbar (#581). */}
+      <BottomBar>
+        {folderStack.length > 0 ? (
+          <BarButton label="Back" onClick={() => goBack()}>
+            <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
+          </BarButton>
+        ) : (
+          <div className="flex h-11 w-11 items-center justify-center text-muted-foreground" aria-hidden>
+            <FolderOpen strokeWidth={1.5} className="h-5 w-5" />
+          </div>
+        )}
+        <span className="max-w-[45vw] truncate px-1 text-sm font-medium text-foreground">
+          {currentName}
+        </span>
+        <BarButton label="Refresh" onClick={() => void load(true)}>
+          <RefreshCw strokeWidth={1.5} className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+        </BarButton>
+      </BottomBar>
     </div>
   );
 }
