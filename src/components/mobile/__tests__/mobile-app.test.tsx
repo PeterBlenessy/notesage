@@ -417,3 +417,39 @@ describe("mermaid preview lifecycle", () => {
     vi.doUnmock("mermaid");
   });
 });
+
+describe("search islands", () => {
+  it("filters the folder listing as the user types", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "alpha.md", path: "alpha.md", is_directory: false, hidden: false },
+      { name: "beta.md", path: "beta.md", is_directory: false, hidden: false },
+    ]);
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("alpha.md");
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "bet" } });
+    await waitFor(() => expect(screen.queryByText("alpha.md")).toBeNull());
+    expect(screen.getByText("beta.md")).toBeTruthy();
+    // Closing the search restores the full listing.
+    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
+    expect(await screen.findByText("alpha.md")).toBeTruthy();
+  });
+
+  it("finds and highlights matches in an open note", async () => {
+    setMockInvokeHandler("ios_read_file", () => "irrelevant");
+    setMockInvokeHandler(
+      "render_markdown_fragment",
+      () => "<p>the word needle appears here, and needle again</p>",
+    );
+    useMobileStore.setState({ openDoc: { relPath: "note.md", name: "note.md" } });
+    renderWithProviders(<Reader />);
+    await screen.findByText(/needle appears/);
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "needle" } });
+    await waitFor(() => {
+      expect(document.querySelectorAll("mark.dom-find-highlight").length).toBe(2);
+    });
+    // Navigation between matches is offered.
+    expect(await screen.findByText("1/2")).toBeTruthy();
+  });
+});

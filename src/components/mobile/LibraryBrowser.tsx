@@ -5,7 +5,7 @@ import { iosListDirectory } from "@/lib/ios-api";
 import { useMobileStore } from "@/stores/mobile-store";
 import { FileRow } from "./FileRow";
 import { Button } from "@/components/ui/button";
-import { Island, ChromeButton, CONTENT_INSETS } from "./Chrome";
+import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 
 type LoadState =
   | { status: "loading" }
@@ -28,6 +28,7 @@ export function LibraryBrowser() {
   const currentName = folderStack.length === 0 ? libraryName || "Notesage" : folderStack[folderStack.length - 1].name;
 
   const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [query, setQuery] = useState("");
   // Drives the refresh icon's spin. Kept spinning for a beat even when the
   // listing returns instantly — an animation too short to see reads as a dead
   // button.
@@ -103,17 +104,27 @@ export function LibraryBrowser() {
         {state.status === "loading" && <BrowserSkeleton />}
         {state.status === "error" && <BrowserError message={state.message} onRetry={() => void load()} />}
         {state.status === "ready" &&
-          (state.entries.length === 0 ? (
-            <EmptyFolder />
-          ) : (
-            <ul>
-              {state.entries.map((entry) => (
-                <li key={entry.path}>
-                  <FileRow entry={entry} onActivate={onActivate} />
-                </li>
-              ))}
-            </ul>
-          ))}
+          (() => {
+            const visible = query
+              ? state.entries.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()))
+              : state.entries;
+            if (state.entries.length === 0) return <EmptyFolder />;
+            if (visible.length === 0)
+              return (
+                <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+                  Nothing matches "{query}"
+                </p>
+              );
+            return (
+              <ul>
+                {visible.map((entry) => (
+                  <li key={entry.path}>
+                    <FileRow entry={entry} onActivate={onActivate} />
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
       </div>
 
       {/* Button islands (iOS 26 / Notes layout): nav top-left, actions
@@ -135,11 +146,12 @@ export function LibraryBrowser() {
         </ChromeButton>
       </Island>
       {state.status === "ready" && (
-        <Island corner="bottom-center" className="px-3 py-1.5">
-          <span className="text-xs text-muted-foreground">
-            {state.entries.length} {state.entries.length === 1 ? "item" : "items"}
-          </span>
-        </Island>
+        <SearchIsland
+          query={query}
+          onQueryChange={setQuery}
+          placeholder="Search this folder"
+          status={`${state.entries.length} ${state.entries.length === 1 ? "item" : "items"}`}
+        />
       )}
     </div>
   );

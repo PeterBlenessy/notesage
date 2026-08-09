@@ -9,7 +9,8 @@ import { useMobileStore } from "@/stores/mobile-store";
 import { classifyFile } from "./FileRow";
 import { Button } from "@/components/ui/button";
 import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
-import { Island, ChromeButton, CONTENT_INSETS } from "./Chrome";
+import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
+import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 
 // Lazy-loaded — pdf.js is heavy (and pulls in browser-only globals like
 // DOMMatrix), so it's only imported when a PDF is actually opened.
@@ -90,6 +91,44 @@ export function Reader() {
   const relPath = openDoc?.relPath ?? "";
   const name = openDoc?.name ?? "";
   const kind = useMemo(() => (name ? classifyFile(name) : "other"), [name]);
+
+  // Find-in-document (markdown/text): matches marked via the shared
+  // dom-search utility the desktop's DOCX/plain viewers use. PDFs search
+  // through the viewer's own toolbar; HTML reports are cross-origin
+  // sandboxed frames (deferred).
+  const [findQuery, setFindQuery] = useState("");
+  const [findIndex, setFindIndex] = useState(0);
+  const [findTotal, setFindTotal] = useState(0);
+  const findMarksRef = useRef<HTMLElement[]>([]);
+  const searchable =
+    state.status === "markdown" || state.status === "text";
+
+  useEffect(() => {
+    const root = articleRef.current;
+    if (!root) return;
+    const t = setTimeout(() => {
+      clearDomHighlights(root);
+      findMarksRef.current = findQuery ? highlightDomMatches(root, findQuery) : [];
+      setFindIndex(0);
+      setFindTotal(findMarksRef.current.length);
+      if (findMarksRef.current.length > 0) {
+        findMarksRef.current[0].classList.add("dom-find-highlight-active");
+        findMarksRef.current[0].scrollIntoView({ block: "center" });
+      }
+    }, 150);
+    return () => clearTimeout(t);
+  }, [findQuery, state]);
+
+  const goToMatch = (next: boolean) => {
+    const marks = findMarksRef.current;
+    if (marks.length === 0) return;
+    const cur = findIndex;
+    const idx = (cur + (next ? 1 : marks.length - 1)) % marks.length;
+    marks[cur]?.classList.remove("dom-find-highlight-active");
+    marks[idx].classList.add("dom-find-highlight-active");
+    marks[idx].scrollIntoView({ block: "center" });
+    setFindIndex(idx);
+  };
 
   const load = useCallback(async () => {
     if (!relPath) return;
@@ -342,6 +381,23 @@ export function Reader() {
           own toolbar pill owns the top row, so back moves to the bottom-left
           island — the two never collide. Top-right is reserved for share /
           edit (issue #582, MVP task #6). */}
+      {searchable && (
+        <SearchIsland
+          query={findQuery}
+          onQueryChange={setFindQuery}
+          placeholder="Find in document"
+          matches={
+            findQuery && findTotal > 0
+              ? {
+                  current: findIndex + 1,
+                  total: findTotal,
+                  onNext: () => goToMatch(true),
+                  onPrev: () => goToMatch(false),
+                }
+              : undefined
+          }
+        />
+      )}
       {state.status === "pdf" ? (
         <Island corner="bottom-left">
           <ChromeButton label="Back" onClick={() => goBack()}>
@@ -421,7 +477,14 @@ export function Reader() {
         )}
 
         {state.status === "text" && (
-          <pre className="mx-auto max-w-[720px] whitespace-pre-wrap break-words px-5 py-8 font-mono text-sm leading-relaxed text-foreground">
+          // Shares articleRef with the markdown article (they never render
+          // together) so find-in-document walks this text too.
+          <pre
+            ref={(el) => {
+              articleRef.current = el;
+            }}
+            className="mx-auto max-w-[720px] whitespace-pre-wrap break-words px-5 py-8 font-mono text-sm leading-relaxed text-foreground"
+          >
             {state.content}
           </pre>
         )}
