@@ -75,7 +75,7 @@ TestFlight pass on a clean device. `ITSAppUsesNonExemptEncryption = false`.
 Triage the 2026-08-09 mobile code review: fix Critical/High before launch,
 schedule Medium/Low.
 
-### #15 — iOS bottom navigation (issue #581)
+### #15 — iOS bottom navigation (issue #581) ✅
 Move the mobile shell's chrome to bottom-anchored toolbars per iOS
 convention (reachability + native feel): browser, reader, and the new
 editor screen designed bottom-bar-first. Respect safe-area-inset-bottom;
