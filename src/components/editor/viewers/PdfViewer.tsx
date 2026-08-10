@@ -54,6 +54,26 @@ interface PdfViewerProps {
    * owns the back island. Nothing from the desktop toolbar renders.
    */
   mobileChrome?: boolean;
+  /** When the native chrome owns search, the CSS island is not rendered and
+   * the viewer is driven through `mobileFindRef` instead. */
+  nativeFind?: boolean;
+  /** Imperative find handle for the native search island (mobile). */
+  mobileFindRef?: React.MutableRefObject<PdfMobileFindHandle | null>;
+  /** Live find/page state for the native island's counter + status. */
+  onMobileFindState?: (s: PdfMobileFindState) => void;
+}
+
+export interface PdfMobileFindHandle {
+  setQuery: (q: string) => void;
+  next: () => void;
+  prev: () => void;
+}
+
+export interface PdfMobileFindState {
+  current: number;
+  total: number;
+  page: number;
+  pages: number;
 }
 
 const ZOOM_STEPS = [
@@ -300,7 +320,14 @@ function clearTextLayerHighlights(container: HTMLDivElement) {
   }
 }
 
-export function PdfViewer({ filePath, fileName, mobileChrome = false }: PdfViewerProps) {
+export function PdfViewer({
+  filePath,
+  fileName,
+  mobileChrome = false,
+  nativeFind = false,
+  mobileFindRef,
+  onMobileFindState,
+}: PdfViewerProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
@@ -903,6 +930,29 @@ export function PdfViewer({ filePath, fileName, mobileChrome = false }: PdfViewe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mobileChrome, mobileQuery]);
 
+  // Native-island bridge: the Reader drives search through this handle and
+  // mirrors our counter/page state into the native chrome spec.
+  useEffect(() => {
+    if (!mobileFindRef) return;
+    mobileFindRef.current = {
+      setQuery: (q: string) => setMobileQuery(q),
+      next: handleSearchNext,
+      prev: handleSearchPrev,
+    };
+    return () => {
+      mobileFindRef.current = null;
+    };
+  }, [mobileFindRef, handleSearchNext, handleSearchPrev]);
+  useEffect(() => {
+    onMobileFindState?.({
+      current: searchCurrentIndex,
+      total: displayMatchCount,
+      page: currentPage,
+      pages: totalPages,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchCurrentIndex, displayMatchCount, currentPage, totalPages]);
+
   // Compute placeholder dimensions for unrendered pages so scroll positions are correct
   // even before canvases render (critical for deterministic search navigation)
   const placeholderScale = pageBaseDims
@@ -933,7 +983,7 @@ export function PdfViewer({ filePath, fileName, mobileChrome = false }: PdfViewe
     >
       {/* Scrollable page area with floating pill toolbar + FindBar overlay */}
       <div className="flex-1 overflow-hidden relative">
-        {mobileChrome && (
+        {mobileChrome && !nativeFind && (
           <SearchIsland
             query={mobileQuery}
             onQueryChange={setMobileQuery}

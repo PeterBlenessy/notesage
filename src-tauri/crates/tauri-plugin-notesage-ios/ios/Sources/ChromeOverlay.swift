@@ -35,6 +35,9 @@ struct ChromeSearchSpec: Decodable, Equatable {
   /// 1-based current match + total, when the search is a find-in-document.
   let current: Int?
   let total: Int?
+  /// "filter" (folder search: capsule + outer ✕) or "find" (in-document:
+  /// ✓-done circle left, nav-chevron capsule right — Apple Notes anatomy).
+  let kind: String?
 }
 
 struct ChromeSpec: Decodable, Equatable {
@@ -48,6 +51,7 @@ struct ChromeSpec: Decodable, Equatable {
 /// user's in-progress text and expansion state survive re-declarations
 /// (which arrive on every match-count change).
 final class SearchModel: ObservableObject {
+  @Published var kind = "filter"
   @Published var placeholder = "Search"
   @Published var status: String?
   @Published var currentMatch = 0
@@ -82,6 +86,7 @@ final class ChromeManager {
       searchModel.text = ""
       return
     }
+    searchModel.kind = spec.kind ?? "filter"
     searchModel.placeholder = spec.placeholder
     searchModel.status = spec.status
     searchModel.currentMatch = spec.current ?? 0
@@ -94,15 +99,22 @@ final class ChromeManager {
     let host = UIHostingController(rootView: AnyView(GlassSearchIsland(model: searchModel)))
     host.view.backgroundColor = .clear
     host.view.translatesAutoresizingMaskIntoConstraints = false
-    host.sizingOptions = [.intrinsicContentSize]
     container.addSubview(host.view)
+    // FULL-WIDTH, fixed-height host: intrinsic sizing does not reliably grow
+    // the hosting view when the SwiftUI content expands, and UIKit clips
+    // hit-testing to the FRAME — the expanded bar drew full-width while only
+    // the collapsed-pill strip stayed tappable (done/chevrons dead). With a
+    // constant frame, SwiftUI centers the collapsed pill itself and the
+    // hosting view passes touches through its empty regions.
     NSLayoutConstraint.activate([
-      host.view.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+      host.view.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+      host.view.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
       // keyboardLayoutGuide rests on the bottom safe area when the keyboard
       // is down and tracks its top edge when up — native keyboard avoidance,
       // no JS bridge involved.
       host.view.bottomAnchor.constraint(
         equalTo: container.keyboardLayoutGuide.topAnchor, constant: -10),
+      host.view.heightAnchor.constraint(equalToConstant: 50),
     ])
     searchHost = host
   }
@@ -221,17 +233,30 @@ struct GlassSearchIsland: View {
   @FocusState private var focused: Bool
 
   var body: some View {
-    Group {
-      if model.expanded {
-        expandedField
-      } else {
-        collapsedPill
-      }
+    // Both states stay MOUNTED (ZStack + opacity/allowsHitTesting) rather
+    // than an animated if/else branch swap: swapping the tree left the
+    // hosting view's hit-testing stuck on the removed branch — the expanded
+    // bar rendered but every control in it (field included) was untappable.
+    ZStack {
+      collapsedPill
+        .opacity(model.expanded ? 0 : 1)
+        .allowsHitTesting(!model.expanded)
+      expandedField
+        .opacity(model.expanded ? 1 : 0)
+        .allowsHitTesting(model.expanded)
     }
     .animation(.spring(response: 0.35, dampingFraction: 0.7), value: model.expanded)
   }
 
   private var collapsedPill: some View {
+    HStack {
+      Spacer(minLength: 0)
+      collapsedButton
+      Spacer(minLength: 0)
+    }
+  }
+
+  private var collapsedButton: some View {
     Button {
       model.expanded = true
       model.emit?("search-open", nil)
@@ -249,66 +274,99 @@ struct GlassSearchIsland: View {
     .modifier(GlassCapsule())
   }
 
-  // Apple Notes anatomy: the field capsule and a SEPARATE circular ✕ glass
-  // button beside it. Inside the field, a small ⊗ appears only once there
-  // is text and clears it (the keyboard's own dictation key covers voice).
+  private func endSearch() {
+    model.text = ""
+    model.expanded = false
+    focused = false
+    model.emit?("search-query", "")
+    model.emit?("search-close", nil)
+  }
+
+  /// The shared field capsule: magnifier, text, counter (find mode), and the
+  /// ⊗ clear that appears once there is text.
+  private var fieldCapsule: some View {
+    HStack(spacing: 8) {
+      Image(systemName: "magnifyingglass")
+        .font(.system(size: 15, weight: .medium))
+        .foregroundStyle(.secondary)
+      TextField(model.placeholder, text: $model.text)
+        .focused($focused)
+        .textFieldStyle(.plain)
+        .autocorrectionDisabled()
+        .textInputAutocapitalization(.never)
+        .submitLabel(.search)
+        .onChange(of: model.text) { value in
+          model.emit?("search-query", value)
+        }
+      if model.kind == "find", model.totalMatches > 0 {
+        Text("\(model.currentMatch)/\(model.totalMatches)")
+          .font(.subheadline.monospacedDigit())
+          .foregroundStyle(.secondary)
+      }
+      if !model.text.isEmpty {
+        Button {
+          model.text = ""
+          // onChange fires the empty query; keep focus for a new search.
+        } label: {
+          Image(systemName: "xmark.circle.fill")
+            .font(.system(size: 16))
+            .foregroundStyle(.secondary)
+        }
+        .buttonStyle(.plain)
+      }
+    }
+    .padding(.horizontal, 14)
+    .frame(height: 46)
+    .frame(maxWidth: .infinity)
+    .modifier(GlassCapsuleSurface())
+  }
+
+  /// Folder search (Apple Notes list-search anatomy): field capsule + a
+  /// separate circular ✕ glass button.
+  /// In-document find (Notes note-search anatomy): ✓-done prominent circle
+  /// on the LEFT, field capsule, and the ∧∨ nav pair in its own capsule.
   private var expandedField: some View {
     HStack(spacing: 10) {
-      HStack(spacing: 8) {
-        Image(systemName: "magnifyingglass")
-          .font(.system(size: 15, weight: .medium))
-          .foregroundStyle(.secondary)
-        TextField(model.placeholder, text: $model.text)
-          .focused($focused)
-          .textFieldStyle(.plain)
-          .autocorrectionDisabled()
-          .textInputAutocapitalization(.never)
-          .submitLabel(.search)
-          .onChange(of: model.text) { value in
-            model.emit?("search-query", value)
-          }
-        if model.totalMatches > 0 {
-          Text("\(model.currentMatch)/\(model.totalMatches)")
-            .font(.footnote.monospacedDigit())
-            .foregroundStyle(.secondary)
-          Button { model.emit?("search-prev", nil) } label: {
-            Image(systemName: "chevron.up").font(.system(size: 13, weight: .medium))
-          }
-          Button { model.emit?("search-next", nil) } label: {
-            Image(systemName: "chevron.down").font(.system(size: 13, weight: .medium))
-          }
+      if model.kind == "find" {
+        Button(action: endSearch) {
+          Image(systemName: "checkmark")
+            .font(.system(size: 15, weight: .semibold))
+            .frame(width: 40, height: 40)
         }
-        if !model.text.isEmpty {
-          Button {
-            model.text = ""
-            // onChange fires the empty query; keep focus for a new search.
-          } label: {
-            Image(systemName: "xmark.circle.fill")
-              .font(.system(size: 16))
-              .foregroundStyle(.secondary)
+        .modifier(GlassCircleProminent())
+
+        fieldCapsule
+
+        HStack(spacing: 0) {
+          Button { model.emit?("search-prev", nil) } label: {
+            Image(systemName: "chevron.up")
+              .font(.system(size: 15, weight: .medium))
+              .frame(width: 36, height: 40)
           }
           .buttonStyle(.plain)
+          .disabled(model.totalMatches == 0)
+          Button { model.emit?("search-next", nil) } label: {
+            Image(systemName: "chevron.down")
+              .font(.system(size: 15, weight: .medium))
+              .frame(width: 36, height: 40)
+          }
+          .buttonStyle(.plain)
+          .disabled(model.totalMatches == 0)
         }
-      }
-      .padding(.horizontal, 14)
-      .frame(height: 46)
-      .frame(maxWidth: .infinity)
-      .modifier(GlassCapsuleSurface())
+        .padding(.horizontal, 4)
+        .modifier(GlassCapsuleSurface())
+      } else {
+        fieldCapsule
 
-      Button {
-        model.text = ""
-        model.expanded = false
-        focused = false
-        model.emit?("search-query", "")
-        model.emit?("search-close", nil)
-      } label: {
-        Image(systemName: "xmark")
-          .font(.system(size: 15, weight: .semibold))
-          .frame(width: 40, height: 40)
+        Button(action: endSearch) {
+          Image(systemName: "xmark")
+            .font(.system(size: 15, weight: .semibold))
+            .frame(width: 40, height: 40)
+        }
+        .modifier(GlassCircle())
       }
-      .modifier(GlassCircle())
     }
-    .frame(width: UIScreen.main.bounds.width - 24)
+    .frame(maxWidth: .infinity)
   }
 }
 
@@ -323,13 +381,23 @@ struct GlassCapsule: ViewModifier {
   }
 }
 
-/// Glass surface for a non-button container (the expanded field).
-struct GlassCapsuleSurface: ViewModifier {
+/// Prominent (tinted) glass circle — the find bar's ✓ done button.
+struct GlassCircleProminent: ViewModifier {
   func body(content: Content) -> some View {
     if #available(iOS 26.0, *) {
-      content.glassEffect(.regular.interactive(), in: .capsule)
+      content.buttonStyle(.glassProminent).buttonBorderShape(.circle)
     } else {
-      content.background(.ultraThinMaterial, in: Capsule())
+      content.buttonStyle(.borderedProminent).clipShape(Circle())
     }
+  }
+}
+
+/// Glass surface for a non-button container (the expanded field).
+/// NOTE: deliberately NOT glassEffect — a glass surface WRAPPING interactive
+/// controls swallowed every tap inside it (iOS 26 renders the effect on its
+/// own layer); material background keeps normal hit-testing.
+struct GlassCapsuleSurface: ViewModifier {
+  func body(content: Content) -> some View {
+    content.background(.ultraThinMaterial, in: Capsule())
   }
 }

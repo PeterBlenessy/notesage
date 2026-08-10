@@ -77,6 +77,8 @@ export interface IosChromeSearch {
   /** 1-based current match + total for find-in-document searches. */
   current?: number;
   total?: number;
+  /** "filter" (folder search) or "find" (in-document, Notes find anatomy). */
+  kind?: "filter" | "find";
 }
 
 export function iosSetChrome(spec: {

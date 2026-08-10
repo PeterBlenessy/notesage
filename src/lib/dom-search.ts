@@ -20,6 +20,7 @@ interface CharMapping {
 export function highlightDomMatches(
   container: HTMLElement,
   query: string,
+  maxMatches: number = Number.POSITIVE_INFINITY,
 ): HTMLElement[] {
   if (!query) return [];
 
@@ -51,7 +52,7 @@ export function highlightDomMatches(
   const lowerQuery = query.toLowerCase();
   const matchPositions: Array<{ start: number; end: number }> = [];
   let searchFrom = 0;
-  while (searchFrom <= lowerFull.length - lowerQuery.length) {
+  while (matchPositions.length < maxMatches && searchFrom <= lowerFull.length - lowerQuery.length) {
     const idx = lowerFull.indexOf(lowerQuery, searchFrom);
     if (idx === -1) break;
     matchPositions.push({ start: idx, end: idx + lowerQuery.length });
