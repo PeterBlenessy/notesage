@@ -47,7 +47,7 @@ export function Onboarding() {
       <p className="mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">
         {isStale
           ? "Your access to the Notesage folder expired. Grant it once more to keep reading."
-          : "Read your Notesage notes on the go. iOS needs a one-time permission to open your iCloud Notesage folder."}
+          : "Read your Notesage notes on the go. iOS needs a one-time permission to open your Notesage folder — your iCloud Notesage folder, or any folder under On My iPhone if you don't use iCloud."}
       </p>
 
       <div className="mt-6 w-full max-w-sm space-y-3 text-left">
@@ -55,8 +55,9 @@ export function Onboarding() {
           The app only reads the folder you grant — the single exception is the
           notes it adds when you share a link.
         </Feature>
-        <Feature icon={FolderOpen} title="Your iCloud Notesage folder">
-          We open the picker right at it — just confirm the highlighted folder.
+        <Feature icon={FolderOpen} title="Your Notesage folder">
+          We open the picker at your iCloud Notesage folder — no iCloud
+          account? Pick a folder under On My iPhone instead; any folder works.
         </Feature>
       </div>
 

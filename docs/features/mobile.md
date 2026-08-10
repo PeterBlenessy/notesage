@@ -165,6 +165,60 @@ share-sheet target for capturing links. PRD:
   corner slivers against the logo's gradient) and installs the set into
   `icons/ios/` + the generated asset catalog.
 
+## App Review notes (task #11, issue #594)
+
+Apple App Review will not have the team's iCloud account. The onboarding flow
+already supports that: the folder picker is only *pre-pointed* at `iCloud
+Drive/Notesage` as a convenience — `LibraryAccess.pickLibraryFolder` persists
+a bookmark for whatever folder the user actually picks, iCloud or not.
+When `FileManager.default.url(forUbiquityContainerIdentifier:)` returns `nil`
+(no iCloud account signed in), the `if let` guard around `picker.directoryURL`
+simply skips setting a starting location — the picker still opens on the
+standard Files browse view, with no crash and no forced iCloud dependency.
+The onboarding copy says this explicitly, so a reviewer isn't left guessing.
+
+**Demo path for reviewers (no iCloud account required):**
+
+1. Launch the app — the onboarding screen appears ("Welcome to Notesage").
+   Its copy explains that a local folder works if you don't use iCloud.
+2. Tap "Select your Notesage folder". The system Files picker opens.
+3. In the picker, go to "On My iPhone" (or "Browse" → "On My iPhone") and
+   create or choose any folder — it does not need to be named "Notesage" or
+   contain anything.
+4. Confirm. The app grants access and shows the library browser for that
+   folder.
+5. An empty folder shows a real empty state ("Nothing here yet" / "This
+   folder is empty."), not placeholder or lorem-ipsum content.
+6. Cancelling the picker at step 3 (tap "Cancel") returns to the onboarding
+   screen with a friendly "No folder selected — tap again to choose your
+   Notesage folder" message; the button is immediately re-tappable, nothing
+   is left in a stuck/loading state.
+
+**Permissions.** The app requests no runtime permission beyond the one-time
+folder grant itself — no camera, microphone, photo library, contacts,
+location, or notification usage keys are declared
+(`src-tauri/ios/Notesage.entitlements` / `ShareExtension-Info.plist`), so
+reviewers will not hit a permission prompt they can't explain from the UI in
+front of them.
+
+**Verified this pass (code review — no macOS/Xcode available in this
+environment, so the actual `UIDocumentPickerViewController` could not be
+exercised on a simulator or device):**
+
+- The picker's iCloud pre-point uses an optional `if let` (no force-unwrap),
+  so a missing iCloud container cannot crash folder selection.
+- `documentPickerWasCancelled` resolves `granted: false` rather than
+  rejecting, so cancelling is a friendly no-op, not an error.
+- The empty-folder state, the cancelled/rejected-picker states, and the
+  onboarding copy are covered by automated tests in
+  `src/components/mobile/__tests__/mobile-app.test.tsx` (describe block
+  "App Review safety — local-folder demo path (issue #594)").
+
+Before submitting to App Review, run the embedded-simulator harness (above)
+through the six demo-path steps on a simulator signed out of iCloud
+(Settings → \[your name\] → Sign Out, or a fresh simulator that was never
+signed in) to confirm on-device behavior matches this code-level review.
+
 ## v1 limitations (deferred)
 
 - EPUB/DOCX/PPTX in-app rendering (shown as "open on your Mac"). PDF renders in-app.

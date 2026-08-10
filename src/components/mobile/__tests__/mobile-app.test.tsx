@@ -528,6 +528,41 @@ describe("share", () => {
   });
 });
 
+describe("App Review safety — local-folder demo path (issue #594)", () => {
+  it("onboarding tells the user a local on-device folder works too, not just iCloud", async () => {
+    // A reviewer with no iCloud account must be able to tell, from the copy
+    // alone, that granting a local "On My iPhone" folder is a supported path
+    // — not a workaround they have to guess at. Prevents a Guideline
+    // 2.1-style "I can't test this without your iCloud account" rejection.
+    useMobileStore.setState({ grantState: "ungranted" });
+    renderWithProviders(<Onboarding />);
+    expect(
+      screen.getAllByText(/on my iphone|on this device|without icloud|local folder|any folder/i)
+        .length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("cancelling from onboarding leaves the button re-tappable, not stuck busy", async () => {
+    useMobileStore.setState({ grantState: "ungranted" });
+    setMockInvokeHandler("ios_pick_library_folder", () => ({ displayName: "", granted: false }));
+    renderWithProviders(<Onboarding />);
+    fireEvent.click(screen.getByRole("button", { name: "Select your Notesage folder" }));
+    const { toast } = await import("sonner");
+    await waitFor(() => expect(toast.info).toHaveBeenCalled());
+    // A reviewer who backs out of the picker must land on a re-tappable
+    // control, not a control frozen on "Opening…".
+    expect(screen.getByRole("button", { name: "Select your Notesage folder" })).toBeTruthy();
+    expect(screen.queryByText("Opening…")).toBeNull();
+  });
+
+  it("an empty library folder renders a real empty state, not placeholder content", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    renderWithProviders(<LibraryBrowser />);
+    expect(await screen.findByText("Nothing here yet")).toBeTruthy();
+    expect(screen.queryByText(/lorem ipsum/i)).toBeNull();
+  });
+});
+
 describe("library re-pick", () => {
   it("the root folder button reopens the folder picker", async () => {
     setMockInvokeHandler("ios_list_directory", () => []);
