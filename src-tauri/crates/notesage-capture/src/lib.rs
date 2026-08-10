@@ -166,7 +166,8 @@ pub struct Article {
     pub markdown: String,
 }
 
-/// Readable extraction + HTML→Markdown for rich web capture (#584).
+/// Readable extraction + HTML→Markdown for rich web capture (#584), with
+/// ad/tracker image filtering (#610).
 ///
 /// Returns `None` when the page does not yield a genuine article — nav-heavy
 /// portals, login walls, near-empty bodies — so the caller can fall back to
@@ -176,10 +177,10 @@ pub struct Article {
 pub fn extract_article(html: &str, url: &str) -> Option<Article> {
     const MIN_ARTICLE_CHARS: usize = 400;
 
-    let parsed_url = url::Url::parse(url).ok()?;
-    let mut bytes = html.as_bytes();
-    let product = readability::extractor::extract(&mut bytes, &parsed_url).ok()?;
-    let markdown = htmd::convert(&product.content).ok()?;
+    let mut readability = dom_smoothie::Readability::new(html, Some(url), None).ok()?;
+    let product = readability.parse().ok()?;
+    let filtered_content = strip_ad_and_tracker_images(&product.content);
+    let markdown = htmd::convert(&filtered_content).ok()?;
     let markdown = markdown.trim();
     if markdown.chars().count() < MIN_ARTICLE_CHARS {
         return None;
@@ -189,6 +190,71 @@ pub fn extract_article(html: &str, url: &str) -> Option<Article> {
         if t.is_empty() { None } else { Some(t.to_string()) }
     };
     Some(Article { title, markdown: markdown.to_string() })
+}
+
+/// Ad/tracker domains observed in real captures. Matched as a substring of
+/// the image `src` (covers both the bare host and CDN/ad-server subdomains
+/// like `securepubads.g.doubleclick.net`).
+const AD_TRACKER_DOMAINS: &[&str] = &[
+    "doubleclick.net",
+    "googlesyndication.com",
+    "googleadservices.com",
+    "google-analytics.com",
+    "googletagmanager.com",
+    "adservice.google.com",
+    "adnxs.com",
+    "amazon-adsystem.com",
+    "scorecardresearch.com",
+    "quantserve.com",
+    "taboola.com",
+    "outbrain.com",
+    "criteo.com",
+    "moatads.com",
+    "adsafeprotected.com",
+    "chartbeat.com",
+    "pubmatic.com",
+    "rubiconproject.com",
+    "casalemedia.com",
+    "bidswitch.net",
+    "adform.net",
+    "facebook.com/tr",
+];
+
+/// Below this pixel size in either dimension, an `<img>` is a tracking pixel
+/// or layout spacer rather than genuine content — real photos and figures
+/// are never captured with `width`/`height` this small.
+const TRACKING_PIXEL_MAX_DIMENSION: u32 = 5;
+
+/// Strip ad/tracker `<img>` elements from readability-extracted HTML,
+/// **before** the HTML→Markdown conversion — markdown drops the
+/// `width`/`height`/full-`src`-host signal these heuristics need, so the
+/// filter has to run on the DOM, not the rendered text.
+fn strip_ad_and_tracker_images(html: &str) -> String {
+    let doc = dom_query::Document::fragment(html);
+    let ad_images: Vec<_> = doc
+        .select("img")
+        .iter()
+        .filter(|node| is_ad_or_tracker_image(node))
+        .collect();
+    for node in ad_images {
+        node.remove();
+    }
+    doc.html().to_string()
+}
+
+fn is_ad_or_tracker_image(node: &dom_query::Selection) -> bool {
+    let src = node.attr("src").unwrap_or_default();
+    if src.is_empty() {
+        return false;
+    }
+    let src_lower = src.to_ascii_lowercase();
+    if AD_TRACKER_DOMAINS.iter().any(|domain| src_lower.contains(domain)) {
+        return true;
+    }
+    let width = node.attr("width").and_then(|w| w.parse::<u32>().ok());
+    let height = node.attr("height").and_then(|h| h.parse::<u32>().ok());
+    width.is_some_and(|w| w <= TRACKING_PIXEL_MAX_DIMENSION)
+        || height.is_some_and(|h| h <= TRACKING_PIXEL_MAX_DIMENSION)
 }
 
 /// Body-bearing capture note (format v2): identical frontmatter to the
@@ -438,5 +504,62 @@ mod tests {
         let article = extract_article(&article_html(), "https://example.com/post").unwrap();
         let note = build_article_note(&input, &article, "2026-08-10T10:00:00+02:00", "2026-08-10-100000");
         assert!(note.contents.contains("User Chosen"));
+    }
+
+    // ---- ad/tracker image filtering (#610) ---------------------------------
+
+    /// A representative article body — 12 real paragraphs plus nav/footer
+    /// chrome (mirrors `article_html()`) — with `images` inserted right
+    /// after the heading, so each fixture below reads like an actual capture.
+    fn article_html_with_images(images: &str) -> String {
+        let paragraphs: String = (0..12)
+            .map(|i| format!("<p>Paragraph {i}: the quick brown fox jumps over the lazy dog, again and again, providing ample readable content for the extractor to work with.</p>"))
+            .collect();
+        format!(
+            "<html><head><title>A Real Article</title></head><body>\
+             <nav><a href=\"/\">Home</a><a href=\"/about\">About</a></nav>\
+             <article><h1>A Real Article</h1>{images}{paragraphs}</article>\
+             <footer>© footer</footer></body></html>"
+        )
+    }
+
+    #[test]
+    fn keeps_genuine_content_figures() {
+        let images = r#"<figure><img src="https://cdn.example.com/photos/skyline.jpg" width="800" height="450" alt="City skyline"></figure>"#;
+        let article =
+            extract_article(&article_html_with_images(images), "https://example.com/post").expect("article");
+        assert!(article.markdown.contains("skyline.jpg"), "{}", article.markdown);
+    }
+
+    #[test]
+    fn strips_known_ad_domain_images() {
+        let images = concat!(
+            r#"<img src="https://securepubads.g.doubleclick.net/gampad/ad?id=1" width="300" height="250" alt="ad">"#,
+            r#"<figure><img src="https://cdn.example.com/photos/skyline.jpg" width="800" height="450" alt="City skyline"></figure>"#,
+        );
+        let article =
+            extract_article(&article_html_with_images(images), "https://example.com/post").expect("article");
+        assert!(!article.markdown.contains("doubleclick"), "{}", article.markdown);
+        assert!(article.markdown.contains("skyline.jpg"), "{}", article.markdown);
+    }
+
+    #[test]
+    fn strips_tracking_pixel_sized_images() {
+        let images = concat!(
+            r#"<img src="https://cdn.example.com/beacon.gif" width="1" height="1" alt="">"#,
+            r#"<figure><img src="https://cdn.example.com/photos/skyline.jpg" width="800" height="450" alt="City skyline"></figure>"#,
+        );
+        let article =
+            extract_article(&article_html_with_images(images), "https://example.com/post").expect("article");
+        assert!(!article.markdown.contains("beacon.gif"), "{}", article.markdown);
+        assert!(article.markdown.contains("skyline.jpg"), "{}", article.markdown);
+    }
+
+    #[test]
+    fn image_free_article_extracts_cleanly() {
+        let article =
+            extract_article(&article_html_with_images(""), "https://example.com/post").expect("article");
+        assert!(article.markdown.contains("Paragraph 3"));
+        assert!(!article.markdown.contains("<img"));
     }
 }
