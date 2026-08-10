@@ -37,6 +37,34 @@ describe("mobile-store grant state machine", () => {
     expect(store().grantState).toBe("stale");
   });
 
+  it("refreshGrant retries once on a transient throw and lands granted, not stale", async () => {
+    // A one-off IPC hiccup (unrelated to bookmark validity) must not surface
+    // "Reconnect your library" — the retry should succeed and resolve granted.
+    let calls = 0;
+    setMockInvokeHandler("ios_get_library_grant", () => {
+      calls++;
+      if (calls === 1) throw new Error("transient IPC hiccup");
+      return { displayName: "Notesage", granted: true };
+    });
+    await store().refreshGrant();
+    expect(calls).toBe(2);
+    expect(store().grantState).toBe("granted");
+    expect(store().libraryName).toBe("Notesage");
+  });
+
+  it("refreshGrant retries once and still lands stale when the bookmark is genuinely stale", async () => {
+    // A genuinely stale bookmark fails consistently — it must not be
+    // misclassified as transient just because a retry was attempted.
+    let calls = 0;
+    setMockInvokeHandler("ios_get_library_grant", () => {
+      calls++;
+      throw new Error("stale bookmark");
+    });
+    await store().refreshGrant();
+    expect(calls).toBe(2);
+    expect(store().grantState).toBe("stale");
+  });
+
   it("pickFolder → granted and resets navigation", async () => {
     setMockInvokeHandler("ios_pick_library_folder", () => ({ displayName: "Notesage", granted: true }));
     store().enterFolder({ relPath: "Sub", name: "Sub" });

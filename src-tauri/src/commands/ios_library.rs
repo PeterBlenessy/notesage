@@ -321,4 +321,30 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn ensure_downloaded_swift_wires_up_the_failed_download_state() {
+        // `LibraryAccess.ensureDownloaded` (Swift) can only ever return
+        // `.ready`/`.downloading` or throw unless it explicitly reads the
+        // iCloud download-error resource key — `DownloadState::Failed` is a
+        // real wire value (see the match arms in ios_impl::ensure_downloaded
+        // above and tauri_plugin_notesage_ios::DownloadState) that was never
+        // actually produced. No XCTest harness exists anywhere in this repo
+        // (confirmed by search, issue #590), so this locks the fix at the
+        // source level — the same idiom
+        // `every_read_command_path_goes_through_the_sanitizer` above already
+        // uses for this file's own off-platform (iOS-only) code paths.
+        let swift_src = include_str!(
+            "../../crates/tauri-plugin-notesage-ios/ios/Sources/LibraryAccess.swift"
+        );
+        let body_start = swift_src
+            .find("static func ensureDownloaded(")
+            .expect("ensureDownloaded not found in LibraryAccess.swift");
+        let body = &swift_src[body_start..(body_start + 1200).min(swift_src.len())];
+        assert!(
+            body.contains("ubiquitousItemDownloadingErrorKey") && body.contains(".failed"),
+            "ensureDownloaded does not read the iCloud download-error resource key — \
+             DownloadState::Failed can never be produced"
+        );
+    }
 }
