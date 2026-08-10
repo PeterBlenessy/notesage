@@ -192,3 +192,4 @@ Chronological log of major implementation milestones and changes.
 | 186 | [Release v0.48.0-alpha.21](186-release-v0.48.0-alpha.21.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 187 | [Release v0.48.0-alpha.22](187-release-v0.48.0-alpha.22.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 188 | [Release v0.48.0-alpha.23](188-release-v0.48.0-alpha.23.md) | pi as a second Local Agent engine (beta), permission modes for local agents, fix for agents failing to start after an update |
+| 189 | [Release v0.48.0-alpha.24](189-release-v0.48.0-alpha.24.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
