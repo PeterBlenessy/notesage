@@ -1,26 +1,29 @@
-# cargo-audit configuration (read by the "Rust Dependency Audit" CI job, which
-# runs `cargo audit` from this directory).
+# cargo-audit configuration for the CI "Rust Dependency Audit" job
+# (test.yml runs `cargo audit` with working-directory src-tauri, so this is
+# $PWD/.cargo/audit.toml — the path cargo-audit reads).
 #
-# We ignore ONLY advisories that are unfixable from this repo — i.e. they live
-# in TRANSITIVE crates pinned by third-party dependencies we don't control, so
-# `cargo update` cannot reach the patched version. Everything else must be fixed
-# by upgrading (e.g. anyhow, memmap2 were bumped rather than ignored). Each entry
-# below records why it's unfixable and when it can be dropped. Re-audit whenever
-# the pinning dependency releases an update.
-#
-# Tracking issue: https://github.com/PeterBlenessy/notesage/issues/508
+# Every entry below is a vulnerability whose FIX VERSION is semver-unreachable
+# until an upstream dependency moves — verified with `cargo tree -i` per
+# crate. Each is documented with its blocker and tracked in an issue; remove
+# an entry as soon as the upstream bump lands. New advisories still fail CI.
 
 [advisories]
 ignore = [
-    # quick-xml — memory-exhaustion DoS when parsing untrusted XML. Reachable
-    # only through document import/export parsers, and every copy in our tree is
-    # transitive and below the patched 0.41.0:
-    #   0.36.2 ← docx-rs
-    #   0.38.4 ← citationberg ← hayagriva ← typst-library
-    #   0.39.4 ← plist ← syntect / ppt-rs
-    #   0.37.5 ← (transitive)
-    # None expose a semver-compatible >=0.41.0, so this can't be resolved until
-    # those upstreams bump quick-xml. Drop these once they do.
-    "RUSTSEC-2026-0195", # Unbounded namespace-declaration allocation in NsReader (DoS)
-    "RUSTSEC-2026-0194", # Quadratic run time checking a start tag for duplicate attribute names (DoS)
+    # rkyv 0.7.46 (OOB reads validating archives with Rc/Arc; fix >=0.8.17).
+    # In the lockfile only as an UNUSED optional feature of rust_decimal
+    # (via typst-library / byte-unit) — no rkyv code is compiled. Issue #589.
+    "RUSTSEC-2026-0235",
+
+    # quick-xml (fix >=0.41.0): quadratic duplicate-attribute check.
+    # Pinned by docx-rs 0.4 (0.36) and typst's citation stack
+    # citationberg/hayagriva (0.38); both parse app-local/trusted XML, and
+    # the impact is DoS-shaped, not memory corruption. Issue #602.
+    "RUSTSEC-2026-0194",
+    # quick-xml NsReader unbounded namespace allocation (same pins as above).
+    "RUSTSEC-2026-0195",
+
+    # bincode 1.3.3 "unmaintained": pinned by syntect 5 (comrak / ppt-rs),
+    # used only to load BUNDLED syntax-highlighting definitions — trusted
+    # input packaged at build time. Waiting on syntect → bincode 2. Issue #602.
+    "RUSTSEC-2025-0141",
 ]
