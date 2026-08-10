@@ -26,6 +26,10 @@ struct ChromeItemSpec: Decodable, Equatable {
   /// Long-press menu (Files' held-back-button hierarchy). Tap still fires
   /// `id`; holding presents these as a native UIMenu.
   let menu: [ChromeMenuItemSpec]?
+  /// True while the action behind this button is in flight (e.g. a refresh
+  /// reload) — the button spins its SF Symbol for the duration, mirroring
+  /// the web-fallback island's `animate-spin` treatment.
+  let busy: Bool?
 }
 
 struct ChromeSearchSpec: Decodable, Equatable {
@@ -178,6 +182,11 @@ final class ChromeManager {
 struct GlassChromeButton: View {
   let item: ChromeItemSpec
   let emit: (String) -> Void
+  // Continuous rotation while `item.busy` is true — mirrors the web
+  // fallback's `animate-spin` (CSS keeps spinning until the state flips).
+  // Manual rotation rather than `.symbolEffect(.rotate)` keeps this working
+  // on the iOS 16 deployment target instead of gating on iOS 17+.
+  @State private var spinning = false
 
   private var label: some View {
     Image(systemName: item.icon)
@@ -185,6 +194,15 @@ struct GlassChromeButton: View {
       // 36pt label + the glass style's own padding lands on the ~40pt
       // circle native bars use (measured against the Files reference).
       .frame(width: 36, height: 36)
+      .rotationEffect(.degrees(spinning ? 360 : 0))
+      .animation(
+        spinning
+          ? .linear(duration: 0.8).repeatForever(autoreverses: false)
+          : .default,
+        value: spinning
+      )
+      .onAppear { spinning = item.busy == true }
+      .onChange(of: item.busy) { busy in spinning = busy == true }
   }
 
   var body: some View {

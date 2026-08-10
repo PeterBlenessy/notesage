@@ -100,7 +100,7 @@ export function LibraryBrowser() {
               menu: ancestors.map((f, depth) => ({ id: `jump-${depth}`, title: f.name })),
             }
           : { id: "pick", icon: "folder" },
-      topRight: { id: "refresh", icon: "arrow.clockwise" },
+      topRight: { id: "refresh", icon: "arrow.clockwise", busy: refreshing },
       search: {
         placeholder: "Search this folder",
         status:
