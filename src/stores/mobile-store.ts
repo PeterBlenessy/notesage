@@ -88,16 +88,26 @@ export const useMobileStore = create<MobileStore>()(
       },
 
       refreshGrant: async () => {
-        try {
+        const resolve = async () => {
           const grant = await iosGetLibraryGrant();
           if (grant.granted) {
             set({ grantState: "granted", libraryName: grant.displayName });
           } else {
             set({ grantState: "ungranted", libraryName: "" });
           }
+        };
+        try {
+          await resolve();
         } catch {
-          // A throwing resolve means the bookmark is present but unusable.
-          set({ grantState: "stale" });
+          // A thrown error could be a transient IPC hiccup, not necessarily a
+          // stale bookmark — retry once before concluding stale. A genuinely
+          // stale bookmark fails consistently on retry; a one-off hiccup
+          // usually succeeds.
+          try {
+            await resolve();
+          } catch {
+            set({ grantState: "stale" });
+          }
         }
       },
 

@@ -181,7 +181,15 @@ enum LibraryAccess {
         let scoped = root.startAccessingSecurityScopedResource()
         defer { if scoped { root.stopAccessingSecurityScopedResource() } }
         let fileURL = root.appendingPathComponent(rel)
-        let values = try? fileURL.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
+        let values = try? fileURL.resourceValues(forKeys: [
+            .ubiquitousItemDownloadingStatusKey,
+            .ubiquitousItemDownloadingErrorKey,
+        ])
+        // A non-nil download error (eviction, iCloud denying the fetch, etc.)
+        // is a real, documented Foundation signal that the item will never
+        // become ready on its own — report it instead of leaving the caller
+        // to poll `.downloading` forever.
+        if values?.ubiquitousItemDownloadingError != nil { return .failed }
         if values?.ubiquitousItemDownloadingStatus == .current { return .ready }
         try FileManager.default.startDownloadingUbiquitousItem(at: fileURL)
         return .downloading
