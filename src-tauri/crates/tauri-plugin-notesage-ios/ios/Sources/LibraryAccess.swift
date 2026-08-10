@@ -163,11 +163,14 @@ enum LibraryAccess {
     static func copyForSharing(_ rel: String) throws -> URL {
         let data = try readBinary(rel)
         let name = (rel as NSString).lastPathComponent
+        // Per-invocation directory: sharing the same file twice must never
+        // overwrite a copy an earlier (lazily-reading) share target still
+        // holds. The caller deletes the directory when its share completes.
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("share", isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let dest = dir.appendingPathComponent(name)
-        try? FileManager.default.removeItem(at: dest)
         try data.write(to: dest)
         return dest
     }

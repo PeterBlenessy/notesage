@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { HTML_FIND_AGENT } from "@/components/mobile/html-find-agent";
+import { withFindAgent } from "@/components/mobile/html-find-agent";
 
 /**
  * Executes the injected find agent for real (jsdom): the script is what runs
@@ -9,7 +9,7 @@ import { HTML_FIND_AGENT } from "@/components/mobile/html-find-agent";
  */
 
 function bootAgent() {
-  const body = HTML_FIND_AGENT.replace(/<\/?script>/g, "");
+  const body = withFindAgent("").replace(/<\/?script>/g, "");
   // eslint-disable-next-line no-eval
   window.eval(body);
 }
@@ -74,6 +74,21 @@ describe("HTML find agent", () => {
     expect(document.querySelectorAll("mark[data-nsfind]").length).toBe(0);
     expect(document.body.textContent).toContain("needle in text");
     await vi.waitFor(() => expect(replies[replies.length - 1]).toEqual({ total: 0, current: 0 }));
+  });
+
+  it("closes a dangling <script> in the report before appending the agent", () => {
+    // An unclosed <script> would otherwise swallow the agent element whole
+    // and silently kill search for that file.
+    const out = withFindAgent("<p>x</p><script>var a = 1");
+    const opens = (out.match(/<script/gi) ?? []).length;
+    const closes = (out.match(/<\/script/gi) ?? []).length;
+    expect(closes).toBe(opens);
+    expect(out.indexOf("</script>")).toBeLessThan(out.indexOf("notesage-find"));
+  });
+
+  it("adds nothing extra to well-formed reports", () => {
+    const out = withFindAgent("<p>fine</p><script>ok()</script>");
+    expect(out.startsWith("<p>fine</p><script>ok()</script>\n<script>")).toBe(true);
   });
 
   it("ignores messages from other protocols", () => {

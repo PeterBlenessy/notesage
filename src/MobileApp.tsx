@@ -55,7 +55,9 @@ export function MobileApp() {
         {grantState === "unknown" ? (
           <Splash />
         ) : grantState === "granted" ? (
-          openDoc ? <Reader /> : <LibraryBrowser />
+          // Keyed by path: a document switch REMOUNTS the reader, so per-doc
+          // state (find query, marks, refs) can never leak between documents.
+          openDoc ? <Reader key={openDoc.relPath} /> : <LibraryBrowser />
         ) : (
           <Onboarding />
         )}

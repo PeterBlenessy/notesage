@@ -1544,6 +1544,7 @@ init` on a Mac — see `src-tauri/ios/README.md`.
 | `ios_read_file` | `(relPath) -> String` | Read a UTF-8 file under the granted root. |
 | `ios_read_binary` | `(relPath) -> Vec<u8>` | Read a binary file (image/PDF/…) under the granted root. |
 | `ios_ensure_downloaded` | `(relPath) -> DownloadState` | Trigger/await iCloud download; returns `ready` \| `downloading` \| `failed`. |
+| `ios_share_file` | `(relPath) -> ()` | Present the native share sheet over a temp copy of the file (share targets can't read through the security-scoped grant; the copy's per-invocation temp dir is deleted when the share completes). |
 
 ```rust
 #[serde(rename_all = "camelCase")]

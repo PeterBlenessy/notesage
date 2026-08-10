@@ -10,7 +10,7 @@ import { classifyFile } from "./FileRow";
 import { Button } from "@/components/ui/button";
 import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
-import { HTML_FIND_AGENT } from "./html-find-agent";
+import { withFindAgent } from "./html-find-agent";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 
 // Lazy-loaded — pdf.js is heavy (and pulls in browser-only globals like
@@ -138,6 +138,8 @@ export function Reader() {
   useEffect(() => {
     if (!isHtml) return;
     const onMessage = (e: MessageEvent) => {
+      // Only the report frame we injected the agent into may drive the counter.
+      if (e.source !== htmlFrameRef.current?.contentWindow) return;
       const d = e.data as { ns?: string; type?: string; total?: number; current?: number };
       if (!d || d.ns !== "notesage-find" || d.type !== "state") return;
       if (typeof d.total === "number" && Number.isFinite(d.total)) setFindTotal(Math.max(0, d.total));
@@ -165,12 +167,23 @@ export function Reader() {
     setFindIndex(idx);
   };
 
+  // Generation counter: every load() invocation takes a ticket, and a
+  // superseded invocation (doc switched or component unmounted mid-flight)
+  // must not setState — and must RELEASE what it just acquired (object URL,
+  // html_preview registration; the Rust-side preview store has no eviction).
+  // Same idiom as the theme + mermaid effects below.
+  const loadIdRef = useRef(0);
+  useEffect(() => () => { loadIdRef.current++; }, []);
+
   const load = useCallback(async () => {
     if (!relPath) return;
+    const loadId = ++loadIdRef.current;
+    const isCurrent = () => loadIdRef.current === loadId;
     setState({ status: "loading" });
     try {
       if (kind === "image") {
         const bytes = await iosReadBinary(relPath);
+        if (!isCurrent()) return;
         // Copy into a fresh ArrayBuffer-backed view so the BlobPart type is
         // unambiguous (TS 6 distinguishes ArrayBuffer from SharedArrayBuffer).
         const buffer = bytes.slice().buffer;
@@ -183,6 +196,7 @@ export function Reader() {
         // shared binary cache the desktop PdfViewer reads from, keyed by the
         // relative path, then mount the full viewer (zoom / fit / search).
         const bytes = await iosReadBinary(relPath);
+        if (!isCurrent()) return;
         setBinaryData(relPath, bytes);
         setState({ status: "pdf", filePath: relPath });
         return;
@@ -200,12 +214,19 @@ export function Reader() {
         const id = crypto.randomUUID();
         // The find agent rides along inside the document — the only place
         // search can run in a sandboxed cross-origin frame.
-        await invoke("html_preview_register", { id, content: raw + HTML_FIND_AGENT });
+        await invoke("html_preview_register", { id, content: withFindAgent(raw) });
+        if (!isCurrent()) {
+          // Superseded after registering — release the doc immediately or it
+          // is orphaned forever (the preview store has no eviction).
+          void invoke("html_preview_unregister", { id }).catch(() => {});
+          return;
+        }
         setState({ status: "html", url: `htmlpreview://localhost/${id}`, previewId: id });
         return;
       }
       if (kind === "markdown" || kind === "text") {
         const raw = await iosReadFile(relPath);
+        if (!isCurrent()) return;
         if (kind === "markdown") {
           // Rendered by the same comrak pipeline as the desktop, so a note
           // looks the same on both. Frontmatter stripping happens there too.
@@ -218,6 +239,7 @@ export function Reader() {
           // markdown without touching the file again.
           const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
           const html = await renderMarkdownFragment(raw, theme);
+          if (!isCurrent()) return;
           rawMarkdownRef.current = raw;
           renderedThemeRef.current = theme;
           setState({ status: "markdown", html });
@@ -233,6 +255,7 @@ export function Reader() {
       // user retry once it's local.
       try {
         const dl = await iosEnsureDownloaded(relPath);
+        if (!isCurrent()) return;
         if (dl === "downloading") {
           setState({ status: "downloading" });
           return;
@@ -240,6 +263,7 @@ export function Reader() {
       } catch {
         /* fall through to the original read error */
       }
+      if (!isCurrent()) return;
       setState({ status: "error", message: String(err) });
     }
   }, [relPath, kind]);

@@ -13,7 +13,7 @@
  * frame) — worst case a hostile report lies about its own match count, which
  * only misleads its own search UI.
  */
-export const HTML_FIND_AGENT = `
+const HTML_FIND_AGENT = `
 <script>
 (function () {
   "use strict";
@@ -108,3 +108,17 @@ export const HTML_FIND_AGENT = `
 })();
 </script>
 `;
+
+/**
+ * Append the find agent to a report, closing any dangling `<script>` first.
+ * HTML script parsing consumes everything up to the next literal
+ * `</script>` — an unclosed script tag in the report would otherwise swallow
+ * the agent whole (no sandbox impact, but search would silently die for that
+ * file).
+ */
+export function withFindAgent(raw: string): string {
+  const opens = (raw.match(/<script\b/gi) ?? []).length;
+  const closes = (raw.match(/<\/script/gi) ?? []).length;
+  const guard = opens > closes ? "</script>".repeat(opens - closes) : "";
+  return raw + guard + HTML_FIND_AGENT;
+}

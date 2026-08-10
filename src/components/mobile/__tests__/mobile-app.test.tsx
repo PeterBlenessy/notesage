@@ -255,17 +255,26 @@ describe("HTML reports", () => {
   it("shows a search island for HTML reports and drives the agent over postMessage", async () => {
     const frame = await openHtml();
     const posted: unknown[] = [];
-    Object.defineProperty(frame, "contentWindow", {
-      value: { postMessage: (msg: unknown) => posted.push(msg) },
-    });
+    const frameWindow = { postMessage: (msg: unknown) => posted.push(msg) };
+    Object.defineProperty(frame, "contentWindow", { value: frameWindow });
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
     fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Q3" } });
     await waitFor(() => {
       expect(posted).toContainEqual({ ns: "notesage-find", type: "query", q: "Q3" });
     });
     // The agent's state replies drive the match counter.
-    fireEvent(window, new MessageEvent("message", { data: { ns: "notesage-find", type: "state", total: 4, current: 0 } }));
+    // The reply listener verifies e.source === the report frame's window —
+    // replies from anywhere else must not drive the counter.
+    fireEvent(window, new MessageEvent("message", { data: { ns: "notesage-find", type: "state", total: 9, current: 0 } }));
+    fireEvent(
+      window,
+      new MessageEvent("message", {
+        data: { ns: "notesage-find", type: "state", total: 4, current: 0 },
+        source: frameWindow as unknown as Window,
+      }),
+    );
     expect(await screen.findByText("1/4")).toBeTruthy();
+    expect(screen.queryByText("1/9")).toBeNull();
   });
 
   it("keeps the report on an opaque origin so it cannot reach the app", async () => {
@@ -499,6 +508,23 @@ describe("share", () => {
     await screen.findByText("hello");
     fireEvent.click(screen.getByRole("button", { name: "Share" }));
     await waitFor(() => expect(shared).toEqual(["notes/today.md"]));
+  });
+
+  it("surfaces a share failure as a toast instead of failing silently", async () => {
+    setMockInvokeHandler("ios_read_file", () => "hello");
+    setMockInvokeHandler("render_markdown_fragment", () => "<p>hello</p>");
+    setMockInvokeHandler("ios_share_file", () => {
+      throw new Error("A share sheet is already open");
+    });
+    useMobileStore.setState({ openDoc: { relPath: "notes/today.md", name: "today.md" } });
+    renderWithProviders(<Reader />);
+    await screen.findByText("hello");
+    const { toast } = await import("sonner");
+    vi.mocked(toast.error).mockClear();
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/Couldn't share/)),
+    );
   });
 });
 

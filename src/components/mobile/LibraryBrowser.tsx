@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, FolderOpen, RefreshCw, AlertCircle } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory } from "@/lib/ios-api";
@@ -36,12 +36,18 @@ export function LibraryBrowser() {
   // button.
   const [refreshing, setRefreshing] = useState(false);
 
+  // Generation counter: rapid folder navigation can resolve listings out of
+  // order — a superseded load must not put a stale listing under the new
+  // breadcrumb (same idiom as the Reader's loader).
+  const loadIdRef = useRef(0);
   const load = useCallback(async (viaRefresh = false) => {
+    const loadId = ++loadIdRef.current;
     if (viaRefresh) setRefreshing(true);
     else setState({ status: "loading" });
     const spinFloor = viaRefresh ? new Promise((r) => setTimeout(r, 600)) : null;
     try {
       const entries = await iosListDirectory(currentRelPath);
+      if (loadIdRef.current !== loadId) return;
       // Hidden entries (dotfiles, `.notesage/`, `.git/`) are excluded outright
       // — mirroring the desktop's default — as defense-in-depth on top of the
       // native layer's own filter: internal machinery and comment sidecars
@@ -54,6 +60,7 @@ export function LibraryBrowser() {
       });
       setState({ status: "ready", entries: sorted });
     } catch (err) {
+      if (loadIdRef.current !== loadId) return;
       setState({ status: "error", message: String(err) });
     } finally {
       if (spinFloor) await spinFloor;
@@ -140,6 +147,9 @@ export function LibraryBrowser() {
           <ChromeButton
             label="Change library folder"
             onClick={() => {
+              // The explicit reload IS needed: at the root, currentRelPath
+              // stays "" after a re-pick, so the load effect never refires on
+              // its own. The generation guard de-races it.
               void pickFolder()
                 .then(() => void load())
                 .catch((err) => {

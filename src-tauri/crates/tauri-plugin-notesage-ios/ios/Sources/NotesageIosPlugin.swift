@@ -60,8 +60,8 @@ private enum KeyboardAccessory {
 /// Extension writes captures in its own process, so exposing a write on the
 /// app's plugin would widen its surface for something the app never does.
 class NotesageIosPlugin: Plugin {
-  private var accessoryRemoved = false
   private var keyboardObserversInstalled = false
+  private var keyboardObserverTokens: [NSObjectProtocol] = []
   private weak var webViewRef: WKWebView?
 
   private var topViewController: UIViewController? {
@@ -78,21 +78,28 @@ class NotesageIosPlugin: Plugin {
   /// reacts to it (verified empirically — zero events, height unchanged), so
   /// bottom-anchored chrome would sit behind the keyboard without this bridge.
   private func configureWebViewOnce() {
-    guard !accessoryRemoved || !keyboardObserversInstalled else { return }
+    // Re-runs (cheaply) whenever the weak ref has gone nil — WebKit can
+    // recreate the content view after a WebContent-process reset, and a
+    // one-shot bind would silently kill keyboard forwarding forever.
+    guard webViewRef == nil || !keyboardObserversInstalled else { return }
     DispatchQueue.main.async { [weak self] in
-      guard
-        let self,
-        let window = UIApplication.shared.connectedScenes
-          .compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first,
-        let webView = KeyboardAccessory.findWebView(in: window)
-      else { return }
-      self.webViewRef = webView
-      if !self.accessoryRemoved {
-        KeyboardAccessory.remove(from: webView)
-        self.accessoryRemoved = true
-      }
-      self.installKeyboardObservers()
+      _ = self?.resolveWebView()
+      self?.installKeyboardObservers()
     }
+  }
+
+  /// Find (or re-find) the app's webview; idempotently strip its accessory
+  /// bar on every (re)bind. Main thread only.
+  private func resolveWebView() -> WKWebView? {
+    if let live = webViewRef { return live }
+    guard
+      let window = UIApplication.shared.connectedScenes
+        .compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first,
+      let webView = KeyboardAccessory.findWebView(in: window)
+    else { return nil }
+    webViewRef = webView
+    KeyboardAccessory.remove(from: webView)
+    return webView
   }
 
   /// Dispatch a `notesage:keyboard` CustomEvent with the keyboard's overlap
@@ -102,13 +109,17 @@ class NotesageIosPlugin: Plugin {
     keyboardObserversInstalled = true
     let center = NotificationCenter.default
     let forward: (Notification) -> Void = { [weak self] note in
-      guard let webView = self?.webViewRef else { return }
+      // Re-resolve on every event: the weak ref survives normal use but goes
+      // nil if WebKit recreates the webview — re-binding here restores both
+      // the forwarding and the accessory removal.
+      guard let webView = self?.resolveWebView() else { return }
       var inset: CGFloat = 0
       if let frame = (note.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?
         .cgRectValue
       {
         let local = webView.convert(frame, from: nil)
-        inset = max(0, webView.bounds.maxY - local.minY)
+        let overlap = webView.bounds.maxY - local.minY
+        if overlap.isFinite { inset = max(0, overlap) }
       }
       if note.name == UIResponder.keyboardWillHideNotification { inset = 0 }
       webView.evaluateJavaScript(
@@ -120,7 +131,14 @@ class NotesageIosPlugin: Plugin {
       UIResponder.keyboardWillChangeFrameNotification,
       UIResponder.keyboardWillHideNotification,
     ] {
-      center.addObserver(forName: name, object: nil, queue: .main, using: forward)
+      keyboardObserverTokens.append(
+        center.addObserver(forName: name, object: nil, queue: .main, using: forward))
+    }
+  }
+
+  deinit {
+    for token in keyboardObserverTokens {
+      NotificationCenter.default.removeObserver(token)
     }
   }
 
@@ -186,7 +204,20 @@ class NotesageIosPlugin: Plugin {
           invoke.reject("No view controller to present the share sheet")
           return
         }
+        guard presenter.presentedViewController == nil else {
+          // A sheet is already up (double-tap). UIKit would refuse the second
+          // present silently; reject so the JS side isn't lied to.
+          try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent())
+          invoke.reject("A share sheet is already open")
+          return
+        }
         let sheet = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+        // Delete the temp copy (its per-invocation directory) once the share
+        // flow completes or is cancelled — share targets read the URL lazily,
+        // so cleanup must wait for the completion handler.
+        sheet.completionWithItemsHandler = { _, _, _, _ in
+          try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent())
+        }
         // iPad requires a popover anchor; on iPhone this is ignored.
         sheet.popoverPresentationController?.sourceView = presenter.view
         sheet.popoverPresentationController?.sourceRect = CGRect(
