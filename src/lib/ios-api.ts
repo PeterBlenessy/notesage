@@ -70,9 +70,19 @@ export interface IosChromeItem {
  * Declare the native Liquid Glass chrome overlay. Rejects off-iOS and on
  * pre-native builds — callers treat rejection as "render web chrome".
  */
+export interface IosChromeSearch {
+  placeholder: string;
+  /** Passive status shown collapsed (item count, page indicator). */
+  status?: string;
+  /** 1-based current match + total for find-in-document searches. */
+  current?: number;
+  total?: number;
+}
+
 export function iosSetChrome(spec: {
   topLeft?: IosChromeItem;
   topRight?: IosChromeItem;
+  search?: IosChromeSearch;
 }): Promise<void> {
   return invoke("ios_set_chrome", { spec });
 }

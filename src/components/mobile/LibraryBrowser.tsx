@@ -101,9 +101,18 @@ export function LibraryBrowser() {
             }
           : { id: "pick", icon: "folder" },
       topRight: { id: "refresh", icon: "arrow.clockwise" },
+      search: {
+        placeholder: "Search this folder",
+        status:
+          state.status === "ready"
+            ? `${state.entries.length} ${state.entries.length === 1 ? "item" : "items"}`
+            : undefined,
+      },
     },
     {
       back: () => void goBack(),
+      "search-query": (value?: string) => setQuery(value ?? ""),
+      "search-close": () => setQuery(""),
       ...Object.fromEntries(
         ancestors.map((_, depth) => [`jump-${depth}`, () => goToDepth(depth)]),
       ),
@@ -289,7 +298,7 @@ export function LibraryBrowser() {
           </>,
           document.body,
         )}
-      {state.status === "ready" && (
+      {!nativeChrome && state.status === "ready" && (
         <SearchIsland
           query={query}
           onQueryChange={setQuery}

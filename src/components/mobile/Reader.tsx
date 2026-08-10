@@ -180,12 +180,25 @@ export function Reader() {
     {
       topLeft: { id: "back", icon: "chevron.backward" },
       topRight: { id: "share", icon: "square.and.arrow.up" },
+      // PDFs keep the viewer's own (CSS) search island for now — its search
+      // state lives inside PdfViewer; unifying it is a follow-up.
+      search: searchable
+        ? {
+            placeholder: "Find in document",
+            current: findTotal > 0 ? findIndex + 1 : undefined,
+            total: findTotal > 0 ? findTotal : undefined,
+          }
+        : undefined,
     },
     {
       back: () => void goBack(),
       share: () => {
         void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
       },
+      "search-query": (value?: string) => setFindQuery(value ?? ""),
+      "search-close": () => setFindQuery(""),
+      "search-next": () => goToMatch(true),
+      "search-prev": () => goToMatch(false),
     },
   );
 
@@ -456,7 +469,7 @@ export function Reader() {
           top-left island — placement must not depend on the document type.
           Top-right holds Share (issue #582) — the native share sheet over a
           temp copy of the file. */}
-      {searchable && (
+      {!nativeChrome && searchable && (
         <SearchIsland
           query={findQuery}
           onQueryChange={setFindQuery}

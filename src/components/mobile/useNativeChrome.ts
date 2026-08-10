@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { iosSetChrome, type IosChromeItem } from "@/lib/ios-api";
+import { iosSetChrome, type IosChromeItem, type IosChromeSearch } from "@/lib/ios-api";
 
 export interface NativeChromeSpec {
   topLeft?: IosChromeItem;
   topRight?: IosChromeItem;
+  search?: IosChromeSearch;
 }
 
 /**
@@ -18,7 +19,7 @@ export interface NativeChromeSpec {
  */
 export function useNativeChrome(
   spec: NativeChromeSpec,
-  actions: Record<string, () => void>,
+  actions: Record<string, (value?: string) => void>,
 ): boolean {
   const [active, setActive] = useState(false);
   const actionsRef = useRef(actions);
@@ -43,8 +44,8 @@ export function useNativeChrome(
 
   useEffect(() => {
     const onChrome = (e: Event) => {
-      const id = (e as CustomEvent<{ id?: string }>).detail?.id;
-      if (id) actionsRef.current[id]?.();
+      const detail = (e as CustomEvent<{ id?: string; value?: string }>).detail;
+      if (detail?.id) actionsRef.current[detail.id]?.(detail.value);
     };
     window.addEventListener("notesage:chrome", onChrome);
     return () => window.removeEventListener("notesage:chrome", onChrome);
