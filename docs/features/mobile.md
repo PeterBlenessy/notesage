@@ -51,7 +51,17 @@ share-sheet target for capturing links. PRD:
   the theme class flips (syntect's syntax colors are inline styles from the
   Rust renderer, and mermaid bakes its theme + background at render time —
   neither follows a CSS-variable swap).
-- **iOS island chrome (issue #581).** No full-width toolbars: floating glass
+- **Native chrome over the webview (ADR 0009).** The corner controls are
+  REAL SwiftUI Liquid Glass buttons (`.buttonStyle(.glass)`, iOS 26) hosted
+  in per-corner `UIHostingController`s above the WKWebView — genuine
+  material, illumination, and interruptible spring physics, with a native
+  `UIMenu` on back-button long-press (Files' ancestor-jump pattern). The web
+  app declares chrome as data (`ios_set_chrome`: ids + SF Symbol names +
+  menu entries) and receives taps as `notesage:chrome` CustomEvents;
+  `useNativeChrome` falls back to the web islands below when the native
+  layer is absent (desktop dev, tests). Content stays web — the shared Rust
+  rendering pipeline is the reason the hybrid wins over fully-native.
+- **iOS island chrome (issue #581) — web layer, now the fallback + in-content press language.** No full-width toolbars: floating glass
   "button islands" pinned to the screen corners (Apple Notes / iOS 26 pattern,
   the mobile cousin of the desktop Quiet Composer), with content scrolling
   full-height beneath them. Placement contract in `mobile/Chrome.tsx`: back
