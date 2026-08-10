@@ -99,7 +99,37 @@ class NotesageIosPlugin: Plugin {
     else { return nil }
     webViewRef = webView
     KeyboardAccessory.remove(from: webView)
+    installPullToRefresh(on: webView)
     return webView
+  }
+
+  /// Native pull-to-refresh over the library listing (issue #620), replacing
+  /// the web fallback's tap-to-refresh button. The listing lives in the
+  /// page's own overflow-y scroller, not a native page load, so there is no
+  /// native "did finish" signal to end the spinner on — it ends on a fixed,
+  /// deliberately visible beat instead (the same shape as the removed
+  /// button's spin floor, just on the native side).
+  private func installPullToRefresh(on webView: WKWebView) {
+    let control = UIRefreshControl()
+    control.addTarget(self, action: #selector(handlePullToRefresh(_:)), for: .valueChanged)
+    webView.scrollView.refreshControl = control
+  }
+
+  @objc private func handlePullToRefresh(_ sender: UIRefreshControl) {
+    guard let webView = webViewRef else {
+      sender.endRefreshing()
+      return
+    }
+    // Reuses the same `notesage:chrome` bridge shape tap events already
+    // carry — the web side's `refresh` action handler (kept when the
+    // topRight tap button was removed) reacts identically whether the id
+    // came from a tapped button or, as here, a pull gesture.
+    webView.evaluateJavaScript(
+      "window.dispatchEvent(new CustomEvent('notesage:chrome',{detail:{id:'refresh'}}))"
+    )
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+      sender.endRefreshing()
+    }
   }
 
   /// Dispatch a `notesage:keyboard` CustomEvent with the keyboard's overlap

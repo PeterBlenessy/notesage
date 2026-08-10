@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, FolderOpen, RefreshCw, AlertCircle } from "lucide-react";
+import { ChevronLeft, FolderOpen, AlertCircle } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory } from "@/lib/ios-api";
 import { toast } from "sonner";
@@ -33,10 +33,6 @@ export function LibraryBrowser() {
 
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [query, setQuery] = useState("");
-  // Drives the refresh icon's spin. Kept spinning for a beat even when the
-  // listing returns instantly — an animation too short to see reads as a dead
-  // button.
-  const [refreshing, setRefreshing] = useState(false);
 
   // Generation counter: rapid folder navigation can resolve listings out of
   // order — a superseded load must not put a stale listing under the new
@@ -44,9 +40,11 @@ export function LibraryBrowser() {
   const loadIdRef = useRef(0);
   const load = useCallback(async (viaRefresh = false) => {
     const loadId = ++loadIdRef.current;
-    if (viaRefresh) setRefreshing(true);
-    else setState({ status: "loading" });
-    const spinFloor = viaRefresh ? new Promise((r) => setTimeout(r, 600)) : null;
+    // A refresh (pull gesture or the bridge event it dispatches) keeps the
+    // current listing on screen instead of flashing back to the skeleton —
+    // the native UIRefreshControl already shows its own spinner for the
+    // duration, so there is no busy state to track here.
+    if (!viaRefresh) setState({ status: "loading" });
     try {
       const entries = await iosListDirectory(currentRelPath);
       if (loadIdRef.current !== loadId) return;
@@ -64,9 +62,6 @@ export function LibraryBrowser() {
     } catch (err) {
       if (loadIdRef.current !== loadId) return;
       setState({ status: "error", message: String(err) });
-    } finally {
-      if (spinFloor) await spinFloor;
-      setRefreshing(false);
     }
   }, [currentRelPath]);
 
@@ -100,7 +95,11 @@ export function LibraryBrowser() {
               menu: ancestors.map((f, depth) => ({ id: `jump-${depth}`, title: f.name })),
             }
           : { id: "pick", icon: "folder" },
-      topRight: { id: "refresh", icon: "arrow.clockwise", busy: refreshing },
+      // No topRight island: pull-to-refresh (native UIRefreshControl) fully
+      // replaces the tap-to-refresh button (issue #620). The `refresh`
+      // action below still exists — the native control dispatches the same
+      // `notesage:chrome` bridge event a button tap would, just without a
+      // button ever being declared.
       search: {
         placeholder: "Search this folder",
         status:
@@ -125,6 +124,9 @@ export function LibraryBrowser() {
             }
           });
       },
+      // Fired by the native pull-to-refresh gesture (WKWebView's
+      // UIRefreshControl), never by a button — the topRight island for tap
+      // refresh was removed (issue #620).
       refresh: () => void load(true),
     },
   );
@@ -255,13 +257,6 @@ export function LibraryBrowser() {
             <FolderOpen strokeWidth={1.5} className="h-5 w-5" />
           </ChromeButton>
         )}
-      </Island>
-      )}
-      {!nativeChrome && (
-      <Island corner="top-right">
-        <ChromeButton label="Refresh" onClick={() => void load(true)}>
-          <RefreshCw strokeWidth={1.5} className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-        </ChromeButton>
       </Island>
       )}
       {ancestorMenuOpen &&
