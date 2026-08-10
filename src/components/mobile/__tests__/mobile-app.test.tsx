@@ -532,6 +532,94 @@ describe("search islands", () => {
     // Navigation between matches is offered.
     expect(await screen.findByText("1/2")).toBeTruthy();
   });
+
+  it("navigating between matches does not silently reset the article and wipe find marks (issue #605 root cause)", async () => {
+    setMockInvokeHandler("ios_read_file", () => "irrelevant");
+    setMockInvokeHandler(
+      "render_markdown_fragment",
+      () => "<p>needle one, needle two, needle three</p>",
+    );
+    useMobileStore.setState({ openDoc: { relPath: "note.md", name: "note.md" } });
+    renderWithProviders(<Reader />);
+    await screen.findByText(/needle one/);
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "needle" } });
+    await waitFor(() => {
+      expect(document.querySelectorAll("mark.dom-find-highlight").length).toBe(3);
+    });
+
+    // Advancing to the next match updates findIndex/findTotal — state that
+    // has nothing to do with the rendered HTML string. That re-render must
+    // not silently reset the article's innerHTML and wipe every mark it
+    // just painted (React diffs dangerouslySetInnerHTML by object identity,
+    // not by the __html string's value, so an unmemoized `{ __html }`
+    // object resets the DOM on every unrelated re-render).
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+
+    expect(document.querySelectorAll("mark.dom-find-highlight").length).toBe(3);
+    expect(await screen.findByText("2/3")).toBeTruthy();
+  });
+
+  it("watchdog heals when only some marks are silently detached, not just the first (issue #605)", async () => {
+    setMockInvokeHandler("ios_read_file", () => "irrelevant");
+    setMockInvokeHandler(
+      "render_markdown_fragment",
+      () => "<p>needle one, needle two, needle three</p>",
+    );
+    useMobileStore.setState({ openDoc: { relPath: "note.md", name: "note.md" } });
+    renderWithProviders(<Reader />);
+    await screen.findByText(/needle one/);
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "needle" } });
+    await waitFor(() => {
+      expect(document.querySelectorAll("mark.dom-find-highlight").length).toBe(3);
+    });
+
+    // Simulate a hypothetical external actor (outside React entirely — the
+    // watchdog's remaining reason to exist) silently unwrapping only the
+    // second and third marks back to plain text. The first mark stays
+    // connected, so a watchdog that only checks marks[0] would never notice.
+    const marks = Array.from(document.querySelectorAll("mark.dom-find-highlight"));
+    for (const mark of marks.slice(1)) {
+      mark.replaceWith(document.createTextNode(mark.textContent ?? ""));
+    }
+    expect(document.querySelectorAll("mark.dom-find-highlight").length).toBe(1);
+
+    // The watchdog's next tick must notice the partial breakage and re-wrap
+    // every match — not leave the lone survivor as the new normal.
+    await waitFor(
+      () => expect(document.querySelectorAll("mark.dom-find-highlight").length).toBe(3),
+      { timeout: 2000 },
+    );
+  });
+
+  it("goToMatch heals partially-detached marks before navigating (issue #605)", async () => {
+    setMockInvokeHandler("ios_read_file", () => "irrelevant");
+    setMockInvokeHandler(
+      "render_markdown_fragment",
+      () => "<p>needle one, needle two, needle three</p>",
+    );
+    useMobileStore.setState({ openDoc: { relPath: "note.md", name: "note.md" } });
+    renderWithProviders(<Reader />);
+    await screen.findByText(/needle one/);
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "needle" } });
+    await waitFor(() => {
+      expect(document.querySelectorAll("mark.dom-find-highlight").length).toBe(3);
+    });
+
+    const marks = Array.from(document.querySelectorAll("mark.dom-find-highlight"));
+    for (const mark of marks.slice(1)) {
+      mark.replaceWith(document.createTextNode(mark.textContent ?? ""));
+    }
+    expect(document.querySelectorAll("mark.dom-find-highlight").length).toBe(1);
+
+    // Navigate immediately, before the 500ms watchdog tick has a chance to
+    // fire — goToMatch's own heal path must catch the partial breakage too.
+    fireEvent.click(screen.getByRole("button", { name: "Next match" }));
+
+    expect(document.querySelectorAll("mark.dom-find-highlight").length).toBe(3);
+  });
 });
 
 describe("share", () => {
