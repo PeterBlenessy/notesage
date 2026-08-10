@@ -76,6 +76,9 @@ SHARE_TARGET = {
                     "NSExtensionActivationRule": {
                         "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
                         "NSExtensionActivationSupportsText": True,
+                        # Documents (Safari-viewed PDFs, Files shares, EPUBs…)
+                        # — without this iOS never lists Notesage for files.
+                        "NSExtensionActivationSupportsFileWithMaxCount": 3,
                     }
                 },
             },

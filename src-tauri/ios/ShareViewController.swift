@@ -31,6 +31,20 @@ final class ShareViewController: UIViewController {
         }
         let title = item.attributedContentText?.string
 
+        // DOCUMENTS first (a Safari-viewed PDF shares both the file and its
+        // URL — the user wants the document, not a link note). Images are
+        // excluded: photo shares are out of scope for the library inbox.
+        let documentProviders = attachments.filter { p in
+            if p.hasItemConformingToTypeIdentifier(UTType.image.identifier) { return false }
+            return p.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
+                || p.hasItemConformingToTypeIdentifier("org.idpf.epub-container")
+                || p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
+        }
+        if !documentProviders.isEmpty {
+            saveDocuments(documentProviders)
+            return
+        }
+
         // Prefer a URL attachment; fall back to plain text containing a URL.
         if let provider = attachments.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.url.identifier) }) {
             provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { [weak self] data, _ in
@@ -45,6 +59,42 @@ final class ShareViewController: UIViewController {
             }
         } else {
             finish()
+        }
+    }
+
+    /// Copy up to three shared documents into Inbox/. Uses
+    /// `loadFileRepresentation` (a temp FILE url, streamed — a 100 MB PDF
+    /// never lives in extension memory, which iOS caps hard).
+    private func saveDocuments(_ providers: [NSItemProvider]) {
+        let group = DispatchGroup()
+        var saved = 0
+        let lock = NSLock()
+        for provider in providers.prefix(3) {
+            let typeId =
+                provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
+                ? UTType.pdf.identifier
+                : provider.hasItemConformingToTypeIdentifier("org.idpf.epub-container")
+                    ? "org.idpf.epub-container"
+                    : UTType.data.identifier
+            group.enter()
+            provider.loadFileRepresentation(forTypeIdentifier: typeId) { url, _ in
+                defer { group.leave() }
+                guard let url else { return }
+                // The temp file dies when this closure returns — copy NOW.
+                if (try? LibraryAccess.writeDocument(from: url, suggestedName: url.lastPathComponent)) != nil {
+                    lock.lock()
+                    saved += 1
+                    lock.unlock()
+                }
+            }
+        }
+        group.notify(queue: .main) {
+            if saved > 0 {
+                let what = saved == 1 ? "document" : "\(saved) documents"
+                self.show(message: "Saved \(what) to Notesage Inbox", success: true)
+            } else {
+                self.show(message: "Couldn’t save to Notesage", success: false)
+            }
         }
     }
 

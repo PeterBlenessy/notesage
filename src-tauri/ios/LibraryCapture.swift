@@ -94,3 +94,42 @@ extension LibraryAccess {
         }
     }
 }
+
+extension LibraryAccess {
+    /// Store a shared DOCUMENT (PDF, EPUB, …) as a real library file in
+    /// `Inbox/`, keeping its original name (deduped). Returns the stored
+    /// relative path. The source is the temp file `loadFileRepresentation`
+    /// hands the extension — copied under coordination so iCloud sees a
+    /// complete file appear.
+    static func writeDocument(from src: URL, suggestedName: String) throws -> String {
+        let root = try resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+
+        // Keep the shared file's own name — that's what the user will look
+        // for — minus anything path-like; dedupe with a numeric suffix.
+        var name = (suggestedName as NSString).lastPathComponent
+        if name.isEmpty || name == "." || name == ".." { name = "Shared document" }
+        let ext = (name as NSString).pathExtension
+        let stem = (name as NSString).deletingPathExtension
+        var target = inbox.appendingPathComponent(name)
+        var n = 1
+        while FileManager.default.fileExists(atPath: target.path) {
+            name = ext.isEmpty ? "\(stem)-\(n)" : "\(stem)-\(n).\(ext)"
+            target = inbox.appendingPathComponent(name)
+            n += 1
+        }
+
+        var coordError: NSError?
+        var copyError: Error?
+        NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &coordError) { url in
+            do { try FileManager.default.copyItem(at: src, to: url) }
+            catch { copyError = error }
+        }
+        if let coordError { throw coordError }
+        if let copyError { throw copyError }
+        return "Inbox/\(name)"
+    }
+}
