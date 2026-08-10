@@ -763,6 +763,140 @@ describe("native pull-to-refresh (issue #620)", () => {
   });
 });
 
+describe("accessibility — Dynamic Type + Bold Text (issue #617)", () => {
+  const dispatchA11y = (detail: { scale: number; bold: boolean }) => {
+    fireEvent(window, new CustomEvent("notesage:a11y", { detail }));
+  };
+
+  it("reflects a Dynamic Type scale change on the library browser root", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false },
+    ]);
+    const { container } = renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("note.md");
+
+    dispatchA11y({ scale: 1.3, bold: false });
+
+    const root = container.querySelector("[data-a11y-scale]");
+    expect(root?.getAttribute("data-a11y-scale")).toBe("1.3");
+  });
+
+  it("reflects the Bold Text setting on the library browser root", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    const { container } = renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Nothing here yet");
+
+    dispatchA11y({ scale: 1, bold: true });
+
+    const root = container.querySelector("[data-a11y-scale]");
+    expect(root?.getAttribute("data-a11y-bold")).toBe("true");
+  });
+
+  it("wires the folder title to scale via the a11y CSS variable", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    renderWithProviders(<LibraryBrowser />);
+    const title = await screen.findByText("Notesage");
+    expect(title.className).toContain("--ns-a11y-scale");
+  });
+
+  it("wires a file row's name to scale and weight via the a11y CSS variables", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false },
+    ]);
+    renderWithProviders(<LibraryBrowser />);
+    const row = await screen.findByText("note.md");
+    expect(row.className).toContain("--ns-a11y-scale");
+    expect(row.style.fontWeight).toContain("--ns-a11y-weight");
+  });
+
+  it("wires the breadcrumb nav to scale and weight via the a11y CSS variables", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    useMobileStore.setState({
+      libraryName: "Notesage",
+      folderStack: [{ relPath: "Sub", name: "Sub" }],
+    });
+    renderWithProviders(<LibraryBrowser />);
+    const crumb = await screen.findByRole("button", { name: "Sub" });
+    const nav = crumb.closest("nav");
+    expect(nav?.className).toContain("--ns-a11y-scale");
+    expect((nav as HTMLElement)?.style.fontWeight).toContain("--ns-a11y-weight");
+  });
+
+  it("wires the empty-folder heading and body text to scale and weight via the a11y CSS variables", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    renderWithProviders(<LibraryBrowser />);
+    const heading = await screen.findByText("Nothing here yet");
+    const body = screen.getByText("This folder is empty.");
+    expect(heading.className).toContain("--ns-a11y-scale");
+    expect(heading.style.fontWeight).toContain("--ns-a11y-weight");
+    expect(body.className).toContain("--ns-a11y-scale");
+    expect(body.style.fontWeight).toContain("--ns-a11y-weight");
+  });
+
+  it("wires the browser-error heading and message text to scale and weight via the a11y CSS variables", async () => {
+    setMockInvokeHandler("ios_list_directory", () => {
+      throw new Error("boom");
+    });
+    renderWithProviders(<LibraryBrowser />);
+    const heading = await screen.findByText("Couldn't open this folder");
+    const message = screen.getByText("Error: boom");
+    expect(heading.className).toContain("--ns-a11y-scale");
+    expect(heading.style.fontWeight).toContain("--ns-a11y-weight");
+    expect(message.className).toContain("--ns-a11y-scale");
+    expect(message.style.fontWeight).toContain("--ns-a11y-weight");
+  });
+
+  it("reflects the a11y scale/bold on the onboarding screen root", async () => {
+    useMobileStore.setState({ grantState: "ungranted" });
+    const { container } = renderWithProviders(<Onboarding />);
+
+    dispatchA11y({ scale: 1.2, bold: true });
+
+    const root = container.querySelector("[data-a11y-scale]");
+    expect(root?.getAttribute("data-a11y-scale")).toBe("1.2");
+    expect(root?.getAttribute("data-a11y-bold")).toBe("true");
+  });
+
+  it("wires the onboarding heading to scale via the a11y CSS variable", async () => {
+    useMobileStore.setState({ grantState: "ungranted" });
+    renderWithProviders(<Onboarding />);
+    const heading = screen.getByText("Welcome to Notesage");
+    expect(heading.className).toContain("--ns-a11y-scale");
+  });
+
+  it("wires the onboarding body paragraph to scale and weight via the a11y CSS variables", async () => {
+    useMobileStore.setState({ grantState: "ungranted" });
+    renderWithProviders(<Onboarding />);
+    const body = screen.getByText(/Read your Notesage notes on the go/);
+    expect(body.className).toContain("--ns-a11y-scale");
+    expect(body.style.fontWeight).toContain("--ns-a11y-weight");
+  });
+
+  it("wires the onboarding feature title and description to scale and weight via the a11y CSS variables", async () => {
+    useMobileStore.setState({ grantState: "ungranted" });
+    renderWithProviders(<Onboarding />);
+    const title = screen.getByText("Read-only & private");
+    const description = screen.getByText(/single exception is the/);
+    expect(title.className).toContain("--ns-a11y-scale");
+    expect(title.style.fontWeight).toContain("--ns-a11y-weight");
+    expect(description.className).toContain("--ns-a11y-scale");
+    expect(description.style.fontWeight).toContain("--ns-a11y-weight");
+  });
+
+  it("leaves reader content typography untouched by the a11y bridge", async () => {
+    setMockInvokeHandler("ios_read_file", () => "# Hi");
+    setMockInvokeHandler("render_markdown_fragment", () => "<h1>Hi</h1>");
+    useMobileStore.setState({ openDoc: { relPath: "note.md", name: "note.md" } });
+    const { container } = renderWithProviders(<Reader />);
+    await screen.findByText("Hi");
+
+    dispatchA11y({ scale: 1.5, bold: true });
+
+    // Reader never opts into the a11y bridge — no scoped root to find.
+    expect(container.querySelector("[data-a11y-scale]")).toBeNull();
+  });
+});
+
 describe("library re-pick", () => {
   it("the root folder button reopens the folder picker", async () => {
     setMockInvokeHandler("ios_list_directory", () => []);
