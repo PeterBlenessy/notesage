@@ -159,6 +159,66 @@ fn yaml_quote(value: &str) -> String {
 /// Compute the `date_saved` (RFC3339, UTC, seconds precision) and the filename
 /// time stamp (`YYYY-MM-DD-HHmmss`, UTC) from the system clock. Kept dependency
 /// -free (no `chrono`/`time` crate) via a small civil-time conversion.
+/// A readable article extracted from a captured web page.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Article {
+    pub title: Option<String>,
+    pub markdown: String,
+}
+
+/// Readable extraction + HTML→Markdown for rich web capture (#584).
+///
+/// Returns `None` when the page does not yield a genuine article — nav-heavy
+/// portals, login walls, near-empty bodies — so the caller can fall back to
+/// the link-only capture note. The bar: at least `MIN_ARTICLE_CHARS` of
+/// extracted markdown, which filters boilerplate-only extractions without
+/// rejecting short-but-real posts.
+pub fn extract_article(html: &str, url: &str) -> Option<Article> {
+    const MIN_ARTICLE_CHARS: usize = 400;
+
+    let parsed_url = url::Url::parse(url).ok()?;
+    let mut bytes = html.as_bytes();
+    let product = readability::extractor::extract(&mut bytes, &parsed_url).ok()?;
+    let markdown = htmd::convert(&product.content).ok()?;
+    let markdown = markdown.trim();
+    if markdown.chars().count() < MIN_ARTICLE_CHARS {
+        return None;
+    }
+    let title = {
+        let t = product.title.trim();
+        if t.is_empty() { None } else { Some(t.to_string()) }
+    };
+    Some(Article { title, markdown: markdown.to_string() })
+}
+
+/// Body-bearing capture note (format v2): identical frontmatter to the
+/// link-only builder plus `capture_format: markdown`, with the extracted
+/// article as the body after the source-link line. The link-only builder
+/// remains the universal fallback — a capture must never fail outright.
+pub fn build_article_note(
+    input: &CaptureInput,
+    article: &Article,
+    now_rfc3339: &str,
+    file_stamp: &str,
+) -> CaptureNote {
+    let effective_title = input.title.clone().or_else(|| article.title.clone());
+    let base = build_capture_note(
+        &CaptureInput { title: effective_title, ..input.clone() },
+        now_rfc3339,
+        file_stamp,
+    );
+    let mut contents = base.contents;
+    // Frontmatter is the first `---` block; add the format marker just
+    // before its closing fence so consumers can route on it.
+    if let Some(close) = contents[3..].find("\n---") {
+        contents.insert_str(3 + close, "\ncapture_format: markdown");
+    }
+    contents.push('\n');
+    contents.push_str(&article.markdown);
+    contents.push('\n');
+    CaptureNote { contents, ..base }
+}
+
 pub fn timestamps() -> (String, String) {
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
@@ -314,5 +374,69 @@ mod tests {
         assert_eq!(s.len(), 50);
         assert_eq!(slugify("  !!! hi --- there !!!  "), "hi-there");
         assert_eq!(slugify("!!!"), "");
+    }
+
+    // ---- rich web capture (#584) ------------------------------------------
+
+    fn article_html() -> String {
+        let paragraphs: String = (0..12)
+            .map(|i| format!("<p>Paragraph {i}: the quick brown fox jumps over the lazy dog, again and again, providing ample readable content for the extractor to work with.</p>"))
+            .collect();
+        format!(
+            "<html><head><title>A Real Article</title></head><body>\
+             <nav><a href=\"/\">Home</a><a href=\"/about\">About</a></nav>\
+             <article><h1>A Real Article</h1>{paragraphs}</article>\
+             <footer>© footer</footer></body></html>"
+        )
+    }
+
+    #[test]
+    fn extracts_a_real_article_to_markdown() {
+        let article = extract_article(&article_html(), "https://example.com/post").expect("article");
+        assert!(article.markdown.contains("Paragraph 3"));
+        assert!(!article.markdown.contains("About"), "nav chrome must not survive extraction");
+        assert_eq!(article.title.as_deref(), Some("A Real Article"));
+    }
+
+    #[test]
+    fn rejects_nav_heavy_and_tiny_pages() {
+        let portal = "<html><body><nav><ul><li><a href=\"/a\">A</a></li><li><a href=\"/b\">B</a></li></ul></nav><p>Login</p></body></html>";
+        assert!(extract_article(portal, "https://example.com/").is_none());
+        assert!(extract_article("<html><body><p>hi</p></body></html>", "https://example.com/").is_none());
+        assert!(extract_article("not html at all", "https://example.com/").is_none());
+    }
+
+    #[test]
+    fn article_note_carries_format_marker_and_body() {
+        let input = CaptureInput {
+            url: "https://example.com/post".into(),
+            title: None,
+            selection_text: None,
+            tags: vec![],
+        };
+        let article = extract_article(&article_html(), "https://example.com/post").unwrap();
+        let note = build_article_note(&input, &article, "2026-08-10T10:00:00+02:00", "2026-08-10-100000");
+        // Frontmatter: format marker INSIDE the fence, title from the article.
+        let fm_end = note.contents[3..].find("\n---").unwrap() + 3;
+        let frontmatter = &note.contents[..fm_end];
+        assert!(frontmatter.contains("capture_format: markdown"), "{frontmatter}");
+        assert!(frontmatter.contains("A Real Article"));
+        // Body: the article markdown follows.
+        assert!(note.contents[fm_end..].contains("Paragraph 3"));
+        // Same naming scheme as the link-only note.
+        assert!(note.rel_path.starts_with("Inbox/2026-08-10-100000"));
+    }
+
+    #[test]
+    fn explicit_share_title_beats_extracted_title() {
+        let input = CaptureInput {
+            url: "https://example.com/post".into(),
+            title: Some("User Chosen".into()),
+            selection_text: None,
+            tags: vec![],
+        };
+        let article = extract_article(&article_html(), "https://example.com/post").unwrap();
+        let note = build_article_note(&input, &article, "2026-08-10T10:00:00+02:00", "2026-08-10-100000");
+        assert!(note.contents.contains("User Chosen"));
     }
 }

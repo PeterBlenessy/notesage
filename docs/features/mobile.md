@@ -92,6 +92,20 @@ share-sheet target for capturing links. PRD:
   file — share targets cannot read through the security-scoped grant, so the
   Swift side (`LibraryAccess.copyForSharing`) copies to the app's temp dir
   first. Full stack: `ios_share_file` command → plugin `shareFile`.
+- **Capture with a format picker.** Sharing a URL opens a compact
+  transparent card (the host app stays visible — no opaque sheet) offering
+  **Article (Markdown)** — page fetched (10 s / 5 MB, Safari UA) and run
+  through readable extraction + HTML→Markdown in the Rust `notesage-capture`
+  crate (`extract_article`, `capture_format: markdown` note v2), falling back
+  to the link note when a page yields nothing readable; **Link note** — the
+  classic instant capture; **Page (HTML)** — the fetched page stored as a
+  real `.html` Inbox file (opens in the app's HTML viewer). The last choice
+  is remembered (App Group defaults) and listed first; success flashes
+  "✓ Saved…" and auto-dismisses. Documents (PDF/EPUB/file shares — the
+  extension also declares `NSExtensionActivationSupportsFileWithMaxCount`)
+  skip the picker and store immediately in `Inbox/` with their original
+  names, streamed via `loadFileRepresentation`. PDF-format capture via an
+  in-extension WKWebView render: #609; extraction quality: #610.
 - **Capture links via the share sheet.** "Share → Notesage" from Safari, the
   X/Twitter app, or anything that shares a URL writes a link-only
   `type: capture` note into `Inbox/`, which syncs back to the desktop where the
