@@ -8,7 +8,7 @@ import { useMobileStore } from "@/stores/mobile-store";
 import { FileRow } from "./FileRow";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
-import { useNativeChrome } from "./useNativeChrome";
+import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
 
 type LoadState =
   | { status: "loading" }
@@ -27,6 +27,7 @@ export function LibraryBrowser() {
   const goBack = useMobileStore((s) => s.goBack);
   const goToDepth = useMobileStore((s) => s.goToDepth);
   const pickFolder = useMobileStore((s) => s.pickFolder);
+  const a11y = useA11yPrefs();
 
   const currentRelPath = folderStack.length === 0 ? "" : folderStack[folderStack.length - 1].relPath;
   const currentName = folderStack.length === 0 ? libraryName || "Notesage" : folderStack[folderStack.length - 1].name;
@@ -144,7 +145,7 @@ export function LibraryBrowser() {
   };
 
   return (
-    <div className="relative h-full w-full bg-background">
+    <div className="relative h-full w-full bg-background" {...a11yRootProps(a11y)}>
       {/* Full-height scroller — content flows edge to edge and passes UNDER
           the translucent top/bottom chrome (Apple Notes / Quiet Composer
           pattern, issue #581). The large title lives IN the content, so it
@@ -155,9 +156,14 @@ export function LibraryBrowser() {
         style={CONTENT_INSETS}
       >
         <div className="px-4 pb-1 pt-2">
-          <h1 className="truncate text-2xl font-bold text-foreground">{currentName}</h1>
+          <h1 className="truncate text-[length:calc(1.5rem*var(--ns-a11y-scale,1))] font-bold text-foreground">
+            {currentName}
+          </h1>
           {folderStack.length > 0 && (
-            <nav className="mt-0.5 flex items-center gap-1 overflow-x-auto text-xs text-muted-foreground">
+            <nav
+              className="mt-0.5 flex items-center gap-1 overflow-x-auto text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground"
+              style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
+            >
               <button type="button" className="ios-press-row shrink-0 rounded px-1 hover:text-foreground" onClick={() => goToDepth(0)}>
                 {libraryName || "Notesage"}
               </button>
@@ -327,8 +333,12 @@ function EmptyFolder() {
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 py-16 text-center">
       <FolderOpen strokeWidth={1.25} className="h-8 w-8 text-muted-foreground" />
-      <p className="mt-3 text-sm font-medium text-foreground">Nothing here yet</p>
-      <p className="mt-1 text-xs text-muted-foreground">This folder is empty.</p>
+      <p className="mt-3 text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] font-medium text-foreground">
+        Nothing here yet
+      </p>
+      <p className="mt-1 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground">
+        This folder is empty.
+      </p>
     </div>
   );
 }
@@ -337,8 +347,12 @@ function BrowserError({ message, onRetry }: { message: string; onRetry: () => vo
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 py-16 text-center">
       <AlertCircle strokeWidth={1.25} className="h-8 w-8 text-muted-foreground" />
-      <p className="mt-3 text-sm font-medium text-foreground">Couldn't open this folder</p>
-      <p className="mt-1 max-w-xs text-xs text-muted-foreground break-words">{message}</p>
+      <p className="mt-3 text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] font-medium text-foreground">
+        Couldn't open this folder
+      </p>
+      <p className="mt-1 max-w-xs text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground break-words">
+        {message}
+      </p>
       <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={onRetry}>
         Try again
       </Button>

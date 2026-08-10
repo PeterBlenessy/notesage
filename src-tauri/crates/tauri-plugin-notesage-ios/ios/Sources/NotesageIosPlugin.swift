@@ -62,6 +62,8 @@ private enum KeyboardAccessory {
 class NotesageIosPlugin: Plugin {
   private var keyboardObserversInstalled = false
   private var keyboardObserverTokens: [NSObjectProtocol] = []
+  private var accessibilityObserversInstalled = false
+  private var accessibilityObserverTokens: [NSObjectProtocol] = []
   private weak var webViewRef: WKWebView?
 
   private var topViewController: UIViewController? {
@@ -85,6 +87,7 @@ class NotesageIosPlugin: Plugin {
     DispatchQueue.main.async { [weak self] in
       _ = self?.resolveWebView()
       self?.installKeyboardObservers()
+      self?.installAccessibilityObservers()
     }
   }
 
@@ -136,8 +139,55 @@ class NotesageIosPlugin: Plugin {
     }
   }
 
+  /// Current Dynamic Type scale as a multiplier around 1.0 (1 = the default
+  /// "Large" content size category). `UIFont.preferredFont(forTextStyle:
+  /// .body)` already reflects the user's chosen size category, so its point
+  /// size relative to the 17pt default gives the scale the web layer needs —
+  /// no manual category-to-multiplier table to keep in sync with iOS.
+  private func currentA11yScale() -> CGFloat {
+    UIFont.preferredFont(forTextStyle: .body).pointSize / 17.0
+  }
+
+  /// Dispatch a `notesage:a11y` CustomEvent with the current Dynamic Type
+  /// scale and Bold Text state — the folder-view surfaces (Chrome, FileRow,
+  /// LibraryBrowser, Onboarding) consume this to scale/weight their own
+  /// text. Document/reader content does not listen for this event.
+  private func emitA11yPrefs(to webView: WKWebView) {
+    let scale = currentA11yScale()
+    let bold = UIAccessibility.isBoldTextEnabled
+    webView.evaluateJavaScript(
+      "window.dispatchEvent(new CustomEvent('notesage:a11y',{detail:{scale:\(scale),bold:\(bold)}}))"
+    )
+  }
+
+  /// Observe Dynamic Type and Bold Text changes and re-emit `notesage:a11y`
+  /// whenever either flips — plus once immediately on install, so the web
+  /// layer isn't stuck at defaults until the user changes a setting.
+  private func installAccessibilityObservers() {
+    guard !accessibilityObserversInstalled else { return }
+    accessibilityObserversInstalled = true
+    let center = NotificationCenter.default
+    let forward: (Notification) -> Void = { [weak self] _ in
+      guard let webView = self?.resolveWebView() else { return }
+      self?.emitA11yPrefs(to: webView)
+    }
+    for name in [
+      UIContentSizeCategory.didChangeNotification,
+      UIAccessibility.boldTextStatusDidChangeNotification,
+    ] {
+      accessibilityObserverTokens.append(
+        center.addObserver(forName: name, object: nil, queue: .main, using: forward))
+    }
+    if let webView = resolveWebView() {
+      emitA11yPrefs(to: webView)
+    }
+  }
+
   deinit {
     for token in keyboardObserverTokens {
+      NotificationCenter.default.removeObserver(token)
+    }
+    for token in accessibilityObserverTokens {
       NotificationCenter.default.removeObserver(token)
     }
   }

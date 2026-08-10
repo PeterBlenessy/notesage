@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Search, X, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useA11yPrefs, a11yRootProps } from "./useNativeChrome";
 
 /**
  * iOS 26-style chrome for the mobile shell (issue #581): floating glass
@@ -104,6 +105,11 @@ export function Island({
 }) {
   const keyboardInset = useKeyboardInset();
   const isBottom = corner.startsWith("bottom");
+  // Portaled to document.body — outside the folder-view root's DOM subtree —
+  // so it needs its own a11y hook rather than inheriting the ancestor's CSS
+  // custom properties, which follow the DOM tree, not the React tree.
+  const a11y = useA11yPrefs();
+  const a11yProps = a11yRootProps(a11y);
   return createPortal(
     <div
       className={cn(
@@ -112,11 +118,14 @@ export function Island({
         CORNER[corner],
         className,
       )}
-      style={
-        isBottom && keyboardInset > 0
+      data-a11y-scale={a11yProps["data-a11y-scale"]}
+      data-a11y-bold={a11yProps["data-a11y-bold"]}
+      style={{
+        ...a11yProps.style,
+        ...(isBottom && keyboardInset > 0
           ? { transform: `translateY(-${keyboardInset}px)`, transition: "transform 360ms cubic-bezier(0.28, 1.25, 0.4, 1)" }
-          : undefined
-      }
+          : undefined),
+      }}
     >
       {children}
     </div>,

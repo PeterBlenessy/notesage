@@ -78,10 +78,14 @@ export function FileRow({ entry, active, onActivate }: FileRowProps) {
       />
       <span
         className={cn(
-          "flex-1 truncate text-sm",
-          active ? "font-medium text-foreground" : "text-foreground",
+          "flex-1 truncate text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground",
           entry.hidden && "opacity-60",
         )}
+        style={{
+          fontWeight: active
+            ? "max(500, var(--ns-a11y-weight, 400))"
+            : "var(--ns-a11y-weight, 400)",
+        }}
       >
         {entry.name}
       </span>

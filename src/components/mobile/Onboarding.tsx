@@ -3,6 +3,7 @@ import { FolderOpen, ShieldCheck, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useMobileStore } from "@/stores/mobile-store";
+import { useA11yPrefs, a11yRootProps } from "./useNativeChrome";
 
 /**
  * First-run / re-grant screen. Explains that iOS requires a one-time permission
@@ -14,6 +15,7 @@ export function Onboarding() {
   const grantState = useMobileStore((s) => s.grantState);
   const pickFolder = useMobileStore((s) => s.pickFolder);
   const [busy, setBusy] = useState(false);
+  const a11y = useA11yPrefs();
 
   const isStale = grantState === "stale";
 
@@ -35,16 +37,22 @@ export function Onboarding() {
   };
 
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center px-8 text-center">
+    <div
+      className="flex h-full w-full flex-col items-center justify-center px-8 text-center"
+      {...a11yRootProps(a11y)}
+    >
       <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
         <BookOpen strokeWidth={1.5} className="h-8 w-8 text-foreground" />
       </div>
 
-      <h1 className="mt-6 text-xl font-semibold text-foreground">
+      <h1
+        className="mt-6 text-[length:calc(1.25rem*var(--ns-a11y-scale,1))] text-foreground"
+        style={{ fontWeight: "max(600, var(--ns-a11y-weight, 400))" }}
+      >
         {isStale ? "Reconnect your library" : "Welcome to Notesage"}
       </h1>
 
-      <p className="mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">
+      <p className="mt-3 max-w-sm text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] leading-relaxed text-muted-foreground">
         {isStale
           ? "Your access to the Notesage folder expired. Grant it once more to keep reading."
           : "Read your Notesage notes on the go. iOS needs a one-time permission to open your Notesage folder — your iCloud Notesage folder, or any folder under On My iPhone if you don't use iCloud."}
@@ -86,8 +94,15 @@ function Feature({
     <div className="flex gap-3 rounded-lg border border-border p-3">
       <Icon strokeWidth={1.5} className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
       <div>
-        <div className="text-sm font-medium text-foreground">{title}</div>
-        <div className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{children}</div>
+        <div
+          className="text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground"
+          style={{ fontWeight: "max(500, var(--ns-a11y-weight, 400))" }}
+        >
+          {title}
+        </div>
+        <div className="mt-0.5 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] leading-relaxed text-muted-foreground">
+          {children}
+        </div>
       </div>
     </div>
   );
