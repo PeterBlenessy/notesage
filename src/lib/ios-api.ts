@@ -64,6 +64,10 @@ export interface IosChromeItem {
   icon: string;
   /** Long-press menu entries (native UIMenu); tap still fires `id`. */
   menu?: Array<{ id: string; title: string }>;
+  /** True while the action behind this button is in flight — the native
+   *  button spins its SF Symbol for the duration, mirroring the web
+   *  fallback's `animate-spin` treatment. */
+  busy?: boolean;
 }
 
 /**

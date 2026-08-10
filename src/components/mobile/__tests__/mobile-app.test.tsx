@@ -625,6 +625,70 @@ describe("long-press ancestor menu (web fallback)", () => {
   });
 });
 
+describe("native chrome refresh busy state (issue #604)", () => {
+  it("marks the topRight chrome item busy while a tap-to-refresh reload is in flight, then clears it", async () => {
+    const specs: Array<{ topRight?: { id: string; icon: string; busy?: boolean } }> = [];
+    setMockInvokeHandler("ios_set_chrome", (args) => {
+      specs.push((args as { spec: (typeof specs)[number] }).spec);
+      // Rejects like the unmocked default — the web fallback stays the
+      // rendered surface, but every declared spec is still captured.
+      throw new Error("native chrome unavailable in tests");
+    });
+
+    let resolveList: ((entries: unknown[]) => void) | null = null;
+    setMockInvokeHandler("ios_list_directory", () => {
+      return new Promise((resolve) => {
+        resolveList = resolve;
+      });
+    });
+
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(resolveList).not.toBeNull());
+    resolveList!([]);
+    await screen.findByText("Nothing here yet");
+
+    // Idle: the refresh button is not declared busy.
+    expect(specs[specs.length - 1]?.topRight?.busy).toBeFalsy();
+
+    // Tap-to-refresh: hold the listing pending and assert busy flips on —
+    // same signal (`refreshing`) that already drives the web-fallback spin.
+    resolveList = null;
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(resolveList).not.toBeNull());
+    await waitFor(() => expect(specs[specs.length - 1]?.topRight?.busy).toBe(true));
+
+    // Resolve the listing; busy must clear once the refresh settles (past
+    // the same spinFloor beat the web-fallback icon respects).
+    resolveList!([]);
+    await waitFor(() => expect(specs[specs.length - 1]?.topRight?.busy).toBeFalsy(), { timeout: 2000 });
+  });
+
+  it("does not mark the refresh button busy during an ordinary folder-navigation reload", async () => {
+    const specs: Array<{ topRight?: { id: string; icon: string; busy?: boolean } }> = [];
+    setMockInvokeHandler("ios_set_chrome", (args) => {
+      specs.push((args as { spec: (typeof specs)[number] }).spec);
+      throw new Error("native chrome unavailable in tests");
+    });
+    setMockInvokeHandler("ios_list_directory", (args) => {
+      const relPath = (args as { relPath: string }).relPath;
+      if (relPath === "Sub") {
+        return [{ name: "leaf.md", path: "Sub/leaf.md", is_directory: false, hidden: false }];
+      }
+      return [{ name: "Sub", path: "Sub", is_directory: true, hidden: false }];
+    });
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Sub");
+    expect(specs[specs.length - 1]?.topRight?.busy).toBeFalsy();
+
+    fireEvent.click(screen.getByText("Sub"));
+    await screen.findByText("leaf.md");
+    // Every spec declared during the plain folder-navigation load stayed
+    // non-busy — only the explicit refresh action sets busy.
+    expect(specs.every((s) => !s.topRight?.busy)).toBe(true);
+  });
+});
+
 describe("library re-pick", () => {
   it("the root folder button reopens the folder picker", async () => {
     setMockInvokeHandler("ios_list_directory", () => []);
