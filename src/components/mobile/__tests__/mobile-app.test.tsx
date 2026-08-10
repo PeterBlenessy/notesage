@@ -141,6 +141,44 @@ describe("library browser states", () => {
   });
 });
 
+describe("library browser load-generation guard (rapid navigation races)", () => {
+  it("drops a stale folder listing when folder navigation and a document open race an in-flight load", async () => {
+    // Deferred resolvers keyed by relPath so the test controls resolution
+    // order independently of call order — the exact shape of a race.
+    const deferred: Record<string, (entries: unknown[]) => void> = {};
+    setMockInvokeHandler("ios_list_directory", (args) => {
+      const relPath = (args as { relPath: string }).relPath;
+      return new Promise((resolve) => {
+        deferred[relPath] = resolve;
+      });
+    });
+
+    renderWithProviders(<LibraryBrowser />);
+    // Root listing kicks off on mount and is left in flight.
+    await waitFor(() => expect(deferred[""]).toBeDefined());
+
+    // Rapid navigation: enter a folder (supersedes the in-flight root load)
+    // AND open a document in the same window — interleaving folder and
+    // document navigation the way a fast double-tap would.
+    useMobileStore.getState().enterFolder({ relPath: "Sub", name: "Sub" });
+    useMobileStore.getState().openDocument({ relPath: "Sub/note.md", name: "note.md" });
+    await waitFor(() => expect(deferred["Sub"]).toBeDefined());
+
+    // Resolve the CURRENT folder's listing first...
+    deferred["Sub"]([{ name: "leaf.md", path: "Sub/leaf.md", is_directory: false, hidden: false }]);
+    expect(await screen.findByText("leaf.md")).toBeTruthy();
+
+    // ...then resolve the SUPERSEDED root listing out of order. A load
+    // without the generation guard would clobber the correct view with this
+    // stale data.
+    deferred[""]([{ name: "root-file.md", path: "root-file.md", is_directory: false, hidden: false }]);
+    await new Promise((r) => setTimeout(r, 10));
+
+    expect(screen.queryByText("root-file.md")).toBeNull();
+    expect(screen.getByText("leaf.md")).toBeTruthy();
+  });
+});
+
 describe("reader states", () => {
   it("routes PDFs to the PDF viewer (reads bytes, not the unsupported state)", async () => {
     useMobileStore.setState({ openDoc: { relPath: "doc.pdf", name: "doc.pdf" } });
