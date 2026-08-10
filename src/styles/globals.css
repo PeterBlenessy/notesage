@@ -1226,3 +1226,279 @@ html[data-cmd-bar-resizing="true"] [data-cmd-bar] {
   color: var(--color-muted-foreground);
   pointer-events: none;
 }
+
+/* =========================================================================
+ * iOS Liquid Glass press feedback (mobile shell + portaled chrome islands).
+ *
+ * What native iOS 26 interactive glass does on press (and this recreates):
+ *   1. The glass SWELLS toward the finger — scale UP (~1.08), never the
+ *      old-school press-down shrink.
+ *   2. Touch-point illumination — a soft bloom at the contact point
+ *      (--press-x/--press-y set from pointerdown) radiating into the glass.
+ *   3. Release springs back with a visible wobble (SwiftUI's
+ *      spring(response: 0.3, damping: 0.6) feel) — a keyframe animation the
+ *      button JS triggers on pointerup, since a transition can only
+ *      overshoot once.
+ *   4. The material itself: specular rim (top-light inner edge) + strong
+ *      backdrop blur/saturation, brightening while any child is pressed.
+ *
+ * Un-layered on purpose (must beat layered Tailwind utilities). Neutral
+ * palette: highlights are pure white/black alphas — zero chroma.
+ * ========================================================================= */
+.island-glass {
+  /* The WebKit-native Liquid Glass material (SVG-filter lensing is
+     Chromium-only — backdrop-filter: url() does not exist in Safari, so
+     this is the faithful recipe that DOES work in WKWebView):
+     milk-white translucent fill + blur/saturate/brighten backdrop + a
+     4-edge specular rim + diagonal sheen (::after below). NOTE: no
+     position here — islands are position:fixed via utilities, and an
+     un-layered override would knock them out of the viewport. */
+  isolation: isolate;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  backdrop-filter: blur(12px) saturate(180%) brightness(1.08);
+  -webkit-backdrop-filter: blur(12px) saturate(180%) brightness(1.08);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.25),
+    inset 0 1px 1px rgba(255, 255, 255, 0.55),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.3),
+    inset 1px 0 1px rgba(255, 255, 255, 0.2),
+    inset -1px 0 1px rgba(255, 255, 255, 0.2);
+  transition: background-color 200ms ease-out, border-color 200ms ease-out;
+}
+.dark .island-glass {
+  background: rgba(255, 255, 255, 0.07);
+  border-color: rgba(255, 255, 255, 0.14);
+}
+/* Diagonal sheen — light casting across the surface. Sits above the fill,
+   below the controls (which are z-lifted). */
+.island-glass::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.45),
+    rgba(255, 255, 255, 0.08) 28%,
+    transparent 58%
+  );
+  mix-blend-mode: screen;
+  opacity: 0.5;
+}
+.dark .island-glass::after {
+  opacity: 0.35;
+}
+.island-glass > * {
+  position: relative;
+  z-index: 1;
+}
+/* The whole pill answers a press on any of its controls — "illumination
+   radiates to nearby glass": the glass brightens AND its border lights up. */
+.island-glass:has(.liquid-press:active) {
+  background-color: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.26);
+}
+
+.liquid-press,
+.ios-press-row,
+.island-glass {
+  -webkit-tap-highlight-color: transparent;
+  /* Chrome is not content: no text selection, no long-press callout, no
+     drag-lift ghost (the misaligned floating copy WebKit spawns on hold). */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+.island-glass input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+.liquid-press {
+  position: relative;
+  isolation: isolate;
+  border: 1px solid transparent;
+  background-color: rgba(0, 0, 0, 0.05);
+  /* Press-in: quick, eased — the finger does the pushing. Release is NOT
+     this transition; the wobble keyframes below take over via JS. */
+  transition:
+    transform 170ms ease-out,
+    filter 170ms ease-out,
+    background-color 170ms ease-out,
+    border-color 170ms ease-out,
+    box-shadow 170ms ease-out;
+  will-change: transform;
+}
+.dark .liquid-press {
+  background-color: rgba(0, 0, 0, 0.28);
+}
+.liquid-press:active {
+  /* Native glyphs swell WAY up (1.3–1.5×) and pop out of the toolbar glass
+     as their own droplet: fill clearly BRIGHTER than rest, but only a
+     hairline border — the illumination is in the surface, not the ring. */
+  transform: scale(1.4);
+  z-index: 10;
+  /* OPAQUE fill: the droplet must cover the chrome beneath it — a
+     translucent fill lets the original button ring ghost through the
+     swollen glass (visible in on-device screenshots; native droplets are
+     solid milky glass). */
+  background-color: color-mix(in oklab, var(--color-muted) 72%, white);
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow:
+    0 8px 24px rgba(0, 0, 0, 0.35),
+    inset 0 1px 1px rgba(255, 255, 255, 0.35);
+  filter: brightness(1.12) saturate(1.1);
+}
+/* Touch-point illumination: a bloom centred on the contact point. */
+/* Bloom paints ABOVE the opaque fill (no negative z-index), below the
+   glyph — children get lifted one layer so the icon stays crisp. */
+.liquid-press > * {
+  position: relative;
+  z-index: 1;
+}
+.liquid-press::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(
+    circle at var(--press-x, 50%) var(--press-y, 50%),
+    rgba(255, 255, 255, 0.28),
+    rgba(255, 255, 255, 0.07) 55%,
+    transparent 75%
+  );
+  opacity: 0;
+  transition: opacity 260ms ease-out;
+}
+.liquid-press:active::before {
+  opacity: 1;
+  transition-duration: 60ms;
+}
+/* Release wobble — scale 1.08 → undershoot → tiny overshoot → rest, the
+   damped-spring signature. Applied by the button on pointerup/cancel and
+   removed on animationend. */
+@keyframes liquid-spring {
+  0%   { transform: scale(1.4); }
+  40%  { transform: scale(0.94); }
+  70%  { transform: scale(1.045); }
+  100% { transform: scale(1); }
+}
+.liquid-press.liquid-release {
+  animation: liquid-spring 420ms cubic-bezier(0.33, 0, 0.3, 1);
+}
+
+/* List rows keep the flat UITableViewCell highlight (rows don't morph in
+   Notes/Files either); the engage delay keeps scroll-starts from flashing. */
+.ios-press-row {
+  transition: background-color 220ms ease-out;
+}
+.ios-press-row:active {
+  background-color: var(--color-muted);
+  transition-delay: 60ms;
+  transition-duration: 0ms;
+}
+
+/* View-enter motion: the continuity that makes a press feel like it morphs
+   into the incoming surface. Every screen change animates in — iOS never
+   hard-cuts. Content zooms up from 97% with a small rise, on the same
+   fast-out curve UIKit uses for pushes. */
+@keyframes view-zoom-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.97) translateY(8px);
+  }
+  70% {
+    opacity: 1;
+    transform: scale(1.006) translateY(-1px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+.view-enter {
+  animation: view-zoom-in 340ms cubic-bezier(0.22, 0.9, 0.32, 1);
+}
+
+/* Glass surfaces that appear (expanded search, context menus) spring in —
+   nothing in iOS pops without physics. */
+@keyframes glass-spring-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  80% {
+    transform: scale(0.985);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.glass-spring-in {
+  animation: glass-spring-in 380ms cubic-bezier(0.25, 0.8, 0.35, 1);
+}
+
+/* Button→menu morph (Files' held-back-button behavior): the held control
+   IS the menu's origin — the panel grows out of the button's circle
+   (top-left anchored, radius relaxing from full-round to panel), while the
+   real button hides underneath. Items fade in once the shape has mostly
+   settled, so the glass appears to stretch first and furnish second. */
+@keyframes morph-from-button {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.22);
+    border-radius: 9999px;
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.03);
+    border-radius: 24px;
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    border-radius: 16px;
+  }
+}
+.morph-from-button {
+  transform-origin: top left;
+  animation: morph-from-button 340ms cubic-bezier(0.25, 0.9, 0.35, 1);
+}
+@keyframes morph-item-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.morph-from-button > * {
+  animation: morph-item-fade 220ms 100ms ease-out backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .liquid-press,
+  .liquid-press::before {
+    transition-duration: 0ms;
+  }
+  .liquid-press:active {
+    transform: none;
+  }
+  .liquid-press.liquid-release {
+    animation: none;
+  }
+  .view-enter,
+  .glass-spring-in,
+  .morph-from-button,
+  .morph-from-button > * {
+    animation: none;
+  }
+}

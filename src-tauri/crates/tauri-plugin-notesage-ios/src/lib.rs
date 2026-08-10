@@ -149,6 +149,14 @@ impl<R: Runtime> NotesageIos<R> {
             .map(|r| r.base64)
     }
 
+    /// Declare the native chrome overlay (real Liquid Glass buttons hosted
+    /// over the webview). `spec` is the JSON `{ topLeft?, topRight? }` shape
+    /// ChromeOverlay.swift decodes; taps come back as `notesage:chrome`
+    /// CustomEvents in the page.
+    pub fn set_chrome(&self, spec: serde_json::Value) -> Result<()> {
+        self.call("setChrome", spec)
+    }
+
     /// Present the iOS share sheet for a library file (copied to temp first —
     /// share targets can't read through the security-scoped grant).
     pub fn share_file(&self, rel: &str) -> Result<()> {
@@ -185,6 +193,9 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn read_binary(&self, _rel: &str) -> Result<String> {
+        Err(Error::Unavailable)
+    }
+    pub fn set_chrome(&self, _spec: serde_json::Value) -> Result<()> {
         Err(Error::Unavailable)
     }
     pub fn share_file(&self, _rel: &str) -> Result<()> {
