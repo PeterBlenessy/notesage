@@ -9,6 +9,11 @@ struct RelPathArgs: Decodable {
   let relPath: String
 }
 
+struct WriteFileArgs: Decodable {
+  let relPath: String
+  let text: String
+}
+
 // MARK: - Keyboard accessory removal
 
 /// WKWebView shows its own accessory bar (form prev/next arrows + Done) above
@@ -222,6 +227,28 @@ class NotesageIosPlugin: Plugin {
       // parsed on the WebView main thread (seconds of frozen UI). Base64 is a
       // single contiguous string; the JS side decodes it natively.
       invoke.resolve(["base64": try LibraryAccess.readBinary(args.relPath).base64EncodedString()])
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func writeFile(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(WriteFileArgs.self)
+      try LibraryAccess.writeFile(args.relPath, text: args.text)
+      invoke.resolve()
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func createFile(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(WriteFileArgs.self)
+      invoke.resolve(["relPath": try LibraryAccess.createFile(args.relPath, text: args.text)])
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func createDirectory(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(RelPathArgs.self)
+      invoke.resolve(["relPath": try LibraryAccess.createDirectory(args.relPath)])
     } catch { invoke.reject(String(describing: error)) }
   }
 

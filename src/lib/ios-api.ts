@@ -102,3 +102,28 @@ export function iosEnsureDownloaded(relPath: string): Promise<IosDownloadState> 
   return invoke<IosDownloadState>("ios_ensure_downloaded", { relPath });
 }
 
+/**
+ * Overwrite (or create) a UTF-8 file — the mobile editor's save path (#586).
+ * Atomic coordinated write on the native side.
+ */
+export function iosWriteFile(relPath: string, content: string): Promise<void> {
+  return invoke("ios_write_file", { relPath, content });
+}
+
+/**
+ * Create a new UTF-8 file. The name is deduped natively (`note.md` →
+ * `note-1.md`) rather than overwritten; resolves to the relative path
+ * actually created.
+ */
+export function iosCreateFile(relPath: string, content: string): Promise<string> {
+  return invoke<string>("ios_create_file", { relPath, content });
+}
+
+/**
+ * Create a new folder. The name is deduped natively; resolves to the
+ * relative path actually created.
+ */
+export function iosCreateDirectory(relPath: string): Promise<string> {
+  return invoke<string>("ios_create_directory", { relPath });
+}
+

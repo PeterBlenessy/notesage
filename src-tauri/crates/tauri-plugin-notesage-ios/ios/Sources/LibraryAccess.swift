@@ -175,6 +175,93 @@ enum LibraryAccess {
         return dest
     }
 
+    // MARK: - Writes (#586 create/edit notes; all `rel` pre-sanitized by the Rust layer)
+    //
+    // The app's write surface is deliberately this small: overwrite a text
+    // file, create a text file, create a folder. No delete, no rename, no
+    // binary writes — those stay out of the binary until they have their own
+    // issue-scoped design (#618 covers delete).
+
+    /// Overwrite (or create) a UTF-8 file. Coordinated `.forReplacing` write so
+    /// iCloud sees one atomic replacement instead of a truncate+append.
+    static func writeFile(_ rel: String, text: String) throws {
+        guard !rel.isEmpty else { throw LibraryAccessError.ioError("cannot write the library root") }
+        let root = try resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let fileURL = root.appendingPathComponent(rel)
+        var coordError: NSError?
+        var result: Result<Void, Error> = .failure(LibraryAccessError.ioError("uncoordinated"))
+        NSFileCoordinator().coordinate(writingItemAt: fileURL, options: .forReplacing, error: &coordError) { url in
+            do {
+                try Data(text.utf8).write(to: url, options: .atomic)
+                result = .success(())
+            } catch { result = .failure(error) }
+        }
+        if let coordError { throw coordError }
+        try result.get()
+    }
+
+    /// Create a new UTF-8 file, deduping the name (`note.md` → `note-1.md`)
+    /// instead of overwriting — same behaviour the Share Extension's document
+    /// capture uses. Returns the final relative path actually created.
+    static func createFile(_ rel: String, text: String) throws -> String {
+        guard !rel.isEmpty else { throw LibraryAccessError.ioError("file name is empty") }
+        let root = try resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let (fileURL, finalRel) = deduped(rel, under: root)
+        var coordError: NSError?
+        var result: Result<Void, Error> = .failure(LibraryAccessError.ioError("uncoordinated"))
+        NSFileCoordinator().coordinate(writingItemAt: fileURL, options: [], error: &coordError) { url in
+            do {
+                try Data(text.utf8).write(to: url, options: .atomic)
+                result = .success(())
+            } catch { result = .failure(error) }
+        }
+        if let coordError { throw coordError }
+        try result.get()
+        return finalRel
+    }
+
+    /// Create a new folder, deduping the name. Returns the final relative path.
+    static func createDirectory(_ rel: String) throws -> String {
+        guard !rel.isEmpty else { throw LibraryAccessError.ioError("folder name is empty") }
+        let root = try resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let (dirURL, finalRel) = deduped(rel, under: root)
+        var coordError: NSError?
+        var result: Result<Void, Error> = .failure(LibraryAccessError.ioError("uncoordinated"))
+        NSFileCoordinator().coordinate(writingItemAt: dirURL, options: [], error: &coordError) { url in
+            do {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+                result = .success(())
+            } catch { result = .failure(error) }
+        }
+        if let coordError { throw coordError }
+        try result.get()
+        return finalRel
+    }
+
+    /// First free name for `rel` under `root`: `stem.ext`, `stem-1.ext`, `stem-2.ext`, …
+    private static func deduped(_ rel: String, under root: URL) -> (URL, String) {
+        let ns = rel as NSString
+        let dir = ns.deletingLastPathComponent
+        let ext = ns.pathExtension
+        let stem = (ns.lastPathComponent as NSString).deletingPathExtension
+        var candidateRel = rel
+        var url = root.appendingPathComponent(rel)
+        var n = 1
+        while FileManager.default.fileExists(atPath: url.path) {
+            let name = ext.isEmpty ? "\(stem)-\(n)" : "\(stem)-\(n).\(ext)"
+            candidateRel = dir.isEmpty ? name : "\(dir)/\(name)"
+            url = root.appendingPathComponent(candidateRel)
+            n += 1
+        }
+        return (url, candidateRel)
+    }
+
     @discardableResult
     static func ensureDownloaded(_ rel: String) throws -> DownloadState {
         let root = try resolveRoot()

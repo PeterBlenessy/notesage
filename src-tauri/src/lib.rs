@@ -265,14 +265,19 @@ pub fn run() {
         })
         ;
 
-    // iOS registers ONLY the mobile reader's command surface. The desktop list
-    // below contains write/exec/credential commands (`write_file`,
-    // `delete_path`, `get_credential`, `acp_agent_spawn`, `run_in_terminal`,
-    // …) that the mobile shell never calls — but "the frontend doesn't call
-    // it" is not a security boundary. Gating them out of the iOS binary makes
-    // the documented read-only posture real at the IPC layer: an XSS-class
-    // bug or compromised dependency in the mobile WebView has no write/exec
-    // commands to reach.
+    // iOS registers ONLY the mobile shell's command surface. The desktop list
+    // below contains broad write/exec/credential commands (`write_file` on
+    // arbitrary absolute paths, `delete_path`, `get_credential`,
+    // `acp_agent_spawn`, `run_in_terminal`, …) that the mobile shell never
+    // calls — but "the frontend doesn't call it" is not a security boundary.
+    // Gating them out of the iOS binary keeps the documented posture real at
+    // the IPC layer. Since #586 the posture is "reads + three allowlisted
+    // note-editing writes", not read-only: `ios_write_file` /
+    // `ios_create_file` / `ios_create_directory` are library-root-confined
+    // (sanitized relative paths, no delete/rename/exec) — an XSS-class bug in
+    // the mobile WebView can at worst scribble text inside the granted
+    // Notesage folder, never touch credentials, arbitrary paths, or spawn
+    // anything.
     #[cfg(target_os = "ios")]
     let builder = builder.invoke_handler(tauri::generate_handler![
         ios_pick_library_folder,
@@ -281,6 +286,9 @@ pub fn run() {
         ios_list_directory,
         ios_read_file,
         ios_read_binary,
+        ios_write_file,
+        ios_create_file,
+        ios_create_directory,
         ios_set_chrome,
             ios_share_file,
             ios_ensure_downloaded,
@@ -322,6 +330,9 @@ pub fn run() {
             ios_list_directory,
             ios_read_file,
             ios_read_binary,
+            ios_write_file,
+            ios_create_file,
+            ios_create_directory,
             ios_set_chrome,
             ios_share_file,
             ios_ensure_downloaded,
