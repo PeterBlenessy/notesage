@@ -249,31 +249,52 @@ struct GlassSearchIsland: View {
     .modifier(GlassCapsule())
   }
 
+  // Apple Notes anatomy: the field capsule and a SEPARATE circular ✕ glass
+  // button beside it. Inside the field, a small ⊗ appears only once there
+  // is text and clears it (the keyboard's own dictation key covers voice).
   private var expandedField: some View {
-    HStack(spacing: 8) {
-      Image(systemName: "magnifyingglass")
-        .font(.system(size: 14, weight: .medium))
-        .foregroundStyle(.secondary)
-      TextField(model.placeholder, text: $model.text)
-        .focused($focused)
-        .textFieldStyle(.plain)
-        .autocorrectionDisabled()
-        .textInputAutocapitalization(.never)
-        .submitLabel(.search)
-        .onChange(of: model.text) { value in
-          model.emit?("search-query", value)
-        }
-      if model.totalMatches > 0 {
-        Text("\(model.currentMatch)/\(model.totalMatches)")
-          .font(.footnote.monospacedDigit())
+    HStack(spacing: 10) {
+      HStack(spacing: 8) {
+        Image(systemName: "magnifyingglass")
+          .font(.system(size: 15, weight: .medium))
           .foregroundStyle(.secondary)
-        Button { model.emit?("search-prev", nil) } label: {
-          Image(systemName: "chevron.up").font(.system(size: 13, weight: .medium))
+        TextField(model.placeholder, text: $model.text)
+          .focused($focused)
+          .textFieldStyle(.plain)
+          .autocorrectionDisabled()
+          .textInputAutocapitalization(.never)
+          .submitLabel(.search)
+          .onChange(of: model.text) { value in
+            model.emit?("search-query", value)
+          }
+        if model.totalMatches > 0 {
+          Text("\(model.currentMatch)/\(model.totalMatches)")
+            .font(.footnote.monospacedDigit())
+            .foregroundStyle(.secondary)
+          Button { model.emit?("search-prev", nil) } label: {
+            Image(systemName: "chevron.up").font(.system(size: 13, weight: .medium))
+          }
+          Button { model.emit?("search-next", nil) } label: {
+            Image(systemName: "chevron.down").font(.system(size: 13, weight: .medium))
+          }
         }
-        Button { model.emit?("search-next", nil) } label: {
-          Image(systemName: "chevron.down").font(.system(size: 13, weight: .medium))
+        if !model.text.isEmpty {
+          Button {
+            model.text = ""
+            // onChange fires the empty query; keep focus for a new search.
+          } label: {
+            Image(systemName: "xmark.circle.fill")
+              .font(.system(size: 16))
+              .foregroundStyle(.secondary)
+          }
+          .buttonStyle(.plain)
         }
       }
+      .padding(.horizontal, 14)
+      .frame(height: 46)
+      .frame(maxWidth: .infinity)
+      .modifier(GlassCapsuleSurface())
+
       Button {
         model.text = ""
         model.expanded = false
@@ -281,12 +302,13 @@ struct GlassSearchIsland: View {
         model.emit?("search-query", "")
         model.emit?("search-close", nil)
       } label: {
-        Image(systemName: "xmark").font(.system(size: 13, weight: .medium))
+        Image(systemName: "xmark")
+          .font(.system(size: 15, weight: .semibold))
+          .frame(width: 40, height: 40)
       }
+      .modifier(GlassCircle())
     }
-    .padding(.horizontal, 14)
-    .frame(width: UIScreen.main.bounds.width - 24, height: 44)
-    .modifier(GlassCapsuleSurface())
+    .frame(width: UIScreen.main.bounds.width - 24)
   }
 }
 
