@@ -95,6 +95,28 @@ export function Reader() {
   const name = openDoc?.name ?? "";
   const kind = useMemo(() => (name ? classifyFile(name) : "other"), [name]);
 
+  // Root cause of issue #605 (the article's rendered markup silently
+  // reverting to pristine, detaching find-in-document marks): React's DOM
+  // renderer diffs `dangerouslySetInnerHTML` by OBJECT IDENTITY, not by the
+  // `__html` string's value — `{ __html: state.html }` is a fresh object
+  // literal on every JSX evaluation, so React unconditionally re-executes
+  // `element.innerHTML = html` on every commit that touches this component,
+  // even when the html string itself hasn't changed and the only real state
+  // change was something unrelated (find match index/count, a theme
+  // MutationObserver firing, native-chrome activation, ...). That silently
+  // wipes any DOM mutation made outside React — exactly what the find-in-
+  // document marks are. Confirmed directly (not inferred) by reading React
+  // 19's `updateProperties`/`setProp` in react-dom's dev bundle and by a
+  // regression test below that reproduces the wipe deterministically in
+  // jsdom via an ordinary match-navigation re-render — no device needed.
+  // Memoizing the object so its reference only changes when the html STRING
+  // does closes this at the source.
+  const markdownHtml = state.status === "markdown" ? state.html : null;
+  const articleInnerHtml = useMemo(
+    () => (markdownHtml === null ? null : { __html: markdownHtml }),
+    [markdownHtml],
+  );
+
   // Find-in-document. Markdown/text: matches marked via the shared
   // dom-search utility the desktop's DOCX/plain viewers use. HTML reports:
   // the document is a cross-origin sandboxed frame, so search runs INSIDE it
@@ -150,18 +172,39 @@ export function Reader() {
     return () => clearTimeout(t);
   }, [findQuery, state, isHtml]);
 
-  // Watchdog: something can restore the article's innerHTML after render
-  // (marks are connected at creation and detached later; trigger not yet
-  // identified). While a find is active, re-wrap when the marks die so the
-  // painted highlights survive. Cheap: a connectivity check per tick, a
-  // re-walk (≤300 matches) only when it actually died.
+  // Watchdog (issue #605). The root cause of the article's innerHTML
+  // silently reverting to pristine was found this session — see the
+  // `articleInnerHtml` memo above — and the earlier framing here ("trigger
+  // not yet identified", suspects "eliminated" including React's own
+  // dangerouslySetInnerHTML diffing) was WRONG: it was exactly that diffing,
+  // just not in the form that had been tested. React compares
+  // `dangerouslySetInnerHTML` by object identity, not by the `__html`
+  // string's value, so any unrelated re-render (e.g. a find-match nav
+  // updating findIndex/findTotal, the theme observer firing, native-chrome
+  // activation) re-executed `element.innerHTML = html` and wiped whatever
+  // had been mutated outside React — including these marks. That is now
+  // fixed at the source.
+  //
+  // This watchdog stays anyway, downgraded from "the fix" to a defense-in-
+  // depth backstop: nothing rules out some OTHER actor (WebKit itself, a
+  // future regression) also mutating this subtree outside React, and the
+  // cost of keeping a cheap periodic connectivity check is far lower than
+  // the cost of find-in-document silently breaking again undetected. Two
+  // real gaps were closed while re-evaluating it: the connectivity check
+  // only ever looked at marks[0], so a rewrite that detached SOME marks but
+  // left the first one connected went undetected — the affected matches
+  // stayed permanently dead. Checking every mark closes that gap.
+  // Re-wrapping now also clears first: blindly re-highlighting over a
+  // survivor (rather than a fully pristine subtree) nested a fresh <mark>
+  // inside it instead of replacing it.
   useEffect(() => {
     if (isHtml || !findQuery) return;
     const t = window.setInterval(() => {
       const root = articleRef.current;
       if (!root) return;
-      const first = findMarksRef.current[0];
-      if (first && !first.isConnected) {
+      const marks = findMarksRef.current;
+      if (marks.length > 0 && marks.some((m) => !m.isConnected)) {
+        clearDomHighlights(root);
         findMarksRef.current = highlightDomMatches(root, findQuery, 300);
         const bounded = Math.min(findIndexRef.current, Math.max(0, findMarksRef.current.length - 1));
         findIndexRef.current = bounded;
@@ -237,9 +280,13 @@ export function Reader() {
     }
     let marks = findMarksRef.current;
     // Heal before use: if the article was rewritten since the last walk,
-    // the stored marks are detached husks — re-wrap from the live DOM.
-    if (marks.length > 0 && !marks[0].isConnected) {
+    // some (not necessarily all) of the stored marks are detached husks —
+    // clear and re-wrap from the live DOM rather than trust a first-mark
+    // check (see the watchdog comment above for why marks[0] alone isn't
+    // enough, and why the clear has to happen before the re-wrap).
+    if (marks.length > 0 && marks.some((m) => !m.isConnected)) {
       const root = articleRef.current;
+      if (root) clearDomHighlights(root);
       marks = root && findQuery ? highlightDomMatches(root, findQuery, 300) : [];
       findMarksRef.current = marks;
       setFindTotal(marks.length);
@@ -723,7 +770,7 @@ export function Reader() {
                 "--editor-padding-bottom": "1.5rem",
               } as React.CSSProperties
             }
-            dangerouslySetInnerHTML={{ __html: state.html }}
+            dangerouslySetInnerHTML={articleInnerHtml ?? { __html: "" }}
           />
         )}
       </div>
