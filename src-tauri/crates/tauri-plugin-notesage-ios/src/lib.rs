@@ -82,6 +82,11 @@ struct Base64Response {
 struct StateResponse {
     state: String,
 }
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SizeResponse {
+    size_bytes: u64,
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -257,6 +262,14 @@ impl<R: Runtime> NotesageIos<R> {
             _ => DownloadState::Failed,
         })
     }
+
+    /// Return the file's on-disk size in bytes without reading its content —
+    /// a cheap metadata probe (issue #616: a full read of a multi-hundred-MB
+    /// text file blocked the WebView's main thread).
+    pub fn stat_file(&self, rel: &str) -> Result<u64> {
+        self.call::<_, SizeResponse>("statFile", RelPathArgs { rel_path: rel })
+            .map(|r| r.size_bytes)
+    }
 }
 
 #[cfg(not(target_os = "ios"))]
@@ -304,6 +317,9 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn ensure_downloaded(&self, _rel: &str) -> Result<DownloadState> {
+        Err(Error::Unavailable)
+    }
+    pub fn stat_file(&self, _rel: &str) -> Result<u64> {
         Err(Error::Unavailable)
     }
 }

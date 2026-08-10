@@ -2,7 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
-import { ChevronLeft, CloudDownload, AlertCircle, FileQuestion, Share, Pencil, Check } from "lucide-react";
+import { ChevronLeft, CloudDownload, AlertCircle, FileQuestion, FileWarning, Share, Pencil, Check } from "lucide-react";
 import {
   iosReadFile,
   iosReadBinary,
@@ -11,6 +11,7 @@ import {
   iosWriteFile,
   iosRenameFile,
   iosCreateFile,
+  iosStatFile,
 } from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
 import { useMobileStore } from "@/stores/mobile-store";
@@ -59,11 +60,22 @@ type ReaderState =
   | { status: "downloading" }
   | { status: "error"; message: string }
   | { status: "unsupported" }
+  | { status: "too-large"; sizeBytes: number }
   | { status: "text"; content: string }
   | { status: "markdown"; html: string }
   | { status: "image"; url: string }
   | { status: "html"; url: string; previewId: string }
   | { status: "pdf"; filePath: string };
+
+/**
+ * Above this, a text/markdown/html file is declined instead of read (issue
+ * #616): `ios_read_file` ships the whole file across IPC as one JSON string,
+ * and for a multi-hundred-MB file that parse blocks the WebView's main
+ * thread — the loading spinner freezes and the back button stops responding.
+ * "A few MB" per the issue's own assumption; the exact value is an
+ * implementation detail, not a contract.
+ */
+const MAX_INLINE_TEXT_BYTES = 5 * 1024 * 1024;
 
 /**
  * Mobile reader (PRD task #14). Renders markdown (via the shared Rust comrak
@@ -510,6 +522,24 @@ export function Reader() {
         setState({ status: "pdf", filePath: relPath });
         return;
       }
+      if (kind === "markdown" || kind === "text" || kind === "html") {
+        // Size guard (issue #616): stat before reading. A cheap metadata
+        // probe with none of the cost `ios_read_file` has for an oversized
+        // file — see MAX_INLINE_TEXT_BYTES above. A stat failure (older
+        // native build, off-iOS test harness, transient IPC error) fails
+        // OPEN: falls through to the normal read path exactly as before
+        // this guard existed, rather than blocking an ordinary read.
+        try {
+          const stat = await iosStatFile(relPath);
+          if (!isCurrent()) return;
+          if (stat.sizeBytes > MAX_INLINE_TEXT_BYTES) {
+            setState({ status: "too-large", sizeBytes: stat.sizeBytes });
+            return;
+          }
+        } catch {
+          /* size unknown — fall through to the normal read path */
+        }
+      }
       if (kind === "html") {
         // Served from the `htmlpreview://` custom scheme — the same mechanism
         // as the desktop HtmlViewer, for the same reason: srcDoc, blob: AND
@@ -886,6 +916,23 @@ export function Reader() {
           </ReaderMessage>
         )}
 
+        {state.status === "too-large" && (
+          <ReaderMessage icon={FileWarning} title="Too large to open">
+            This file is {formatBytes(state.sizeBytes)} — too large to preview
+            safely in Notesage.
+            <Button
+              variant="outline"
+              size="sm"
+              className="ios-press-row mt-4"
+              onClick={() => {
+                void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
+              }}
+            >
+              Share instead
+            </Button>
+          </ReaderMessage>
+        )}
+
         {state.status === "image" && (
           <div className="flex justify-center p-4">
             <img src={state.url} alt={name} className="max-h-full max-w-full rounded-md" />
@@ -974,6 +1021,12 @@ export function deriveNoteTitle(md: string): string | null {
     return clean || null;
   }
   return null;
+}
+
+/** Human-readable file size for the too-large decline card. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`;
+  return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
 }
 
 /** Map an image filename to a MIME type so blob-URL `<img>` renders correctly. */

@@ -185,3 +185,18 @@ export function iosCreateDirectory(relPath: string): Promise<string> {
   return invoke<string>("ios_create_directory", { relPath });
 }
 
+export interface IosFileStat {
+  /** File size in bytes. */
+  sizeBytes: number;
+}
+
+/**
+ * Cheap metadata probe — the file's size, without reading its content. The
+ * mobile reader calls this before `iosReadFile` for text/markdown/html so it
+ * can decline an oversized file instead of attempting a read that would
+ * freeze the WebView (issue #616).
+ */
+export function iosStatFile(relPath: string): Promise<IosFileStat> {
+  return invoke<IosFileStat>("ios_stat_file", { relPath });
+}
+
