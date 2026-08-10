@@ -43,6 +43,11 @@ fn set_log_level(level: String) {
 // `option_env!` resolves to `None` when the var is unset at compile time, so a
 // no-key local/dev build compiles and runs as a clean telemetry no-op — never
 // `env!` (compile error) and never a runtime panic.
+//
+// `SENTRY_DSN` is iOS-gated alongside its only consumer (the init block in
+// `run()` below): the `sentry` crate itself is not linked into the iOS build
+// (see Cargo.toml), so there is nothing for this constant to feed there.
+#[cfg(not(target_os = "ios"))]
 const SENTRY_DSN: Option<&str> = option_env!("NOTESAGE_SENTRY_DSN");
 const APTABASE_KEY: Option<&str> = option_env!("NOTESAGE_APTABASE_KEY");
 
@@ -91,6 +96,11 @@ pub fn run() {
     // crash toggle takes effect immediately with no second panic-hook install.
     //
     // `None` DSN → no client is built → all telemetry helpers are clean no-ops.
+    //
+    // iOS-gated: `sentry` is not in the iOS Cargo dependency graph (issue
+    // #587) — crash reporting is a desktop concern, and the mobile app ships
+    // no telemetry by design.
+    #[cfg(not(target_os = "ios"))]
     if let Some(dsn) = SENTRY_DSN {
         let guard = sentry::init((
             dsn,
@@ -217,6 +227,11 @@ pub fn run() {
     // so frontend egress rides the Rust SDK — no widening of the JS HTTP
     // capability surface. Runtime crash-consent gating is handled by binding /
     // unbinding the client on the Hub (`telemetry::set_sentry_enabled`).
+    //
+    // iOS-gated alongside `commands::telemetry` and the Cargo dependency
+    // (issue #587) — `tauri_plugin_sentry` is never linked into the iOS
+    // binary, so there is no client to register here.
+    #[cfg(not(target_os = "ios"))]
     if let Some(client) = telemetry::sentry_client() {
         builder = builder.plugin(tauri_plugin_sentry::init(&client));
     }

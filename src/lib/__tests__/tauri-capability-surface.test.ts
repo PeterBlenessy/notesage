@@ -187,16 +187,26 @@ describe('tauri default capability permissions', () => {
     expect(fsPermissions).toEqual([]);
   });
 
-  it('grants sentry:default (telemetry crash-report invoke bridge)', () => {
+  it('grants sentry:default (telemetry crash-report invoke bridge), scoped off the iOS build', () => {
     // `tauri-plugin-sentry` routes frontend errors through Rust via `invoke`;
     // `sentry:default` enables that bridge. It is an invoke permission, NOT a
     // network permission — egress originates from the Rust SDK, so this does
     // not widen the frontend's HTTP surface. See PRD 2026-06-07-telemetry.
-    const cap = loadDefaultCapability();
-    const identifiers = cap.permissions.map((perm) =>
+    //
+    // It must NOT live in `default.json` (unscoped — applies to every
+    // platform, including iOS): `sentry` / `tauri-plugin-sentry` are gated
+    // out of the iOS Cargo dependency graph (issue #587, App Store
+    // "Data Not Collected" privacy label), and a capability naming a
+    // permission from a plugin that isn't built fails the build — the same
+    // reason `aptabase:allow-track-event` lives in `desktop-telemetry.json`
+    // instead of `default.json`.
+    const defaultIdentifiers = loadDefaultCapability().permissions.map((perm) =>
       typeof perm === 'string' ? perm : perm.identifier,
     );
-    expect(identifiers).toContain('sentry:default');
+    expect(defaultIdentifiers).not.toContain('sentry:default');
+
+    const perms = allCapabilityPermissions().filter((id) => id.startsWith('sentry:'));
+    expect(perms).toEqual(['sentry:default']);
   });
 
   it('grants aptabase:allow-track-event, and ONLY that, across every capability file', () => {
@@ -220,11 +230,17 @@ describe('tauri default capability permissions', () => {
   it('keeps telemetry off the iOS build by platform-scoping its capability', () => {
     // If this capability ever loses its `platforms` field, the iOS build breaks
     // at the manifest step with "Permission aptabase:allow-track-event not
-    // found" — an error that reads like a typo rather than a platform issue.
+    // found" (or the sentry equivalent) — an error that reads like a typo
+    // rather than a platform issue.
     const cap = loadCapability('desktop-telemetry');
     expect(cap.platforms).toBeDefined();
     expect(cap.platforms).not.toContain('iOS');
     expect(cap.platforms).toContain('macOS');
+    // Both desktop-only telemetry plugins share this one platform-scoped
+    // capability file (issue #587) — neither's dependency is present in the
+    // iOS Cargo build.
+    expect(cap.permissions).toContain('aptabase:allow-track-event');
+    expect(cap.permissions).toContain('sentry:default');
   });
 
   it('grants clipboard-manager READ-only (no write/clear/image surface)', () => {

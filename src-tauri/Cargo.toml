@@ -143,26 +143,35 @@ docx-rs = "0.4"
 # E2E testing (optional — only enabled via `--features e2e-testing`)
 tauri-plugin-webdriver = { version = "0.2", optional = true }
 tauri-plugin-deep-link = "2.4.9"
-# Telemetry — crash/error reporting (Sentry, DSN-swappable to GlitchTip).
-# Pin to match tauri-plugin-sentry 0.5's internal sentry version (0.42) so the
-# ClientInitGuard passed to the plugin is the same type — a newer top-level
-# sentry pulls a second major into the tree and breaks `init(&client)`.
-sentry = "0.42"
-tauri-plugin-sentry = "0.5.0"
 # Only for installing the process-default CryptoProvider at startup — reqwest
 # 0.13's rustls path panics "No provider set" without one. Ring is already in
 # the tree transitively; this makes it explicit and selectable.
 base64 = "0.22"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+[target.'cfg(target_os = "ios")'.dependencies]
+tauri-plugin-notesage-ios = { path = "crates/tauri-plugin-notesage-ios" }
+
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+# Telemetry — crash/error reporting (Sentry, DSN-swappable to GlitchTip).
+# Pin to match tauri-plugin-sentry 0.5's internal sentry version (0.42) so the
+# ClientInitGuard passed to the plugin is the same type — a newer top-level
+# sentry pulls a second major into the tree and breaks `init(&client)`.
+# NOT available on iOS: gated off (rather than left registered-but-unused) so
+# the crate is unreachable from the iOS build entirely — the property the App
+# Store privacy label ("Data Not Collected") relies on. Previously these two
+# were plain unscoped dependencies, so every iOS build linked the crash
+# SDK regardless of whether a DSN was ever configured (issue #587).
+# `commands::telemetry` (which uses `sentry::` throughout) is gated off the
+# same way in `lib.rs`/`commands/mod.rs`; `capabilities/sentry:default` moved
+# out of the platform-unscoped `default.json` into `desktop-telemetry.json`
+# for the same reason `aptabase:allow-track-event` already lives there below.
+sentry = "0.42"
+tauri-plugin-sentry = "0.5.0"
 # Telemetry — privacy-first usage analytics (first-party Tauri v2 plugin).
 # NOT available on iOS: the plugin's `sys.rs` leaves `ENGINE_NAME` undefined
 # for that target, so it fails to compile there. Gated off rather than patched
 # because the mobile app ships no usage telemetry by design (PRD
 # `2026-06-28-ios-mobile-app.md` § Non-Goals) — there is nothing to lose.
-[target.'cfg(target_os = "ios")'.dependencies]
-tauri-plugin-notesage-ios = { path = "crates/tauri-plugin-notesage-ios" }
-
-[target.'cfg(not(target_os = "ios"))'.dependencies]
 tauri-plugin-aptabase = "1.0.0"
 # `whisper-rs` vendors whisper.cpp, whose ggml kernels reference Accelerate
 # symbols (`_vDSP_vsub`, `cblas_*`) that fail to link on iOS; `cpal` drives

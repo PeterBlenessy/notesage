@@ -12,6 +12,14 @@ pub mod html_preview;
 pub mod git;
 pub mod watcher;
 pub mod sync;
+// `commands::telemetry` (Sentry client lifecycle + `before_send` PII scrubber)
+// uses the `sentry` crate throughout. `sentry` is only a dependency on
+// non-iOS targets (see Cargo.toml) — crash reporting is a desktop concern,
+// and gating it out keeps the crate unreachable from an iOS build entirely
+// (issue #587, App Store "Data Not Collected" privacy label). No mobile stub
+// is needed: unlike `transcription`, nothing here is referenced outside the
+// matching `#[cfg(not(target_os = "ios"))]` blocks in `lib.rs`.
+#[cfg(not(target_os = "ios"))]
 pub mod telemetry;
 pub mod acp;
 pub mod acp_binary;
@@ -71,6 +79,7 @@ pub use html_preview::*;
 pub use git::*;
 pub use watcher::*;
 pub use sync::*;
+#[cfg(not(target_os = "ios"))]
 pub use telemetry::*;
 pub use acp::*;
 pub use acp_binary::*;

@@ -140,6 +140,58 @@ share-sheet target for capturing links. PRD:
   mirrored from the app) and re-runs `xcodegen generate`. Idempotent — run it
   after any `tauri ios init`.
 
+## Privacy — telemetry-free iOS binary (App Store "Data Not Collected")
+
+Verified state backing the App Store privacy label answer (issue #587,
+`docs/prds/2026-08-09-ios-appstore-mvp.md` § App Store readiness): the iOS
+binary links **no** crash-reporting (Sentry) or usage-analytics (Aptabase)
+telemetry code, and the frontend's usage-telemetry entry point is unreachable
+from the mobile shell.
+
+- **Rust — dependency-graph gating.** `sentry` / `tauri-plugin-sentry` and
+  `tauri-plugin-aptabase` are declared only under
+  `[target.'cfg(not(target_os = "ios"))'.dependencies]` in
+  `src-tauri/Cargo.toml`, so neither crate is even present in an iOS build's
+  dependency graph — verified by `cargo tree --target aarch64-apple-ios -i
+  <crate>` returning empty for all three (`sentry`, `tauri-plugin-sentry`,
+  `tauri-plugin-aptabase`). Before this fix, `sentry` and `tauri-plugin-sentry`
+  were plain unscoped dependencies, so every iOS build linked the
+  crash-reporting SDK regardless of whether a build-time DSN was ever
+  configured — only Aptabase was correctly scoped. `commands::telemetry`
+  (Sentry client lifecycle + the `before_send` PII scrubber; it uses `sentry::`
+  throughout) and the Sentry init/registration blocks in `lib.rs` carry the
+  matching `#[cfg(not(target_os = "ios"))]` gate, so the whole crash-reporting
+  code path is compiled out of the iOS target, not just left unregistered.
+  Regression lock: `src-tauri/tests/ios_telemetry_free.rs`.
+- **Tauri capabilities.** `sentry:default` (the invoke bridge
+  `tauri-plugin-sentry` needs) lives in the platform-scoped
+  `desktop-telemetry.json` capability (`platforms: ["macOS", "windows",
+  "linux"]`) alongside `aptabase:allow-track-event`, not in the
+  platform-unscoped `default.json` — a capability naming a permission from a
+  plugin that isn't built fails the iOS manifest step. Regression lock:
+  `src/lib/__tests__/tauri-capability-surface.test.ts`.
+- **Frontend — usage-telemetry entry point unreachable from the mobile
+  shell.** `src/lib/telemetry.ts` (the Aptabase `track()` helper) is never
+  imported, directly or transitively, from `src/MobileApp.tsx` — root
+  branching in `main.tsx` (`isIos()` picks `MobileApp` over the desktop `App`)
+  means the desktop lifecycle hooks that call `track()` are never mounted on
+  iOS. Regression lock:
+  `src/lib/__tests__/ios-telemetry-unreachable.test.ts`, which walks the real
+  static import graph from `MobileApp.tsx` (not a fixed file list) and asserts
+  `src/lib/telemetry.ts` is never reached.
+- **Known residual, not fixed by this pass:** `src/main.tsx` (the shared entry
+  point for both shells) unconditionally imports `@sentry/browser` and
+  registers `window` `error`/`unhandledrejection` listeners that call
+  `Sentry.captureException` — gated on the crash-consent flag, but not on
+  platform. On iOS this SDK import still ships in the JS bundle, and a call
+  would silently no-op (try/caught) since no `tauri-plugin-sentry` command is
+  registered to receive it — so no data is collected, but the SDK code itself
+  is technically present in the iOS JS bundle. Out of scope for this pass
+  (Rust dependency graph + capability surface, the two things a build/App
+  Review audit actually inspects); tracked as a follow-up to scope the
+  `main.tsx` listeners to `!isIos()` for full source-level parity with the
+  Rust side.
+
 ## Build & verification pipeline
 
 - **Dev loop:** `npx tauri ios dev "<sim name>" --config '{"build":{...}}'`
