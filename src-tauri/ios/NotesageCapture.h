@@ -46,6 +46,15 @@ char *notesage_capture_contents(const char *url,
                                 const char *tags);
 
 /// Release a string returned above. Passing NULL is a no-op.
+/// Article capture note contents from fetched page HTML (rich web capture).
+/// NULL when the page yields no genuine article — fall back to the link
+/// note. Caller frees with notesage_capture_string_free().
+char *notesage_capture_article_contents(const char *url,
+                                        const char *title,
+                                        const char *selection_text,
+                                        const char *tags,
+                                        const char *html);
+
 void notesage_capture_string_free(char *ptr);
 
 #ifdef __cplusplus

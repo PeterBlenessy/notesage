@@ -12,7 +12,12 @@ description = "Capture-note formatting for Notesage's iOS share extension — on
 # is not viable. `rlib` so the app crate can depend on it normally.
 crate-type = ["staticlib", "rlib"]
 
-# Deliberately dependency-free. This is linked into a share extension, so every
-# transitive dependency is binary weight in a memory-constrained process — and
-# the whole module is string formatting plus a civil-time conversion.
+# Kept dependency-LIGHT (linked into a share extension with a hard memory
+# cap): the only deps are the readable-extraction pair for rich web capture
+# (#584) — readability (Mozilla port; html5ever tree) + htmd (HTML→Markdown,
+# shares the html5ever tree). String formatting and the civil-time conversion
+# remain dependency-free.
 [dependencies]
+readability = { version = "0.3", default-features = false }
+htmd = "0.2"
+url = "2"

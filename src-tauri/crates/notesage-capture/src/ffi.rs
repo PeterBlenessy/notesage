@@ -23,7 +23,7 @@
 use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use crate::{build_capture_note, timestamps, CaptureInput};
+use crate::{build_article_note, build_capture_note, extract_article, timestamps, CaptureInput};
 
 /// Borrow a C string as `Option<String>`; `NULL` or invalid UTF-8 → `None`.
 unsafe fn opt_str(ptr: *const c_char) -> Option<String> {
@@ -82,6 +82,40 @@ pub unsafe extern "C" fn notesage_capture_contents(
         let input = input_from(url, title, selection_text, tags);
         let (now, stamp) = timestamps();
         into_c_string(build_capture_note(&input, &now, &stamp).contents)
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Build an ARTICLE capture note's **file contents** from fetched page HTML
+/// (rich web capture, #584): readable extraction + HTML→Markdown + the v2
+/// note format (`capture_format: markdown`).
+///
+/// Returns NULL when the page does not yield a genuine article (nav-heavy
+/// page, near-empty body, non-HTML) — the caller falls back to the link-only
+/// note — or on panic. Free with [`notesage_capture_string_free`].
+///
+/// # Safety
+/// All pointers must be NUL-terminated C strings or NULL, valid for the call.
+#[no_mangle]
+pub unsafe extern "C" fn notesage_capture_article_contents(
+    url: *const c_char,
+    title: *const c_char,
+    selection_text: *const c_char,
+    tags: *const c_char,
+    html: *const c_char,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        let input = input_from(url, title, selection_text, tags);
+        let html = match opt_str(html) {
+            Some(h) => h,
+            None => return std::ptr::null_mut(),
+        };
+        let article = match extract_article(&html, &input.url) {
+            Some(a) => a,
+            None => return std::ptr::null_mut(),
+        };
+        let (now, stamp) = timestamps();
+        into_c_string(build_article_note(&input, &article, &now, &stamp).contents)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
