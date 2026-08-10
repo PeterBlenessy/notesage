@@ -51,6 +51,37 @@ share-sheet target for capturing links. PRD:
   the theme class flips (syntect's syntax colors are inline styles from the
   Rust renderer, and mermaid bakes its theme + background at render time —
   neither follows a CSS-variable swap).
+- **iOS island chrome (issue #581).** No full-width toolbars: floating glass
+  "button islands" pinned to the screen corners (Apple Notes / iOS 26 pattern,
+  the mobile cousin of the desktop Quiet Composer), with content scrolling
+  full-height beneath them. Placement contract in `mobile/Chrome.tsx`: back
+  top-left (always — including the PDF viewer, which drops the desktop pill
+  entirely in `mobileChrome` mode), screen actions top-right (Share; library
+  re-pick on the folder root), search bottom-center. Islands portal to
+  `document.body` with `position: fixed` — chrome, never page content.
+- **Search everywhere, bottom-center.** The folder view filters filenames; a
+  collapsed island shows passive status (item count / PDF page indicator,
+  Files-style). Documents get find-in-document: markdown/text via the shared
+  `dom-search` marker, PDFs via the viewer's text-layer search, and sandboxed
+  HTML reports via an **injected find agent** (`html-find-agent.ts`) driven
+  over postMessage — the app cannot reach a cross-origin frame's DOM, so
+  search runs inside the report itself. (PDF search on WebKit also needed
+  `src/lib/readablestream-asynciterator-polyfill.ts`: pdf.js ≥ 4 iterates a
+  ReadableStream with `for await`, which WebKit doesn't implement — this had
+  silently broken PDF text search on desktop macOS too.)
+- **Keyboard-aware chrome, natively.** The page cannot see the iOS keyboard —
+  in WKWebView neither `window.innerHeight` nor `visualViewport` reacts to it
+  (verified empirically). The Swift plugin observes
+  `UIResponder.keyboardWill{Show,ChangeFrame,Hide}` and dispatches a
+  `notesage:keyboard` CustomEvent with the exact overlap; bottom islands lift
+  by that amount and drop back on hide. The plugin also strips WKWebView's
+  keyboard accessory bar (the ∧∨/Done row that duplicated island controls)
+  via the dynamic `WKContent` subclass trick.
+- **Share any document.** The top-right island in the reader presents the
+  native share sheet (`UIActivityViewController`) over a **temp copy** of the
+  file — share targets cannot read through the security-scoped grant, so the
+  Swift side (`LibraryAccess.copyForSharing`) copies to the app's temp dir
+  first. Full stack: `ios_share_file` command → plugin `shareFile`.
 - **Capture links via the share sheet.** "Share → Notesage" from Safari, the
   X/Twitter app, or anything that shares a URL writes a link-only
   `type: capture` note into `Inbox/`, which syncs back to the desktop where the

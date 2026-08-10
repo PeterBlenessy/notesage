@@ -2056,13 +2056,3 @@ mark.dom-find-highlight-active {
   transition: outline-color 150ms ease-in-out;
 }
 
-/* Mobile shell (iOS): viewer toolbar pills (PDF, etc. — `fixed top-4` on
-   desktop) sit under the notch and collide with the chrome islands. Push
-   them below the safe area; the back island moves to the bottom-left for
-   these viewers (see mobile Reader), so the top row is theirs alone.
-   Un-layered on purpose: this must beat the pill's Tailwind classes. */
-.mobile-shell ~ * [data-viewer-id],
-.mobile-shell [data-viewer-id] {
-  top: calc(max(0.5rem, env(safe-area-inset-top)));
-  max-width: calc(100vw - 1.5rem);
-}

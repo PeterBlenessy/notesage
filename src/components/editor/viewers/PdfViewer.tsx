@@ -12,9 +12,11 @@ import { Button } from "@/components/ui/button";
 import { getBinaryData } from "@/lib/binary-cache";
 import { FindBar } from "@/components/editor/FindBar";
 import { ViewerToolbarPill } from "./ViewerToolbarPill";
+import { SearchIsland } from "@/components/mobile/Chrome";
 import { usePdfStore } from "@/stores/pdf-store";
 import { registerZoomController } from "@/hooks/useEditorZoom";
 import { cn } from "@/lib/utils";
+import "@/lib/readablestream-asynciterator-polyfill"; // WebKit lacks ReadableStream async iteration; pdf.js getTextContent needs it
 import * as pdfjsLib from "pdfjs-dist";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
 
@@ -45,6 +47,13 @@ function ensureBlobWorker(): Promise<void> {
 interface PdfViewerProps {
   filePath: string;
   fileName: string;
+  /**
+   * iOS island chrome instead of the desktop pill + FindBar (issue #581):
+   * search lives in the bottom-center SearchIsland (collapsed status = the
+   * page indicator, Files-style), zoom is fit-width, and the mobile Reader
+   * owns the back island. Nothing from the desktop toolbar renders.
+   */
+  mobileChrome?: boolean;
 }
 
 const ZOOM_STEPS = [
@@ -291,7 +300,7 @@ function clearTextLayerHighlights(container: HTMLDivElement) {
   }
 }
 
-export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
+export function PdfViewer({ filePath, fileName, mobileChrome = false }: PdfViewerProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
@@ -883,6 +892,17 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
     setFindBarOpen((open) => !open);
   }, []);
 
+  // Mobile island search: the SearchIsland is controlled (query in/out), the
+  // desktop FindBar owns its own input — so mobile keeps a query string here
+  // and debounces it into the shared handleSearch pipeline.
+  const [mobileQuery, setMobileQuery] = useState("");
+  useEffect(() => {
+    if (!mobileChrome) return;
+    const t = window.setTimeout(() => void handleSearch(mobileQuery), 200);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mobileChrome, mobileQuery]);
+
   // Compute placeholder dimensions for unrendered pages so scroll positions are correct
   // even before canvases render (critical for deterministic search navigation)
   const placeholderScale = pageBaseDims
@@ -913,6 +933,25 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
     >
       {/* Scrollable page area with floating pill toolbar + FindBar overlay */}
       <div className="flex-1 overflow-hidden relative">
+        {mobileChrome && (
+          <SearchIsland
+            query={mobileQuery}
+            onQueryChange={setMobileQuery}
+            placeholder="Find in document"
+            status={totalPages > 0 ? `${currentPage} / ${totalPages}` : undefined}
+            matches={
+              mobileQuery && displayMatchCount > 0
+                ? {
+                    current: searchCurrentIndex + 1,
+                    total: displayMatchCount,
+                    onNext: handleSearchNext,
+                    onPrev: handleSearchPrev,
+                  }
+                : undefined
+            }
+          />
+        )}
+        {!mobileChrome && (
         <ViewerToolbarPill viewerId="pdf" scrollRef={scrollContainerRef}>
           <PillIconButton
             onClick={zoomOut}
@@ -973,6 +1012,8 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
             <Search className="h-3.5 w-3.5" strokeWidth={1.5} />
           </PillIconButton>
         </ViewerToolbarPill>
+        )}
+        {!mobileChrome && (
         <FindBar
           open={findBarOpen}
           onClose={handleFindClose}
@@ -985,9 +1026,21 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
           replaceExpanded={false}
           onReplaceExpandedChange={() => {}}
         />
+        )}
         <div
           ref={scrollContainerRef}
-          className="h-full overflow-auto bg-muted/50 px-8 pb-8 pt-16"
+          className={cn(
+            "h-full overflow-auto bg-muted/50",
+            mobileChrome ? "px-2" : "px-8 pb-8 pt-16",
+          )}
+          style={
+            mobileChrome
+              ? {
+                  paddingTop: "calc(3.75rem + env(safe-area-inset-top))",
+                  paddingBottom: "calc(4.25rem + env(safe-area-inset-bottom))",
+                }
+              : undefined
+          }
         >
           <div className="flex flex-col items-center" style={{ gap: `${PAGE_GAP}px` }}>
             {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (

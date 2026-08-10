@@ -177,6 +177,24 @@ pub async fn ios_read_binary(
     }
 }
 
+/// Present the iOS share sheet for a library file. The native layer copies
+/// the file to temp first (share targets can't read through the
+/// security-scoped grant) and presents a `UIActivityViewController`.
+#[tauri::command]
+pub async fn ios_share_file(app: tauri::AppHandle, rel_path: String) -> Result<(), String> {
+    let rel = sanitize_rel_path(&rel_path)?;
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::share_file(&app, &rel).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = &app;
+        let _ = rel;
+        Err("ios_share_file is only available on iOS".into())
+    }
+}
+
 /// Ensure an iCloud item is downloaded; returns its current download state.
 #[tauri::command]
 pub async fn ios_ensure_downloaded(app: tauri::AppHandle, rel_path: String) -> Result<DownloadState, String> {
@@ -251,6 +269,10 @@ mod ios_impl {
         app.notesage_ios().read_binary(rel).map_err(|e| e.to_string())
     }
 
+    pub async fn share_file(app: &AppHandle, rel: &str) -> Result<(), String> {
+        app.notesage_ios().share_file(rel).map_err(|e| e.to_string())
+    }
+
     pub async fn ensure_downloaded(app: &AppHandle, rel: &str) -> Result<DownloadState, String> {
         app.notesage_ios()
             .ensure_downloaded(rel)
@@ -288,7 +310,7 @@ mod tests {
         // themselves are `#[cfg(target_os = "ios")]` seams that error off-iOS,
         // so a missing call could not otherwise be caught on a desktop build.
         let src = include_str!("ios_library.rs");
-        for cmd in ["ios_list_directory", "ios_read_file", "ios_read_binary", "ios_ensure_downloaded"] {
+        for cmd in ["ios_list_directory", "ios_read_file", "ios_read_binary", "ios_share_file", "ios_ensure_downloaded"] {
             let body_start = src
                 .find(&format!("pub async fn {cmd}("))
                 .unwrap_or_else(|| panic!("{cmd} not found"));

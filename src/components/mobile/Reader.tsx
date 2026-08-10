@@ -2,14 +2,15 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
-import { ChevronLeft, CloudDownload, AlertCircle, FileQuestion } from "lucide-react";
-import { iosReadFile, iosReadBinary, iosEnsureDownloaded } from "@/lib/ios-api";
+import { ChevronLeft, CloudDownload, AlertCircle, FileQuestion, Share } from "lucide-react";
+import { iosReadFile, iosReadBinary, iosEnsureDownloaded, iosShareFile } from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
 import { useMobileStore } from "@/stores/mobile-store";
 import { classifyFile } from "./FileRow";
 import { Button } from "@/components/ui/button";
 import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
+import { HTML_FIND_AGENT } from "./html-find-agent";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 
 // Lazy-loaded — pdf.js is heavy (and pulls in browser-only globals like
@@ -92,18 +93,30 @@ export function Reader() {
   const name = openDoc?.name ?? "";
   const kind = useMemo(() => (name ? classifyFile(name) : "other"), [name]);
 
-  // Find-in-document (markdown/text): matches marked via the shared
-  // dom-search utility the desktop's DOCX/plain viewers use. PDFs search
-  // through the viewer's own toolbar; HTML reports are cross-origin
-  // sandboxed frames (deferred).
+  // Find-in-document. Markdown/text: matches marked via the shared
+  // dom-search utility the desktop's DOCX/plain viewers use. HTML reports:
+  // the document is a cross-origin sandboxed frame, so search runs INSIDE it
+  // via the injected find agent (html-find-agent.ts), driven over
+  // postMessage. PDFs search through the PdfViewer's own island.
   const [findQuery, setFindQuery] = useState("");
   const [findIndex, setFindIndex] = useState(0);
   const [findTotal, setFindTotal] = useState(0);
   const findMarksRef = useRef<HTMLElement[]>([]);
+  const htmlFrameRef = useRef<HTMLIFrameElement | null>(null);
   const searchable =
-    state.status === "markdown" || state.status === "text";
+    state.status === "markdown" || state.status === "text" || state.status === "html";
+  const isHtml = state.status === "html";
 
   useEffect(() => {
+    if (isHtml) {
+      const t = setTimeout(() => {
+        htmlFrameRef.current?.contentWindow?.postMessage(
+          { ns: "notesage-find", type: "query", q: findQuery },
+          "*",
+        );
+      }, 150);
+      return () => clearTimeout(t);
+    }
     const root = articleRef.current;
     if (!root) return;
     const t = setTimeout(() => {
@@ -117,9 +130,31 @@ export function Reader() {
       }
     }, 150);
     return () => clearTimeout(t);
-  }, [findQuery, state]);
+  }, [findQuery, state, isHtml]);
+
+  // Counter updates from the HTML find agent. Untrusted (the report's own
+  // scripts share the frame) — shape-checked, and worst case a hostile report
+  // lies about its own match count.
+  useEffect(() => {
+    if (!isHtml) return;
+    const onMessage = (e: MessageEvent) => {
+      const d = e.data as { ns?: string; type?: string; total?: number; current?: number };
+      if (!d || d.ns !== "notesage-find" || d.type !== "state") return;
+      if (typeof d.total === "number" && Number.isFinite(d.total)) setFindTotal(Math.max(0, d.total));
+      if (typeof d.current === "number" && Number.isFinite(d.current)) setFindIndex(Math.max(0, d.current));
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [isHtml]);
 
   const goToMatch = (next: boolean) => {
+    if (isHtml) {
+      htmlFrameRef.current?.contentWindow?.postMessage(
+        { ns: "notesage-find", type: "nav", dir: next ? 1 : -1 },
+        "*",
+      );
+      return;
+    }
     const marks = findMarksRef.current;
     if (marks.length === 0) return;
     const cur = findIndex;
@@ -163,7 +198,9 @@ export function Reader() {
         // `sandbox="allow-scripts"` attribute is what isolates the document.
         const raw = await iosReadFile(relPath);
         const id = crypto.randomUUID();
-        await invoke("html_preview_register", { id, content: raw });
+        // The find agent rides along inside the document — the only place
+        // search can run in a sandboxed cross-origin frame.
+        await invoke("html_preview_register", { id, content: raw + HTML_FIND_AGENT });
         setState({ status: "html", url: `htmlpreview://localhost/${id}`, previewId: id });
         return;
       }
@@ -377,10 +414,10 @@ export function Reader() {
 
   return (
     <div className="relative h-full w-full bg-background">
-      {/* Button islands (iOS 26 / Notes layout, #581). For PDFs the viewer's
-          own toolbar pill owns the top row, so back moves to the bottom-left
-          island — the two never collide. Top-right is reserved for share /
-          edit (issue #582, MVP task #6). */}
+      {/* Button islands (iOS 26 / Notes layout, #581). Back is ALWAYS the
+          top-left island — placement must not depend on the document type.
+          Top-right holds Share (issue #582) — the native share sheet over a
+          temp copy of the file. */}
       {searchable && (
         <SearchIsland
           query={findQuery}
@@ -398,32 +435,34 @@ export function Reader() {
           }
         />
       )}
-      {state.status === "pdf" ? (
-        <Island corner="bottom-left">
-          <ChromeButton label="Back" onClick={() => goBack()}>
-            <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
-          </ChromeButton>
-        </Island>
-      ) : (
-        <>
-          <Island corner="top-left">
-            <ChromeButton label="Back" onClick={() => goBack()}>
-              <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
-            </ChromeButton>
-          </Island>
-          <h1 className="pointer-events-none absolute left-1/2 top-[max(1.25rem,env(safe-area-inset-top))] z-40 max-w-[55vw] -translate-x-1/2 truncate text-sm font-medium text-muted-foreground">
-            {name}
-          </h1>
-        </>
+      <Island corner="top-left">
+        <ChromeButton label="Back" onClick={() => goBack()}>
+          <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
+        </ChromeButton>
+      </Island>
+      <Island corner="top-right">
+        <ChromeButton
+          label="Share"
+          onClick={() => {
+            void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
+          }}
+        >
+          <Share strokeWidth={1.5} className="h-4 w-4" />
+        </ChromeButton>
+      </Island>
+      {state.status !== "pdf" && (
+        <h1 className="pointer-events-none absolute left-1/2 top-[max(1.25rem,env(safe-area-inset-top))] z-40 max-w-[55vw] -translate-x-1/2 truncate text-sm font-medium text-muted-foreground">
+          {name}
+        </h1>
       )}
 
       {state.status === "pdf" ? (
-        // The PdfViewer owns the full screen; its own toolbar pill is the top
-        // chrome (repositioned below the safe area by the .mobile-shell rule
-        // in editor.css).
+        // The PdfViewer owns the full screen in island chrome mode: no
+        // desktop pill, search + page indicator in its bottom-center
+        // SearchIsland, back in our top-left island.
         <div className="absolute inset-0">
           <Suspense fallback={<ReaderMessage spinner>Loading…</ReaderMessage>}>
-            <PdfViewer filePath={state.filePath} fileName={name} />
+            <PdfViewer filePath={state.filePath} fileName={name} mobileChrome />
           </Suspense>
         </div>
       ) : state.status === "html" ? (
@@ -434,6 +473,7 @@ export function Reader() {
         // starting below the top islands.
         <div className="absolute inset-x-0 bottom-0" style={{ top: "calc(3.75rem + env(safe-area-inset-top))" }}>
           <iframe
+            ref={htmlFrameRef}
             key={state.url}
             src={state.url}
             title={name}

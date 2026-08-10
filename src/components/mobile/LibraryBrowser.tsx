@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ChevronLeft, FolderOpen, RefreshCw, AlertCircle } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory } from "@/lib/ios-api";
+import { toast } from "sonner";
 import { useMobileStore } from "@/stores/mobile-store";
 import { FileRow } from "./FileRow";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ export function LibraryBrowser() {
   const openDocument = useMobileStore((s) => s.openDocument);
   const goBack = useMobileStore((s) => s.goBack);
   const goToDepth = useMobileStore((s) => s.goToDepth);
+  const pickFolder = useMobileStore((s) => s.pickFolder);
 
   const currentRelPath = folderStack.length === 0 ? "" : folderStack[folderStack.length - 1].relPath;
   const currentName = folderStack.length === 0 ? libraryName || "Notesage" : folderStack[folderStack.length - 1].name;
@@ -135,9 +137,21 @@ export function LibraryBrowser() {
             <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
           </ChromeButton>
         ) : (
-          <div className="flex h-11 w-11 items-center justify-center text-muted-foreground" aria-hidden>
+          <ChromeButton
+            label="Change library folder"
+            onClick={() => {
+              void pickFolder()
+                .then(() => void load())
+                .catch((err) => {
+                  // Dismissing the picker is a normal outcome, not an error.
+                  if (!String(err).includes("No folder was selected")) {
+                    toast.error(`Couldn't change folder: ${err}`);
+                  }
+                });
+            }}
+          >
             <FolderOpen strokeWidth={1.5} className="h-5 w-5" />
-          </div>
+          </ChromeButton>
         )}
       </Island>
       <Island corner="top-right">

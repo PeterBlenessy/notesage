@@ -58,6 +58,11 @@ export async function iosReadBinary(relPath: string): Promise<Uint8Array> {
 }
 
 /** Ensure an iCloud item is downloaded; returns its current download state. */
+/** Present the iOS share sheet for a library file. */
+export function iosShareFile(relPath: string): Promise<void> {
+  return invoke("ios_share_file", { relPath });
+}
+
 export function iosEnsureDownloaded(relPath: string): Promise<IosDownloadState> {
   return invoke<IosDownloadState>("ios_ensure_downloaded", { relPath });
 }

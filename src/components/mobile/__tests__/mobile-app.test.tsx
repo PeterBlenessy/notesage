@@ -44,6 +44,9 @@ const ALLOWED = new Set([
   "ios_read_file",
   "ios_read_binary",
   "ios_ensure_downloaded",
+  // Presents the native share sheet over a TEMP COPY of the file — reads the
+  // library, writes only to the app's own temp dir.
+  "ios_share_file",
   // Pure render — takes markdown text, returns an HTML fragment. Touches no
   // filesystem and no library path, so it cannot widen the read surface.
   "render_markdown_fragment",
@@ -65,6 +68,9 @@ const FORBIDDEN = [
 ];
 
 beforeEach(() => {
+  // jsdom elements have no scrollIntoView; the find debounce can fire after a
+  // test finishes and an unhandled TypeError fails the whole run.
+  Element.prototype.scrollIntoView = vi.fn();
   useMobileStore.getState().reset();
   invokeMock.mockClear();
   useMobileStore.setState({ grantState: "granted", libraryName: "Notesage" });
@@ -234,6 +240,32 @@ describe("HTML reports", () => {
   it("lets the report's own scripts run", async () => {
     const frame = await openHtml();
     expect(frame.getAttribute("sandbox")).toContain("allow-scripts");
+  });
+
+  it("injects the find agent so search works inside the sandboxed frame", async () => {
+    // The app cannot reach a cross-origin frame's DOM — the injected agent is
+    // the ONLY way find-in-document can work for HTML reports.
+    await openHtml();
+    expect(registered.length).toBe(1);
+    expect(registered[0].content).toContain("notesage-find");
+    // The report's own markup still leads the document.
+    expect(registered[0].content.startsWith("<html>")).toBe(true);
+  });
+
+  it("shows a search island for HTML reports and drives the agent over postMessage", async () => {
+    const frame = await openHtml();
+    const posted: unknown[] = [];
+    Object.defineProperty(frame, "contentWindow", {
+      value: { postMessage: (msg: unknown) => posted.push(msg) },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "Q3" } });
+    await waitFor(() => {
+      expect(posted).toContainEqual({ ns: "notesage-find", type: "query", q: "Q3" });
+    });
+    // The agent's state replies drive the match counter.
+    fireEvent(window, new MessageEvent("message", { data: { ns: "notesage-find", type: "state", total: 4, current: 0 } }));
+    expect(await screen.findByText("1/4")).toBeTruthy();
   });
 
   it("keeps the report on an opaque origin so it cannot reach the app", async () => {
@@ -451,5 +483,46 @@ describe("search islands", () => {
     });
     // Navigation between matches is offered.
     expect(await screen.findByText("1/2")).toBeTruthy();
+  });
+});
+
+describe("share", () => {
+  it("shares the open document via the native share sheet", async () => {
+    setMockInvokeHandler("ios_read_file", () => "hello");
+    setMockInvokeHandler("render_markdown_fragment", () => "<p>hello</p>");
+    const shared: string[] = [];
+    setMockInvokeHandler("ios_share_file", (args) => {
+      shared.push((args as { relPath: string }).relPath);
+    });
+    useMobileStore.setState({ openDoc: { relPath: "notes/today.md", name: "today.md" } });
+    renderWithProviders(<Reader />);
+    await screen.findByText("hello");
+    fireEvent.click(screen.getByRole("button", { name: "Share" }));
+    await waitFor(() => expect(shared).toEqual(["notes/today.md"]));
+  });
+});
+
+describe("library re-pick", () => {
+  it("the root folder button reopens the folder picker", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    setMockInvokeHandler("ios_pick_library_folder", () => ({ displayName: "Elsewhere", granted: true }));
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByRole("button", { name: "Change library folder" });
+    fireEvent.click(screen.getByRole("button", { name: "Change library folder" }));
+    await waitFor(() => expect(calledCommands()).toContain("ios_pick_library_folder"));
+    // A granted pick lands the browser in the new library.
+    await waitFor(() => expect(useMobileStore.getState().libraryName).toBe("Elsewhere"));
+  });
+
+  it("treats a dismissed picker as a non-event (no error surfaced)", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    setMockInvokeHandler("ios_pick_library_folder", () => ({ displayName: "", granted: false }));
+    renderWithProviders(<LibraryBrowser />);
+    const { toast } = await import("sonner");
+    const btn = await screen.findByRole("button", { name: "Change library folder" });
+    vi.mocked(toast.error).mockClear();
+    fireEvent.click(btn);
+    await waitFor(() => expect(calledCommands()).toContain("ios_pick_library_folder"));
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });

@@ -149,6 +149,12 @@ impl<R: Runtime> NotesageIos<R> {
             .map(|r| r.base64)
     }
 
+    /// Present the iOS share sheet for a library file (copied to temp first —
+    /// share targets can't read through the security-scoped grant).
+    pub fn share_file(&self, rel: &str) -> Result<()> {
+        self.call("shareFile", RelPathArgs { rel_path: rel })
+    }
+
     pub fn ensure_downloaded(&self, rel: &str) -> Result<DownloadState> {
         let r: StateResponse = self.call("ensureDownloaded", RelPathArgs { rel_path: rel })?;
         Ok(match r.state.as_str() {
@@ -179,6 +185,9 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn read_binary(&self, _rel: &str) -> Result<String> {
+        Err(Error::Unavailable)
+    }
+    pub fn share_file(&self, _rel: &str) -> Result<()> {
         Err(Error::Unavailable)
     }
     pub fn ensure_downloaded(&self, _rel: &str) -> Result<DownloadState> {

@@ -157,6 +157,21 @@ enum LibraryAccess {
         return try result.get()
     }
 
+    /// Copy a library file into the app's temp dir (keeping its basename) so
+    /// a UIActivityViewController can hand it to other apps — share targets
+    /// cannot read through our security-scoped grant.
+    static func copyForSharing(_ rel: String) throws -> URL {
+        let data = try readBinary(rel)
+        let name = (rel as NSString).lastPathComponent
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("share", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let dest = dir.appendingPathComponent(name)
+        try? FileManager.default.removeItem(at: dest)
+        try data.write(to: dest)
+        return dest
+    }
+
     @discardableResult
     static func ensureDownloaded(_ rel: String) throws -> DownloadState {
         let root = try resolveRoot()

@@ -25,6 +25,44 @@ import { cn } from "@/lib/utils";
  *   bottom-right  reserved: primary creation action (new note)
  */
 
+/**
+ * The on-screen keyboard's overlap with the webview, in CSS pt. The page
+ * CANNOT observe the keyboard itself: in WKWebView neither `window.innerHeight`
+ * nor `visualViewport` reacts to it (verified empirically — zero events,
+ * heights unchanged), and WebKit has no `interactive-widget` support. The
+ * authoritative signal is native: the Swift plugin observes
+ * `UIResponder.keyboardWill{Show,ChangeFrame,Hide}` and dispatches a
+ * `notesage:keyboard` CustomEvent carrying the overlap. A visualViewport
+ * fallback is kept for engines that DO shrink the visual viewport.
+ */
+function useKeyboardInset(): number {
+  const [nativeInset, setNativeInset] = useState(0);
+  const [vvInset, setVvInset] = useState(0);
+  useEffect(() => {
+    const onKeyboard = (e: Event) => {
+      const detail = (e as CustomEvent<{ inset?: number }>).detail;
+      setNativeInset(Math.max(0, detail?.inset ?? 0));
+    };
+    window.addEventListener("notesage:keyboard", onKeyboard);
+    return () => window.removeEventListener("notesage:keyboard", onKeyboard);
+  }, []);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const update = () => {
+      setVvInset(Math.max(0, window.innerHeight - vv.height - vv.offsetTop));
+    };
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+    };
+  }, []);
+  return Math.max(nativeInset, vvInset);
+}
+
 export type IslandCorner =
   | "top-left"
   | "top-right"
@@ -63,6 +101,8 @@ export function Island({
   className?: string;
   children: ReactNode;
 }) {
+  const keyboardInset = useKeyboardInset();
+  const isBottom = corner.startsWith("bottom");
   return createPortal(
     <div
       className={cn(
@@ -71,6 +111,11 @@ export function Island({
         CORNER[corner],
         className,
       )}
+      style={
+        isBottom && keyboardInset > 0
+          ? { transform: `translateY(-${keyboardInset}px)`, transition: "transform 120ms ease-out" }
+          : undefined
+      }
     >
       {children}
     </div>,
