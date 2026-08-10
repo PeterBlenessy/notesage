@@ -10,6 +10,7 @@ import { classifyFile } from "./FileRow";
 import { Button } from "@/components/ui/button";
 import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
+import { useNativeChrome } from "./useNativeChrome";
 import { withFindAgent } from "./html-find-agent";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 
@@ -18,6 +19,7 @@ import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 const PdfViewer = lazy(() =>
   import("@/components/editor/viewers/PdfViewer").then((m) => ({ default: m.PdfViewer })),
 );
+import type { PdfMobileFindHandle, PdfMobileFindState } from "@/components/editor/viewers/PdfViewer";
 
 /**
  * Resolve a relative markdown link against the directory of the current doc.
@@ -102,6 +104,15 @@ export function Reader() {
   const [findIndex, setFindIndex] = useState(0);
   const [findTotal, setFindTotal] = useState(0);
   const findMarksRef = useRef<HTMLElement[]>([]);
+  // Mirror of findIndex for event handlers: native chrome taps can arrive
+  // faster than re-renders, and a stale state read wedges the navigation.
+  const findIndexRef = useRef(0);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // PDF find lives inside PdfViewer; the native island drives it through
+  // this handle and mirrors its state from the callback below.
+  const pdfFindRef = useRef<PdfMobileFindHandle | null>(null);
+  const [pdfFind, setPdfFind] = useState<PdfMobileFindState>({ current: -1, total: 0, page: 0, pages: 0 });
+  const isPdf = state.status === "pdf";
   const htmlFrameRef = useRef<HTMLIFrameElement | null>(null);
   const searchable =
     state.status === "markdown" || state.status === "text" || state.status === "html";
@@ -120,17 +131,47 @@ export function Reader() {
     const root = articleRef.current;
     if (!root) return;
     const t = setTimeout(() => {
+      // Mark-based highlighting, same mechanism as the HTML agent and the
+      // PDF text layer — the ONLY one of the three that both paints and
+      // scrolls in this WKWebView. (The CSS Custom Highlight API was tried
+      // and registers ranges but never paints in the embedded webview —
+      // matches were invisible; do not bring it back without an on-device
+      // paint check.) Capped for hundreds-of-pages documents.
       clearDomHighlights(root);
-      findMarksRef.current = findQuery ? highlightDomMatches(root, findQuery) : [];
+      findMarksRef.current = findQuery ? highlightDomMatches(root, findQuery, 300) : [];
+      findIndexRef.current = 0;
       setFindIndex(0);
       setFindTotal(findMarksRef.current.length);
       if (findMarksRef.current.length > 0) {
         findMarksRef.current[0].classList.add("dom-find-highlight-active");
-        findMarksRef.current[0].scrollIntoView({ block: "center" });
+        scrollMarkIntoView(findMarksRef.current[0]);
       }
     }, 150);
     return () => clearTimeout(t);
   }, [findQuery, state, isHtml]);
+
+  // Watchdog: something can restore the article's innerHTML after render
+  // (marks are connected at creation and detached later; trigger not yet
+  // identified). While a find is active, re-wrap when the marks die so the
+  // painted highlights survive. Cheap: a connectivity check per tick, a
+  // re-walk (≤300 matches) only when it actually died.
+  useEffect(() => {
+    if (isHtml || !findQuery) return;
+    const t = window.setInterval(() => {
+      const root = articleRef.current;
+      if (!root) return;
+      const first = findMarksRef.current[0];
+      if (first && !first.isConnected) {
+        findMarksRef.current = highlightDomMatches(root, findQuery, 300);
+        const bounded = Math.min(findIndexRef.current, Math.max(0, findMarksRef.current.length - 1));
+        findIndexRef.current = bounded;
+        setFindTotal(findMarksRef.current.length);
+        findMarksRef.current[bounded]?.classList.add("dom-find-highlight-active");
+      }
+    }, 500);
+    return () => window.clearInterval(t);
+  }, [isHtml, findQuery]);
+
 
   // Counter updates from the HTML find agent. Untrusted (the report's own
   // scripts share the frame) — shape-checked, and worst case a hostile report
@@ -138,8 +179,12 @@ export function Reader() {
   useEffect(() => {
     if (!isHtml) return;
     const onMessage = (e: MessageEvent) => {
-      // Only the report frame we injected the agent into may drive the counter.
-      if (e.source !== htmlFrameRef.current?.contentWindow) return;
+      // No e.source identity check: WKWebView does not reliably preserve
+      // source identity for opaque-origin (sandboxed) frames, and a strict
+      // comparison silently dropped every agent reply on-device — the match
+      // counter stayed 0 and the nav chevrons rendered permanently disabled.
+      // The payload is shape-checked and only ever drives a bounded counter
+      // (worst case: a hostile report lies about its own match count).
       const d = e.data as { ns?: string; type?: string; total?: number; current?: number };
       if (!d || d.ns !== "notesage-find" || d.type !== "state") return;
       if (typeof d.total === "number" && Number.isFinite(d.total)) setFindTotal(Math.max(0, d.total));
@@ -149,6 +194,39 @@ export function Reader() {
     return () => window.removeEventListener("message", onMessage);
   }, [isHtml]);
 
+  // Scroll to the active mark and KEEP it there: content above a match can
+  // change height after the scroll (mermaid fences swap to sized iframes,
+  // images resolve, fonts settle), which strands the viewport where the
+  // match USED to be — in a long document that reads as "scrolled to the
+  // wrong place entirely". The PDF viewer solves this with pre-sized page
+  // placeholders; markdown can't know sizes up front, so navigation
+  // re-checks the mark's real position after layout settles and corrects.
+  const correctionTimersRef = useRef<number[]>([]);
+  const scrollMarkIntoView = (mark: HTMLElement) => {
+    for (const t of correctionTimersRef.current) window.clearTimeout(t);
+    correctionTimersRef.current = [];
+    mark.scrollIntoView({ block: "center" });
+    for (const delay of [250, 700, 1500]) {
+      correctionTimersRef.current.push(
+        window.setTimeout(() => {
+          if (!mark.isConnected) return; // the watchdog will re-wrap
+          const scroller = scrollerRef.current;
+          if (!scroller) return;
+          const rect = mark.getBoundingClientRect();
+          const srect = scroller.getBoundingClientRect();
+          const offCenter = rect.top + rect.height / 2 - (srect.top + scroller.clientHeight / 2);
+          if (Math.abs(offCenter) > 48) mark.scrollIntoView({ block: "center" });
+        }, delay),
+      );
+    }
+  };
+  useEffect(
+    () => () => {
+      for (const t of correctionTimersRef.current) window.clearTimeout(t);
+    },
+    [],
+  );
+
   const goToMatch = (next: boolean) => {
     if (isHtml) {
       htmlFrameRef.current?.contentWindow?.postMessage(
@@ -157,13 +235,22 @@ export function Reader() {
       );
       return;
     }
-    const marks = findMarksRef.current;
+    let marks = findMarksRef.current;
+    // Heal before use: if the article was rewritten since the last walk,
+    // the stored marks are detached husks — re-wrap from the live DOM.
+    if (marks.length > 0 && !marks[0].isConnected) {
+      const root = articleRef.current;
+      marks = root && findQuery ? highlightDomMatches(root, findQuery, 300) : [];
+      findMarksRef.current = marks;
+      setFindTotal(marks.length);
+    }
     if (marks.length === 0) return;
-    const cur = findIndex;
+    const cur = Math.min(findIndexRef.current, marks.length - 1);
     const idx = (cur + (next ? 1 : marks.length - 1)) % marks.length;
     marks[cur]?.classList.remove("dom-find-highlight-active");
     marks[idx].classList.add("dom-find-highlight-active");
-    marks[idx].scrollIntoView({ block: "center" });
+    scrollMarkIntoView(marks[idx]);
+    findIndexRef.current = idx;
     setFindIndex(idx);
   };
 
@@ -174,6 +261,40 @@ export function Reader() {
   // Same idiom as the theme + mermaid effects below.
   const loadIdRef = useRef(0);
   useEffect(() => () => { loadIdRef.current++; }, []);
+
+  const nativeChrome = useNativeChrome(
+    {
+      topLeft: { id: "back", icon: "chevron.backward" },
+      topRight: { id: "share", icon: "square.and.arrow.up" },
+      search: isPdf
+        ? {
+            kind: "find" as const,
+            placeholder: "Find in document",
+            status: pdfFind.pages > 0 ? `${pdfFind.page} / ${pdfFind.pages}` : undefined,
+            current: pdfFind.total > 0 ? pdfFind.current + 1 : undefined,
+            total: pdfFind.total > 0 ? pdfFind.total : undefined,
+          }
+        : searchable
+          ? {
+              kind: "find" as const,
+              placeholder: "Find in document",
+              current: findTotal > 0 ? findIndex + 1 : undefined,
+              total: findTotal > 0 ? findTotal : undefined,
+            }
+          : undefined,
+    },
+    {
+      back: () => void goBack(),
+      share: () => {
+        void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
+      },
+      "search-query": (value?: string) =>
+        isPdf ? pdfFindRef.current?.setQuery(value ?? "") : setFindQuery(value ?? ""),
+      "search-close": () => (isPdf ? pdfFindRef.current?.setQuery("") : setFindQuery("")),
+      "search-next": () => (isPdf ? pdfFindRef.current?.next() : goToMatch(true)),
+      "search-prev": () => (isPdf ? pdfFindRef.current?.prev() : goToMatch(false)),
+    },
+  );
 
   const load = useCallback(async () => {
     if (!relPath) return;
@@ -437,12 +558,12 @@ export function Reader() {
   if (!openDoc) return null;
 
   return (
-    <div className="relative h-full w-full bg-background">
+    <div className="view-enter relative h-full w-full bg-background">
       {/* Button islands (iOS 26 / Notes layout, #581). Back is ALWAYS the
           top-left island — placement must not depend on the document type.
           Top-right holds Share (issue #582) — the native share sheet over a
           temp copy of the file. */}
-      {searchable && (
+      {!nativeChrome && searchable && (
         <SearchIsland
           query={findQuery}
           onQueryChange={setFindQuery}
@@ -459,21 +580,25 @@ export function Reader() {
           }
         />
       )}
-      <Island corner="top-left">
-        <ChromeButton label="Back" onClick={() => goBack()}>
-          <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
-        </ChromeButton>
-      </Island>
-      <Island corner="top-right">
-        <ChromeButton
-          label="Share"
-          onClick={() => {
-            void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
-          }}
-        >
-          <Share strokeWidth={1.5} className="h-4 w-4" />
-        </ChromeButton>
-      </Island>
+      {!nativeChrome && (
+        <>
+          <Island corner="top-left">
+            <ChromeButton label="Back" onClick={() => goBack()}>
+              <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
+            </ChromeButton>
+          </Island>
+          <Island corner="top-right">
+            <ChromeButton
+              label="Share"
+              onClick={() => {
+                void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
+              }}
+            >
+              <Share strokeWidth={1.5} className="h-4 w-4" />
+            </ChromeButton>
+          </Island>
+        </>
+      )}
       {state.status !== "pdf" && (
         <h1 className="pointer-events-none absolute left-1/2 top-[max(1.25rem,env(safe-area-inset-top))] z-40 max-w-[55vw] -translate-x-1/2 truncate text-sm font-medium text-muted-foreground">
           {name}
@@ -486,7 +611,14 @@ export function Reader() {
         // SearchIsland, back in our top-left island.
         <div className="absolute inset-0">
           <Suspense fallback={<ReaderMessage spinner>Loading…</ReaderMessage>}>
-            <PdfViewer filePath={state.filePath} fileName={name} mobileChrome />
+            <PdfViewer
+              filePath={state.filePath}
+              fileName={name}
+              mobileChrome
+              nativeFind={nativeChrome}
+              mobileFindRef={pdfFindRef}
+              onMobileFindState={setPdfFind}
+            />
           </Suspense>
         </div>
       ) : state.status === "html" ? (
@@ -506,13 +638,13 @@ export function Reader() {
           />
         </div>
       ) : (
-      <div className="absolute inset-0 overflow-y-auto" style={CONTENT_INSETS}>
+      <div ref={scrollerRef} className="absolute inset-0 overflow-y-auto" style={CONTENT_INSETS}>
         {state.status === "loading" && <ReaderMessage spinner>Loading…</ReaderMessage>}
 
         {state.status === "downloading" && (
           <ReaderMessage icon={CloudDownload} title="Downloading from iCloud">
             This note isn't on your device yet. It'll be ready in a moment.
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => void load()}>
+            <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={() => void load()}>
               Retry
             </Button>
           </ReaderMessage>
@@ -521,7 +653,7 @@ export function Reader() {
         {state.status === "error" && (
           <ReaderMessage icon={AlertCircle} title="Couldn't open this file">
             <span className="break-words">{state.message}</span>
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => void load()}>
+            <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={() => void load()}>
               Try again
             </Button>
           </ReaderMessage>

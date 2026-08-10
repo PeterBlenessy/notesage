@@ -177,6 +177,23 @@ pub async fn ios_read_binary(
     }
 }
 
+/// Declare the native chrome overlay (Liquid Glass buttons over the
+/// webview). Config is a `{ topLeft?: {id, icon}, topRight?: {id, icon} }`
+/// JSON value; icons are SF Symbol names. Taps arrive in the page as
+/// `notesage:chrome` CustomEvents.
+#[tauri::command]
+pub async fn ios_set_chrome(app: tauri::AppHandle, spec: serde_json::Value) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::set_chrome(&app, spec).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, spec);
+        Err("ios_set_chrome is only available on iOS".into())
+    }
+}
+
 /// Present the iOS share sheet for a library file. The native layer copies
 /// the file to temp first (share targets can't read through the
 /// security-scoped grant) and presents a `UIActivityViewController`.
@@ -267,6 +284,10 @@ mod ios_impl {
 
     pub async fn read_binary(app: &AppHandle, rel: &str) -> Result<String, String> {
         app.notesage_ios().read_binary(rel).map_err(|e| e.to_string())
+    }
+
+    pub async fn set_chrome(app: &AppHandle, spec: serde_json::Value) -> Result<(), String> {
+        app.notesage_ios().set_chrome(spec).map_err(|e| e.to_string())
     }
 
     pub async fn share_file(app: &AppHandle, rel: &str) -> Result<(), String> {

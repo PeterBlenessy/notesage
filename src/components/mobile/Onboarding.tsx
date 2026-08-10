@@ -63,7 +63,7 @@ export function Onboarding() {
 
       <Button
         size="lg"
-        className="mt-8 w-full max-w-sm"
+        className="ios-press-row mt-8 w-full max-w-sm"
         onClick={handleGrant}
         disabled={busy}
       >

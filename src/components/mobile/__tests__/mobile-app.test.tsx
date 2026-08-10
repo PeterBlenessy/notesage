@@ -47,6 +47,9 @@ const ALLOWED = new Set([
   // Presents the native share sheet over a TEMP COPY of the file — reads the
   // library, writes only to the app's own temp dir.
   "ios_share_file",
+  // Declares the native chrome overlay — pure UI, no filesystem access. In
+  // tests it is unmocked and rejects, which is exactly the web-fallback path.
+  "ios_set_chrome",
   // Pure render — takes markdown text, returns an HTML fragment. Touches no
   // filesystem and no library path, so it cannot widen the read surface.
   "render_markdown_fragment",
@@ -301,9 +304,8 @@ describe("HTML reports", () => {
       expect(posted).toContainEqual({ ns: "notesage-find", type: "query", q: "Q3" });
     });
     // The agent's state replies drive the match counter.
-    // The reply listener verifies e.source === the report frame's window —
-    // replies from anywhere else must not drive the counter.
-    fireEvent(window, new MessageEvent("message", { data: { ns: "notesage-find", type: "state", total: 9, current: 0 } }));
+    // Replies are shape-checked (no e.source identity check — WKWebView
+    // does not preserve source identity for opaque-origin frames).
     fireEvent(
       window,
       new MessageEvent("message", {
@@ -312,7 +314,6 @@ describe("HTML reports", () => {
       }),
     );
     expect(await screen.findByText("1/4")).toBeTruthy();
-    expect(screen.queryByText("1/9")).toBeNull();
   });
 
   it("keeps the report on an opaque origin so it cannot reach the app", async () => {
@@ -598,6 +599,29 @@ describe("App Review safety — local-folder demo path (issue #594)", () => {
     renderWithProviders(<LibraryBrowser />);
     expect(await screen.findByText("Nothing here yet")).toBeTruthy();
     expect(screen.queryByText(/lorem ipsum/i)).toBeNull();
+  });
+});
+
+describe("long-press ancestor menu (web fallback)", () => {
+  it("holding Back opens the folder-hierarchy jump menu (Files pattern)", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    useMobileStore.setState({
+      libraryName: "Notesage",
+      folderStack: [
+        { relPath: "Investeringar", name: "Investeringar" },
+        { relPath: "Investeringar/reports", name: "reports" },
+      ],
+    });
+    renderWithProviders(<LibraryBrowser />);
+    const back = await screen.findByRole("button", { name: "Back" });
+    fireEvent.pointerDown(back.parentElement!);
+    await waitFor(() => expect(screen.getByRole("menu")).toBeTruthy(), { timeout: 1500 });
+    // Ancestors only — the current folder is where we already are.
+    expect(screen.getByRole("menuitem", { name: "Notesage" })).toBeTruthy();
+    expect(screen.getByRole("menuitem", { name: "Investeringar" })).toBeTruthy();
+    expect(screen.queryByRole("menuitem", { name: "reports" })).toBeNull();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Notesage" }));
+    expect(useMobileStore.getState().folderStack).toEqual([]);
   });
 });
 

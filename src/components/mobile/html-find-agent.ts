@@ -19,6 +19,7 @@ const HTML_FIND_AGENT = `
   "use strict";
   var marks = [];
   var current = 0;
+  var lastQuery = "";
   var BASE = "background:rgba(255,213,79,.6);color:inherit;border-radius:2px;";
   var ACTIVE = "background:rgba(255,152,0,.9);color:#000;border-radius:2px;";
 
@@ -43,6 +44,21 @@ const HTML_FIND_AGENT = `
     current = 0;
   }
 
+  // Whether layout information exists (real browsers yes, jsdom no) — the
+  // visibility filter only makes sense where hidden things HAVE no layout.
+  var hasLayout = document.documentElement.getBoundingClientRect().width > 0;
+
+  function isHidden(el) {
+    // display:none anywhere in the chain (offsetParent null) — the common
+    // case for tabbed reports: matches behind another tab are unreachable
+    // by scrolling, so navigation must skip them entirely.
+    if (!hasLayout) return false;
+    if (el.offsetParent === null && getComputedStyle(el).position !== "fixed") return true;
+    return false;
+  }
+
+  var MAX_MATCHES = 300;
+
   function highlight(query) {
     clearMarks();
     if (!query) { reply(); return; }
@@ -54,6 +70,7 @@ const HTML_FIND_AGENT = `
         var tag = p.tagName;
         if (tag === "SCRIPT" || tag === "STYLE" || tag === "NOSCRIPT" || tag === "TEXTAREA" || tag === "MARK")
           return NodeFilter.FILTER_REJECT;
+        if (isHidden(p)) return NodeFilter.FILTER_REJECT;
         return node.nodeValue && node.nodeValue.toLowerCase().indexOf(needle) !== -1
           ? NodeFilter.FILTER_ACCEPT
           : NodeFilter.FILTER_REJECT;
@@ -61,7 +78,7 @@ const HTML_FIND_AGENT = `
     });
     var nodes = [];
     while (walker.nextNode()) nodes.push(walker.currentNode);
-    for (var n = 0; n < nodes.length; n++) {
+    for (var n = 0; n < nodes.length && marks.length < MAX_MATCHES; n++) {
       var node = nodes[n];
       var text = node.nodeValue || "";
       var lower = text.toLowerCase();
@@ -92,14 +109,34 @@ const HTML_FIND_AGENT = `
     current = ((idx % marks.length) + marks.length) % marks.length;
     var m = marks[current];
     m.setAttribute("style", ACTIVE);
-    if (scroll) m.scrollIntoView({ block: "center" });
+    if (scroll) {
+      // Land the match in the upper third: centering left it behind the
+      // app's bottom search island (and the keyboard while typing).
+      m.scrollIntoView({ block: "start" });
+      window.scrollBy(0, -Math.round(window.innerHeight * 0.3));
+    }
   }
+
+  // Reports with tabs/accordions reveal content AFTER the search ran — a
+  // match on another tab is invisible to the initial walk. Any click may be
+  // such a reveal: re-run the active query once things settle.
+  document.addEventListener(
+    "click",
+    function () {
+      if (!lastQuery) return;
+      setTimeout(function () {
+        if (lastQuery) highlight(lastQuery);
+      }, 350);
+    },
+    true
+  );
 
   window.addEventListener("message", function (e) {
     var d = e.data;
     if (!d || d.ns !== "notesage-find") return;
     if (d.type === "query") {
-      highlight(String(d.q || ""));
+      lastQuery = String(d.q || "");
+      highlight(lastQuery);
     } else if (d.type === "nav") {
       activate(current + (d.dir === -1 ? -1 : 1), true);
       reply();
