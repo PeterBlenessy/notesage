@@ -1,6 +1,34 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.25",
+      "date": "2026-08-10",
+      "previousVersion": "0.48.0-alpha.24",
+      "sections": {
+        "features": [
+          "feat(mobile): refresh-spin state on the native chrome button (#607)"
+        ],
+        "fixes": [
+          "fix(mobile): stop Reader's innerHTML reset from wiping find-in-document marks (#608)"
+        ]
+      },
+      "underTheHood": [
+        "iOS: native Liquid Glass chrome + find-in-document across all readers (#600)",
+        "iOS: capture shared documents — Notesage in the share sheet for PDFs (#601)",
+        "CI: scoped audit ignores for advisories blocked on upstream bumps (#603)",
+        "fix(mobile): stop Reader's innerHTML reset from wiping find-in-document marks (#608)",
+        "feat(mobile): refresh-spin state on the native chrome button (#607)",
+        "ci: scoped audit ignores for advisories blocked on upstream bumps",
+        "feat(mobile): capture shared documents — Notesage in the share sheet for PDFs",
+        "fix(mobile): find-in-document round — deterministic scroll, healing, hidden content",
+        "fix(mobile): native search matches Apple Notes anatomy",
+        "feat(mobile): native search island — glass capsule, field, and match nav",
+        "docs(mobile): ADR 0009 — iOS chrome is native SwiftUI over the webview",
+        "feat(mobile): native Liquid Glass chrome — real SwiftUI buttons over the webview",
+        "feat(mobile): Liquid Glass press feedback + motion for the web chrome"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.24",
       "date": "2026-08-10",
       "previousVersion": "0.48.0-alpha.23",
