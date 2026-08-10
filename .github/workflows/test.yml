@@ -174,6 +174,70 @@ jobs:
           path: playwright-report/
           retention-days: 14
 
+  ios-swift-syntax:
+    name: iOS Native Checks
+    runs-on: macos-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # The iOS native sources are not part of any build this CI runs, so
+      # without this job nothing would ever read them: a typo would surface
+      # only at Xcode-integration time, on someone's laptop.
+      #
+      # Two tiers, because they are not equally checkable here:
+      #
+      #   LibraryAccess + LibraryCapture + ShareViewController  →  full
+      #     -typecheck against the real iOS SDK with the capture bridging
+      #     header. None of them import Tauri, so this is a genuine compile
+      #     check: it resolves UIKit, the C ABI, and every call site.
+      #     LibraryAccess comes from the plugin package because LibraryCapture
+      #     extends it — the Share Extension target compiles both together.
+      #
+      #   NotesageIosPlugin  →  -parse only. It imports the `Tauri` Swift
+      #     package, which only exists once Tauri wires the plugin's Swift
+      #     Package into a generated Xcode project, so a type check would fail
+      #     on the import rather than on the code.
+      - name: Type-check iOS Swift sources
+        run: |
+          set -euo pipefail
+          SDK="$(xcrun --sdk iphoneos --show-sdk-path)"
+          swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios16.0 \
+            -import-objc-header src-tauri/ios/NotesageCapture.h \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryAccess.swift \
+            src-tauri/ios/LibraryCapture.swift \
+            src-tauri/ios/ShareViewController.swift
+          swiftc -parse src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/NotesageIosPlugin.swift
+
+      # The Share Extension links this static library to call the shared
+      # capture-note formatter. Building it here proves the C ABI compiles for
+      # the device target and exports the symbols Swift expects — the Xcode
+      # integration step then only has to link it.
+      - name: Build capture staticlib for iOS + verify exported symbols
+        run: |
+          set -euo pipefail
+          rustup target add aarch64-apple-ios
+          cargo build --release --target aarch64-apple-ios \
+            --manifest-path src-tauri/crates/notesage-capture/Cargo.toml
+          LIB=src-tauri/target/aarch64-apple-ios/release/libnotesage_capture.a
+          # Xcode's `nm` is older than the LLVM that rustc emits, so it errors
+          # on the Rust std/dep objects in the archive ("Unknown attribute kind
+          # (105)") and exits non-zero. Those objects are not what we are
+          # checking — our own is readable — so capture the output and tolerate
+          # the exit code, then assert on the symbols. Without the `|| true`,
+          # `set -euo pipefail` kills the step before grep ever runs.
+          syms="$(nm -gU "$LIB" 2>/dev/null || true)"
+          [ -n "$syms" ] || { echo "nm produced no symbols at all — cannot verify the C ABI"; exit 1; }
+          for sym in _notesage_capture_rel_path _notesage_capture_contents _notesage_capture_string_free; do
+            # `grep -q` exits on first match, which SIGPIPEs printf and — under
+            # pipefail — fails the step precisely when the symbol IS found.
+            # Plain grep with output discarded consumes all input instead.
+            printf '%s\n' "$syms" | grep " T $sym\$" >/dev/null || { echo "missing exported symbol: $sym"; exit 1; }
+          done
+          echo "All capture C ABI symbols exported."
+
   rust-tests:
     name: Rust Backend Tests
     runs-on: macos-latest
@@ -337,7 +401,11 @@ jobs:
         # (some older Tauri docs use the latter). `scripts/run-real-e2e.sh`
         # looks for `tauri-webdriver` in PATH; install accordingly.
         if: steps.cache-tauri-webdriver.outputs.cache-hit != 'true'
-        run: cargo install tauri-webdriver
+        # --force: the binary can already exist even on a dedicated-cache miss
+        # (a Cargo.lock change rotates this cache's key while the broader Rust
+        # cache still restores ~/.cargo/bin), and cargo refuses to overwrite
+        # without it ("binary `tauri-webdriver` already exists in destination").
+        run: cargo install tauri-webdriver --force
 
       - name: Run real Tauri E2E tests
         run: pnpm test:e2e-real-full

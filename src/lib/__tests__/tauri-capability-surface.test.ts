@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'fs';
+import { readFileSync, readdirSync } from 'fs';
 import path from 'path';
+
+const { join, dirname } = path;
 
 // Regression-lock for task #21 (project-data-isolation).
 // `assetProtocol.scope.allow = ["**"]` would let the renderer load any file on
@@ -42,6 +44,8 @@ interface DefaultCapability {
   permissions: Array<
     string | { identifier: string; allow?: HttpAllowEntry[] }
   >;
+  /** Absent = every platform. Tauri accepts linux/macOS/windows/android/iOS. */
+  platforms?: string[];
 }
 
 function loadTauriConf(): TauriConf {
@@ -50,6 +54,29 @@ function loadTauriConf(): TauriConf {
 
 function loadDefaultCapability(): DefaultCapability {
   return JSON.parse(readFileSync(defaultCapPath, 'utf8')) as DefaultCapability;
+}
+
+/** Load a capability by file stem, e.g. `desktop-telemetry`. */
+function loadCapability(name: string): DefaultCapability {
+  const path = join(dirname(defaultCapPath), `${name}.json`);
+  return JSON.parse(readFileSync(path, 'utf8')) as DefaultCapability;
+}
+
+/**
+ * Every permission identifier granted across ALL capability files.
+ *
+ * Capabilities were split by platform once the iOS target arrived, so a check
+ * that reads only `default.json` can be silently bypassed by adding a second
+ * file. Anything asserting "we grant exactly X" should scan the directory.
+ */
+function allCapabilityPermissions(): string[] {
+  const dir = dirname(defaultCapPath);
+  return readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .flatMap((f) => {
+      const cap = JSON.parse(readFileSync(join(dir, f), 'utf8')) as DefaultCapability;
+      return (cap.permissions ?? []).map((p) => (typeof p === 'string' ? p : p.identifier));
+    });
 }
 
 describe('tauri asset protocol scope', () => {
@@ -172,19 +199,32 @@ describe('tauri default capability permissions', () => {
     expect(identifiers).toContain('sentry:default');
   });
 
-  it('grants aptabase:allow-track-event (telemetry usage invoke bridge)', () => {
+  it('grants aptabase:allow-track-event, and ONLY that, across every capability file', () => {
     // `tauri-plugin-aptabase` exposes only the `track_event` command and ships
     // NO `aptabase:default` set, so the command must be granted explicitly. We
     // invoke it directly through the v2 IPC (the npm JS binding is pinned to the
     // Tauri v1 API and can't reach the v2 bridge). Like sentry, this is an
     // invoke permission, NOT a network permission — egress is Rust-side
-    // `reqwest`, so it does not widen the frontend HTTP surface. Lock that only
-    // `allow-track-event` is granted (never a broader/write aptabase scope).
-    const cap = loadDefaultCapability();
-    const aptabasePerms = cap.permissions
-      .map((perm) => (typeof perm === 'string' ? perm : perm.identifier))
-      .filter((id) => id.startsWith('aptabase:'));
-    expect(aptabasePerms).toEqual(['aptabase:allow-track-event']);
+    // `reqwest`, so it does not widen the frontend HTTP surface.
+    //
+    // It lives in `desktop-telemetry.json` rather than `default.json` because
+    // the plugin does not compile for iOS, so the dependency is gated off there
+    // — and a capability naming a permission from a plugin that isn't built
+    // fails the build. Scanning EVERY capability file (rather than one) is the
+    // stronger check: it also catches a broader aptabase scope smuggled into a
+    // new file.
+    const perms = allCapabilityPermissions().filter((id) => id.startsWith('aptabase:'));
+    expect(perms).toEqual(['aptabase:allow-track-event']);
+  });
+
+  it('keeps telemetry off the iOS build by platform-scoping its capability', () => {
+    // If this capability ever loses its `platforms` field, the iOS build breaks
+    // at the manifest step with "Permission aptabase:allow-track-event not
+    // found" — an error that reads like a typo rather than a platform issue.
+    const cap = loadCapability('desktop-telemetry');
+    expect(cap.platforms).toBeDefined();
+    expect(cap.platforms).not.toContain('iOS');
+    expect(cap.platforms).toContain('macOS');
   });
 
   it('grants clipboard-manager READ-only (no write/clear/image surface)', () => {

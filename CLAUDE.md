@@ -70,6 +70,7 @@ Reversible + cheap → act, then report. Otherwise → ask first.
 | EPUB, PDF export, DOCX, viewers | @docs/features/document-formats.md |
 | Projects, file tree, iCloud, git, external changes | @docs/features/workspace.md |
 | Automations (triggers, steps, agent-step provider & permissions, builder) | docs/features/automations.md |
+| iOS mobile app (read-only reader + share capture) | docs/features/mobile.md |
 
 ## Development Lifecycle
 

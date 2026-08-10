@@ -117,9 +117,63 @@ pub async fn render_markdown_preview(
     .map_err(|e| format!("Markdown preview task failed: {}", e))?
 }
 
+/// Render markdown **content** (rather than a file path) to an HTML body
+/// fragment.
+///
+/// Sibling of [`render_markdown_preview`] for callers that already hold the
+/// text and cannot hand over a path the main process can open — notably iOS,
+/// where every read goes through a security-scoped bookmark resolved in the
+/// native layer, so `fs::read_to_string` on the raw path would fail.
+///
+/// Sharing `markdown_to_html` is the point: the mobile reader renders a note
+/// through exactly the same comrak pipeline as the desktop, so callouts,
+/// tables, task lists and syntax highlighting look the same on both, and there
+/// is one renderer to keep correct rather than two.
+///
+/// Safe to inject as HTML: comrak runs without `unsafe_`, so raw HTML in the
+/// source (including `<script>`) is stripped rather than passed through.
+#[tauri::command]
+pub async fn render_markdown_fragment(markdown: String, theme: String) -> Result<String, String> {
+    // CPU-bound render — same blocking-pool treatment as the path variant.
+    tokio::task::spawn_blocking(move || {
+        let body = strip_frontmatter(&markdown);
+        Ok(markdown_to_html(body, &theme, None, None))
+    })
+    .await
+    .map_err(|e| format!("Markdown render task failed: {}", e))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn render_fragment_strips_frontmatter_and_renders_markdown() {
+        let html = render_markdown_fragment(
+            "---\ntitle: T\n---\n\n# Hello\n\n- one\n- two\n".into(),
+            "light".into(),
+        )
+        .await
+        .unwrap();
+        assert!(html.contains("Hello"), "heading should render: {html}");
+        assert!(html.contains("<li>"), "list should render: {html}");
+        assert!(!html.contains("title: T"), "frontmatter must not leak: {html}");
+    }
+
+    #[tokio::test]
+    async fn render_fragment_strips_raw_html_so_the_output_is_injection_safe() {
+        // The mobile reader injects this fragment as HTML. comrak runs without
+        // `unsafe_`, so a note containing a script tag cannot execute — this
+        // pins that, because the day it changes the reader becomes an XSS sink.
+        let html = render_markdown_fragment(
+            "# Title\n\n<script>alert('x')</script>\n\n<img src=x onerror=alert(1)>\n".into(),
+            "light".into(),
+        )
+        .await
+        .unwrap();
+        assert!(!html.contains("<script"), "script tag survived: {html}");
+        assert!(!html.contains("onerror"), "event handler survived: {html}");
+    }
 
     #[test]
     fn strip_frontmatter_no_frontmatter_returns_input() {

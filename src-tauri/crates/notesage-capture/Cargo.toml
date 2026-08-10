@@ -1,0 +1,18 @@
+[package]
+name = "notesage-capture"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Capture-note formatting for Notesage's iOS share extension — one implementation, callable from Rust and from Swift over a C ABI"
+
+[lib]
+# `staticlib` so the iOS Share Extension can link it directly: the extension is
+# a separate process and cannot reach the Tauri app's Rust, and linking the
+# whole app crate into a share extension (which has a hard ~120MB memory cap)
+# is not viable. `rlib` so the app crate can depend on it normally.
+crate-type = ["staticlib", "rlib"]
+
+# Deliberately dependency-free. This is linked into a share extension, so every
+# transitive dependency is binary weight in a memory-constrained process — and
+# the whole module is string formatting plus a civil-time conversion.
+[dependencies]

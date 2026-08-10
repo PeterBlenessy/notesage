@@ -1,5 +1,6 @@
 pub mod alpha_update;
 pub mod file;
+pub mod ios_library;
 pub mod dialog;
 pub mod ai;
 pub mod ai_streaming;
@@ -26,6 +27,15 @@ pub mod json_rpc;
 pub mod logging;
 pub mod store;
 pub mod health;
+// Desktop only: `whisper-rs` bundles whisper.cpp, whose ggml compute kernels
+// reference Accelerate symbols (`_vDSP_vsub`, …) that do not link on iOS — and
+// a read-only mobile reader has no business carrying a speech-recognition
+// engine. The mobile build gets `transcription_stub` under the same name so
+// `generate_handler!` in lib.rs stays platform-agnostic.
+#[cfg(desktop)]
+pub mod transcription;
+#[cfg(mobile)]
+#[path = "transcription_stub.rs"]
 pub mod transcription;
 pub mod local_inference;
 pub mod model_management;
@@ -52,6 +62,7 @@ pub mod theme;
 
 pub use alpha_update::*;
 pub use file::*;
+pub use ios_library::*;
 pub use dialog::*;
 pub use ai::*;
 pub use export::*;

@@ -72,3 +72,9 @@ public/excalidraw-assets/
 .dev-home/
 content/site/
 content/screenshots/
+
+# Vendored Tauri Swift API, copied in by `tauri-plugin`'s build script for the
+# iOS plugin crate's Swift Package to resolve `import Tauri`. Regenerated on
+# every build and version-locked to the tauri crate — committing it would let a
+# stale copy drift from the Rust side.
+src-tauri/crates/*/.tauri/

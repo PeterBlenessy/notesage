@@ -390,7 +390,26 @@ impl AgentManagerState {
 // Directory layout
 // ---------------------------------------------------------------------------
 
+/// Test-only base override. Tests that install into a sandbox MUST use this
+/// rather than mutating `$HOME`: `dirs::home_dir()` reads the environment, the
+/// test harness runs tests in parallel threads, and a mid-suite `set_var`
+/// races every other test that derives paths from home (seen as a CI-only
+/// flake in `determine_agent_source_global_agents`, which read home twice
+/// around another test's mutation window). A thread-local is visible to the
+/// installing test's own call chain and to nobody else.
+#[cfg(test)]
+thread_local! {
+    static TEST_AGENTS_BASE: std::cell::RefCell<Option<PathBuf>> =
+        const { std::cell::RefCell::new(None) };
+}
+
 fn agents_base_dir() -> PathBuf {
+    #[cfg(test)]
+    {
+        if let Some(base) = TEST_AGENTS_BASE.with(|c| c.borrow().clone()) {
+            return base;
+        }
+    }
     dirs::home_dir()
         .unwrap_or_default()
         .join(".notesage")
@@ -1793,12 +1812,13 @@ mod tests {
         }
         let data = builder.into_inner().unwrap().finish().unwrap();
 
-        // Redirect HOME so agents_* dirs land in a temp sandbox.
+        // Redirect the agents base into a temp sandbox via the thread-local
+        // override — NOT by mutating $HOME, which races parallel tests that
+        // read `dirs::home_dir()` (module doc on TEST_AGENTS_BASE).
         let tmp = std::env::temp_dir().join(format!("ns-tree-install-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&tmp);
         std::fs::create_dir_all(&tmp).unwrap();
-        let old_home = std::env::var_os("HOME");
-        std::env::set_var("HOME", &tmp);
+        TEST_AGENTS_BASE.with(|c| *c.borrow_mut() = Some(tmp.join(".notesage").join("agents")));
 
         let result = extract_tree_and_install("pi", "pi", "pi/pi", "pi-linux-x64.tar.gz", &data);
 
@@ -1818,11 +1838,9 @@ mod tests {
             Ok(())
         });
 
-        // Restore HOME before asserting so a failure can't poison other tests.
-        match old_home {
-            Some(h) => std::env::set_var("HOME", h),
-            None => std::env::remove_var("HOME"),
-        }
+        // Clear the override before asserting so a failure can't poison later
+        // tests on this thread.
+        TEST_AGENTS_BASE.with(|c| *c.borrow_mut() = None);
         let _ = std::fs::remove_dir_all(&tmp);
         checks.expect("tree install must extract, guard traversal, and link the binary");
     }
