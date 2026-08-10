@@ -146,15 +146,19 @@ export function FileRow({ entry, active, onActivate, onChanged }: FileRowProps) 
         <span className="min-w-0 flex-1">
           <span
             className={cn(
-              "block truncate text-sm",
-              active ? "font-medium text-foreground" : "text-foreground",
+              "block truncate text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground",
               entry.hidden && "opacity-60",
             )}
+            style={{
+              fontWeight: active
+                ? "max(500, var(--ns-a11y-weight, 400))"
+                : "var(--ns-a11y-weight, 400)",
+            }}
           >
             {entry.name}
           </span>
           {entry.modified !== undefined && (
-            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+            <span className="mt-0.5 block truncate text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground">
               {formatModified(entry.modified)}
             </span>
           )}

@@ -9,7 +9,7 @@ import { FileRow } from "./FileRow";
 import { GalleryView } from "./GalleryView";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
-import { useNativeChrome } from "./useNativeChrome";
+import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
 
 type LoadState =
   | { status: "loading" }
@@ -32,6 +32,7 @@ export function LibraryBrowser() {
   const setSortMode = useMobileStore((s) => s.setSortMode);
   const viewMode = useMobileStore((s) => s.viewMode);
   const setViewMode = useMobileStore((s) => s.setViewMode);
+  const a11y = useA11yPrefs();
 
   const currentRelPath = folderStack.length === 0 ? "" : folderStack[folderStack.length - 1].relPath;
   const currentName = folderStack.length === 0 ? libraryName || "Notesage" : folderStack[folderStack.length - 1].name;
@@ -286,9 +287,12 @@ export function LibraryBrowser() {
       holdTimer.current = null;
     }
   };
+  // The ancestor-jump menu below is portaled to document.body, so it needs
+  // its own a11y CSS scope computed here (see the comment at its render site).
+  const menuA11yProps = a11yRootProps(a11y);
 
   return (
-    <div className="relative h-full w-full bg-background">
+    <div className="relative h-full w-full bg-background" {...a11yRootProps(a11y)}>
       {/* Full-height scroller — content flows edge to edge and passes UNDER
           the translucent top/bottom chrome (Apple Notes / Quiet Composer
           pattern, issue #581). The large title lives IN the content, so it
@@ -304,9 +308,14 @@ export function LibraryBrowser() {
             replaces them, it does not duplicate them). */}
         {!nativeChrome && (
         <div className="px-4 pb-1 pt-2">
-          <h1 className="truncate text-2xl font-bold text-foreground">{currentName}</h1>
+          <h1 className="truncate text-[length:calc(1.5rem*var(--ns-a11y-scale,1))] font-bold text-foreground">
+            {currentName}
+          </h1>
           {folderStack.length > 0 && (
-            <nav className="mt-0.5 flex items-center gap-1 overflow-x-auto text-xs text-muted-foreground">
+            <nav
+              className="mt-0.5 flex items-center gap-1 overflow-x-auto text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground"
+              style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
+            >
               <button type="button" className="ios-press-row shrink-0 rounded px-1 hover:text-foreground" onClick={() => goToDepth(0)}>
                 {libraryName || "Notesage"}
               </button>
@@ -343,7 +352,10 @@ export function LibraryBrowser() {
             if (state.entries.length === 0) return <EmptyFolder />;
             if (visible.length === 0)
               return (
-                <p className="px-4 py-10 text-center text-sm text-muted-foreground">
+                <p
+                  className="px-4 py-10 text-center text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-muted-foreground"
+                  style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
+                >
                   Nothing matches "{query}"
                 </p>
               );
@@ -512,11 +524,17 @@ export function LibraryBrowser() {
               aria-hidden
               onClick={() => setAncestorMenuOpen(false)}
             />
+            {/* Portaled to document.body — outside the root div's DOM subtree
+                above, so the a11y CSS custom properties set there don't
+                inherit here. Re-apply them on this menu's own root the same
+                way Chrome.tsx's Island does for its portaled content. */}
             <div
               role="menu"
               aria-label="Jump to folder"
               className="island-glass morph-from-button fixed left-3 z-50 min-w-44 rounded-2xl py-1"
-              style={{ top: "max(0.5rem, env(safe-area-inset-top))" }}
+              data-a11y-scale={menuA11yProps["data-a11y-scale"]}
+              data-a11y-bold={menuA11yProps["data-a11y-bold"]}
+              style={{ ...menuA11yProps.style, top: "max(0.5rem, env(safe-area-inset-top))" }}
             >
               {[{ relPath: "", name: libraryName || "Notesage" }, ...folderStack.slice(0, -1)].map(
                 (f, depth) => (
@@ -524,7 +542,8 @@ export function LibraryBrowser() {
                     key={f.relPath || "__root"}
                     type="button"
                     role="menuitem"
-                    className="ios-press-row block w-full px-4 py-2.5 text-left text-sm text-foreground"
+                    className="ios-press-row block w-full px-4 py-2.5 text-left text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground"
+                    style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
                     onClick={() => {
                       setAncestorMenuOpen(false);
                       goToDepth(depth);
@@ -567,8 +586,18 @@ function EmptyFolder() {
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 py-16 text-center">
       <FolderOpen strokeWidth={1.25} className="h-8 w-8 text-muted-foreground" />
-      <p className="mt-3 text-sm font-medium text-foreground">Nothing here yet</p>
-      <p className="mt-1 text-xs text-muted-foreground">This folder is empty.</p>
+      <p
+        className="mt-3 text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground"
+        style={{ fontWeight: "max(500, var(--ns-a11y-weight, 400))" }}
+      >
+        Nothing here yet
+      </p>
+      <p
+        className="mt-1 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground"
+        style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
+      >
+        This folder is empty.
+      </p>
     </div>
   );
 }
@@ -577,8 +606,18 @@ function BrowserError({ message, onRetry }: { message: string; onRetry: () => vo
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 py-16 text-center">
       <AlertCircle strokeWidth={1.25} className="h-8 w-8 text-muted-foreground" />
-      <p className="mt-3 text-sm font-medium text-foreground">Couldn't open this folder</p>
-      <p className="mt-1 max-w-xs text-xs text-muted-foreground break-words">{message}</p>
+      <p
+        className="mt-3 text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground"
+        style={{ fontWeight: "max(500, var(--ns-a11y-weight, 400))" }}
+      >
+        Couldn't open this folder
+      </p>
+      <p
+        className="mt-1 max-w-xs text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground break-words"
+        style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
+      >
+        {message}
+      </p>
       <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={onRetry}>
         Try again
       </Button>
