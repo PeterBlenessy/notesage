@@ -195,6 +195,20 @@ class NotesageIosPlugin: Plugin {
     } catch { invoke.reject(String(describing: error)) }
   }
 
+  @objc public func setChrome(_ invoke: Invoke) {
+    do {
+      let spec = try invoke.parseArgs(ChromeSpec.self)
+      DispatchQueue.main.async {
+        guard let webView = self.resolveWebView() else {
+          invoke.reject("No webview to attach chrome to")
+          return
+        }
+        ChromeManager.shared.apply(spec, over: webView)
+        invoke.resolve()
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
   @objc public func shareFile(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(RelPathArgs.self)

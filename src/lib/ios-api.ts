@@ -58,6 +58,25 @@ export async function iosReadBinary(relPath: string): Promise<Uint8Array> {
 }
 
 /** Ensure an iCloud item is downloaded; returns its current download state. */
+/** Native chrome item: an SF-Symbol button at a screen corner. */
+export interface IosChromeItem {
+  id: string;
+  icon: string;
+  /** Long-press menu entries (native UIMenu); tap still fires `id`. */
+  menu?: Array<{ id: string; title: string }>;
+}
+
+/**
+ * Declare the native Liquid Glass chrome overlay. Rejects off-iOS and on
+ * pre-native builds — callers treat rejection as "render web chrome".
+ */
+export function iosSetChrome(spec: {
+  topLeft?: IosChromeItem;
+  topRight?: IosChromeItem;
+}): Promise<void> {
+  return invoke("ios_set_chrome", { spec });
+}
+
 /** Present the iOS share sheet for a library file. */
 export function iosShareFile(relPath: string): Promise<void> {
   return invoke("ios_share_file", { relPath });
