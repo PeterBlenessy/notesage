@@ -10,6 +10,7 @@ import { classifyFile } from "./FileRow";
 import { Button } from "@/components/ui/button";
 import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
+import { useNativeChrome } from "./useNativeChrome";
 import { withFindAgent } from "./html-find-agent";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 
@@ -174,6 +175,19 @@ export function Reader() {
   // Same idiom as the theme + mermaid effects below.
   const loadIdRef = useRef(0);
   useEffect(() => () => { loadIdRef.current++; }, []);
+
+  const nativeChrome = useNativeChrome(
+    {
+      topLeft: { id: "back", icon: "chevron.backward" },
+      topRight: { id: "share", icon: "square.and.arrow.up" },
+    },
+    {
+      back: () => void goBack(),
+      share: () => {
+        void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
+      },
+    },
+  );
 
   const load = useCallback(async () => {
     if (!relPath) return;
@@ -437,7 +451,7 @@ export function Reader() {
   if (!openDoc) return null;
 
   return (
-    <div className="relative h-full w-full bg-background">
+    <div className="view-enter relative h-full w-full bg-background">
       {/* Button islands (iOS 26 / Notes layout, #581). Back is ALWAYS the
           top-left island — placement must not depend on the document type.
           Top-right holds Share (issue #582) — the native share sheet over a
@@ -459,21 +473,25 @@ export function Reader() {
           }
         />
       )}
-      <Island corner="top-left">
-        <ChromeButton label="Back" onClick={() => goBack()}>
-          <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
-        </ChromeButton>
-      </Island>
-      <Island corner="top-right">
-        <ChromeButton
-          label="Share"
-          onClick={() => {
-            void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
-          }}
-        >
-          <Share strokeWidth={1.5} className="h-4 w-4" />
-        </ChromeButton>
-      </Island>
+      {!nativeChrome && (
+        <>
+          <Island corner="top-left">
+            <ChromeButton label="Back" onClick={() => goBack()}>
+              <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
+            </ChromeButton>
+          </Island>
+          <Island corner="top-right">
+            <ChromeButton
+              label="Share"
+              onClick={() => {
+                void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
+              }}
+            >
+              <Share strokeWidth={1.5} className="h-4 w-4" />
+            </ChromeButton>
+          </Island>
+        </>
+      )}
       {state.status !== "pdf" && (
         <h1 className="pointer-events-none absolute left-1/2 top-[max(1.25rem,env(safe-area-inset-top))] z-40 max-w-[55vw] -translate-x-1/2 truncate text-sm font-medium text-muted-foreground">
           {name}
@@ -512,7 +530,7 @@ export function Reader() {
         {state.status === "downloading" && (
           <ReaderMessage icon={CloudDownload} title="Downloading from iCloud">
             This note isn't on your device yet. It'll be ready in a moment.
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => void load()}>
+            <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={() => void load()}>
               Retry
             </Button>
           </ReaderMessage>
@@ -521,7 +539,7 @@ export function Reader() {
         {state.status === "error" && (
           <ReaderMessage icon={AlertCircle} title="Couldn't open this file">
             <span className="break-words">{state.message}</span>
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => void load()}>
+            <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={() => void load()}>
               Try again
             </Button>
           </ReaderMessage>

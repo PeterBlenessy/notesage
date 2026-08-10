@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChevronLeft, FolderOpen, RefreshCw, AlertCircle } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory } from "@/lib/ios-api";
@@ -7,6 +8,7 @@ import { useMobileStore } from "@/stores/mobile-store";
 import { FileRow } from "./FileRow";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
+import { useNativeChrome } from "./useNativeChrome";
 
 type LoadState =
   | { status: "loading" }
@@ -80,18 +82,74 @@ export function LibraryBrowser() {
     }
   };
 
+  // Native Liquid Glass chrome when the build has it; the web islands below
+  // stay as the fallback (desktop dev, tests, older builds).
+  // Ancestors for the native back button's long-press UIMenu (Files
+  // pattern): root first, then every level above the current folder.
+  const ancestors = [
+    { relPath: "", name: libraryName || "Notesage" },
+    ...folderStack.slice(0, -1),
+  ];
+  const nativeChrome = useNativeChrome(
+    {
+      topLeft:
+        folderStack.length > 0
+          ? {
+              id: "back",
+              icon: "chevron.backward",
+              menu: ancestors.map((f, depth) => ({ id: `jump-${depth}`, title: f.name })),
+            }
+          : { id: "pick", icon: "folder" },
+      topRight: { id: "refresh", icon: "arrow.clockwise" },
+    },
+    {
+      back: () => void goBack(),
+      ...Object.fromEntries(
+        ancestors.map((_, depth) => [`jump-${depth}`, () => goToDepth(depth)]),
+      ),
+      pick: () => {
+        void pickFolder()
+          .then(() => void load())
+          .catch((err) => {
+            if (!String(err).includes("No folder was selected")) {
+              toast.error(`Couldn't change folder: ${err}`);
+            }
+          });
+      },
+      refresh: () => void load(true),
+    },
+  );
+
+  // Long-press on Back opens the ancestor-jump menu (Files' pattern: hold
+  // the back control, get the path hierarchy). Timer-based: 450ms hold with
+  // the resulting click suppressed so releasing over the button doesn't ALSO
+  // navigate back one level.
+  const [ancestorMenuOpen, setAncestorMenuOpen] = useState(false);
+  const holdTimer = useRef<number | null>(null);
+  const suppressClick = useRef(false);
+  const cancelHold = () => {
+    if (holdTimer.current !== null) {
+      window.clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+  };
+
   return (
     <div className="relative h-full w-full bg-background">
       {/* Full-height scroller — content flows edge to edge and passes UNDER
           the translucent top/bottom chrome (Apple Notes / Quiet Composer
           pattern, issue #581). The large title lives IN the content, so it
           scrolls away like Notes' does. */}
-      <div className="absolute inset-0 overflow-y-auto" style={CONTENT_INSETS}>
+      <div
+        key={currentRelPath}
+        className="view-enter absolute inset-0 overflow-y-auto"
+        style={CONTENT_INSETS}
+      >
         <div className="px-4 pb-1 pt-2">
           <h1 className="truncate text-2xl font-bold text-foreground">{currentName}</h1>
           {folderStack.length > 0 && (
             <nav className="mt-0.5 flex items-center gap-1 overflow-x-auto text-xs text-muted-foreground">
-              <button type="button" className="shrink-0 hover:text-foreground" onClick={() => goToDepth(0)}>
+              <button type="button" className="ios-press-row shrink-0 rounded px-1 hover:text-foreground" onClick={() => goToDepth(0)}>
                 {libraryName || "Notesage"}
               </button>
               {folderStack.map((f, i) => (
@@ -99,7 +157,11 @@ export function LibraryBrowser() {
                   <span>/</span>
                   <button
                     type="button"
-                    className={i === folderStack.length - 1 ? "text-foreground" : "hover:text-foreground"}
+                    className={
+                      i === folderStack.length - 1
+                        ? "ios-press-row rounded px-1 text-foreground"
+                        : "ios-press-row rounded px-1 hover:text-foreground"
+                    }
                     onClick={() => goToDepth(i + 1)}
                   >
                     {f.name}
@@ -138,11 +200,32 @@ export function LibraryBrowser() {
 
       {/* Button islands (iOS 26 / Notes layout): nav top-left, actions
           top-right, passive status bottom-center. */}
-      <Island corner="top-left">
+      {!nativeChrome && (
+      <Island corner="top-left" className={ancestorMenuOpen ? "invisible" : undefined}>
         {folderStack.length > 0 ? (
-          <ChromeButton label="Back" onClick={() => goBack()}>
-            <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
-          </ChromeButton>
+          <div
+            onPointerDown={() => {
+              cancelHold();
+              holdTimer.current = window.setTimeout(() => {
+                suppressClick.current = true;
+                setAncestorMenuOpen(true);
+              }, 450);
+            }}
+            onPointerUp={cancelHold}
+            onPointerCancel={cancelHold}
+            onPointerLeave={cancelHold}
+            onClickCapture={(e) => {
+              if (suppressClick.current) {
+                suppressClick.current = false;
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
+          >
+            <ChromeButton label="Back" onClick={() => goBack()}>
+              <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
+            </ChromeButton>
+          </div>
         ) : (
           <ChromeButton
             label="Change library folder"
@@ -164,11 +247,48 @@ export function LibraryBrowser() {
           </ChromeButton>
         )}
       </Island>
+      )}
+      {!nativeChrome && (
       <Island corner="top-right">
         <ChromeButton label="Refresh" onClick={() => void load(true)}>
           <RefreshCw strokeWidth={1.5} className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
         </ChromeButton>
       </Island>
+      )}
+      {ancestorMenuOpen &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              aria-hidden
+              onClick={() => setAncestorMenuOpen(false)}
+            />
+            <div
+              role="menu"
+              aria-label="Jump to folder"
+              className="island-glass morph-from-button fixed left-3 z-50 min-w-44 rounded-2xl py-1"
+              style={{ top: "max(0.5rem, env(safe-area-inset-top))" }}
+            >
+              {[{ relPath: "", name: libraryName || "Notesage" }, ...folderStack.slice(0, -1)].map(
+                (f, depth) => (
+                  <button
+                    key={f.relPath || "__root"}
+                    type="button"
+                    role="menuitem"
+                    className="ios-press-row block w-full px-4 py-2.5 text-left text-sm text-foreground"
+                    onClick={() => {
+                      setAncestorMenuOpen(false);
+                      goToDepth(depth);
+                    }}
+                  >
+                    {f.name}
+                  </button>
+                ),
+              )}
+            </div>
+          </>,
+          document.body,
+        )}
       {state.status === "ready" && (
         <SearchIsland
           query={query}
@@ -210,7 +330,7 @@ function BrowserError({ message, onRetry }: { message: string; onRetry: () => vo
       <AlertCircle strokeWidth={1.25} className="h-8 w-8 text-muted-foreground" />
       <p className="mt-3 text-sm font-medium text-foreground">Couldn't open this folder</p>
       <p className="mt-1 max-w-xs text-xs text-muted-foreground break-words">{message}</p>
-      <Button variant="outline" size="sm" className="mt-4" onClick={onRetry}>
+      <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={onRetry}>
         Try again
       </Button>
     </div>

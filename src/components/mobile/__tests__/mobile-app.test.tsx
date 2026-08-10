@@ -47,6 +47,9 @@ const ALLOWED = new Set([
   // Presents the native share sheet over a TEMP COPY of the file — reads the
   // library, writes only to the app's own temp dir.
   "ios_share_file",
+  // Declares the native chrome overlay — pure UI, no filesystem access. In
+  // tests it is unmocked and rejects, which is exactly the web-fallback path.
+  "ios_set_chrome",
   // Pure render — takes markdown text, returns an HTML fragment. Touches no
   // filesystem and no library path, so it cannot widen the read surface.
   "render_markdown_fragment",

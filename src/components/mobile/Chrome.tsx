@@ -80,9 +80,10 @@ const CORNER: Record<IslandCorner, string> = {
   "bottom-center": "left-1/2 -translate-x-1/2 bottom-[max(0.75rem,env(safe-area-inset-bottom))]",
 };
 
-/** The shared glass recipe — one source so every island matches. */
-export const ISLAND_GLASS =
-  "rounded-full border border-border/60 bg-background/60 shadow-sm backdrop-blur-xl backdrop-saturate-150";
+/** The shared glass recipe — one source so every island matches. The
+ * `island-glass` class (globals.css) adds the specular rim + press-response
+ * illumination that Tailwind utilities can't express. */
+export const ISLAND_GLASS = "island-glass rounded-full";
 
 /**
  * A floating glass island holding one or more controls (~48pt tall).
@@ -113,7 +114,7 @@ export function Island({
       )}
       style={
         isBottom && keyboardInset > 0
-          ? { transform: `translateY(-${keyboardInset}px)`, transition: "transform 120ms ease-out" }
+          ? { transform: `translateY(-${keyboardInset}px)`, transition: "transform 360ms cubic-bezier(0.28, 1.25, 0.4, 1)" }
           : undefined
       }
     >
@@ -121,6 +122,34 @@ export function Island({
     </div>,
     document.body,
   );
+}
+
+/**
+ * Liquid Glass press behavior (shared by every island control): stamp the
+ * touch point for the illumination bloom on pointerdown, and run the spring
+ * wobble on release — a CSS transition can only overshoot once, the
+ * damped-spring signature needs keyframes triggered at pointerup.
+ */
+export function liquidPressHandlers() {
+  return {
+    onPointerDown: (e: React.PointerEvent<HTMLElement>) => {
+      const r = e.currentTarget.getBoundingClientRect();
+      e.currentTarget.style.setProperty("--press-x", `${((e.clientX - r.left) / r.width) * 100}%`);
+      e.currentTarget.style.setProperty("--press-y", `${((e.clientY - r.top) / r.height) * 100}%`);
+      e.currentTarget.classList.remove("liquid-release");
+    },
+    onPointerUp: (e: React.PointerEvent<HTMLElement>) => {
+      e.currentTarget.classList.add("liquid-release");
+    },
+    onPointerCancel: (e: React.PointerEvent<HTMLElement>) => {
+      e.currentTarget.classList.add("liquid-release");
+    },
+    onAnimationEnd: (e: React.AnimationEvent<HTMLElement>) => {
+      if (e.animationName === "liquid-spring") {
+        e.currentTarget.classList.remove("liquid-release");
+      }
+    },
+  };
 }
 
 /** A 44pt icon button for an island. */
@@ -138,7 +167,8 @@ export function ChromeButton({
       type="button"
       onClick={onClick}
       aria-label={label}
-      className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      {...liquidPressHandlers()}
+      className="liquid-press flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
     >
       {children}
     </button>
@@ -183,7 +213,8 @@ export function SearchIsland({
           type="button"
           aria-label="Search"
           onClick={() => setOpen(true)}
-          className="flex h-11 items-center gap-2 rounded-full px-4 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          {...liquidPressHandlers()}
+          className="liquid-press flex h-10 items-center gap-2 rounded-full px-4 text-muted-foreground hover:text-foreground"
         >
           <Search strokeWidth={1.5} className="h-4 w-4" />
           {status != null && <span className="text-xs">{status}</span>}
@@ -193,7 +224,7 @@ export function SearchIsland({
   }
 
   return (
-    <Island corner="bottom-center" className="w-[calc(100vw-1.5rem)] max-w-96 px-2">
+    <Island corner="bottom-center" className="glass-spring-in w-[calc(100vw-1.5rem)] max-w-96 px-2">
       <Search strokeWidth={1.5} className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden />
       <input
         ref={inputRef}
@@ -202,7 +233,7 @@ export function SearchIsland({
         onChange={(e) => onQueryChange(e.target.value)}
         placeholder={placeholder}
         aria-label={placeholder}
-        className="h-11 w-full min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground"
+        className="h-10 w-full min-w-0 flex-1 bg-transparent text-base text-foreground outline-none placeholder:text-muted-foreground"
       />
       {matches && matches.total > 0 && (
         <>
