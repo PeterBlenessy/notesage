@@ -1,6 +1,9 @@
-import { ChevronRight, Folder, FileText, FileImage, FileType, FileCode, File } from "lucide-react";
+import { ChevronRight, Folder, FileText, FileImage, FileType, FileCode, File, Share } from "lucide-react";
+import { toast } from "sonner";
 import type { FileEntry } from "@/lib/tauri";
+import { iosShareFile } from "@/lib/ios-api";
 import { cn } from "@/lib/utils";
+import { SwipeRevealRow, type SwipeRevealAction } from "./SwipeRevealRow";
 
 /** Classify a file by extension for icon + viewer routing. */
 export function classifyFile(
@@ -53,41 +56,63 @@ interface FileRowProps {
   onActivate: (entry: FileEntry) => void;
 }
 
-/** A single tappable row in the mobile library browser. */
+/**
+ * A single tappable row in the mobile library browser. Swipe left to reveal
+ * row actions (Share today; #619 adds Delete to this same array, without
+ * touching the gesture in `SwipeRevealRow`).
+ */
 export function FileRow({ entry, active, onActivate }: FileRowProps) {
   const Icon = iconFor(entry);
+  // Directories have no share concept in Notesage today — `ios_share_file`
+  // copies a single file to a temp location for the share sheet, mirroring
+  // its only other consumer (the Reader, which only ever shares a document).
+  const actions: SwipeRevealAction[] = entry.is_directory
+    ? []
+    : [
+        {
+          id: "share",
+          label: "Share",
+          icon: Share,
+          onSelect: () => {
+            void iosShareFile(entry.path).catch((err) => toast.error(`Couldn't share: ${err}`));
+          },
+        },
+      ];
+
   return (
-    <button
-      type="button"
-      onClick={() => onActivate(entry)}
-      aria-current={active ? "page" : undefined}
-      className={cn(
-        "ios-press-row flex w-full items-center gap-3 px-4 py-3 text-left",
-        "border-b border-border last:border-b-0",
-        "hover:bg-muted/50",
-        active && "bg-muted",
-      )}
-    >
-      <Icon
-        strokeWidth={1.5}
+    <SwipeRevealRow actions={actions}>
+      <button
+        type="button"
+        onClick={() => onActivate(entry)}
+        aria-current={active ? "page" : undefined}
         className={cn(
-          "h-5 w-5 shrink-0",
-          active ? "text-[var(--color-accent-primary)]" : "text-muted-foreground",
-          entry.hidden && "opacity-50",
-        )}
-      />
-      <span
-        className={cn(
-          "flex-1 truncate text-sm",
-          active ? "font-medium text-foreground" : "text-foreground",
-          entry.hidden && "opacity-60",
+          "ios-press-row flex w-full items-center gap-3 px-4 py-3 text-left",
+          "border-b border-border last:border-b-0",
+          "hover:bg-muted/50",
+          active && "bg-muted",
         )}
       >
-        {entry.name}
-      </span>
-      {entry.is_directory && (
-        <ChevronRight strokeWidth={1.5} className="h-4 w-4 shrink-0 text-muted-foreground" />
-      )}
-    </button>
+        <Icon
+          strokeWidth={1.5}
+          className={cn(
+            "h-5 w-5 shrink-0",
+            active ? "text-[var(--color-accent-primary)]" : "text-muted-foreground",
+            entry.hidden && "opacity-50",
+          )}
+        />
+        <span
+          className={cn(
+            "flex-1 truncate text-sm",
+            active ? "font-medium text-foreground" : "text-foreground",
+            entry.hidden && "opacity-60",
+          )}
+        >
+          {entry.name}
+        </span>
+        {entry.is_directory && (
+          <ChevronRight strokeWidth={1.5} className="h-4 w-4 shrink-0 text-muted-foreground" />
+        )}
+      </button>
+    </SwipeRevealRow>
   );
 }
