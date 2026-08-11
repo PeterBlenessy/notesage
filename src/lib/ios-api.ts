@@ -65,7 +65,14 @@ export interface IosChromeItem {
   /** Native UIMenu entries. Long-press by default (tap fires `id`); with
    *  `menuOnTap` the tap opens the menu. `selected` renders a checkmark row
    *  (pick-one controls like the sort menu). */
-  menu?: Array<{ id: string; title: string; icon?: string; selected?: boolean }>;
+  menu?: Array<{
+    id: string;
+    title: string;
+    icon?: string;
+    selected?: boolean;
+    /** Start a new menu section (divider) before this entry. */
+    sectionBreak?: boolean;
+  }>;
   /** When true, tapping opens `menu` directly and `id` never fires. */
   menuOnTap?: boolean;
   /** True while the action behind this button is in flight — the native
