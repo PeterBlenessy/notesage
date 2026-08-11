@@ -11,6 +11,10 @@ pub struct FileEntry {
     pub is_directory: bool,
     pub children: Option<Vec<FileEntry>>,
     pub hidden: bool,
+    /// Files-app-style row metadata (seconds since 1970). Populated only by
+    /// the iOS library listing (#588); absent on every desktop path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub modified: Option<f64>,
 }
 
 #[tauri::command]
@@ -102,6 +106,7 @@ async fn list_directory_recursive(
             is_directory,
             hidden: is_hidden,
             children,
+            modified: None,
         });
     }
 
@@ -162,6 +167,7 @@ pub async fn list_files_shallow(path: String, show_hidden: Option<bool>) -> Resu
             is_directory: false,
             hidden: is_hidden,
             children: None,
+            modified: None,
         });
     }
 

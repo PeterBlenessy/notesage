@@ -50,6 +50,30 @@ function iconFor(entry: FileEntry) {
   }
 }
 
+/**
+ * Files-app-style modified label (#588): time for today, "Yesterday", then
+ * a locale date (year included only when it differs). Locale-aware via the
+ * platform formatter — no strings of our own beyond "Yesterday"'s key.
+ */
+export function formatModified(seconds: number, now: Date = new Date()): string {
+  const d = new Date(seconds * 1000);
+  const sameDay = (a: Date, b: Date) =>
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate();
+  if (sameDay(d, now)) {
+    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (sameDay(d, yesterday)) return "Yesterday";
+  return d.toLocaleDateString(undefined, {
+    day: "numeric",
+    month: "short",
+    year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",
+  });
+}
+
 interface FileRowProps {
   entry: FileEntry;
   active?: boolean;
@@ -100,14 +124,21 @@ export function FileRow({ entry, active, onActivate }: FileRowProps) {
             entry.hidden && "opacity-50",
           )}
         />
-        <span
-          className={cn(
-            "flex-1 truncate text-sm",
-            active ? "font-medium text-foreground" : "text-foreground",
-            entry.hidden && "opacity-60",
+        <span className="min-w-0 flex-1">
+          <span
+            className={cn(
+              "block truncate text-sm",
+              active ? "font-medium text-foreground" : "text-foreground",
+              entry.hidden && "opacity-60",
+            )}
+          >
+            {entry.name}
+          </span>
+          {entry.modified !== undefined && (
+            <span className="mt-0.5 block truncate text-xs text-muted-foreground">
+              {formatModified(entry.modified)}
+            </span>
           )}
-        >
-          {entry.name}
         </span>
         {entry.is_directory && (
           <ChevronRight strokeWidth={1.5} className="h-4 w-4 shrink-0 text-muted-foreground" />

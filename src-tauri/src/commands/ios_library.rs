@@ -129,10 +129,8 @@ pub async fn ios_clear_library_grant(app: tauri::AppHandle) -> Result<(), String
     }
 }
 
-/// List a directory relative to the granted library root.
-/// (The native layer already reports Files-app row metadata — size/modified —
-/// which the conversion below drops for now; surfacing it in rows is the
-/// Files-style browser follow-up.)
+/// List a directory relative to the granted library root. Carries the native
+/// layer's Files-app row metadata (`modified`) through to the frontend (#588).
 #[tauri::command]
 pub async fn ios_list_directory(app: tauri::AppHandle, rel_path: String) -> Result<Vec<FileEntry>, String> {
     let rel = sanitize_rel_path(&rel_path)?;
@@ -403,6 +401,7 @@ mod ios_impl {
                 is_directory: e.is_directory,
                 children: None,
                 hidden: e.hidden,
+                modified: e.modified,
             })
             .collect()
     }

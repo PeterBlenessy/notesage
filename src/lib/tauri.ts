@@ -11,6 +11,9 @@ export interface FileEntry {
   is_directory: boolean;
   children?: FileEntry[];
   hidden: boolean;
+  /** Last-modified (seconds since 1970). Only the iOS library listing
+   *  populates it (#588); absent on desktop paths. */
+  modified?: number;
 }
 
 export type GitStatus = 'modified' | 'added' | 'untracked' | 'deleted' | 'renamed' | 'conflicted';
