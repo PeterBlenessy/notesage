@@ -23,6 +23,8 @@ struct ChromeMenuItemSpec: Decodable, Equatable {
   /// When present, the row renders selection state (checkmark when true) —
   /// used by pick-one menus like the sort control (#632).
   let selected: Bool?
+  /// Start a new menu section (divider) before this entry.
+  let sectionBreak: Bool?
 }
 
 struct ChromeItemSpec: Decodable, Equatable {
@@ -303,6 +305,9 @@ struct GlassChromeButton: View {
   @ViewBuilder
   private func menuRows(_ menu: [ChromeMenuItemSpec]) -> some View {
     ForEach(menu, id: \.id) { entry in
+      if entry.sectionBreak == true {
+        Divider()
+      }
       if let selected = entry.selected {
         // Selection row: Toggle inside a Menu renders as a native
         // checkmark row (the pick-one pattern the sort control uses).

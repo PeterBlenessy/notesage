@@ -170,7 +170,7 @@ interface CapturedChromeSpec {
     id: string;
     icon: string;
     menuOnTap?: boolean;
-    menu?: Array<{ id: string; title: string; selected?: boolean }>;
+    menu?: Array<{ id: string; title: string; selected?: boolean; sectionBreak?: boolean }>;
   };
 }
 
@@ -201,7 +201,7 @@ describe("sort toggle (#632)", () => {
     expect(useMobileStore.getState().sortMode).toBe("modified");
   });
 
-  it("declares a labeled pick-one menu on the native sort control (checkmark on active)", async () => {
+  it("declares the Files-style view-options menu: view section, then labeled sort picks", async () => {
     let captured: CapturedChromeSpec = {};
     setMockInvokeHandler("ios_set_chrome", (args) => {
       captured = (args as { spec: CapturedChromeSpec }).spec;
@@ -210,19 +210,22 @@ describe("sort toggle (#632)", () => {
     setMockInvokeHandler("ios_list_directory", () => []);
 
     renderWithProviders(<LibraryBrowser />);
-    await waitFor(() => expect(captured.topRight?.id).toBe("sort"));
-    // Constant sort glyph; the LABELED menu carries the meaning (Peter's
-    // feedback: a mode glyph like "Abc" was not illustrative enough).
-    expect(captured.topRight?.icon).toBe("arrow.up.arrow.down");
+    await waitFor(() => expect(captured.topRight?.id).toBe("view-options"));
+    // Ellipsis control hosting sections (Peter's Files-app design): view
+    // mode on top, sort selection in its own section beneath.
+    expect(captured.topRight?.icon).toBe("ellipsis");
     expect(captured.topRight?.menuOnTap).toBe(true);
     expect(captured.topRight?.menu?.map((m) => [m.title, m.selected])).toEqual([
+      ["List", true],
       ["Alphabetical", true],
       ["Date modified", false],
     ]);
+    // The sort section starts with a divider.
+    expect(captured.topRight?.menu?.[1]?.sectionBreak).toBe(true);
 
     useMobileStore.getState().setSortMode("modified");
     await waitFor(() =>
-      expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([false, true]),
+      expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([true, false, true]),
     );
   });
 });

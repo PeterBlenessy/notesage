@@ -170,19 +170,21 @@ export function LibraryBrowser() {
               }))
             : undefined,
       },
-      // Sort control (#632): constant sort glyph; the tap opens a labeled
-      // pick-one menu with a checkmark on the active order — clearer than
-      // any mode icon (Peter's feedback on the Abc glyph).
+      // Files-style "..." view-options menu (Peter's design): view mode on
+      // top (Gallery joins when #633 ships), sort selection below, room for
+      // advanced options as they arrive.
       topRight: {
-        id: "sort",
-        icon: "arrow.up.arrow.down",
+        id: "view-options",
+        icon: "ellipsis",
         menuOnTap: true,
         menu: [
+          { id: "view-list", title: "List", icon: "list.bullet", selected: true },
           {
             id: "sort-name",
             title: "Alphabetical",
             icon: "textformat.abc",
             selected: sortMode === "name",
+            sectionBreak: true,
           },
           {
             id: "sort-modified",
@@ -214,6 +216,7 @@ export function LibraryBrowser() {
     },
     {
       back: () => void goBack(),
+      "view-list": () => {}, // List is the only view until #633's gallery ships.
       "sort-name": () => setSortMode("name"),
       "sort-modified": () => setSortMode("modified"),
       "create-note": () => createNote(),
