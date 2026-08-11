@@ -159,7 +159,52 @@ describe("library browser states", () => {
 
 interface CapturedChromeSpec {
   topCenter?: { title: string; menu?: Array<{ id: string; title: string; icon?: string }> };
+  topRight?: { id: string; icon: string };
 }
+
+describe("sort toggle (#632)", () => {
+  it("toggles between alphabetical (folders first) and modified-newest, persisted", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "beta.md", path: "beta.md", is_directory: false, hidden: false, modified: 300 },
+      { name: "Alpha", path: "Alpha", is_directory: true, hidden: false, modified: 100 },
+      { name: "zulu.md", path: "zulu.md", is_directory: false, hidden: false, modified: 200 },
+    ]);
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("beta.md");
+    const rowNames = () =>
+      screen.getAllByRole("button", { name: /Alpha|beta\.md|zulu\.md/ }).map((b) => b.textContent);
+
+    // Alphabetical: folders first, then files A→Z.
+    expect(rowNames()[0]).toContain("Alpha");
+    expect(rowNames()[1]).toContain("beta.md");
+
+    fireEvent.click(screen.getByRole("button", { name: "Sort by modified date" }));
+
+    // Modified: newest first, folders and files interleaved (Files-app style).
+    await waitFor(() => expect(rowNames()[0]).toContain("beta.md"));
+    expect(rowNames()[1]).toContain("zulu.md");
+    expect(rowNames()[2]).toContain("Alpha");
+    // The choice persists in the store.
+    expect(useMobileStore.getState().sortMode).toBe("modified");
+  });
+
+  it("declares the current mode's icon on the native topRight slot", async () => {
+    let captured: CapturedChromeSpec = {};
+    setMockInvokeHandler("ios_set_chrome", (args) => {
+      captured = (args as { spec: CapturedChromeSpec }).spec;
+      return null;
+    });
+    setMockInvokeHandler("ios_list_directory", () => []);
+
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(captured.topRight?.id).toBe("toggle-sort"));
+    expect(captured.topRight?.icon).toBe("textformat.abc");
+
+    useMobileStore.getState().setSortMode("modified");
+    await waitFor(() => expect(captured.topRight?.icon).toBe("clock"));
+  });
+});
 
 describe("breadcrumb island (#615)", () => {
   it("declares the current folder as topCenter with an ancestor jump menu (root first)", async () => {

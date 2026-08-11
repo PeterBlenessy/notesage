@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, FolderOpen, AlertCircle, Plus, FolderPlus } from "lucide-react";
+import { ChevronLeft, FolderOpen, AlertCircle, Plus, FolderPlus, ArrowDownAZ, Clock } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory, iosCreateDirectory, iosTextPrompt } from "@/lib/ios-api";
 import { toast } from "sonner";
@@ -27,6 +27,8 @@ export function LibraryBrowser() {
   const goBack = useMobileStore((s) => s.goBack);
   const goToDepth = useMobileStore((s) => s.goToDepth);
   const pickFolder = useMobileStore((s) => s.pickFolder);
+  const sortMode = useMobileStore((s) => s.sortMode);
+  const setSortMode = useMobileStore((s) => s.setSortMode);
 
   const currentRelPath = folderStack.length === 0 ? "" : folderStack[folderStack.length - 1].relPath;
   const currentName = folderStack.length === 0 ? libraryName || "Notesage" : folderStack[folderStack.length - 1].name;
@@ -53,12 +55,7 @@ export function LibraryBrowser() {
       // native layer's own filter: internal machinery and comment sidecars
       // must not be one tap away in the browser.
       const visible = entries.filter((e) => !e.hidden && !e.name.startsWith("."));
-      // Folders first, then files, each alphabetical — mirrors desktop order.
-      const sorted = visible.sort((a, b) => {
-        if (a.is_directory !== b.is_directory) return a.is_directory ? -1 : 1;
-        return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-      });
-      setState({ status: "ready", entries: sorted });
+      setState({ status: "ready", entries: visible });
     } catch (err) {
       if (loadIdRef.current !== loadId) return;
       setState({ status: "error", message: String(err) });
@@ -68,6 +65,21 @@ export function LibraryBrowser() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Sorting happens at render time (#632) so a mode toggle re-orders the
+  // listing instantly with no reload. Alphabetical mirrors the desktop
+  // (folders first); modified is newest-first with folders and files
+  // interleaved, matching the Files app.
+  const sortEntries = (entries: FileEntry[]): FileEntry[] => {
+    const copy = [...entries];
+    if (sortMode === "modified") {
+      return copy.sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0));
+    }
+    return copy.sort((a, b) => {
+      if (a.is_directory !== b.is_directory) return a.is_directory ? -1 : 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+  };
 
   const onActivate = (entry: FileEntry) => {
     if (entry.is_directory) {
@@ -153,11 +165,14 @@ export function LibraryBrowser() {
               }))
             : undefined,
       },
-      // No topRight island: pull-to-refresh (native UIRefreshControl) fully
-      // replaces the tap-to-refresh button (issue #620). The `refresh`
-      // action below still exists — the native control dispatches the same
-      // `notesage:chrome` bridge event a button tap would, just without a
-      // button ever being declared.
+      // Sort toggle (#632) in the slot pull-to-refresh freed (#620): the icon
+      // shows the CURRENT mode (Aa = alphabetical, clock = modified-newest);
+      // tapping flips it. The `refresh` action below still exists for the
+      // native pull gesture — no button declares it.
+      topRight: {
+        id: "toggle-sort",
+        icon: sortMode === "name" ? "textformat.abc" : "clock",
+      },
       bottomRight: atRoot
         ? { id: "create-folder", icon: "plus" }
         : {
@@ -176,6 +191,7 @@ export function LibraryBrowser() {
     },
     {
       back: () => void goBack(),
+      "toggle-sort": () => setSortMode(sortMode === "name" ? "modified" : "name"),
       "create-note": () => createNote(),
       "create-folder": () => void createFolder(),
       "search-query": (value?: string) => setQuery(value ?? ""),
@@ -268,9 +284,11 @@ export function LibraryBrowser() {
         {state.status === "error" && <BrowserError message={state.message} onRetry={() => void load()} />}
         {state.status === "ready" &&
           (() => {
-            const visible = query
-              ? state.entries.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()))
-              : state.entries;
+            const visible = sortEntries(
+              query
+                ? state.entries.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()))
+                : state.entries,
+            );
             if (state.entries.length === 0) return <EmptyFolder />;
             if (visible.length === 0)
               return (
@@ -292,6 +310,20 @@ export function LibraryBrowser() {
 
       {/* Button islands (iOS 26 / Notes layout): nav top-left, actions
           top-right, passive status bottom-center. */}
+      {!nativeChrome && (
+        <Island corner="top-right">
+          <ChromeButton
+            label={sortMode === "name" ? "Sort by modified date" : "Sort by name"}
+            onClick={() => setSortMode(sortMode === "name" ? "modified" : "name")}
+          >
+            {sortMode === "name" ? (
+              <ArrowDownAZ strokeWidth={1.5} className="h-4 w-4" />
+            ) : (
+              <Clock strokeWidth={1.5} className="h-4 w-4" />
+            )}
+          </ChromeButton>
+        </Island>
+      )}
       {!nativeChrome && (
       <Island corner="top-left" className={ancestorMenuOpen ? "invisible" : undefined}>
         {folderStack.length > 0 ? (
