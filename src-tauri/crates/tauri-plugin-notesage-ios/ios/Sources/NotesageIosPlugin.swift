@@ -64,6 +64,35 @@ private enum KeyboardAccessory {
   }
 }
 
+// MARK: - WebContent-process crash recovery
+
+/// iOS kills the WKWebView's WebContent process under memory pressure (large
+/// files, background eviction — see #616). Without a handler the app stays a
+/// permanently BLANK screen: the native shell is alive but the page is gone,
+/// and Apple's crash reporting never sees it (the app process didn't crash).
+/// `webViewWebContentProcessDidTerminate` is the delegate hook for exactly
+/// this — reload restores the page (#587).
+///
+/// Tauri/wry owns the navigation delegate, so the handler is injected into
+/// the EXISTING delegate's class via the objc runtime (the same trick
+/// `KeyboardAccessory` uses): added when the delegate doesn't implement the
+/// selector; left alone when it does (upstream handling wins). Idempotent —
+/// `class_addMethod` fails harmlessly on the second call.
+private enum ContentProcessRecovery {
+  static func install(on webView: WKWebView) {
+    guard let delegate = webView.navigationDelegate,
+      let cls = object_getClass(delegate)
+    else { return }
+    let selector = #selector(WKNavigationDelegate.webViewWebContentProcessDidTerminate(_:))
+    guard !delegate.responds(to: selector) else { return }
+    let block: @convention(block) (AnyObject, WKWebView) -> Void = { _, wv in
+      NSLog("[notesage] WebContent process terminated — reloading webview")
+      wv.reload()
+    }
+    class_addMethod(cls, selector, imp_implementationWithBlock(block), "v@:@")
+  }
+}
+
 // MARK: - Plugin
 
 /// Bridges the mobile reader's library access to iOS.
@@ -128,6 +157,7 @@ class NotesageIosPlugin: Plugin {
     else { return nil }
     webViewRef = webView
     KeyboardAccessory.remove(from: webView)
+    ContentProcessRecovery.install(on: webView)
     installPullToRefresh(on: webView)
     return webView
   }

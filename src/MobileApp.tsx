@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { log } from "@/lib/logger";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "@/components/ui/sonner";
 import { useMobileStore } from "@/stores/mobile-store";
@@ -24,6 +25,30 @@ export function MobileApp() {
   useEffect(() => {
     void refreshGrant();
   }, [refreshGrant]);
+
+  // Local-only JS diagnostics (#587): Apple's crash reporting sees only
+  // NATIVE crashes — JS errors and unhandled rejections are invisible to it.
+  // Forward them to the app's own on-device log via the existing logger
+  // (log_frontend), which is never transmitted anywhere: the iOS binary
+  // links no telemetry SDKs. Capped so an error loop can't flood the log.
+  useEffect(() => {
+    let logged = 0;
+    const CAP = 50;
+    const onError = (e: ErrorEvent) => {
+      if (logged++ >= CAP) return;
+      log.error("mobile-js", `Unhandled error: ${e.message} @ ${e.filename}:${e.lineno}`);
+    };
+    const onRejection = (e: PromiseRejectionEvent) => {
+      if (logged++ >= CAP) return;
+      log.error("mobile-js", `Unhandled rejection: ${String(e.reason)}`);
+    };
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    };
+  }, []);
 
   // Keep the chrome islands anchored ("sticky"): when the on-screen keyboard
   // appears, iOS pans the visual viewport to reveal the focused input, which
