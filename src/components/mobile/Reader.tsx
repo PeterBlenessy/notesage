@@ -475,8 +475,14 @@ export function Reader() {
     if (isNew) {
       // Nothing on disk yet — an empty rendered doc; the auto-edit effect
       // opens the editor immediately. Created only on save/back with content.
+      // renderedThemeRef must be the CURRENT theme, not null: a null makes
+      // the theme-re-render effect below think the theme changed and fire a
+      // pointless renderMarkdownFragment("") — which in tests lands as an
+      // unhandled post-teardown rejection (the CI-only #630 failure).
       rawMarkdownRef.current = "";
-      renderedThemeRef.current = null;
+      renderedThemeRef.current = document.documentElement.classList.contains("dark")
+        ? "dark"
+        : "light";
       setState({ status: "markdown", html: "" });
       return;
     }

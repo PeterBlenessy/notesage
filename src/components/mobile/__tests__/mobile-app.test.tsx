@@ -190,6 +190,10 @@ describe("create flow (#586)", () => {
       expect(a.content).toBe("# Groceries\n\n- milk");
       return "Sub/Groceries.md";
     });
+    // The post-save reload reads the real file — mock it so no async work is
+    // left unhandled at teardown (the CI-only unhandled-rejection failure).
+    setMockInvokeHandler("ios_read_file", () => "# Groceries\n\n- milk");
+    setMockInvokeHandler("render_markdown_fragment", () => "<h1>Groceries</h1>");
 
     renderWithProviders(<Shell />);
     fireEvent.click(await screen.findByRole("button", { name: "New note" }));
