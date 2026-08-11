@@ -85,9 +85,17 @@ export interface IosChromeSearch {
   kind?: "filter" | "find";
 }
 
+/** Top-center breadcrumb island (#615): current folder name; tapping opens a
+ *  native UIMenu of ancestors (root first). Empty/absent menu = passive label. */
+export interface IosChromeBreadcrumb {
+  title: string;
+  menu?: Array<{ id: string; title: string; icon?: string }>;
+}
+
 export function iosSetChrome(spec: {
   topLeft?: IosChromeItem;
   topRight?: IosChromeItem;
+  topCenter?: IosChromeBreadcrumb;
   /** Bottom-trailing action button (the folder view's "+"). */
   bottomRight?: IosChromeItem;
   search?: IosChromeSearch;

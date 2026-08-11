@@ -157,6 +157,45 @@ describe("library browser states", () => {
   });
 });
 
+interface CapturedChromeSpec {
+  topCenter?: { title: string; menu?: Array<{ id: string; title: string; icon?: string }> };
+}
+
+describe("breadcrumb island (#615)", () => {
+  it("declares the current folder as topCenter with an ancestor jump menu (root first)", async () => {
+    let captured: CapturedChromeSpec = {};
+    setMockInvokeHandler("ios_set_chrome", (args) => {
+      captured = (args as { spec: CapturedChromeSpec }).spec;
+      return null;
+    });
+    setMockInvokeHandler("ios_list_directory", () => []);
+    useMobileStore.setState({
+      folderStack: [
+        { relPath: "Projects", name: "Projects" },
+        { relPath: "Projects/Deep", name: "Deep" },
+      ],
+    });
+
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(captured.topCenter?.title).toBe("Deep"));
+    expect(captured.topCenter?.menu?.map((m) => m.title)).toEqual(["Notesage", "Projects"]);
+    expect(captured.topCenter?.menu?.[0]?.id).toBe("jump-0");
+  });
+
+  it("renders a passive breadcrumb (no menu) at the library root", async () => {
+    let captured: CapturedChromeSpec = {};
+    setMockInvokeHandler("ios_set_chrome", (args) => {
+      captured = (args as { spec: CapturedChromeSpec }).spec;
+      return null;
+    });
+    setMockInvokeHandler("ios_list_directory", () => []);
+
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(captured.topCenter?.title).toBe("Notesage"));
+    expect(captured.topCenter?.menu).toBeUndefined();
+  });
+});
+
 describe("create flow (#586)", () => {
   it("root '+' creates a folder (native prompt) and enters it — never offers New Note", async () => {
     setMockInvokeHandler("ios_list_directory", () => []);

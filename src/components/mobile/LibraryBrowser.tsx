@@ -135,12 +135,24 @@ export function LibraryBrowser() {
     {
       topLeft:
         folderStack.length > 0
-          ? {
-              id: "back",
-              icon: "chevron.backward",
-              menu: ancestors.map((f, depth) => ({ id: `jump-${depth}`, title: f.name })),
-            }
+          ? { id: "back", icon: "chevron.backward" }
           : { id: "pick", icon: "folder" },
+      // Breadcrumb island (#615): current folder on a glass capsule between
+      // the corner buttons; tap opens the ancestor jump menu (root first).
+      // At the root it is a passive label carrying the library name. The
+      // ancestor menu that used to hide behind the back button's long-press
+      // moved here — a visible affordance beats a hidden gesture.
+      topCenter: {
+        title: currentName,
+        menu:
+          folderStack.length > 0
+            ? ancestors.map((f, depth) => ({
+                id: `jump-${depth}`,
+                title: f.name,
+                icon: depth === 0 ? "house" : "folder",
+              }))
+            : undefined,
+      },
       // No topRight island: pull-to-refresh (native UIRefreshControl) fully
       // replaces the tap-to-refresh button (issue #620). The `refresh`
       // action below still exists — the native control dispatches the same

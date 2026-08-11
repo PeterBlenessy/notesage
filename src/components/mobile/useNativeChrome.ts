@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { iosSetChrome, type IosChromeItem, type IosChromeSearch } from "@/lib/ios-api";
+import { iosSetChrome, type IosChromeItem, type IosChromeBreadcrumb, type IosChromeSearch } from "@/lib/ios-api";
 
 export interface NativeChromeSpec {
   topLeft?: IosChromeItem;
   topRight?: IosChromeItem;
+  topCenter?: IosChromeBreadcrumb;
   bottomRight?: IosChromeItem;
   search?: IosChromeSearch;
 }
