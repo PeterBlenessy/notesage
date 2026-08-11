@@ -50,9 +50,19 @@ struct ChromeSearchSpec: Decodable, Equatable {
   let kind: String?
 }
 
+/// Top-center breadcrumb island (#615): the current folder's name on a glass
+/// capsule; tapping opens a native UIMenu jumping to the library root or any
+/// ancestor. With no menu entries (library root) it renders as a passive
+/// label.
+struct ChromeBreadcrumbSpec: Decodable, Equatable {
+  let title: String
+  let menu: [ChromeMenuItemSpec]?
+}
+
 struct ChromeSpec: Decodable, Equatable {
   let topLeft: ChromeItemSpec?
   let topRight: ChromeItemSpec?
+  let topCenter: ChromeBreadcrumbSpec?
   /// Bottom-trailing action button (the folder view's "+"). Pinned to the
   /// bottom safe area — the keyboard covers it while typing, like Notes'
   /// compose button.
@@ -92,7 +102,41 @@ final class ChromeManager {
     setCorner("topLeft", item: spec.topLeft, over: webView, leading: true)
     setCorner("topRight", item: spec.topRight, over: webView, leading: false)
     setCorner("bottomRight", item: spec.bottomRight, over: webView, leading: false, top: false)
+    setBreadcrumb(spec.topCenter, over: webView)
     setSearch(spec.search, over: webView)
+  }
+
+  private var breadcrumbHost: UIHostingController<AnyView>?
+
+  private func setBreadcrumb(_ spec: ChromeBreadcrumbSpec?, over webView: WKWebView) {
+    guard let container = webView.superview else { return }
+    guard let spec else {
+      breadcrumbHost?.view.removeFromSuperview()
+      breadcrumbHost = nil
+      return
+    }
+    let view = AnyView(GlassBreadcrumb(spec: spec) { [weak self] id in self?.emit(id, value: nil) })
+    if let host = breadcrumbHost, host.view.superview != nil {
+      // Title/menu change on navigation — swap the root view in place.
+      host.rootView = view
+      container.bringSubviewToFront(host.view)
+      return
+    }
+    let host = UIHostingController(rootView: view)
+    host.view.backgroundColor = .clear
+    host.view.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(host.view)
+    // Fixed-frame strip between the two corner buttons (hosting views clip
+    // hit-testing to their frame — the corner-button lesson). SwiftUI centers
+    // the capsule inside it. NOTE: the strip sits over the top-center of the
+    // webview; only non-interactive content (titles) lives under that zone.
+    NSLayoutConstraint.activate([
+      host.view.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 8),
+      host.view.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 72),
+      host.view.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -72),
+      host.view.heightAnchor.constraint(equalToConstant: 46),
+    ])
+    breadcrumbHost = host
   }
 
   private func setSearch(_ spec: ChromeSearchSpec?, over webView: WKWebView) {
@@ -279,6 +323,70 @@ struct GlassChromeButton: View {
         Button(action: { emit(item.id) }) { label }
           .modifier(GlassCircle())
       }
+    }
+  }
+}
+
+/// The top-center breadcrumb capsule (#615). Tap opens the ancestor UIMenu
+/// (root first); at the library root (no menu) it is a passive label. Long
+/// titles middle-truncate; the container strip already reserves clearance
+/// from both corner buttons.
+struct GlassBreadcrumb: View {
+  let spec: ChromeBreadcrumbSpec
+  let emit: (String) -> Void
+
+  private var label: some View {
+    HStack(spacing: 4) {
+      Text(spec.title)
+        .font(.subheadline.weight(.semibold))
+        .lineLimit(1)
+        .truncationMode(.middle)
+      if !(spec.menu ?? []).isEmpty {
+        Image(systemName: "chevron.down")
+          .font(.caption2.weight(.semibold))
+          .opacity(0.6)
+      }
+    }
+    .padding(.horizontal, 14)
+    .frame(height: 36)
+  }
+
+  var body: some View {
+    if let menu = spec.menu, !menu.isEmpty {
+      Menu {
+        ForEach(menu, id: \.id) { entry in
+          Button {
+            emit(entry.id)
+          } label: {
+            if let icon = entry.icon {
+              Label(entry.title, systemImage: icon)
+            } else {
+              Text(entry.title)
+            }
+          }
+        }
+      } label: {
+        label
+      }
+      .modifier(GlassCapsuleButton())
+    } else {
+      label
+        .background(.ultraThinMaterial, in: Capsule())
+    }
+  }
+}
+
+/// Real glass capsule on iOS 26; bordered capsule before that.
+struct GlassCapsuleButton: ViewModifier {
+  func body(content: Content) -> some View {
+    if #available(iOS 26.0, *) {
+      content
+        .buttonStyle(.glass)
+        .buttonBorderShape(.capsule)
+    } else {
+      content
+        .buttonStyle(.bordered)
+        .clipShape(Capsule())
     }
   }
 }
