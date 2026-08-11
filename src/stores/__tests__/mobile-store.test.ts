@@ -125,3 +125,31 @@ describe("mobile-store navigation", () => {
     expect(new Set(recents).size).toBe(recents.length);
   });
 });
+
+describe("mobile-store view mode (#633 — gallery view)", () => {
+  it("defaults to list", () => {
+    expect(store().viewMode).toBe("list");
+  });
+
+  it("setViewMode switches to gallery and back", () => {
+    store().setViewMode("gallery");
+    expect(store().viewMode).toBe("gallery");
+    store().setViewMode("list");
+    expect(store().viewMode).toBe("list");
+  });
+
+  it("reset() returns viewMode to list", () => {
+    store().setViewMode("gallery");
+    store().reset();
+    expect(store().viewMode).toBe("list");
+  });
+
+  it("is included in the persisted (partialize'd) state — survives a relaunch", () => {
+    store().setViewMode("gallery");
+    const persistApi = (useMobileStore as unknown as { persist: { getOptions: () => { partialize?: (s: unknown) => unknown } } }).persist;
+    const partialize = persistApi.getOptions().partialize;
+    expect(partialize).toBeTruthy();
+    const persisted = partialize!(store()) as { viewMode?: string };
+    expect(persisted.viewMode).toBe("gallery");
+  });
+});

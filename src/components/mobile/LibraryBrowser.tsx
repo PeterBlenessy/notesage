@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, FolderOpen, AlertCircle, Plus, FolderPlus, ArrowDownAZ, Clock } from "lucide-react";
+import { ChevronLeft, FolderOpen, AlertCircle, Plus, FolderPlus, ArrowDownAZ, Clock, LayoutGrid, List } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory, iosCreateDirectory, iosTextPrompt } from "@/lib/ios-api";
 import { toast } from "sonner";
 import { useMobileStore } from "@/stores/mobile-store";
 import { FileRow } from "./FileRow";
+import { GalleryView } from "./GalleryView";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome } from "./useNativeChrome";
@@ -29,6 +30,8 @@ export function LibraryBrowser() {
   const pickFolder = useMobileStore((s) => s.pickFolder);
   const sortMode = useMobileStore((s) => s.sortMode);
   const setSortMode = useMobileStore((s) => s.setSortMode);
+  const viewMode = useMobileStore((s) => s.viewMode);
+  const setViewMode = useMobileStore((s) => s.setViewMode);
 
   const currentRelPath = folderStack.length === 0 ? "" : folderStack[folderStack.length - 1].relPath;
   const currentName = folderStack.length === 0 ? libraryName || "Notesage" : folderStack[folderStack.length - 1].name;
@@ -80,6 +83,11 @@ export function LibraryBrowser() {
       return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
     });
   };
+
+  // List ↔ gallery view (#633) lives in the "..." view-options menu beside
+  // the sort picks (Peter's Files-app design supersedes the standalone
+  // toggle the gallery branch shipped). Global preference, not per-folder.
+  const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
 
   const onActivate = (entry: FileEntry) => {
     if (entry.is_directory) {
@@ -170,19 +178,34 @@ export function LibraryBrowser() {
               }))
             : undefined,
       },
-      // Sort control (#632): constant sort glyph; the tap opens a labeled
-      // pick-one menu with a checkmark on the active order — clearer than
-      // any mode icon (Peter's feedback on the Abc glyph).
+      // Files-style "..." view-options menu (Peter's design): view mode on
+      // top (List / Gallery, #633), sort selection below its divider, room
+      // for advanced options as they arrive. (Tap-to-refresh left this slot
+      // in #620 — the `refresh` action below is fired by the native pull
+      // gesture, never a button.)
       topRight: {
-        id: "sort",
-        icon: "arrow.up.arrow.down",
+        id: "view-options",
+        icon: "ellipsis",
         menuOnTap: true,
         menu: [
+          {
+            id: "view-list",
+            title: "List",
+            icon: "list.bullet",
+            selected: viewMode === "list",
+          },
+          {
+            id: "view-gallery",
+            title: "Gallery",
+            icon: "square.grid.2x2",
+            selected: viewMode === "gallery",
+          },
           {
             id: "sort-name",
             title: "Alphabetical",
             icon: "textformat.abc",
             selected: sortMode === "name",
+            sectionBreak: true,
           },
           {
             id: "sort-modified",
@@ -192,10 +215,6 @@ export function LibraryBrowser() {
           },
         ],
       },
-      // Sort toggle (#632) in the slot pull-to-refresh freed (#620): the icon
-      // shows the CURRENT mode (Aa = alphabetical, clock = modified-newest);
-      // tapping flips it. The `refresh` action below still exists for the
-      // native pull gesture — no button declares it.
       bottomRight: atRoot
         ? { id: "create-folder", icon: "plus" }
         : {
@@ -214,6 +233,8 @@ export function LibraryBrowser() {
     },
     {
       back: () => void goBack(),
+      "view-list": () => setViewMode("list"),
+      "view-gallery": () => setViewMode("gallery"),
       "sort-name": () => setSortMode("name"),
       "sort-modified": () => setSortMode("modified"),
       "create-note": () => createNote(),
@@ -326,6 +347,16 @@ export function LibraryBrowser() {
                   Nothing matches "{query}"
                 </p>
               );
+            if (viewMode === "gallery") {
+              return (
+                <GalleryView
+                  entries={visible}
+                  currentFolderName={currentName}
+                  theme={theme}
+                  onActivate={onActivate}
+                />
+              );
+            }
             return (
               <ul>
                 {visible.map((entry) => (
@@ -342,6 +373,16 @@ export function LibraryBrowser() {
           top-right, passive status bottom-center. */}
       {!nativeChrome && (
         <Island corner="top-right">
+          <ChromeButton
+            label={viewMode === "gallery" ? "Switch to list view" : "Switch to gallery view"}
+            onClick={() => setViewMode(viewMode === "gallery" ? "list" : "gallery")}
+          >
+            {viewMode === "gallery" ? (
+              <List strokeWidth={1.5} className="h-4 w-4" />
+            ) : (
+              <LayoutGrid strokeWidth={1.5} className="h-4 w-4" />
+            )}
+          </ChromeButton>
           <ChromeButton
             label={sortMode === "name" ? "Sort by modified date" : "Sort by name"}
             onClick={() => setSortMode(sortMode === "name" ? "modified" : "name")}
