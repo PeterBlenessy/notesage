@@ -12,6 +12,9 @@ pub mod html_preview;
 pub mod git;
 pub mod watcher;
 pub mod sync;
+// Desktop-only: the telemetry module wraps the Sentry SDK, which is not
+// linked into the iOS target (#587 — "Data Not Collected" privacy label).
+#[cfg(not(target_os = "ios"))]
 pub mod telemetry;
 pub mod acp;
 pub mod acp_binary;
@@ -71,6 +74,7 @@ pub use html_preview::*;
 pub use git::*;
 pub use watcher::*;
 pub use sync::*;
+#[cfg(not(target_os = "ios"))]
 pub use telemetry::*;
 pub use acp::*;
 pub use acp_binary::*;

@@ -43,6 +43,7 @@ fn set_log_level(level: String) {
 // `option_env!` resolves to `None` when the var is unset at compile time, so a
 // no-key local/dev build compiles and runs as a clean telemetry no-op — never
 // `env!` (compile error) and never a runtime panic.
+#[cfg_attr(target_os = "ios", allow(dead_code))]
 const SENTRY_DSN: Option<&str> = option_env!("NOTESAGE_SENTRY_DSN");
 const APTABASE_KEY: Option<&str> = option_env!("NOTESAGE_APTABASE_KEY");
 
@@ -91,6 +92,9 @@ pub fn run() {
     // crash toggle takes effect immediately with no second panic-hook install.
     //
     // `None` DSN → no client is built → all telemetry helpers are clean no-ops.
+    // Not compiled for iOS at all: the sentry crates are absent from that
+    // target (#587), so this block would not even name-resolve there.
+    #[cfg(not(target_os = "ios"))]
     if let Some(dsn) = SENTRY_DSN {
         let guard = sentry::init((
             dsn,
@@ -217,6 +221,7 @@ pub fn run() {
     // so frontend egress rides the Rust SDK — no widening of the JS HTTP
     // capability surface. Runtime crash-consent gating is handled by binding /
     // unbinding the client on the Hub (`telemetry::set_sentry_enabled`).
+    #[cfg(not(target_os = "ios"))]
     if let Some(client) = telemetry::sentry_client() {
         builder = builder.plugin(tauri_plugin_sentry::init(&client));
     }

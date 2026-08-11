@@ -29,7 +29,6 @@
     "notification:allow-notify",
     "autostart:default",
     "deep-link:default",
-    "sentry:default",
     "clipboard-manager:allow-read-text"
   ]
 }

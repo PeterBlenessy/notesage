@@ -431,4 +431,28 @@ mod tests {
             "no email may survive serialization"
         );
     }
+
+    #[test]
+    fn telemetry_crates_are_gated_off_the_ios_target() {
+        // Backs the App Store privacy label "Data Not Collected" (#587): the
+        // iOS binary must not even LINK the telemetry SDKs. Asserted at the
+        // Cargo.toml level because that is the guarantee the compiler then
+        // enforces everywhere — an ungated `sentry::` reference in lib.rs
+        // fails the iOS build outright once the crate is absent there.
+        let manifest = include_str!("../../Cargo.toml");
+        let not_ios = manifest
+            .find("[target.'cfg(not(target_os = \"ios\"))'.dependencies]")
+            .expect("the not-iOS dependency table must exist");
+        for krate in ["sentry =", "tauri-plugin-sentry", "tauri-plugin-aptabase"] {
+            let pos = manifest
+                .find(krate)
+                .unwrap_or_else(|| panic!("{krate} not found in Cargo.toml"));
+            assert!(
+                pos > not_ios,
+                "{krate} is declared before the not-iOS target table — it would \
+                 link into the iOS binary and invalidate the \"Data Not \
+                 Collected\" privacy label"
+            );
+        }
+    }
 }

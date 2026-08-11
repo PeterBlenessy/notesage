@@ -187,16 +187,29 @@ describe('tauri default capability permissions', () => {
     expect(fsPermissions).toEqual([]);
   });
 
-  it('grants sentry:default (telemetry crash-report invoke bridge)', () => {
+  it('grants sentry:default in the DESKTOP-ONLY telemetry capability, never in default', () => {
     // `tauri-plugin-sentry` routes frontend errors through Rust via `invoke`;
     // `sentry:default` enables that bridge. It is an invoke permission, NOT a
     // network permission — egress originates from the Rust SDK, so this does
     // not widen the frontend's HTTP surface. See PRD 2026-06-07-telemetry.
-    const cap = loadDefaultCapability();
-    const identifiers = cap.permissions.map((perm) =>
+    //
+    // It lives in `desktop-telemetry.json` (platform-scoped), NOT in
+    // `default.json`: the sentry crates are gated off the iOS target (#587 —
+    // the "Data Not Collected" privacy label relies on the SDK not linking
+    // there), and a capability naming a permission from a plugin that isn't
+    // built fails the iOS build outright.
+    const desktopTelemetry = loadCapability('desktop-telemetry');
+    const identifiers = desktopTelemetry.permissions.map((perm) =>
       typeof perm === 'string' ? perm : perm.identifier,
     );
     expect(identifiers).toContain('sentry:default');
+    expect(desktopTelemetry.platforms).not.toContain('iOS');
+
+    const cap = loadDefaultCapability();
+    const defaultIdentifiers = cap.permissions.map((perm) =>
+      typeof perm === 'string' ? perm : perm.identifier,
+    );
+    expect(defaultIdentifiers).not.toContain('sentry:default');
   });
 
   it('grants aptabase:allow-track-event, and ONLY that, across every capability file', () => {

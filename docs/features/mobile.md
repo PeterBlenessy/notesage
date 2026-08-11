@@ -118,6 +118,28 @@ share-sheet target for capturing links. PRD:
   commands — they are compiled out of the iOS target), and a regression test
   asserts the shell only invokes allowed read commands.
 
+## Telemetry-free by construction (#587)
+
+The iOS binary ships with **no telemetry SDKs linked at all** — this is the
+verified basis for the App Store privacy label **"Data Not Collected"**:
+
+- `sentry` / `tauri-plugin-sentry` / `tauri-plugin-aptabase` are declared
+  under `[target.'cfg(not(target_os = "ios"))'.dependencies]` in
+  `src-tauri/Cargo.toml`, and the Sentry init + plugin-registration blocks in
+  `lib.rs` (plus the whole `commands/telemetry.rs` module) are
+  `#[cfg(not(target_os = "ios"))]`. Verified:
+  `cargo tree --target aarch64-apple-ios -i sentry` (and `-i
+  tauri-plugin-aptabase`) prints nothing — the crates are unreachable from
+  the iOS dependency graph.
+- Regression locks: `telemetry_crates_are_gated_off_the_ios_target`
+  (Rust — fails if a telemetry crate moves out of the not-iOS target table)
+  and `telemetry-unreachable.test.ts` (walks `MobileApp.tsx`'s transitive
+  static import graph and fails if `src/lib/telemetry.ts` ever becomes
+  reachable from the iOS shell).
+- Usage insight comes from Apple's own OS-level collection (App Store
+  Connect App Analytics + TestFlight metrics), which requires zero in-app
+  code.
+
 ## Architecture
 
 - **One codebase, Tauri Mobile.** The iOS app reuses the React/TS frontend. The
