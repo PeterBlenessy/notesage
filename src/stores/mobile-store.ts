@@ -44,6 +44,10 @@ export interface OpenDocRef {
 
 const RECENT_CAP = 20;
 
+/** Library listing order (#632): alphabetical (folders first) or modified
+ *  (newest first, folders and files interleaved — Files-app behaviour). */
+export type SortMode = "name" | "modified";
+
 interface MobileStore {
   grantState: GrantState;
   libraryName: string;
@@ -53,6 +57,8 @@ interface MobileStore {
   openDoc: OpenDocRef | null;
   /** Most-recently-read relative paths (newest first). */
   recentlyRead: string[];
+  /** Listing order for the library browser (persisted). */
+  sortMode: SortMode;
 
   /** Current folder relative path (`""` at root). */
   currentRelPath: () => string;
@@ -75,6 +81,8 @@ interface MobileStore {
   /** Jump to a breadcrumb depth (0 = root). */
   goToDepth: (depth: number) => void;
 
+  setSortMode: (mode: SortMode) => void;
+
   /** Test/reset helper. */
   reset: () => void;
 }
@@ -87,6 +95,7 @@ export const useMobileStore = create<MobileStore>()(
       folderStack: [],
       openDoc: null,
       recentlyRead: [],
+      sortMode: "name",
 
       currentRelPath: () => {
         const stack = get().folderStack;
@@ -170,6 +179,8 @@ export const useMobileStore = create<MobileStore>()(
         return false;
       },
 
+      setSortMode: (mode) => set({ sortMode: mode }),
+
       goToDepth: (depth) =>
         set((s) => ({
           folderStack: s.folderStack.slice(0, Math.max(0, depth)),
@@ -183,12 +194,13 @@ export const useMobileStore = create<MobileStore>()(
           folderStack: [],
           openDoc: null,
           recentlyRead: [],
+          sortMode: "name",
         }),
     }),
     {
       name: "mobile-store",
-      // The grant is authoritative on the backend; only recents are persisted.
-      partialize: (s) => ({ recentlyRead: s.recentlyRead }),
+      // The grant is authoritative on the backend; recents + sort persist.
+      partialize: (s) => ({ recentlyRead: s.recentlyRead, sortMode: s.sortMode }),
     },
   ),
 );
