@@ -427,6 +427,13 @@ class NotesageIosPlugin: Plugin {
       invoke.resolve(["state": try LibraryAccess.ensureDownloaded(args.relPath).rawValue])
     } catch { invoke.reject(String(describing: error)) }
   }
+
+  @objc public func statFile(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(RelPathArgs.self)
+      invoke.resolve(["sizeBytes": try LibraryAccess.statFile(args.relPath)])
+    } catch { invoke.reject(String(describing: error)) }
+  }
 }
 
 @_cdecl("init_plugin_notesage_ios")

@@ -180,7 +180,9 @@ verified basis for the App Store privacy label **"Data Not Collected"**:
 - **Command surface.** `ios_pick_library_folder` / `ios_get_library_grant` /
   `ios_clear_library_grant` (grant lifecycle); `ios_list_directory` /
   `ios_read_file` / `ios_read_binary` (base64) / `ios_ensure_downloaded`
-  (iCloud-aware reads). There is deliberately NO write command on the app's
+  (iCloud-aware reads) / `ios_stat_file` (size-only probe the reader runs
+  before `ios_read_file` on text/markdown/html so an oversized file is
+  declined instead of freezing the WebView, issue #616). There is deliberately NO write command on the app's
   surface — captures are written by the Share Extension in its own process
   over the C ABI. All `relPath`s are
   relative to the granted root. See `docs/tauri-commands.md` → "iOS Library &

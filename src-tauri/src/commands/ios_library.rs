@@ -39,6 +39,15 @@ pub enum DownloadState {
     Failed,
 }
 
+/// On-disk size of a library file, in bytes — a cheap metadata probe that
+/// lets a caller decide whether a file is safe to read/render BEFORE paying
+/// for the read. See `ios_stat_file` (issue #616).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileStat {
+    pub size_bytes: u64,
+}
+
 // ---------------------------------------------------------------------------
 // Path safety (shared by all platforms — guards the iOS impl against traversal)
 // ---------------------------------------------------------------------------
@@ -379,6 +388,25 @@ pub async fn ios_ensure_downloaded(app: tauri::AppHandle, rel_path: String) -> R
     }
 }
 
+/// Return the on-disk size of a library file, in bytes, without reading its
+/// content. The mobile reader calls this before `ios_read_file` for
+/// text/markdown/html so it can decline an oversized file instead of
+/// attempting a read that would freeze the WebView (issue #616).
+#[tauri::command]
+pub async fn ios_stat_file(app: tauri::AppHandle, rel_path: String) -> Result<FileStat, String> {
+    let rel = sanitize_rel_path(&rel_path)?;
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::stat_file(&app, &rel).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = &app;
+        let _ = rel;
+        Err("ios_stat_file is only available on iOS".into())
+    }
+}
+
 // ---------------------------------------------------------------------------
 // iOS-only implementation seam
 // ---------------------------------------------------------------------------
@@ -391,7 +419,7 @@ pub async fn ios_ensure_downloaded(app: tauri::AppHandle, rel_path: String) -> R
 
 #[cfg(target_os = "ios")]
 mod ios_impl {
-    use super::{DownloadState, FileEntry, LibraryGrant};
+    use super::{DownloadState, FileEntry, FileStat, LibraryGrant};
     use tauri::AppHandle;
     use tauri_plugin_notesage_ios::NotesageIosExt;
 
@@ -487,6 +515,13 @@ mod ios_impl {
             })
             .map_err(|e| e.to_string())
     }
+
+    pub async fn stat_file(app: &AppHandle, rel: &str) -> Result<FileStat, String> {
+        app.notesage_ios()
+            .stat_file(rel)
+            .map(|size_bytes| FileStat { size_bytes })
+            .map_err(|e| e.to_string())
+    }
 }
 
 #[cfg(test)]
@@ -525,6 +560,7 @@ mod tests {
             "ios_create_directory",
             "ios_rename_file",
             "ios_delete_file",
+            "ios_stat_file",
         ] {
             let body_start = src
                 .find(&format!("pub async fn {cmd}("))
@@ -612,6 +648,47 @@ mod tests {
             body.contains("ubiquitousItemDownloadingErrorKey") && body.contains(".failed"),
             "ensureDownloaded does not read the iCloud download-error resource key — \
              DownloadState::Failed can never be produced"
+        );
+    }
+
+    #[test]
+    fn stat_file_swift_reads_the_file_size_key() {
+        // Locks the fix for issue #616 at the source level (same idiom as
+        // `ensure_downloaded_swift_wires_up_the_failed_download_state` — no
+        // XCTest harness exists in this repo). If `statFile` stopped reading
+        // `.fileSizeKey`, the mobile reader's size guard would silently see
+        // `nil`/an error on every call and fail open on every file,
+        // regressing straight back to the hang this issue reports.
+        let swift_src = include_str!(
+            "../../crates/tauri-plugin-notesage-ios/ios/Sources/LibraryAccess.swift"
+        );
+        let body_start = swift_src
+            .find("static func statFile(")
+            .expect("statFile not found in LibraryAccess.swift");
+        let body = &swift_src[body_start..(body_start + 600).min(swift_src.len())];
+        assert!(
+            body.contains(".fileSizeKey") && body.contains("fileSize"),
+            "statFile does not read the file size resource key"
+        );
+    }
+
+    #[test]
+    fn stat_file_plugin_dispatch_is_wired_up() {
+        // Pins the Swift plugin's method name to what the Rust bridge calls
+        // (`NotesageIos::stat_file` invokes `"statFile"`) and the response key
+        // (`sizeBytes`, decoded by `SizeResponse` in the plugin crate) — a
+        // rename on either side would fail silently at runtime with no
+        // XCTest harness to catch it.
+        let plugin_src = include_str!(
+            "../../crates/tauri-plugin-notesage-ios/ios/Sources/NotesageIosPlugin.swift"
+        );
+        let body_start = plugin_src
+            .find("func statFile(")
+            .expect("statFile dispatcher not found in NotesageIosPlugin.swift");
+        let body = &plugin_src[body_start..(body_start + 300).min(plugin_src.len())];
+        assert!(
+            body.contains("LibraryAccess.statFile") && body.contains("\"sizeBytes\""),
+            "statFile dispatcher does not call LibraryAccess.statFile or resolve a sizeBytes key"
         );
     }
 }

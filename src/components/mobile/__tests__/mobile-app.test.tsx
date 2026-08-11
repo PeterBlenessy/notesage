@@ -44,6 +44,10 @@ const ALLOWED = new Set([
   "ios_read_file",
   "ios_read_binary",
   "ios_ensure_downloaded",
+  // Cheap metadata probe (size only, no content) run before ios_read_file for
+  // text/markdown/html — lets the reader decline an oversized file instead of
+  // reading it (issue #616).
+  "ios_stat_file",
   // Presents the native share sheet over a TEMP COPY of the file — reads the
   // library, writes only to the app's own temp dir.
   "ios_share_file",
@@ -580,6 +584,94 @@ describe("reader states", () => {
     setMockInvokeHandler("ios_ensure_downloaded", () => "downloading");
     renderWithProviders(<Reader />);
     expect(await screen.findByText("Downloading from iCloud")).toBeTruthy();
+  });
+});
+
+describe("large file guard (issue #616)", () => {
+  it("declines an oversized text file gracefully instead of reading it", async () => {
+    // Regression lock for the actual repro: a multi-hundred-MB Apple Health
+    // export.xml read via ios_read_file crosses IPC as one JSON string,
+    // blocking the WebView main thread and wedging the whole app. The
+    // reader must stat the file first and never call ios_read_file at all
+    // once the probe says the file is oversized.
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "export.xml", path: "export.xml", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("ios_stat_file", () => ({ sizeBytes: 200 * 1024 * 1024 }));
+    renderWithProviders(<Shell />);
+    fireEvent.click(await screen.findByText("export.xml"));
+
+    expect(await screen.findByText("Too large to open")).toBeTruthy();
+    expect(calledCommands()).not.toContain("ios_read_file");
+  });
+
+  it("offers the native share sheet from the decline card", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "export.xml", path: "export.xml", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("ios_stat_file", () => ({ sizeBytes: 200 * 1024 * 1024 }));
+    setMockInvokeHandler("ios_share_file", () => undefined);
+    renderWithProviders(<Shell />);
+    fireEvent.click(await screen.findByText("export.xml"));
+    await screen.findByText("Too large to open");
+
+    fireEvent.click(screen.getByRole("button", { name: "Share instead" }));
+    await waitFor(() => expect(calledCommands()).toContain("ios_share_file"));
+  });
+
+  it("opens a file under the threshold normally, after a fast stat probe", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("ios_stat_file", () => ({ sizeBytes: 1024 }));
+    setMockInvokeHandler("ios_read_file", () => "# Small note");
+    setMockInvokeHandler("render_markdown_fragment", () => "<h1>Small note</h1>");
+    renderWithProviders(<Shell />);
+    fireEvent.click(await screen.findByText("note.md"));
+
+    expect(await screen.findByText("Small note")).toBeTruthy();
+    expect(calledCommands()).toContain("ios_stat_file");
+  });
+
+  it("fails open and reads normally when the size probe is unavailable (older native build)", async () => {
+    // ios_stat_file deliberately left unmocked — invoke rejects with "No
+    // handler registered". A missing/failing probe must never regress an
+    // ordinary read that used to work before this guard existed.
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("ios_read_file", () => "# Fallback note");
+    setMockInvokeHandler("render_markdown_fragment", () => "<h1>Fallback note</h1>");
+    renderWithProviders(<Shell />);
+    fireEvent.click(await screen.findByText("note.md"));
+
+    expect(await screen.findByText("Fallback note")).toBeTruthy();
+  });
+
+  it("backing out while the size probe is in flight cancels the load instead of applying a stale decline state", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "export.xml", path: "export.xml", is_directory: false, hidden: false },
+    ]);
+    let resolveStat: ((v: { sizeBytes: number }) => void) | null = null;
+    setMockInvokeHandler(
+      "ios_stat_file",
+      () => new Promise((res) => { resolveStat = res; }),
+    );
+    renderWithProviders(<Shell />);
+    fireEvent.click(await screen.findByText("export.xml"));
+    await waitFor(() => expect(resolveStat).not.toBeNull());
+
+    // Back out before the stat probe resolves — the same generation-guard
+    // idiom the loader already uses for folder-navigation races.
+    useMobileStore.getState().goBack();
+    expect(await screen.findByText("export.xml")).toBeTruthy(); // back in the folder listing
+
+    // The superseded probe resolves late with an oversized result.
+    resolveStat!({ sizeBytes: 900 * 1024 * 1024 });
+    await new Promise((r) => setTimeout(r, 10));
+
+    // Must not apply the decline state for a document that's no longer open.
+    expect(screen.queryByText("Too large to open")).toBeNull();
   });
 });
 

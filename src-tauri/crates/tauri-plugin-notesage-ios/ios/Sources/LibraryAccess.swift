@@ -341,6 +341,25 @@ enum LibraryAccess {
         return .downloading
     }
 
+    /// Return the file's on-disk size in bytes without reading its content —
+    /// a cheap metadata probe that lets the mobile reader decline oversized
+    /// files before attempting a full read (issue #616: reading a
+    /// multi-hundred-MB text file crossed IPC as one JSON string and froze
+    /// the WebView's main thread). `.fileSizeKey` is reported for
+    /// not-yet-downloaded iCloud placeholders too (the real remote size), so
+    /// a huge undownloaded file is declined before a download even starts.
+    static func statFile(_ rel: String) throws -> Int64 {
+        let root = try resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let fileURL = root.appendingPathComponent(rel)
+        let values = try fileURL.resourceValues(forKeys: [.fileSizeKey])
+        guard let size = values.fileSize else {
+            throw LibraryAccessError.ioError("file size unavailable")
+        }
+        return Int64(size)
+    }
+
 }
 
 /// Retained picker delegate that forwards the selection.
