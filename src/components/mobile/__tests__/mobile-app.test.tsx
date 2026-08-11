@@ -655,6 +655,69 @@ describe("share", () => {
   });
 });
 
+describe("folder view row swipe actions (issue #618)", () => {
+  it("hides the Share action on a file row until it is swiped", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false },
+    ]);
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("note.md");
+    expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+  });
+
+  it("reveals a Share action when a file row is swiped left", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false },
+    ]);
+    renderWithProviders(<LibraryBrowser />);
+    const row = await screen.findByRole("button", { name: "note.md" });
+    fireEvent.pointerDown(row, { clientX: 200 });
+    fireEvent.pointerMove(row, { clientX: 100 });
+    fireEvent.pointerUp(row, { clientX: 100 });
+    expect(await screen.findByRole("button", { name: "Share" })).toBeTruthy();
+  });
+
+  it("invokes ios_share_file with the row's relPath when the revealed Share action is tapped", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "today.md", path: "notes/today.md", is_directory: false, hidden: false },
+    ]);
+    const shared: string[] = [];
+    setMockInvokeHandler("ios_share_file", (args) => {
+      shared.push((args as { relPath: string }).relPath);
+    });
+    renderWithProviders(<LibraryBrowser />);
+    const row = await screen.findByRole("button", { name: "today.md" });
+    fireEvent.pointerDown(row, { clientX: 200 });
+    fireEvent.pointerMove(row, { clientX: 100 });
+    fireEvent.pointerUp(row, { clientX: 100 });
+    fireEvent.click(await screen.findByRole("button", { name: "Share" }));
+    await waitFor(() => expect(shared).toEqual(["notes/today.md"]));
+  });
+
+  it("a plain tap (no swipe) on a file row still opens the document — functional parity", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("ios_read_file", () => "# Hi");
+    setMockInvokeHandler("render_markdown_fragment", () => "<h1>Hi</h1>");
+    renderWithProviders(<Shell />);
+    fireEvent.click(await screen.findByRole("button", { name: "note.md" }));
+    expect(await screen.findByText("Hi")).toBeTruthy();
+  });
+
+  it("does not reveal a Share action when a directory row is swiped", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Sub", path: "Sub", is_directory: true, hidden: false },
+    ]);
+    renderWithProviders(<LibraryBrowser />);
+    const row = await screen.findByRole("button", { name: /Sub/ });
+    fireEvent.pointerDown(row, { clientX: 200 });
+    fireEvent.pointerMove(row, { clientX: 100 });
+    fireEvent.pointerUp(row, { clientX: 100 });
+    expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+  });
+});
+
 describe("App Review safety — local-folder demo path (issue #594)", () => {
   it("onboarding tells the user a local on-device folder works too, not just iCloud", async () => {
     // A reviewer with no iCloud account must be able to tell, from the copy
