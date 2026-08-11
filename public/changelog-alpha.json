@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.26",
+      "date": "2026-08-11",
+      "previousVersion": "0.48.0-alpha.25",
+      "sections": {
+        "features": [
+          "feat(mobile): replace manual refresh button with native pull-to-refresh (#622)"
+        ]
+      },
+      "underTheHood": [
+        "iOS: rich web capture — article extraction + compose-page share sheet (#613)",
+        "feat(mobile): replace manual refresh button with native pull-to-refresh (#622)",
+        "feat(mobile): rich web capture — article extraction + compose-page share sheet"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.25",
       "date": "2026-08-10",
       "previousVersion": "0.48.0-alpha.24",
