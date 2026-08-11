@@ -544,6 +544,27 @@ mod tests {
     }
 
     #[test]
+    fn webcontent_process_crash_recovery_is_installed_on_the_webview() {
+        // #587: iOS kills the WebContent process under memory pressure; with
+        // no `webViewWebContentProcessDidTerminate` handler the app stays a
+        // permanently blank screen that Apple's crash reporting never sees.
+        // Same source-shape idiom as the sanitizer tests — no XCTest harness
+        // exists in this repo (#590).
+        let swift_src = include_str!(
+            "../../crates/tauri-plugin-notesage-ios/ios/Sources/NotesageIosPlugin.swift"
+        );
+        assert!(
+            swift_src.contains("webViewWebContentProcessDidTerminate"),
+            "the content-process terminate handler is gone — a WebContent \
+             kill leaves a permanently blank app"
+        );
+        assert!(
+            swift_src.contains("ContentProcessRecovery.install(on: webView)"),
+            "ContentProcessRecovery exists but is never installed on the webview"
+        );
+    }
+
+    #[test]
     fn ensure_downloaded_swift_wires_up_the_failed_download_state() {
         // `LibraryAccess.ensureDownloaded` (Swift) can only ever return
         // `.ready`/`.downloading` or throw unless it explicitly reads the
