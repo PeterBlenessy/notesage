@@ -217,15 +217,16 @@ describe("sort toggle (#632)", () => {
     expect(captured.topRight?.menuOnTap).toBe(true);
     expect(captured.topRight?.menu?.map((m) => [m.title, m.selected])).toEqual([
       ["List", true],
+      ["Gallery", false],
       ["Alphabetical", true],
       ["Date modified", false],
     ]);
     // The sort section starts with a divider.
-    expect(captured.topRight?.menu?.[1]?.sectionBreak).toBe(true);
+    expect(captured.topRight?.menu?.[2]?.sectionBreak).toBe(true);
 
     useMobileStore.getState().setSortMode("modified");
     await waitFor(() =>
-      expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([true, false, true]),
+      expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([true, false, false, true]),
     );
   });
 });
@@ -306,6 +307,41 @@ describe("swipe delete (#618)", () => {
     await screen.findByText("Folder");
     expect(screen.queryByRole("button", { name: /Delete/, hidden: true })).toBeNull();
     expect(screen.queryByRole("button", { name: /Share/, hidden: true })).toBeNull();
+  });
+});
+
+describe("gallery view toggle (#633)", () => {
+  it("starts in list layout and switches to the gallery grid on toggle, back on toggle again", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Sub", path: "Sub", is_directory: true, hidden: false },
+    ]);
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Sub");
+    expect(screen.queryByRole("list", { name: "Notes gallery" })).toBeNull();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Switch to gallery view" }));
+    expect(await screen.findByRole("list", { name: "Notes gallery" })).toBeTruthy();
+    expect(useMobileStore.getState().viewMode).toBe("gallery");
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch to list view" }));
+    await waitFor(() => expect(screen.queryByRole("list", { name: "Notes gallery" })).toBeNull());
+    expect(useMobileStore.getState().viewMode).toBe("list");
+  });
+
+  it("only invokes allowed read commands while browsing in gallery mode", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Sub", path: "Sub", is_directory: true, hidden: false },
+    ]);
+    useMobileStore.getState().setViewMode("gallery");
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Sub");
+
+    for (const cmd of calledCommands()) {
+      expect(ALLOWED.has(cmd)).toBe(true);
+    }
+
   });
 });
 

@@ -47,6 +47,9 @@ const RECENT_CAP = 20;
 /** Library listing order (#632): alphabetical (folders first) or modified
  *  (newest first, folders and files interleaved — Files-app behaviour). */
 export type SortMode = "name" | "modified";
+/** List (single-column) vs. gallery (grid of preview cards) library layout (#633). */
+export type ViewMode = "list" | "gallery";
+
 
 interface MobileStore {
   grantState: GrantState;
@@ -59,6 +62,10 @@ interface MobileStore {
   recentlyRead: string[];
   /** Listing order for the library browser (persisted). */
   sortMode: SortMode;
+  /** List vs. gallery layout for the library listing; global (not per-folder),
+   *  persists across app relaunches. */
+  viewMode: ViewMode;
+
 
   /** Current folder relative path (`""` at root). */
   currentRelPath: () => string;
@@ -80,6 +87,8 @@ interface MobileStore {
   goBack: () => boolean;
   /** Jump to a breadcrumb depth (0 = root). */
   goToDepth: (depth: number) => void;
+  /** Switch between list and gallery layouts. */
+  setViewMode: (mode: ViewMode) => void;
 
   setSortMode: (mode: SortMode) => void;
 
@@ -96,6 +105,8 @@ export const useMobileStore = create<MobileStore>()(
       openDoc: null,
       recentlyRead: [],
       sortMode: "name",
+      viewMode: "list",
+
 
       currentRelPath: () => {
         const stack = get().folderStack;
@@ -187,6 +198,8 @@ export const useMobileStore = create<MobileStore>()(
           openDoc: null,
         })),
 
+      setViewMode: (mode) => set({ viewMode: mode }),
+
       reset: () =>
         set({
           grantState: "unknown",
@@ -195,12 +208,21 @@ export const useMobileStore = create<MobileStore>()(
           openDoc: null,
           recentlyRead: [],
           sortMode: "name",
+          viewMode: "list",
+
         }),
     }),
     {
       name: "mobile-store",
       // The grant is authoritative on the backend; recents + sort persist.
-      partialize: (s) => ({ recentlyRead: s.recentlyRead, sortMode: s.sortMode }),
+      // The grant is authoritative on the backend; the durable preferences
+      // are recents, the sort order, and the chosen view mode.
+      partialize: (s) => ({
+        recentlyRead: s.recentlyRead,
+        sortMode: s.sortMode,
+        viewMode: s.viewMode,
+      }),
+
     },
   ),
 );

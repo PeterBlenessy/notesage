@@ -31,7 +31,9 @@ export function classifyFile(
   return "other";
 }
 
-function iconFor(entry: FileEntry) {
+/** Icon for a file's classification — shared with the gallery view's card
+ *  thumbnail fallback (#633), so list and gallery agree on iconography. */
+export function iconFor(entry: FileEntry) {
   if (entry.is_directory) return Folder;
   switch (classifyFile(entry.name)) {
     case "markdown":
