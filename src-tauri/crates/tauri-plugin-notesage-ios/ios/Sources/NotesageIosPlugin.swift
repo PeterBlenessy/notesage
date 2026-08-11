@@ -76,6 +76,19 @@ private enum KeyboardAccessory {
 /// Extension writes captures in its own process, so exposing a write on the
 /// app's plugin would widen its surface for something the app never does.
 class NotesageIosPlugin: Plugin {
+  /// Runs at webview creation, BEFORE the first composite. Without this the
+  /// webview paints its default opaque WHITE canvas for a few frames until
+  /// the document parses — a severe white flash on every cold start in dark
+  /// mode (the inline `<style>` in index.html cannot help; it only applies
+  /// once HTML is parsed). Non-opaque + systemBackground makes those first
+  /// frames match the OS theme, so launch-screen → app is seamless.
+  @objc public override func load(webview: WKWebView) {
+    webview.isOpaque = false
+    webview.backgroundColor = .systemBackground
+    webview.scrollView.backgroundColor = .systemBackground
+    webview.underPageBackgroundColor = .systemBackground
+  }
+
   private var keyboardObserversInstalled = false
   private var keyboardObserverTokens: [NSObjectProtocol] = []
   private weak var webViewRef: WKWebView?
