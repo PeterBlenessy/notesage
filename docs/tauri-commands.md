@@ -1523,9 +1523,10 @@ const bodyHtml = await invoke<string>('render_markdown_preview', {
 ## iOS Library & Capture Operations
 
 Located in `src-tauri/src/commands/ios_library.rs` (with the pure capture-note
-formatter in the `notesage-capture` workspace crate). These back the iOS mobile app — a read-only
-reader over the iCloud-synced Notesage library plus share-sheet link capture
-(PRD `docs/prds/2026-06-28-ios-mobile-app.md`). They are registered on every
+formatter in the `notesage-capture` workspace crate). These back the iOS mobile app — a
+reader and note editor over the iCloud-synced Notesage library plus
+share-sheet link capture (PRD `docs/prds/2026-06-28-ios-mobile-app.md`;
+create/edit is issue #586). They are registered on every
 platform so the frontend surface is uniform, but the real work is **iOS-only**:
 on non-iOS targets every command returns an error. The native bridge
 (security-scoped bookmark + `NSFileCoordinator`) is wired during `tauri ios
@@ -1545,6 +1546,11 @@ init` on a Mac — see `src-tauri/ios/README.md`.
 | `ios_read_binary` | `(relPath) -> Vec<u8>` | Read a binary file (image/PDF/…) under the granted root. |
 | `ios_ensure_downloaded` | `(relPath) -> DownloadState` | Trigger/await iCloud download; returns `ready` \| `downloading` \| `failed`. |
 | `ios_share_file` | `(relPath) -> ()` | Present the native share sheet over a temp copy of the file (share targets can't read through the security-scoped grant; the copy's per-invocation temp dir is deleted when the share completes). |
+| `ios_write_file` | `(relPath, content) -> ()` | Overwrite (or create) a UTF-8 file — the mobile editor's save path. Coordinated atomic `.forReplacing` write. |
+| `ios_create_file` | `(relPath, content) -> String` | Create a new UTF-8 file; the name is deduped natively (`note.md` → `note-1.md`). Returns the rel path actually created. |
+| `ios_create_directory` | `(relPath) -> String` | Create a new folder, name deduped. Returns the rel path actually created. |
+| `ios_rename_file` | `(relPath, newName) -> String` | Rename WITHIN the directory (single validated name segment — the title-becomes-filename primitive, not a move). Deduped; returns the final rel path. |
+| `ios_text_prompt` | `(title, placeholder, confirmLabel) -> Option<String>` | Native single-line `UIAlertController` text prompt (the create flow's name entry). `None` = cancelled. Pure UI, no filesystem. |
 
 ```rust
 #[serde(rename_all = "camelCase")]
@@ -1558,11 +1564,12 @@ The capture note format (frontmatter `type: capture` / `source_url` / `title` /
 `date_saved` / `tags`, body = the link plus any shared selection, filename
 `Inbox/YYYY-MM-DD-HHmmss-<slug>.md`) is produced by the shared, unit-tested
 `notesage-capture` crate, which the Share Extension calls over its C ABI —
-there is no in-app write command; capture happens only in the extension's
-process. On iOS the invoke handler registers ONLY these read commands (plus
-`render_markdown_fragment`, the `html_preview_*` pair, `log_frontend` and
-`set_log_level`) — the desktop's write/exec/credential commands are compiled
-out of the iOS binary.
+capture happens only in the extension's process. In-app writes are the
+three allowlisted note-editing commands above (#586) — library-root-confined
+relative paths, no delete, no move. On iOS the invoke handler registers ONLY
+this mobile surface (plus `render_markdown_fragment`, the `html_preview_*`
+pair, `log_frontend` and `set_log_level`) — the desktop's broad
+write/exec/credential commands are compiled out of the iOS binary.
 
 **Frontend usage** (via `src/lib/ios-api.ts`):
 

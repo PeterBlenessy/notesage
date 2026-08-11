@@ -1,7 +1,8 @@
 # Mobile (iOS)
 
-A read-only iOS companion app for the Notesage library, plus a system
-share-sheet target for capturing links. PRD:
+An iOS companion app for the Notesage library — browse and read, create and
+edit markdown notes (#586), plus a system share-sheet target for capturing
+links and documents. PRD:
 `docs/prds/2026-06-28-ios-mobile-app.md`. Tasks:
 `docs/tasks/2026-06-28-ios-mobile-app-tasks.md`.
 
@@ -111,12 +112,24 @@ share-sheet target for capturing links. PRD:
   `type: capture` note into `Inbox/`, which syncs back to the desktop where the
   existing `download-webpage` / `save-research` workflows enrich it. Verified
   end-to-end (share → grant resolution → Rust formatter → coordinated write).
-- **Read-only & private.** The only write path in the whole app is the share
-  capture, which runs in the extension's separate process. Enforced at TWO
-  layers: the iOS binary registers only the mobile reader's commands in its
-  invoke handler (no `write_file`, no `delete_path`, no credential or agent
-  commands — they are compiled out of the iOS target), and a regression test
-  asserts the shell only invokes allowed read commands.
+- **Create & edit (#586).** A native "+" (bottom-right glass circle) creates:
+  at the library root it prompts for a folder name (root is folders-only);
+  inside a folder a tap creates `Untitled.md` INSTANTLY and opens it —
+  long-press offers New Folder. A brand-new empty note drops straight into
+  edit mode (Notes-style). Editing is raw markdown in a full-screen textarea:
+  pencil to edit (Share moves to its long-press menu), ✓ to save; back while
+  editing saves first. On save the note's TITLE (first heading / non-empty
+  line, sanitized) becomes the filename via `ios_rename_file` (deduped
+  natively) and the doc re-opens under the new name.
+- **Confined writes & private.** The app's write surface is exactly four
+  allowlisted commands (`ios_write_file`, `ios_create_file`,
+  `ios_create_directory`, `ios_rename_file`) — library-root-confined relative
+  paths (sanitizer-guarded, source-shape-locked tests), no delete, no move,
+  coordinated `NSFileCoordinator` writes. Link/article capture still runs
+  only in the Share Extension's separate process. The desktop's broad
+  write/exec/credential commands remain compiled out of the iOS binary, and
+  the mobile test suite's ALLOWED/FORBIDDEN lock asserts the shell never
+  invokes anything beyond this surface.
 
 ## Telemetry-free by construction (#587)
 

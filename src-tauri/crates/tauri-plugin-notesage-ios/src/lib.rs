@@ -7,9 +7,11 @@
 //! undefined `init_plugin_*` that never mentions Swift. This is the supported
 //! shape, and it removes every manual Xcode step.
 //!
-//! Read-only by construction: there is no capture method. The Share Extension
-//! writes captures in its own process, so a write here would widen the app's
-//! surface for something it never does.
+//! Write surface (#586): deliberately three methods — overwrite a text file,
+//! create a text file, create a folder — all confined to the granted library
+//! root by the caller's sanitizer. No delete, no rename, no binary writes.
+//! Link/article capture stays in the Share Extension's own process; this
+//! surface exists solely for in-app note creation and editing.
 //!
 //! Path safety lives in the caller (`ios_library::sanitize_rel_path`), which
 //! rejects absolute paths and `..` before anything reaches Swift.
@@ -87,6 +89,41 @@ struct RelPathArgs<'a> {
     rel_path: &'a str,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WriteFileArgs<'a> {
+    rel_path: &'a str,
+    text: &'a str,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PathResponse {
+    rel_path: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameArgs<'a> {
+    rel_path: &'a str,
+    new_name: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TextPromptArgs<'a> {
+    title: &'a str,
+    placeholder: &'a str,
+    confirm_label: &'a str,
+}
+
+/// `text` is absent when the user cancelled the prompt.
+#[derive(Deserialize, Default)]
+struct TextPromptResponse {
+    #[serde(default)]
+    text: Option<String>,
+}
+
 /// iCloud download state for a file that may be a not-yet-downloaded placeholder.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -149,6 +186,48 @@ impl<R: Runtime> NotesageIos<R> {
             .map(|r| r.base64)
     }
 
+    /// Overwrite (or create) a UTF-8 file — the editor's save path. Atomic
+    /// coordinated `.forReplacing` write on the Swift side.
+    pub fn write_file(&self, rel: &str, text: &str) -> Result<()> {
+        self.call("writeFile", WriteFileArgs { rel_path: rel, text })
+    }
+
+    /// Create a new UTF-8 file; the name is deduped (`note.md` → `note-1.md`)
+    /// rather than overwritten. Returns the relative path actually created.
+    pub fn create_file(&self, rel: &str, text: &str) -> Result<String> {
+        self.call::<_, PathResponse>("createFile", WriteFileArgs { rel_path: rel, text })
+            .map(|r| r.rel_path)
+    }
+
+    /// Create a new folder; the name is deduped. Returns the relative path
+    /// actually created.
+    pub fn create_directory(&self, rel: &str) -> Result<String> {
+        self.call::<_, PathResponse>("createDirectory", RelPathArgs { rel_path: rel })
+            .map(|r| r.rel_path)
+    }
+
+    /// Rename a file within its directory (single-segment new name, deduped
+    /// on collision). Returns the relative path actually produced.
+    pub fn rename_file(&self, rel: &str, new_name: &str) -> Result<String> {
+        self.call::<_, PathResponse>("renameFile", RenameArgs { rel_path: rel, new_name })
+            .map(|r| r.rel_path)
+    }
+
+    /// Present a native single-line text prompt (UIAlertController). Returns
+    /// `None` when the user cancels.
+    pub fn text_prompt(
+        &self,
+        title: &str,
+        placeholder: &str,
+        confirm_label: &str,
+    ) -> Result<Option<String>> {
+        self.call::<_, TextPromptResponse>(
+            "textPrompt",
+            TextPromptArgs { title, placeholder, confirm_label },
+        )
+        .map(|r| r.text)
+    }
+
     /// Declare the native chrome overlay (real Liquid Glass buttons hosted
     /// over the webview). `spec` is the JSON `{ topLeft?, topRight? }` shape
     /// ChromeOverlay.swift decodes; taps come back as `notesage:chrome`
@@ -193,6 +272,21 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn read_binary(&self, _rel: &str) -> Result<String> {
+        Err(Error::Unavailable)
+    }
+    pub fn write_file(&self, _rel: &str, _text: &str) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn rename_file(&self, _rel: &str, _new_name: &str) -> Result<String> {
+        Err(Error::Unavailable)
+    }
+    pub fn text_prompt(&self, _t: &str, _p: &str, _c: &str) -> Result<Option<String>> {
+        Err(Error::Unavailable)
+    }
+    pub fn create_file(&self, _rel: &str, _text: &str) -> Result<String> {
+        Err(Error::Unavailable)
+    }
+    pub fn create_directory(&self, _rel: &str) -> Result<String> {
         Err(Error::Unavailable)
     }
     pub fn set_chrome(&self, _spec: serde_json::Value) -> Result<()> {

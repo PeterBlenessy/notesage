@@ -57,14 +57,27 @@ const ALLOWED = new Set([
   // nothing to the library.
   "html_preview_register",
   "html_preview_unregister",
+  // #586 — the DELIBERATE write surface: three library-root-confined
+  // note-editing commands (sanitized rel paths, native name dedupe) plus the
+  // pure-UI native name prompt. This is the intentional end of the
+  // read-only posture; anything beyond these still fails the lock below.
+  "ios_write_file",
+  "ios_create_file",
+  "ios_create_directory",
+  "ios_rename_file",
+  "ios_text_prompt",
 ]);
 
-/** Commands that would mutate the library or reach AI — must never be invoked. */
+/** Commands that would mutate paths OUTSIDE the granted library, or reach
+ *  AI — must never be invoked from the mobile shell. (The desktop
+ *  absolute-path write commands are distinct from the ios_* rel-path ones
+ *  allowed above.) */
 const FORBIDDEN = [
   "ios_write_capture",
   "write_file",
   "delete_path",
   "create_file",
+  "create_directory",
   "rename_path",
   "ai_chat_stream",
   "ai_chat",
@@ -141,6 +154,150 @@ describe("library browser states", () => {
     renderWithProviders(<LibraryBrowser />);
     expect(await screen.findByText("Couldn't open this folder")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+});
+
+describe("create flow (#586)", () => {
+  it("root '+' creates a folder (native prompt) and enters it — never offers New Note", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    setMockInvokeHandler("ios_text_prompt", () => "Ideas");
+    setMockInvokeHandler("ios_create_directory", (args) => {
+      expect((args as { relPath: string }).relPath).toBe("Ideas");
+      return "Ideas";
+    });
+
+    renderWithProviders(<LibraryBrowser />);
+    fireEvent.click(await screen.findByRole("button", { name: "New folder" }));
+
+    // Creation ran and the browser entered the new folder.
+    await waitFor(() => expect(calledCommands()).toContain("ios_create_directory"));
+    await waitFor(() => {
+      const stack = useMobileStore.getState().folderStack;
+      expect(stack[stack.length - 1]?.relPath).toBe("Ideas");
+    });
+    // Root offers folder creation directly — no note option anywhere.
+    expect(screen.queryByText("New Note")).toBeNull();
+  });
+
+  it("sub-folder '+' tap creates an untitled note INSTANTLY (no prompt) and opens the deduped path", async () => {
+    useMobileStore.getState().enterFolder({ relPath: "Sub", name: "Sub" });
+    setMockInvokeHandler("ios_list_directory", () => []);
+    // The native layer dedupes — the frontend must open what was actually
+    // created, not what it asked for.
+    setMockInvokeHandler("ios_create_file", (args) => {
+      expect((args as { relPath: string }).relPath).toBe("Sub/Untitled.md");
+      return "Sub/Untitled-1.md";
+    });
+
+    renderWithProviders(<LibraryBrowser />);
+    fireEvent.click(await screen.findByRole("button", { name: "New note" }));
+
+    await waitFor(() =>
+      expect(useMobileStore.getState().openDoc?.relPath).toBe("Sub/Untitled-1.md"),
+    );
+    expect(useMobileStore.getState().openDoc?.name).toBe("Untitled-1.md");
+    // Instant creation — no name prompt anywhere in the flow.
+    expect(calledCommands()).not.toContain("ios_text_prompt");
+  });
+
+  it("long-pressing sub-folder '+' opens the New Folder menu instead of creating a note", async () => {
+    useMobileStore.getState().enterFolder({ relPath: "Sub", name: "Sub" });
+    setMockInvokeHandler("ios_list_directory", () => []);
+
+    renderWithProviders(<LibraryBrowser />);
+    const plus = await screen.findByRole("button", { name: "New note" });
+    // Same real-timer hold pattern as the back button's ancestor-menu test:
+    // the 450ms hold elapses naturally, waitFor picks up the menu.
+    fireEvent.pointerDown(plus.parentElement!);
+    await waitFor(
+      () => expect(screen.getByRole("menuitem", { name: /New Folder/ })).toBeTruthy(),
+      { timeout: 1500 },
+    );
+    expect(calledCommands()).not.toContain("ios_create_file");
+  });
+
+  it("cancelling the folder-name prompt creates nothing", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    setMockInvokeHandler("ios_text_prompt", () => null);
+
+    renderWithProviders(<LibraryBrowser />);
+    fireEvent.click(await screen.findByRole("button", { name: "New folder" }));
+
+    await waitFor(() => expect(calledCommands()).toContain("ios_text_prompt"));
+    expect(calledCommands()).not.toContain("ios_create_directory");
+    expect(calledCommands()).not.toContain("ios_create_file");
+  });
+});
+
+describe("edit flow (#586)", () => {
+  it("an empty new note auto-enters edit mode; Save writes and renames to the doc title", async () => {
+    useMobileStore.setState({ openDoc: { relPath: "Sub/Untitled.md", name: "Untitled.md" } });
+    setMockInvokeHandler("ios_read_file", () => "");
+    setMockInvokeHandler("render_markdown_fragment", () => "");
+    setMockInvokeHandler("ios_write_file", (args) => {
+      expect((args as { content: string }).content).toBe("# Shopping List\n\n- milk");
+      return null;
+    });
+    setMockInvokeHandler("ios_rename_file", (args) => {
+      const a = args as { relPath: string; newName: string };
+      expect(a.relPath).toBe("Sub/Untitled.md");
+      expect(a.newName).toBe("Shopping List.md");
+      return "Sub/Shopping List.md";
+    });
+
+    renderWithProviders(<Reader />);
+    // Empty note → straight into the editor, no tap needed.
+    const editor = await screen.findByRole("textbox", { name: "Note editor" });
+    fireEvent.change(editor, { target: { value: "# Shopping List\n\n- milk" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    // Saved, renamed, and re-opened under the title-derived name.
+    await waitFor(() =>
+      expect(useMobileStore.getState().openDoc?.relPath).toBe("Sub/Shopping List.md"),
+    );
+    expect(calledCommands()).toContain("ios_write_file");
+  });
+
+  it("editing an existing note whose title matches the filename saves without renaming", async () => {
+    useMobileStore.setState({ openDoc: { relPath: "Sub/hello.md", name: "hello.md" } });
+    setMockInvokeHandler("ios_read_file", () => "# hello\n\nworld");
+    setMockInvokeHandler("render_markdown_fragment", () => "<h1>hello</h1><p>world</p>");
+    setMockInvokeHandler("ios_write_file", () => null);
+
+    renderWithProviders(<Reader />);
+    await screen.findByText("hello");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = await screen.findByRole("textbox", { name: "Note editor" });
+    // The raw source (not the rendered HTML) is what's edited.
+    expect((editor as HTMLTextAreaElement).value).toBe("# hello\n\nworld");
+    fireEvent.change(editor, { target: { value: "# hello\n\nworld — edited" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(calledCommands()).toContain("ios_write_file"));
+    expect(calledCommands()).not.toContain("ios_rename_file");
+    // Back to the rendered view after save.
+    await waitFor(() => expect(screen.queryByRole("textbox", { name: "Note editor" })).toBeNull());
+  });
+
+  it("backing out of an edit saves the draft first (Notes semantics)", async () => {
+    useMobileStore.setState({ openDoc: { relPath: "Sub/hello.md", name: "hello.md" } });
+    setMockInvokeHandler("ios_read_file", () => "# hello");
+    setMockInvokeHandler("render_markdown_fragment", () => "<h1>hello</h1>");
+    let written: string | null = null;
+    setMockInvokeHandler("ios_write_file", (args) => {
+      written = (args as { content: string }).content;
+      return null;
+    });
+
+    renderWithProviders(<Reader />);
+    await screen.findByText("hello");
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = await screen.findByRole("textbox", { name: "Note editor" });
+    fireEvent.change(editor, { target: { value: "# hello\n\nqueued thought" } });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    await waitFor(() => expect(written).toBe("# hello\n\nqueued thought"));
+    await waitFor(() => expect(useMobileStore.getState().openDoc).toBeNull());
   });
 });
 

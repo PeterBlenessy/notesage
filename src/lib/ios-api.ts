@@ -63,7 +63,7 @@ export interface IosChromeItem {
   id: string;
   icon: string;
   /** Long-press menu entries (native UIMenu); tap still fires `id`. */
-  menu?: Array<{ id: string; title: string }>;
+  menu?: Array<{ id: string; title: string; icon?: string }>;
   /** True while the action behind this button is in flight — the native
    *  button spins its SF Symbol for the duration, mirroring the web
    *  fallback's `animate-spin` treatment. */
@@ -88,9 +88,38 @@ export interface IosChromeSearch {
 export function iosSetChrome(spec: {
   topLeft?: IosChromeItem;
   topRight?: IosChromeItem;
+  /** Bottom-trailing action button (the folder view's "+"). */
+  bottomRight?: IosChromeItem;
   search?: IosChromeSearch;
 }): Promise<void> {
   return invoke("ios_set_chrome", { spec });
+}
+
+/**
+ * Rename a file within its directory (the title-becomes-filename primitive).
+ * `newName` is a single path segment; the native side dedupes on collision.
+ * Resolves the relative path actually produced.
+ */
+export function iosRenameFile(relPath: string, newName: string): Promise<string> {
+  return invoke<string>("ios_rename_file", { relPath, newName });
+}
+
+/**
+ * Native single-line text prompt (UIAlertController with a text field).
+ * Resolves the entered text, or `null` when the user cancels. Rejects
+ * off-iOS — callers fall back to a web prompt.
+ */
+export async function iosTextPrompt(
+  title: string,
+  placeholder: string,
+  confirmLabel: string,
+): Promise<string | null> {
+  const text = await invoke<string | null>("ios_text_prompt", {
+    title,
+    placeholder,
+    confirmLabel,
+  });
+  return text ?? null;
 }
 
 /** Present the iOS share sheet for a library file. */
@@ -100,5 +129,30 @@ export function iosShareFile(relPath: string): Promise<void> {
 
 export function iosEnsureDownloaded(relPath: string): Promise<IosDownloadState> {
   return invoke<IosDownloadState>("ios_ensure_downloaded", { relPath });
+}
+
+/**
+ * Overwrite (or create) a UTF-8 file — the mobile editor's save path (#586).
+ * Atomic coordinated write on the native side.
+ */
+export function iosWriteFile(relPath: string, content: string): Promise<void> {
+  return invoke("ios_write_file", { relPath, content });
+}
+
+/**
+ * Create a new UTF-8 file. The name is deduped natively (`note.md` →
+ * `note-1.md`) rather than overwritten; resolves to the relative path
+ * actually created.
+ */
+export function iosCreateFile(relPath: string, content: string): Promise<string> {
+  return invoke<string>("ios_create_file", { relPath, content });
+}
+
+/**
+ * Create a new folder. The name is deduped natively; resolves to the
+ * relative path actually created.
+ */
+export function iosCreateDirectory(relPath: string): Promise<string> {
+  return invoke<string>("ios_create_directory", { relPath });
 }
 

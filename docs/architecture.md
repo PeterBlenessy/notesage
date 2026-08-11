@@ -26,7 +26,7 @@ note-sage/
 │   │   ├── commands/       # Tauri IPC commands
 │   │   │   ├── mod.rs
 │   │   │   ├── file.rs     # File read/write/list/copy operations
-│   │   │   ├── ios_library.rs # iOS-only: security-scoped library reads + share capture (cfg-gated; native bridge staged in src-tauri/ios/)
+│   │   │   ├── ios_library.rs # iOS-only: security-scoped library reads, allowlisted note-editing writes (#586) + share capture (cfg-gated)
 │   │   │   ├── dialog.rs   # Native file/folder dialogs
 │   │   │   ├── ai.rs       # AI provider commands (direct API)
 │   │   │   ├── acp.rs      # ACP agent management (spawn, auth, sessions, permissions, cleanup)
@@ -113,7 +113,7 @@ note-sage/
 ├── src/                    # React frontend
 │   ├── main.tsx            # Entry point — picks the root shell via isIos(): MobileApp (iOS) or App (desktop)
 │   ├── App.tsx             # Desktop root — mounts lifecycle hooks, renders QuietLayout (unconditional) + dialogs
-│   ├── MobileApp.tsx       # iOS root — read-only reader + share capture (Onboarding / LibraryBrowser / Reader); no desktop hooks
+│   ├── MobileApp.tsx       # iOS root — library reader + note editor (#586) + share capture (Onboarding / LibraryBrowser / Reader); no desktop hooks
 │   ├── components/
 │   │   ├── mobile/         # iOS shell — Onboarding.tsx, LibraryBrowser.tsx, FileRow.tsx, Reader.tsx, markdown-components.tsx
 │   │   ├── QuietLayout.tsx # Quiet Composer layout — the only desktop shell (Classic Layout removed in #325; PRD 2026-04-21-ui-refresh / 2026-05-22-classic-layout-removal)

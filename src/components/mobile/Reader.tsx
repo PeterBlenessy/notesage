@@ -2,8 +2,15 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { toast } from "sonner";
-import { ChevronLeft, CloudDownload, AlertCircle, FileQuestion, Share } from "lucide-react";
-import { iosReadFile, iosReadBinary, iosEnsureDownloaded, iosShareFile } from "@/lib/ios-api";
+import { ChevronLeft, CloudDownload, AlertCircle, FileQuestion, Share, Pencil, Check } from "lucide-react";
+import {
+  iosReadFile,
+  iosReadBinary,
+  iosEnsureDownloaded,
+  iosShareFile,
+  iosWriteFile,
+  iosRenameFile,
+} from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
 import { useMobileStore } from "@/stores/mobile-store";
 import { classifyFile } from "./FileRow";
@@ -309,11 +316,108 @@ export function Reader() {
   const loadIdRef = useRef(0);
   useEffect(() => () => { loadIdRef.current++; }, []);
 
+  // --- Edit mode (#586): markdown/text notes edit as raw source in a
+  // full-screen textarea. Save writes through ios_write_file; for markdown
+  // the note's TITLE (first heading / non-empty line) becomes the filename
+  // via ios_rename_file (deduped natively). A brand-new empty note drops
+  // straight into edit mode, Notes-style.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const editable = state.status === "markdown" || state.status === "text";
+
+  const startEdit = useCallback(() => {
+    setFindQuery("");
+    setDraft(
+      state.status === "text" ? state.content : (rawMarkdownRef.current ?? ""),
+    );
+    setEditing(true);
+  }, [state]);
+
+  // A just-created empty note opens directly in edit mode (once per doc —
+  // the ref guards against re-entering after the user deliberately saves an
+  // empty draft and stays on the page).
+  const autoEditRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (editing || autoEditRef.current === relPath) return;
+    const empty =
+      (state.status === "markdown" && (rawMarkdownRef.current ?? "").trim() === "") ||
+      (state.status === "text" && state.content.trim() === "");
+    if (empty) {
+      autoEditRef.current = relPath;
+      startEdit();
+    }
+  }, [state, editing, relPath, startEdit]);
+
+  /** Write the draft; markdown also renames to the derived title. Returns
+   *  the (possibly renamed) relative path. */
+  const persistDraft = useCallback(async (): Promise<string> => {
+    await iosWriteFile(relPath, draft);
+    if (kind === "markdown") {
+      const title = deriveNoteTitle(draft);
+      const stem = name.replace(/\.[^.]+$/, "");
+      if (title && title !== stem) {
+        return await iosRenameFile(relPath, `${title}.md`);
+      }
+    }
+    return relPath;
+  }, [relPath, draft, kind, name]);
+
+  // `load` is declared further down (it needs the chrome hook's siblings);
+  // the ref indirection lets save re-trigger it without reordering the
+  // component.
+  const loadRef = useRef<(() => Promise<void>) | null>(null);
+  const saveEdit = useCallback(async () => {
+    try {
+      const finalRel = await persistDraft();
+      setEditing(false);
+      if (finalRel !== relPath) {
+        // Re-open under the new name (the Reader is keyed by relPath — this
+        // remounts with a fresh load of what was actually saved).
+        openDocument({ relPath: finalRel, name: finalRel.split("/").pop() ?? name });
+      } else {
+        rawMarkdownRef.current = null;
+        renderedThemeRef.current = null;
+        await loadRef.current?.();
+      }
+    } catch (err) {
+      toast.error(`Couldn't save: ${err}`);
+    }
+  }, [persistDraft, relPath, name, openDocument]);
+
+  // Back while editing saves first (Notes semantics — no unsaved-changes
+  // dialog), then leaves; the browser relists on mount so a rename shows.
+  const backAction = useCallback(() => {
+    if (!editing) {
+      goBack();
+      return;
+    }
+    void (async () => {
+      try {
+        await persistDraft();
+      } catch (err) {
+        toast.error(`Couldn't save: ${err}`);
+      }
+      goBack();
+    })();
+  }, [editing, persistDraft, goBack]);
+
   const nativeChrome = useNativeChrome(
     {
       topLeft: { id: "back", icon: "chevron.backward" },
-      topRight: { id: "share", icon: "square.and.arrow.up" },
-      search: isPdf
+      // Editable notes: tap = edit (pencil), long-press = Share menu. While
+      // editing the slot becomes the ✓ save. Non-editable docs keep Share.
+      topRight: editing
+        ? { id: "save", icon: "checkmark" }
+        : editable
+          ? {
+              id: "edit",
+              icon: "square.and.pencil",
+              menu: [{ id: "share", title: "Share", icon: "square.and.arrow.up" }],
+            }
+          : { id: "share", icon: "square.and.arrow.up" },
+      search: editing
+        ? undefined
+        : isPdf
         ? {
             kind: "find" as const,
             placeholder: "Find in document",
@@ -331,7 +435,9 @@ export function Reader() {
           : undefined,
     },
     {
-      back: () => void goBack(),
+      back: backAction,
+      edit: () => startEdit(),
+      save: () => void saveEdit(),
       share: () => {
         void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
       },
@@ -435,6 +541,8 @@ export function Reader() {
       setState({ status: "error", message: String(err) });
     }
   }, [relPath, kind]);
+
+  loadRef.current = load;
 
   useEffect(() => {
     rawMarkdownRef.current = null;
@@ -610,7 +718,7 @@ export function Reader() {
           top-left island — placement must not depend on the document type.
           Top-right holds Share (issue #582) — the native share sheet over a
           temp copy of the file. */}
-      {!nativeChrome && searchable && (
+      {!nativeChrome && searchable && !editing && (
         <SearchIsland
           query={findQuery}
           onQueryChange={setFindQuery}
@@ -630,19 +738,32 @@ export function Reader() {
       {!nativeChrome && (
         <>
           <Island corner="top-left">
-            <ChromeButton label="Back" onClick={() => goBack()}>
+            <ChromeButton label="Back" onClick={backAction}>
               <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
             </ChromeButton>
           </Island>
           <Island corner="top-right">
-            <ChromeButton
-              label="Share"
-              onClick={() => {
-                void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
-              }}
-            >
-              <Share strokeWidth={1.5} className="h-4 w-4" />
-            </ChromeButton>
+            {editing ? (
+              <ChromeButton label="Save" onClick={() => void saveEdit()}>
+                <Check strokeWidth={1.5} className="h-4 w-4" />
+              </ChromeButton>
+            ) : (
+              <>
+                {editable && (
+                  <ChromeButton label="Edit" onClick={startEdit}>
+                    <Pencil strokeWidth={1.5} className="h-4 w-4" />
+                  </ChromeButton>
+                )}
+                <ChromeButton
+                  label="Share"
+                  onClick={() => {
+                    void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
+                  }}
+                >
+                  <Share strokeWidth={1.5} className="h-4 w-4" />
+                </ChromeButton>
+              </>
+            )}
           </Island>
         </>
       )}
@@ -652,7 +773,24 @@ export function Reader() {
         </h1>
       )}
 
-      {state.status === "pdf" ? (
+      {editing ? (
+        // Raw-source editor. 16px font is REQUIRED — iOS auto-zooms the
+        // viewport into any focused input with a smaller font, and never
+        // zooms back out.
+        <div className="absolute inset-0" style={CONTENT_INSETS}>
+          <textarea
+            autoFocus
+            aria-label="Note editor"
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            autoCapitalize="sentences"
+            autoCorrect="on"
+            spellCheck
+            className="h-full w-full resize-none border-0 bg-background px-5 py-6 text-[16px] leading-relaxed text-foreground outline-none"
+            style={kind === "text" ? { fontFamily: "ui-monospace, monospace" } : undefined}
+          />
+        </div>
+      ) : state.status === "pdf" ? (
         // The PdfViewer owns the full screen in island chrome mode: no
         // desktop pill, search + page indicator in its bottom-center
         // SearchIsland, back in our top-left island.
@@ -778,6 +916,29 @@ export function Reader() {
 
     </div>
   );
+}
+
+/**
+ * The note's title for filename purposes (#586 — "title in doc becomes file
+ * name"): first non-empty line after frontmatter, `#` markers stripped,
+ * path-hostile characters replaced, capped at 60 chars. Null when the note
+ * has no usable title (filename is left alone).
+ */
+export function deriveNoteTitle(md: string): string | null {
+  let src = md;
+  const fm = /^---\n[\s\S]*?\n---\n?/.exec(src);
+  if (fm) src = src.slice(fm[0].length);
+  for (const line of src.split("\n")) {
+    const text = line.replace(/^#+\s*/, "").trim();
+    if (!text) continue;
+    const clean = text
+      .replace(/[/\\:]/g, "-")
+      .replace(/^\.+/, "")
+      .slice(0, 60)
+      .trim();
+    return clean || null;
+  }
+  return null;
 }
 
 /** Map an image filename to a MIME type so blob-URL `<img>` renders correctly. */
