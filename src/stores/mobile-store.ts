@@ -34,6 +34,12 @@ export interface FolderRef {
 export interface OpenDocRef {
   relPath: string;
   name: string;
+  /** A brand-new note that does NOT exist on disk yet: the Reader opens the
+   *  editor with an empty draft and only CREATES the file on save/back when
+   *  the draft is non-empty — an accidental "+" tap leaves no file behind
+   *  (#586 follow-up, Notes semantics). `relPath` is the intended location;
+   *  the real path is chosen at creation (title-derived, deduped). */
+  isNew?: boolean;
 }
 
 const RECENT_CAP = 20;
