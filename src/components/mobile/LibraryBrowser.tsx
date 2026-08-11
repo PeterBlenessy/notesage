@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, FolderOpen, AlertCircle } from "lucide-react";
+import { ChevronLeft, FolderOpen, AlertCircle, Plus, FolderPlus } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
-import { iosListDirectory } from "@/lib/ios-api";
+import {
+  iosListDirectory,
+  iosCreateFile,
+  iosCreateDirectory,
+  iosTextPrompt,
+} from "@/lib/ios-api";
 import { toast } from "sonner";
 import { useMobileStore } from "@/stores/mobile-store";
 import { FileRow } from "./FileRow";
@@ -77,6 +82,58 @@ export function LibraryBrowser() {
     }
   };
 
+  // --- Create flow (#586): "+" bottom-right. At the library root only
+  // folders may be created (notes live inside project folders — Peter's
+  // design), so the tap prompts for a folder name. Inside a folder the tap
+  // creates an untitled note IMMEDIATELY (Notes-style — no prompt; the
+  // note's title will become the filename once editing lands) and
+  // long-press offers New Folder via the native UIMenu.
+  const atRoot = folderStack.length === 0;
+
+  const promptName = useCallback(async (title: string): Promise<string | null> => {
+    try {
+      return await iosTextPrompt(title, "Name", "Create");
+    } catch {
+      // Web fallback (desktop dev, builds without the native layer). Plain,
+      // but it is only ever the fallback path.
+      return window.prompt(title) ?? null;
+    }
+  }, []);
+
+  // Slashes would read as nested paths on the Rust side; entered names are a
+  // single path segment by definition.
+  const cleanName = (raw: string) => raw.trim().replace(/\//g, "-");
+
+  const createNote = useCallback(async () => {
+    // No name prompt — the note is created instantly as Untitled.md (the
+    // native side dedupes to Untitled-1.md etc. and returns the path
+    // actually created) and opened. Renaming to the doc's title is the
+    // editor's job when it saves.
+    const rel = currentRelPath ? `${currentRelPath}/Untitled.md` : "Untitled.md";
+    try {
+      const finalRel = await iosCreateFile(rel, "");
+      await load();
+      openDocument({ relPath: finalRel, name: finalRel.split("/").pop() ?? "Untitled.md" });
+    } catch (err) {
+      toast.error(`Couldn't create note: ${err}`);
+    }
+  }, [currentRelPath, load, openDocument]);
+
+  const createFolder = useCallback(async () => {
+    const name = cleanName((await promptName("New Folder")) ?? "");
+    if (!name) return;
+    const rel = currentRelPath ? `${currentRelPath}/${name}` : name;
+    try {
+      const finalRel = await iosCreateDirectory(rel);
+      await load();
+      // Enter the new folder — creating one is almost always to put
+      // something in it.
+      enterFolder({ relPath: finalRel, name: finalRel.split("/").pop() ?? name });
+    } catch (err) {
+      toast.error(`Couldn't create folder: ${err}`);
+    }
+  }, [currentRelPath, promptName, load, enterFolder]);
+
   // Native Liquid Glass chrome when the build has it; the web islands below
   // stay as the fallback (desktop dev, tests, older builds).
   // Ancestors for the native back button's long-press UIMenu (Files
@@ -100,6 +157,14 @@ export function LibraryBrowser() {
       // action below still exists — the native control dispatches the same
       // `notesage:chrome` bridge event a button tap would, just without a
       // button ever being declared.
+      bottomRight: atRoot
+        ? { id: "create-folder", icon: "plus" }
+        : {
+            // Tap = new note instantly (primaryAction); hold = UIMenu.
+            id: "create-note",
+            icon: "plus",
+            menu: [{ id: "create-folder", title: "New Folder", icon: "folder.badge.plus" }],
+          },
       search: {
         placeholder: "Search this folder",
         status:
@@ -110,6 +175,8 @@ export function LibraryBrowser() {
     },
     {
       back: () => void goBack(),
+      "create-note": () => void createNote(),
+      "create-folder": () => void createFolder(),
       "search-query": (value?: string) => setQuery(value ?? ""),
       "search-close": () => setQuery(""),
       ...Object.fromEntries(
@@ -130,6 +197,19 @@ export function LibraryBrowser() {
       refresh: () => void load(true),
     },
   );
+
+  // Web-fallback create menu (native builds get a UIMenu instead), opened by
+  // long-pressing the "+" — same hold pattern as the back button's
+  // ancestor menu.
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const createHoldTimer = useRef<number | null>(null);
+  const createSuppressClick = useRef(false);
+  const cancelCreateHold = () => {
+    if (createHoldTimer.current !== null) {
+      window.clearTimeout(createHoldTimer.current);
+      createHoldTimer.current = null;
+    }
+  };
 
   // Long-press on Back opens the ancestor-jump menu (Files' pattern: hold
   // the back control, get the path hierarchy). Timer-based: 450ms hold with
@@ -259,6 +339,67 @@ export function LibraryBrowser() {
         )}
       </Island>
       )}
+      {!nativeChrome && (
+        <Island corner="bottom-right">
+          <div
+            onPointerDown={() => {
+              if (atRoot) return;
+              cancelCreateHold();
+              createHoldTimer.current = window.setTimeout(() => {
+                createSuppressClick.current = true;
+                setCreateMenuOpen(true);
+              }, 450);
+            }}
+            onPointerUp={cancelCreateHold}
+            onPointerCancel={cancelCreateHold}
+            onPointerLeave={cancelCreateHold}
+            onClickCapture={(e) => {
+              if (createSuppressClick.current) {
+                createSuppressClick.current = false;
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
+          >
+            <ChromeButton
+              label={atRoot ? "New folder" : "New note"}
+              onClick={() => (atRoot ? void createFolder() : void createNote())}
+            >
+              <Plus strokeWidth={1.5} className="h-5 w-5" />
+            </ChromeButton>
+          </div>
+        </Island>
+      )}
+      {createMenuOpen &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              aria-hidden
+              onClick={() => setCreateMenuOpen(false)}
+            />
+            <div
+              role="menu"
+              aria-label="Create"
+              className="island-glass morph-from-button fixed right-3 z-50 min-w-44 rounded-2xl py-1"
+              style={{ bottom: "max(4.25rem, calc(3.5rem + env(safe-area-inset-bottom)))" }}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="ios-press-row flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-foreground"
+                onClick={() => {
+                  setCreateMenuOpen(false);
+                  void createFolder();
+                }}
+              >
+                <FolderPlus strokeWidth={1.5} className="h-4 w-4 text-muted-foreground" />
+                New Folder
+              </button>
+            </div>
+          </>,
+          document.body,
+        )}
       {ancestorMenuOpen &&
         createPortal(
           <>

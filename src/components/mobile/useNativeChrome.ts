@@ -4,6 +4,7 @@ import { iosSetChrome, type IosChromeItem, type IosChromeSearch } from "@/lib/io
 export interface NativeChromeSpec {
   topLeft?: IosChromeItem;
   topRight?: IosChromeItem;
+  bottomRight?: IosChromeItem;
   search?: IosChromeSearch;
 }
 

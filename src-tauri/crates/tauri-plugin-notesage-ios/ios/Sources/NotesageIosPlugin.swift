@@ -9,6 +9,22 @@ struct RelPathArgs: Decodable {
   let relPath: String
 }
 
+struct WriteFileArgs: Decodable {
+  let relPath: String
+  let text: String
+}
+
+struct RenameArgs: Decodable {
+  let relPath: String
+  let newName: String
+}
+
+struct TextPromptArgs: Decodable {
+  let title: String
+  let placeholder: String
+  let confirmLabel: String
+}
+
 // MARK: - Keyboard accessory removal
 
 /// WKWebView shows its own accessory bar (form prev/next arrows + Done) above
@@ -60,6 +76,19 @@ private enum KeyboardAccessory {
 /// Extension writes captures in its own process, so exposing a write on the
 /// app's plugin would widen its surface for something the app never does.
 class NotesageIosPlugin: Plugin {
+  /// Runs at webview creation, BEFORE the first composite. Without this the
+  /// webview paints its default opaque WHITE canvas for a few frames until
+  /// the document parses — a severe white flash on every cold start in dark
+  /// mode (the inline `<style>` in index.html cannot help; it only applies
+  /// once HTML is parsed). Non-opaque + systemBackground makes those first
+  /// frames match the OS theme, so launch-screen → app is seamless.
+  @objc public override func load(webview: WKWebView) {
+    webview.isOpaque = false
+    webview.backgroundColor = .systemBackground
+    webview.scrollView.backgroundColor = .systemBackground
+    webview.underPageBackgroundColor = .systemBackground
+  }
+
   private var keyboardObserversInstalled = false
   private var keyboardObserverTokens: [NSObjectProtocol] = []
   private weak var webViewRef: WKWebView?
@@ -222,6 +251,88 @@ class NotesageIosPlugin: Plugin {
       // parsed on the WebView main thread (seconds of frozen UI). Base64 is a
       // single contiguous string; the JS side decodes it natively.
       invoke.resolve(["base64": try LibraryAccess.readBinary(args.relPath).base64EncodedString()])
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func writeFile(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(WriteFileArgs.self)
+      try LibraryAccess.writeFile(args.relPath, text: args.text)
+      invoke.resolve()
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func createFile(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(WriteFileArgs.self)
+      invoke.resolve(["relPath": try LibraryAccess.createFile(args.relPath, text: args.text)])
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func createDirectory(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(RelPathArgs.self)
+      invoke.resolve(["relPath": try LibraryAccess.createDirectory(args.relPath)])
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func renameFile(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(RenameArgs.self)
+      invoke.resolve(["relPath": try LibraryAccess.renameFile(args.relPath, to: args.newName)])
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Native single-line text prompt (UIAlertController with a text field) —
+  /// the name-entry popover for the create flow (#586). Resolves
+  /// `{ text: "<entered>" }` on confirm, `{}` on cancel; the confirm button
+  /// stays disabled while the field is empty.
+  @objc public func textPrompt(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(TextPromptArgs.self)
+      DispatchQueue.main.async {
+        guard let presenter = self.topViewController else {
+          invoke.reject("No view controller to present the prompt")
+          return
+        }
+        guard presenter.presentedViewController == nil else {
+          invoke.reject("Another sheet is already open")
+          return
+        }
+        let alert = UIAlertController(title: args.title, message: nil, preferredStyle: .alert)
+        // The change observer must be removed on either exit, and the confirm
+        // closure must capture the alert weakly — an alert retains its
+        // actions, so a strong capture is a retain cycle that leaks the whole
+        // controller on every prompt.
+        var observer: NSObjectProtocol?
+        let removeObserver = {
+          if let o = observer { NotificationCenter.default.removeObserver(o) }
+          observer = nil
+        }
+        let confirm = UIAlertAction(title: args.confirmLabel, style: .default) { [weak alert] _ in
+          removeObserver()
+          invoke.resolve(["text": alert?.textFields?.first?.text ?? ""])
+        }
+        confirm.isEnabled = false
+        alert.addTextField { field in
+          field.placeholder = args.placeholder
+          field.autocapitalizationType = .sentences
+          field.clearButtonMode = .whileEditing
+          // Enable the confirm action only once there is real input.
+          observer = NotificationCenter.default.addObserver(
+            forName: UITextField.textDidChangeNotification, object: field, queue: .main
+          ) { [weak field] _ in
+            confirm.isEnabled = !(field?.text ?? "")
+              .trimmingCharacters(in: .whitespaces).isEmpty
+          }
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+          removeObserver()
+          invoke.resolve([:] as [String: String])
+        })
+        alert.addAction(confirm)
+        presenter.present(alert, animated: true)
+      }
     } catch { invoke.reject(String(describing: error)) }
   }
 
