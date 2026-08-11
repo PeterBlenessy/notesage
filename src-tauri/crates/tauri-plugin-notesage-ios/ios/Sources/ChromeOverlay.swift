@@ -204,8 +204,14 @@ final class ChromeManager {
       host.view.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
     ]
     NSLayoutConstraint.activate(searchCollapsedConstraints)
+    // Settle the initial frame WITHOUT animation — and skip the publisher's
+    // immediate first fire below — otherwise the island animates from its
+    // default zero frame at the top-left corner on every (re)install (the
+    // jumpy flight Peter saw when closing a document).
+    UIView.performWithoutAnimation { container.layoutIfNeeded() }
     searchWidthCancellable = searchModel.$expanded
       .removeDuplicates()
+      .dropFirst()
       .sink { [weak self, weak container] expanded in
         guard let self, let container else { return }
         NSLayoutConstraint.deactivate(
@@ -309,16 +315,17 @@ struct GlassChromeButton: View {
         Divider()
       }
       if let selected = entry.selected {
-        // Selection row: Toggle inside a Menu renders as a native
-        // checkmark row (the pick-one pattern the sort control uses).
-        Toggle(isOn: .constant(selected)) {
+        // Selection row: Toggle inside a Menu renders as a native checkmark
+        // row. The EMIT lives in the binding's setter — UIMenu rows never
+        // deliver SwiftUI tap gestures, so an .onTapGesture here silently
+        // does nothing (the shipped bug: sort/view picks were inert).
+        Toggle(isOn: Binding(get: { selected }, set: { _ in emit(entry.id) })) {
           if let icon = entry.icon {
             Label(entry.title, systemImage: icon)
           } else {
             Text(entry.title)
           }
         }
-        .onTapGesture { emit(entry.id) }
       } else {
         Button {
           emit(entry.id)
