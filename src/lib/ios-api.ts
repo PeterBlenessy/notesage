@@ -62,8 +62,12 @@ export async function iosReadBinary(relPath: string): Promise<Uint8Array> {
 export interface IosChromeItem {
   id: string;
   icon: string;
-  /** Long-press menu entries (native UIMenu); tap still fires `id`. */
-  menu?: Array<{ id: string; title: string; icon?: string }>;
+  /** Native UIMenu entries. Long-press by default (tap fires `id`); with
+   *  `menuOnTap` the tap opens the menu. `selected` renders a checkmark row
+   *  (pick-one controls like the sort menu). */
+  menu?: Array<{ id: string; title: string; icon?: string; selected?: boolean }>;
+  /** When true, tapping opens `menu` directly and `id` never fires. */
+  menuOnTap?: boolean;
   /** True while the action behind this button is in flight — the native
    *  button spins its SF Symbol for the duration, mirroring the web
    *  fallback's `animate-spin` treatment. */
@@ -89,7 +93,9 @@ export interface IosChromeSearch {
  *  native UIMenu of ancestors (root first). Empty/absent menu = passive label. */
 export interface IosChromeBreadcrumb {
   title: string;
-  menu?: Array<{ id: string; title: string; icon?: string }>;
+  /** Compact ancestor path shown as a second line ("Notesage › Projects"). */
+  subtitle?: string;
+  menu?: Array<{ id: string; title: string; icon?: string; selected?: boolean }>;
 }
 
 export function iosSetChrome(spec: {
