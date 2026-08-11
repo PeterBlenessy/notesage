@@ -65,6 +65,9 @@ const ALLOWED = new Set([
   "ios_create_file",
   "ios_create_directory",
   "ios_rename_file",
+  // #618 — swipe-delete: file-only (directories refused natively), backed by
+  // iCloud's 30-day Recently Deleted recovery.
+  "ios_delete_file",
   "ios_text_prompt",
 ]);
 
@@ -262,6 +265,44 @@ describe("breadcrumb island (#615)", () => {
     renderWithProviders(<LibraryBrowser />);
     await waitFor(() => expect(captured.topCenter?.title).toBe("Notesage"));
     expect(captured.topCenter?.menu).toBeUndefined();
+  });
+});
+
+describe("swipe delete (#618)", () => {
+  it("the Delete action removes the file and refreshes the listing", async () => {
+    let entries = [
+      { name: "doomed.md", path: "doomed.md", is_directory: false, hidden: false },
+      { name: "keeper.md", path: "keeper.md", is_directory: false, hidden: false },
+    ];
+    setMockInvokeHandler("ios_list_directory", () => entries);
+    setMockInvokeHandler("ios_delete_file", (args) => {
+      expect((args as { relPath: string }).relPath).toBe("doomed.md");
+      entries = entries.filter((e) => e.path !== "doomed.md");
+      return null;
+    });
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("doomed.md");
+    // The action buttons exist behind the row (revealed by swipe on device;
+    // clickable directly in jsdom, which has no real gesture).
+    // The strip is aria-hidden until revealed — include hidden nodes; the
+    // click path is identical to a post-swipe tap.
+    const deleteButtons = screen.getAllByRole("button", { name: /Delete/, hidden: true });
+    fireEvent.click(deleteButtons[0]);
+
+    await waitFor(() => expect(calledCommands()).toContain("ios_delete_file"));
+    await waitFor(() => expect(screen.queryByText("doomed.md")).toBeNull());
+    expect(screen.getByText("keeper.md")).toBeTruthy();
+  });
+
+  it("directories expose no swipe actions (folder deletion stays off the surface)", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Folder", path: "Folder", is_directory: true, hidden: false },
+    ]);
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Folder");
+    expect(screen.queryByRole("button", { name: /Delete/, hidden: true })).toBeNull();
+    expect(screen.queryByRole("button", { name: /Share/, hidden: true })).toBeNull();
   });
 });
 

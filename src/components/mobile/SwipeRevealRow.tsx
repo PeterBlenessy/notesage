@@ -14,6 +14,9 @@ export interface SwipeRevealAction {
  *  would make the reveal threshold untestable; a fixed width also keeps the
  *  gesture math identical on device. */
 const ACTION_WIDTH = 72;
+/** Extra leftward travel past the fully-revealed strip that commits the
+ *  edge action (full-swipe-to-delete, #618) — the Mail/Notes gesture. */
+const FULL_SWIPE_EXTRA = 96;
 /** Pointer movement (px) before a press counts as a drag rather than a tap —
  *  keeps a few pixels of jitter from hijacking a normal row tap. */
 const DRAG_THRESHOLD = 8;
@@ -69,7 +72,10 @@ export function SwipeRevealRow({
       if (Math.abs(delta) < DRAG_THRESHOLD) return;
       drag.isDrag = true;
     }
-    const next = Math.min(0, Math.max(-revealWidth, drag.startOffset + delta));
+    const next = Math.min(
+      0,
+      Math.max(-(revealWidth + FULL_SWIPE_EXTRA + 40), drag.startOffset + delta),
+    );
     drag.lastOffset = next;
     setDragOffset(next);
   };
@@ -80,6 +86,16 @@ export function SwipeRevealRow({
     if (!drag) return;
     setDragOffset(null);
     if (drag.isDrag) {
+      // Full swipe past the strip commits the edge action directly.
+      if (
+        actions.length > 0 &&
+        Math.abs(drag.lastOffset) >= revealWidth + FULL_SWIPE_EXTRA
+      ) {
+        setOpen(false);
+        suppressClickRef.current = true;
+        actions[actions.length - 1].onSelect();
+        return;
+      }
       setOpen(Math.abs(drag.lastOffset) > revealWidth / 2);
       suppressClickRef.current = true;
     } else if (open) {
@@ -106,6 +122,10 @@ export function SwipeRevealRow({
           style={{ width: revealWidth }}
           aria-hidden={!open}
         >
+          {/* Notes-style actions (Peter's reference): floating round icon
+              buttons with small captions beneath — not full-height panes.
+              Delete keeps the destructive red carve-out; everything else
+              stays neutral per the strict palette. */}
           {actions.map((action) => {
             const Icon = action.icon;
             return (
@@ -118,15 +138,19 @@ export function SwipeRevealRow({
                   setOpen(false);
                   action.onSelect();
                 }}
-                className={cn(
-                  "ios-press-row flex h-full flex-col items-center justify-center gap-1 text-xs font-medium text-white",
-                  action.tone === "destructive"
-                    ? "bg-[var(--color-destructive)]"
-                    : "bg-[var(--color-accent-primary)]",
-                )}
+                className="ios-press-row flex h-full flex-col items-center justify-center gap-1"
               >
-                <Icon strokeWidth={1.5} className="h-5 w-5" />
-                {action.label}
+                <span
+                  className={cn(
+                    "flex h-11 w-11 items-center justify-center rounded-full",
+                    action.tone === "destructive"
+                      ? "bg-[var(--color-destructive)] text-white"
+                      : "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]",
+                  )}
+                >
+                  <Icon strokeWidth={1.5} className="h-5 w-5" />
+                </span>
+                <span className="text-[11px] font-medium text-muted-foreground">{action.label}</span>
               </button>
             );
           })}
