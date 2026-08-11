@@ -110,7 +110,7 @@ export function FileRow({ entry, active, onActivate }: FileRowProps) {
         onClick={() => onActivate(entry)}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "ios-press-row flex w-full items-center gap-3 px-4 py-3 text-left",
+          "ios-press-row flex w-full items-center gap-3 px-4 py-1.5 text-left",
           "border-b border-border last:border-b-0",
           "hover:bg-muted/50",
           active && "bg-muted",
