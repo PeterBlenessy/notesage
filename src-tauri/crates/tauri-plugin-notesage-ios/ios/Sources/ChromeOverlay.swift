@@ -20,18 +20,23 @@ struct ChromeMenuItemSpec: Decodable, Equatable {
   let title: String
   /// Optional SF Symbol shown beside the title in the UIMenu row.
   let icon: String?
+  /// When present, the row renders selection state (checkmark when true) —
+  /// used by pick-one menus like the sort control (#632).
+  let selected: Bool?
 }
 
 struct ChromeItemSpec: Decodable, Equatable {
   let id: String
   /// SF Symbol name (e.g. "chevron.backward", "arrow.clockwise").
   let icon: String
-  /// Long-press menu (Files' held-back-button hierarchy). Tap fires `id`;
-  /// holding presents these as a native UIMenu. (A tap-opens-menu variant
-  /// was tried and reverted: a plain SwiftUI `Menu` label never received
-  /// the tap inside our fixed-frame hosting setup — only the
-  /// `Menu(primaryAction:)` shape below is proven to work.)
+  /// Native UIMenu. Default: long-press menu (Files' held-back-button
+  /// hierarchy) with tap firing `id`. With `menuOnTap`, the TAP opens the
+  /// menu and `id` never fires. (The earlier "tap-menu doesn't work" theory
+  /// was wrong — the dead taps were the search host swallowing them; the
+  /// breadcrumb's pure Menu proves the variant works.)
   let menu: [ChromeMenuItemSpec]?
+  /// When true, tapping opens `menu` directly (pick-one control pattern).
+  let menuOnTap: Bool?
   /// True while the action behind this button is in flight (e.g. a refresh
   /// reload) — the button spins its SF Symbol for the duration, mirroring
   /// the web-fallback island's `animate-spin` treatment.
@@ -56,6 +61,8 @@ struct ChromeSearchSpec: Decodable, Equatable {
 /// label.
 struct ChromeBreadcrumbSpec: Decodable, Equatable {
   let title: String
+  /// Compact ancestor path shown as a second line ("Notesage › Projects").
+  let subtitle: String?
   let menu: [ChromeMenuItemSpec]?
 }
 
@@ -296,13 +303,26 @@ struct GlassChromeButton: View {
   @ViewBuilder
   private func menuRows(_ menu: [ChromeMenuItemSpec]) -> some View {
     ForEach(menu, id: \.id) { entry in
-      Button {
-        emit(entry.id)
-      } label: {
-        if let icon = entry.icon {
-          Label(entry.title, systemImage: icon)
-        } else {
-          Text(entry.title)
+      if let selected = entry.selected {
+        // Selection row: Toggle inside a Menu renders as a native
+        // checkmark row (the pick-one pattern the sort control uses).
+        Toggle(isOn: .constant(selected)) {
+          if let icon = entry.icon {
+            Label(entry.title, systemImage: icon)
+          } else {
+            Text(entry.title)
+          }
+        }
+        .onTapGesture { emit(entry.id) }
+      } else {
+        Button {
+          emit(entry.id)
+        } label: {
+          if let icon = entry.icon {
+            Label(entry.title, systemImage: icon)
+          } else {
+            Text(entry.title)
+          }
         }
       }
     }
@@ -310,7 +330,14 @@ struct GlassChromeButton: View {
 
   var body: some View {
     Group {
-      if let menu = item.menu, !menu.isEmpty {
+      if let menu = item.menu, !menu.isEmpty, item.menuOnTap == true {
+        Menu {
+          menuRows(menu)
+        } label: {
+          label
+        }
+        .modifier(GlassCircle())
+      } else if let menu = item.menu, !menu.isEmpty {
         Menu {
           menuRows(menu)
         } label: {
@@ -336,11 +363,20 @@ struct GlassBreadcrumb: View {
   let emit: (String) -> Void
 
   private var label: some View {
-    HStack(spacing: 4) {
-      Text(spec.title)
-        .font(.subheadline.weight(.semibold))
-        .lineLimit(1)
-        .truncationMode(.middle)
+    HStack(spacing: 5) {
+      VStack(spacing: 0) {
+        Text(spec.title)
+          .font(.subheadline.weight(.semibold))
+          .lineLimit(1)
+          .truncationMode(.middle)
+        if let subtitle = spec.subtitle, !subtitle.isEmpty {
+          Text(subtitle)
+            .font(.caption2)
+            .opacity(0.55)
+            .lineLimit(1)
+            .truncationMode(.middle)
+        }
+      }
       if !(spec.menu ?? []).isEmpty {
         Image(systemName: "chevron.down")
           .font(.caption2.weight(.semibold))
@@ -348,7 +384,7 @@ struct GlassBreadcrumb: View {
       }
     }
     .padding(.horizontal, 14)
-    .frame(height: 36)
+    .frame(height: 40)
   }
 
   var body: some View {

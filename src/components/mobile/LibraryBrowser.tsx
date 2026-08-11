@@ -156,6 +156,11 @@ export function LibraryBrowser() {
       // moved here — a visible affordance beats a hidden gesture.
       topCenter: {
         title: currentName,
+        // The island REPLACES the in-content title + breadcrumb row (they
+        // only render on the web fallback) — the path rides as a compact
+        // second line.
+        subtitle:
+          folderStack.length > 0 ? ancestors.map((f) => f.name).join(" › ") : undefined,
         menu:
           folderStack.length > 0
             ? ancestors.map((f, depth) => ({
@@ -165,14 +170,32 @@ export function LibraryBrowser() {
               }))
             : undefined,
       },
+      // Sort control (#632): constant sort glyph; the tap opens a labeled
+      // pick-one menu with a checkmark on the active order — clearer than
+      // any mode icon (Peter's feedback on the Abc glyph).
+      topRight: {
+        id: "sort",
+        icon: "arrow.up.arrow.down",
+        menuOnTap: true,
+        menu: [
+          {
+            id: "sort-name",
+            title: "Alphabetical",
+            icon: "textformat.abc",
+            selected: sortMode === "name",
+          },
+          {
+            id: "sort-modified",
+            title: "Date modified",
+            icon: "clock",
+            selected: sortMode === "modified",
+          },
+        ],
+      },
       // Sort toggle (#632) in the slot pull-to-refresh freed (#620): the icon
       // shows the CURRENT mode (Aa = alphabetical, clock = modified-newest);
       // tapping flips it. The `refresh` action below still exists for the
       // native pull gesture — no button declares it.
-      topRight: {
-        id: "toggle-sort",
-        icon: sortMode === "name" ? "textformat.abc" : "clock",
-      },
       bottomRight: atRoot
         ? { id: "create-folder", icon: "plus" }
         : {
@@ -191,7 +214,8 @@ export function LibraryBrowser() {
     },
     {
       back: () => void goBack(),
-      "toggle-sort": () => setSortMode(sortMode === "name" ? "modified" : "name"),
+      "sort-name": () => setSortMode("name"),
+      "sort-modified": () => setSortMode("modified"),
       "create-note": () => createNote(),
       "create-folder": () => void createFolder(),
       "search-query": (value?: string) => setQuery(value ?? ""),
@@ -253,6 +277,11 @@ export function LibraryBrowser() {
         className="view-enter absolute inset-0 overflow-y-auto"
         style={CONTENT_INSETS}
       >
+        {/* The large in-content title + breadcrumb row exist ONLY on the web
+            fallback: with native chrome the breadcrumb ISLAND carries both
+            the folder name and the path (Peter's #615 design — the island
+            replaces them, it does not duplicate them). */}
+        {!nativeChrome && (
         <div className="px-4 pb-1 pt-2">
           <h1 className="truncate text-2xl font-bold text-foreground">{currentName}</h1>
           {folderStack.length > 0 && (
@@ -279,6 +308,7 @@ export function LibraryBrowser() {
             </nav>
           )}
         </div>
+        )}
 
         {state.status === "loading" && <BrowserSkeleton />}
         {state.status === "error" && <BrowserError message={state.message} onRetry={() => void load()} />}

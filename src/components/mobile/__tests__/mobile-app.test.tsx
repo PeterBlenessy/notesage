@@ -158,8 +158,17 @@ describe("library browser states", () => {
 });
 
 interface CapturedChromeSpec {
-  topCenter?: { title: string; menu?: Array<{ id: string; title: string; icon?: string }> };
-  topRight?: { id: string; icon: string };
+  topCenter?: {
+    title: string;
+    subtitle?: string;
+    menu?: Array<{ id: string; title: string; icon?: string }>;
+  };
+  topRight?: {
+    id: string;
+    icon: string;
+    menuOnTap?: boolean;
+    menu?: Array<{ id: string; title: string; selected?: boolean }>;
+  };
 }
 
 describe("sort toggle (#632)", () => {
@@ -189,7 +198,7 @@ describe("sort toggle (#632)", () => {
     expect(useMobileStore.getState().sortMode).toBe("modified");
   });
 
-  it("declares the current mode's icon on the native topRight slot", async () => {
+  it("declares a labeled pick-one menu on the native sort control (checkmark on active)", async () => {
     let captured: CapturedChromeSpec = {};
     setMockInvokeHandler("ios_set_chrome", (args) => {
       captured = (args as { spec: CapturedChromeSpec }).spec;
@@ -198,11 +207,20 @@ describe("sort toggle (#632)", () => {
     setMockInvokeHandler("ios_list_directory", () => []);
 
     renderWithProviders(<LibraryBrowser />);
-    await waitFor(() => expect(captured.topRight?.id).toBe("toggle-sort"));
-    expect(captured.topRight?.icon).toBe("textformat.abc");
+    await waitFor(() => expect(captured.topRight?.id).toBe("sort"));
+    // Constant sort glyph; the LABELED menu carries the meaning (Peter's
+    // feedback: a mode glyph like "Abc" was not illustrative enough).
+    expect(captured.topRight?.icon).toBe("arrow.up.arrow.down");
+    expect(captured.topRight?.menuOnTap).toBe(true);
+    expect(captured.topRight?.menu?.map((m) => [m.title, m.selected])).toEqual([
+      ["Alphabetical", true],
+      ["Date modified", false],
+    ]);
 
     useMobileStore.getState().setSortMode("modified");
-    await waitFor(() => expect(captured.topRight?.icon).toBe("clock"));
+    await waitFor(() =>
+      expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([false, true]),
+    );
   });
 });
 
@@ -223,8 +241,14 @@ describe("breadcrumb island (#615)", () => {
 
     renderWithProviders(<LibraryBrowser />);
     await waitFor(() => expect(captured.topCenter?.title).toBe("Deep"));
+    // The island carries the PATH too — it replaces the in-content title +
+    // breadcrumb row, which must not render while native chrome is active.
+    expect(captured.topCenter?.subtitle).toBe("Notesage › Projects");
     expect(captured.topCenter?.menu?.map((m) => m.title)).toEqual(["Notesage", "Projects"]);
     expect(captured.topCenter?.menu?.[0]?.id).toBe("jump-0");
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "Deep" })).toBeNull(),
+    );
   });
 
   it("renders a passive breadcrumb (no menu) at the library root", async () => {
