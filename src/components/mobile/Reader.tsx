@@ -10,6 +10,7 @@ import {
   iosShareFile,
   iosWriteFile,
   iosRenameFile,
+  iosCreateFile,
 } from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
 import { useMobileStore } from "@/stores/mobile-store";
@@ -100,6 +101,10 @@ export function Reader() {
 
   const relPath = openDoc?.relPath ?? "";
   const name = openDoc?.name ?? "";
+  // Pending note (#586 follow-up): nothing exists on disk yet. The editor
+  // opens on an empty draft and the file is only created on save/back when
+  // the draft is non-empty — an accidental "+" tap leaves no file behind.
+  const isNew = openDoc?.isNew === true;
   const kind = useMemo(() => (name ? classifyFile(name) : "other"), [name]);
 
   // Root cause of issue #605 (the article's rendered markup silently
@@ -348,9 +353,20 @@ export function Reader() {
     }
   }, [state, editing, relPath, startEdit]);
 
-  /** Write the draft; markdown also renames to the derived title. Returns
-   *  the (possibly renamed) relative path. */
-  const persistDraft = useCallback(async (): Promise<string> => {
+  /** Persist the draft. Existing notes: write + title-rename. Pending notes
+   *  (`isNew`): CREATE the file — directly under its title-derived name — but
+   *  only when the draft is non-empty; an empty draft returns null and leaves
+   *  no file behind. Returns the final relative path, or null when nothing
+   *  was (or should be) persisted. */
+  const persistDraft = useCallback(async (): Promise<string | null> => {
+    if (isNew) {
+      if (draft.trim() === "") return null;
+      const title = deriveNoteTitle(draft) ?? "Untitled";
+      const folder = relPath.includes("/") ? relPath.slice(0, relPath.lastIndexOf("/")) : "";
+      const rel = folder ? `${folder}/${title}.md` : `${title}.md`;
+      // The native side dedupes and returns the path actually created.
+      return await iosCreateFile(rel, draft);
+    }
     await iosWriteFile(relPath, draft);
     if (kind === "markdown") {
       const title = deriveNoteTitle(draft);
@@ -360,7 +376,7 @@ export function Reader() {
       }
     }
     return relPath;
-  }, [relPath, draft, kind, name]);
+  }, [isNew, relPath, draft, kind, name]);
 
   // `load` is declared further down (it needs the chrome hook's siblings);
   // the ref indirection lets save re-trigger it without reordering the
@@ -369,8 +385,13 @@ export function Reader() {
   const saveEdit = useCallback(async () => {
     try {
       const finalRel = await persistDraft();
+      if (finalRel === null) {
+        // Empty pending note — nothing to keep. Leave without a file.
+        goBack();
+        return;
+      }
       setEditing(false);
-      if (finalRel !== relPath) {
+      if (isNew || finalRel !== relPath) {
         // Re-open under the new name (the Reader is keyed by relPath — this
         // remounts with a fresh load of what was actually saved).
         openDocument({ relPath: finalRel, name: finalRel.split("/").pop() ?? name });
@@ -382,7 +403,7 @@ export function Reader() {
     } catch (err) {
       toast.error(`Couldn't save: ${err}`);
     }
-  }, [persistDraft, relPath, name, openDocument]);
+  }, [persistDraft, relPath, name, isNew, goBack, openDocument]);
 
   // Back while editing saves first (Notes semantics — no unsaved-changes
   // dialog), then leaves; the browser relists on mount so a rename shows.
@@ -451,6 +472,14 @@ export function Reader() {
 
   const load = useCallback(async () => {
     if (!relPath) return;
+    if (isNew) {
+      // Nothing on disk yet — an empty rendered doc; the auto-edit effect
+      // opens the editor immediately. Created only on save/back with content.
+      rawMarkdownRef.current = "";
+      renderedThemeRef.current = null;
+      setState({ status: "markdown", html: "" });
+      return;
+    }
     const loadId = ++loadIdRef.current;
     const isCurrent = () => loadIdRef.current === loadId;
     setState({ status: "loading" });
@@ -540,7 +569,7 @@ export function Reader() {
       if (!isCurrent()) return;
       setState({ status: "error", message: String(err) });
     }
-  }, [relPath, kind]);
+  }, [relPath, kind, isNew]);
 
   loadRef.current = load;
 

@@ -179,25 +179,47 @@ describe("create flow (#586)", () => {
     expect(screen.queryByText("New Note")).toBeNull();
   });
 
-  it("sub-folder '+' tap creates an untitled note INSTANTLY (no prompt) and opens the deduped path", async () => {
+  it("sub-folder '+' opens a pending editor with NO file yet; Save creates it under the title-derived name", async () => {
     useMobileStore.getState().enterFolder({ relPath: "Sub", name: "Sub" });
     setMockInvokeHandler("ios_list_directory", () => []);
-    // The native layer dedupes — the frontend must open what was actually
-    // created, not what it asked for.
     setMockInvokeHandler("ios_create_file", (args) => {
-      expect((args as { relPath: string }).relPath).toBe("Sub/Untitled.md");
-      return "Sub/Untitled-1.md";
+      const a = args as { relPath: string; content: string };
+      // Created DIRECTLY under the title-derived name — no Untitled
+      // intermediate on disk, ever.
+      expect(a.relPath).toBe("Sub/Groceries.md");
+      expect(a.content).toBe("# Groceries\n\n- milk");
+      return "Sub/Groceries.md";
     });
 
-    renderWithProviders(<LibraryBrowser />);
+    renderWithProviders(<Shell />);
     fireEvent.click(await screen.findByRole("button", { name: "New note" }));
 
-    await waitFor(() =>
-      expect(useMobileStore.getState().openDoc?.relPath).toBe("Sub/Untitled-1.md"),
-    );
-    expect(useMobileStore.getState().openDoc?.name).toBe("Untitled-1.md");
-    // Instant creation — no name prompt anywhere in the flow.
+    // The editor opens on a pending note — nothing has touched the disk.
+    const editor = await screen.findByRole("textbox", { name: "Note editor" });
+    expect(calledCommands()).not.toContain("ios_create_file");
     expect(calledCommands()).not.toContain("ios_text_prompt");
+
+    fireEvent.change(editor, { target: { value: "# Groceries\n\n- milk" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(useMobileStore.getState().openDoc?.relPath).toBe("Sub/Groceries.md"),
+    );
+    expect(useMobileStore.getState().openDoc?.isNew).toBeUndefined();
+  });
+
+  it("backing out of an untouched new note leaves NO file behind (accidental '+' tap)", async () => {
+    useMobileStore.getState().enterFolder({ relPath: "Sub", name: "Sub" });
+    setMockInvokeHandler("ios_list_directory", () => []);
+
+    renderWithProviders(<Shell />);
+    fireEvent.click(await screen.findByRole("button", { name: "New note" }));
+    await screen.findByRole("textbox", { name: "Note editor" });
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+
+    await waitFor(() => expect(useMobileStore.getState().openDoc).toBeNull());
+    expect(calledCommands()).not.toContain("ios_create_file");
+    expect(calledCommands()).not.toContain("ios_write_file");
   });
 
   it("long-pressing sub-folder '+' opens the New Folder menu instead of creating a note", async () => {

@@ -2,12 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, FolderOpen, AlertCircle, Plus, FolderPlus } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
-import {
-  iosListDirectory,
-  iosCreateFile,
-  iosCreateDirectory,
-  iosTextPrompt,
-} from "@/lib/ios-api";
+import { iosListDirectory, iosCreateDirectory, iosTextPrompt } from "@/lib/ios-api";
 import { toast } from "sonner";
 import { useMobileStore } from "@/stores/mobile-store";
 import { FileRow } from "./FileRow";
@@ -104,20 +99,14 @@ export function LibraryBrowser() {
   // single path segment by definition.
   const cleanName = (raw: string) => raw.trim().replace(/\//g, "-");
 
-  const createNote = useCallback(async () => {
-    // No name prompt — the note is created instantly as Untitled.md (the
-    // native side dedupes to Untitled-1.md etc. and returns the path
-    // actually created) and opened. Renaming to the doc's title is the
-    // editor's job when it saves.
+  const createNote = useCallback(() => {
+    // No prompt AND no file yet: the editor opens on an empty pending note,
+    // and the file is only created on save/back when the draft is non-empty
+    // (under its title-derived name directly). An accidental "+" tap backs
+    // out leaving no trace — Notes semantics.
     const rel = currentRelPath ? `${currentRelPath}/Untitled.md` : "Untitled.md";
-    try {
-      const finalRel = await iosCreateFile(rel, "");
-      await load();
-      openDocument({ relPath: finalRel, name: finalRel.split("/").pop() ?? "Untitled.md" });
-    } catch (err) {
-      toast.error(`Couldn't create note: ${err}`);
-    }
-  }, [currentRelPath, load, openDocument]);
+    openDocument({ relPath: rel, name: "Untitled.md", isNew: true });
+  }, [currentRelPath, openDocument]);
 
   const createFolder = useCallback(async () => {
     const name = cleanName((await promptName("New Folder")) ?? "");
@@ -175,7 +164,7 @@ export function LibraryBrowser() {
     },
     {
       back: () => void goBack(),
-      "create-note": () => void createNote(),
+      "create-note": () => createNote(),
       "create-folder": () => void createFolder(),
       "search-query": (value?: string) => setQuery(value ?? ""),
       "search-close": () => setQuery(""),
@@ -363,7 +352,7 @@ export function LibraryBrowser() {
           >
             <ChromeButton
               label={atRoot ? "New folder" : "New note"}
-              onClick={() => (atRoot ? void createFolder() : void createNote())}
+              onClick={() => (atRoot ? void createFolder() : createNote())}
             >
               <Plus strokeWidth={1.5} className="h-5 w-5" />
             </ChromeButton>
