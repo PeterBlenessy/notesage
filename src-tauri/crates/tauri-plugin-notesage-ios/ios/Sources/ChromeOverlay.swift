@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UIKit
 import WebKit
@@ -17,14 +18,19 @@ import WebKit
 struct ChromeMenuItemSpec: Decodable, Equatable {
   let id: String
   let title: String
+  /// Optional SF Symbol shown beside the title in the UIMenu row.
+  let icon: String?
 }
 
 struct ChromeItemSpec: Decodable, Equatable {
   let id: String
   /// SF Symbol name (e.g. "chevron.backward", "arrow.clockwise").
   let icon: String
-  /// Long-press menu (Files' held-back-button hierarchy). Tap still fires
-  /// `id`; holding presents these as a native UIMenu.
+  /// Long-press menu (Files' held-back-button hierarchy). Tap fires `id`;
+  /// holding presents these as a native UIMenu. (A tap-opens-menu variant
+  /// was tried and reverted: a plain SwiftUI `Menu` label never received
+  /// the tap inside our fixed-frame hosting setup — only the
+  /// `Menu(primaryAction:)` shape below is proven to work.)
   let menu: [ChromeMenuItemSpec]?
   /// True while the action behind this button is in flight (e.g. a refresh
   /// reload) — the button spins its SF Symbol for the duration, mirroring
@@ -47,6 +53,10 @@ struct ChromeSearchSpec: Decodable, Equatable {
 struct ChromeSpec: Decodable, Equatable {
   let topLeft: ChromeItemSpec?
   let topRight: ChromeItemSpec?
+  /// Bottom-trailing action button (the folder view's "+"). Pinned to the
+  /// bottom safe area — the keyboard covers it while typing, like Notes'
+  /// compose button.
+  let bottomRight: ChromeItemSpec?
   let search: ChromeSearchSpec?
 }
 
@@ -71,6 +81,9 @@ final class ChromeManager {
   private var current: [String: ChromeItemSpec] = [:]
   private var searchHost: UIHostingController<AnyView>?
   private let searchModel = SearchModel()
+  private var searchWidthCancellable: AnyCancellable?
+  private var searchCollapsedConstraints: [NSLayoutConstraint] = []
+  private var searchExpandedConstraints: [NSLayoutConstraint] = []
   private weak var webView: WKWebView?
 
   /// Apply a chrome spec. Main thread only.
@@ -78,6 +91,7 @@ final class ChromeManager {
     self.webView = webView
     setCorner("topLeft", item: spec.topLeft, over: webView, leading: true)
     setCorner("topRight", item: spec.topRight, over: webView, leading: false)
+    setCorner("bottomRight", item: spec.bottomRight, over: webView, leading: false, top: false)
     setSearch(spec.search, over: webView)
   }
 
@@ -86,6 +100,9 @@ final class ChromeManager {
     guard let spec else {
       searchHost?.view.removeFromSuperview()
       searchHost = nil
+      searchWidthCancellable = nil
+      searchCollapsedConstraints = []
+      searchExpandedConstraints = []
       searchModel.expanded = false
       searchModel.text = ""
       return
@@ -104,15 +121,20 @@ final class ChromeManager {
     host.view.backgroundColor = .clear
     host.view.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(host.view)
-    // FULL-WIDTH, fixed-height host: intrinsic sizing does not reliably grow
-    // the hosting view when the SwiftUI content expands, and UIKit clips
-    // hit-testing to the FRAME — the expanded bar drew full-width while only
-    // the collapsed-pill strip stayed tappable (done/chevrons dead). With a
-    // constant frame, SwiftUI centers the collapsed pill itself and the
-    // hosting view passes touches through its empty regions.
+    // Fixed-height host (intrinsic sizing does not reliably grow the hosting
+    // view when the SwiftUI content expands, and UIKit clips hit-testing to
+    // the FRAME — the expanded bar drew full-width while only the
+    // collapsed-pill strip stayed tappable).
+    //
+    // WIDTH IS STATE-DRIVEN, not static full-width: the hosting view does
+    // NOT pass touches through its empty regions (the earlier comment
+    // claiming it does was never verified) — a full-width collapsed host
+    // silently swallowed every tap aimed at the bottom-right "+" beneath it
+    // (#586's dead create button). Collapsed: a centered 260pt strip that
+    // hugs the pill and leaves both bottom corners tappable. Expanded:
+    // full-width for the text field + nav controls, when the corner buttons
+    // are behind the keyboard anyway.
     NSLayoutConstraint.activate([
-      host.view.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
-      host.view.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
       // keyboardLayoutGuide rests on the bottom safe area when the keyboard
       // is down and tracks its top edge when up — native keyboard avoidance,
       // no JS bridge involved.
@@ -120,11 +142,31 @@ final class ChromeManager {
         equalTo: container.keyboardLayoutGuide.topAnchor, constant: -10),
       host.view.heightAnchor.constraint(equalToConstant: 50),
     ])
+    searchCollapsedConstraints = [
+      host.view.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+      host.view.widthAnchor.constraint(equalToConstant: 260),
+    ]
+    searchExpandedConstraints = [
+      host.view.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12),
+      host.view.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
+    ]
+    NSLayoutConstraint.activate(searchCollapsedConstraints)
+    searchWidthCancellable = searchModel.$expanded
+      .removeDuplicates()
+      .sink { [weak self, weak container] expanded in
+        guard let self, let container else { return }
+        NSLayoutConstraint.deactivate(
+          expanded ? self.searchCollapsedConstraints : self.searchExpandedConstraints)
+        NSLayoutConstraint.activate(
+          expanded ? self.searchExpandedConstraints : self.searchCollapsedConstraints)
+        UIView.animate(withDuration: 0.25) { container.layoutIfNeeded() }
+      }
     searchHost = host
   }
 
   private func setCorner(
-    _ key: String, item: ChromeItemSpec?, over webView: WKWebView, leading: Bool
+    _ key: String, item: ChromeItemSpec?, over webView: WKWebView, leading: Bool,
+    top: Bool = true
   ) {
     guard let container = webView.superview else { return }
     guard let item else {
@@ -150,7 +192,9 @@ final class ChromeManager {
     container.addSubview(host.view)
     let guide = container.safeAreaLayoutGuide
     NSLayoutConstraint.activate([
-      host.view.topAnchor.constraint(equalTo: guide.topAnchor, constant: 8),
+      top
+        ? host.view.topAnchor.constraint(equalTo: guide.topAnchor, constant: 8)
+        : host.view.bottomAnchor.constraint(equalTo: guide.bottomAnchor, constant: -10),
       leading
         ? host.view.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 12)
         : host.view.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -12),
@@ -205,13 +249,26 @@ struct GlassChromeButton: View {
       .onChange(of: item.busy) { busy in spinning = busy == true }
   }
 
+  @ViewBuilder
+  private func menuRows(_ menu: [ChromeMenuItemSpec]) -> some View {
+    ForEach(menu, id: \.id) { entry in
+      Button {
+        emit(entry.id)
+      } label: {
+        if let icon = entry.icon {
+          Label(entry.title, systemImage: icon)
+        } else {
+          Text(entry.title)
+        }
+      }
+    }
+  }
+
   var body: some View {
     Group {
       if let menu = item.menu, !menu.isEmpty {
         Menu {
-          ForEach(menu, id: \.id) { entry in
-            Button(entry.title) { emit(entry.id) }
-          }
+          menuRows(menu)
         } label: {
           label
         } primaryAction: {

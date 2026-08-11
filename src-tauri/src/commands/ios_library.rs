@@ -61,6 +61,23 @@ pub fn sanitize_rel_path(rel_path: &str) -> Result<String, String> {
     Ok(parts.join("/"))
 }
 
+/// Validate a SINGLE filename segment (for rename): non-empty, no `/`, no
+/// path dots, no leading dot (hidden files are invisible to the mobile
+/// browser — a rename into one would look like deletion).
+pub fn sanitize_file_name(name: &str) -> Result<String, String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return Err("File name is empty".into());
+    }
+    if trimmed.contains('/') || trimmed == "." || trimmed == ".." {
+        return Err("File name must be a single path segment".into());
+    }
+    if trimmed.starts_with('.') {
+        return Err("File name cannot start with a dot".into());
+    }
+    Ok(trimmed.to_string())
+}
+
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
@@ -246,6 +263,53 @@ pub async fn ios_create_directory(
     }
 }
 
+/// Rename a file WITHIN its directory (#586 — the title-becomes-filename
+/// primitive, not a general move). `new_name` is a single validated path
+/// segment; the native side dedupes on collision and returns the relative
+/// path actually produced.
+#[tauri::command]
+pub async fn ios_rename_file(
+    app: tauri::AppHandle,
+    rel_path: String,
+    new_name: String,
+) -> Result<String, String> {
+    let rel = sanitize_rel_path(&rel_path)?;
+    if rel.is_empty() {
+        return Err("Cannot rename the library root".into());
+    }
+    let name = sanitize_file_name(&new_name)?;
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::rename_file(&app, &rel, &name).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, rel, name);
+        Err("ios_rename_file is only available on iOS".into())
+    }
+}
+
+/// Present a native single-line text prompt (UIAlertController with a text
+/// field) — the create flow's name entry (#586). `Ok(None)` = cancelled.
+/// Pure UI: takes no path and touches no filesystem.
+#[tauri::command]
+pub async fn ios_text_prompt(
+    app: tauri::AppHandle,
+    title: String,
+    placeholder: String,
+    confirm_label: String,
+) -> Result<Option<String>, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::text_prompt(&app, &title, &placeholder, &confirm_label).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, title, placeholder, confirm_label);
+        Err("ios_text_prompt is only available on iOS".into())
+    }
+}
+
 /// Declare the native chrome overlay (Liquid Glass buttons over the
 /// webview). Config is a `{ topLeft?: {id, icon}, topRight?: {id, icon} }`
 /// JSON value; icons are SF Symbol names. Taps arrive in the page as
@@ -367,6 +431,21 @@ mod ios_impl {
         app.notesage_ios().create_directory(rel).map_err(|e| e.to_string())
     }
 
+    pub async fn rename_file(app: &AppHandle, rel: &str, new_name: &str) -> Result<String, String> {
+        app.notesage_ios().rename_file(rel, new_name).map_err(|e| e.to_string())
+    }
+
+    pub async fn text_prompt(
+        app: &AppHandle,
+        title: &str,
+        placeholder: &str,
+        confirm_label: &str,
+    ) -> Result<Option<String>, String> {
+        app.notesage_ios()
+            .text_prompt(title, placeholder, confirm_label)
+            .map_err(|e| e.to_string())
+    }
+
     pub async fn set_chrome(app: &AppHandle, spec: serde_json::Value) -> Result<(), String> {
         app.notesage_ios().set_chrome(spec).map_err(|e| e.to_string())
     }
@@ -421,6 +500,7 @@ mod tests {
             "ios_write_file",
             "ios_create_file",
             "ios_create_directory",
+            "ios_rename_file",
         ] {
             let body_start = src
                 .find(&format!("pub async fn {cmd}("))
@@ -440,7 +520,7 @@ mod tests {
         // Same source-shape idiom as the sanitizer test above, for the same
         // reason: the command bodies are iOS-only seams.
         let src = include_str!("ios_library.rs");
-        for cmd in ["ios_write_file", "ios_create_file", "ios_create_directory"] {
+        for cmd in ["ios_write_file", "ios_create_file", "ios_create_directory", "ios_rename_file"] {
             let body_start = src
                 .find(&format!("pub async fn {cmd}("))
                 .unwrap_or_else(|| panic!("{cmd} not found"));
@@ -450,6 +530,18 @@ mod tests {
                 "{cmd} does not guard against the empty (library-root) path"
             );
         }
+    }
+
+    #[test]
+    fn file_name_validator_rejects_traversal_and_hidden_names() {
+        assert!(sanitize_file_name("").is_err());
+        assert!(sanitize_file_name("   ").is_err());
+        assert!(sanitize_file_name("a/b").is_err());
+        assert!(sanitize_file_name("..").is_err());
+        assert!(sanitize_file_name(".").is_err());
+        assert!(sanitize_file_name(".hidden.md").is_err());
+        assert_eq!(sanitize_file_name("  Note.md  ").unwrap(), "Note.md");
+        assert_eq!(sanitize_file_name("Meeting notes.md").unwrap(), "Meeting notes.md");
     }
 
     #[test]

@@ -102,6 +102,28 @@ struct PathResponse {
     rel_path: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameArgs<'a> {
+    rel_path: &'a str,
+    new_name: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TextPromptArgs<'a> {
+    title: &'a str,
+    placeholder: &'a str,
+    confirm_label: &'a str,
+}
+
+/// `text` is absent when the user cancelled the prompt.
+#[derive(Deserialize, Default)]
+struct TextPromptResponse {
+    #[serde(default)]
+    text: Option<String>,
+}
+
 /// iCloud download state for a file that may be a not-yet-downloaded placeholder.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -184,6 +206,28 @@ impl<R: Runtime> NotesageIos<R> {
             .map(|r| r.rel_path)
     }
 
+    /// Rename a file within its directory (single-segment new name, deduped
+    /// on collision). Returns the relative path actually produced.
+    pub fn rename_file(&self, rel: &str, new_name: &str) -> Result<String> {
+        self.call::<_, PathResponse>("renameFile", RenameArgs { rel_path: rel, new_name })
+            .map(|r| r.rel_path)
+    }
+
+    /// Present a native single-line text prompt (UIAlertController). Returns
+    /// `None` when the user cancels.
+    pub fn text_prompt(
+        &self,
+        title: &str,
+        placeholder: &str,
+        confirm_label: &str,
+    ) -> Result<Option<String>> {
+        self.call::<_, TextPromptResponse>(
+            "textPrompt",
+            TextPromptArgs { title, placeholder, confirm_label },
+        )
+        .map(|r| r.text)
+    }
+
     /// Declare the native chrome overlay (real Liquid Glass buttons hosted
     /// over the webview). `spec` is the JSON `{ topLeft?, topRight? }` shape
     /// ChromeOverlay.swift decodes; taps come back as `notesage:chrome`
@@ -231,6 +275,12 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn write_file(&self, _rel: &str, _text: &str) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn rename_file(&self, _rel: &str, _new_name: &str) -> Result<String> {
+        Err(Error::Unavailable)
+    }
+    pub fn text_prompt(&self, _t: &str, _p: &str, _c: &str) -> Result<Option<String>> {
         Err(Error::Unavailable)
     }
     pub fn create_file(&self, _rel: &str, _text: &str) -> Result<String> {

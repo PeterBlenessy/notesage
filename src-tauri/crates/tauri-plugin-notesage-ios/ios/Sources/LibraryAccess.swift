@@ -244,6 +244,40 @@ enum LibraryAccess {
         return finalRel
     }
 
+    /// Rename a file WITHIN its directory (single-segment new name — this is
+    /// the title-becomes-filename primitive, not a general move). The new
+    /// name is deduped on collision. Returns the final relative path.
+    static func renameFile(_ rel: String, to newName: String) throws -> String {
+        guard !rel.isEmpty, !newName.isEmpty else { throw LibraryAccessError.ioError("empty path") }
+        let root = try resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let src = root.appendingPathComponent(rel)
+        let dir = (rel as NSString).deletingLastPathComponent
+        let targetRel = dir.isEmpty ? newName : "\(dir)/\(newName)"
+        // Renaming to the name it already has is a no-op, not a dedupe to
+        // `name-1` — the editor calls this on every save.
+        if targetRel == rel { return rel }
+        let (dst, finalRel) = deduped(targetRel, under: root)
+        var coordError: NSError?
+        var result: Result<Void, Error> = .failure(LibraryAccessError.ioError("uncoordinated"))
+        let coordinator = NSFileCoordinator()
+        coordinator.coordinate(
+            writingItemAt: src, options: .forMoving,
+            writingItemAt: dst, options: .forReplacing,
+            error: &coordError
+        ) { s, d in
+            do {
+                try FileManager.default.moveItem(at: s, to: d)
+                coordinator.item(at: s, didMoveTo: d)
+                result = .success(())
+            } catch { result = .failure(error) }
+        }
+        if let coordError { throw coordError }
+        try result.get()
+        return finalRel
+    }
+
     /// First free name for `rel` under `root`: `stem.ext`, `stem-1.ext`, `stem-2.ext`, …
     private static func deduped(_ rel: String, under root: URL) -> (URL, String) {
         let ns = rel as NSString

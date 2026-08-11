@@ -14,6 +14,17 @@ struct WriteFileArgs: Decodable {
   let text: String
 }
 
+struct RenameArgs: Decodable {
+  let relPath: String
+  let newName: String
+}
+
+struct TextPromptArgs: Decodable {
+  let title: String
+  let placeholder: String
+  let confirmLabel: String
+}
+
 // MARK: - Keyboard accessory removal
 
 /// WKWebView shows its own accessory bar (form prev/next arrows + Done) above
@@ -249,6 +260,66 @@ class NotesageIosPlugin: Plugin {
     do {
       let args = try invoke.parseArgs(RelPathArgs.self)
       invoke.resolve(["relPath": try LibraryAccess.createDirectory(args.relPath)])
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func renameFile(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(RenameArgs.self)
+      invoke.resolve(["relPath": try LibraryAccess.renameFile(args.relPath, to: args.newName)])
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Native single-line text prompt (UIAlertController with a text field) —
+  /// the name-entry popover for the create flow (#586). Resolves
+  /// `{ text: "<entered>" }` on confirm, `{}` on cancel; the confirm button
+  /// stays disabled while the field is empty.
+  @objc public func textPrompt(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(TextPromptArgs.self)
+      DispatchQueue.main.async {
+        guard let presenter = self.topViewController else {
+          invoke.reject("No view controller to present the prompt")
+          return
+        }
+        guard presenter.presentedViewController == nil else {
+          invoke.reject("Another sheet is already open")
+          return
+        }
+        let alert = UIAlertController(title: args.title, message: nil, preferredStyle: .alert)
+        // The change observer must be removed on either exit, and the confirm
+        // closure must capture the alert weakly — an alert retains its
+        // actions, so a strong capture is a retain cycle that leaks the whole
+        // controller on every prompt.
+        var observer: NSObjectProtocol?
+        let removeObserver = {
+          if let o = observer { NotificationCenter.default.removeObserver(o) }
+          observer = nil
+        }
+        let confirm = UIAlertAction(title: args.confirmLabel, style: .default) { [weak alert] _ in
+          removeObserver()
+          invoke.resolve(["text": alert?.textFields?.first?.text ?? ""])
+        }
+        confirm.isEnabled = false
+        alert.addTextField { field in
+          field.placeholder = args.placeholder
+          field.autocapitalizationType = .sentences
+          field.clearButtonMode = .whileEditing
+          // Enable the confirm action only once there is real input.
+          observer = NotificationCenter.default.addObserver(
+            forName: UITextField.textDidChangeNotification, object: field, queue: .main
+          ) { [weak field] _ in
+            confirm.isEnabled = !(field?.text ?? "")
+              .trimmingCharacters(in: .whitespaces).isEmpty
+          }
+        }
+        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+          removeObserver()
+          invoke.resolve([:] as [String: String])
+        })
+        alert.addAction(confirm)
+        presenter.present(alert, animated: true)
+      }
     } catch { invoke.reject(String(describing: error)) }
   }
 

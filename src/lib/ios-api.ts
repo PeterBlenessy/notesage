@@ -63,7 +63,7 @@ export interface IosChromeItem {
   id: string;
   icon: string;
   /** Long-press menu entries (native UIMenu); tap still fires `id`. */
-  menu?: Array<{ id: string; title: string }>;
+  menu?: Array<{ id: string; title: string; icon?: string }>;
   /** True while the action behind this button is in flight — the native
    *  button spins its SF Symbol for the duration, mirroring the web
    *  fallback's `animate-spin` treatment. */
@@ -88,9 +88,38 @@ export interface IosChromeSearch {
 export function iosSetChrome(spec: {
   topLeft?: IosChromeItem;
   topRight?: IosChromeItem;
+  /** Bottom-trailing action button (the folder view's "+"). */
+  bottomRight?: IosChromeItem;
   search?: IosChromeSearch;
 }): Promise<void> {
   return invoke("ios_set_chrome", { spec });
+}
+
+/**
+ * Rename a file within its directory (the title-becomes-filename primitive).
+ * `newName` is a single path segment; the native side dedupes on collision.
+ * Resolves the relative path actually produced.
+ */
+export function iosRenameFile(relPath: string, newName: string): Promise<string> {
+  return invoke<string>("ios_rename_file", { relPath, newName });
+}
+
+/**
+ * Native single-line text prompt (UIAlertController with a text field).
+ * Resolves the entered text, or `null` when the user cancels. Rejects
+ * off-iOS — callers fall back to a web prompt.
+ */
+export async function iosTextPrompt(
+  title: string,
+  placeholder: string,
+  confirmLabel: string,
+): Promise<string | null> {
+  const text = await invoke<string | null>("ios_text_prompt", {
+    title,
+    placeholder,
+    confirmLabel,
+  });
+  return text ?? null;
 }
 
 /** Present the iOS share sheet for a library file. */
