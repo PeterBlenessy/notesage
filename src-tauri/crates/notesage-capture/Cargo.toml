@@ -13,11 +13,15 @@ description = "Capture-note formatting for Notesage's iOS share extension — on
 crate-type = ["staticlib", "rlib"]
 
 # Kept dependency-LIGHT (linked into a share extension with a hard memory
-# cap): the only deps are the readable-extraction pair for rich web capture
-# (#584) — readability (Mozilla port; html5ever tree) + htmd (HTML→Markdown,
-# shares the html5ever tree). String formatting and the civil-time conversion
-# remain dependency-free.
+# cap): the extraction stack for rich web capture (#584, upgraded #610) is
+# dom_smoothie (actively-maintained Mozilla Readability port; replaced the
+# abandoned 2019-era `readability` 0.3 crate) + dom_query (re-parses the
+# extracted fragment to strip ad/tracker `<img>`s — already pulled in
+# transitively by dom_smoothie, so pinning it directly adds no extra compiled
+# dependency) + htmd (HTML→Markdown). String formatting and the civil-time
+# conversion remain dependency-free. `url` was dropped: dom_smoothie's
+# `Readability::new` already validates the document URL is absolute.
 [dependencies]
-readability = { version = "0.3", default-features = false }
+dom_smoothie = "0.18"
+dom_query = "0.28"
 htmd = "0.2"
-url = "2"
