@@ -206,6 +206,11 @@ impl<R: Runtime> NotesageIos<R> {
             .map(|r| r.rel_path)
     }
 
+    /// Delete a FILE (never a directory) — coordinated `.forDeleting`.
+    pub fn delete_file(&self, rel: &str) -> Result<()> {
+        self.call("deleteFile", RelPathArgs { rel_path: rel })
+    }
+
     /// Rename a file within its directory (single-segment new name, deduped
     /// on collision). Returns the relative path actually produced.
     pub fn rename_file(&self, rel: &str, new_name: &str) -> Result<String> {
@@ -275,6 +280,9 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn write_file(&self, _rel: &str, _text: &str) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn delete_file(&self, _rel: &str) -> Result<()> {
         Err(Error::Unavailable)
     }
     pub fn rename_file(&self, _rel: &str, _new_name: &str) -> Result<String> {

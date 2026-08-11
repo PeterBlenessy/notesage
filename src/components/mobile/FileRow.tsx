@@ -1,7 +1,7 @@
-import { ChevronRight, Folder, FileText, FileImage, FileType, FileCode, File, Share } from "lucide-react";
+import { ChevronRight, Folder, FileText, FileImage, FileType, FileCode, File, Share, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { FileEntry } from "@/lib/tauri";
-import { iosShareFile } from "@/lib/ios-api";
+import { iosShareFile, iosDeleteFile } from "@/lib/ios-api";
 import { cn } from "@/lib/utils";
 import { SwipeRevealRow, type SwipeRevealAction } from "./SwipeRevealRow";
 
@@ -78,6 +78,9 @@ interface FileRowProps {
   entry: FileEntry;
   active?: boolean;
   onActivate: (entry: FileEntry) => void;
+  /** Called after a row action mutates the listing (delete) so the parent
+   *  can refresh. */
+  onChanged?: () => void;
 }
 
 /**
@@ -85,11 +88,14 @@ interface FileRowProps {
  * row actions (Share today; #619 adds Delete to this same array, without
  * touching the gesture in `SwipeRevealRow`).
  */
-export function FileRow({ entry, active, onActivate }: FileRowProps) {
+export function FileRow({ entry, active, onActivate, onChanged }: FileRowProps) {
   const Icon = iconFor(entry);
   // Directories have no share concept in Notesage today — `ios_share_file`
   // copies a single file to a temp location for the share sheet, mirroring
   // its only other consumer (the Reader, which only ever shares a document).
+  // Delete is EDGE-MOST (last) — the full-swipe gesture commits the last
+  // action, and in iOS that is always the destructive one. No confirm:
+  // iCloud's "Recently Deleted" gives 30-day recovery (#618).
   const actions: SwipeRevealAction[] = entry.is_directory
     ? []
     : [
@@ -99,6 +105,17 @@ export function FileRow({ entry, active, onActivate }: FileRowProps) {
           icon: Share,
           onSelect: () => {
             void iosShareFile(entry.path).catch((err) => toast.error(`Couldn't share: ${err}`));
+          },
+        },
+        {
+          id: "delete",
+          label: "Delete",
+          icon: Trash2,
+          tone: "destructive",
+          onSelect: () => {
+            void iosDeleteFile(entry.path)
+              .then(() => onChanged?.())
+              .catch((err) => toast.error(`Couldn't delete: ${err}`));
           },
         },
       ];

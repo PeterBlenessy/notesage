@@ -330,7 +330,7 @@ export function LibraryBrowser() {
               <ul>
                 {visible.map((entry) => (
                   <li key={entry.path}>
-                    <FileRow entry={entry} onActivate={onActivate} />
+                    <FileRow entry={entry} onActivate={onActivate} onChanged={() => void load(true)} />
                   </li>
                 ))}
               </ul>

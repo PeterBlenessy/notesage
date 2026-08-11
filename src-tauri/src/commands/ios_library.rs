@@ -261,6 +261,26 @@ pub async fn ios_create_directory(
     }
 }
 
+/// Delete a FILE relative to the granted library root (#618 swipe-delete).
+/// Directories are refused natively; iCloud's "Recently Deleted" (30-day
+/// recovery) is the safety net for the no-confirm swipe gesture.
+#[tauri::command]
+pub async fn ios_delete_file(app: tauri::AppHandle, rel_path: String) -> Result<(), String> {
+    let rel = sanitize_rel_path(&rel_path)?;
+    if rel.is_empty() {
+        return Err("Cannot delete the library root".into());
+    }
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::delete_file(&app, &rel).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, rel);
+        Err("ios_delete_file is only available on iOS".into())
+    }
+}
+
 /// Rename a file WITHIN its directory (#586 — the title-becomes-filename
 /// primitive, not a general move). `new_name` is a single validated path
 /// segment; the native side dedupes on collision and returns the relative
@@ -430,6 +450,10 @@ mod ios_impl {
         app.notesage_ios().create_directory(rel).map_err(|e| e.to_string())
     }
 
+    pub async fn delete_file(app: &AppHandle, rel: &str) -> Result<(), String> {
+        app.notesage_ios().delete_file(rel).map_err(|e| e.to_string())
+    }
+
     pub async fn rename_file(app: &AppHandle, rel: &str, new_name: &str) -> Result<String, String> {
         app.notesage_ios().rename_file(rel, new_name).map_err(|e| e.to_string())
     }
@@ -500,6 +524,7 @@ mod tests {
             "ios_create_file",
             "ios_create_directory",
             "ios_rename_file",
+            "ios_delete_file",
         ] {
             let body_start = src
                 .find(&format!("pub async fn {cmd}("))
@@ -519,7 +544,7 @@ mod tests {
         // Same source-shape idiom as the sanitizer test above, for the same
         // reason: the command bodies are iOS-only seams.
         let src = include_str!("ios_library.rs");
-        for cmd in ["ios_write_file", "ios_create_file", "ios_create_directory", "ios_rename_file"] {
+        for cmd in ["ios_write_file", "ios_create_file", "ios_create_directory", "ios_rename_file", "ios_delete_file"] {
             let body_start = src
                 .find(&format!("pub async fn {cmd}("))
                 .unwrap_or_else(|| panic!("{cmd} not found"));

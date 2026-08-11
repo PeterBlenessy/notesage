@@ -278,6 +278,31 @@ enum LibraryAccess {
         return finalRel
     }
 
+    /// Delete a FILE (never a directory — recursive folder deletion stays off
+    /// the surface, #618) with a coordinated `.forDeleting` write. Deletions
+    /// inside the iCloud container land in iCloud Drive's "Recently Deleted"
+    /// (30-day recovery), which is the safety net for the no-confirm swipe.
+    static func deleteFile(_ rel: String) throws {
+        guard !rel.isEmpty else { throw LibraryAccessError.ioError("cannot delete the library root") }
+        let root = try resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let fileURL = root.appendingPathComponent(rel)
+        if (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
+            throw LibraryAccessError.ioError("directories cannot be deleted from the app")
+        }
+        var coordError: NSError?
+        var result: Result<Void, Error> = .failure(LibraryAccessError.ioError("uncoordinated"))
+        NSFileCoordinator().coordinate(writingItemAt: fileURL, options: .forDeleting, error: &coordError) { url in
+            do {
+                try FileManager.default.removeItem(at: url)
+                result = .success(())
+            } catch { result = .failure(error) }
+        }
+        if let coordError { throw coordError }
+        try result.get()
+    }
+
     /// First free name for `rel` under `root`: `stem.ext`, `stem-1.ext`, `stem-2.ext`, …
     private static func deduped(_ rel: String, under root: URL) -> (URL, String) {
         let ns = rel as NSString

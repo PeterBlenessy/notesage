@@ -110,6 +110,14 @@ export function iosSetChrome(spec: {
 }
 
 /**
+ * Delete a FILE (never a directory) under the granted library root. iCloud's
+ * "Recently Deleted" (30-day recovery) backs the no-confirm swipe gesture.
+ */
+export function iosDeleteFile(relPath: string): Promise<void> {
+  return invoke("ios_delete_file", { relPath });
+}
+
+/**
  * Rename a file within its directory (the title-becomes-filename primitive).
  * `newName` is a single path segment; the native side dedupes on collision.
  * Resolves the relative path actually produced.

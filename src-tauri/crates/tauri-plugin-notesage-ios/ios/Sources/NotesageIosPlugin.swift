@@ -306,6 +306,14 @@ class NotesageIosPlugin: Plugin {
     } catch { invoke.reject(String(describing: error)) }
   }
 
+  @objc public func deleteFile(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(RelPathArgs.self)
+      try LibraryAccess.deleteFile(args.relPath)
+      invoke.resolve()
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
   @objc public func renameFile(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(RenameArgs.self)
