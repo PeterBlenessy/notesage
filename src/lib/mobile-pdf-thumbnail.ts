@@ -39,6 +39,7 @@ function ensureBlobWorker(): Promise<void> {
 export async function renderPdfThumbnailDataUrl(
   bytes: Uint8Array,
   maxWidth = 240,
+  isStale: () => boolean = () => false,
 ): Promise<string> {
   await ensureBlobWorker();
   const loadingTask = pdfjsLib.getDocument({
@@ -48,7 +49,9 @@ export async function renderPdfThumbnailDataUrl(
   });
   try {
     const doc = await loadingTask.promise;
+    if (isStale()) throw new Error("thumbnail superseded");
     const page = await doc.getPage(1);
+    if (isStale()) throw new Error("thumbnail superseded");
     const baseViewport = page.getViewport({ scale: 1 });
     const scale = maxWidth / baseViewport.width;
     const viewport = page.getViewport({ scale });
