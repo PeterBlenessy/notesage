@@ -53,6 +53,12 @@ export function SwipeRevealRow({
   const suppressClickRef = useRef(false);
 
   const offset = dragOffset ?? (open ? -revealWidth : 0);
+  // 0 → fully closed, 1 → strip fully revealed. Drives BOTH polish effects
+  // (#651, Notes reference): the action circles zoom in with the swipe (and
+  // zoom back out on release/close), and the row content's trailing corners
+  // round in step with the drag — never an instant square→rounded jump.
+  const revealProgress = revealWidth > 0 ? Math.min(1, Math.abs(offset) / revealWidth) : 0;
+  const animating = dragOffset === null;
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (actions.length === 0) return;
@@ -147,10 +153,25 @@ export function SwipeRevealRow({
                       ? "bg-[var(--color-destructive)] text-white"
                       : "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]",
                   )}
+                  style={{
+                    transform: `scale(${0.4 + 0.6 * revealProgress})`,
+                    opacity: 0.2 + 0.8 * revealProgress,
+                    transition: animating
+                      ? "transform 260ms cubic-bezier(0.34, 1.4, 0.5, 1), opacity 200ms ease"
+                      : "none",
+                  }}
                 >
                   <Icon strokeWidth={1.5} className="h-5 w-5" />
                 </span>
-                <span className="text-[11px] font-medium text-muted-foreground">{action.label}</span>
+                <span
+                  className="text-[11px] font-medium text-muted-foreground"
+                  style={{
+                    opacity: revealProgress,
+                    transition: animating ? "opacity 200ms ease" : "none",
+                  }}
+                >
+                  {action.label}
+                </span>
               </button>
             );
           })}
@@ -164,9 +185,13 @@ export function SwipeRevealRow({
         onClickCapture={onContentClickCapture}
         style={{
           transform: `translateX(${offset}px)`,
-          transition: dragOffset !== null ? "none" : "transform 240ms cubic-bezier(0.25, 0.8, 0.35, 1)",
+          borderTopRightRadius: 14 * revealProgress,
+          borderBottomRightRadius: 14 * revealProgress,
+          transition: animating
+            ? "transform 240ms cubic-bezier(0.25, 0.8, 0.35, 1), border-top-right-radius 240ms ease, border-bottom-right-radius 240ms ease"
+            : "none",
         }}
-        className="relative bg-background"
+        className="relative overflow-hidden bg-background"
       >
         {children}
       </div>
