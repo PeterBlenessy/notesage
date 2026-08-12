@@ -1,6 +1,22 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.31",
+      "date": "2026-08-12",
+      "previousVersion": "0.48.0-alpha.30",
+      "sections": {},
+      "underTheHood": [
+        "iOS: native QuickLook preview for videos, audio and office documents (#648)",
+        "iOS: system-generated thumbnails via QLThumbnailGenerator (#649)",
+        "iOS: foreground refresh after shares + working pull-to-refresh (#654)",
+        "iOS: swipe-action polish — zoom-in circles, animated rounded trailing edge (#659)",
+        "feat(mobile): swipe-action polish — circles zoom with the swipe, trailing edge rounds in step",
+        "fix(mobile): foreground refresh after a share + working pull-to-refresh (#650)",
+        "feat(mobile): system-generated thumbnails — QLThumbnailGenerator replaces the web raster",
+        "feat(mobile): native QuickLook for videos, audio and office documents"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.30",
       "date": "2026-08-12",
       "previousVersion": "0.48.0-alpha.29",
