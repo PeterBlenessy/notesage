@@ -228,13 +228,20 @@ describe("sort toggle (#632)", () => {
       ["Gallery", false],
       ["Alphabetical", true],
       ["Date modified", false],
+      // Group by section (#652), its own divider-led group beneath sort.
+      ["Pinned", false],
+      ["None", true],
     ]);
     // The sort section starts with a divider.
     expect(captured.topRight?.menu?.[2]?.sectionBreak).toBe(true);
+    // So does the Group by section.
+    expect(captured.topRight?.menu?.[4]?.sectionBreak).toBe(true);
 
     useMobileStore.getState().setSortMode("modified");
     await waitFor(() =>
-      expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([true, false, false, true]),
+      expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([
+        true, false, false, true, false, true,
+      ]),
     );
   });
 });
@@ -639,7 +646,14 @@ describe("large file guard (issue #616)", () => {
     fireEvent.click(await screen.findByText("export.xml"));
 
     expect(await screen.findByText("Too large to open")).toBeTruthy();
-    expect(calledCommands()).not.toContain("ios_read_file");
+    // The Pinned group's own `.notesage/pins.json` read (#652) is unrelated
+    // background bookkeeping and does hit ios_read_file on mount — the
+    // regression this guards against is specifically the oversized file's
+    // own content ever being read.
+    const readFileCalls = invokeMock.mock.calls.filter((c) => c[0] === "ios_read_file");
+    expect(
+      readFileCalls.some((c) => (c[1] as { relPath?: string } | undefined)?.relPath === "export.xml"),
+    ).toBe(false);
   });
 
   it("offers the native share sheet from the decline card", async () => {

@@ -1,7 +1,15 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { FileEntry } from "@/lib/tauri";
+import { FileEntry, tauriApi } from "@/lib/tauri";
 import { canonicalizeMacPath } from "@/lib/path-utils";
+import { useSettingsStore } from "@/stores/settings-store";
+import {
+  pinsFilePath,
+  derivePinsFilePaths,
+  parsePinsFileContent,
+  serializePinsFileContent,
+  mergePinsFromFile,
+} from "@/lib/pins-file";
 
 
 export interface WorkspaceProject {
@@ -76,6 +84,13 @@ interface WorkspaceStore {
   pinFile: (path: string) => void;
   unpinFile: (path: string) => void;
   reorderPinnedFiles: (from: number, to: number) => void;
+  /**
+   * Read-only merge (#652): pulls remote-only pins from the shared
+   * `library-root/.notesage/pins.json` into local `pinnedFiles` — additive,
+   * never drops an existing local pin. Safe to call against a library root
+   * that has no pins.json yet (treated as an empty remote set).
+   */
+  syncPinsFromLibraryRoot: (libraryRoot: string) => Promise<void>;
 
   // Folder expansion
   toggleFolder: (path: string) => void;
@@ -229,16 +244,33 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       },
 
       pinFile: (path) => {
-        set((state) => {
-          if (state.pinnedFiles.includes(path)) return state;
-          return { pinnedFiles: [...state.pinnedFiles, path] };
-        });
+        const before = get().pinnedFiles;
+        if (before.includes(path)) return;
+        set({ pinnedFiles: [...before, path] });
+        void writeThroughPinsFile(get().pinnedFiles);
       },
 
       unpinFile: (path) => {
+        const before = get().pinnedFiles;
+        if (!before.includes(path)) return;
+        set({ pinnedFiles: before.filter((p) => p !== path) });
+        void writeThroughPinsFile(get().pinnedFiles);
+      },
+
+      syncPinsFromLibraryRoot: async (libraryRoot) => {
+        let remoteRel: string[] = [];
+        try {
+          const raw = await tauriApi.readFile(pinsFilePath(libraryRoot));
+          remoteRel = parsePinsFileContent(raw);
+        } catch {
+          // No pins.json yet (fresh library, or a library never opened by a
+          // build with this feature) — treat as an empty remote pin set.
+          remoteRel = [];
+        }
         set((state) => {
-          if (!state.pinnedFiles.includes(path)) return state;
-          return { pinnedFiles: state.pinnedFiles.filter((p) => p !== path) };
+          const merged = mergePinsFromFile(state.pinnedFiles, remoteRel, libraryRoot);
+          if (merged.length === state.pinnedFiles.length) return state;
+          return { pinnedFiles: merged };
         });
       },
 
@@ -362,3 +394,35 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
     }
   )
 );
+
+/**
+ * Push the subset of `pinnedFiles` that lives inside the synced library
+ * root (#652) to the shared `library-root/.notesage/pins.json` — the file
+ * iOS reads to populate its Pinned group. No-ops when no library root is
+ * known yet (iCloud unavailable, or not yet detected at startup). Local-
+ * authoritative: writes exactly what the desktop currently has pinned
+ * inside the root, so an unpin is never silently undone by a stale remote
+ * read. Best-effort — a write failure (permissions, iCloud not ready) must
+ * never break local pin/unpin.
+ */
+async function writeThroughPinsFile(pinnedFiles: string[]): Promise<void> {
+  const libraryRoot = useSettingsStore.getState().icloudNotesagePath;
+  if (!libraryRoot) return;
+  const relPaths = derivePinsFilePaths(pinnedFiles, libraryRoot);
+  if (relPaths.length === 0) {
+    // Nothing pinned inside the library root — skip the I/O rather than
+    // writing an empty file for a pin/unpin that never touched the root.
+    return;
+  }
+  const filePath = pinsFilePath(libraryRoot);
+  try {
+    // `.notesage/` may not exist yet at the library root (it isn't
+    // necessarily a project itself) — create_directory is a no-op when it
+    // already does, avoiding a Rust-side change just to bootstrap it.
+    await tauriApi.createDirectory(`${libraryRoot}/.notesage`);
+    await tauriApi.markSelfWrite(filePath);
+    await tauriApi.writeFile(filePath, serializePinsFileContent(relPaths));
+  } catch {
+    // Best-effort — see doc comment above.
+  }
+}

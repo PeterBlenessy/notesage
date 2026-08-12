@@ -5,6 +5,7 @@ import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory, iosCreateDirectory, iosTextPrompt, iosQuickLook } from "@/lib/ios-api";
 import { toast } from "sonner";
 import { useMobileStore } from "@/stores/mobile-store";
+import { groupByPinned } from "@/lib/pins-file";
 import { FileRow, classifyFile } from "./FileRow";
 import { GalleryView } from "./GalleryView";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,18 @@ export function LibraryBrowser() {
   const setSortMode = useMobileStore((s) => s.setSortMode);
   const viewMode = useMobileStore((s) => s.viewMode);
   const setViewMode = useMobileStore((s) => s.setViewMode);
+  const groupByMode = useMobileStore((s) => s.groupByMode);
+  const setGroupByMode = useMobileStore((s) => s.setGroupByMode);
+  const pinnedPaths = useMobileStore((s) => s.pinnedPaths);
+  const loadPinnedPaths = useMobileStore((s) => s.loadPinnedPaths);
   const a11y = useA11yPrefs();
+
+  // Pinned group (#652): the shared library-root pins.json is read once on
+  // mount — desktop is the sole writer in this slice, so there is no
+  // per-navigation refresh signal to key off yet.
+  useEffect(() => {
+    void loadPinnedPaths();
+  }, [loadPinnedPaths]);
 
   const currentRelPath = folderStack.length === 0 ? "" : folderStack[folderStack.length - 1].relPath;
   const currentName = folderStack.length === 0 ? libraryName || "Notesage" : folderStack[folderStack.length - 1].name;
@@ -225,6 +237,19 @@ export function LibraryBrowser() {
             icon: "clock",
             selected: sortMode === "modified",
           },
+          {
+            id: "group-pinned",
+            title: "Pinned",
+            icon: "pin.fill",
+            selected: groupByMode === "pinned",
+            sectionBreak: true,
+          },
+          {
+            id: "group-none",
+            title: "None",
+            icon: "line.3.horizontal",
+            selected: groupByMode === "none",
+          },
         ],
       },
       bottomRight: atRoot
@@ -249,6 +274,8 @@ export function LibraryBrowser() {
       "view-gallery": () => setViewMode("gallery"),
       "sort-name": () => setSortMode("name"),
       "sort-modified": () => setSortMode("modified"),
+      "group-pinned": () => setGroupByMode("pinned"),
+      "group-none": () => setGroupByMode("none"),
       "create-note": () => createNote(),
       "create-folder": () => void createFolder(),
       "search-query": (value?: string) => setQuery(value ?? ""),
@@ -380,15 +407,33 @@ export function LibraryBrowser() {
                 />
               );
             }
-            return (
+            const renderRows = (list: FileEntry[]) => (
               <ul>
-                {visible.map((entry) => (
+                {list.map((entry) => (
                   <li key={entry.path}>
                     <FileRow entry={entry} onActivate={onActivate} onChanged={() => void load(true)} />
                   </li>
                 ))}
               </ul>
             );
+            if (groupByMode === "pinned") {
+              const { pinned, rest } = groupByPinned(visible, pinnedPaths, (e) => e.path);
+              if (pinned.length > 0) {
+                return (
+                  <>
+                    <h2
+                      className="px-4 pb-1 pt-3 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] font-semibold uppercase tracking-wider text-muted-foreground"
+                      style={{ fontWeight: "max(600, var(--ns-a11y-weight, 400))" }}
+                    >
+                      Pinned
+                    </h2>
+                    {renderRows(pinned)}
+                    {rest.length > 0 && renderRows(rest)}
+                  </>
+                );
+              }
+            }
+            return renderRows(visible);
           })()}
       </div>
 

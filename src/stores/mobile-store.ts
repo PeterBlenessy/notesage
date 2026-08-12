@@ -14,7 +14,9 @@ import {
   iosGetLibraryGrant,
   iosPickLibraryFolder,
   iosClearLibraryGrant,
+  iosReadFile,
 } from "@/lib/ios-api";
+import { PINS_FILE_REL_PATH, parsePinsFileContent } from "@/lib/pins-file";
 
 /**
  * - `unknown`  — not yet resolved (initial; show a neutral splash)
@@ -50,6 +52,10 @@ export type SortMode = "name" | "modified";
 /** List (single-column) vs. gallery (grid of preview cards) library layout (#633). */
 export type ViewMode = "list" | "gallery";
 
+/** Library listing grouping (#652): flat, or a labeled "Pinned" section on
+ *  top followed by the rest in the existing sort order. Persisted like
+ *  sortMode/viewMode. */
+export type GroupByMode = "none" | "pinned";
 
 interface MobileStore {
   grantState: GrantState;
@@ -65,6 +71,13 @@ interface MobileStore {
   /** List vs. gallery layout for the library listing; global (not per-folder),
    *  persists across app relaunches. */
   viewMode: ViewMode;
+  /** Root-relative pinned paths read from the shared library-root
+   *  `.notesage/pins.json` (#652) — read-only on iOS in this slice, desktop
+   *  is the only writer. Not persisted: always freshly re-read from disk
+   *  (a missing file resolves to an empty array, never throws). */
+  pinnedPaths: string[];
+  /** Library-listing grouping mode; persisted like sortMode. */
+  groupByMode: GroupByMode;
 
 
   /** Current folder relative path (`""` at root). */
@@ -92,6 +105,11 @@ interface MobileStore {
 
   setSortMode: (mode: SortMode) => void;
 
+  /** Reload `pinnedPaths` from `.notesage/pins.json` at the library root.
+   *  Tolerant of a missing file — resolves to an empty array, never throws. */
+  loadPinnedPaths: () => Promise<void>;
+  setGroupByMode: (mode: GroupByMode) => void;
+
   /** Test/reset helper. */
   reset: () => void;
 }
@@ -106,6 +124,8 @@ export const useMobileStore = create<MobileStore>()(
       recentlyRead: [],
       sortMode: "name",
       viewMode: "list",
+      pinnedPaths: [],
+      groupByMode: "none",
 
 
       currentRelPath: () => {
@@ -200,6 +220,19 @@ export const useMobileStore = create<MobileStore>()(
 
       setViewMode: (mode) => set({ viewMode: mode }),
 
+      loadPinnedPaths: async () => {
+        try {
+          const raw = await iosReadFile(PINS_FILE_REL_PATH);
+          set({ pinnedPaths: parsePinsFileContent(raw) });
+        } catch {
+          // Missing pins.json (fresh library, or a library never opened by a
+          // build with this feature) — resolve to an empty set, never throw.
+          set({ pinnedPaths: [] });
+        }
+      },
+
+      setGroupByMode: (mode) => set({ groupByMode: mode }),
+
       reset: () =>
         set({
           grantState: "unknown",
@@ -209,6 +242,8 @@ export const useMobileStore = create<MobileStore>()(
           recentlyRead: [],
           sortMode: "name",
           viewMode: "list",
+          pinnedPaths: [],
+          groupByMode: "none",
 
         }),
     }),
@@ -221,6 +256,7 @@ export const useMobileStore = create<MobileStore>()(
         recentlyRead: s.recentlyRead,
         sortMode: s.sortMode,
         viewMode: s.viewMode,
+        groupByMode: s.groupByMode,
       }),
 
     },
