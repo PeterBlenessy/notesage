@@ -3,6 +3,7 @@ import { toast } from "sonner";
 import type { FileEntry } from "@/lib/tauri";
 import { iosShareFile, iosDeleteFile } from "@/lib/ios-api";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 import { SwipeRevealRow, type SwipeRevealAction } from "./SwipeRevealRow";
 
 /** Classify a file by extension for icon + viewer routing. */
@@ -73,7 +74,7 @@ export function formatModified(seconds: number, now: Date = new Date()): string 
   }
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
-  if (sameDay(d, yesterday)) return "Yesterday";
+  if (sameDay(d, yesterday)) return t("section.yesterday");
   return d.toLocaleDateString(undefined, {
     day: "numeric",
     month: "short",
@@ -108,21 +109,21 @@ export function FileRow({ entry, active, onActivate, onChanged }: FileRowProps) 
     : [
         {
           id: "share",
-          label: "Share",
+          label: t("action.share"),
           icon: Share,
           onSelect: () => {
-            void iosShareFile(entry.path).catch((err) => toast.error(`Couldn't share: ${err}`));
+            void iosShareFile(entry.path).catch((err) => toast.error(t("action.shareFailed", { error: String(err) })));
           },
         },
         {
           id: "delete",
-          label: "Delete",
+          label: t("action.delete"),
           icon: Trash2,
           tone: "destructive",
           onSelect: () => {
             void iosDeleteFile(entry.path)
               .then(() => onChanged?.())
-              .catch((err) => toast.error(`Couldn't delete: ${err}`));
+              .catch((err) => toast.error(t("action.deleteFailed", { error: String(err) })));
           },
         },
       ];
