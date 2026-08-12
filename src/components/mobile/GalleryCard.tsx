@@ -83,12 +83,15 @@ export function GalleryCard({ entry, currentFolderName, theme, onActivate }: Gal
         ) : thumbnail.kind === "markdown" ? (
           // Safe to inject: `renderMarkdownFragment` strips raw HTML at the
           // source (comrak run without `unsafe_`) — same guarantee the
-          // Reader's article view relies on. Scaled down via a tiny font
-          // rather than a CSS transform (simpler, no counter-scale math),
-          // clamped by the fixed aspect-square box, and faded via a mask so
-          // an overflowing preview doesn't hard-cut mid-line.
+          // Reader's article view relies on. Scaled down via a tiny BASE font
+          // and BROWSER-DEFAULT element styles, which are em-relative and
+          // shrink with it. Deliberately NOT `.ProseMirror`: editor.css is
+          // un-layered, so its rem-fixed heading sizes and desktop padding
+          // variables beat any Tailwind utility — that combination rendered
+          // giant clipped headings shoved right by a 6rem left pad (Peter's
+          // gallery bug). Faded via a mask so overflow doesn't hard-cut.
           <span
-            className="ProseMirror pointer-events-none absolute inset-0 select-none overflow-hidden p-2 text-left text-[6px] leading-[1.4] text-foreground"
+            className="pointer-events-none absolute inset-0 block select-none overflow-hidden p-2 text-left text-[6px] leading-[1.4] text-foreground [&_*]:max-w-full"
             style={{
               maskImage: "linear-gradient(to bottom, black 60%, transparent 100%)",
               WebkitMaskImage: "linear-gradient(to bottom, black 60%, transparent 100%)",
