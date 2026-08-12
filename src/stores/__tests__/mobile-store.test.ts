@@ -153,3 +153,49 @@ describe("mobile-store view mode (#633 — gallery view)", () => {
     expect(persisted.viewMode).toBe("gallery");
   });
 });
+
+describe("mobile-store pinned paths & group-by (#652)", () => {
+  it("loadPinnedPaths populates pinnedPaths from .notesage/pins.json", async () => {
+    setMockInvokeHandler("ios_read_file", (args) => {
+      expect((args as { relPath: string }).relPath).toBe(".notesage/pins.json");
+      return JSON.stringify({ paths: ["a.md", "Sub/b.md"] });
+    });
+    await store().loadPinnedPaths();
+    expect(store().pinnedPaths).toEqual(["a.md", "Sub/b.md"]);
+  });
+
+  it("resolves pinnedPaths to an empty array without throwing when pins.json is missing", async () => {
+    // ios_read_file deliberately unmocked — invoke rejects, mirroring a
+    // missing file (fresh library, or a library never opened by a build
+    // with this feature).
+    await expect(store().loadPinnedPaths()).resolves.toBeUndefined();
+    expect(store().pinnedPaths).toEqual([]);
+  });
+
+  it("defaults groupByMode to none", () => {
+    expect(store().groupByMode).toBe("none");
+  });
+
+  it("setGroupByMode switches to pinned and back", () => {
+    store().setGroupByMode("pinned");
+    expect(store().groupByMode).toBe("pinned");
+    store().setGroupByMode("none");
+    expect(store().groupByMode).toBe("none");
+  });
+
+  it("reset() returns groupByMode to none and clears pinnedPaths", () => {
+    store().setGroupByMode("pinned");
+    useMobileStore.setState({ pinnedPaths: ["a.md"] });
+    store().reset();
+    expect(store().groupByMode).toBe("none");
+    expect(store().pinnedPaths).toEqual([]);
+  });
+
+  it("groupByMode is included in the persisted (partialize'd) state — survives a relaunch, like sortMode", () => {
+    store().setGroupByMode("pinned");
+    const persistApi = (useMobileStore as unknown as { persist: { getOptions: () => { partialize?: (s: unknown) => unknown } } }).persist;
+    const partialize = persistApi.getOptions().partialize;
+    const persisted = partialize!(store()) as { groupByMode?: string };
+    expect(persisted.groupByMode).toBe("pinned");
+  });
+});

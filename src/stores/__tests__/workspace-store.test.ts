@@ -65,7 +65,9 @@ vi.mock('@/lib/tauri-storage', () => {
 // Imports
 // ---------------------------------------------------------------------------
 
+import { invoke } from '@tauri-apps/api/core';
 import { useWorkspaceStore } from '../workspace-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import type { FileEntry } from '@/lib/tauri';
 
 // ---------------------------------------------------------------------------
@@ -810,5 +812,161 @@ describe('pinnedFiles', () => {
     await waitForPersist();
 
     expect(useWorkspaceStore.getState().pinnedFiles).toEqual([]);
+  });
+});
+
+// ===========================================================================
+// Shared pins.json write-through & sync (iOS Pinned group, #652)
+// ===========================================================================
+
+describe('pins.json write-through & sync (#652)', () => {
+  const LIBRARY_ROOT = '/Users/x/Library/Mobile Documents/com~apple~CloudDocs/Notesage';
+  const PINS_PATH = `${LIBRARY_ROOT}/.notesage/pins.json`;
+
+  beforeEach(() => {
+    useSettingsStore.getState().setICloudNotesagePath(LIBRARY_ROOT);
+    vi.mocked(invoke).mockReset();
+    vi.mocked(invoke).mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    useSettingsStore.getState().setICloudNotesagePath(null);
+  });
+
+  it('pinning a file inside the library root writes/updates pins.json with the relative path', async () => {
+    const writeCalls: Array<{ path: string; content: string }> = [];
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
+      if (cmd === 'read_file') throw new Error('file not found');
+      if (cmd === 'write_file') {
+        writeCalls.push(args as { path: string; content: string });
+      }
+      return null;
+    });
+
+    useWorkspaceStore.getState().pinFile(`${LIBRARY_ROOT}/notes/a.md`);
+    await waitForPersist();
+
+    expect(writeCalls).toHaveLength(1);
+    expect(writeCalls[0].path).toBe(PINS_PATH);
+    expect(JSON.parse(writeCalls[0].content)).toEqual({ paths: ['notes/a.md'] });
+  });
+
+  it('unpinning a file removes its path from pins.json', async () => {
+    const writeCalls: Array<{ content: string }> = [];
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
+      if (cmd === 'read_file') throw new Error('file not found');
+      if (cmd === 'write_file') {
+        writeCalls.push(args as { content: string });
+      }
+      return null;
+    });
+
+    useWorkspaceStore.getState().pinFile(`${LIBRARY_ROOT}/notes/a.md`);
+    await waitForPersist();
+    useWorkspaceStore.getState().pinFile(`${LIBRARY_ROOT}/notes/b.md`);
+    await waitForPersist();
+    useWorkspaceStore.getState().unpinFile(`${LIBRARY_ROOT}/notes/a.md`);
+    await waitForPersist();
+
+    const last = writeCalls[writeCalls.length - 1];
+    expect(JSON.parse(last.content)).toEqual({ paths: ['notes/b.md'] });
+  });
+
+  it('unpinning the LAST pinned in-root file still writes pins.json with an empty paths array (regression — aw-review gap on PR #660)', async () => {
+    // Real-world bug found in review: writeThroughPinsFile short-circuited
+    // whenever the RESULTING relative-paths array was empty, which meant
+    // the 1-pinned -> 0-pinned transition never reached write_file at all —
+    // pins.json kept its stale content forever, so iOS never learned the
+    // note was unpinned. The fix gates the skip on whether the pin/unpin
+    // action's own path was inside the library root, not on the resulting
+    // count, so this transition must still fire a write with an empty list.
+    const writeCalls: Array<{ path: string; content: string }> = [];
+    vi.mocked(invoke).mockImplementation(async (cmd: string, args?: unknown) => {
+      if (cmd === 'read_file') throw new Error('file not found');
+      if (cmd === 'write_file') {
+        writeCalls.push(args as { path: string; content: string });
+      }
+      return null;
+    });
+
+    useWorkspaceStore.getState().pinFile(`${LIBRARY_ROOT}/notes/a.md`);
+    await waitForPersist();
+    useWorkspaceStore.getState().unpinFile(`${LIBRARY_ROOT}/notes/a.md`);
+    await waitForPersist();
+
+    const last = writeCalls[writeCalls.length - 1];
+    expect(last).toBeDefined();
+    expect(last.path).toBe(PINS_PATH);
+    expect(JSON.parse(last.content)).toEqual({ paths: [] });
+  });
+
+  it('pinning a file OUTSIDE the library root does NOT write to pins.json', async () => {
+    let writeCalled = false;
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === 'read_file') throw new Error('file not found');
+      if (cmd === 'write_file') writeCalled = true;
+      return null;
+    });
+
+    useWorkspaceStore.getState().pinFile('/Users/x/elsewhere/note.md');
+    await waitForPersist();
+
+    expect(writeCalled).toBe(false);
+    // It still stays local-only in pinnedFiles.
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual(['/Users/x/elsewhere/note.md']);
+  });
+
+  it('unpinning a file OUTSIDE the library root does NOT write to pins.json', async () => {
+    // Companion regression guard for the fix above: the skip decision must
+    // stay keyed on "is the changed path inside the root", not merely "is
+    // the resulting in-root pin count zero" — an outside-root unpin should
+    // never touch pins.json at all, in either direction.
+    let writeCalled = false;
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === 'read_file') throw new Error('file not found');
+      if (cmd === 'write_file') writeCalled = true;
+      return null;
+    });
+
+    useWorkspaceStore.getState().pinFile('/Users/x/elsewhere/note.md');
+    await waitForPersist();
+    useWorkspaceStore.getState().unpinFile('/Users/x/elsewhere/note.md');
+    await waitForPersist();
+
+    expect(writeCalled).toBe(false);
+  });
+
+  it('opening a library that has no pins.json yet does not throw — the read path treats "not found" as an empty set', async () => {
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === 'read_file') throw new Error('file not found');
+      return null;
+    });
+
+    let threw = false;
+    try {
+      await useWorkspaceStore.getState().syncPinsFromLibraryRoot(LIBRARY_ROOT);
+    } catch {
+      threw = true;
+    }
+
+    expect(threw).toBe(false);
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual([]);
+  });
+
+  it('opening a library whose pins.json already exists merges/derives correctly on first read (no duplicates, no data loss)', async () => {
+    useWorkspaceStore.setState({ pinnedFiles: [`${LIBRARY_ROOT}/local-only.md`] });
+    vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+      if (cmd === 'read_file') {
+        return JSON.stringify({ paths: ['remote-only.md', 'local-only.md'] });
+      }
+      return null;
+    });
+
+    await useWorkspaceStore.getState().syncPinsFromLibraryRoot(LIBRARY_ROOT);
+
+    const pinned = useWorkspaceStore.getState().pinnedFiles;
+    expect(pinned).toContain(`${LIBRARY_ROOT}/local-only.md`);
+    expect(pinned).toContain(`${LIBRARY_ROOT}/remote-only.md`);
+    expect(pinned.filter((p) => p === `${LIBRARY_ROOT}/local-only.md`)).toHaveLength(1);
   });
 });
