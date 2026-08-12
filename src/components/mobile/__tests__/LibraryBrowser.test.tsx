@@ -53,17 +53,18 @@ describe("Group by — Pinned (#652)", () => {
       "Group by pinned",
       "Group by recent",
       "Group by date",
+      "Group by type",
     ]);
     // The grouping section opens with a divider, like the sort section.
     expect(groupSection[0].sectionBreak).toBe(true);
-    expect(groupSection.map((m) => m.selected)).toEqual([true, false, false, false]);
+    expect(groupSection.map((m) => m.selected)).toEqual([true, false, false, false, false]);
 
     useMobileStore.getState().setGroupMode("pinned");
     await waitFor(() => {
       const section = captured.topRight!.menu!.filter((m) =>
         m.title.startsWith("Group by") || m.title === "No grouping",
       );
-      expect(section.map((m) => m.selected)).toEqual([false, true, false, false]);
+      expect(section.map((m) => m.selected)).toEqual([false, true, false, false, false]);
     });
   });
 
