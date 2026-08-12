@@ -15,6 +15,8 @@ import {
 } from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
 import { useMobileStore } from "@/stores/mobile-store";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 import { classifyFile } from "./FileRow";
 import { Button } from "@/components/ui/button";
 import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
@@ -85,6 +87,7 @@ const MAX_INLINE_TEXT_BYTES = 5 * 1024 * 1024;
  * placeholders are downloaded on demand.
  */
 export function Reader() {
+  useLocale();
   const openDoc = useMobileStore((s) => s.openDoc);
   const goBack = useMobileStore((s) => s.goBack);
   const openDocument = useMobileStore((s) => s.openDocument);
@@ -413,7 +416,7 @@ export function Reader() {
         await loadRef.current?.();
       }
     } catch (err) {
-      toast.error(`Couldn't save: ${err}`);
+      toast.error(t("reader.saveFailed", { error: String(err) }));
     }
   }, [persistDraft, relPath, name, isNew, goBack, openDocument]);
 
@@ -428,7 +431,7 @@ export function Reader() {
       try {
         await persistDraft();
       } catch (err) {
-        toast.error(`Couldn't save: ${err}`);
+        toast.error(t("reader.saveFailed", { error: String(err) }));
       }
       goBack();
     })();
@@ -453,7 +456,7 @@ export function Reader() {
         : isPdf
         ? {
             kind: "find" as const,
-            placeholder: "Find in document",
+            placeholder: t("reader.find"),
             status: pdfFind.pages > 0 ? `${pdfFind.page} / ${pdfFind.pages}` : undefined,
             current: pdfFind.total > 0 ? pdfFind.current + 1 : undefined,
             total: pdfFind.total > 0 ? pdfFind.total : undefined,
@@ -461,7 +464,7 @@ export function Reader() {
         : searchable
           ? {
               kind: "find" as const,
-              placeholder: "Find in document",
+              placeholder: t("reader.find"),
               current: findTotal > 0 ? findIndex + 1 : undefined,
               total: findTotal > 0 ? findTotal : undefined,
             }
@@ -472,7 +475,7 @@ export function Reader() {
       edit: () => startEdit(),
       save: () => void saveEdit(),
       share: () => {
-        void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
+        void iosShareFile(relPath).catch((err) => toast.error(t("action.shareFailed", { error: String(err) })));
       },
       "search-query": (value?: string) =>
         isPdf ? pdfFindRef.current?.setQuery(value ?? "") : setFindQuery(value ?? ""),
@@ -787,7 +790,7 @@ export function Reader() {
         <SearchIsland
           query={findQuery}
           onQueryChange={setFindQuery}
-          placeholder="Find in document"
+          placeholder={t("reader.find")}
           matches={
             findQuery && findTotal > 0
               ? {
@@ -803,26 +806,26 @@ export function Reader() {
       {!nativeChrome && (
         <>
           <Island corner="top-left">
-            <ChromeButton label="Back" onClick={backAction}>
+            <ChromeButton label={t("reader.back")} onClick={backAction}>
               <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
             </ChromeButton>
           </Island>
           <Island corner="top-right">
             {editing ? (
-              <ChromeButton label="Save" onClick={() => void saveEdit()}>
+              <ChromeButton label={t("reader.save")} onClick={() => void saveEdit()}>
                 <Check strokeWidth={1.5} className="h-4 w-4" />
               </ChromeButton>
             ) : (
               <>
                 {editable && (
-                  <ChromeButton label="Edit" onClick={startEdit}>
+                  <ChromeButton label={t("reader.edit")} onClick={startEdit}>
                     <Pencil strokeWidth={1.5} className="h-4 w-4" />
                   </ChromeButton>
                 )}
                 <ChromeButton
-                  label="Share"
+                  label={t("action.share")}
                   onClick={() => {
-                    void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
+                    void iosShareFile(relPath).catch((err) => toast.error(t("action.shareFailed", { error: String(err) })));
                   }}
                 >
                   <Share strokeWidth={1.5} className="h-4 w-4" />
@@ -845,7 +848,7 @@ export function Reader() {
         <div className="absolute inset-0" style={CONTENT_INSETS}>
           <textarea
             autoFocus
-            aria-label="Note editor"
+            aria-label={t("reader.editor")}
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
             autoCapitalize="sentences"
@@ -860,7 +863,7 @@ export function Reader() {
         // desktop pill, search + page indicator in its bottom-center
         // SearchIsland, back in our top-left island.
         <div className="absolute inset-0">
-          <Suspense fallback={<ReaderMessage spinner>Loading…</ReaderMessage>}>
+          <Suspense fallback={<ReaderMessage spinner>{t("reader.loading")}</ReaderMessage>}>
             <PdfViewer
               filePath={state.filePath}
               fileName={name}
@@ -889,35 +892,35 @@ export function Reader() {
         </div>
       ) : (
       <div ref={scrollerRef} className="absolute inset-0 overflow-y-auto" style={CONTENT_INSETS}>
-        {state.status === "loading" && <ReaderMessage spinner>Loading…</ReaderMessage>}
+        {state.status === "loading" && <ReaderMessage spinner>{t("reader.loading")}</ReaderMessage>}
 
         {state.status === "downloading" && (
-          <ReaderMessage icon={CloudDownload} title="Downloading from iCloud">
-            This note isn't on your device yet. It'll be ready in a moment.
+          <ReaderMessage icon={CloudDownload} title={t("reader.downloading")}>
+            {t("reader.downloadingHint")}
             <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={() => void load()}>
-              Retry
+              {t("reader.retry")}
             </Button>
           </ReaderMessage>
         )}
 
         {state.status === "error" && (
-          <ReaderMessage icon={AlertCircle} title="Couldn't open this file">
+          <ReaderMessage icon={AlertCircle} title={t("reader.openFailed")}>
             <span className="break-words">{state.message}</span>
             <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={() => void load()}>
-              Try again
+              {t("library.tryAgain")}
             </Button>
           </ReaderMessage>
         )}
 
         {state.status === "unsupported" && (
-          <ReaderMessage icon={FileQuestion} title="Can't preview this format yet">
+          <ReaderMessage icon={FileQuestion} title={t("reader.unsupported")}>
             {name.split(".").pop()?.toUpperCase()} files aren't viewable in the
             mobile app yet — open it on your Mac.
           </ReaderMessage>
         )}
 
         {state.status === "too-large" && (
-          <ReaderMessage icon={FileWarning} title="Too large to open">
+          <ReaderMessage icon={FileWarning} title={t("reader.tooLarge")}>
             This file is {formatBytes(state.sizeBytes)} — too large to preview
             safely in Notesage.
             <Button
@@ -925,7 +928,7 @@ export function Reader() {
               size="sm"
               className="ios-press-row mt-4"
               onClick={() => {
-                void iosShareFile(relPath).catch((err) => toast.error(`Couldn't share: ${err}`));
+                void iosShareFile(relPath).catch((err) => toast.error(t("action.shareFailed", { error: String(err) })));
               }}
             >
               Share instead

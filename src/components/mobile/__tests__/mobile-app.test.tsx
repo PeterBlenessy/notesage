@@ -1537,7 +1537,7 @@ describe("accessibility — Dynamic Type + Bold Text (issue #617)", () => {
   it("wires the onboarding body paragraph to scale and weight via the a11y CSS variables", async () => {
     useMobileStore.setState({ grantState: "ungranted" });
     renderWithProviders(<Onboarding />);
-    const body = screen.getByText(/Read your Notesage notes on the go/);
+    const body = screen.getByText(/Read and write your Notesage notes on the go/);
     expect(body.className).toContain("--ns-a11y-scale");
     expect(body.style.fontWeight).toContain("--ns-a11y-weight");
   });
@@ -1545,8 +1545,8 @@ describe("accessibility — Dynamic Type + Bold Text (issue #617)", () => {
   it("wires the onboarding feature title and description to scale and weight via the a11y CSS variables", async () => {
     useMobileStore.setState({ grantState: "ungranted" });
     renderWithProviders(<Onboarding />);
-    const title = screen.getByText("Read-only & private");
-    const description = screen.getByText(/single exception is the/);
+    const title = screen.getByText("Private by design");
+    const description = screen.getByText(/nothing is sent anywhere/);
     expect(title.className).toContain("--ns-a11y-scale");
     expect(title.style.fontWeight).toContain("--ns-a11y-weight");
     expect(description.className).toContain("--ns-a11y-scale");
