@@ -10,6 +10,7 @@
 // PRD: docs/prds/2026-06-28-ios-mobile-app.md (tasks #3, #4, #8).
 
 import Foundation
+import QuickLookThumbnailing
 import UIKit
 import UniformTypeIdentifiers
 
@@ -276,6 +277,35 @@ enum LibraryAccess {
         if let coordError { throw coordError }
         try result.get()
         return finalRel
+    }
+
+    /// Generate a thumbnail PNG via the system QuickLook generator — renders
+    /// PDFs, images, videos and office documents off the app's main thread
+    /// (replaces the WebView-side pdf.js raster for gallery cards). The
+    /// security scope is held until the async generation completes.
+    static func thumbnail(
+        _ rel: String, maxPixel: CGFloat,
+        completion: @escaping (Result<Data, Error>) -> Void
+    ) {
+        do {
+            let root = try resolveRoot()
+            let scoped = root.startAccessingSecurityScopedResource()
+            let fileURL = root.appendingPathComponent(rel)
+            let request = QLThumbnailGenerator.Request(
+                fileAt: fileURL,
+                size: CGSize(width: maxPixel, height: maxPixel),
+                scale: 2,
+                representationTypes: .thumbnail
+            )
+            QLThumbnailGenerator.shared.generateBestRepresentation(for: request) { rep, error in
+                if scoped { root.stopAccessingSecurityScopedResource() }
+                if let rep, let data = rep.uiImage.pngData() {
+                    completion(.success(data))
+                } else {
+                    completion(.failure(error ?? LibraryAccessError.ioError("no thumbnail")))
+                }
+            }
+        } catch { completion(.failure(error)) }
     }
 
     /// Delete a FILE (never a directory — recursive folder deletion stays off

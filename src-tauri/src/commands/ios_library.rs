@@ -270,6 +270,36 @@ pub async fn ios_create_directory(
     }
 }
 
+/// System-generated thumbnail (QLThumbnailGenerator) for gallery cards —
+/// PDFs, images, videos and office docs rendered by the OS, off the
+/// webview thread. Returns RAW PNG bytes (same rationale as
+/// `ios_read_binary`: no JSON work on the WebView main thread).
+#[tauri::command]
+pub async fn ios_thumbnail(
+    app: tauri::AppHandle,
+    rel_path: String,
+    max_pixel: f64,
+) -> Result<tauri::ipc::Response, String> {
+    let rel = sanitize_rel_path(&rel_path)?;
+    if rel.is_empty() {
+        return Err("Cannot thumbnail the library root".into());
+    }
+    #[cfg(target_os = "ios")]
+    {
+        use base64::Engine as _;
+        let b64 = ios_impl::thumbnail(&app, &rel, max_pixel).await?;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(b64)
+            .map_err(|e| format!("invalid base64 from native layer: {e}"))?;
+        Ok(tauri::ipc::Response::new(bytes))
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, rel, max_pixel);
+        Err("ios_thumbnail is only available on iOS".into())
+    }
+}
+
 /// Present the system QuickLook preview for a library file — native
 /// video/audio playback and document rendering for formats the web reader
 /// does not handle. Reads a temp copy; writes nothing to the library.
@@ -496,6 +526,10 @@ mod ios_impl {
 
     pub async fn create_directory(app: &AppHandle, rel: &str) -> Result<String, String> {
         app.notesage_ios().create_directory(rel).map_err(|e| e.to_string())
+    }
+
+    pub async fn thumbnail(app: &AppHandle, rel: &str, max_pixel: f64) -> Result<String, String> {
+        app.notesage_ios().thumbnail_file(rel, max_pixel).map_err(|e| e.to_string())
     }
 
     pub async fn quick_look(app: &AppHandle, rel: &str) -> Result<(), String> {
