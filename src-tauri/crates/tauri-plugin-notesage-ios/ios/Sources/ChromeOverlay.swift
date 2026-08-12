@@ -15,6 +15,42 @@ import WebKit
 /// `notesage:chrome` CustomEvents — the same bridge shape as the keyboard
 /// forwarder. Each host is sized to its button, so the web content around
 /// the chrome keeps receiving touches untouched.
+/// A view whose only content is a vertical alpha gradient of the system
+/// background — nearly opaque at the status-bar edge, fully transparent at
+/// its lower edge, so the top row reads as a soft band rather than a
+/// toolbar (Peter's reference). A UIView subclass (not a bare layer) so the
+/// gradient tracks bounds changes automatically.
+final class GradientScrimView: UIView {
+  override class var layerClass: AnyClass { CAGradientLayer.self }
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    apply()
+  }
+  required init?(coder: NSCoder) {
+    super.init(coder: coder)
+    apply()
+  }
+
+  /// Re-resolve on light/dark flips — cgColor snapshots a dynamic UIColor at
+  /// assignment time and would otherwise stay stale.
+  override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+    super.traitCollectionDidChange(previous)
+    apply()
+  }
+
+  private func apply() {
+    guard let gradient = layer as? CAGradientLayer else { return }
+    let bg = UIColor.systemBackground.resolvedColor(with: traitCollection)
+    gradient.colors = [
+      bg.withAlphaComponent(0.92).cgColor,
+      bg.withAlphaComponent(0.55).cgColor,
+      bg.withAlphaComponent(0).cgColor,
+    ]
+    gradient.locations = [0, 0.55, 1]
+  }
+}
+
 struct ChromeMenuItemSpec: Decodable, Equatable {
   let id: String
   let title: String
@@ -108,6 +144,7 @@ final class ChromeManager {
   /// Apply a chrome spec. Main thread only.
   func apply(_ spec: ChromeSpec, over webView: WKWebView) {
     self.webView = webView
+    installTopScrim(over: webView)
     setCorner("topLeft", item: spec.topLeft, over: webView, leading: true)
     setCorner("topRight", item: spec.topRight, over: webView, leading: false)
     setCorner("bottomRight", item: spec.bottomRight, over: webView, leading: false, top: false)
@@ -116,6 +153,34 @@ final class ChromeManager {
   }
 
   private var breadcrumbHost: UIHostingController<AnyView>?
+  private var topScrim: UIView?
+
+  /// Soft gradient band behind the top row (Peter's reference): stronger at
+  /// the status-bar edge, fading to fully transparent at its lower edge, so
+  /// nothing but the corner buttons is opaque and content passes under it
+  /// without a visible cut line. Blur is deliberately omitted — a material
+  /// here reads as a toolbar, which is exactly what the design avoids.
+  private func installTopScrim(over webView: WKWebView) {
+    guard let container = webView.superview else { return }
+    if let existing = topScrim, existing.superview != nil {
+      container.bringSubviewToFront(existing)
+      return
+    }
+    let scrim = GradientScrimView()
+    scrim.isUserInteractionEnabled = false
+    scrim.translatesAutoresizingMaskIntoConstraints = false
+    // Directly above the webview and below every chrome host, so the
+    // buttons and title stay crisp while content fades under the band.
+    container.insertSubview(scrim, aboveSubview: webView)
+    NSLayoutConstraint.activate([
+      scrim.topAnchor.constraint(equalTo: container.topAnchor),
+      scrim.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      scrim.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      scrim.bottomAnchor.constraint(
+        equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 74),
+    ])
+    topScrim = scrim
+  }
 
   private func setBreadcrumb(_ spec: ChromeBreadcrumbSpec?, over webView: WKWebView) {
     guard let container = webView.superview else { return }
@@ -390,12 +455,16 @@ struct GlassBreadcrumb: View {
         }
       }
       if !(spec.menu ?? []).isEmpty {
+        // The ONLY affordance: a small tinted circle holding the chevron.
+        // The title itself sits bare on the band — no capsule, no border,
+        // no material (Peter's reference screenshot).
         Image(systemName: "chevron.down")
-          .font(.caption2.weight(.semibold))
-          .opacity(0.6)
+          .font(.caption2.weight(.bold))
+          .frame(width: 22, height: 22)
+          .background(Color.primary.opacity(0.14), in: Circle())
       }
     }
-    .padding(.horizontal, 14)
+    .padding(.horizontal, 6)
     .frame(height: 40)
   }
 
@@ -416,10 +485,11 @@ struct GlassBreadcrumb: View {
       } label: {
         label
       }
-      .modifier(GlassCapsuleButton())
+      // Plain button style: no glass capsule, no bordered shape — the
+      // chevron circle is the affordance.
+      .buttonStyle(.plain)
     } else {
       label
-        .background(.ultraThinMaterial, in: Capsule())
     }
   }
 }
