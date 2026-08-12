@@ -229,6 +229,7 @@ describe("sort toggle (#632)", () => {
       ["Alphabetical", true],
       ["Date modified", false],
       ["No grouping", true],
+      ["Group by pinned", false],
       ["Group by recent", false],
       ["Group by date", false],
     ]);
@@ -239,7 +240,7 @@ describe("sort toggle (#632)", () => {
     useMobileStore.getState().setSortMode("modified");
     await waitFor(() =>
       expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([
-        true, false, false, true, true, false, false,
+        true, false, false, true, true, false, false, false,
       ]),
     );
   });
@@ -701,7 +702,13 @@ describe("large file guard (issue #616)", () => {
     fireEvent.click(await screen.findByText("export.xml"));
 
     expect(await screen.findByText("Too large to open")).toBeTruthy();
-    expect(calledCommands()).not.toContain("ios_read_file");
+    // The OVERSIZED file is never read. (A bare "no ios_read_file at all"
+    // assertion no longer holds: the browser reads the shared
+    // `.notesage/pins.json` on mount for the Pinned grouping, #652.)
+    const readPaths = invokeMock.mock.calls
+      .filter((c) => c[0] === "ios_read_file")
+      .map((c) => (c[1] as { relPath: string }).relPath);
+    expect(readPaths).not.toContain("export.xml");
   });
 
   it("offers the native share sheet from the decline card", async () => {

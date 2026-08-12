@@ -14,7 +14,9 @@ import {
   iosGetLibraryGrant,
   iosPickLibraryFolder,
   iosClearLibraryGrant,
+  iosReadFile,
 } from "@/lib/ios-api";
+import { PINS_FILE_REL_PATH, parsePinsFileContent } from "@/lib/pins-file";
 
 /**
  * - `unknown`  — not yet resolved (initial; show a neutral splash)
@@ -48,15 +50,12 @@ const RECENT_CAP = 20;
  *  (newest first, folders and files interleaved — Files-app behaviour). */
 export type SortMode = "name" | "modified";
 
-/** Listing grouping (#652). `recent` uses the app's own recently-read list;
- *  `date` buckets by modified date (Notes' Today / Yesterday / … pattern).
- *  `pinned` is deliberately absent: the desktop keeps pins in localStorage,
- *  not in `.notesage/`, so there is nothing for mobile to read yet — that
- *  needs the desktop-side pins file first (see the issue). */
-export type GroupMode = "none" | "recent" | "date";
+/** Listing grouping (#652): pinned (shared pins.json), recent (this app's
+ *  recently-read list) or date (Notes' Today / Yesterday / … buckets). */
+export type GroupMode = "none" | "pinned" | "recent" | "date";
+
 /** List (single-column) vs. gallery (grid of preview cards) library layout (#633). */
 export type ViewMode = "list" | "gallery";
-
 
 interface MobileStore {
   grantState: GrantState;
@@ -74,7 +73,11 @@ interface MobileStore {
   /** List vs. gallery layout for the library listing; global (not per-folder),
    *  persists across app relaunches. */
   viewMode: ViewMode;
-
+  /** Root-relative pinned paths read from the shared library-root
+   *  `.notesage/pins.json` (#652) — read-only on iOS in this slice, desktop
+   *  is the only writer. Not persisted: always freshly re-read from disk
+   *  (a missing file resolves to an empty array, never throws). */
+  pinnedPaths: string[];
 
   /** Current folder relative path (`""` at root). */
   currentRelPath: () => string;
@@ -102,6 +105,10 @@ interface MobileStore {
   setSortMode: (mode: SortMode) => void;
   setGroupMode: (mode: GroupMode) => void;
 
+  /** Reload `pinnedPaths` from `.notesage/pins.json` at the library root.
+   *  Tolerant of a missing file — resolves to an empty array, never throws. */
+  loadPinnedPaths: () => Promise<void>;
+
   /** Test/reset helper. */
   reset: () => void;
 }
@@ -117,7 +124,7 @@ export const useMobileStore = create<MobileStore>()(
       sortMode: "name",
       groupMode: "none",
       viewMode: "list",
-
+      pinnedPaths: [],
 
       currentRelPath: () => {
         const stack = get().folderStack;
@@ -212,6 +219,18 @@ export const useMobileStore = create<MobileStore>()(
 
       setViewMode: (mode) => set({ viewMode: mode }),
 
+      loadPinnedPaths: async () => {
+        try {
+          const raw = await iosReadFile(PINS_FILE_REL_PATH);
+          set({ pinnedPaths: parsePinsFileContent(raw) });
+        } catch {
+          // Missing pins.json (fresh library, or a library never opened by a
+          // build with this feature) — resolve to an empty set, never throw.
+          set({ pinnedPaths: [] });
+        }
+      },
+
+
       reset: () =>
         set({
           grantState: "unknown",
@@ -222,8 +241,8 @@ export const useMobileStore = create<MobileStore>()(
           sortMode: "name",
           groupMode: "none",
           viewMode: "list",
-
-        }),
+          pinnedPaths: [],
+            }),
     }),
     {
       name: "mobile-store",

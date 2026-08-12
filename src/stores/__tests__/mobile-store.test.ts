@@ -153,3 +153,49 @@ describe("mobile-store view mode (#633 — gallery view)", () => {
     expect(persisted.viewMode).toBe("gallery");
   });
 });
+
+describe("mobile-store pinned paths & group-by (#652)", () => {
+  it("loadPinnedPaths populates pinnedPaths from .notesage/pins.json", async () => {
+    setMockInvokeHandler("ios_read_file", (args) => {
+      expect((args as { relPath: string }).relPath).toBe(".notesage/pins.json");
+      return JSON.stringify({ paths: ["a.md", "Sub/b.md"] });
+    });
+    await store().loadPinnedPaths();
+    expect(store().pinnedPaths).toEqual(["a.md", "Sub/b.md"]);
+  });
+
+  it("resolves pinnedPaths to an empty array without throwing when pins.json is missing", async () => {
+    // ios_read_file deliberately unmocked — invoke rejects, mirroring a
+    // missing file (fresh library, or a library never opened by a build
+    // with this feature).
+    await expect(store().loadPinnedPaths()).resolves.toBeUndefined();
+    expect(store().pinnedPaths).toEqual([]);
+  });
+
+  it("defaults groupMode to none", () => {
+    expect(store().groupMode).toBe("none");
+  });
+
+  it("setGroupMode switches to pinned and back", () => {
+    store().setGroupMode("pinned");
+    expect(store().groupMode).toBe("pinned");
+    store().setGroupMode("none");
+    expect(store().groupMode).toBe("none");
+  });
+
+  it("reset() returns groupMode to none and clears pinnedPaths", () => {
+    store().setGroupMode("pinned");
+    useMobileStore.setState({ pinnedPaths: ["a.md"] });
+    store().reset();
+    expect(store().groupMode).toBe("none");
+    expect(store().pinnedPaths).toEqual([]);
+  });
+
+  it("groupMode is included in the persisted (partialize'd) state — survives a relaunch, like sortMode", () => {
+    store().setGroupMode("pinned");
+    const persistApi = (useMobileStore as unknown as { persist: { getOptions: () => { partialize?: (s: unknown) => unknown } } }).persist;
+    const partialize = persistApi.getOptions().partialize;
+    const persisted = partialize!(store()) as { groupMode?: string };
+    expect(persisted.groupMode).toBe("pinned");
+  });
+});

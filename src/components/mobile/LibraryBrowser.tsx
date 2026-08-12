@@ -33,6 +33,8 @@ export function LibraryBrowser() {
   const groupMode = useMobileStore((s) => s.groupMode);
   const setGroupMode = useMobileStore((s) => s.setGroupMode);
   const recentlyRead = useMobileStore((s) => s.recentlyRead);
+  const pinnedPaths = useMobileStore((s) => s.pinnedPaths);
+  const loadPinnedPaths = useMobileStore((s) => s.loadPinnedPaths);
   const viewMode = useMobileStore((s) => s.viewMode);
   const setViewMode = useMobileStore((s) => s.setViewMode);
   const a11y = useA11yPrefs();
@@ -72,6 +74,12 @@ export function LibraryBrowser() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Pins live in `<library>/.notesage/pins.json`, written through by the
+  // desktop (#652). Read once on mount — mobile is a read-only consumer.
+  useEffect(() => {
+    void loadPinnedPaths();
+  }, [loadPinnedPaths]);
 
   // Refresh when the app returns to the foreground (#650): a share-extension
   // save happens while the app is backgrounded, so the open folder (Inbox)
@@ -149,6 +157,15 @@ export function LibraryBrowser() {
     const files = entries.filter((e) => !e.is_directory);
     const sections: Array<{ key: string; title: string | null; items: FileEntry[] }> = [];
     if (folders.length > 0) sections.push({ key: "folders", title: "Folders", items: folders });
+
+    if (groupMode === "pinned") {
+      const pinned = new Set(pinnedPaths);
+      const inPinned = files.filter((e) => pinned.has(e.path));
+      const rest = files.filter((e) => !pinned.has(e.path));
+      if (inPinned.length > 0) sections.push({ key: "pinned", title: "Pinned", items: inPinned });
+      if (rest.length > 0) sections.push({ key: "other", title: "All Notes", items: rest });
+      return sections;
+    }
 
     if (groupMode === "recent") {
       const recent = new Set(recentlyRead);
@@ -322,6 +339,12 @@ export function LibraryBrowser() {
             sectionBreak: true,
           },
           {
+            id: "group-pinned",
+            title: "Group by pinned",
+            icon: "pin.fill",
+            selected: groupMode === "pinned",
+          },
+          {
             id: "group-recent",
             title: "Group by recent",
             icon: "clock.arrow.circlepath",
@@ -358,6 +381,7 @@ export function LibraryBrowser() {
       "sort-name": () => setSortMode("name"),
       "sort-modified": () => setSortMode("modified"),
       "group-none": () => setGroupMode("none"),
+      "group-pinned": () => setGroupMode("pinned"),
       "group-recent": () => setGroupMode("recent"),
       "group-date": () => setGroupMode("date"),
       "create-note": () => createNote(),
