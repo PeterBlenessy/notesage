@@ -117,6 +117,16 @@ export function iosSetChrome(spec: {
 }
 
 /**
+ * System-generated thumbnail PNG (QLThumbnailGenerator) — PDFs, images,
+ * videos and office docs rendered by the OS off the webview thread. Raw
+ * bytes (no JSON), same transport as `iosReadBinary`.
+ */
+export async function iosThumbnail(relPath: string, maxPixel: number): Promise<Uint8Array> {
+  const buf = await invoke<ArrayBuffer>("ios_thumbnail", { relPath, maxPixel });
+  return new Uint8Array(buf);
+}
+
+/**
  * Present the system QuickLook preview for a library file — native
  * video/audio playback and document rendering. Rejects off-iOS.
  */

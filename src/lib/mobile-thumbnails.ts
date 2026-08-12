@@ -18,7 +18,7 @@
  * never re-fetches. Callers (GalleryCard) are additionally expected to only
  * call `getThumbnail` once a card is actually visible.
  */
-import { iosReadFile, iosReadBinary } from "@/lib/ios-api";
+import { iosReadFile, iosReadBinary, iosThumbnail } from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
 import { classifyFile } from "@/components/mobile/FileRow";
 import type { FileEntry } from "@/lib/tauri";
@@ -124,6 +124,21 @@ async function buildThumbnail(
       const preview = extractPreviewSource(raw);
       const html = await renderMarkdownFragment(preview, opts.theme);
       return { kind: "markdown", html };
+    }
+    if (kind === "image" || kind === "pdf" || kind === "media" || kind === "doc") {
+      // Native first: QLThumbnailGenerator renders PDFs, images, videos and
+      // office docs OFF the webview thread — no multi-MB reads over IPC, no
+      // pdf.js raster on the main thread. The web pipeline below survives
+      // only as the fallback for builds without the native layer.
+      try {
+        const png = await iosThumbnail(entry.path, 480);
+        if (isStale()) throw new ThumbnailCancelled();
+        const blob = new Blob([png.slice().buffer], { type: "image/png" });
+        return { kind: "image", url: URL.createObjectURL(blob) };
+      } catch (err) {
+        if (err instanceof ThumbnailCancelled) throw err;
+        // Fall through to the web pipeline (desktop dev, tests).
+      }
     }
     if (kind === "image") {
       const bytes = await iosReadBinary(entry.path);

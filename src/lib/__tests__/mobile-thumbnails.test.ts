@@ -5,9 +5,11 @@ import type { FileEntry } from "@/lib/tauri";
 
 const iosReadFileMock = vi.fn<(relPath: string) => Promise<string>>();
 const iosReadBinaryMock = vi.fn<(relPath: string) => Promise<Uint8Array>>();
+const iosThumbnailMock = vi.fn<(relPath: string, maxPixel: number) => Promise<Uint8Array>>();
 vi.mock("@/lib/ios-api", () => ({
   iosReadFile: (relPath: string) => iosReadFileMock(relPath),
   iosReadBinary: (relPath: string) => iosReadBinaryMock(relPath),
+  iosThumbnail: (relPath: string, maxPixel: number) => iosThumbnailMock(relPath, maxPixel),
 }));
 
 const renderMarkdownFragmentMock = vi.fn<(markdown: string, theme: "light" | "dark") => Promise<string>>();
@@ -42,6 +44,9 @@ beforeEach(() => {
   resetThumbnailCache();
   iosReadFileMock.mockReset();
   iosReadBinaryMock.mockReset();
+  iosThumbnailMock.mockReset();
+  // Default: native layer absent (web-pipeline fallback), like desktop/tests.
+  iosThumbnailMock.mockRejectedValue(new Error("only available on iOS"));
   renderMarkdownFragmentMock.mockReset();
   renderPdfThumbnailDataUrlMock.mockReset();
   // jsdom has no createObjectURL — stub it the same way image-compress.test.ts does.
@@ -259,3 +264,25 @@ describe("cancelPendingThumbnails (#633 frozen back-out)", () => {
     const retry = await getThumbnail(entry({ name: "big.md" }), { theme: "light" });
     expect(retry.kind).toBe("markdown");
   });
+
+describe("native-first thumbnails (QLThumbnailGenerator)", () => {
+  it("uses the native generator for pdf/media and never touches the web pipeline", async () => {
+    iosThumbnailMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+
+    const pdf = await getThumbnail(entry({ name: "doc.pdf" }), { theme: "light" });
+    const mov = await getThumbnail(entry({ name: "clip.mov" }), { theme: "light" });
+    expect(pdf.kind).toBe("image");
+    expect(mov.kind).toBe("image");
+    expect(iosReadBinaryMock).not.toHaveBeenCalled();
+    expect(renderPdfThumbnailDataUrlMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the web pipeline when the native layer is absent", async () => {
+    iosReadBinaryMock.mockResolvedValue(new Uint8Array([9, 9]));
+    renderPdfThumbnailDataUrlMock.mockResolvedValue("data:image/png;base64,x");
+
+    const pdf = await getThumbnail(entry({ name: "doc.pdf" }), { theme: "light" });
+    expect(pdf.kind).toBe("pdf");
+    expect(renderPdfThumbnailDataUrlMock).toHaveBeenCalled();
+  });
+});

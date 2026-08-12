@@ -116,6 +116,13 @@ struct RenameArgs<'a> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct ThumbnailArgs<'a> {
+    rel_path: &'a str,
+    max_pixel: f64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct TextPromptArgs<'a> {
     title: &'a str,
     placeholder: &'a str,
@@ -211,6 +218,13 @@ impl<R: Runtime> NotesageIos<R> {
             .map(|r| r.rel_path)
     }
 
+    /// System-generated thumbnail PNG (QLThumbnailGenerator) as base64 —
+    /// PDFs, images, videos, office docs, rendered off the webview thread.
+    pub fn thumbnail_file(&self, rel: &str, max_pixel: f64) -> Result<String> {
+        self.call::<_, Base64Response>("thumbnailFile", ThumbnailArgs { rel_path: rel, max_pixel })
+            .map(|r| r.base64)
+    }
+
     /// Present the system QuickLook preview over a temp copy of a library
     /// file (native video/audio playback, DOCX/PPTX/EPUB rendering, …).
     pub fn quick_look(&self, rel: &str) -> Result<()> {
@@ -299,6 +313,9 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn write_file(&self, _rel: &str, _text: &str) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn thumbnail_file(&self, _rel: &str, _max_pixel: f64) -> Result<String> {
         Err(Error::Unavailable)
     }
     pub fn quick_look(&self, _rel: &str) -> Result<()> {

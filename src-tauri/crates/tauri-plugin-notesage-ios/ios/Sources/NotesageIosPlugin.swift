@@ -20,6 +20,11 @@ struct RenameArgs: Decodable {
   let newName: String
 }
 
+struct ThumbnailArgs: Decodable {
+  let relPath: String
+  let maxPixel: Double
+}
+
 struct TextPromptArgs: Decodable {
   let title: String
   let placeholder: String
@@ -381,6 +386,20 @@ class NotesageIosPlugin: Plugin {
     do {
       let args = try invoke.parseArgs(RelPathArgs.self)
       invoke.resolve(["relPath": try LibraryAccess.createDirectory(args.relPath)])
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func thumbnailFile(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(ThumbnailArgs.self)
+      LibraryAccess.thumbnail(args.relPath, maxPixel: CGFloat(args.maxPixel)) { result in
+        switch result {
+        case .success(let data):
+          invoke.resolve(["base64": data.base64EncodedString()])
+        case .failure(let error):
+          invoke.reject(String(describing: error))
+        }
+      }
     } catch { invoke.reject(String(describing: error)) }
   }
 

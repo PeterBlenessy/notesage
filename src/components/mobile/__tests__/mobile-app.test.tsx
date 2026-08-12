@@ -74,6 +74,8 @@ const ALLOWED = new Set([
   "ios_delete_file",
   // Native QuickLook preview — reads a temp copy, writes nothing.
   "ios_quick_look",
+  // System thumbnail generation — pure read, rendered by the OS.
+  "ios_thumbnail",
   "ios_text_prompt",
 ]);
 
