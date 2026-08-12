@@ -144,11 +144,46 @@ class NotesageIosPlugin: Plugin {
   /// mode (the inline `<style>` in index.html cannot help; it only applies
   /// once HTML is parsed). Non-opaque + systemBackground makes those first
   /// frames match the OS theme, so launch-screen → app is seamless.
+  /// Kill the white launch flash (#675).
+  ///
+  /// WKWebView paints WHITE until its document's first paint, in dark mode
+  /// too — the well-known iOS behaviour behind every "Tauri flashes white on
+  /// startup" report. Making the webview non-opaque with a themed background
+  /// is only HALF the fix: a transparent webview reveals whatever is behind
+  /// it, and Tauri's container view and the UIWindow are themselves white by
+  /// default, so the flash simply moves one layer down (measured: a pure
+  /// white frame right after the launch screen).
+  ///
+  /// So theme the whole stack — webview, its superview chain, and the window
+  /// — and re-apply on the next runloop turn because the view hierarchy is
+  /// not fully assembled when the plugin loads.
   @objc public override func load(webview: WKWebView) {
+    applyLaunchBackground(to: webview)
+    DispatchQueue.main.async { [weak webview] in
+      guard let webview else { return }
+      self.applyLaunchBackground(to: webview)
+    }
+  }
+
+  private func applyLaunchBackground(to webview: WKWebView) {
     webview.isOpaque = false
     webview.backgroundColor = .systemBackground
     webview.scrollView.backgroundColor = .systemBackground
     webview.underPageBackgroundColor = .systemBackground
+    // Everything the transparent webview can reveal.
+    var view: UIView? = webview.superview
+    while let current = view {
+      current.backgroundColor = .systemBackground
+      view = current.superview
+    }
+    webview.window?.backgroundColor = .systemBackground
+    for scene in UIApplication.shared.connectedScenes {
+      guard let windowScene = scene as? UIWindowScene else { continue }
+      for window in windowScene.windows {
+        window.backgroundColor = .systemBackground
+        window.rootViewController?.view.backgroundColor = .systemBackground
+      }
+    }
   }
 
   private var keyboardObserversInstalled = false
