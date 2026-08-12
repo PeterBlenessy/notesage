@@ -212,15 +212,22 @@ final class ShareViewController: UIViewController {
         }
         sharedTitle = item.attributedContentText?.string
 
+        // Media joined the accepted set on Peter's request (2026-08-12):
+        // screenshots and other images, screen/voice recordings and videos
+        // all save into Inbox/ like documents. Everything goes through the
+        // same streamed temp-file copy, so a large video never lives in the
+        // extension's ~120 MB memory budget.
         documentProviders = attachments.filter { p in
-            if p.hasItemConformingToTypeIdentifier(UTType.image.identifier) { return false }
-            return p.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
+            p.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
                 || p.hasItemConformingToTypeIdentifier("org.idpf.epub-container")
+                || p.hasItemConformingToTypeIdentifier(UTType.image.identifier)
+                || p.hasItemConformingToTypeIdentifier(UTType.movie.identifier)
+                || p.hasItemConformingToTypeIdentifier(UTType.audio.identifier)
                 || p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
         }
         if !documentProviders.isEmpty {
             let count = documentProviders.count
-            previewLabel.text = count == 1 ? "1 document" : "\(count) documents"
+            previewLabel.text = count == 1 ? "1 file" : "\(count) files"
             formatRow.isHidden = true
             saveButton?.isEnabled = true
             updateFilenamePreview()
@@ -357,17 +364,26 @@ final class ShareViewController: UIViewController {
         finish()
     }
 
-    /// Copy up to three shared documents into Inbox/ (streamed via temp-file
-    /// representations — a large PDF never lives in extension memory).
+    /// Copy shared files into Inbox/ (streamed via temp-file representations
+    /// — a large PDF or video never lives in extension memory). Ten matches
+    /// the image activation cap; other kinds are capped lower by their own
+    /// activation rules.
     private func saveDocuments(_ providers: [NSItemProvider]) {
         let group = DispatchGroup()
-        for provider in providers.prefix(3) {
+        for provider in providers.prefix(10) {
+            // Most specific conforming type first — the provider hands the
+            // richest file representation for it (a screenshot shared as
+            // UIImage still yields a PNG file via UTType.image).
+            let candidates = [
+                UTType.pdf.identifier,
+                "org.idpf.epub-container",
+                UTType.image.identifier,
+                UTType.movie.identifier,
+                UTType.audio.identifier,
+            ]
             let typeId =
-                provider.hasItemConformingToTypeIdentifier(UTType.pdf.identifier)
-                ? UTType.pdf.identifier
-                : provider.hasItemConformingToTypeIdentifier("org.idpf.epub-container")
-                    ? "org.idpf.epub-container"
-                    : UTType.data.identifier
+                candidates.first(where: provider.hasItemConformingToTypeIdentifier)
+                ?? UTType.data.identifier
             group.enter()
             provider.loadFileRepresentation(forTypeIdentifier: typeId) { url, _ in
                 defer { group.leave() }

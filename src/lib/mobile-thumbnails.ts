@@ -109,31 +109,42 @@ function imageMimeFor(name: string): string {
 async function buildThumbnail(
   entry: FileEntry,
   opts: { theme: "light" | "dark" },
+  isStale: () => boolean,
 ): Promise<ThumbnailResult> {
   if (entry.is_directory) return { kind: "icon" };
   const kind = classifyFile(entry.name);
+  // Every await below is an abort checkpoint: a rapid folder in-and-out
+  // must stop an in-flight job at its NEXT stage, not let a started
+  // read→parse→render chain run to completion while the fresh folder's
+  // jobs (and even its listing paint) wait behind it.
   try {
     if (kind === "markdown" || kind === "text") {
       const raw = await iosReadFile(entry.path);
+      if (isStale()) throw new ThumbnailCancelled();
       const preview = extractPreviewSource(raw);
       const html = await renderMarkdownFragment(preview, opts.theme);
       return { kind: "markdown", html };
     }
     if (kind === "image") {
       const bytes = await iosReadBinary(entry.path);
+      if (isStale()) throw new ThumbnailCancelled();
       const buffer = bytes.slice().buffer;
       const blob = new Blob([buffer], { type: imageMimeFor(entry.name) });
       return { kind: "image", url: URL.createObjectURL(blob) };
     }
     if (kind === "pdf") {
       const bytes = await iosReadBinary(entry.path);
+      if (isStale()) throw new ThumbnailCancelled();
       const { renderPdfThumbnailDataUrl } = await import("./mobile-pdf-thumbnail");
-      const url = await renderPdfThumbnailDataUrl(bytes);
+      const url = await renderPdfThumbnailDataUrl(bytes, undefined, isStale);
       return { kind: "pdf", url };
     }
-  } catch {
-    // iCloud placeholder not yet downloaded, corrupt file, pdf.js failure,
-    // etc. — a card without a preview still browses fine with a generic icon.
+  } catch (err) {
+    // Any failure while stale counts as cancellation (evicted for retry) —
+    // otherwise a stale-aborted pdf.js run would be cached as an icon
+    // forever. Genuine failures (placeholder not downloaded, corrupt file)
+    // on a LIVE epoch still degrade to the generic icon.
+    if (err instanceof ThumbnailCancelled || isStale()) throw new ThumbnailCancelled();
     return { kind: "icon" };
   }
   return { kind: "icon" };
@@ -174,11 +185,12 @@ export function getThumbnail(
   const cached = cache.get(entry.path);
   if (cached) return cached;
   const myEpoch = epoch;
+  const isStale = () => myEpoch !== epoch;
   const promise = thumbnailLimiter(async () => {
-    if (myEpoch !== epoch) throw new ThumbnailCancelled();
+    if (isStale()) throw new ThumbnailCancelled();
     await yieldToUi();
-    if (myEpoch !== epoch) throw new ThumbnailCancelled();
-    return buildThumbnail(entry, opts);
+    if (isStale()) throw new ThumbnailCancelled();
+    return buildThumbnail(entry, opts, isStale);
   }).catch((err) => {
     if (err instanceof ThumbnailCancelled) {
       cache.delete(entry.path);

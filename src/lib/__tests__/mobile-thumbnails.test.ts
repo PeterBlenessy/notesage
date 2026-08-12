@@ -234,3 +234,28 @@ describe("cancelPendingThumbnails (#633 frozen back-out)", () => {
     expect(retry.kind).toBe("markdown");
   });
 });
+
+  it("an IN-FLIGHT job aborts at its next stage checkpoint and is evicted for retry", async () => {
+    let releaseRead: (raw: string) => void = () => {};
+    iosReadFileMock.mockImplementation(
+      () => new Promise((resolve) => { releaseRead = resolve; }),
+    );
+    renderMarkdownFragmentMock.mockResolvedValue("<h1>hi</h1>");
+
+    const inflight = getThumbnail(entry({ name: "big.md" }), { theme: "light" });
+    // Let the job pass its pre-read checkpoints and start the read.
+    await new Promise((r) => setTimeout(r, 5));
+    cancelPendingThumbnails();
+    releaseRead("# hi");
+
+    // The post-read checkpoint fires: no render happens, the result is a
+    // plain icon, and the render pipeline was never reached.
+    const result = await inflight;
+    expect(result.kind).toBe("icon");
+    expect(renderMarkdownFragmentMock).not.toHaveBeenCalled();
+
+    // Evicted — a revisit regenerates for real.
+    iosReadFileMock.mockResolvedValue("# hi");
+    const retry = await getThumbnail(entry({ name: "big.md" }), { theme: "light" });
+    expect(retry.kind).toBe("markdown");
+  });

@@ -24,6 +24,10 @@
                 <integer>1</integer>
                 <key>NSExtensionActivationSupportsText</key>
                 <true/>
+                <key>NSExtensionActivationSupportsImageWithMaxCount</key>
+                <integer>10</integer>
+                <key>NSExtensionActivationSupportsMovieWithMaxCount</key>
+                <integer>3</integer>
                 <key>NSExtensionActivationSupportsFileWithMaxCount</key>
                 <integer>3</integer>
             </dict>
