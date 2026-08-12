@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, FolderOpen, AlertCircle, Plus, FolderPlus, ArrowDownAZ, Clock, LayoutGrid, List } from "lucide-react";
+import { ChevronLeft, FolderOpen, AlertCircle, Plus, FolderPlus, ArrowDownAZ, Clock, LayoutGrid, List, RefreshCw } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory, iosCreateDirectory, iosTextPrompt, iosQuickLook } from "@/lib/ios-api";
 import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 import { useMobileStore } from "@/stores/mobile-store";
 import { FileRow, classifyFile } from "./FileRow";
 import { GalleryView } from "./GalleryView";
@@ -15,6 +16,20 @@ type LoadState =
   | { status: "loading" }
   | { status: "error"; message: string }
   | { status: "ready"; entries: FileEntry[] };
+
+/** Downward drag distance (px) needed to commit a web-implemented
+ *  pull-to-refresh (issue #655) — mirrors UIRefreshControl's release
+ *  threshold. The gesture only arms when the scroller is already at
+ *  scrollTop 0; pulling further down while mid-scroll is ordinary
+ *  scrolling, not a refresh. */
+const PULL_THRESHOLD = 64;
+const MAX_PULL = 96;
+
+interface PullDragState {
+  startY: number;
+  isDrag: boolean;
+  lastDistance: number;
+}
 
 /**
  * Mobile library browser — push-navigation list over the granted folder
@@ -39,6 +54,17 @@ export function LibraryBrowser() {
 
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [query, setQuery] = useState("");
+
+  // Web-implemented pull-to-refresh (issue #655): the native UIRefreshControl
+  // is attached to the WKWebView's own scrollView, but this listing scrolls
+  // inside its own `overflow-y` div — the outer scrollView never moves, so
+  // the native gesture never fires. Tracking the drag directly on the inner
+  // scroller sidesteps that entirely, using the same pointer-drag idiom as
+  // SwipeRevealRow's gesture handling.
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const pullDragRef = useRef<PullDragState | null>(null);
+  const [pullDistance, setPullDistance] = useState(0);
+  const [refreshing, setRefreshing] = useState(false);
 
   // Generation counter: rapid folder navigation can resolve listings out of
   // order — a superseded load must not put a stale listing under the new
@@ -69,6 +95,51 @@ export function LibraryBrowser() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const onScrollerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (refreshing) return;
+    const el = scrollerRef.current;
+    if (!el || el.scrollTop > 0) return;
+    pullDragRef.current = { startY: e.clientY, isDrag: false, lastDistance: 0 };
+  };
+
+  const onScrollerPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const drag = pullDragRef.current;
+    if (!drag) return;
+    const el = scrollerRef.current;
+    // A genuine scroll away from the top mid-gesture cancels the pull — only
+    // a drag that starts, and stays, at the top counts as a refresh gesture.
+    if (!el || el.scrollTop > 0) {
+      pullDragRef.current = null;
+      setPullDistance(0);
+      return;
+    }
+    const delta = e.clientY - drag.startY;
+    if (delta <= 0) {
+      drag.isDrag = false;
+      drag.lastDistance = 0;
+      setPullDistance(0);
+      return;
+    }
+    drag.isDrag = true;
+    drag.lastDistance = Math.min(MAX_PULL, delta);
+    setPullDistance(drag.lastDistance);
+  };
+
+  const endPull = () => {
+    const drag = pullDragRef.current;
+    pullDragRef.current = null;
+    if (!drag?.isDrag || drag.lastDistance < PULL_THRESHOLD) {
+      setPullDistance(0);
+      return;
+    }
+    setRefreshing(true);
+    setPullDistance(PULL_THRESHOLD);
+    void load(true).finally(() => {
+      setRefreshing(false);
+      setPullDistance(0);
+    });
+  };
 
   // Sorting happens at render time (#632) so a mode toggle re-orders the
   // listing instantly with no reload. Alphabetical mirrors the desktop
@@ -310,9 +381,36 @@ export function LibraryBrowser() {
           scrolls away like Notes' does. */}
       <div
         key={currentRelPath}
+        ref={scrollerRef}
+        data-testid="library-scroller"
         className="view-enter absolute inset-0 overflow-y-auto"
         style={CONTENT_INSETS}
+        onPointerDown={onScrollerPointerDown}
+        onPointerMove={onScrollerPointerMove}
+        onPointerUp={endPull}
+        onPointerCancel={endPull}
       >
+        {/* Pull-to-refresh indicator (issue #655) — pushed open by the drag
+            distance, held open at the threshold height while the reload is
+            in flight. Absent from the tree (not just hidden) once idle so it
+            never intercepts a tap on the content beneath it. */}
+        {(pullDistance > 0 || refreshing) && (
+          <div
+            aria-hidden
+            className="flex items-center justify-center overflow-hidden"
+            style={{ height: refreshing ? PULL_THRESHOLD : pullDistance }}
+          >
+            <RefreshCw
+              strokeWidth={1.5}
+              className={cn("h-4 w-4 text-muted-foreground", refreshing && "animate-spin")}
+              style={
+                refreshing
+                  ? undefined
+                  : { transform: `rotate(${Math.min(1, pullDistance / PULL_THRESHOLD) * 180}deg)` }
+              }
+            />
+          </div>
+        )}
         {/* The large in-content title + breadcrumb row exist ONLY on the web
             fallback: with native chrome the breadcrumb ISLAND carries both
             the folder name and the path (Peter's #615 design — the island

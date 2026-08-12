@@ -1326,6 +1326,60 @@ describe("native pull-to-refresh (issue #620)", () => {
   });
 });
 
+describe("web-implemented pull-to-refresh on the inner scroller (issue #655)", () => {
+  it("reloads the listing after a downward drag past the pull threshold, starting at the top of the scroller", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Nothing here yet");
+    const scroller = screen.getByTestId("library-scroller");
+    const callsBefore = calledCommands().filter((c) => c === "ios_list_directory").length;
+
+    // The native UIRefreshControl never sees this gesture — it lives on the
+    // WKWebView's own scrollView, but the listing scrolls inside this inner
+    // `overflow-y` div, so the outer scrollView never moves. Simulate the
+    // drag directly on the inner scroller instead.
+    fireEvent.pointerDown(scroller, { clientY: 0 });
+    fireEvent.pointerMove(scroller, { clientY: 90 });
+    fireEvent.pointerUp(scroller, { clientY: 90 });
+
+    await waitFor(() => {
+      const callsAfter = calledCommands().filter((c) => c === "ios_list_directory").length;
+      expect(callsAfter).toBe(callsBefore + 1);
+    });
+  });
+
+  it("does not reload when the downward drag stays under the pull threshold", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Nothing here yet");
+    const scroller = screen.getByTestId("library-scroller");
+    const callsBefore = calledCommands().filter((c) => c === "ios_list_directory").length;
+
+    fireEvent.pointerDown(scroller, { clientY: 0 });
+    fireEvent.pointerMove(scroller, { clientY: 20 });
+    fireEvent.pointerUp(scroller, { clientY: 20 });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calledCommands().filter((c) => c === "ios_list_directory").length).toBe(callsBefore);
+  });
+
+  it("does not start a pull gesture when the scroller is not already at the top", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Nothing here yet");
+    const scroller = screen.getByTestId("library-scroller");
+    Object.defineProperty(scroller, "scrollTop", { value: 50, configurable: true });
+    const callsBefore = calledCommands().filter((c) => c === "ios_list_directory").length;
+
+    fireEvent.pointerDown(scroller, { clientY: 0 });
+    fireEvent.pointerMove(scroller, { clientY: 90 });
+    fireEvent.pointerUp(scroller, { clientY: 90 });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calledCommands().filter((c) => c === "ios_list_directory").length).toBe(callsBefore);
+  });
+});
+
 describe("accessibility — Dynamic Type + Bold Text (issue #617)", () => {
   const dispatchA11y = (detail: { scale: number; bold: boolean }) => {
     fireEvent(window, new CustomEvent("notesage:a11y", { detail }));
