@@ -62,6 +62,12 @@ SHARE_TARGET = {
         {"path": "../../ios/ShareViewController.swift"},
         {"path": "../../ios/LibraryCapture.swift"},
         {"path": "../../crates/tauri-plugin-notesage-ios/ios/Sources/LibraryAccess.swift"},
+        # Localizations (#653). The .lproj folders must land as RESOURCES of
+        # the extension bundle — `buildPhase: resources` — or NSLocalizedString
+        # falls back to the key at runtime. Also drives the "Languages" list
+        # App Store Connect derives from the bundle.
+        {"path": "../../ios/ShareResources/en.lproj", "buildPhase": "resources", "type": "folder"},
+        {"path": "../../ios/ShareResources/sv.lproj", "buildPhase": "resources", "type": "folder"},
     ],
     "info": {
         # xcodegen GENERATES this file (adds CFBundle* defaults itself); the

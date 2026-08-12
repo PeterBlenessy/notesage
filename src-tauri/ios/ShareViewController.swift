@@ -24,6 +24,13 @@
 
 import LinkPresentation
 import UIKit
+
+/// Short helper so call sites stay readable. Table is the extension bundle's
+/// own Localizable.strings (en/sv today, #653).
+private func L(_ key: String, _ args: CVarArg...) -> String {
+    let format = NSLocalizedString(key, comment: "")
+    return args.isEmpty ? format : String(format: format, arguments: args)
+}
 import UniformTypeIdentifiers
 
 final class ShareViewController: UIViewController {
@@ -37,9 +44,9 @@ final class ShareViewController: UIViewController {
 
         var label: String {
             switch self {
-            case .article: return "Article (Markdown)"
-            case .link: return "Link note"
-            case .html: return "Page (HTML)"
+            case .article: return L("share.formatArticle")
+            case .link: return L("share.formatLink")
+            case .html: return L("share.formatHtml")
             }
         }
 
@@ -81,11 +88,11 @@ final class ShareViewController: UIViewController {
         // Nav row: Cancel · Notesage · Save (top-right, like Notes).
         let navBar = UINavigationBar()
         navBar.translatesAutoresizingMaskIntoConstraints = false
-        let item = UINavigationItem(title: "Notesage")
+        let item = UINavigationItem(title: L("share.title"))
         item.leftBarButtonItem = UIBarButtonItem(
             barButtonSystemItem: .cancel, target: self, action: #selector(cancelTapped))
         let save = UIBarButtonItem(
-            title: "Save", style: .done, target: self, action: #selector(saveTapped))
+            title: L("share.save"), style: .done, target: self, action: #selector(saveTapped))
         item.rightBarButtonItem = save
         saveButton = save
         save.isEnabled = false
@@ -104,7 +111,7 @@ final class ShareViewController: UIViewController {
         previewLabel.font = .preferredFont(forTextStyle: .subheadline)
         previewLabel.textColor = .label
         previewLabel.numberOfLines = 3
-        previewLabel.text = "Loading…"
+        previewLabel.text = L("share.loading")
         previewLabel.translatesAutoresizingMaskIntoConstraints = false
         card.addSubview(previewLabel)
 
@@ -115,7 +122,7 @@ final class ShareViewController: UIViewController {
         view.addSubview(formatRow)
 
         let formatTitle = UILabel()
-        formatTitle.text = "Format"
+        formatTitle.text = L("share.format")
         formatTitle.font = .preferredFont(forTextStyle: .body)
         formatTitle.translatesAutoresizingMaskIntoConstraints = false
         formatRow.addSubview(formatTitle)
@@ -183,18 +190,18 @@ final class ShareViewController: UIViewController {
 
     private func updateFilenamePreview() {
         if !documentProviders.isEmpty {
-            filenameLabel.text = "Saves to Inbox in your Notesage library, keeping the original filename."
+            filenameLabel.text = L("share.savesToInboxKeepName")
             return
         }
         guard let url = sharedUrl else {
-            filenameLabel.text = "Saves to Inbox in your Notesage library."
+            filenameLabel.text = L("share.savesToInbox")
             return
         }
         if let rel = LibraryAccess.previewRelPath(url: url, title: sharedTitle) {
             let stem = ((rel as NSString).lastPathComponent as NSString).deletingPathExtension
-            filenameLabel.text = "Saves to Inbox in your Notesage library as\n\(stem).\(format.fileExtension)"
+            filenameLabel.text = L("share.savesToInboxAs", "\(stem).\(format.fileExtension)")
         } else {
-            filenameLabel.text = "Saves to Inbox in your Notesage library."
+            filenameLabel.text = L("share.savesToInbox")
         }
     }
 
@@ -202,12 +209,12 @@ final class ShareViewController: UIViewController {
 
     private func loadSharedItem() {
         guard LibraryAccess.getLibraryGrant().granted else {
-            previewLabel.text = "Open Notesage to set up before sharing."
+            previewLabel.text = L("share.setUpFirst")
             return
         }
         guard let item = (extensionContext?.inputItems.first as? NSExtensionItem),
               let attachments = item.attachments else {
-            previewLabel.text = "Nothing to save."
+            previewLabel.text = L("share.nothingToSave")
             return
         }
         sharedTitle = item.attributedContentText?.string
@@ -227,7 +234,7 @@ final class ShareViewController: UIViewController {
         }
         if !documentProviders.isEmpty {
             let count = documentProviders.count
-            previewLabel.text = count == 1 ? "1 file" : "\(count) files"
+            previewLabel.text = count == 1 ? L("share.oneFile") : L("share.manyFiles", count)
             formatRow.isHidden = true
             saveButton?.isEnabled = true
             updateFilenamePreview()
@@ -246,13 +253,13 @@ final class ShareViewController: UIViewController {
                 DispatchQueue.main.async { self?.showUrl(url ?? text) }
             }
         } else {
-            previewLabel.text = "Nothing to save."
+            previewLabel.text = L("share.nothingToSave")
         }
     }
 
     private func showUrl(_ url: String?) {
         guard let url, !url.isEmpty else {
-            previewLabel.text = "Nothing to save."
+            previewLabel.text = L("share.nothingToSave")
             return
         }
         sharedUrl = url

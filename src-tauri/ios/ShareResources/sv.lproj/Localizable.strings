@@ -1,0 +1,16 @@
+/* Delningstillägget (#653). Nycklarna speglar src/lib/i18n.ts där ytorna
+   överlappar; Avbryt är ett system-knappobjekt och lokaliseras av iOS. */
+"share.title" = "Notesage";
+"share.save" = "Spara";
+"share.loading" = "Läser in…";
+"share.format" = "Format";
+"share.formatArticle" = "Artikel (Markdown)";
+"share.formatLink" = "Länkanteckning";
+"share.formatHtml" = "Sida (HTML)";
+"share.savesToInbox" = "Sparas i Inbox i ditt Notesage-bibliotek.";
+"share.savesToInboxAs" = "Sparas i Inbox i ditt Notesage-bibliotek som\n%@";
+"share.setUpFirst" = "Öppna Notesage för att komma igång innan du delar.";
+"share.nothingToSave" = "Inget att spara.";
+"share.oneFile" = "1 fil";
+"share.manyFiles" = "%d filer";
+"share.savesToInboxKeepName" = "Sparas i Inbox i ditt Notesage-bibliotek med originalnamnet.";
