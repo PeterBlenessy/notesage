@@ -10,6 +10,8 @@ import { GalleryView } from "./GalleryView";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 type LoadState =
   | { status: "loading" }
@@ -38,6 +40,8 @@ export function LibraryBrowser() {
   const viewMode = useMobileStore((s) => s.viewMode);
   const setViewMode = useMobileStore((s) => s.setViewMode);
   const a11y = useA11yPrefs();
+  // Re-render on a language change so every t() below re-evaluates.
+  useLocale();
 
   const currentRelPath = folderStack.length === 0 ? "" : folderStack[folderStack.length - 1].relPath;
   const currentName = folderStack.length === 0 ? libraryName || "Notesage" : folderStack[folderStack.length - 1].name;
@@ -156,14 +160,14 @@ export function LibraryBrowser() {
     const folders = entries.filter((e) => e.is_directory);
     const files = entries.filter((e) => !e.is_directory);
     const sections: Array<{ key: string; title: string | null; items: FileEntry[] }> = [];
-    if (folders.length > 0) sections.push({ key: "folders", title: "Folders", items: folders });
+    if (folders.length > 0) sections.push({ key: "folders", title: t("section.folders"), items: folders });
 
     if (groupMode === "pinned") {
       const pinned = new Set(pinnedPaths);
       const inPinned = files.filter((e) => pinned.has(e.path));
       const rest = files.filter((e) => !pinned.has(e.path));
-      if (inPinned.length > 0) sections.push({ key: "pinned", title: "Pinned", items: inPinned });
-      if (rest.length > 0) sections.push({ key: "other", title: "All Notes", items: rest });
+      if (inPinned.length > 0) sections.push({ key: "pinned", title: t("section.pinned"), items: inPinned });
+      if (rest.length > 0) sections.push({ key: "other", title: t("section.allNotes"), items: rest });
       return sections;
     }
 
@@ -171,8 +175,8 @@ export function LibraryBrowser() {
       const recent = new Set(recentlyRead);
       const inRecent = files.filter((e) => recent.has(e.path));
       const rest = files.filter((e) => !recent.has(e.path));
-      if (inRecent.length > 0) sections.push({ key: "recent", title: "Recent", items: inRecent });
-      if (rest.length > 0) sections.push({ key: "other", title: "All Notes", items: rest });
+      if (inRecent.length > 0) sections.push({ key: "recent", title: t("section.recent"), items: inRecent });
+      if (rest.length > 0) sections.push({ key: "other", title: t("section.allNotes"), items: rest });
       return sections;
     }
 
@@ -210,10 +214,10 @@ export function LibraryBrowser() {
     const startOfYesterday = startOfToday - 86400;
     const weekAgo = startOfToday - 6 * 86400;
     const buckets: Array<{ key: string; title: string; items: FileEntry[] }> = [
-      { key: "today", title: "Today", items: [] },
-      { key: "yesterday", title: "Yesterday", items: [] },
-      { key: "week", title: "Previous 7 Days", items: [] },
-      { key: "older", title: "Older", items: [] },
+      { key: "today", title: t("section.today"), items: [] },
+      { key: "yesterday", title: t("section.yesterday"), items: [] },
+      { key: "week", title: t("section.previous7Days"), items: [] },
+      { key: "older", title: t("section.older"), items: [] },
     ];
     for (const file of files) {
       const m = file.modified ?? 0;
@@ -253,7 +257,7 @@ export function LibraryBrowser() {
 
   const promptName = useCallback(async (title: string): Promise<string | null> => {
     try {
-      return await iosTextPrompt(title, "Name", "Create");
+      return await iosTextPrompt(title, t("action.name"), t("action.create"));
     } catch {
       // Web fallback (desktop dev, builds without the native layer). Plain,
       // but it is only ever the fallback path.
@@ -275,7 +279,7 @@ export function LibraryBrowser() {
   }, [currentRelPath, openDocument]);
 
   const createFolder = useCallback(async () => {
-    const name = cleanName((await promptName("New Folder")) ?? "");
+    const name = cleanName((await promptName(t("menu.newFolder"))) ?? "");
     if (!name) return;
     const rel = currentRelPath ? `${currentRelPath}/${name}` : name;
     try {
@@ -285,7 +289,7 @@ export function LibraryBrowser() {
       // something in it.
       enterFolder({ relPath: finalRel, name: finalRel.split("/").pop() ?? name });
     } catch (err) {
-      toast.error(`Couldn't create folder: ${err}`);
+      toast.error(t("action.createFolderFailed", { error: String(err) }));
     }
   }, [currentRelPath, promptName, load, enterFolder]);
 
@@ -336,51 +340,51 @@ export function LibraryBrowser() {
         menu: [
           {
             id: "view-list",
-            title: "List",
+            title: t("menu.list"),
             icon: "list.bullet",
             selected: viewMode === "list",
           },
           {
             id: "view-gallery",
-            title: "Gallery",
+            title: t("menu.gallery"),
             icon: "square.grid.2x2",
             selected: viewMode === "gallery",
           },
           {
             id: "sort-name",
-            title: "Alphabetical",
+            title: t("menu.sortName"),
             icon: "textformat.abc",
             selected: sortMode === "name",
             sectionBreak: true,
           },
           {
             id: "sort-modified",
-            title: "Date modified",
+            title: t("menu.sortModified"),
             icon: "clock",
             selected: sortMode === "modified",
           },
           {
             id: "group-none",
-            title: "No grouping",
+            title: t("menu.groupNone"),
             icon: "rectangle.grid.1x2",
             selected: groupMode === "none",
             sectionBreak: true,
           },
           {
             id: "group-pinned",
-            title: "Group by pinned",
+            title: t("menu.groupPinned"),
             icon: "pin.fill",
             selected: groupMode === "pinned",
           },
           {
             id: "group-recent",
-            title: "Group by recent",
+            title: t("menu.groupRecent"),
             icon: "clock.arrow.circlepath",
             selected: groupMode === "recent",
           },
           {
             id: "group-date",
-            title: "Group by date",
+            title: t("menu.groupDate"),
             icon: "calendar",
             selected: groupMode === "date",
           },
@@ -398,13 +402,15 @@ export function LibraryBrowser() {
             // Tap = new note instantly (primaryAction); hold = UIMenu.
             id: "create-note",
             icon: "plus",
-            menu: [{ id: "create-folder", title: "New Folder", icon: "folder.badge.plus" }],
+            menu: [{ id: "create-folder", title: t("menu.newFolder"), icon: "folder.badge.plus" }],
           },
       search: {
-        placeholder: "Search this folder",
+        placeholder: t("library.searchFolder"),
         status:
           state.status === "ready"
-            ? `${state.entries.length} ${state.entries.length === 1 ? "item" : "items"}`
+            ? state.entries.length === 1
+              ? t("library.itemsOne")
+              : t("library.items", { count: state.entries.length })
             : undefined,
       },
     },
@@ -431,7 +437,7 @@ export function LibraryBrowser() {
           .then(() => void load())
           .catch((err) => {
             if (!String(err).includes("No folder was selected")) {
-              toast.error(`Couldn't change folder: ${err}`);
+              toast.error(t("library.changeFolderFailed", { error: String(err) }));
             }
           });
       },
@@ -567,7 +573,7 @@ export function LibraryBrowser() {
                   className="px-4 py-10 text-center text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-muted-foreground"
                   style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
                 >
-                  Nothing matches "{query}"
+                  {t("library.noMatches", { query })}
                 </p>
               );
             if (viewMode === "gallery") {
@@ -664,7 +670,7 @@ export function LibraryBrowser() {
           </div>
         ) : (
           <ChromeButton
-            label="Change library folder"
+            label={t("library.changeFolder")}
             onClick={() => {
               // The explicit reload IS needed: at the root, currentRelPath
               // stays "" after a re-pick, so the load effect never refires on
@@ -674,7 +680,7 @@ export function LibraryBrowser() {
                 .catch((err) => {
                   // Dismissing the picker is a normal outcome, not an error.
                   if (!String(err).includes("No folder was selected")) {
-                    toast.error(`Couldn't change folder: ${err}`);
+                    toast.error(t("library.changeFolderFailed", { error: String(err) }));
                   }
                 });
             }}
@@ -707,7 +713,7 @@ export function LibraryBrowser() {
             }}
           >
             <ChromeButton
-              label={atRoot ? "New folder" : "New note"}
+              label={atRoot ? t("action.newFolderShort") : t("action.newNote")}
               onClick={() => (atRoot ? void createFolder() : createNote())}
             >
               <Plus strokeWidth={1.5} className="h-5 w-5" />
@@ -790,8 +796,12 @@ export function LibraryBrowser() {
         <SearchIsland
           query={query}
           onQueryChange={setQuery}
-          placeholder="Search this folder"
-          status={`${state.entries.length} ${state.entries.length === 1 ? "item" : "items"}`}
+          placeholder={t("library.searchFolder")}
+          status={
+            state.entries.length === 1
+              ? t("library.itemsOne")
+              : t("library.items", { count: state.entries.length })
+          }
         />
       )}
     </div>
@@ -848,7 +858,7 @@ function BrowserError({ message, onRetry }: { message: string; onRetry: () => vo
         {message}
       </p>
       <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={onRetry}>
-        Try again
+        {t("library.tryAgain")}
       </Button>
     </div>
   );

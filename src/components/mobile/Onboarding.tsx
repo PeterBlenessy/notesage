@@ -3,6 +3,8 @@ import { FolderOpen, ShieldCheck, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useMobileStore } from "@/stores/mobile-store";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 import { useA11yPrefs, a11yRootProps } from "./useNativeChrome";
 
 /**
@@ -13,6 +15,7 @@ import { useA11yPrefs, a11yRootProps } from "./useNativeChrome";
  */
 export function Onboarding() {
   const grantState = useMobileStore((s) => s.grantState);
+  useLocale();
   const pickFolder = useMobileStore((s) => s.pickFolder);
   const [busy, setBusy] = useState(false);
   const a11y = useA11yPrefs();
@@ -27,7 +30,7 @@ export function Onboarding() {
       const message = String(err);
       // Dismissing the picker is a normal choice, not a failure.
       if (message.includes("No folder was selected")) {
-        toast.info("No folder selected — tap again to choose your Notesage folder.");
+        toast.info(t("onboarding.noFolder"));
       } else {
         toast.error(`Couldn't open your folder: ${err}`);
       }
@@ -49,26 +52,22 @@ export function Onboarding() {
         className="mt-6 text-[length:calc(1.25rem*var(--ns-a11y-scale,1))] text-foreground"
         style={{ fontWeight: "max(600, var(--ns-a11y-weight, 400))" }}
       >
-        {isStale ? "Reconnect your library" : "Welcome to Notesage"}
+        {isStale ? t("onboarding.titleStale") : t("onboarding.title")}
       </h1>
 
       <p
         className="mt-3 max-w-sm text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] leading-relaxed text-muted-foreground"
         style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
       >
-        {isStale
-          ? "Your access to the Notesage folder expired. Grant it once more to keep reading."
-          : "Read your Notesage notes on the go. iOS needs a one-time permission to open your Notesage folder — your iCloud Notesage folder, or any folder under On My iPhone if you don't use iCloud."}
+        {isStale ? t("onboarding.introStale") : t("onboarding.intro")}
       </p>
 
       <div className="mt-6 w-full max-w-sm space-y-3 text-left">
-        <Feature icon={ShieldCheck} title="Read-only & private">
-          The app only reads the folder you grant — the single exception is the
-          notes it adds when you share a link.
+        <Feature icon={ShieldCheck} title={t("onboarding.privateTitle")}>
+          {t("onboarding.privateBody")}
         </Feature>
-        <Feature icon={FolderOpen} title="Your Notesage folder">
-          We open the picker at your iCloud Notesage folder — no iCloud
-          account? Pick a folder under On My iPhone instead; any folder works.
+        <Feature icon={FolderOpen} title={t("onboarding.folderTitle")}>
+          {t("onboarding.folderBody")}
         </Feature>
       </div>
 
@@ -78,7 +77,7 @@ export function Onboarding() {
         onClick={handleGrant}
         disabled={busy}
       >
-        {busy ? "Opening…" : isStale ? "Select your folder again" : "Select your Notesage folder"}
+        {busy ? t("onboarding.opening") : isStale ? t("onboarding.pickAgain") : t("onboarding.pick")}
       </Button>
     </div>
   );
