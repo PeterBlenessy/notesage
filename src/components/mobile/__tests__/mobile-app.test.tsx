@@ -228,13 +228,19 @@ describe("sort toggle (#632)", () => {
       ["Gallery", false],
       ["Alphabetical", true],
       ["Date modified", false],
+      ["No grouping", true],
+      ["Group by recent", false],
+      ["Group by date", false],
     ]);
-    // The sort section starts with a divider.
+    // Sort and group each open their own section.
     expect(captured.topRight?.menu?.[2]?.sectionBreak).toBe(true);
+    expect(captured.topRight?.menu?.[4]?.sectionBreak).toBe(true);
 
     useMobileStore.getState().setSortMode("modified");
     await waitFor(() =>
-      expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([true, false, false, true]),
+      expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([
+        true, false, false, true, true, false, false,
+      ]),
     );
   });
 });
@@ -299,6 +305,40 @@ describe("foreground refresh (#650)", () => {
     expect(await screen.findByText("shared.png")).toBeTruthy();
     // Refresh keeps the current listing visible — no skeleton flash.
     expect(screen.getByText("old.md")).toBeTruthy();
+  });
+});
+
+describe("group by (#652)", () => {
+  it("groups files under Recent / All Notes with folders in their own section", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Sub", path: "Sub", is_directory: true, hidden: false },
+      { name: "seen.md", path: "seen.md", is_directory: false, hidden: false },
+      { name: "fresh.md", path: "fresh.md", is_directory: false, hidden: false },
+    ]);
+    useMobileStore.setState({ groupMode: "recent", recentlyRead: ["seen.md"] });
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("seen.md");
+    expect(screen.getByRole("heading", { name: "Folders" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Recent" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "All Notes" })).toBeTruthy();
+  });
+
+  it("buckets by modified date when grouping by date", async () => {
+    const now = Date.now() / 1000;
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "today.md", path: "today.md", is_directory: false, hidden: false, modified: now },
+      { name: "ancient.md", path: "ancient.md", is_directory: false, hidden: false, modified: now - 40 * 86400 },
+    ]);
+    useMobileStore.setState({ groupMode: "date" });
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("today.md");
+    expect(screen.getByRole("heading", { name: "Today" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Older" })).toBeTruthy();
+    // No grouping headers leak into the default mode.
+    useMobileStore.setState({ groupMode: "none" });
+    await waitFor(() => expect(screen.queryByRole("heading", { name: "Today" })).toBeNull());
   });
 });
 

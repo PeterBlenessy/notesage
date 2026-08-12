@@ -47,6 +47,13 @@ const RECENT_CAP = 20;
 /** Library listing order (#632): alphabetical (folders first) or modified
  *  (newest first, folders and files interleaved — Files-app behaviour). */
 export type SortMode = "name" | "modified";
+
+/** Listing grouping (#652). `recent` uses the app's own recently-read list;
+ *  `date` buckets by modified date (Notes' Today / Yesterday / … pattern).
+ *  `pinned` is deliberately absent: the desktop keeps pins in localStorage,
+ *  not in `.notesage/`, so there is nothing for mobile to read yet — that
+ *  needs the desktop-side pins file first (see the issue). */
+export type GroupMode = "none" | "recent" | "date";
 /** List (single-column) vs. gallery (grid of preview cards) library layout (#633). */
 export type ViewMode = "list" | "gallery";
 
@@ -62,6 +69,8 @@ interface MobileStore {
   recentlyRead: string[];
   /** Listing order for the library browser (persisted). */
   sortMode: SortMode;
+  /** Listing grouping for the library browser (persisted). */
+  groupMode: GroupMode;
   /** List vs. gallery layout for the library listing; global (not per-folder),
    *  persists across app relaunches. */
   viewMode: ViewMode;
@@ -91,6 +100,7 @@ interface MobileStore {
   setViewMode: (mode: ViewMode) => void;
 
   setSortMode: (mode: SortMode) => void;
+  setGroupMode: (mode: GroupMode) => void;
 
   /** Test/reset helper. */
   reset: () => void;
@@ -105,6 +115,7 @@ export const useMobileStore = create<MobileStore>()(
       openDoc: null,
       recentlyRead: [],
       sortMode: "name",
+      groupMode: "none",
       viewMode: "list",
 
 
@@ -191,6 +202,7 @@ export const useMobileStore = create<MobileStore>()(
       },
 
       setSortMode: (mode) => set({ sortMode: mode }),
+      setGroupMode: (mode) => set({ groupMode: mode }),
 
       goToDepth: (depth) =>
         set((s) => ({
@@ -208,6 +220,7 @@ export const useMobileStore = create<MobileStore>()(
           openDoc: null,
           recentlyRead: [],
           sortMode: "name",
+          groupMode: "none",
           viewMode: "list",
 
         }),
@@ -220,6 +233,7 @@ export const useMobileStore = create<MobileStore>()(
       partialize: (s) => ({
         recentlyRead: s.recentlyRead,
         sortMode: s.sortMode,
+        groupMode: s.groupMode,
         viewMode: s.viewMode,
       }),
 

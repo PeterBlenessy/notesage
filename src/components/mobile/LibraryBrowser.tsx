@@ -30,6 +30,9 @@ export function LibraryBrowser() {
   const pickFolder = useMobileStore((s) => s.pickFolder);
   const sortMode = useMobileStore((s) => s.sortMode);
   const setSortMode = useMobileStore((s) => s.setSortMode);
+  const groupMode = useMobileStore((s) => s.groupMode);
+  const setGroupMode = useMobileStore((s) => s.setGroupMode);
+  const recentlyRead = useMobileStore((s) => s.recentlyRead);
   const viewMode = useMobileStore((s) => s.viewMode);
   const setViewMode = useMobileStore((s) => s.setViewMode);
   const a11y = useA11yPrefs();
@@ -132,6 +135,49 @@ export function LibraryBrowser() {
   // the sort picks (Peter's Files-app design supersedes the standalone
   // toggle the gallery branch shipped). Global preference, not per-folder.
   const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+
+  /** Split the (already sorted) entries into labeled sections (#652).
+   *  `recent` lifts anything in the app's recently-read list to the top;
+   *  `date` buckets by modified date the way Notes does. Folders always
+   *  stay in their own leading section — grouping files under date headers
+   *  while folders float loose reads as a bug. */
+  const groupEntries = (
+    entries: FileEntry[],
+  ): Array<{ key: string; title: string | null; items: FileEntry[] }> => {
+    if (groupMode === "none") return [{ key: "all", title: null, items: entries }];
+    const folders = entries.filter((e) => e.is_directory);
+    const files = entries.filter((e) => !e.is_directory);
+    const sections: Array<{ key: string; title: string | null; items: FileEntry[] }> = [];
+    if (folders.length > 0) sections.push({ key: "folders", title: "Folders", items: folders });
+
+    if (groupMode === "recent") {
+      const recent = new Set(recentlyRead);
+      const inRecent = files.filter((e) => recent.has(e.path));
+      const rest = files.filter((e) => !recent.has(e.path));
+      if (inRecent.length > 0) sections.push({ key: "recent", title: "Recent", items: inRecent });
+      if (rest.length > 0) sections.push({ key: "other", title: "All Notes", items: rest });
+      return sections;
+    }
+
+    // Date buckets, newest first — undated entries sink to "Older".
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
+    const startOfYesterday = startOfToday - 86400;
+    const weekAgo = startOfToday - 6 * 86400;
+    const buckets: Array<{ key: string; title: string; items: FileEntry[] }> = [
+      { key: "today", title: "Today", items: [] },
+      { key: "yesterday", title: "Yesterday", items: [] },
+      { key: "week", title: "Previous 7 Days", items: [] },
+      { key: "older", title: "Older", items: [] },
+    ];
+    for (const file of files) {
+      const m = file.modified ?? 0;
+      const bucket =
+        m >= startOfToday ? 0 : m >= startOfYesterday ? 1 : m >= weekAgo ? 2 : 3;
+      buckets[bucket].items.push(file);
+    }
+    return [...sections, ...buckets.filter((b) => b.items.length > 0)];
+  };
 
   const onActivate = (entry: FileEntry) => {
     if (entry.is_directory) {
@@ -268,6 +314,25 @@ export function LibraryBrowser() {
             icon: "clock",
             selected: sortMode === "modified",
           },
+          {
+            id: "group-none",
+            title: "No grouping",
+            icon: "rectangle.grid.1x2",
+            selected: groupMode === "none",
+            sectionBreak: true,
+          },
+          {
+            id: "group-recent",
+            title: "Group by recent",
+            icon: "clock.arrow.circlepath",
+            selected: groupMode === "recent",
+          },
+          {
+            id: "group-date",
+            title: "Group by date",
+            icon: "calendar",
+            selected: groupMode === "date",
+          },
         ],
       },
       bottomRight: atRoot
@@ -292,6 +357,9 @@ export function LibraryBrowser() {
       "view-gallery": () => setViewMode("gallery"),
       "sort-name": () => setSortMode("name"),
       "sort-modified": () => setSortMode("modified"),
+      "group-none": () => setGroupMode("none"),
+      "group-recent": () => setGroupMode("recent"),
+      "group-date": () => setGroupMode("date"),
       "create-note": () => createNote(),
       "create-folder": () => void createFolder(),
       "search-query": (value?: string) => setQuery(value ?? ""),
@@ -453,14 +521,32 @@ export function LibraryBrowser() {
                 />
               );
             }
+            // Grouped rendering (#652): one <ul> per section with a sticky
+            // header. Ungrouped is a single untitled section, so the row
+            // markup below has exactly one shape.
             return (
-              <ul>
-                {visible.map((entry) => (
-                  <li key={entry.path}>
-                    <FileRow entry={entry} onActivate={onActivate} onChanged={() => void load(true)} />
-                  </li>
+              <>
+                {groupEntries(visible).map((section) => (
+                  <section key={section.key}>
+                    {section.title && (
+                      <h2 className="sticky top-0 z-10 bg-background/85 px-4 py-1.5 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
+                        {section.title}
+                      </h2>
+                    )}
+                    <ul>
+                      {section.items.map((entry) => (
+                        <li key={entry.path}>
+                          <FileRow
+                            entry={entry}
+                            onActivate={onActivate}
+                            onChanged={() => void load(true)}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
                 ))}
-              </ul>
+              </>
             );
           })()}
       </div>
