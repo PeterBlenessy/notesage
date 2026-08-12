@@ -684,6 +684,45 @@ mod tests {
     }
 
     #[test]
+    fn share_extension_ui_strings_are_localized() {
+        // #653: every user-facing string in the Share Extension must go
+        // through NSLocalizedString (the `L(...)` helper) and have a Swedish
+        // translation — a hardcoded literal ships an English word into a
+        // Swedish share sheet. Source-shape assertion for the same reason as
+        // the sanitizer tests: no XCTest harness exists in this repo (#590).
+        let swift = include_str!("../../ios/ShareViewController.swift");
+        for key in [
+            "share.save",
+            "share.format",
+            "share.savesToInbox",
+            "share.nothingToSave",
+            "share.oneFile",
+        ] {
+            assert!(
+                swift.contains(&format!("L(\"{key}\"")),
+                "{key} is not used in ShareViewController — a UI string may have been hardcoded"
+            );
+        }
+        let en = include_str!("../../ios/ShareResources/en.lproj/Localizable.strings");
+        let sv = include_str!("../../ios/ShareResources/sv.lproj/Localizable.strings");
+        let keys_of = |table: &str| -> Vec<String> {
+            table
+                .lines()
+                .filter_map(|line| line.trim().strip_prefix('"'))
+                .filter_map(|rest| rest.split('"').next().map(str::to_string))
+                .collect()
+        };
+        let (en_keys, sv_keys) = (keys_of(en), keys_of(sv));
+        assert!(!en_keys.is_empty(), "the English strings table failed to parse");
+        for key in &en_keys {
+            assert!(
+                sv_keys.contains(key),
+                "{key} has no Swedish translation — it would silently ship in English"
+            );
+        }
+    }
+
+    #[test]
     fn ensure_downloaded_swift_wires_up_the_failed_download_state() {
         // `LibraryAccess.ensureDownloaded` (Swift) can only ever return
         // `.ready`/`.downloading` or throw unless it explicitly reads the
