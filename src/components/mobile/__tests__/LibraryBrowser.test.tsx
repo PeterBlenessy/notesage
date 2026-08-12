@@ -27,7 +27,7 @@ beforeEach(() => {
 });
 
 describe("Group by — Pinned (#652)", () => {
-  it("declares a Group by section (Pinned, None) with checkmark selection reflecting groupByMode", async () => {
+  it("declares Group by pinned in the menu's grouping section, checkmarked when active", async () => {
     let captured: CapturedChromeSpec = {};
     setMockInvokeHandler("ios_set_chrome", (args) => {
       captured = (args as { spec: CapturedChromeSpec }).spec;
@@ -40,21 +40,30 @@ describe("Group by — Pinned (#652)", () => {
 
     renderWithProviders(<LibraryBrowser />);
     await waitFor(() =>
-      expect(captured.topRight?.menu?.some((m) => m.title === "Pinned")).toBe(true),
+      expect(captured.topRight?.menu?.some((m) => m.title === "Group by pinned")).toBe(true),
     );
 
-    const groupSection = captured
-      .topRight!.menu!.filter((m) => m.title === "Pinned" || m.title === "None");
-    expect(groupSection.map((m) => m.title)).toEqual(["Pinned", "None"]);
-    // The Group by section starts with a divider, matching the sort section's pattern.
+    // Pinned joins the grouping section shipped in #664 (No grouping /
+    // Recent / Date) rather than forming a second, parallel section.
+    const groupSection = captured.topRight!.menu!.filter((m) =>
+      m.title.startsWith("Group by") || m.title === "No grouping",
+    );
+    expect(groupSection.map((m) => m.title)).toEqual([
+      "No grouping",
+      "Group by pinned",
+      "Group by recent",
+      "Group by date",
+    ]);
+    // The grouping section opens with a divider, like the sort section.
     expect(groupSection[0].sectionBreak).toBe(true);
-    expect(groupSection.map((m) => m.selected)).toEqual([false, true]);
+    expect(groupSection.map((m) => m.selected)).toEqual([true, false, false, false]);
 
-    useMobileStore.getState().setGroupByMode("pinned");
+    useMobileStore.getState().setGroupMode("pinned");
     await waitFor(() => {
-      const section = captured
-        .topRight!.menu!.filter((m) => m.title === "Pinned" || m.title === "None");
-      expect(section.map((m) => m.selected)).toEqual([true, false]);
+      const section = captured.topRight!.menu!.filter((m) =>
+        m.title.startsWith("Group by") || m.title === "No grouping",
+      );
+      expect(section.map((m) => m.selected)).toEqual([false, true, false, false]);
     });
   });
 
@@ -68,7 +77,7 @@ describe("Group by — Pinned (#652)", () => {
 
     renderWithProviders(<LibraryBrowser />);
     await screen.findByText("alpha.md");
-    useMobileStore.getState().setGroupByMode("pinned");
+    useMobileStore.getState().setGroupMode("pinned");
 
     await waitFor(() => expect(screen.getByText("Pinned")).toBeTruthy());
     const rowNames = () =>

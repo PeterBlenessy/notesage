@@ -50,19 +50,12 @@ const RECENT_CAP = 20;
  *  (newest first, folders and files interleaved — Files-app behaviour). */
 export type SortMode = "name" | "modified";
 
-/** Listing grouping (#652). `recent` uses the app's own recently-read list;
- *  `date` buckets by modified date (Notes' Today / Yesterday / … pattern).
- *  `pinned` is deliberately absent: the desktop keeps pins in localStorage,
- *  not in `.notesage/`, so there is nothing for mobile to read yet — that
- *  needs the desktop-side pins file first (see the issue). */
-export type GroupMode = "none" | "recent" | "date";
+/** Listing grouping (#652): pinned (shared pins.json), recent (this app's
+ *  recently-read list) or date (Notes' Today / Yesterday / … buckets). */
+export type GroupMode = "none" | "pinned" | "recent" | "date";
+
 /** List (single-column) vs. gallery (grid of preview cards) library layout (#633). */
 export type ViewMode = "list" | "gallery";
-
-/** Library listing grouping (#652): flat, or a labeled "Pinned" section on
- *  top followed by the rest in the existing sort order. Persisted like
- *  sortMode/viewMode. */
-export type GroupByMode = "none" | "pinned";
 
 interface MobileStore {
   grantState: GrantState;
@@ -85,8 +78,6 @@ interface MobileStore {
    *  is the only writer. Not persisted: always freshly re-read from disk
    *  (a missing file resolves to an empty array, never throws). */
   pinnedPaths: string[];
-  /** Library-listing grouping mode; persisted like sortMode. */
-  groupByMode: GroupByMode;
 
   /** Current folder relative path (`""` at root). */
   currentRelPath: () => string;
@@ -117,7 +108,6 @@ interface MobileStore {
   /** Reload `pinnedPaths` from `.notesage/pins.json` at the library root.
    *  Tolerant of a missing file — resolves to an empty array, never throws. */
   loadPinnedPaths: () => Promise<void>;
-  setGroupByMode: (mode: GroupByMode) => void;
 
   /** Test/reset helper. */
   reset: () => void;
@@ -135,7 +125,6 @@ export const useMobileStore = create<MobileStore>()(
       groupMode: "none",
       viewMode: "list",
       pinnedPaths: [],
-      groupByMode: "none",
 
       currentRelPath: () => {
         const stack = get().folderStack;
@@ -241,7 +230,6 @@ export const useMobileStore = create<MobileStore>()(
         }
       },
 
-      setGroupByMode: (mode) => set({ groupByMode: mode }),
 
       reset: () =>
         set({
@@ -254,8 +242,7 @@ export const useMobileStore = create<MobileStore>()(
           groupMode: "none",
           viewMode: "list",
           pinnedPaths: [],
-          groupByMode: "none",
-        }),
+            }),
     }),
     {
       name: "mobile-store",
@@ -267,7 +254,6 @@ export const useMobileStore = create<MobileStore>()(
         sortMode: s.sortMode,
         groupMode: s.groupMode,
         viewMode: s.viewMode,
-        groupByMode: s.groupByMode,
       }),
 
     },

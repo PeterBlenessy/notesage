@@ -172,30 +172,30 @@ describe("mobile-store pinned paths & group-by (#652)", () => {
     expect(store().pinnedPaths).toEqual([]);
   });
 
-  it("defaults groupByMode to none", () => {
-    expect(store().groupByMode).toBe("none");
+  it("defaults groupMode to none", () => {
+    expect(store().groupMode).toBe("none");
   });
 
-  it("setGroupByMode switches to pinned and back", () => {
-    store().setGroupByMode("pinned");
-    expect(store().groupByMode).toBe("pinned");
-    store().setGroupByMode("none");
-    expect(store().groupByMode).toBe("none");
+  it("setGroupMode switches to pinned and back", () => {
+    store().setGroupMode("pinned");
+    expect(store().groupMode).toBe("pinned");
+    store().setGroupMode("none");
+    expect(store().groupMode).toBe("none");
   });
 
-  it("reset() returns groupByMode to none and clears pinnedPaths", () => {
-    store().setGroupByMode("pinned");
+  it("reset() returns groupMode to none and clears pinnedPaths", () => {
+    store().setGroupMode("pinned");
     useMobileStore.setState({ pinnedPaths: ["a.md"] });
     store().reset();
-    expect(store().groupByMode).toBe("none");
+    expect(store().groupMode).toBe("none");
     expect(store().pinnedPaths).toEqual([]);
   });
 
-  it("groupByMode is included in the persisted (partialize'd) state — survives a relaunch, like sortMode", () => {
-    store().setGroupByMode("pinned");
+  it("groupMode is included in the persisted (partialize'd) state — survives a relaunch, like sortMode", () => {
+    store().setGroupMode("pinned");
     const persistApi = (useMobileStore as unknown as { persist: { getOptions: () => { partialize?: (s: unknown) => unknown } } }).persist;
     const partialize = persistApi.getOptions().partialize;
-    const persisted = partialize!(store()) as { groupByMode?: string };
-    expect(persisted.groupByMode).toBe("pinned");
+    const persisted = partialize!(store()) as { groupMode?: string };
+    expect(persisted.groupMode).toBe("pinned");
   });
 });
