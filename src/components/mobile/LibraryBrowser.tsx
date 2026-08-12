@@ -32,6 +32,9 @@ export function LibraryBrowser() {
   const setSortMode = useMobileStore((s) => s.setSortMode);
   const viewMode = useMobileStore((s) => s.viewMode);
   const setViewMode = useMobileStore((s) => s.setViewMode);
+  const groupByMode = useMobileStore((s) => s.groupByMode);
+  const setGroupByMode = useMobileStore((s) => s.setGroupByMode);
+  const recentlyRead = useMobileStore((s) => s.recentlyRead);
   const a11y = useA11yPrefs();
 
   const currentRelPath = folderStack.length === 0 ? "" : folderStack[folderStack.length - 1].relPath;
@@ -268,6 +271,19 @@ export function LibraryBrowser() {
             icon: "clock",
             selected: sortMode === "modified",
           },
+          {
+            id: "group-recent",
+            title: "Recent",
+            icon: "clock.arrow.circlepath",
+            selected: groupByMode === "recent",
+            sectionBreak: true,
+          },
+          {
+            id: "group-none",
+            title: "None",
+            icon: "line.3.horizontal",
+            selected: groupByMode === "none",
+          },
         ],
       },
       bottomRight: atRoot
@@ -292,6 +308,8 @@ export function LibraryBrowser() {
       "view-gallery": () => setViewMode("gallery"),
       "sort-name": () => setSortMode("name"),
       "sort-modified": () => setSortMode("modified"),
+      "group-recent": () => setGroupByMode("recent"),
+      "group-none": () => setGroupByMode("none"),
       "create-note": () => createNote(),
       "create-folder": () => void createFolder(),
       "search-query": (value?: string) => setQuery(value ?? ""),
@@ -453,15 +471,33 @@ export function LibraryBrowser() {
                 />
               );
             }
-            return (
+            const renderRows = (list: FileEntry[]) => (
               <ul>
-                {visible.map((entry) => (
+                {list.map((entry) => (
                   <li key={entry.path}>
                     <FileRow entry={entry} onActivate={onActivate} onChanged={() => void load(true)} />
                   </li>
                 ))}
               </ul>
             );
+            if (groupByMode === "recent") {
+              const { recent, rest } = groupByRecent(visible, recentlyRead);
+              if (recent.length > 0) {
+                return (
+                  <>
+                    <h2
+                      className="px-4 pb-1 pt-3 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] font-semibold uppercase tracking-wider text-muted-foreground"
+                      style={{ fontWeight: "max(600, var(--ns-a11y-weight, 400))" }}
+                    >
+                      Recent
+                    </h2>
+                    {renderRows(recent)}
+                    {rest.length > 0 && renderRows(rest)}
+                  </>
+                );
+              }
+            }
+            return renderRows(visible);
           })()}
       </div>
 
@@ -651,6 +687,24 @@ export function LibraryBrowser() {
       )}
     </div>
   );
+}
+
+/** Buckets `entries` into recently-read (recency order, most-recent first)
+ *  and everything else, preserving `entries`' existing order for the rest
+ *  (#656 — "Recent" group-by). Pure and reusable across renders. */
+function groupByRecent(
+  entries: FileEntry[],
+  recentlyRead: string[],
+): { recent: FileEntry[]; rest: FileEntry[] } {
+  const byPath = new Map(entries.map((e) => [e.path, e] as const));
+  const recent: FileEntry[] = [];
+  for (const relPath of recentlyRead) {
+    const entry = byPath.get(relPath);
+    if (entry) recent.push(entry);
+  }
+  const recentPaths = new Set(recent.map((e) => e.path));
+  const rest = entries.filter((e) => !recentPaths.has(e.path));
+  return { recent, rest };
 }
 
 function BrowserSkeleton() {

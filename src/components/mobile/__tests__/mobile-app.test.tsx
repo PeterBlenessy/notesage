@@ -228,13 +228,20 @@ describe("sort toggle (#632)", () => {
       ["Gallery", false],
       ["Alphabetical", true],
       ["Date modified", false],
+      // Group by section (#656), its own divider-led group beneath sort.
+      ["Recent", false],
+      ["None", true],
     ]);
     // The sort section starts with a divider.
     expect(captured.topRight?.menu?.[2]?.sectionBreak).toBe(true);
+    // So does the Group by section.
+    expect(captured.topRight?.menu?.[4]?.sectionBreak).toBe(true);
 
     useMobileStore.getState().setSortMode("modified");
     await waitFor(() =>
-      expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([true, false, false, true]),
+      expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([
+        true, false, false, true, false, true,
+      ]),
     );
   });
 });

@@ -49,6 +49,8 @@ const RECENT_CAP = 20;
 export type SortMode = "name" | "modified";
 /** List (single-column) vs. gallery (grid of preview cards) library layout (#633). */
 export type ViewMode = "list" | "gallery";
+/** Library-list grouping (#656): flat list, or bucketed by recency. */
+export type GroupByMode = "none" | "recent";
 
 
 interface MobileStore {
@@ -65,6 +67,8 @@ interface MobileStore {
   /** List vs. gallery layout for the library listing; global (not per-folder),
    *  persists across app relaunches. */
   viewMode: ViewMode;
+  /** Grouping mode for the library listing (persisted). */
+  groupByMode: GroupByMode;
 
 
   /** Current folder relative path (`""` at root). */
@@ -92,6 +96,8 @@ interface MobileStore {
 
   setSortMode: (mode: SortMode) => void;
 
+  setGroupByMode: (mode: GroupByMode) => void;
+
   /** Test/reset helper. */
   reset: () => void;
 }
@@ -106,6 +112,7 @@ export const useMobileStore = create<MobileStore>()(
       recentlyRead: [],
       sortMode: "name",
       viewMode: "list",
+      groupByMode: "none",
 
 
       currentRelPath: () => {
@@ -200,6 +207,8 @@ export const useMobileStore = create<MobileStore>()(
 
       setViewMode: (mode) => set({ viewMode: mode }),
 
+      setGroupByMode: (mode) => set({ groupByMode: mode }),
+
       reset: () =>
         set({
           grantState: "unknown",
@@ -209,6 +218,7 @@ export const useMobileStore = create<MobileStore>()(
           recentlyRead: [],
           sortMode: "name",
           viewMode: "list",
+          groupByMode: "none",
 
         }),
     }),
@@ -221,6 +231,7 @@ export const useMobileStore = create<MobileStore>()(
         recentlyRead: s.recentlyRead,
         sortMode: s.sortMode,
         viewMode: s.viewMode,
+        groupByMode: s.groupByMode,
       }),
 
     },

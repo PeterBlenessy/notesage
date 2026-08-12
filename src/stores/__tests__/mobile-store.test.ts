@@ -153,3 +153,31 @@ describe("mobile-store view mode (#633 — gallery view)", () => {
     expect(persisted.viewMode).toBe("gallery");
   });
 });
+
+describe("mobile-store group by (#656 — Recent)", () => {
+  it("defaults to none", () => {
+    expect(store().groupByMode).toBe("none");
+  });
+
+  it("setGroupByMode switches to recent and back to none", () => {
+    store().setGroupByMode("recent");
+    expect(store().groupByMode).toBe("recent");
+    store().setGroupByMode("none");
+    expect(store().groupByMode).toBe("none");
+  });
+
+  it("reset() returns groupByMode to none", () => {
+    store().setGroupByMode("recent");
+    store().reset();
+    expect(store().groupByMode).toBe("none");
+  });
+
+  it("is included in the persisted (partialize'd) state — survives a relaunch", () => {
+    store().setGroupByMode("recent");
+    const persistApi = (useMobileStore as unknown as { persist: { getOptions: () => { partialize?: (s: unknown) => unknown } } }).persist;
+    const partialize = persistApi.getOptions().partialize;
+    expect(partialize).toBeTruthy();
+    const persisted = partialize!(store()) as { groupByMode?: string };
+    expect(persisted.groupByMode).toBe("recent");
+  });
+});
