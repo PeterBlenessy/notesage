@@ -131,6 +131,15 @@ def patch_project_yml() -> None:
         if key in app_info:
             share_info[key] = app_info[key]
 
+    # Export-compliance answer, baked in (TestFlight/App Store): Notesage
+    # uses only standard HTTPS/TLS, which is exempt. Declaring it here stops
+    # App Store Connect asking on EVERY upload and prevents a build sitting
+    # in "Missing Compliance" limbo. Both targets get it — the extension is
+    # a separate binary and is asked separately.
+    app_info.setdefault("ITSAppUsesNonExemptEncryption", False)
+    app.setdefault("info", {}).setdefault("properties", app_info)
+    share_info.setdefault("ITSAppUsesNonExemptEncryption", False)
+
     # The App Group MUST go through the yml's entitlements `properties`, not a
     # direct plist edit: xcodegen REGENERATES the entitlements file on every
     # `xcodegen generate` (empty when no properties are declared), so a plist
@@ -146,10 +155,40 @@ def patch_project_yml() -> None:
     print(f"patched {PROJECT_YML.relative_to(REPO)}")
 
 
+def strip_icon_alpha() -> None:
+    """App Store Connect rejects an app icon that merely HAS an alpha channel
+    ("Invalid large app icon… can't contain an alpha channel"), even when the
+    alpha is fully opaque — which is exactly what `tauri icon` emits. Flatten
+    every generated icon onto white; the pixels are unchanged (verified fully
+    opaque), only the channel goes away. Idempotent, and re-run automatically
+    here so a future `tauri ios init` / icon regeneration can't silently
+    reintroduce the rejection."""
+    icons = REPO / "src-tauri/gen/apple/Assets.xcassets/AppIcon.appiconset"
+    if not icons.is_dir():
+        return
+    try:
+        from PIL import Image
+    except ImportError:
+        print("! Pillow not installed — skipping icon alpha strip (App Store needs it)")
+        return
+    stripped = 0
+    for path in sorted(icons.glob("*.png")):
+        image = Image.open(path)
+        if image.mode == "RGB":
+            continue
+        flat = Image.new("RGB", image.size, (255, 255, 255))
+        flat.paste(image, mask=image.split()[-1] if image.mode == "RGBA" else None)
+        flat.save(path, "PNG")
+        stripped += 1
+    if stripped:
+        print(f"stripped alpha from {stripped} app icons (App Store requirement)")
+
+
 def main() -> None:
     if not PROJECT_YML.exists():
         sys.exit("gen/apple/project.yml not found — run `tauri ios init` first")
     patch_project_yml()
+    strip_icon_alpha()
     subprocess.run(["xcodegen", "generate"], cwd=GEN, check=True)
     ent = plistlib.loads(APP_ENTITLEMENTS.read_bytes())
     assert APP_GROUP in ent.get("com.apple.security.application-groups", []), (
