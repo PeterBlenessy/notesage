@@ -75,8 +75,10 @@ export function GalleryCard({ entry, currentFolderName, theme, onActivate }: Gal
       <span className="relative aspect-square w-full overflow-hidden rounded-lg bg-muted">
         {entry.is_directory ? (
           <Folder
-            strokeWidth={1.25}
-            className="absolute inset-0 m-auto h-8 w-8 text-muted-foreground"
+            strokeWidth={1}
+            // Sized to the CARD (55% of its square), not a fixed 32px — at
+            // three cards per row a fixed icon reads as a speck.
+            className="absolute inset-0 m-auto h-[55%] w-[55%] text-muted-foreground"
           />
         ) : thumbnail === null ? (
           <span className="absolute inset-0 animate-pulse" aria-hidden />
@@ -107,7 +109,10 @@ export function GalleryCard({ entry, currentFolderName, theme, onActivate }: Gal
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : (
-          <Icon strokeWidth={1.25} className="absolute inset-0 m-auto h-8 w-8 text-muted-foreground" />
+          <Icon
+            strokeWidth={1}
+            className="absolute inset-0 m-auto h-[45%] w-[45%] text-muted-foreground"
+          />
         )}
       </span>
       <span className="w-full min-w-0">
