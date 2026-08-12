@@ -70,6 +70,49 @@ export function LibraryBrowser() {
     void load();
   }, [load]);
 
+  // Refresh when the app returns to the foreground (#650): a share-extension
+  // save happens while the app is backgrounded, so the open folder (Inbox)
+  // was stale until re-entered. visibilitychange fires on every return.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [load]);
+
+  // Web pull-to-refresh (#650). The native UIRefreshControl hung off the
+  // WEBVIEW's scroll view — but the listing scrolls in this inner div, so
+  // that gesture could never fire (removed). This tracks the pull on the
+  // real scroller: drag down from the top past the threshold to reload.
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const pullStart = useRef<number | null>(null);
+  const [pullPx, setPullPx] = useState(0);
+  const [pullBusy, setPullBusy] = useState(false);
+  const PULL_TRIGGER = 64;
+  const onPullStart = (e: React.TouchEvent) => {
+    const el = scrollerRef.current;
+    pullStart.current = el && el.scrollTop <= 0 ? e.touches[0].clientY : null;
+  };
+  const onPullMove = (e: React.TouchEvent) => {
+    const el = scrollerRef.current;
+    if (pullStart.current === null || !el || el.scrollTop > 0 || pullBusy) return;
+    const delta = e.touches[0].clientY - pullStart.current;
+    // Rubber-band factor so the indicator trails the finger like UIKit.
+    setPullPx(delta > 0 ? Math.min(90, delta * 0.45) : 0);
+  };
+  const onPullEnd = () => {
+    pullStart.current = null;
+    if (pullPx >= PULL_TRIGGER && !pullBusy) {
+      setPullBusy(true);
+      // A floor keeps the spinner visible long enough to read as an action
+      // even when the listing returns instantly.
+      const floor = new Promise((r) => setTimeout(r, 500));
+      void Promise.all([load(true), floor]).finally(() => setPullBusy(false));
+    }
+    setPullPx(0);
+  };
+
   // Sorting happens at render time (#632) so a mode toggle re-orders the
   // listing instantly with no reload. Alphabetical mirrors the desktop
   // (folders first); modified is newest-first with folders and files
@@ -310,9 +353,39 @@ export function LibraryBrowser() {
           scrolls away like Notes' does. */}
       <div
         key={currentRelPath}
+        ref={scrollerRef}
+        onTouchStart={onPullStart}
+        onTouchMove={onPullMove}
+        onTouchEnd={onPullEnd}
+        onTouchCancel={onPullEnd}
         className="view-enter absolute inset-0 overflow-y-auto"
-        style={CONTENT_INSETS}
+        style={{
+          ...CONTENT_INSETS,
+          overscrollBehaviorY: "contain",
+          transform:
+            pullPx > 0 ? `translateY(${pullPx}px)` : pullBusy ? "translateY(48px)" : undefined,
+          transition: pullPx > 0 ? "none" : "transform 260ms cubic-bezier(0.25, 0.8, 0.35, 1)",
+        }}
       >
+        {/* Pull-to-refresh indicator: rides above the content, revealed by
+            the pull translate; spins while the reload runs. */}
+        <div
+          aria-hidden={!pullBusy && pullPx === 0}
+          className="pointer-events-none absolute -top-12 left-0 right-0 flex h-12 items-center justify-center"
+        >
+          <div
+            className={
+              pullBusy
+                ? "h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground"
+                : "h-5 w-5 rounded-full border-2 border-muted border-t-foreground"
+            }
+            style={
+              pullBusy
+                ? undefined
+                : { opacity: Math.min(1, pullPx / 64), transform: `rotate(${pullPx * 3.2}deg)` }
+            }
+          />
+        </div>
         {/* The large in-content title + breadcrumb row exist ONLY on the web
             fallback: with native chrome the breadcrumb ISLAND carries both
             the folder name and the path (Peter's #615 design — the island

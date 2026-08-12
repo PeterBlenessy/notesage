@@ -280,6 +280,28 @@ describe("breadcrumb island (#615)", () => {
   });
 });
 
+describe("foreground refresh (#650)", () => {
+  it("reloads the listing when the app returns to the foreground (post-share staleness)", async () => {
+    let entries = [{ name: "old.md", path: "old.md", is_directory: false, hidden: false }];
+    setMockInvokeHandler("ios_list_directory", () => entries);
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("old.md");
+
+    // A share-extension save lands while backgrounded…
+    entries = [
+      ...entries,
+      { name: "shared.png", path: "shared.png", is_directory: false, hidden: false },
+    ];
+    // …and the return to foreground fires visibilitychange.
+    fireEvent(document, new Event("visibilitychange"));
+
+    expect(await screen.findByText("shared.png")).toBeTruthy();
+    // Refresh keeps the current listing visible — no skeleton flash.
+    expect(screen.getByText("old.md")).toBeTruthy();
+  });
+});
+
 describe("native QuickLook routing", () => {
   it("opens videos via ios_quick_look without navigating away from the browser", async () => {
     setMockInvokeHandler("ios_list_directory", () => [
