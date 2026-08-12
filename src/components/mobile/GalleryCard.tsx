@@ -102,6 +102,8 @@ export function GalleryCard({ entry, currentFolderName, theme, onActivate }: Gal
           <img
             src={thumbnail.url}
             alt=""
+            decoding="async"
+            loading="lazy"
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : (

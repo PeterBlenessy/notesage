@@ -58,7 +58,15 @@ export async function renderPdfThumbnailDataUrl(
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("2D canvas context unavailable");
     await page.render({ canvasContext: ctx, canvas, viewport }).promise;
-    return canvas.toDataURL("image/png");
+    // toBlob encodes asynchronously — toDataURL blocks the main thread for
+    // the whole PNG encode, which stacked up across a folder of PDFs.
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error("PNG encode failed"))),
+        "image/png",
+      );
+    });
+    return URL.createObjectURL(blob);
   } finally {
     // `destroy()` lives on the loading task, not the resolved document proxy.
     await loadingTask.destroy();

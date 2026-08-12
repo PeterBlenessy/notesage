@@ -26,8 +26,11 @@ import type { FileEntry } from "@/lib/tauri";
 /** How many source lines of a note feed the thumbnail preview. */
 const PREVIEW_LINES = 10;
 
-/** Max simultaneous thumbnail generations across the whole gallery. */
-const THUMBNAIL_CONCURRENCY = 4;
+/** Max simultaneous thumbnail generations across the whole gallery. Two, not
+ *  more: each job is an IPC read plus render work, and the queue drains
+ *  back-to-back — higher concurrency visibly starves the UI thread during
+ *  navigation (Peter's frozen back-out, #633 follow-up). */
+const THUMBNAIL_CONCURRENCY = 2;
 
 /** Strip a leading YAML frontmatter block, mirroring `Reader.deriveNoteTitle`. */
 export function stripFrontmatter(md: string): string {
@@ -138,6 +141,27 @@ async function buildThumbnail(
 
 const cache = new Map<string, Promise<ThumbnailResult>>();
 
+/** Bumped by `cancelPendingThumbnails`; queued jobs from an older epoch
+ *  resolve to a plain icon without doing any work. */
+let epoch = 0;
+
+class ThumbnailCancelled extends Error {}
+
+/**
+ * Drop every queued-but-unstarted generation. Called when the gallery
+ * unmounts (folder change, back-out, view switch): without this the queue
+ * kept reading and rendering dozens of files while the parent folder tried
+ * to paint — the "frozen back-out" Peter hit. The ≤2 in-flight jobs finish;
+ * cancelled paths are evicted from the cache so a revisit regenerates them.
+ */
+export function cancelPendingThumbnails(): void {
+  epoch++;
+}
+
+/** One macrotask of breathing room before each job so navigation, taps and
+ *  scrolling get a frame between generations. */
+const yieldToUi = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
 /**
  * The single entry point cards use. Runs the actual generation through the
  * shared concurrency limiter and caches the in-flight/resolved promise by
@@ -149,7 +173,19 @@ export function getThumbnail(
 ): Promise<ThumbnailResult> {
   const cached = cache.get(entry.path);
   if (cached) return cached;
-  const promise = thumbnailLimiter(() => buildThumbnail(entry, opts));
+  const myEpoch = epoch;
+  const promise = thumbnailLimiter(async () => {
+    if (myEpoch !== epoch) throw new ThumbnailCancelled();
+    await yieldToUi();
+    if (myEpoch !== epoch) throw new ThumbnailCancelled();
+    return buildThumbnail(entry, opts);
+  }).catch((err) => {
+    if (err instanceof ThumbnailCancelled) {
+      cache.delete(entry.path);
+      return { kind: "icon" } as ThumbnailResult;
+    }
+    throw err;
+  });
   cache.set(entry.path, promise);
   return promise;
 }
