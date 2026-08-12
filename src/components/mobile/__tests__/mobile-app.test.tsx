@@ -72,6 +72,8 @@ const ALLOWED = new Set([
   // #618 — swipe-delete: file-only (directories refused natively), backed by
   // iCloud's 30-day Recently Deleted recovery.
   "ios_delete_file",
+  // Native QuickLook preview — reads a temp copy, writes nothing.
+  "ios_quick_look",
   "ios_text_prompt",
 ]);
 
@@ -273,6 +275,39 @@ describe("breadcrumb island (#615)", () => {
     renderWithProviders(<LibraryBrowser />);
     await waitFor(() => expect(captured.topCenter?.title).toBe("Notesage"));
     expect(captured.topCenter?.menu).toBeUndefined();
+  });
+});
+
+describe("native QuickLook routing", () => {
+  it("opens videos via ios_quick_look without navigating away from the browser", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "demo.mov", path: "demo.mov", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("ios_quick_look", (args) => {
+      expect((args as { relPath: string }).relPath).toBe("demo.mov");
+      return null;
+    });
+
+    renderWithProviders(<Shell />);
+    fireEvent.click(await screen.findByText("demo.mov"));
+
+    await waitFor(() => expect(calledCommands()).toContain("ios_quick_look"));
+    // No navigation: the browser stays put under the native preview.
+    expect(useMobileStore.getState().openDoc).toBeNull();
+  });
+
+  it("falls back to the Reader when the native layer is absent", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "slides.pptx", path: "slides.pptx", is_directory: false, hidden: false },
+    ]);
+    // ios_quick_look deliberately unmocked — rejects like a build without
+    // the native layer.
+    renderWithProviders(<Shell />);
+    fireEvent.click(await screen.findByText("slides.pptx"));
+
+    await waitFor(() =>
+      expect(useMobileStore.getState().openDoc?.relPath).toBe("slides.pptx"),
+    );
   });
 });
 

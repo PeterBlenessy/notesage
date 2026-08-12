@@ -1,4 +1,5 @@
 import Foundation
+import QuickLook
 import Tauri
 import UIKit
 import WebKit
@@ -90,6 +91,33 @@ private enum ContentProcessRecovery {
       wv.reload()
     }
     class_addMethod(cls, selector, imp_implementationWithBlock(block), "v@:@")
+  }
+}
+
+// MARK: - QuickLook
+
+/// Presents the system QuickLook viewer over a TEMP COPY of a library file
+/// (#587 follow-up: videos, audio, DOCX/PPTX/EPUB and friends get the native
+/// player/preview instead of an "unsupported" card). The temp copy exists
+/// because QuickLook renders out-of-process and cannot read through our
+/// security-scoped grant; its per-invocation directory is deleted on dismiss.
+private final class QuickLookPresenter: NSObject, QLPreviewControllerDataSource,
+  QLPreviewControllerDelegate
+{
+  /// Retained while presented — QLPreviewController holds its dataSource weakly.
+  static var current: QuickLookPresenter?
+  private let url: URL
+  init(url: URL) { self.url = url }
+
+  func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
+  func previewController(_ controller: QLPreviewController, previewItemAt index: Int)
+    -> QLPreviewItem
+  {
+    url as NSURL
+  }
+  func previewControllerDidDismiss(_ controller: QLPreviewController) {
+    try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+    QuickLookPresenter.current = nil
   }
 }
 
@@ -353,6 +381,32 @@ class NotesageIosPlugin: Plugin {
     do {
       let args = try invoke.parseArgs(RelPathArgs.self)
       invoke.resolve(["relPath": try LibraryAccess.createDirectory(args.relPath)])
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func quickLook(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(RelPathArgs.self)
+      let fileURL = try LibraryAccess.copyForSharing(args.relPath)
+      DispatchQueue.main.async {
+        guard let presenter = self.topViewController else {
+          try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent())
+          invoke.reject("No view controller to present the preview")
+          return
+        }
+        guard presenter.presentedViewController == nil else {
+          try? FileManager.default.removeItem(at: fileURL.deletingLastPathComponent())
+          invoke.reject("Another sheet is already open")
+          return
+        }
+        let holder = QuickLookPresenter(url: fileURL)
+        QuickLookPresenter.current = holder
+        let controller = QLPreviewController()
+        controller.dataSource = holder
+        controller.delegate = holder
+        presenter.present(controller, animated: true)
+        invoke.resolve()
+      }
     } catch { invoke.reject(String(describing: error)) }
   }
 

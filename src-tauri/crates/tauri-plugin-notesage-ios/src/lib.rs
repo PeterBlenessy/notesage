@@ -211,6 +211,12 @@ impl<R: Runtime> NotesageIos<R> {
             .map(|r| r.rel_path)
     }
 
+    /// Present the system QuickLook preview over a temp copy of a library
+    /// file (native video/audio playback, DOCX/PPTX/EPUB rendering, …).
+    pub fn quick_look(&self, rel: &str) -> Result<()> {
+        self.call("quickLook", RelPathArgs { rel_path: rel })
+    }
+
     /// Delete a FILE (never a directory) — coordinated `.forDeleting`.
     pub fn delete_file(&self, rel: &str) -> Result<()> {
         self.call("deleteFile", RelPathArgs { rel_path: rel })
@@ -293,6 +299,9 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn write_file(&self, _rel: &str, _text: &str) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn quick_look(&self, _rel: &str) -> Result<()> {
         Err(Error::Unavailable)
     }
     pub fn delete_file(&self, _rel: &str) -> Result<()> {

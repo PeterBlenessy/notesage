@@ -270,6 +270,26 @@ pub async fn ios_create_directory(
     }
 }
 
+/// Present the system QuickLook preview for a library file — native
+/// video/audio playback and document rendering for formats the web reader
+/// does not handle. Reads a temp copy; writes nothing to the library.
+#[tauri::command]
+pub async fn ios_quick_look(app: tauri::AppHandle, rel_path: String) -> Result<(), String> {
+    let rel = sanitize_rel_path(&rel_path)?;
+    if rel.is_empty() {
+        return Err("Cannot preview the library root".into());
+    }
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::quick_look(&app, &rel).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, rel);
+        Err("ios_quick_look is only available on iOS".into())
+    }
+}
+
 /// Delete a FILE relative to the granted library root (#618 swipe-delete).
 /// Directories are refused natively; iCloud's "Recently Deleted" (30-day
 /// recovery) is the safety net for the no-confirm swipe gesture.
@@ -476,6 +496,10 @@ mod ios_impl {
 
     pub async fn create_directory(app: &AppHandle, rel: &str) -> Result<String, String> {
         app.notesage_ios().create_directory(rel).map_err(|e| e.to_string())
+    }
+
+    pub async fn quick_look(app: &AppHandle, rel: &str) -> Result<(), String> {
+        app.notesage_ios().quick_look(rel).map_err(|e| e.to_string())
     }
 
     pub async fn delete_file(app: &AppHandle, rel: &str) -> Result<(), String> {

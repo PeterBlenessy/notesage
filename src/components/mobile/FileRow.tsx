@@ -1,4 +1,4 @@
-import { ChevronRight, Folder, FileText, FileImage, FileType, FileCode, File, Share, Trash2 } from "lucide-react";
+import { ChevronRight, Folder, FileText, FileImage, FileType, FileCode, File, FilePlay, Share, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { FileEntry } from "@/lib/tauri";
 import { iosShareFile, iosDeleteFile } from "@/lib/ios-api";
@@ -8,12 +8,15 @@ import { SwipeRevealRow, type SwipeRevealAction } from "./SwipeRevealRow";
 /** Classify a file by extension for icon + viewer routing. */
 export function classifyFile(
   name: string,
-): "markdown" | "image" | "text" | "pdf" | "doc" | "html" | "other" {
+): "markdown" | "image" | "text" | "pdf" | "doc" | "media" | "html" | "other" {
   const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
   if (ext === "md" || ext === "markdown") return "markdown";
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"].includes(ext)) return "image";
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "heic"].includes(ext)) return "image";
   if (ext === "pdf") return "pdf";
   if (["epub", "docx", "pptx"].includes(ext)) return "doc";
+  // Videos and audio (shared screen recordings, voice memos, …) — opened
+  // via the native QuickLook player, never the web reader.
+  if (["mp4", "mov", "m4v", "mp3", "m4a", "wav", "aac", "caf"].includes(ext)) return "media";
   // Rendered, not shown as source: exported reports are self-contained HTML
   // whose charts and interactivity are inline scripts. iOS Files shows them as
   // markup with scripts disabled, which is the gap this reader closes.
@@ -43,6 +46,8 @@ export function iconFor(entry: FileEntry) {
     case "pdf":
     case "doc":
       return FileType;
+    case "media":
+      return FilePlay;
     case "html":
       return FileCode;
     case "text":
