@@ -176,6 +176,34 @@ export function LibraryBrowser() {
       return sections;
     }
 
+    if (groupMode === "type") {
+      // One section per kind, in a fixed reading order so the listing does
+      // not reshuffle as a folder's mix changes. `classifyFile`'s kinds are
+      // the source of truth; empty sections are dropped below.
+      const order: Array<[ReturnType<typeof classifyFile>, string]> = [
+        ["markdown", "Notes"],
+        ["text", "Text & Code"],
+        ["pdf", "PDFs"],
+        ["image", "Images"],
+        ["media", "Audio & Video"],
+        ["doc", "Documents"],
+        ["html", "Web Pages"],
+        ["other", "Other"],
+      ];
+      const byKind = new Map<string, FileEntry[]>();
+      for (const file of files) {
+        const kind = classifyFile(file.name);
+        const list = byKind.get(kind);
+        if (list) list.push(file);
+        else byKind.set(kind, [file]);
+      }
+      for (const [kind, title] of order) {
+        const items = byKind.get(kind);
+        if (items && items.length > 0) sections.push({ key: kind, title, items });
+      }
+      return sections;
+    }
+
     // Date buckets, newest first — undated entries sink to "Older".
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
@@ -356,6 +384,12 @@ export function LibraryBrowser() {
             icon: "calendar",
             selected: groupMode === "date",
           },
+          {
+            id: "group-type",
+            title: "Group by type",
+            icon: "doc.on.doc",
+            selected: groupMode === "type",
+          },
         ],
       },
       bottomRight: atRoot
@@ -384,6 +418,7 @@ export function LibraryBrowser() {
       "group-pinned": () => setGroupMode("pinned"),
       "group-recent": () => setGroupMode("recent"),
       "group-date": () => setGroupMode("date"),
+      "group-type": () => setGroupMode("type"),
       "create-note": () => createNote(),
       "create-folder": () => void createFolder(),
       "search-query": (value?: string) => setQuery(value ?? ""),

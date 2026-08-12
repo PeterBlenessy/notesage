@@ -232,6 +232,7 @@ describe("sort toggle (#632)", () => {
       ["Group by pinned", false],
       ["Group by recent", false],
       ["Group by date", false],
+      ["Group by type", false],
     ]);
     // Sort and group each open their own section.
     expect(captured.topRight?.menu?.[2]?.sectionBreak).toBe(true);
@@ -240,7 +241,7 @@ describe("sort toggle (#632)", () => {
     useMobileStore.getState().setSortMode("modified");
     await waitFor(() =>
       expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([
-        true, false, false, true, true, false, false, false,
+        true, false, false, true, true, false, false, false, false,
       ]),
     );
   });
@@ -323,6 +324,26 @@ describe("group by (#652)", () => {
     expect(screen.getByRole("heading", { name: "Folders" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Recent" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "All Notes" })).toBeTruthy();
+  });
+
+  it("sections by file type in a fixed reading order, dropping empty kinds", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "clip.mov", path: "clip.mov", is_directory: false, hidden: false },
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false },
+      { name: "shot.png", path: "shot.png", is_directory: false, hidden: false },
+    ]);
+    useMobileStore.setState({ groupMode: "type" });
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("note.md");
+    // h1 is the web-fallback page title ("Notesage") — sections are h2.
+    const headings = screen
+      .getAllByRole("heading", { level: 2 })
+      .map((h) => h.textContent)
+      .filter((t): t is string => Boolean(t));
+    // Fixed order regardless of listing order; kinds with no files omitted.
+    expect(headings).toEqual(["Notes", "Images", "Audio & Video"]);
+    expect(headings).not.toContain("PDFs");
   });
 
   it("buckets by modified date when grouping by date", async () => {

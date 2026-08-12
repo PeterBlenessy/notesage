@@ -52,7 +52,7 @@ export type SortMode = "name" | "modified";
 
 /** Listing grouping (#652): pinned (shared pins.json), recent (this app's
  *  recently-read list) or date (Notes' Today / Yesterday / … buckets). */
-export type GroupMode = "none" | "pinned" | "recent" | "date";
+export type GroupMode = "none" | "pinned" | "recent" | "date" | "type";
 
 /** List (single-column) vs. gallery (grid of preview cards) library layout (#633). */
 export type ViewMode = "list" | "gallery";
