@@ -26,6 +26,7 @@ import {
   createLimiter,
   getThumbnail,
   resetThumbnailCache,
+  cancelPendingThumbnails,
 } from "@/lib/mobile-thumbnails";
 
 function entry(overrides: Partial<FileEntry> & { name: string }): FileEntry {
@@ -198,5 +199,38 @@ describe("createLimiter (#633 — bounded concurrent reads)", () => {
     const limit = createLimiter(1);
     await expect(limit(() => Promise.resolve(42))).resolves.toBe(42);
     await expect(limit(() => Promise.reject(new Error("boom")))).rejects.toThrow("boom");
+  });
+});
+
+describe("cancelPendingThumbnails (#633 frozen back-out)", () => {
+  it("queued-but-unstarted generations resolve to icons without reading, and are evicted for retry", async () => {
+    const reads: string[] = [];
+    iosReadFileMock.mockImplementation((relPath) => {
+      reads.push(relPath);
+      // Slow read keeps the limiter's slots occupied so later jobs queue.
+      return new Promise((resolve) => setTimeout(() => resolve("# hi"), 30));
+    });
+    renderMarkdownFragmentMock.mockResolvedValue("<h1>hi</h1>");
+
+    // Fill both limiter slots, then queue two more.
+    const inflight = [
+      getThumbnail(entry({ name: "a.md" }), { theme: "light" }),
+      getThumbnail(entry({ name: "b.md" }), { theme: "light" }),
+    ];
+    const queued = [
+      getThumbnail(entry({ name: "c.md" }), { theme: "light" }),
+      getThumbnail(entry({ name: "d.md" }), { theme: "light" }),
+    ];
+    cancelPendingThumbnails();
+
+    const queuedResults = await Promise.all(queued);
+    expect(queuedResults.map((r) => r.kind)).toEqual(["icon", "icon"]);
+    await Promise.all(inflight);
+    // The cancelled paths never touched the filesystem…
+    expect(reads).not.toContain("c.md");
+    expect(reads).not.toContain("d.md");
+    // …and are not cached, so a revisit regenerates them.
+    const retry = await getThumbnail(entry({ name: "c.md" }), { theme: "light" });
+    expect(retry.kind).toBe("markdown");
   });
 });

@@ -9,6 +9,7 @@ import { GalleryView } from "@/components/mobile/GalleryView";
 const getThumbnailMock = vi.fn();
 vi.mock("@/lib/mobile-thumbnails", () => ({
   getThumbnail: (...args: unknown[]) => getThumbnailMock(...args),
+  cancelPendingThumbnails: vi.fn(),
 }));
 
 /** A controllable fake — real WKWebView has IntersectionObserver; jsdom does
