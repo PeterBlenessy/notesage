@@ -47,13 +47,18 @@ pub const INBOX_DIR: &str = "Inbox";
 
 /// Build a capture note from `input`.
 ///
-/// `now_rfc3339` is the `date_saved` value (e.g. `2026-06-28T10:14:00Z`) and
-/// `file_stamp` is the filename time component (`YYYY-MM-DD-HHmmss`). Both are
-/// injected so the function stays deterministic and unit-testable; the command
-/// layer computes them from the system clock.
-pub fn build_capture_note(input: &CaptureInput, now_rfc3339: &str, file_stamp: &str) -> CaptureNote {
-    let slug = slug_for(input);
-    let rel_path = format!("{INBOX_DIR}/{file_stamp}-{slug}.md");
+/// `now_rfc3339` is the `date_saved` value (e.g. `2026-06-28T10:14:00Z`).
+/// It is injected so the function stays deterministic and unit-testable; the
+/// command layer computes it from the system clock.
+///
+/// The filename is the note's TITLE, readable — `The Quiet Rise of Local AI
+/// Models.md`, matching how the editor names notes from their heading. The
+/// date is deliberately NOT part of it: `date_saved` is already in the
+/// frontmatter and drives sorting/grouping, so a timestamp in the name is
+/// noise (Peter, 2026-08-12). Same-title captures are deduped by the caller
+/// (`name-1.md`), never overwritten.
+pub fn build_capture_note(input: &CaptureInput, now_rfc3339: &str) -> CaptureNote {
+    let rel_path = format!("{INBOX_DIR}/{}.md", file_name_for(input));
 
     let tags = if input.tags.is_empty() {
         vec!["inbox".to_string()]
@@ -91,48 +96,65 @@ pub fn build_capture_note(input: &CaptureInput, now_rfc3339: &str, file_stamp: &
     }
 }
 
-/// Derive a filesystem-safe slug from the title (preferred) or the URL host.
-fn slug_for(input: &CaptureInput) -> String {
+/// Derive the note's filename stem from the title (preferred) or the URL
+/// host. Readable, not slugified: spaces and capitals are valid in a
+/// filename and make a shared note look like a hand-written one.
+pub fn file_name_for(input: &CaptureInput) -> String {
     if let Some(title) = input.title.as_ref().filter(|t| !t.trim().is_empty()) {
-        let s = slugify(title);
+        let s = sanitize_file_stem(title);
         if !s.is_empty() {
             return s;
         }
     }
-    let host = url_host(&input.url);
-    let s = slugify(&host);
+    let s = sanitize_file_stem(&url_host(&input.url));
     if s.is_empty() {
-        "capture".to_string()
+        "Capture".to_string()
     } else {
         s
     }
 }
 
-/// Lowercase, replace any run of non-alphanumeric characters with a single `-`,
-/// trim leading/trailing `-`, and cap length at 50 characters.
-fn slugify(input: &str) -> String {
+/// Make a title safe as a single filename component: strip path separators
+/// and characters that break Finder/iCloud round-trips, collapse whitespace,
+/// drop leading dots (a hidden file would vanish from the browser), and cap
+/// at 60 characters on a word boundary where possible.
+pub fn sanitize_file_stem(input: &str) -> String {
     let mut out = String::with_capacity(input.len());
-    let mut prev_dash = false;
+    let mut prev_space = false;
     for ch in input.chars() {
-        if ch.is_ascii_alphanumeric() {
-            out.push(ch.to_ascii_lowercase());
-            prev_dash = false;
-        } else if !prev_dash && !out.is_empty() {
-            out.push('-');
-            prev_dash = true;
+        let mapped = match ch {
+            '/' | '\\' | ':' => Some('-'),
+            // Control characters and the characters Finder/Windows reject.
+            c if c.is_control() => None,
+            '*' | '?' | '"' | '<' | '>' | '|' => None,
+            c if c.is_whitespace() => Some(' '),
+            c => Some(c),
+        };
+        match mapped {
+            Some(' ') => {
+                if !prev_space && !out.is_empty() {
+                    out.push(' ');
+                    prev_space = true;
+                }
+            }
+            Some(c) => {
+                out.push(c);
+                prev_space = false;
+            }
+            None => {}
         }
     }
-    while out.ends_with('-') {
-        out.pop();
+    let mut out = out.trim().trim_start_matches('.').trim().to_string();
+    if out.chars().count() > 60 {
+        let truncated: String = out.chars().take(60).collect();
+        out = match truncated.rsplit_once(' ') {
+            Some((head, _)) if head.chars().count() >= 30 => head.to_string(),
+            _ => truncated,
+        };
     }
-    if out.len() > 50 {
-        out.truncate(50);
-        while out.ends_with('-') {
-            out.pop();
-        }
-    }
-    out
+    out.trim_end_matches(['-', ' ', '.']).to_string()
 }
+
 
 /// Extract the host portion of a URL without pulling in a URL-parsing crate.
 /// `https://x.com/user/status/1` → `x.com`. Falls back to the whole string.
@@ -265,13 +287,11 @@ pub fn build_article_note(
     input: &CaptureInput,
     article: &Article,
     now_rfc3339: &str,
-    file_stamp: &str,
 ) -> CaptureNote {
     let effective_title = input.title.clone().or_else(|| article.title.clone());
     let base = build_capture_note(
         &CaptureInput { title: effective_title, ..input.clone() },
         now_rfc3339,
-        file_stamp,
     );
     let mut contents = base.contents;
     // Frontmatter is the first `---` block; add the format marker just
@@ -286,6 +306,10 @@ pub fn build_article_note(
 }
 
 pub fn timestamps() -> (String, String) {
+    // The second element (the `YYYY-MM-DD-HHmmss` filename stamp) is no
+    // longer used in filenames (#653 follow-up: captures are named after
+    // their title). Kept so the shape stays testable and any future
+    // consumer has it.
     use std::time::{SystemTime, UNIX_EPOCH};
     let secs = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -355,19 +379,17 @@ mod tests {
         let note = build_capture_note(
             &input("https://example.com/post", Some("Hello, World! A Post")),
             "2026-06-28T10:14:00Z",
-            "2026-06-28-101400",
         );
-        assert_eq!(note.rel_path, "Inbox/2026-06-28-101400-hello-world-a-post.md");
+        assert_eq!(note.rel_path, "Inbox/Hello, World! A Post.md");
     }
 
     #[test]
-    fn falls_back_to_host_slug_when_no_title() {
+    fn falls_back_to_host_when_no_title() {
         let note = build_capture_note(
             &input("https://x.com/user/status/123", None),
             "2026-06-28T10:14:00Z",
-            "2026-06-28-101400",
         );
-        assert_eq!(note.rel_path, "Inbox/2026-06-28-101400-x-com.md");
+        assert_eq!(note.rel_path, "Inbox/x.com.md");
     }
 
     #[test]
@@ -381,7 +403,6 @@ mod tests {
         let note = build_capture_note(
             &input("https://example.com", None),
             "2026-06-28T10:14:00Z",
-            "2026-06-28-101400",
         );
         assert!(note.contents.contains("tags:\n  - \"inbox\"\n"));
     }
@@ -390,7 +411,7 @@ mod tests {
     fn honors_explicit_tags() {
         let mut i = input("https://example.com", None);
         i.tags = vec!["read-later".to_string(), "x".to_string()];
-        let note = build_capture_note(&i, "t", "s");
+        let note = build_capture_note(&i, "t");
         assert!(note.contents.contains("  - \"read-later\"\n"));
         assert!(note.contents.contains("  - \"x\"\n"));
         assert!(!note.contents.contains("inbox"));
@@ -401,7 +422,6 @@ mod tests {
         let note = build_capture_note(
             &input("https://example.com/a", Some("T")),
             "2026-06-28T10:14:00Z",
-            "2026-06-28-101400",
         );
         assert!(note.contents.starts_with("---\ntype: capture\n"));
         assert!(note.contents.contains("source_url: \"https://example.com/a\"\n"));
@@ -413,7 +433,7 @@ mod tests {
     fn body_contains_url_then_selection() {
         let mut i = input("https://example.com/a", None);
         i.selection_text = Some("a quoted passage".to_string());
-        let note = build_capture_note(&i, "t", "s");
+        let note = build_capture_note(&i, "t");
         let body = note.contents.split("---\n\n").nth(1).unwrap();
         assert_eq!(body, "https://example.com/a\n\na quoted passage\n");
     }
@@ -422,7 +442,7 @@ mod tests {
     fn omits_blank_title_and_selection() {
         let mut i = input("https://example.com/a", Some("   "));
         i.selection_text = Some("  ".to_string());
-        let note = build_capture_note(&i, "t", "s");
+        let note = build_capture_note(&i, "t");
         assert!(!note.contents.contains("title:"));
         let body = note.contents.split("---\n\n").nth(1).unwrap();
         assert_eq!(body, "https://example.com/a\n");
@@ -434,12 +454,25 @@ mod tests {
     }
 
     #[test]
-    fn slug_is_capped_and_trimmed() {
-        let long = "x".repeat(80);
-        let s = slugify(&long);
-        assert_eq!(s.len(), 50);
-        assert_eq!(slugify("  !!! hi --- there !!!  "), "hi-there");
-        assert_eq!(slugify("!!!"), "");
+    fn file_stem_is_readable_safe_and_capped() {
+        // Readable: spaces and capitals survive — a shared note should look
+        // like a hand-written one (#653 follow-up).
+        assert_eq!(
+            sanitize_file_stem("The Quiet Rise of Local AI Models"),
+            "The Quiet Rise of Local AI Models"
+        );
+        // Path separators and Finder-hostile characters are replaced/dropped.
+        assert_eq!(sanitize_file_stem("Q3/Q4: plan?"), "Q3-Q4- plan");
+        // Whitespace collapses; a leading dot (hidden file!) is stripped.
+        assert_eq!(sanitize_file_stem("  .hidden   name  "), "hidden   name".replace("   ", " "));
+        // Capped at 60 chars, preferring a word boundary.
+        let long = "word ".repeat(30);
+        let capped = sanitize_file_stem(&long);
+        assert!(capped.chars().count() <= 60, "{capped}");
+        assert!(!capped.ends_with(' '));
+        // A title with nothing usable yields an empty stem, so file_name_for
+        // falls back to the host (and ultimately "Capture").
+        assert_eq!(sanitize_file_stem("///"), "");
     }
 
     // ---- rich web capture (#584) ------------------------------------------
@@ -481,7 +514,7 @@ mod tests {
             tags: vec![],
         };
         let article = extract_article(&article_html(), "https://example.com/post").unwrap();
-        let note = build_article_note(&input, &article, "2026-08-10T10:00:00+02:00", "2026-08-10-100000");
+        let note = build_article_note(&input, &article, "2026-08-10T10:00:00+02:00");
         // Frontmatter: format marker INSIDE the fence, title from the article.
         let fm_end = note.contents[3..].find("\n---").unwrap() + 3;
         let frontmatter = &note.contents[..fm_end];
@@ -489,8 +522,8 @@ mod tests {
         assert!(frontmatter.contains("A Real Article"));
         // Body: the article markdown follows.
         assert!(note.contents[fm_end..].contains("Paragraph 3"));
-        // Same naming scheme as the link-only note.
-        assert!(note.rel_path.starts_with("Inbox/2026-08-10-100000"));
+        // Same naming scheme as the link-only note: titled, undated.
+        assert_eq!(note.rel_path, "Inbox/A Real Article.md");
     }
 
     #[test]
@@ -502,7 +535,7 @@ mod tests {
             tags: vec![],
         };
         let article = extract_article(&article_html(), "https://example.com/post").unwrap();
-        let note = build_article_note(&input, &article, "2026-08-10T10:00:00+02:00", "2026-08-10-100000");
+        let note = build_article_note(&input, &article, "2026-08-10T10:00:00+02:00");
         assert!(note.contents.contains("User Chosen"));
     }
 
