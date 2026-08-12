@@ -1563,7 +1563,8 @@ pub enum DownloadState { Ready, Downloading, Failed }
 
 The capture note format (frontmatter `type: capture` / `source_url` / `title` /
 `date_saved` / `tags`, body = the link plus any shared selection, filename
-`Inbox/YYYY-MM-DD-HHmmss-<slug>.md`) is produced by the shared, unit-tested
+`Inbox/<Note Title>.md`, readable and undated — dedupe on collision) is
+produced by the shared, unit-tested
 `notesage-capture` crate, which the Share Extension calls over its C ABI —
 capture happens only in the extension's process. In-app writes are the
 three allowlisted note-editing commands above (#586) — library-root-confined

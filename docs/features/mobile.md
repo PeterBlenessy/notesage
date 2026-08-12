@@ -190,7 +190,10 @@ verified basis for the App Store privacy label **"Data Not Collected"**:
 - **Capture format.** Produced by the pure, unit-tested
   `capture::build_capture_note` (frontmatter `type: capture` / `source_url` /
   `title` / `date_saved` / `tags`; body = the link + any shared selection;
-  filename `Inbox/YYYY-MM-DD-HHmmss-<slug>.md`). The Share Extension calls the
+  filename `Inbox/<Note Title>.md` — readable and UNDATED: `date_saved` is
+  already in the frontmatter and drives sorting/grouping, so a timestamp in
+  the name is noise; same-title captures dedupe to `<Title>-1.md` rather than
+  overwriting). The Share Extension calls the
   same Rust implementation over a C ABI (`notesage-capture` staticlib +
   `NotesageCapture.h`) — one format, one implementation, tested once.
 - **Share Extension wiring is scripted.** `tauri ios init` cannot create
