@@ -59,8 +59,8 @@ pub unsafe extern "C" fn notesage_capture_rel_path(
 ) -> *mut c_char {
     catch_unwind(AssertUnwindSafe(|| {
         let input = input_from(url, title, selection_text, tags);
-        let (now, stamp) = timestamps();
-        into_c_string(build_capture_note(&input, &now, &stamp).rel_path)
+        let (now, _stamp) = timestamps();
+        into_c_string(build_capture_note(&input, &now).rel_path)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
@@ -80,8 +80,8 @@ pub unsafe extern "C" fn notesage_capture_contents(
 ) -> *mut c_char {
     catch_unwind(AssertUnwindSafe(|| {
         let input = input_from(url, title, selection_text, tags);
-        let (now, stamp) = timestamps();
-        into_c_string(build_capture_note(&input, &now, &stamp).contents)
+        let (now, _stamp) = timestamps();
+        into_c_string(build_capture_note(&input, &now).contents)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
@@ -114,8 +114,8 @@ pub unsafe extern "C" fn notesage_capture_article_contents(
             Some(a) => a,
             None => return std::ptr::null_mut(),
         };
-        let (now, stamp) = timestamps();
-        into_c_string(build_article_note(&input, &article, &now, &stamp).contents)
+        let (now, _stamp) = timestamps();
+        into_c_string(build_article_note(&input, &article, &now).contents)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
@@ -216,8 +216,7 @@ mod tests {
                 None,
             )
         };
-        assert!(out.starts_with("Inbox/"), "{out}");
-        assert!(out.ends_with("-hello-world.md"), "{out}");
+        assert_eq!(out, "Inbox/Hello World.md", "{out}");
     }
 
     #[test]

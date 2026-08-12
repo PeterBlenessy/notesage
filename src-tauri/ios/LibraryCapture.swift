@@ -43,9 +43,10 @@ extension LibraryAccess {
             )
         }
 
-        // The Rust name is timestamped to the second; two shares inside the
-        // same second would collide, so disambiguate here where the filesystem
-        // is actually visible.
+        // The Rust name is the note's TITLE (undated since #653's follow-up),
+        // so re-sharing the same article collides by design — disambiguate
+        // here, where the filesystem is actually visible, rather than
+        // overwriting a note the user may have edited.
         var name = (relPath as NSString).lastPathComponent
         var target = inbox.appendingPathComponent(name)
         var n = 1
