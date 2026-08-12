@@ -117,6 +117,14 @@ export function iosSetChrome(spec: {
 }
 
 /**
+ * Present the system QuickLook preview for a library file — native
+ * video/audio playback and document rendering. Rejects off-iOS.
+ */
+export function iosQuickLook(relPath: string): Promise<void> {
+  return invoke("ios_quick_look", { relPath });
+}
+
+/**
  * Delete a FILE (never a directory) under the granted library root. iCloud's
  * "Recently Deleted" (30-day recovery) backs the no-confirm swipe gesture.
  */

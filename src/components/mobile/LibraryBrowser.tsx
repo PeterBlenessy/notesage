@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, FolderOpen, AlertCircle, Plus, FolderPlus, ArrowDownAZ, Clock, LayoutGrid, List } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
-import { iosListDirectory, iosCreateDirectory, iosTextPrompt } from "@/lib/ios-api";
+import { iosListDirectory, iosCreateDirectory, iosTextPrompt, iosQuickLook } from "@/lib/ios-api";
 import { toast } from "sonner";
 import { useMobileStore } from "@/stores/mobile-store";
-import { FileRow } from "./FileRow";
+import { FileRow, classifyFile } from "./FileRow";
 import { GalleryView } from "./GalleryView";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
@@ -93,9 +93,20 @@ export function LibraryBrowser() {
   const onActivate = (entry: FileEntry) => {
     if (entry.is_directory) {
       enterFolder({ relPath: entry.path, name: entry.name });
-    } else {
-      openDocument({ relPath: entry.path, name: entry.name });
+      return;
     }
+    const kind = classifyFile(entry.name);
+    if (kind === "media" || kind === "doc") {
+      // Native QuickLook: video/audio playback and DOCX/PPTX/EPUB rendering
+      // the web reader doesn't do. Presented OVER the browser — no
+      // navigation. Falls back to the Reader (its unsupported card) when the
+      // native layer is absent (desktop dev, tests).
+      void iosQuickLook(entry.path).catch(() =>
+        openDocument({ relPath: entry.path, name: entry.name }),
+      );
+      return;
+    }
+    openDocument({ relPath: entry.path, name: entry.name });
   };
 
   // --- Create flow (#586): "+" bottom-right. At the library root only
