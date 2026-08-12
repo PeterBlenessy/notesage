@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.30",
+      "date": "2026-08-12",
+      "previousVersion": "0.48.0-alpha.29",
+      "sections": {},
+      "underTheHood": [
+        "iOS: fix gallery markdown thumbnails — full-size headings shoved right by editor padding (#644)",
+        "iOS: thumbnail queue cancellation + pacing — no more frozen back-out (#645)",
+        "iOS: accept images, videos and audio in the share sheet (#646)",
+        "feat(mobile): share images, videos and audio into the library",
+        "fix(mobile): abort in-flight thumbnail jobs at every stage checkpoint",
+        "fix(mobile): free the UI thread from thumbnail generation — cancel on back-out, pace the queue",
+        "fix(mobile): gallery markdown thumbnails rendered at full editor size, shoved right"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.29",
       "date": "2026-08-12",
       "previousVersion": "0.48.0-alpha.28",
