@@ -155,7 +155,7 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext }:
         {...longPress}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "ios-press-row flex w-full items-center gap-3 px-4 py-2.5 text-left",
+          "ios-press-row flex w-full items-center gap-3 px-4 py-2 text-left",
           "border-b border-border last:border-b-0",
           "hover:bg-muted/50",
           active && "bg-muted",
@@ -174,7 +174,7 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext }:
             date moved to the section headers — see `dateSection`. */}
         <span
           className={cn(
-            "min-w-0 flex-1 truncate text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground",
+            "min-w-0 flex-1 truncate text-[length:calc(1.0625rem*var(--ns-a11y-scale,1))] text-foreground",
             entry.hidden && "opacity-60",
           )}
           style={{
@@ -186,7 +186,7 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext }:
           {entry.name}
         </span>
         {entry.is_directory && entry.child_count !== undefined && (
-          <span className="shrink-0 text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] tabular-nums text-muted-foreground">
+          <span className="shrink-0 text-[length:calc(1.0625rem*var(--ns-a11y-scale,1))] tabular-nums text-muted-foreground">
             {entry.child_count}
           </span>
         )}

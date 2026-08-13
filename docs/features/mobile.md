@@ -289,6 +289,19 @@ move command), Duplicate (needs a binary-safe copy, or it would silently skip
 non-markdown files), Info (repeats the date already on the row), and
 Quick Look (a plain tap already does it).
 
+## Search island: fade, then collapse
+
+Closing the folder search made the ✕ appear to fly toward the middle of the
+screen. The expanded state is a field capsule filling the container with the
+✕ riding its trailing edge, and both states stay MOUNTED in a ZStack — so
+animating the container's width back to the pill while that content is still
+visible re-lays it out every frame and drags the ✕ inward.
+
+The two are now choreographed: the states cross-fade over `SEARCH_FADE`
+(0.14 s, linear — the old 0.35 s spring's tail kept the content visible deep
+into the collapse), and the width animation waits that long before starting.
+Expanding is unchanged and immediate; only the collapse needed sequencing.
+
 ## Reaching the Inbox (#683)
 
 Shared items land in `Inbox/`, but it was an ordinary folder in an
