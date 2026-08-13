@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.34",
+      "date": "2026-08-13",
+      "previousVersion": "0.48.0-alpha.33",
+      "sections": {
+        "fixes": [
+          "fix(mobile): hold a native cover over the webview until it has painted (#678)"
+        ]
+      },
+      "underTheHood": [
+        "fix(mobile): hold a native cover over the webview until it has painted (#678)"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.33",
       "date": "2026-08-13",
       "previousVersion": "0.48.0-alpha.32",
