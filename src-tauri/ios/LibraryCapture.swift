@@ -113,17 +113,29 @@ extension LibraryAccess {
     /// Save the fetched page's RAW HTML as a real `.html` file in Inbox/
     /// (user-chosen "Page (HTML)" capture format). Named by the same
     /// timestamp-slug scheme as capture notes.
+    ///
+    /// A detected video page (#682) — a poster image with a play-button
+    /// overlay baked in, whose player never actually renders once scripts
+    /// are stripped by the HTML viewer's default sandboxed rendering — is
+    /// replaced with a small link-style document instead of the raw page,
+    /// so the saved note never looks like a playable video that then does
+    /// nothing when tapped.
     static func writeRawHtml(url: String, title: String?, html: String) throws -> String {
-        // Inject <base> so the page's RELATIVE stylesheet/script/image URLs
-        // resolve against the ORIGINAL site — served from the app's custom
-        // scheme they otherwise all 404 and the page renders unstyled.
         var html = html
-        if html.range(of: "<base ", options: .caseInsensitive) == nil {
-            let baseTag = "<base href=\"\(url)\">"
-            if let headRange = html.range(of: "<head[^>]*>", options: [.regularExpression, .caseInsensitive]) {
-                html.insert(contentsOf: baseTag, at: headRange.upperBound)
-            } else {
-                html = baseTag + html
+        if let videoDoc = callVideoHtml(url: url, title: title, html: html) {
+            html = videoDoc
+        } else {
+            // Inject <base> so the page's RELATIVE stylesheet/script/image
+            // URLs resolve against the ORIGINAL site — served from the
+            // app's custom scheme they otherwise all 404 and the page
+            // renders unstyled.
+            if html.range(of: "<base ", options: .caseInsensitive) == nil {
+                let baseTag = "<base href=\"\(url)\">"
+                if let headRange = html.range(of: "<head[^>]*>", options: [.regularExpression, .caseInsensitive]) {
+                    html.insert(contentsOf: baseTag, at: headRange.upperBound)
+                } else {
+                    html = baseTag + html
+                }
             }
         }
         guard let relPath = callCapture(notesage_capture_rel_path, url, title, nil, "") else {
@@ -161,6 +173,27 @@ extension LibraryAccess {
     /// share sheet to preview the generated filename before saving.
     static func previewRelPath(url: String, title: String?) -> String? {
         callCapture(notesage_capture_rel_path, url, title, nil, "")
+    }
+
+    /// Bridge `notesage_capture_video_html`: nil when `url`/`html` is not a
+    /// detected video page (the caller keeps the raw HTML unchanged), else
+    /// the link-style document to write instead (#682).
+    private static func callVideoHtml(url: String, title: String?, html: String) -> String? {
+        func withOptional<R>(_ value: String?, _ body: (UnsafePointer<CChar>?) -> R) -> R {
+            guard let value, !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                return body(nil)
+            }
+            return value.withCString { body($0) }
+        }
+        return url.withCString { urlPtr in
+            withOptional(title) { titlePtr in
+                html.withCString { htmlPtr in
+                    guard let raw = notesage_capture_video_html(urlPtr, titlePtr, htmlPtr) else { return nil }
+                    defer { notesage_capture_string_free(raw) }
+                    return String(cString: raw)
+                }
+            }
+        }
     }
 
     /// Bridge one `notesage_capture_*` call: pass optionals as NULL, copy the

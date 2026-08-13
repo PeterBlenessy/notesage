@@ -47,13 +47,24 @@ char *notesage_capture_contents(const char *url,
 
 /// Release a string returned above. Passing NULL is a no-op.
 /// Article capture note contents from fetched page HTML (rich web capture).
-/// NULL when the page yields no genuine article — fall back to the link
-/// note. Caller frees with notesage_capture_string_free().
+/// A detected video page (poster image with a play-button overlay, no real
+/// player once scripts are stripped) becomes a link-style note instead of
+/// embedding the poster as ordinary content. NULL when the page is neither
+/// a video page nor yields a genuine article — fall back to the link note.
+/// Caller frees with notesage_capture_string_free().
 char *notesage_capture_article_contents(const char *url,
                                         const char *title,
                                         const char *selection_text,
                                         const char *tags,
                                         const char *html);
+
+/// Link-style HTML document for the Page (HTML) capture format, when `url`/
+/// `html` is a detected video page. NULL when it is not a detected video
+/// page — the caller keeps writing the raw fetched HTML unchanged. Caller
+/// frees with notesage_capture_string_free().
+char *notesage_capture_video_html(const char *url,
+                                  const char *title,
+                                  const char *html);
 
 void notesage_capture_string_free(char *ptr);
 

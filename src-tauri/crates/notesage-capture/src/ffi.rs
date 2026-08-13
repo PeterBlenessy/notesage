@@ -23,7 +23,10 @@
 use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use crate::{build_article_note, build_capture_note, extract_article, timestamps, CaptureInput};
+use crate::{
+    build_capture_note, build_capture_note_from_html, build_video_html_note, timestamps,
+    CaptureInput,
+};
 
 /// Borrow a C string as `Option<String>`; `NULL` or invalid UTF-8 → `None`.
 unsafe fn opt_str(ptr: *const c_char) -> Option<String> {
@@ -88,11 +91,15 @@ pub unsafe extern "C" fn notesage_capture_contents(
 
 /// Build an ARTICLE capture note's **file contents** from fetched page HTML
 /// (rich web capture, #584): readable extraction + HTML→Markdown + the v2
-/// note format (`capture_format: markdown`).
+/// note format (`capture_format: markdown`). A detected video page (#682)
+/// becomes a link-style note (`capture_format: video-link`) instead of
+/// embedding the page's play-button-overlaid poster image as ordinary
+/// content.
 ///
-/// Returns NULL when the page does not yield a genuine article (nav-heavy
-/// page, near-empty body, non-HTML) — the caller falls back to the link-only
-/// note — or on panic. Free with [`notesage_capture_string_free`].
+/// Returns NULL when the page is neither a video page nor yields a genuine
+/// article (nav-heavy page, near-empty body, non-HTML) — the caller falls
+/// back to the link-only note — or on panic. Free with
+/// [`notesage_capture_string_free`].
 ///
 /// # Safety
 /// All pointers must be NUL-terminated C strings or NULL, valid for the call.
@@ -110,12 +117,47 @@ pub unsafe extern "C" fn notesage_capture_article_contents(
             Some(h) => h,
             None => return std::ptr::null_mut(),
         };
-        let article = match extract_article(&html, &input.url) {
-            Some(a) => a,
+        let (now, _stamp) = timestamps();
+        match build_capture_note_from_html(&input, &html, &now) {
+            Some(note) => into_c_string(note.contents),
+            None => std::ptr::null_mut(),
+        }
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Build a link-style HTML document for the Page/HTML capture format when
+/// `url`/`html` is a detected video page (#682) — presenting the item as a
+/// clear "Open on \<source\>" link instead of the raw fetched page, whose
+/// player never actually renders once scripts are stripped by the HTML
+/// viewer's default sandboxed rendering (leaving only the inert poster).
+///
+/// Returns NULL when the page is not a detected video page — the caller
+/// keeps writing the raw fetched HTML unchanged — or on panic. Free with
+/// [`notesage_capture_string_free`].
+///
+/// # Safety
+/// All pointers must be NUL-terminated C strings or NULL, valid for the call.
+#[no_mangle]
+pub unsafe extern "C" fn notesage_capture_video_html(
+    url: *const c_char,
+    title: *const c_char,
+    html: *const c_char,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        let url = match opt_str(url) {
+            Some(u) => u,
             None => return std::ptr::null_mut(),
         };
-        let (now, _stamp) = timestamps();
-        into_c_string(build_article_note(&input, &article, &now).contents)
+        let html = match opt_str(html) {
+            Some(h) => h,
+            None => return std::ptr::null_mut(),
+        };
+        let input = CaptureInput { url, title: opt_str(title), ..CaptureInput::default() };
+        match build_video_html_note(&input, &html) {
+            Some(doc) => into_c_string(doc),
+            None => std::ptr::null_mut(),
+        }
     }))
     .unwrap_or(std::ptr::null_mut())
 }
@@ -260,5 +302,73 @@ mod tests {
     #[test]
     fn freeing_null_is_a_no_op() {
         unsafe { notesage_capture_string_free(std::ptr::null_mut()) };
+    }
+
+    // ---- video-page link-style capture (#682) ------------------------------
+
+    fn video_page_html() -> &'static str {
+        "<html><head><title>Great Video</title></head><body>\
+         <nav><a href=\"/\">Home</a><a href=\"/about\">About</a></nav>\
+         <article><h1>Great Video</h1>\
+         <img src=\"https://i.ytimg.com/vi/abc123/maxresdefault.jpg\" width=\"1280\" height=\"720\" alt=\"Play video\">\
+         <p>Paragraph 0: the quick brown fox jumps over the lazy dog, again and again, providing ample readable content.</p>\
+         <p>Paragraph 1: the quick brown fox jumps over the lazy dog, again and again, providing ample readable content.</p>\
+         </article><footer>© footer</footer></body></html>"
+    }
+
+    #[test]
+    fn article_contents_ffi_returns_link_style_note_for_video_pages() {
+        let url = CString::new("https://www.youtube.com/watch?v=abc123").unwrap();
+        let html = CString::new(video_page_html()).unwrap();
+        let ptr = unsafe {
+            notesage_capture_article_contents(
+                url.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                html.as_ptr(),
+            )
+        };
+        assert!(!ptr.is_null(), "FFI returned NULL for a detected video page");
+        let out = unsafe {
+            let s = CStr::from_ptr(ptr).to_str().unwrap().to_owned();
+            notesage_capture_string_free(ptr);
+            s
+        };
+        assert!(!out.contains("maxresdefault.jpg"), "{out}");
+        assert!(out.contains("Open on YouTube"), "{out}");
+    }
+
+    #[test]
+    fn video_html_ffi_returns_link_style_document_for_video_pages() {
+        let url = CString::new("https://www.youtube.com/watch?v=abc123").unwrap();
+        let html = CString::new(video_page_html()).unwrap();
+        let ptr = unsafe {
+            notesage_capture_video_html(url.as_ptr(), std::ptr::null(), html.as_ptr())
+        };
+        assert!(!ptr.is_null(), "FFI returned NULL for a detected video page");
+        let out = unsafe {
+            let s = CStr::from_ptr(ptr).to_str().unwrap().to_owned();
+            notesage_capture_string_free(ptr);
+            s
+        };
+        assert!(!out.contains("maxresdefault.jpg"), "{out}");
+        assert!(out.contains("Open on YouTube"), "{out}");
+    }
+
+    #[test]
+    fn video_html_ffi_returns_null_for_non_video_pages() {
+        let url = CString::new("https://example.com/post").unwrap();
+        let html = CString::new(
+            "<html><head><title>Article</title></head><body><article><h1>Article</h1>\
+             <p>Paragraph 0: the quick brown fox jumps over the lazy dog, again and again, providing ample readable content.</p>\
+             <p>Paragraph 1: the quick brown fox jumps over the lazy dog, again and again, providing ample readable content.</p>\
+             </article></body></html>",
+        )
+        .unwrap();
+        let ptr = unsafe {
+            notesage_capture_video_html(url.as_ptr(), std::ptr::null(), html.as_ptr())
+        };
+        assert!(ptr.is_null(), "expected NULL (not a video page) so the caller keeps the raw HTML");
     }
 }

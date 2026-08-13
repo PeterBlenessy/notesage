@@ -59,7 +59,28 @@ pub const INBOX_DIR: &str = "Inbox";
 /// (`name-1.md`), never overwritten.
 pub fn build_capture_note(input: &CaptureInput, now_rfc3339: &str) -> CaptureNote {
     let rel_path = format!("{INBOX_DIR}/{}.md", file_name_for(input));
+    let fm = frontmatter_for(input, now_rfc3339);
 
+    // Body: the link, then any shared selection text.
+    let mut body = String::new();
+    body.push_str(input.url.trim());
+    body.push('\n');
+    if let Some(sel) = input.selection_text.as_ref().filter(|s| !s.trim().is_empty()) {
+        body.push('\n');
+        body.push_str(sel.trim());
+        body.push('\n');
+    }
+
+    CaptureNote {
+        rel_path,
+        contents: format!("{fm}{body}"),
+    }
+}
+
+/// The shared YAML frontmatter block (`type: capture` + `source_url` +
+/// optional `title` + `date_saved` + `tags`), used by every capture note
+/// variant — link-only, article, and video-link (#682).
+fn frontmatter_for(input: &CaptureInput, now_rfc3339: &str) -> String {
     let tags = if input.tags.is_empty() {
         vec!["inbox".to_string()]
     } else {
@@ -79,21 +100,7 @@ pub fn build_capture_note(input: &CaptureInput, now_rfc3339: &str) -> CaptureNot
         fm.push_str(&format!("  - {}\n", yaml_quote(tag)));
     }
     fm.push_str("---\n\n");
-
-    // Body: the link, then any shared selection text.
-    let mut body = String::new();
-    body.push_str(input.url.trim());
-    body.push('\n');
-    if let Some(sel) = input.selection_text.as_ref().filter(|s| !s.trim().is_empty()) {
-        body.push('\n');
-        body.push_str(sel.trim());
-        body.push('\n');
-    }
-
-    CaptureNote {
-        rel_path,
-        contents: format!("{fm}{body}"),
-    }
+    fm
 }
 
 /// Derive the note's filename stem from the title (preferred) or the URL
@@ -303,6 +310,156 @@ pub fn build_article_note(
     contents.push_str(&article.markdown);
     contents.push('\n');
     CaptureNote { contents, ..base }
+}
+
+/// Known video-hosting domains (matched against the URL host, subdomain- and
+/// scheme-tolerant — `player.vimeo.com`, `m.youtube.com`, etc. all match).
+const VIDEO_HOST_DOMAINS: &[(&str, &str)] =
+    &[("youtube.com", "YouTube"), ("youtu.be", "YouTube"), ("vimeo.com", "Vimeo")];
+
+/// The known-host label for `url`, if any (`Some("YouTube")`, `Some("Vimeo")`).
+fn known_video_host_label(url: &str) -> Option<&'static str> {
+    let host = url_host(url).to_ascii_lowercase();
+    VIDEO_HOST_DOMAINS
+        .iter()
+        .find(|(domain, _)| host == *domain || host.ends_with(&format!(".{domain}")))
+        .map(|(_, label)| *label)
+}
+
+/// Does `html` carry `og:type: video`/`og:video*` Open Graph metadata?
+/// Scanned manually (rather than a CSS attribute selector) to match the
+/// existing manual-attribute-filter style used for ad/tracker image
+/// detection above — one parsing idiom in this crate, not two.
+fn has_video_open_graph_metadata(html: &str) -> bool {
+    let doc = dom_query::Document::from(html);
+    doc.select("meta").iter().any(|meta| {
+        let property = meta.attr("property").unwrap_or_default().to_ascii_lowercase();
+        if property == "og:type" {
+            let content = meta.attr("content").unwrap_or_default().to_ascii_lowercase();
+            return content == "video" || content.starts_with("video.");
+        }
+        property == "og:video" || property.starts_with("og:video:")
+    })
+}
+
+/// Detect whether a captured page is a "video page" (#682): a known
+/// video-hosting domain, or any page carrying `og:type: video` / `og:video`
+/// Open Graph metadata. Detection only — see [`build_capture_note_from_html`]
+/// and [`build_video_html_note`] for what happens once one is detected.
+pub fn is_video_page(html: &str, url: &str) -> bool {
+    known_video_host_label(url).is_some() || has_video_open_graph_metadata(html)
+}
+
+/// The human label for the "Open on \<source\>" link: the known host's brand
+/// name, or the bare URL host for a generically OG-detected video page.
+fn video_source_label(url: &str) -> String {
+    known_video_host_label(url)
+        .map(str::to_string)
+        .unwrap_or_else(|| url_host(url))
+}
+
+/// Best-effort page title when full readability extraction is skipped for a
+/// video page: `<title>`, falling back to `og:title`.
+fn extract_page_title(html: &str) -> Option<String> {
+    let doc = dom_query::Document::from(html);
+    let title_text = doc.select("title").text().trim().to_string();
+    if !title_text.is_empty() {
+        return Some(title_text);
+    }
+    doc.select("meta").iter().find_map(|meta| {
+        let property = meta.attr("property").unwrap_or_default().to_ascii_lowercase();
+        if property != "og:title" {
+            return None;
+        }
+        meta.attr("content")
+            .map(|c| c.trim().to_string())
+            .filter(|c| !c.is_empty())
+    })
+}
+
+/// Link-style capture note for a detected video page (#682): instead of
+/// embedding the page's play-button-overlaid poster image as ordinary body
+/// content (inert — the note is a static file with no network and no
+/// JavaScript), the body is a clear "Open on \<source\>" markdown link.
+fn build_video_note(input: &CaptureInput, html: &str, now_rfc3339: &str) -> CaptureNote {
+    let effective_title = input.title.clone().or_else(|| extract_page_title(html));
+    let effective_input = CaptureInput { title: effective_title, ..input.clone() };
+    let rel_path = format!("{INBOX_DIR}/{}.md", file_name_for(&effective_input));
+    let mut fm = frontmatter_for(&effective_input, now_rfc3339);
+    if let Some(close) = fm[3..].find("\n---") {
+        fm.insert_str(3 + close, "\ncapture_format: video-link");
+    }
+
+    let mut body = String::new();
+    body.push_str(&format!(
+        "[Open on {}]({})\n",
+        video_source_label(&input.url),
+        input.url.trim()
+    ));
+    if let Some(sel) = input.selection_text.as_ref().filter(|s| !s.trim().is_empty()) {
+        body.push('\n');
+        body.push_str(sel.trim());
+        body.push('\n');
+    }
+
+    CaptureNote { rel_path, contents: format!("{fm}{body}") }
+}
+
+/// Rich web capture entry point for the Article/Markdown format (#682): a
+/// detected video page becomes a link-style note ([`build_video_note`]);
+/// otherwise falls through to genuine readable extraction
+/// ([`extract_article`] + [`build_article_note`]). `None` only when neither
+/// applies — same as `extract_article`'s existing contract — so the caller
+/// falls back to the link-only note.
+pub fn build_capture_note_from_html(
+    input: &CaptureInput,
+    html: &str,
+    now_rfc3339: &str,
+) -> Option<CaptureNote> {
+    if is_video_page(html, &input.url) {
+        return Some(build_video_note(input, html, now_rfc3339));
+    }
+    let article = extract_article(html, &input.url)?;
+    Some(build_article_note(input, &article, now_rfc3339))
+}
+
+/// Escape the handful of characters that matter in the tiny generated HTML
+/// document below (a title and an `href`/link-text — no attacker-controlled
+/// markup ever renders as anything but text).
+fn html_escape(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// A minimal, self-contained HTML document for a detected video page,
+/// presenting the item as a link instead of the raw fetched page — whose
+/// player never actually renders once scripts are stripped by the HTML
+/// viewer's default sandboxed rendering, leaving only the poster (#682).
+fn build_video_html(input: &CaptureInput, html: &str) -> String {
+    let title = input
+        .title
+        .clone()
+        .or_else(|| extract_page_title(html))
+        .unwrap_or_else(|| video_source_label(&input.url));
+    let source = video_source_label(&input.url);
+    let url = html_escape(input.url.trim());
+    let title_escaped = html_escape(&title);
+    format!(
+        "<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"><title>{title_escaped}</title></head><body>\n<h1>{title_escaped}</h1>\n<p><a href=\"{url}\">Open on {source}</a></p>\n</body></html>\n"
+    )
+}
+
+/// Video-aware Page/HTML capture (#682): `Some(html)` with the link-style
+/// document above when `html`/`url` is a detected video page, `None`
+/// otherwise — the caller then keeps writing the raw fetched HTML unchanged.
+pub fn build_video_html_note(input: &CaptureInput, html: &str) -> Option<String> {
+    if !is_video_page(html, &input.url) {
+        return None;
+    }
+    Some(build_video_html(input, html))
 }
 
 pub fn timestamps() -> (String, String) {
@@ -594,5 +751,165 @@ mod tests {
             extract_article(&article_html_with_images(""), "https://example.com/post").expect("article");
         assert!(article.markdown.contains("Paragraph 3"));
         assert!(!article.markdown.contains("<img"));
+    }
+
+    // ---- video-page link-style capture (#682) ------------------------------
+
+    /// A video page's HTML: a poster image with a play-button overlay baked
+    /// in (the exact shape reported — tapping it does nothing because the
+    /// note is a static file), plus enough surrounding text that, absent
+    /// video detection, `extract_article` would happily extract it as a
+    /// genuine article.
+    fn video_page_html(og_extra: &str) -> String {
+        let paragraphs: String = (0..12)
+            .map(|i| format!("<p>Paragraph {i}: the quick brown fox jumps over the lazy dog, again and again, providing ample readable content for the extractor to work with.</p>"))
+            .collect();
+        format!(
+            "<html><head><title>Great Video</title>{og_extra}</head><body>\
+             <nav><a href=\"/\">Home</a><a href=\"/about\">About</a></nav>\
+             <article><h1>Great Video</h1>\
+             <img src=\"https://i.ytimg.com/vi/abc123/maxresdefault.jpg\" width=\"1280\" height=\"720\" alt=\"Play video\">\
+             {paragraphs}</article>\
+             <footer>© footer</footer></body></html>"
+        )
+    }
+
+    #[test]
+    fn known_video_hosts_are_detected() {
+        let html = video_page_html("");
+        assert!(is_video_page(&html, "https://www.youtube.com/watch?v=abc123"));
+        assert!(is_video_page(&html, "https://youtu.be/abc123"));
+        assert!(is_video_page(&html, "https://vimeo.com/12345"));
+        assert!(is_video_page(&html, "https://player.vimeo.com/video/12345"));
+    }
+
+    #[test]
+    fn og_type_video_metadata_is_detected() {
+        let html = video_page_html(r#"<meta property="og:type" content="video.other">"#);
+        assert!(is_video_page(&html, "https://cooltube.example.com/watch/1"));
+    }
+
+    #[test]
+    fn og_video_metadata_is_detected() {
+        let html = video_page_html(r#"<meta property="og:video" content="https://cooltube.example.com/v.mp4">"#);
+        assert!(is_video_page(&html, "https://cooltube.example.com/watch/1"));
+    }
+
+    #[test]
+    fn ordinary_article_is_not_detected_as_video_page() {
+        let html = article_html();
+        assert!(!is_video_page(&html, "https://example.com/post"));
+    }
+
+    #[test]
+    fn video_page_note_presents_a_link_not_the_poster_image() {
+        let input = CaptureInput {
+            url: "https://www.youtube.com/watch?v=abc123".into(),
+            title: None,
+            selection_text: None,
+            tags: vec![],
+        };
+        let html = video_page_html("");
+        let note = build_capture_note_from_html(&input, &html, "2026-08-13T10:00:00Z")
+            .expect("video page must produce a note");
+        assert!(!note.contents.contains("maxresdefault.jpg"), "{}", note.contents);
+        assert!(note.contents.contains("[Open on YouTube]"), "{}", note.contents);
+        assert!(note.contents.contains("https://www.youtube.com/watch?v=abc123"), "{}", note.contents);
+        assert!(note.contents.contains("capture_format: video-link"), "{}", note.contents);
+    }
+
+    #[test]
+    fn video_page_on_unknown_host_labels_link_by_host() {
+        let input = CaptureInput {
+            url: "https://cooltube.example.com/watch/1".into(),
+            title: None,
+            selection_text: None,
+            tags: vec![],
+        };
+        let html = video_page_html(r#"<meta property="og:type" content="video">"#);
+        let note = build_capture_note_from_html(&input, &html, "2026-08-13T10:00:00Z")
+            .expect("video page must produce a note");
+        assert!(note.contents.contains("[Open on cooltube.example.com]"), "{}", note.contents);
+    }
+
+    #[test]
+    fn video_page_note_prefers_shared_title_over_page_title() {
+        let input = CaptureInput {
+            url: "https://www.youtube.com/watch?v=abc123".into(),
+            title: Some("My Chosen Title".into()),
+            selection_text: None,
+            tags: vec![],
+        };
+        let html = video_page_html("");
+        let note = build_capture_note_from_html(&input, &html, "2026-08-13T10:00:00Z").unwrap();
+        assert!(note.contents.contains("My Chosen Title"), "{}", note.contents);
+        assert_eq!(note.rel_path, "Inbox/My Chosen Title.md");
+    }
+
+    #[test]
+    fn video_page_note_falls_back_to_page_title_when_none_shared() {
+        let input = CaptureInput {
+            url: "https://www.youtube.com/watch?v=abc123".into(),
+            title: None,
+            selection_text: None,
+            tags: vec![],
+        };
+        let html = video_page_html("");
+        let note = build_capture_note_from_html(&input, &html, "2026-08-13T10:00:00Z").unwrap();
+        assert_eq!(note.rel_path, "Inbox/Great Video.md");
+    }
+
+    #[test]
+    fn non_video_article_still_extracts_normally_via_combinator() {
+        let input = CaptureInput {
+            url: "https://example.com/post".into(),
+            title: None,
+            selection_text: None,
+            tags: vec![],
+        };
+        let html = article_html();
+        let note = build_capture_note_from_html(&input, &html, "2026-08-10T10:00:00+02:00")
+            .expect("genuine article must still extract");
+        assert!(note.contents.contains("Paragraph 3"), "{}", note.contents);
+        assert!(note.contents.contains("capture_format: markdown"), "{}", note.contents);
+        assert!(!note.contents.contains("capture_format: video-link"), "{}", note.contents);
+    }
+
+    #[test]
+    fn unextractable_non_video_page_falls_back_to_none() {
+        let input = CaptureInput {
+            url: "https://example.com/".into(),
+            title: None,
+            selection_text: None,
+            tags: vec![],
+        };
+        let portal = "<html><body><nav><ul><li><a href=\"/a\">A</a></li><li><a href=\"/b\">B</a></li></ul></nav><p>Login</p></body></html>";
+        assert!(build_capture_note_from_html(&input, portal, "2026-08-10T10:00:00+02:00").is_none());
+    }
+
+    #[test]
+    fn video_html_note_is_link_style_for_video_pages() {
+        let input = CaptureInput {
+            url: "https://www.youtube.com/watch?v=abc123".into(),
+            title: None,
+            selection_text: None,
+            tags: vec![],
+        };
+        let html = video_page_html("");
+        let out = build_video_html_note(&input, &html).expect("video page must produce html");
+        assert!(!out.contains("maxresdefault.jpg"), "{out}");
+        assert!(out.contains("Open on YouTube"), "{out}");
+        assert!(out.contains("https://www.youtube.com/watch?v=abc123"), "{out}");
+    }
+
+    #[test]
+    fn video_html_note_is_none_for_non_video_pages() {
+        let input = CaptureInput {
+            url: "https://example.com/post".into(),
+            title: None,
+            selection_text: None,
+            tags: vec![],
+        };
+        assert!(build_video_html_note(&input, &article_html()).is_none());
     }
 }
