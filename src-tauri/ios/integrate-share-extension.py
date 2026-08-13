@@ -27,6 +27,7 @@ Usage:  python3 src-tauri/ios/integrate-share-extension.py
 
 import plistlib
 import subprocess
+import shutil
 import sys
 from pathlib import Path
 
@@ -190,11 +191,30 @@ def strip_icon_alpha() -> None:
         print(f"stripped alpha from {stripped} app icons (App Store requirement)")
 
 
+def sync_launch_assets() -> None:
+    """`tauri ios init` regenerates `LaunchScreen.storyboard` and the asset
+    catalog from its own templates, which would drop the launch logo (#675).
+    Keep the canonical copies under `src-tauri/ios/LaunchAssets/` and re-apply
+    them here on every integration. The storyboard's icon must stay identical
+    in size and position to the plugin's launch cover — the two are one
+    continuous image across the launch-screen → webview handoff."""
+    source = REPO / "src-tauri/ios/LaunchAssets"
+    if not source.is_dir():
+        return
+    shutil.copyfile(source / "LaunchScreen.storyboard", GEN / "LaunchScreen.storyboard")
+    imageset = GEN / "Assets.xcassets" / "LaunchLogo.imageset"
+    if imageset.exists():
+        shutil.rmtree(imageset)
+    shutil.copytree(source / "LaunchLogo.imageset", imageset)
+    print("synced launch screen + LaunchLogo imageset")
+
+
 def main() -> None:
     if not PROJECT_YML.exists():
         sys.exit("gen/apple/project.yml not found — run `tauri ios init` first")
     patch_project_yml()
     strip_icon_alpha()
+    sync_launch_assets()
     subprocess.run(["xcodegen", "generate"], cwd=GEN, check=True)
     ent = plistlib.loads(APP_ENTITLEMENTS.read_bytes())
     assert APP_GROUP in ent.get("com.apple.security.application-groups", []), (
