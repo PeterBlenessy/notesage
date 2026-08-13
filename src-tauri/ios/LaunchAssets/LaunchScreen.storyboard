@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
   Launch screen for the iOS app. Identical in composition to the native
-  launch COVER the plugin holds over the webview (#675): the same 96pt
+  launch COVER the plugin holds over the webview (#675): the same 120pt
   rounded app icon, centered on `systemBackground`. The two are one
   continuous image — the storyboard hands off to the cover with no visible
   change — and the cover then dissolves the icon into the loaded UI.
@@ -27,14 +27,14 @@
                         <autoresizingMask key="autoresizingMask" widthSizable="YES" heightSizable="YES"/>
                         <subviews>
                             <imageView clipsSubviews="YES" userInteractionEnabled="NO" contentMode="scaleAspectFit" horizontalHuggingPriority="251" verticalHuggingPriority="251" image="LaunchLogo" translatesAutoresizingMaskIntoConstraints="NO" id="nsg-lg-oo1">
-                                <rect key="frame" x="159" y="400" width="96" height="96"/>
+                                <rect key="frame" x="147" y="388" width="120" height="120"/>
                                 <constraints>
-                                    <constraint firstAttribute="width" constant="96" id="nsg-lg-wid"/>
-                                    <constraint firstAttribute="height" constant="96" id="nsg-lg-hei"/>
+                                    <constraint firstAttribute="width" constant="120" id="nsg-lg-wid"/>
+                                    <constraint firstAttribute="height" constant="120" id="nsg-lg-hei"/>
                                 </constraints>
                                 <userDefinedRuntimeAttributes>
                                     <userDefinedRuntimeAttribute type="number" keyPath="layer.cornerRadius">
-                                        <real key="value" value="21"/>
+                                        <real key="value" value="27"/>
                                     </userDefinedRuntimeAttribute>
                                 </userDefinedRuntimeAttributes>
                             </imageView>

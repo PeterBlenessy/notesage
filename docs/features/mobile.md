@@ -216,7 +216,7 @@ The fix is the iOS translation of the desktop trick of starting the window
 hidden and showing it when the frontend signals ready (the window can't be
 hidden on iOS, so we cover it instead):
 
-1. `LaunchScreen.storyboard` shows the app icon (96 pt, 21 pt corner radius)
+1. `LaunchScreen.storyboard` shows the app icon (120 pt, 27 pt corner radius)
    centered on `systemBackground`.
 2. The plugin's `load(webview:)` installs an **opaque cover** over the window
    with the *same icon at the same size and position* — so the launch-screen →

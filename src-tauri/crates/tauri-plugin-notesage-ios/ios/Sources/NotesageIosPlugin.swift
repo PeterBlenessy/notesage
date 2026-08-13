@@ -204,13 +204,13 @@ class NotesageIosPlugin: Plugin {
     // Never intercept touches: even if something goes wrong and the cover
     // outlives its welcome, the app stays usable underneath.
     cover.isUserInteractionEnabled = false
-    // Same 96pt rounded app icon, in the same place, as LaunchScreen.storyboard
+    // Same 120pt rounded app icon, in the same place, as LaunchScreen.storyboard
     // — so the handoff from launch screen to cover is invisible and the icon
     // simply stays put while the webview loads behind it.
     if let logo = UIImage(named: "LaunchLogo") {
       let view = UIImageView(image: logo)
       view.contentMode = .scaleAspectFit
-      view.layer.cornerRadius = 21
+      view.layer.cornerRadius = 27
       view.layer.cornerCurve = .continuous
       view.clipsToBounds = true
       view.translatesAutoresizingMaskIntoConstraints = false
@@ -218,8 +218,8 @@ class NotesageIosPlugin: Plugin {
       NSLayoutConstraint.activate([
         view.centerXAnchor.constraint(equalTo: cover.centerXAnchor),
         view.centerYAnchor.constraint(equalTo: cover.centerYAnchor),
-        view.widthAnchor.constraint(equalToConstant: 96),
-        view.heightAnchor.constraint(equalToConstant: 96),
+        view.widthAnchor.constraint(equalToConstant: 120),
+        view.heightAnchor.constraint(equalToConstant: 120),
       ])
       launchCoverLogo = view
     }
