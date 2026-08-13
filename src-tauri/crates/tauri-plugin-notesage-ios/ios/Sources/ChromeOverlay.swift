@@ -564,6 +564,19 @@ struct GlassSearchIsland: View {
     // spring's long tail left the expanded content visible — and therefore
     // re-laying out — well into the collapse.
     .animation(.easeOut(duration: SEARCH_FADE), value: model.expanded)
+    // Dismissing the keyboard (a tap outside the field) should put the island
+    // back too — an expanded bar with no keyboard and nothing typed is just
+    // stranded chrome (Peter, 2026-08-13).
+    //
+    // ONLY when the field is empty: losing focus with a live query is the
+    // user tapping away to READ the filtered list, and collapsing there would
+    // discard their filter and leave a filtered listing with no visible
+    // reason for being filtered. `model.expanded` guards re-entry, since
+    // `endSearch` itself drops focus.
+    .onChange(of: focused) { isFocused in
+      guard !isFocused, model.expanded, model.text.isEmpty else { return }
+      endSearch()
+    }
   }
 
   private var collapsedPill: some View {
