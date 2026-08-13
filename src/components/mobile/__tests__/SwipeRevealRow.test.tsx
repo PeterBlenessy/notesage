@@ -2,7 +2,12 @@
 import { describe, it, expect, vi } from "vitest";
 import { fireEvent } from "@testing-library/react";
 import { renderWithProviders, screen } from "@/test/component-harness";
-import { SwipeRevealRow, type SwipeRevealAction } from "@/components/mobile/SwipeRevealRow";
+import {
+  SwipeRevealRow,
+  actionRevealProgress,
+  rowCornerRadius,
+  type SwipeRevealAction,
+} from "@/components/mobile/SwipeRevealRow";
 
 function makeAction(overrides: Partial<SwipeRevealAction> = {}): SwipeRevealAction {
   return {
@@ -100,5 +105,48 @@ describe("SwipeRevealRow (issue #618)", () => {
 
     expect(onRowClick).not.toHaveBeenCalled();
     expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+  });
+});
+
+describe("actionRevealProgress", () => {
+  // Actions are uncovered right-to-left, so with [Share, Delete] the LAST
+  // one is out before the first has begun (Peter's staggered-zoom request).
+  it("gives the trailing action its whole ramp before the leading one starts", () => {
+    expect(actionRevealProgress(-36, 1, 2)).toBeCloseTo(0.5); // Delete half out
+    expect(actionRevealProgress(-36, 0, 2)).toBe(0); // Share not started
+    expect(actionRevealProgress(-72, 1, 2)).toBe(1); // Delete fully out…
+    expect(actionRevealProgress(-72, 0, 2)).toBe(0); // …exactly as Share starts
+    expect(actionRevealProgress(-108, 0, 2)).toBeCloseTo(0.5);
+    expect(actionRevealProgress(-144, 0, 2)).toBe(1);
+  });
+
+  it("clamps past full reveal so the overshoot of a full swipe doesn't overscale", () => {
+    expect(actionRevealProgress(-400, 0, 2)).toBe(1);
+    expect(actionRevealProgress(-400, 1, 2)).toBe(1);
+  });
+
+  it("ramps a lone action over its own width", () => {
+    expect(actionRevealProgress(0, 0, 1)).toBe(0);
+    expect(actionRevealProgress(-72, 0, 1)).toBe(1);
+  });
+});
+
+describe("rowCornerRadius", () => {
+  it("runs square → 14 over the first action, then creeps toward near-circular", () => {
+    expect(rowCornerRadius(0, 2)).toBe(0);
+    expect(rowCornerRadius(-36, 2)).toBeCloseTo(7);
+    expect(rowCornerRadius(-72, 2)).toBeCloseTo(14);
+    // Past the first action the growth is much slower — the "sticky" feel.
+    expect(rowCornerRadius(-144, 2)).toBeGreaterThan(14);
+    expect(rowCornerRadius(-144, 2)).toBeLessThan(22);
+    expect(rowCornerRadius(-240, 2)).toBeCloseTo(26);
+  });
+
+  it("never exceeds the maximum, however far the row is dragged", () => {
+    expect(rowCornerRadius(-9999, 2)).toBeCloseTo(26);
+  });
+
+  it("stays square when the row has no actions", () => {
+    expect(rowCornerRadius(-100, 0)).toBe(0);
   });
 });
