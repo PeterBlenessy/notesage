@@ -2,6 +2,10 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { FileEntry } from "@/lib/tauri";
 
+vi.mock("@/lib/mobile-thumbnails", () => ({
+  getThumbnail: vi.fn(async () => ({ kind: "markdown", html: "<p>rendered</p>" })),
+}));
+
 vi.mock("@/lib/ios-api", () => ({
   iosContextMenu: vi.fn(),
   iosEntryMenu: vi.fn(),
@@ -19,6 +23,7 @@ import {
   iosShareFile,
   iosTextPrompt,
 } from "@/lib/ios-api";
+import { getThumbnail } from "@/lib/mobile-thumbnails";
 import {
   entryMenuItems,
   runEntryAction,
@@ -129,6 +134,34 @@ describe("presentEntryMenu", () => {
     vi.mocked(iosEntryMenu).mockResolvedValueOnce(null);
     await presentEntryMenu(file, rect, ctx());
     expect(vi.mocked(iosEntryMenu).mock.calls[0][0].sourceRect).toEqual(rect);
+  });
+
+  it("previews a note with the app's own render, not QuickLook's raw text", async () => {
+    vi.mocked(iosEntryMenu).mockResolvedValueOnce(null);
+    await presentEntryMenu(file, rect, ctx());
+    expect(vi.mocked(iosEntryMenu).mock.calls[0][0].previewHtml).toBe("<p>rendered</p>");
+  });
+
+  it("falls back to the QuickLook path when the render is not markdown", async () => {
+    vi.mocked(getThumbnail).mockResolvedValueOnce({ kind: "icon" });
+    vi.mocked(iosEntryMenu).mockResolvedValueOnce(null);
+    await presentEntryMenu(file, rect, ctx());
+    expect(vi.mocked(iosEntryMenu).mock.calls[0][0].previewHtml).toBeUndefined();
+    expect(vi.mocked(iosEntryMenu).mock.calls[0][0].previewRelPath).toBe("Ideas/note.md");
+  });
+
+  it("still presents the menu when rendering the preview fails", async () => {
+    vi.mocked(getThumbnail).mockRejectedValueOnce(new Error("read failed"));
+    vi.mocked(iosEntryMenu).mockResolvedValueOnce(null);
+    await expect(presentEntryMenu(file, rect, ctx())).resolves.toBeUndefined();
+    expect(iosEntryMenu).toHaveBeenCalled();
+  });
+
+  it("never renders a preview for a folder", async () => {
+    vi.mocked(iosEntryMenu).mockResolvedValueOnce(null);
+    await presentEntryMenu(folder, rect, ctx());
+    expect(getThumbnail).not.toHaveBeenCalledWith(folder, expect.anything());
+    expect(vi.mocked(iosEntryMenu).mock.calls[0][0].previewHtml).toBeUndefined();
   });
 
   it("gives a file a QuickLook preview path and a folder none", async () => {

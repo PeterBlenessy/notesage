@@ -23,6 +23,7 @@ import {
   type IosEntryMenuItem,
 } from "@/lib/ios-api";
 import { t } from "@/lib/i18n";
+import { getThumbnail } from "@/lib/mobile-thumbnails";
 
 export interface EntryActionContext {
   /** Whether a root-relative path is in the shared pins file. A predicate
@@ -139,6 +140,14 @@ export async function runEntryAction(
   }
 }
 
+/** The appearance the app is currently painted in. */
+function currentTheme(): "light" | "dark" {
+  return typeof document !== "undefined" &&
+    document.documentElement.classList.contains("dark")
+    ? "dark"
+    : "light";
+}
+
 /**
  * Present the preview menu for `entry` and run the choice.
  *
@@ -151,8 +160,17 @@ export async function presentEntryMenu(
   sourceRect: { x: number; y: number; width: number; height: number } | undefined,
   ctx: EntryActionContext,
 ): Promise<void> {
+  // Prefer the app's OWN render of the note: QuickLook shows a `.md` file as
+  // raw text, so a note whose point is an image previewed as markup. This is
+  // the same pipeline (and cache) the gallery cards use, so a card already on
+  // screen costs nothing to preview.
+  const rendered = entry.is_directory
+    ? null
+    : await getThumbnail(entry, { theme: currentTheme() }).catch(() => null);
+
   const chosen = await iosEntryMenu({
     title: entry.name,
+    previewHtml: rendered?.kind === "markdown" ? rendered.html : undefined,
     // Only files have something QuickLook can render; folders fall back to
     // the name + icon card.
     previewRelPath: entry.is_directory ? undefined : entry.path,

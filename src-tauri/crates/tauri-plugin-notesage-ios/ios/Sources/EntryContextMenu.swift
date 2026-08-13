@@ -17,6 +17,7 @@
 import QuartzCore
 import SwiftUI
 import UIKit
+import WebKit
 
 struct EntryMenuItemSpec: Decodable, Identifiable {
   let id: String
@@ -39,8 +40,13 @@ struct EntryMenuRect: Decodable {
 struct EntryMenuSpec: Decodable {
   let title: String
   let subtitle: String?
-  /// File to render into the preview card. Absent for folders.
+  /// File to render into the preview card via QuickLook. Absent for folders.
   let previewRelPath: String?
+  /// Pre-rendered HTML for the card, from the same markdown pipeline the
+  /// Reader and the gallery use. Preferred over `previewRelPath`: QuickLook
+  /// renders a `.md` file as its RAW TEXT, so a note whose point is an image
+  /// previewed as a wall of markup (Peter, 2026-08-13).
+  let previewHtml: String?
   let isDirectory: Bool
   /// The pressed item's rect in webview coordinates — the preview grows out
   /// of it, so the card visibly comes from the thing you pressed.
@@ -184,7 +190,10 @@ struct EntryContextMenuView: View {
     ZStack {
       RoundedRectangle(cornerRadius: CARD_CORNER, style: .continuous)
         .fill(Color(uiColor: .secondarySystemBackground))
-      if let preview {
+      if let html = spec.previewHtml, !html.isEmpty {
+        RenderedNotePreview(html: html)
+          .clipShape(RoundedRectangle(cornerRadius: CARD_CORNER, style: .continuous))
+      } else if let preview {
         Image(uiImage: preview)
           .resizable()
           .aspectRatio(contentMode: .fill)
@@ -211,7 +220,11 @@ struct EntryContextMenuView: View {
     .frame(height: 320)
     .shadow(color: .black.opacity(0.28), radius: 24, y: 10)
     .gesture(
-      DragGesture()
+      // GLOBAL coordinate space, not the card's own: the card MOVES with the
+      // drag, so a local-space translation is measured against a moving
+      // origin and each frame feeds back into the next — which is exactly
+      // the shaking Peter saw. Global space is fixed, so tracking is smooth.
+      DragGesture(minimumDistance: 0, coordinateSpace: .global)
         .onChanged { value in
           // Only downward travel moves the card; an upward drag is inert
           // rather than lifting it off the top of the screen.
@@ -286,12 +299,71 @@ struct EntryContextMenuView: View {
   }
 
   private func loadPreview() {
-    guard let rel = spec.previewRelPath else { return }
+    // The HTML render, when present, IS the preview — no thumbnail needed.
+    guard spec.previewHtml?.isEmpty ?? true, let rel = spec.previewRelPath else { return }
     LibraryAccess.thumbnail(rel, maxPixel: 600) { result in
       guard case .success(let data) = result, let image = UIImage(data: data) else { return }
       DispatchQueue.main.async {
         withAnimation(.easeOut(duration: 0.18)) { preview = image }
       }
     }
+  }
+}
+
+/// Renders a note's HTML in the preview card.
+///
+/// A plain `WKWebView`, deliberately: the fragment comes from the same Rust
+/// markdown pipeline the Reader uses, so the preview shows what opening the
+/// note shows — images included — rather than QuickLook's raw-text rendering
+/// of a `.md` file. Scrolling and selection are off; this is a picture of the
+/// note, not a place to read it.
+private struct RenderedNotePreview: UIViewRepresentable {
+  let html: String
+
+  func makeUIView(context: Context) -> WKWebView {
+    let webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+    webView.isOpaque = false
+    webView.backgroundColor = .clear
+    webView.scrollView.backgroundColor = .clear
+    webView.scrollView.isScrollEnabled = false
+    // The card owns the drag-to-dismiss gesture; the preview must not eat it.
+    webView.isUserInteractionEnabled = false
+    webView.loadHTMLString(document(for: html), baseURL: nil)
+    return webView
+  }
+
+  func updateUIView(_ webView: WKWebView, context: Context) {}
+
+  /// Minimal chrome around the fragment: system font, theme-following
+  /// colours, and images that cannot overflow the card.
+  private func document(for fragment: String) -> String {
+    """
+    <!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        margin: 0; padding: 18px;
+        font: -apple-system-body; font-family: -apple-system, system-ui, sans-serif;
+        font-size: 13px; line-height: 1.45;
+        color: \(Color.previewForegroundCss);
+        background: transparent;
+        overflow: hidden;
+      }
+      h1, h2, h3 { font-size: 1.25em; margin: 0 0 .4em; }
+      p, ul, ol, blockquote { margin: 0 0 .7em; }
+      img { max-width: 100%; height: auto; border-radius: 8px; display: block; }
+      pre, code { font-family: ui-monospace, monospace; font-size: .9em; }
+      pre { overflow: hidden; }
+      a { color: inherit; }
+    </style></head><body>\(fragment)</body></html>
+    """
+  }
+}
+
+extension Color {
+  /// Matches `label` in both appearances without plumbing the app's theme
+  /// into the menu — the card is a snapshot, not a themed surface.
+  fileprivate static var previewForegroundCss: String {
+    "light-dark(rgba(0,0,0,.88), rgba(255,255,255,.88))"
   }
 }

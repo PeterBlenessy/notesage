@@ -172,8 +172,11 @@ export interface IosEntryMenuItem {
 export interface IosEntryMenuSpec {
   title: string;
   subtitle?: string;
-  /** File to render into the preview card (QuickLook). Omit for folders. */
+  /** File to render into the preview card via QuickLook. Omit for folders. */
   previewRelPath?: string;
+  /** Pre-rendered note HTML — preferred over `previewRelPath`, since
+   *  QuickLook renders a `.md` file as its raw text. */
+  previewHtml?: string;
   isDirectory: boolean;
   /** The pressed element's rect in CSS pixels — the preview grows out of it
    *  and shrinks back into it on dismiss. */

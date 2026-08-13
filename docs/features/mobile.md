@@ -246,8 +246,16 @@ beneath — an inline icon row (Share / Pin / Delete) above full-width rows
 (Rename). The card **morphs out of the pressed row and back into it**: the web
 layer measures the element at pointer-down and passes its rect, and the native
 view interpolates position and scale from there. Dismiss by tapping the
-backdrop or **swiping the preview down**. Files render a real QuickLook
-preview; folders and unrenderable files fall back to an icon + name card.
+backdrop or **swiping the preview down**. Notes render through the app's OWN markdown pipeline (a `WKWebView` on the
+card, fed the same fragment the Reader and the gallery cards use) — QuickLook
+renders a `.md` file as its RAW TEXT, so a note whose point is an image
+previewed as a wall of markup. Other file types fall back to a QuickLook
+thumbnail; folders and unrenderable files to an icon + name card.
+
+The drag-to-dismiss gesture measures in the **global** coordinate space, not
+the card's own. The card moves with the drag, so a local-space translation is
+measured against a moving origin and each frame feeds back into the next —
+which shows up as the card shaking under the finger.
 
 Menu content: **Share** (files only — `ios_share_file` copies a single file to
 temp), **Pin/Unpin**, **Delete** (destructive), **Rename**. Both surfaces build
