@@ -4,6 +4,7 @@ import { fireEvent } from "@testing-library/react";
 import { renderWithProviders, screen } from "@/test/component-harness";
 import {
   SwipeRevealRow,
+  resolveDragAxis,
   actionRevealProgress,
   rowCornerRadius,
   type SwipeRevealAction,
@@ -36,10 +37,10 @@ function Row({
 }
 
 /** Simulate a horizontal drag from `from` to `to` on the given element. */
-function swipe(el: HTMLElement, from: number, to: number) {
-  fireEvent.pointerDown(el, { clientX: from });
-  fireEvent.pointerMove(el, { clientX: to });
-  fireEvent.pointerUp(el, { clientX: to });
+function swipe(el: HTMLElement, from: number, to: number, dy = 0) {
+  fireEvent.pointerDown(el, { clientX: from, clientY: 0 });
+  fireEvent.pointerMove(el, { clientX: to, clientY: dy });
+  fireEvent.pointerUp(el, { clientX: to, clientY: dy });
 }
 
 describe("SwipeRevealRow (issue #618)", () => {
@@ -148,5 +149,44 @@ describe("rowCornerRadius", () => {
 
   it("stays square when the row has no actions", () => {
     expect(rowCornerRadius(-100, 0)).toBe(0);
+  });
+});
+
+describe("resolveDragAxis", () => {
+  // The axis is decided once and locked, which is what lets a swipe survive
+  // a thumb that arcs downward mid-gesture (Peter: swipes "didn't take").
+  it("waits for real movement before committing to an axis", () => {
+    expect(resolveDragAxis(0, 0)).toBe("undecided");
+    expect(resolveDragAxis(-5, 3)).toBe("undecided");
+  });
+
+  it("reads a mostly-sideways gesture as a swipe, even at a healthy angle", () => {
+    expect(resolveDragAxis(-30, 0)).toBe("swipe");
+    expect(resolveDragAxis(-30, 20)).toBe("swipe"); // thumb arc
+    expect(resolveDragAxis(-30, 39)).toBe("swipe"); // still inside the bias
+  });
+
+  it("hands a mostly-vertical gesture to the scroller", () => {
+    expect(resolveDragAxis(0, -30)).toBe("scroll");
+    expect(resolveDragAxis(-10, 40)).toBe("scroll");
+  });
+});
+
+describe("axis locking", () => {
+  it("does not drag when the gesture starts vertical, however far it later moves sideways", () => {
+    renderWithProviders(<Row actions={[makeAction()]} onRowClick={vi.fn()} />);
+    const content = screen.getByText("row content");
+    fireEvent.pointerDown(content, { clientX: 200, clientY: 0 });
+    fireEvent.pointerMove(content, { clientX: 198, clientY: 40 }); // scroll
+    fireEvent.pointerMove(content, { clientX: 40, clientY: 60 }); // now sideways
+    fireEvent.pointerUp(content, { clientX: 40, clientY: 60 });
+    expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+  });
+
+  it("still reveals when the swipe carries vertical drift", () => {
+    renderWithProviders(<Row actions={[makeAction()]} onRowClick={vi.fn()} />);
+    const content = screen.getByText("row content");
+    swipe(content, 200, 60, 30);
+    expect(screen.getByRole("button", { name: "Share" })).toBeTruthy();
   });
 });

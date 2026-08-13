@@ -204,6 +204,27 @@ verified basis for the App Store privacy label **"Data Not Collected"**:
   mirrored from the app) and re-runs `xcodegen generate`. Idempotent — run it
   after any `tauri ios init`.
 
+## Swipe gestures: axis lock + `touch-action`
+
+A swipe row that competes with a vertical scroller needs BOTH halves of the
+contract, or it will drop gestures:
+
+1. **`touch-action: pan-y`** on the draggable content. Without it WebKit owns
+   the whole gesture and fires `pointercancel` the moment it decides the
+   finger is scrolling — the swipe snaps back mid-drag, which reads as "it
+   only works sometimes".
+2. **An axis lock** decided once at 8 px and never revisited
+   (`resolveDragAxis`). Horizontal wins ties and gets a 0.75 bias, because a
+   thumb swipe always arcs downward; a gesture that starts vertical is
+   terminal and never becomes a swipe no matter how far it later travels
+   sideways. Once locked horizontal, later vertical movement is IGNORED
+   rather than gradually turning the drag back into a scroll.
+3. **`setPointerCapture`** on lock, so a finger that drifts onto the
+   neighbouring row keeps feeding the gesture instead of silently ending it.
+
+Long-press (below) covers the same actions, so a user who cannot land a swipe
+— or a layout with no swipe at all, like the gallery — is never stuck.
+
 ## Long-press actions (#680)
 
 Gallery cards have no swipe affordance — the grid scrolls and a horizontal

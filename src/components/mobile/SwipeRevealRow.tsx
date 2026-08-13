@@ -18,8 +18,14 @@ const ACTION_WIDTH = 72;
  *  edge action (full-swipe-to-delete, #618) — the Mail/Notes gesture. */
 const FULL_SWIPE_EXTRA = 96;
 /** Pointer movement (px) before a press counts as a drag rather than a tap —
- *  keeps a few pixels of jitter from hijacking a normal row tap. */
+ *  keeps a few pixels of jitter from hijacking a normal row tap, and is the
+ *  point at which the gesture's axis is decided. */
 const DRAG_THRESHOLD = 8;
+/** How much more vertical than horizontal a gesture must be before it is
+ *  handed to the scroller. Slightly forgiving (a thumb swipe arcs, so it
+ *  always carries some vertical), but nowhere near enough to hijack a
+ *  deliberate scroll. */
+const HORIZONTAL_BIAS = 0.75;
 /** Trailing corner radius once the FIRST action has fully emerged. */
 const RADIUS_REVEALED = 14;
 /** Trailing corner radius at maximum drag — near-circular on a ~60 px row,
@@ -59,8 +65,29 @@ export function rowCornerRadius(offsetPx: number, count: number): number {
   return RADIUS_REVEALED + (RADIUS_MAX - RADIUS_REVEALED) * t;
 }
 
+/**
+ * Which way a gesture went, decided ONCE at `DRAG_THRESHOLD` and then locked.
+ *
+ * The lock is what makes a swipe survive a thumb that arcs: after the axis is
+ * horizontal, later vertical movement is ignored entirely instead of
+ * gradually turning the gesture into a scroll. `scroll` is terminal too — a
+ * gesture that started vertical never becomes a swipe, however far it later
+ * travels sideways.
+ */
+export type DragAxis = "undecided" | "swipe" | "scroll";
+
+/** Decide the axis from the movement so far. Pure, so the angle tolerance is
+ *  testable rather than something to re-derive on a phone. */
+export function resolveDragAxis(dx: number, dy: number): DragAxis {
+  const [ax, ay] = [Math.abs(dx), Math.abs(dy)];
+  if (Math.max(ax, ay) < DRAG_THRESHOLD) return "undecided";
+  return ax >= ay * HORIZONTAL_BIAS ? "swipe" : "scroll";
+}
+
 interface DragState {
   startX: number;
+  startY: number;
+  axis: DragAxis;
   startOffset: number;
   isDrag: boolean;
   lastOffset: number;
@@ -97,6 +124,8 @@ export function SwipeRevealRow({
     if (actions.length === 0) return;
     dragRef.current = {
       startX: e.clientX,
+      startY: e.clientY,
+      axis: "undecided",
       startOffset: open ? -revealWidth : 0,
       isDrag: false,
       lastOffset: open ? -revealWidth : 0,
@@ -105,11 +134,21 @@ export function SwipeRevealRow({
 
   const onPointerMove = (e: React.PointerEvent) => {
     const drag = dragRef.current;
-    if (!drag) return;
+    if (!drag || drag.axis === "scroll") return;
     const delta = e.clientX - drag.startX;
-    if (!drag.isDrag) {
-      if (Math.abs(delta) < DRAG_THRESHOLD) return;
+    if (drag.axis === "undecided") {
+      drag.axis = resolveDragAxis(delta, e.clientY - drag.startY);
+      if (drag.axis !== "swipe") return;
       drag.isDrag = true;
+      // Capture the pointer so the row keeps receiving moves even if the
+      // finger wanders off it — without this a thumb that drifts a few pixels
+      // onto the next row silently ends the swipe mid-gesture.
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        // Not all environments implement capture (jsdom); the gesture still
+        // works, it is just less forgiving.
+      }
     }
     const next = Math.min(
       0,
@@ -219,6 +258,11 @@ export function SwipeRevealRow({
         onPointerCancel={endDrag}
         onClickCapture={onContentClickCapture}
         style={{
+          // Tell WebKit we own horizontal panning and it owns vertical. This
+          // is the difference between a swipe that works and one that gets
+          // cancelled the instant the browser decides the gesture is a
+          // scroll — the reason swipes "sometimes didn't take".
+          touchAction: "pan-y",
           transform: `translateX(${offset}px)`,
           borderTopRightRadius: rowCornerRadius(offset, actions.length),
           borderBottomRightRadius: rowCornerRadius(offset, actions.length),
