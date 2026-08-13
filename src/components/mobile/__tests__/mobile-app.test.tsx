@@ -281,7 +281,8 @@ describe("breadcrumb island (#615)", () => {
       "Inbox",
     ]);
     expect(captured.topCenter?.menu?.[0]?.id).toBe("jump-0");
-    expect(captured.topCenter?.menu?.at(-1)?.id).toBe("goto-inbox");
+    const rows = captured.topCenter?.menu ?? [];
+    expect(rows[rows.length - 1]?.id).toBe("goto-inbox");
     await waitFor(() =>
       expect(screen.queryByRole("heading", { name: "Deep" })).toBeNull(),
     );
