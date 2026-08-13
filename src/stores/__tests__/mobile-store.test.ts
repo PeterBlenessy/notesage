@@ -230,6 +230,16 @@ describe("mobile-store pinned paths & group-by (#652)", () => {
     expect(store().pinnedPaths).toEqual(["first.md"]);
   });
 
+  it("remembers a scroll offset per folder and forgets it on reset", () => {
+    store().rememberScroll("Ideas", 420);
+    store().rememberScroll("Projects", 96);
+    expect(store().scrollOffsets).toEqual({ Ideas: 420, Projects: 96 });
+    store().rememberScroll("Ideas", 12);
+    expect(store().scrollOffsets.Ideas).toBe(12);
+    store().reset();
+    expect(store().scrollOffsets).toEqual({});
+  });
+
   it("defaults groupMode to none", () => {
     expect(store().groupMode).toBe("none");
   });

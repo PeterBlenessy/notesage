@@ -115,6 +115,15 @@ interface MobileStore {
    *  Tolerant of a missing file — resolves to an empty array, never throws. */
   loadPinnedPaths: () => Promise<void>;
 
+  /** Listing scroll offset per folder, so opening a document and coming
+   *  back lands where you were rather than at the top (Peter, 2026-08-13 —
+   *  the browser unmounts while the Reader is open, taking the DOM scroll
+   *  position with it). Session-only: not worth persisting, and a stale
+   *  offset into a folder that changed on another device is worse than
+   *  starting at the top. */
+  scrollOffsets: Record<string, number>;
+  rememberScroll: (relPath: string, offset: number) => void;
+
   /** Pin or unpin a root-relative path, writing the shared
    *  `.notesage/pins.json` the desktop reads. Re-reads the file first so a
    *  pin made on the desktop since the last load is not clobbered. */
@@ -136,6 +145,7 @@ export const useMobileStore = create<MobileStore>()(
       groupMode: "none",
       viewMode: "list",
       pinnedPaths: [],
+      scrollOffsets: {},
 
       currentRelPath: () => {
         const stack = get().folderStack;
@@ -242,6 +252,9 @@ export const useMobileStore = create<MobileStore>()(
       },
 
 
+      rememberScroll: (relPath, offset) =>
+        set((s) => ({ scrollOffsets: { ...s.scrollOffsets, [relPath]: offset } })),
+
       togglePin: async (relPath) => {
         // Read-modify-write against the file rather than the cached array:
         // this file is shared with the desktop, and a stale in-memory copy
@@ -274,6 +287,7 @@ export const useMobileStore = create<MobileStore>()(
           groupMode: "none",
           viewMode: "list",
           pinnedPaths: [],
+          scrollOffsets: {},
             }),
     }),
     {

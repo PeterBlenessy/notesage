@@ -461,14 +461,24 @@ pub async fn ios_text_prompt(
     title: String,
     placeholder: String,
     confirm_label: String,
+    value: Option<String>,
+    select_stem: Option<bool>,
 ) -> Result<Option<String>, String> {
     #[cfg(target_os = "ios")]
     {
-        ios_impl::text_prompt(&app, &title, &placeholder, &confirm_label).await
+        ios_impl::text_prompt(
+            &app,
+            &title,
+            &placeholder,
+            &confirm_label,
+            value.as_deref(),
+            select_stem.unwrap_or(false),
+        )
+        .await
     }
     #[cfg(not(target_os = "ios"))]
     {
-        let _ = (&app, title, placeholder, confirm_label);
+        let _ = (&app, title, placeholder, confirm_label, value, select_stem);
         Err("ios_text_prompt is only available on iOS".into())
     }
 }
@@ -670,9 +680,11 @@ mod ios_impl {
         title: &str,
         placeholder: &str,
         confirm_label: &str,
+        value: Option<&str>,
+        select_stem: bool,
     ) -> Result<Option<String>, String> {
         app.notesage_ios()
-            .text_prompt(title, placeholder, confirm_label)
+            .text_prompt(title, placeholder, confirm_label, value, select_stem)
             .map_err(|e| e.to_string())
     }
 

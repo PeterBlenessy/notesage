@@ -29,6 +29,11 @@ struct TextPromptArgs: Decodable {
   let title: String
   let placeholder: String
   let confirmLabel: String
+  /// Pre-filled, editable text (rename starts from the current name).
+  let value: String?
+  /// Select only the filename stem, so typing replaces the name but keeps
+  /// the extension — what Files and Finder do.
+  let selectStem: Bool?
 }
 
 struct ContextMenuItemSpec: Decodable {
@@ -589,9 +594,11 @@ class NotesageIosPlugin: Plugin {
           removeObserver()
           invoke.resolve(["text": alert?.textFields?.first?.text ?? ""])
         }
-        confirm.isEnabled = false
+        // A pre-filled field is already valid; an empty one is not.
+        confirm.isEnabled = !(args.value ?? "").trimmingCharacters(in: .whitespaces).isEmpty
         alert.addTextField { field in
           field.placeholder = args.placeholder
+          field.text = args.value
           field.autocapitalizationType = .sentences
           field.clearButtonMode = .whileEditing
           // Enable the confirm action only once there is real input.
@@ -607,7 +614,18 @@ class NotesageIosPlugin: Plugin {
           invoke.resolve([:] as [String: String])
         })
         alert.addAction(confirm)
-        presenter.present(alert, animated: true)
+        presenter.present(alert, animated: true) {
+          // Preselect the stem AFTER presentation — before it, the field has
+          // no window and `selectedTextRange` is ignored.
+          guard args.selectStem == true, let field = alert.textFields?.first,
+            let text = field.text, let dot = text.lastIndex(of: "."), dot != text.startIndex,
+            let start = field.position(from: field.beginningOfDocument, offset: 0),
+            let end = field.position(
+              from: field.beginningOfDocument,
+              offset: text.distance(from: text.startIndex, to: dot))
+          else { return }
+          field.selectedTextRange = field.textRange(from: start, to: end)
+        }
       }
     } catch { invoke.reject(String(describing: error)) }
   }

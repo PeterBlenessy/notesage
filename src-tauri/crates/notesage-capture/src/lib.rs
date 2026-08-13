@@ -70,8 +70,8 @@ pub fn build_capture_note(input: &CaptureInput, now_rfc3339: &str) -> CaptureNot
     fm.push_str("---\n");
     fm.push_str("type: capture\n");
     fm.push_str(&format!("source_url: {}\n", yaml_quote(&input.url)));
-    if let Some(title) = input.title.as_ref().filter(|t| !t.trim().is_empty()) {
-        fm.push_str(&format!("title: {}\n", yaml_quote(title)));
+    if let Some(title) = meaningful_title(input.title.as_deref()) {
+        fm.push_str(&format!("title: {}\n", yaml_quote(&title)));
     }
     fm.push_str(&format!("date_saved: {}\n", yaml_quote(now_rfc3339)));
     fm.push_str("tags:\n");
@@ -96,12 +96,112 @@ pub fn build_capture_note(input: &CaptureInput, now_rfc3339: &str) -> CaptureNot
     }
 }
 
+/// Is this "title" really just the URL?
+///
+/// A share sheet's title is whatever the source app put in
+/// `attributedContentText`, and several major apps (YouTube among them) put
+/// the URL there. Taken at face value it wins over every better source and
+/// the note ends up named `https---youtube.com-watchv=…` (Peter, 2026-08-13).
+/// Treat it as no title at all so the real one — the article's, or the page's
+/// `og:title` — is used instead.
+pub fn is_url_like(candidate: &str) -> bool {
+    let t = candidate.trim();
+    if t.is_empty() {
+        return false;
+    }
+    if t.starts_with("http://") || t.starts_with("https://") || t.starts_with("www.") {
+        return true;
+    }
+    // Bare `host/path` with no spaces, e.g. `youtu.be/3zk1WjrxCSw`.
+    !t.contains(char::is_whitespace) && t.contains('/') && t.split('/').next().is_some_and(|host| {
+        host.contains('.') && !host.ends_with('.')
+    })
+}
+
+/// The shared title, unless it is empty or merely the URL again.
+pub fn meaningful_title(title: Option<&str>) -> Option<String> {
+    title
+        .map(str::trim)
+        .filter(|t| !t.is_empty() && !is_url_like(t))
+        .map(str::to_string)
+}
+
+/// Pull a human title out of a page: `og:title`, then `twitter:title`, then
+/// `<title>`. The fallback for pages whose sharer gave us nothing usable and
+/// whose body readability cannot parse (video pages, app shells).
+pub fn extract_meta_title(html: &str) -> Option<String> {
+    fn meta_content(html: &str, property: &str) -> Option<String> {
+        // Deliberately a scan rather than a DOM parse: this runs inside the
+        // Share Extension's tight memory budget, and the shapes below cover
+        // what real pages emit.
+        let lower = html.to_lowercase();
+        let mut from = 0usize;
+        while let Some(start) = lower[from..].find("<meta").map(|i| i + from) {
+            let end = lower[start..].find('>').map(|i| i + start)?;
+            let tag = &html[start..end];
+            let tag_lower = &lower[start..end];
+            let names = [
+                format!("property=\"{property}\""),
+                format!("name=\"{property}\""),
+                format!("property='{property}'"),
+                format!("name='{property}'"),
+            ];
+            if names.iter().any(|n| tag_lower.contains(n.as_str())) {
+                if let Some(value) = attribute_value(tag, tag_lower, "content") {
+                    let value = decode_entities(value.trim());
+                    if !value.is_empty() {
+                        return Some(value);
+                    }
+                }
+            }
+            from = end;
+        }
+        None
+    }
+
+    fn attribute_value<'a>(tag: &'a str, tag_lower: &str, attr: &str) -> Option<&'a str> {
+        let at = tag_lower.find(&format!("{attr}="))? + attr.len() + 1;
+        let rest = &tag[at..];
+        let quote = rest.chars().next()?;
+        if quote != '"' && quote != '\'' {
+            return None;
+        }
+        let close = rest[1..].find(quote)? + 1;
+        Some(&rest[1..close])
+    }
+
+    for property in ["og:title", "twitter:title"] {
+        if let Some(title) = meta_content(html, property).filter(|t| !is_url_like(t)) {
+            return Some(title);
+        }
+    }
+    let lower = html.to_lowercase();
+    let start = lower.find("<title")?;
+    let open_end = lower[start..].find('>')? + start + 1;
+    let close = lower[open_end..].find("</title>")? + open_end;
+    let title = decode_entities(html[open_end..close].trim());
+    if title.is_empty() || is_url_like(&title) { None } else { Some(title) }
+}
+
+/// The handful of entities that actually show up in page titles.
+fn decode_entities(raw: &str) -> String {
+    raw.replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&nbsp;", " ")
+        .trim()
+        .to_string()
+}
+
 /// Derive the note's filename stem from the title (preferred) or the URL
 /// host. Readable, not slugified: spaces and capitals are valid in a
 /// filename and make a shared note look like a hand-written one.
 pub fn file_name_for(input: &CaptureInput) -> String {
-    if let Some(title) = input.title.as_ref().filter(|t| !t.trim().is_empty()) {
-        let s = sanitize_file_stem(title);
+    if let Some(title) = meaningful_title(input.title.as_deref()) {
+        let s = sanitize_file_stem(&title);
         if !s.is_empty() {
             return s;
         }
@@ -207,10 +307,10 @@ pub fn extract_article(html: &str, url: &str) -> Option<Article> {
     if markdown.chars().count() < MIN_ARTICLE_CHARS {
         return None;
     }
-    let title = {
-        let t = product.title.trim();
-        if t.is_empty() { None } else { Some(t.to_string()) }
-    };
+    // Readability's title is usually right, but it comes up empty on app
+    // shells and video pages — fall back to the page's own metadata.
+    let title = meaningful_title(Some(product.title.as_str()))
+        .or_else(|| extract_meta_title(html));
     Some(Article { title, markdown: markdown.to_string() })
 }
 
@@ -288,7 +388,7 @@ pub fn build_article_note(
     article: &Article,
     now_rfc3339: &str,
 ) -> CaptureNote {
-    let effective_title = input.title.clone().or_else(|| article.title.clone());
+    let effective_title = meaningful_title(input.title.as_deref()).or_else(|| article.title.clone());
     let base = build_capture_note(
         &CaptureInput { title: effective_title, ..input.clone() },
         now_rfc3339,
@@ -594,5 +694,88 @@ mod tests {
             extract_article(&article_html_with_images(""), "https://example.com/post").expect("article");
         assert!(article.markdown.contains("Paragraph 3"));
         assert!(!article.markdown.contains("<img"));
+    }
+}
+
+#[cfg(test)]
+mod title_tests {
+    use super::*;
+
+    fn input(url: &str, title: Option<&str>) -> CaptureInput {
+        CaptureInput {
+            url: url.to_string(),
+            title: title.map(str::to_string),
+            selection_text: None,
+            tags: vec![],
+        }
+    }
+
+    #[test]
+    fn a_url_shared_as_the_title_is_not_used_as_one() {
+        // YouTube's share sheet puts the URL in attributedContentText; taken
+        // literally it produced `https---youtube.com-watchv=…md`.
+        assert!(is_url_like("https://youtu.be/3zk1WjrxCSw?is=VPJk"));
+        assert!(is_url_like("www.youtube.com/watch?v=x"));
+        assert!(is_url_like("youtu.be/3zk1WjrxCSw"));
+        assert!(!is_url_like("A zseni, aki mindent hagyott"));
+        // A title that merely mentions a domain is still a title.
+        assert!(!is_url_like("What happened at example.com today"));
+    }
+
+    #[test]
+    fn the_filename_falls_back_to_the_url_stem_rather_than_the_whole_url() {
+        let name = file_name_for(&input(
+            "https://youtu.be/3zk1WjrxCSw",
+            Some("https://youtu.be/3zk1WjrxCSw"),
+        ));
+        assert!(!name.starts_with("https"), "{name}");
+    }
+
+    #[test]
+    fn frontmatter_omits_a_url_masquerading_as_a_title() {
+        let note = build_capture_note(
+            &input("https://youtu.be/abc", Some("https://youtu.be/abc")),
+            "2026-08-13T10:00:00Z",
+        );
+        assert!(!note.contents.contains("title: \"https://youtu.be/abc\""));
+    }
+
+    #[test]
+    fn meta_title_prefers_og_then_twitter_then_title_tag() {
+        let html = r#"<html><head><title>YouTube</title>
+            <meta property="og:title" content="A zseni, aki mindent hagyott">
+            </head><body></body></html>"#;
+        assert_eq!(
+            extract_meta_title(html).as_deref(),
+            Some("A zseni, aki mindent hagyott")
+        );
+
+        let no_og = r#"<html><head><meta name='twitter:title' content='Second choice'>
+            <title>Third choice</title></head></html>"#;
+        assert_eq!(extract_meta_title(no_og).as_deref(), Some("Second choice"));
+
+        let bare = "<html><head><title>Third choice</title></head></html>";
+        assert_eq!(extract_meta_title(bare).as_deref(), Some("Third choice"));
+    }
+
+    #[test]
+    fn meta_title_decodes_the_entities_real_pages_carry() {
+        let html = r#"<head><meta property="og:title" content="Tom &amp; Jerry&#39;s &quot;best&quot;"></head>"#;
+        assert_eq!(
+            extract_meta_title(html).as_deref(),
+            Some("Tom & Jerry's \"best\"")
+        );
+    }
+
+    #[test]
+    fn meta_title_declines_a_page_that_only_repeats_its_url() {
+        let html = r#"<head><meta property="og:title" content="https://example.com/x"><title>https://example.com/x</title></head>"#;
+        assert_eq!(extract_meta_title(html), None);
+    }
+
+    #[test]
+    fn meta_title_survives_a_page_with_no_title_at_all() {
+        assert_eq!(extract_meta_title("<html><body>hi</body></html>"), None);
+        assert_eq!(extract_meta_title(""), None);
     }
 }

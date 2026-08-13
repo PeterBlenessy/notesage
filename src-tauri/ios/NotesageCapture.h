@@ -31,6 +31,14 @@
 extern "C" {
 #endif
 
+/// Relative path for the note, using the fetched page's own metadata
+/// (og:title / twitter:title / <title>) when the sharer's title is missing or
+/// is merely the URL again — which is what YouTube and friends hand over.
+/// Caller frees with notesage_capture_string_free().
+char *notesage_capture_rel_path_from_html(const char *url,
+                                          const char *title,
+                                          const char *html);
+
 /// Relative path for the note, e.g. `Inbox/2026-08-02-101400-a-title.md`.
 /// Caller frees with notesage_capture_string_free().
 char *notesage_capture_rel_path(const char *url,

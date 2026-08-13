@@ -127,6 +127,8 @@ struct TextPromptArgs<'a> {
     title: &'a str,
     placeholder: &'a str,
     confirm_label: &'a str,
+    value: Option<&'a str>,
+    select_stem: bool,
 }
 
 /// One row of the native action sheet (#680).
@@ -303,10 +305,12 @@ impl<R: Runtime> NotesageIos<R> {
         title: &str,
         placeholder: &str,
         confirm_label: &str,
+        value: Option<&str>,
+        select_stem: bool,
     ) -> Result<Option<String>> {
         self.call::<_, TextPromptResponse>(
             "textPrompt",
-            TextPromptArgs { title, placeholder, confirm_label },
+            TextPromptArgs { title, placeholder, confirm_label, value, select_stem },
         )
         .map(|r| r.text)
     }
@@ -392,7 +396,14 @@ impl<R: Runtime> NotesageIos<R> {
     pub fn entry_menu(&self, _spec: serde_json::Value) -> Result<Option<String>> {
         Err(Error::Unavailable)
     }
-    pub fn text_prompt(&self, _t: &str, _p: &str, _c: &str) -> Result<Option<String>> {
+    pub fn text_prompt(
+        &self,
+        _t: &str,
+        _p: &str,
+        _c: &str,
+        _v: Option<&str>,
+        _s: bool,
+    ) -> Result<Option<String>> {
         Err(Error::Unavailable)
     }
     pub fn create_file(&self, _rel: &str, _text: &str) -> Result<String> {

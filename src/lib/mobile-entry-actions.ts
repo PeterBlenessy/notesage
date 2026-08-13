@@ -106,10 +106,15 @@ export async function runEntryAction(
       );
       return;
     case "rename": {
+      // Pre-filled and editable: renaming is usually a small edit to the
+      // existing name, not retyping it (Peter, 2026-08-13). Files-style, the
+      // stem is preselected so typing replaces the name but keeps the
+      // extension — and a folder has no extension to keep.
       const name = await iosTextPrompt(
         t("action.renameTitle"),
         entry.name,
         t("action.rename"),
+        { value: entry.name, selectStem: !entry.is_directory },
       ).catch(() => null);
       if (!name || name === entry.name) return;
       await iosRenameFile(entry.path, name)

@@ -126,7 +126,15 @@ extension LibraryAccess {
                 html = baseTag + html
             }
         }
-        guard let relPath = callCapture(notesage_capture_rel_path, url, title, nil, "") else {
+        // Name from the PAGE's own title when the sharer's "title" is missing
+        // or is just the URL again (YouTube shares the URL) — otherwise the
+        // file lands as `https---youtube.com-watchv=…` (Peter, 2026-08-13).
+        let relPath = html.withCString { htmlPtr -> String? in
+            callCapture({ u, t, _, _ in
+                notesage_capture_rel_path_from_html(u, t, htmlPtr)
+            }, url, title, nil, "")
+        }
+        guard let relPath else {
             throw NSError(
                 domain: "Notesage", code: 2,
                 userInfo: [NSLocalizedDescriptionKey: "Could not derive a capture name"])

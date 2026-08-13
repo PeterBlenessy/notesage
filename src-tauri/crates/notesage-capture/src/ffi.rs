@@ -23,7 +23,10 @@
 use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
-use crate::{build_article_note, build_capture_note, extract_article, timestamps, CaptureInput};
+use crate::{
+    build_article_note, build_capture_note, extract_article, extract_meta_title, meaningful_title,
+    timestamps, CaptureInput,
+};
 
 /// Borrow a C string as `Option<String>`; `NULL` or invalid UTF-8 → `None`.
 unsafe fn opt_str(ptr: *const c_char) -> Option<String> {
@@ -82,6 +85,33 @@ pub unsafe extern "C" fn notesage_capture_contents(
         let input = input_from(url, title, selection_text, tags);
         let (now, _stamp) = timestamps();
         into_c_string(build_capture_note(&input, &now).contents)
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Build the capture **rel path** using the page's own metadata as the title
+/// fallback. Same as `notesage_capture_rel_path`, but for callers that have
+/// already fetched the HTML (the "Page (HTML)" format) — several share sheets
+/// hand over the URL as the title, and without the page's `og:title` the file
+/// ends up named after a mangled URL.
+///
+/// # Safety
+/// All arguments must be NUL-terminated C strings or NULL. The returned
+/// pointer is owned by the caller and must be freed with
+/// `notesage_capture_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn notesage_capture_rel_path_from_html(
+    url: *const c_char,
+    title: *const c_char,
+    html: *const c_char,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        let mut input = input_from(url, title, std::ptr::null(), std::ptr::null());
+        if meaningful_title(input.title.as_deref()).is_none() {
+            input.title = opt_str(html).and_then(|h| extract_meta_title(&h));
+        }
+        let (now, _stamp) = timestamps();
+        into_c_string(build_capture_note(&input, &now).rel_path)
     }))
     .unwrap_or(std::ptr::null_mut())
 }
@@ -260,5 +290,50 @@ mod tests {
     #[test]
     fn freeing_null_is_a_no_op() {
         unsafe { notesage_capture_string_free(std::ptr::null_mut()) };
+    }
+}
+
+#[cfg(test)]
+mod html_title_tests {
+    use super::*;
+    use std::ffi::CString;
+
+    #[test]
+    fn a_url_shared_as_the_title_falls_back_to_the_pages_og_title() {
+        let url = CString::new("https://youtu.be/3zk1WjrxCSw").unwrap();
+        // What YouTube's share sheet actually hands over.
+        let title = CString::new("https://youtu.be/3zk1WjrxCSw").unwrap();
+        let html = CString::new(
+            r#"<html><head><meta property="og:title" content="A zseni, aki mindent hagyott"></head></html>"#,
+        )
+        .unwrap();
+        let out = unsafe {
+            let ptr = notesage_capture_rel_path_from_html(
+                url.as_ptr(),
+                title.as_ptr(),
+                html.as_ptr(),
+            );
+            assert!(!ptr.is_null());
+            let s = CStr::from_ptr(ptr).to_string_lossy().into_owned();
+            notesage_capture_string_free(ptr);
+            s
+        };
+        assert_eq!(out, "Inbox/A zseni, aki mindent hagyott.md", "{out}");
+    }
+
+    #[test]
+    fn a_real_shared_title_still_wins_over_the_pages_metadata() {
+        let url = CString::new("https://example.com/a").unwrap();
+        let title = CString::new("What the user shared").unwrap();
+        let html = CString::new(r#"<head><meta property="og:title" content="Page says"></head>"#)
+            .unwrap();
+        let out = unsafe {
+            let ptr =
+                notesage_capture_rel_path_from_html(url.as_ptr(), title.as_ptr(), html.as_ptr());
+            let s = CStr::from_ptr(ptr).to_string_lossy().into_owned();
+            notesage_capture_string_free(ptr);
+            s
+        };
+        assert_eq!(out, "Inbox/What the user shared.md", "{out}");
     }
 }

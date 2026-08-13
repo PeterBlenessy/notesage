@@ -103,6 +103,32 @@ export function LibraryBrowser() {
   // that gesture could never fire (removed). This tracks the pull on the
   // real scroller: drag down from the top past the threshold to reload.
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // Restore the folder's scroll position once its rows exist (#680 follow-up:
+  // opening a document unmounts this browser, so the DOM offset is gone by
+  // the time we come back). Guarded by a ref so a later refresh — pull, or
+  // the foreground reload — never yanks the user back up.
+  const restoredFor = useRef<string | null>(null);
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el || state.status !== "ready" || state.entries.length === 0) return;
+    if (restoredFor.current === currentRelPath) return;
+    restoredFor.current = currentRelPath;
+    const offset = useMobileStore.getState().scrollOffsets[currentRelPath] ?? 0;
+    if (offset > 0) el.scrollTop = offset;
+  }, [state, currentRelPath]);
+
+  // Record the offset as it changes, cheaply: rAF-coalesced, and written to
+  // the store rather than React state so scrolling never re-renders the list.
+  const scrollTick = useRef(0);
+  const onScroll = () => {
+    if (scrollTick.current) return;
+    scrollTick.current = requestAnimationFrame(() => {
+      scrollTick.current = 0;
+      const el = scrollerRef.current;
+      if (el) useMobileStore.getState().rememberScroll(currentRelPath, el.scrollTop);
+    });
+  };
+  useEffect(() => () => cancelAnimationFrame(scrollTick.current), []);
   const pullStart = useRef<number | null>(null);
   const [pullPx, setPullPx] = useState(0);
   const [pullBusy, setPullBusy] = useState(false);
@@ -497,6 +523,7 @@ export function LibraryBrowser() {
       <div
         key={currentRelPath}
         ref={scrollerRef}
+        onScroll={onScroll}
         onTouchStart={onPullStart}
         onTouchMove={onPullMove}
         onTouchEnd={onPullEnd}

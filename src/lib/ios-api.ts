@@ -235,11 +235,20 @@ export async function iosTextPrompt(
   title: string,
   placeholder: string,
   confirmLabel: string,
+  options: {
+    /** Pre-filled, editable text — rename starts from the current name. */
+    value?: string;
+    /** Preselect the filename stem so typing replaces the name but keeps the
+     *  extension, as Files and Finder do. */
+    selectStem?: boolean;
+  } = {},
 ): Promise<string | null> {
   const text = await invoke<string | null>("ios_text_prompt", {
     title,
     placeholder,
     confirmLabel,
+    value: options.value ?? null,
+    selectStem: options.selectStem ?? false,
   });
   return text ?? null;
 }

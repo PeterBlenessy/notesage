@@ -233,6 +233,13 @@ that raises a native action sheet. List rows get the same press as a second
 route to their swipe actions, which is what iOS itself does (Files and Notes
 both offer swipe *and* hold).
 
+**Rename starts from the current name**, pre-filled and editable with the
+stem preselected (Files/Finder behaviour), so a small correction is a small
+edit rather than retyping the whole name. The listing also **restores its
+scroll position** when you come back from a document — the browser unmounts
+while the Reader is open, so the offset is kept per folder in the store
+(session-only) and reapplied once the rows exist.
+
 **Shape (Apple Notes):** the pressed item lifts out of the list as a large
 rounded **preview card** over a blurred backdrop, with the actions in a panel
 beneath — an inline icon row (Share / Pin / Delete) above full-width rows
