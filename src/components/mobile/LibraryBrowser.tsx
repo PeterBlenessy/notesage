@@ -8,11 +8,16 @@ import { useMobileStore } from "@/stores/mobile-store";
 import type { EntryActionContext } from "@/lib/mobile-entry-actions";
 import { FileRow, classifyFile } from "./FileRow";
 import { GalleryView } from "./GalleryView";
+import { InboxCard } from "./InboxCard";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
 import { t } from "@/lib/i18n";
 import { useLocale } from "@/lib/useLocale";
+
+/** The share extension's landing folder. A literal by contract: the Rust
+ *  capture crate writes to `Inbox/` and the desktop reads it there. */
+const INBOX_NAME = "Inbox";
 
 type LoadState =
   | { status: "loading" }
@@ -27,6 +32,7 @@ export function LibraryBrowser() {
   const libraryName = useMobileStore((s) => s.libraryName);
   const folderStack = useMobileStore((s) => s.folderStack);
   const enterFolder = useMobileStore((s) => s.enterFolder);
+  const jumpToFolder = useMobileStore((s) => s.jumpToFolder);
   const openDocument = useMobileStore((s) => s.openDocument);
   const goBack = useMobileStore((s) => s.goBack);
   const goToDepth = useMobileStore((s) => s.goToDepth);
@@ -355,14 +361,19 @@ export function LibraryBrowser() {
         // second line.
         subtitle:
           folderStack.length > 0 ? ancestors.map((f) => f.name).join(" › ") : undefined,
-        menu:
-          folderStack.length > 0
+        // Ancestors (when nested) plus a PERMANENT Inbox jump: shared items
+        // land there, and hunting for the folder in a long root listing was
+        // the tedious part (Peter, 2026-08-13). Reachable from any depth.
+        menu: [
+          ...(folderStack.length > 0
             ? ancestors.map((f, depth) => ({
                 id: `jump-${depth}`,
                 title: f.name,
                 icon: depth === 0 ? "house" : "folder",
               }))
-            : undefined,
+            : []),
+          { id: "goto-inbox", title: INBOX_NAME, icon: "tray" },
+        ],
       },
       // Files-style "..." view-options menu (Peter's design): view mode on
       // top (List / Gallery, #633), sort selection below its divider, room
@@ -461,6 +472,7 @@ export function LibraryBrowser() {
       "group-recent": () => setGroupMode("recent"),
       "group-date": () => setGroupMode("date"),
       "group-type": () => setGroupMode("type"),
+      "goto-inbox": () => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME }),
       "create-note": () => createNote(),
       "create-folder": () => void createFolder(),
       "search-query": (value?: string) => setQuery(value ?? ""),
@@ -603,6 +615,20 @@ export function LibraryBrowser() {
                 ? state.entries.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()))
                 : state.entries,
             );
+            // The Inbox card sits above whatever the listing shows, so no
+            // sort or grouping choice can move it — and it is excluded from
+            // the list below so the folder is not offered twice.
+            const inboxCard =
+              folderStack.length === 0 &&
+              !query &&
+              state.entries.some((e) => e.is_directory && e.name === INBOX_NAME) ? (
+                <InboxCard
+                  onOpen={() => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME })}
+                />
+              ) : null;
+            const listed = inboxCard
+              ? visible.filter((e) => !(e.is_directory && e.name === INBOX_NAME))
+              : visible;
             if (state.entries.length === 0) return <EmptyFolder />;
             if (visible.length === 0)
               return (
@@ -615,13 +641,16 @@ export function LibraryBrowser() {
               );
             if (viewMode === "gallery") {
               return (
+                <>
+                  {inboxCard}
                 <GalleryView
-                  entries={visible}
+                  entries={listed}
                   currentFolderName={currentName}
                   theme={theme}
                   onActivate={onActivate}
                   actionContext={actionContext}
                 />
+                </>
               );
             }
             // Grouped rendering (#652): one <ul> per section with a sticky
@@ -629,7 +658,8 @@ export function LibraryBrowser() {
             // markup below has exactly one shape.
             return (
               <>
-                {groupEntries(visible).map((section) => (
+                {inboxCard}
+                {groupEntries(listed).map((section) => (
                   <section key={section.key}>
                     {section.title && (
                       <h2 className="sticky top-0 z-10 bg-background/85 px-4 py-1.5 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">

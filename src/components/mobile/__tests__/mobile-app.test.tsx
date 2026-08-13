@@ -273,14 +273,21 @@ describe("breadcrumb island (#615)", () => {
     // The island carries the PATH too — it replaces the in-content title +
     // breadcrumb row, which must not render while native chrome is active.
     expect(captured.topCenter?.subtitle).toBe("Notesage › Projects");
-    expect(captured.topCenter?.menu?.map((m) => m.title)).toEqual(["Notesage", "Projects"]);
+    // Ancestors first, then the permanent Inbox jump (#683) — shared items
+    // land there and must be one tap away from any depth.
+    expect(captured.topCenter?.menu?.map((m) => m.title)).toEqual([
+      "Notesage",
+      "Projects",
+      "Inbox",
+    ]);
     expect(captured.topCenter?.menu?.[0]?.id).toBe("jump-0");
+    expect(captured.topCenter?.menu?.at(-1)?.id).toBe("goto-inbox");
     await waitFor(() =>
       expect(screen.queryByRole("heading", { name: "Deep" })).toBeNull(),
     );
   });
 
-  it("renders a passive breadcrumb (no menu) at the library root", async () => {
+  it("offers only the Inbox jump at the root — there are no ancestors to list", async () => {
     let captured: CapturedChromeSpec = {};
     setMockInvokeHandler("ios_set_chrome", (args) => {
       captured = (args as { spec: CapturedChromeSpec }).spec;
@@ -290,7 +297,7 @@ describe("breadcrumb island (#615)", () => {
 
     renderWithProviders(<LibraryBrowser />);
     await waitFor(() => expect(captured.topCenter?.title).toBe("Notesage"));
-    expect(captured.topCenter?.menu).toBeUndefined();
+    expect(captured.topCenter?.menu?.map((m) => m.id)).toEqual(["goto-inbox"]);
   });
 });
 
@@ -1635,5 +1642,53 @@ describe("library re-pick", () => {
     fireEvent.click(btn);
     await waitFor(() => expect(calledCommands()).toContain("ios_pick_library_folder"));
     expect(toast.error).not.toHaveBeenCalled();
+  });
+});
+
+describe("Inbox shortcut (#683)", () => {
+  it("pins Inbox above the root listing and omits it from the list below", async () => {
+    setMockInvokeHandler("ios_list_directory", (args) => {
+      const rel = (args as { relPath: string }).relPath;
+      if (rel === "Inbox") {
+        return [
+          { name: "a.md", path: "Inbox/a.md", is_directory: false, hidden: false },
+          { name: "b.md", path: "Inbox/b.md", is_directory: false, hidden: false },
+        ];
+      }
+      return [
+        { name: "Inbox", path: "Inbox", is_directory: true, hidden: false },
+        { name: "Zebra", path: "Zebra", is_directory: true, hidden: false },
+      ];
+    });
+
+    renderWithProviders(<LibraryBrowser />);
+    // The card carries the count; the folder appears exactly once overall.
+    await waitFor(() => expect(screen.getByText("2")).toBeTruthy());
+    expect(screen.getAllByText("Inbox")).toHaveLength(1);
+    expect(screen.getByText("Zebra")).toBeTruthy();
+  });
+
+  it("jumps to Inbox from the card, replacing the stack rather than nesting", async () => {
+    setMockInvokeHandler("ios_list_directory", (args) => {
+      const rel = (args as { relPath: string }).relPath;
+      if (rel === "") {
+        return [{ name: "Inbox", path: "Inbox", is_directory: true, hidden: false }];
+      }
+      return [];
+    });
+    useMobileStore.getState().enterFolder({ relPath: "Deep", name: "Deep" });
+    useMobileStore.getState().jumpToFolder({ relPath: "Inbox", name: "Inbox" });
+    expect(useMobileStore.getState().folderStack).toEqual([
+      { relPath: "Inbox", name: "Inbox" },
+    ]);
+  });
+
+  it("shows no card when nothing has ever been shared", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Ideas", path: "Ideas", is_directory: true, hidden: false },
+    ]);
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Ideas");
+    expect(screen.queryByText("Inbox")).toBeNull();
   });
 });

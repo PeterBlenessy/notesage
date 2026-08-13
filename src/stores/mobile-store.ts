@@ -97,6 +97,10 @@ interface MobileStore {
 
   /** Push a folder onto the breadcrumb. */
   enterFolder: (ref: FolderRef) => void;
+  /** Jump straight to a folder, replacing the whole stack — the Inbox
+   *  shortcut, which must work from any depth rather than pushing Inbox
+   *  under wherever you happened to be. */
+  jumpToFolder: (ref: FolderRef) => void;
   /** Open a document (records it in recents). */
   openDocument: (ref: OpenDocRef) => void;
   /** Close the open document. */
@@ -204,6 +208,8 @@ export const useMobileStore = create<MobileStore>()(
 
       enterFolder: (ref) =>
         set((s) => ({ folderStack: [...s.folderStack, ref], openDoc: null })),
+
+      jumpToFolder: (ref) => set({ folderStack: [ref], openDoc: null }),
 
       openDocument: (ref) =>
         set((s) => ({

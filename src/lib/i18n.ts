@@ -38,6 +38,7 @@ const en = {
   "onboarding.opening": "Opening…",
   "onboarding.noFolder": "No folder selected — tap again to choose your Notesage folder.",
   // Library browser
+  "library.inbox": "Inbox",
   "library.searchFolder": "Search this folder",
   "library.items": "{count} items",
   "library.itemsOne": "1 item",
@@ -131,6 +132,7 @@ const sv: Dict = {
   "onboarding.pickAgain": "Välj din mapp igen",
   "onboarding.opening": "Öppnar…",
   "onboarding.noFolder": "Ingen mapp vald — tryck igen för att välja din Notesage-mapp.",
+  "library.inbox": "Inkorg",
   "library.searchFolder": "Sök i den här mappen",
   "library.items": "{count} objekt",
   "library.itemsOne": "1 objekt",

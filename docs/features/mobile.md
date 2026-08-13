@@ -289,6 +289,28 @@ move command), Duplicate (needs a binary-safe copy, or it would silently skip
 non-markdown files), Info (repeats the date already on the row), and
 Quick Look (a plain tap already does it).
 
+## Reaching the Inbox (#683)
+
+Shared items land in `Inbox/`, but it was an ordinary folder in an
+alphabetical list — after sharing a few links from Safari, reaching them meant
+scrolling, or switching the whole listing to sort-by-date. Two affordances,
+following Apple Notes (which pins Quick Notes / Shared in their own card above
+the folder list):
+
+- **A pinned Inbox card** above the root listing, with the item count, in a
+  fixed position no sort or grouping can move. Root only — one level down it
+  is noise — and only when an Inbox exists. The folder is filtered out of the
+  list below so it is never offered twice.
+- **A permanent "Inbox" entry in the breadcrumb island's menu**, after the
+  ancestors, so it is one tap from ANY depth without new corner chrome. It
+  uses `jumpToFolder`, which REPLACES the folder stack — entering it would
+  otherwise nest Inbox under wherever you happened to be.
+
+Deliberately not: pinning Inbox via `pins.json` (shared with the desktop, so a
+mobile navigation fix would rearrange the Mac sidebar), a sort default (only
+works while that mode is kept), or opening the app into Inbox after a share
+(wrong the moment you shared yesterday and want your notes today).
+
 ## Capturing a video link (#682)
 
 A video page has no article to extract and its saved HTML is a player that
