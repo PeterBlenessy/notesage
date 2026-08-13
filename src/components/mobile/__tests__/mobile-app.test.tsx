@@ -77,6 +77,8 @@ const ALLOWED = new Set([
   // System thumbnail generation — pure read, rendered by the OS.
   "ios_thumbnail",
   "ios_text_prompt",
+  // Pure UI signal: drops the native launch cover once painted (#675).
+  "ios_content_ready",
 ]);
 
 /** Commands that would mutate paths OUTSIDE the granted library, or reach

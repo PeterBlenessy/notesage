@@ -204,6 +204,42 @@ verified basis for the App Store privacy label **"Data Not Collected"**:
   mirrored from the app) and re-runs `xcodegen generate`. Idempotent — run it
   after any `tauri ios init`.
 
+## Launch: no white flash (#675)
+
+WKWebView paints **white** for its own first frames regardless of what the
+layers beneath it are set to. Round 1 of the fix themed every native layer
+(webview, scroll view, superview chain, all windows) *and* the document's
+pre-paint CSS — and the flash survived on device, because none of that
+changes what the webview itself paints first.
+
+The fix is the iOS translation of the desktop trick of starting the window
+hidden and showing it when the frontend signals ready (the window can't be
+hidden on iOS, so we cover it instead):
+
+1. `LaunchScreen.storyboard` shows the app icon (120 pt, 27 pt corner radius)
+   centered on `systemBackground`.
+2. The plugin's `load(webview:)` installs an **opaque cover** over the window
+   with the *same icon at the same size and position* — so the launch-screen →
+   cover handoff is invisible. The cover is
+   `isUserInteractionEnabled = false`, so a stuck cover can never block the
+   app, and it self-removes after 4 s if the frontend never signals.
+3. `MobileApp` calls `ios_content_ready` inside a double `requestAnimationFrame`
+   (the second fires *after* the browser has painted the commit), and the
+   native side dissolves the cover: the icon scales to 1.35× as it fades while
+   the cover fades slightly faster, so the icon reads as opening *into* the
+   loaded UI.
+
+The storyboard and the `LaunchLogo` imageset live in
+`src-tauri/ios/LaunchAssets/` and are re-applied by
+`integrate-share-extension.py` on every integration, because `tauri ios init`
+regenerates both from its own templates.
+
+**Verify with video, never screenshots.** The flash is 20–100 ms; polling
+`simctl io screenshot` misses it and reports a clean launch that isn't one.
+Record with `simctl io recordVideo`, decompose at 60 fps, and check the frame
+means — in a dark-mode launch any frame with mean luminance > 150 is the bug
+(and in light mode, any frame < 100).
+
 ## Build & verification pipeline
 
 - **Dev loop:** `npx tauri ios dev "<sim name>" --config '{"build":{...}}'`

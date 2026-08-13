@@ -162,7 +162,99 @@ class NotesageIosPlugin: Plugin {
     DispatchQueue.main.async { [weak webview] in
       guard let webview else { return }
       self.applyLaunchBackground(to: webview)
+      self.installLaunchCover(over: webview)
     }
+  }
+
+  /// Called by the frontend once it has painted its first frame.
+  @objc public func contentReady(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      self.removeLaunchCover()
+      invoke.resolve()
+    }
+  }
+
+  /// Opaque cover held over the webview until the page has actually painted
+  /// (#675, round 2).
+  ///
+  /// Round 1 themed every native layer AND the document's pre-paint CSS, and
+  /// still flashed on device: WKWebView paints WHITE for its own first frames
+  /// no matter what the layers beneath say, and the gap is ~20–100 ms — short
+  /// enough that polling `simctl io screenshot` missed it, which is why the
+  /// earlier verification looked clean. (Lesson: verify a flash with VIDEO.)
+  ///
+  /// This is the iOS equivalent of the desktop trick of starting the window
+  /// hidden and showing it when the frontend is ready: the window can't be
+  /// hidden on iOS, so instead a plain `systemBackground` view — visually
+  /// identical to the launch storyboard — sits ON TOP until the frontend
+  /// signals first paint, making the launch screen appear to continue
+  /// seamlessly into the app.
+  private var launchCover: UIView?
+  private var launchCoverLogo: UIImageView?
+  private var launchCoverRemoved = false
+
+  private func installLaunchCover(over webview: WKWebView) {
+    guard !launchCoverRemoved, launchCover == nil,
+      let window = webview.window ?? UIApplication.shared.connectedScenes
+        .compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first
+    else { return }
+    let cover = UIView(frame: window.bounds)
+    cover.backgroundColor = .systemBackground
+    cover.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    // Never intercept touches: even if something goes wrong and the cover
+    // outlives its welcome, the app stays usable underneath.
+    cover.isUserInteractionEnabled = false
+    // Same 120pt rounded app icon, in the same place, as LaunchScreen.storyboard
+    // — so the handoff from launch screen to cover is invisible and the icon
+    // simply stays put while the webview loads behind it.
+    if let logo = UIImage(named: "LaunchLogo") {
+      let view = UIImageView(image: logo)
+      view.contentMode = .scaleAspectFit
+      view.layer.cornerRadius = 27
+      view.layer.cornerCurve = .continuous
+      view.clipsToBounds = true
+      view.translatesAutoresizingMaskIntoConstraints = false
+      cover.addSubview(view)
+      NSLayoutConstraint.activate([
+        view.centerXAnchor.constraint(equalTo: cover.centerXAnchor),
+        view.centerYAnchor.constraint(equalTo: cover.centerYAnchor),
+        view.widthAnchor.constraint(equalToConstant: 120),
+        view.heightAnchor.constraint(equalToConstant: 120),
+      ])
+      launchCoverLogo = view
+    }
+    window.addSubview(cover)
+    launchCover = cover
+    // Safety net: a frontend that never signals (crash, JS error) must not
+    // leave a blank screen. 4 s is far beyond a normal cold start.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+      self?.removeLaunchCover()
+    }
+  }
+
+  /// Fade the cover out once content is on screen. Idempotent.
+  ///
+  /// The icon scales up a touch as it fades, which reads as the app icon
+  /// opening INTO the UI rather than a plate being yanked off it — the same
+  /// gesture iOS itself uses when an app launches from the Home Screen. The
+  /// cover fades slightly faster than the icon so the loaded UI is already
+  /// there behind the last frames of the icon.
+  func removeLaunchCover() {
+    launchCoverRemoved = true
+    guard let cover = launchCover else { return }
+    launchCover = nil
+    let logo = launchCoverLogo
+    launchCoverLogo = nil
+    UIView.animate(
+      withDuration: 0.34, delay: 0, options: [.curveEaseOut],
+      animations: {
+        logo?.transform = CGAffineTransform(scaleX: 1.35, y: 1.35)
+        logo?.alpha = 0
+      })
+    UIView.animate(
+      withDuration: 0.26, delay: 0.04, options: [.curveEaseOut],
+      animations: { cover.backgroundColor = cover.backgroundColor?.withAlphaComponent(0) },
+      completion: { _ in cover.removeFromSuperview() })
   }
 
   private func applyLaunchBackground(to webview: WKWebView) {

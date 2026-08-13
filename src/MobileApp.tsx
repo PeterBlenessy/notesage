@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { log } from "@/lib/logger";
+import { iosContentReady } from "@/lib/ios-api";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "@/components/ui/sonner";
 import { useMobileStore } from "@/stores/mobile-store";
@@ -25,6 +26,24 @@ export function MobileApp() {
   useEffect(() => {
     void refreshGrant();
   }, [refreshGrant]);
+
+  // Drop the native launch cover once we have actually painted (#675). Two
+  // nested rAFs: the first fires before the browser paints this commit, the
+  // second after — so the cover lifts onto real pixels, not an empty frame.
+  // Errors are ignored: off-iOS there is no cover, and the native side also
+  // removes it on a timeout.
+  useEffect(() => {
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        void iosContentReady().catch(() => {});
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+    };
+  }, []);
 
   // Local-only JS diagnostics (#587): Apple's crash reporting sees only
   // NATIVE crashes — JS errors and unhandled rejections are invisible to it.
