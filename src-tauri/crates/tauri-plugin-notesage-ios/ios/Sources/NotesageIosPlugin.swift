@@ -31,6 +31,24 @@ struct TextPromptArgs: Decodable {
   let confirmLabel: String
 }
 
+struct ContextMenuItemSpec: Decodable {
+  let id: String
+  let title: String
+  /// Rendered in red and sunk to the bottom of the sheet, per iOS.
+  let destructive: Bool?
+}
+
+struct ContextMenuArgs: Decodable {
+  /// Shown as the sheet's title — the file being acted on.
+  let title: String?
+  let items: [ContextMenuItemSpec]
+  /// Where the long press happened, in webview (CSS pixel) coordinates.
+  /// Only used to anchor the popover on iPad; iPhone sheets come up from
+  /// the bottom edge regardless.
+  let x: Double?
+  let y: Double?
+}
+
 // MARK: - Keyboard accessory removal
 
 /// WKWebView shows its own accessory bar (form prev/next arrows + Done) above
@@ -590,6 +608,74 @@ class NotesageIosPlugin: Plugin {
         })
         alert.addAction(confirm)
         presenter.present(alert, animated: true)
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Create a directory at an exact relative path if it doesn't exist yet
+  /// (no dedupe) — used for `.notesage/` before writing the shared pins file.
+  @objc public func ensureDirectory(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(RelPathArgs.self)
+      try LibraryAccess.ensureDirectory(args.relPath)
+      invoke.resolve()
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Native action sheet for a long-pressed list/gallery item (#680).
+  ///
+  /// A `UIAlertController(.actionSheet)` rather than a `UIMenu`: a real
+  /// context menu needs a `UIContextMenuInteraction` bound to the pressed
+  /// VIEW, and the item here is web content — there is no native view to
+  /// attach to, and UIKit exposes no way to raise a `UIMenu` at a point.
+  /// The action sheet is the standard iOS fallback for exactly this case,
+  /// and unlike `UIMenu` it needs no private KVC to carry icons (it simply
+  /// has none), so it stays App Store safe.
+  ///
+  /// Resolves `{ id: "<chosen>" }`, or `{}` when the user cancels.
+  @objc public func contextMenu(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(ContextMenuArgs.self)
+      DispatchQueue.main.async {
+        guard let presenter = self.topViewController else {
+          invoke.reject("No view controller to present the menu")
+          return
+        }
+        guard presenter.presentedViewController == nil else {
+          invoke.reject("Another sheet is already open")
+          return
+        }
+        let sheet = UIAlertController(
+          title: args.title, message: nil, preferredStyle: .actionSheet)
+        for item in args.items where item.destructive != true {
+          sheet.addAction(
+            UIAlertAction(title: item.title, style: .default) { _ in
+              invoke.resolve(["id": item.id])
+            })
+        }
+        // Destructive actions last — iOS never puts one above a plain action.
+        for item in args.items where item.destructive == true {
+          sheet.addAction(
+            UIAlertAction(title: item.title, style: .destructive) { _ in
+              invoke.resolve(["id": item.id])
+            })
+        }
+        sheet.addAction(
+          UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            invoke.resolve([:] as [String: String])
+          })
+        // iPad presents an action sheet as a popover and CRASHES without an
+        // anchor. Point it at the pressed spot in the webview.
+        if let popover = sheet.popoverPresentationController {
+          let source = self.webViewRef ?? presenter.view
+          popover.sourceView = source
+          popover.sourceRect = CGRect(
+            x: args.x ?? (source?.bounds.midX ?? 0),
+            y: args.y ?? (source?.bounds.midY ?? 0), width: 1, height: 1)
+          popover.permittedArrowDirections = [.up, .down]
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        presenter.present(sheet, animated: true)
       }
     } catch { invoke.reject(String(describing: error)) }
   }

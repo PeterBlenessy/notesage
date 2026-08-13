@@ -204,6 +204,43 @@ verified basis for the App Store privacy label **"Data Not Collected"**:
   mirrored from the app) and re-runs `xcodegen generate`. Idempotent — run it
   after any `tauri ios init`.
 
+## Long-press actions (#680)
+
+Gallery cards have no swipe affordance — the grid scrolls and a horizontal
+drag on a card is ambiguous — so their actions live behind a **long press**
+that raises a native action sheet. List rows get the same press as a second
+route to their swipe actions, which is what iOS itself does (Files and Notes
+both offer swipe *and* hold).
+
+Menu: **Share** (files only — `ios_share_file` copies a single file to temp),
+**Rename**, **Pin/Unpin**, **Delete** (destructive, last). Both surfaces build
+their rows from `entryMenuItems` in `src/lib/mobile-entry-actions.ts`, so they
+cannot drift.
+
+**Delete confirms.** iCloud's Recently Deleted does give 30-day recovery, but
+a long press or a full swipe is easy to trigger by accident and the recovery
+path is not discoverable from inside Notesage. Both the menu row and the
+swipe action route through `confirmDelete`.
+
+**Pin writes the shared file.** `togglePin` read-modify-writes the same
+library-root `.notesage/pins.json` the desktop sidebar reads — re-reading the
+file first, so a pin made on the desktop since launch is not clobbered by a
+stale in-memory copy. `.notesage/` is created if missing via
+`ios_ensure_directory`, which unlike `ios_create_directory` does NOT dedupe
+(deduping there would silently produce `.notesage-1` and split the state).
+
+**Why an action sheet, not a `UIMenu`.** A real context menu needs a
+`UIContextMenuInteraction` bound to the pressed *view*, and the item here is
+web content — there is no native view to attach to, and UIKit exposes no way
+to raise a `UIMenu` at a point. The action sheet is the standard fallback, and
+unlike `UIMenu` it needs no private KVC to carry icons (it simply has none),
+so it stays App Store safe.
+
+Deliberately **not** in the menu: Move (needs a folder picker plus a native
+move command), Duplicate (needs a binary-safe copy, or it would silently skip
+non-markdown files), Info (repeats the date already on the row), and
+Quick Look (a plain tap already does it).
+
 ## Launch: no white flash (#675)
 
 WKWebView paints **white** for its own first frames regardless of what the

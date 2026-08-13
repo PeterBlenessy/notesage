@@ -5,6 +5,12 @@ import { iosShareFile, iosDeleteFile } from "@/lib/ios-api";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 import { SwipeRevealRow, type SwipeRevealAction } from "./SwipeRevealRow";
+import { useLongPress } from "./useLongPress";
+import {
+  confirmDelete,
+  presentEntryMenu,
+  type EntryActionContext,
+} from "@/lib/mobile-entry-actions";
 
 /** Classify a file by extension for icon + viewer routing. */
 export function classifyFile(
@@ -89,6 +95,9 @@ interface FileRowProps {
   /** Called after a row action mutates the listing (delete) so the parent
    *  can refresh. */
   onChanged?: () => void;
+  /** Long-press actions (#680) — the same set the gallery offers, so the two
+   *  layouts expose identical capabilities. */
+  actionContext: EntryActionContext;
 }
 
 /**
@@ -96,8 +105,13 @@ interface FileRowProps {
  * row actions (Share today; #619 adds Delete to this same array, without
  * touching the gesture in `SwipeRevealRow`).
  */
-export function FileRow({ entry, active, onActivate, onChanged }: FileRowProps) {
+export function FileRow({ entry, active, onActivate, onChanged, actionContext }: FileRowProps) {
   const Icon = iconFor(entry);
+  // Hold for the full menu — iOS itself offers both swipe AND hold on a list
+  // row (Files, Notes), and hold is the only way to reach Rename/Pin here.
+  const longPress = useLongPress((at) => {
+    void presentEntryMenu(entry, at, actionContext);
+  });
   // Directories have no share concept in Notesage today — `ios_share_file`
   // copies a single file to a temp location for the share sheet, mirroring
   // its only other consumer (the Reader, which only ever shares a document).
@@ -121,9 +135,14 @@ export function FileRow({ entry, active, onActivate, onChanged }: FileRowProps) 
           icon: Trash2,
           tone: "destructive",
           onSelect: () => {
-            void iosDeleteFile(entry.path)
-              .then(() => onChanged?.())
-              .catch((err) => toast.error(t("action.deleteFailed", { error: String(err) })));
+            // Confirm first (#680): a full swipe commits this action outright,
+            // which is easy to trigger by accident.
+            void confirmDelete(entry).then((ok) => {
+              if (!ok) return;
+              return iosDeleteFile(entry.path)
+                .then(() => onChanged?.())
+                .catch((err) => toast.error(t("action.deleteFailed", { error: String(err) })));
+            });
           },
         },
       ];
@@ -133,6 +152,7 @@ export function FileRow({ entry, active, onActivate, onChanged }: FileRowProps) 
       <button
         type="button"
         onClick={() => onActivate(entry)}
+        {...longPress}
         aria-current={active ? "page" : undefined}
         className={cn(
           "ios-press-row flex w-full items-center gap-3 px-4 py-1.5 text-left",

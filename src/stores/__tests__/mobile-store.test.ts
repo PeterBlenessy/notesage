@@ -172,6 +172,64 @@ describe("mobile-store pinned paths & group-by (#652)", () => {
     expect(store().pinnedPaths).toEqual([]);
   });
 
+  it("togglePin adds a path, writing the shared pins file the desktop reads", async () => {
+    const writes: Array<{ relPath: string; content: string }> = [];
+    setMockInvokeHandler("ios_read_file", () => JSON.stringify({ paths: ["a.md"] }));
+    setMockInvokeHandler("ios_ensure_directory", () => undefined);
+    setMockInvokeHandler("ios_write_file", (args) => {
+      writes.push(args as { relPath: string; content: string });
+      return undefined;
+    });
+
+    await store().togglePin("Sub/b.md");
+
+    expect(writes).toHaveLength(1);
+    expect(writes[0].relPath).toBe(".notesage/pins.json");
+    expect(JSON.parse(writes[0].content).paths).toEqual(["a.md", "Sub/b.md"]);
+    expect(store().pinnedPaths).toEqual(["a.md", "Sub/b.md"]);
+  });
+
+  it("togglePin removes an already-pinned path", async () => {
+    let written = "";
+    setMockInvokeHandler("ios_read_file", () => JSON.stringify({ paths: ["a.md", "b.md"] }));
+    setMockInvokeHandler("ios_ensure_directory", () => undefined);
+    setMockInvokeHandler("ios_write_file", (args) => {
+      written = (args as { content: string }).content;
+      return undefined;
+    });
+
+    await store().togglePin("a.md");
+    expect(JSON.parse(written).paths).toEqual(["b.md"]);
+  });
+
+  it("togglePin re-reads the file first, so a pin made on the desktop is not clobbered", async () => {
+    // The store's cached list is empty; the FILE has a desktop-made pin.
+    let written = "";
+    setMockInvokeHandler("ios_read_file", () => JSON.stringify({ paths: ["from-desktop.md"] }));
+    setMockInvokeHandler("ios_ensure_directory", () => undefined);
+    setMockInvokeHandler("ios_write_file", (args) => {
+      written = (args as { content: string }).content;
+      return undefined;
+    });
+
+    expect(store().pinnedPaths).toEqual([]);
+    await store().togglePin("mine.md");
+    expect(JSON.parse(written).paths).toEqual(["from-desktop.md", "mine.md"]);
+  });
+
+  it("togglePin creates .notesage/ before writing, for a library the desktop never wrote to", async () => {
+    const calls: string[] = [];
+    setMockInvokeHandler("ios_ensure_directory", (args) => {
+      calls.push((args as { relPath: string }).relPath);
+      return undefined;
+    });
+    setMockInvokeHandler("ios_write_file", () => undefined);
+    // ios_read_file unmocked → rejects, mirroring a missing pins.json.
+    await store().togglePin("first.md");
+    expect(calls).toEqual([".notesage"]);
+    expect(store().pinnedPaths).toEqual(["first.md"]);
+  });
+
   it("defaults groupMode to none", () => {
     expect(store().groupMode).toBe("none");
   });

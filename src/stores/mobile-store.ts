@@ -15,8 +15,14 @@ import {
   iosPickLibraryFolder,
   iosClearLibraryGrant,
   iosReadFile,
+  iosWriteFile,
+  iosEnsureDirectory,
 } from "@/lib/ios-api";
-import { PINS_FILE_REL_PATH, parsePinsFileContent } from "@/lib/pins-file";
+import {
+  PINS_FILE_REL_PATH,
+  parsePinsFileContent,
+  serializePinsFileContent,
+} from "@/lib/pins-file";
 
 /**
  * - `unknown`  — not yet resolved (initial; show a neutral splash)
@@ -108,6 +114,11 @@ interface MobileStore {
   /** Reload `pinnedPaths` from `.notesage/pins.json` at the library root.
    *  Tolerant of a missing file — resolves to an empty array, never throws. */
   loadPinnedPaths: () => Promise<void>;
+
+  /** Pin or unpin a root-relative path, writing the shared
+   *  `.notesage/pins.json` the desktop reads. Re-reads the file first so a
+   *  pin made on the desktop since the last load is not clobbered. */
+  togglePin: (relPath: string) => Promise<void>;
 
   /** Test/reset helper. */
   reset: () => void;
@@ -230,6 +241,27 @@ export const useMobileStore = create<MobileStore>()(
         }
       },
 
+
+      togglePin: async (relPath) => {
+        // Read-modify-write against the file rather than the cached array:
+        // this file is shared with the desktop, and a stale in-memory copy
+        // would silently drop pins made there since app launch.
+        let current: string[] = [];
+        try {
+          current = parsePinsFileContent(await iosReadFile(PINS_FILE_REL_PATH));
+        } catch {
+          current = [];
+        }
+        const next = current.includes(relPath)
+          ? current.filter((p) => p !== relPath)
+          : [...current, relPath];
+        // `.notesage/` may not exist in a library the desktop has never
+        // written to. `iosEnsureDirectory` is idempotent (no dedupe), so this
+        // is safe on every call.
+        await iosEnsureDirectory(".notesage");
+        await iosWriteFile(PINS_FILE_REL_PATH, serializePinsFileContent(next));
+        set({ pinnedPaths: next });
+      },
 
       reset: () =>
         set({

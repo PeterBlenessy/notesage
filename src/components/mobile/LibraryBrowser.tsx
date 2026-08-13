@@ -5,6 +5,7 @@ import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory, iosCreateDirectory, iosTextPrompt, iosQuickLook } from "@/lib/ios-api";
 import { toast } from "sonner";
 import { useMobileStore } from "@/stores/mobile-store";
+import type { EntryActionContext } from "@/lib/mobile-entry-actions";
 import { FileRow, classifyFile } from "./FileRow";
 import { GalleryView } from "./GalleryView";
 import { Button } from "@/components/ui/button";
@@ -36,6 +37,7 @@ export function LibraryBrowser() {
   const setGroupMode = useMobileStore((s) => s.setGroupMode);
   const recentlyRead = useMobileStore((s) => s.recentlyRead);
   const pinnedPaths = useMobileStore((s) => s.pinnedPaths);
+  const togglePin = useMobileStore((s) => s.togglePin);
   const loadPinnedPaths = useMobileStore((s) => s.loadPinnedPaths);
   const viewMode = useMobileStore((s) => s.viewMode);
   const setViewMode = useMobileStore((s) => s.setViewMode);
@@ -254,6 +256,14 @@ export function LibraryBrowser() {
   // note's title will become the filename once editing lands) and
   // long-press offers New Folder via the native UIMenu.
   const atRoot = folderStack.length === 0;
+
+  // One action set for both layouts (#680) — built here so the pin state and
+  // the listing reload are wired once rather than per row.
+  const actionContext: EntryActionContext = {
+    isPinned: (relPath) => pinnedPaths.includes(relPath),
+    togglePin,
+    onChanged: () => void load(true),
+  };
 
   const promptName = useCallback(async (title: string): Promise<string | null> => {
     try {
@@ -583,6 +593,7 @@ export function LibraryBrowser() {
                   currentFolderName={currentName}
                   theme={theme}
                   onActivate={onActivate}
+                  actionContext={actionContext}
                 />
               );
             }
@@ -605,6 +616,7 @@ export function LibraryBrowser() {
                             entry={entry}
                             onActivate={onActivate}
                             onChanged={() => void load(true)}
+                            actionContext={actionContext}
                           />
                         </li>
                       ))}

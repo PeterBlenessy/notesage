@@ -79,6 +79,9 @@ const ALLOWED = new Set([
   "ios_text_prompt",
   // Pure UI signal: drops the native launch cover once painted (#675).
   "ios_content_ready",
+  // Long-press action sheet + its idempotent dir helper (#680).
+  "ios_context_menu",
+  "ios_ensure_directory",
 ]);
 
 /** Commands that would mutate paths OUTSIDE the granted library, or reach
@@ -400,7 +403,7 @@ describe("native QuickLook routing", () => {
 });
 
 describe("swipe delete (#618)", () => {
-  it("the Delete action removes the file and refreshes the listing", async () => {
+  it("the Delete action removes the file and refreshes the listing once confirmed", async () => {
     let entries = [
       { name: "doomed.md", path: "doomed.md", is_directory: false, hidden: false },
       { name: "keeper.md", path: "keeper.md", is_directory: false, hidden: false },
@@ -411,6 +414,8 @@ describe("swipe delete (#618)", () => {
       entries = entries.filter((e) => e.path !== "doomed.md");
       return null;
     });
+    // Delete confirms natively (#680) — accept the sheet.
+    setMockInvokeHandler("ios_context_menu", () => "delete");
 
     renderWithProviders(<LibraryBrowser />);
     await screen.findByText("doomed.md");
@@ -424,6 +429,23 @@ describe("swipe delete (#618)", () => {
     await waitFor(() => expect(calledCommands()).toContain("ios_delete_file"));
     await waitFor(() => expect(screen.queryByText("doomed.md")).toBeNull());
     expect(screen.getByText("keeper.md")).toBeTruthy();
+  });
+
+  it("dismissing the confirmation leaves the file alone", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "doomed.md", path: "doomed.md", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("ios_delete_file", () => null);
+    // Cancelled sheet — the native side resolves with no id.
+    setMockInvokeHandler("ios_context_menu", () => null);
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("doomed.md");
+    fireEvent.click(screen.getAllByRole("button", { name: /Delete/, hidden: true })[0]);
+
+    await waitFor(() => expect(calledCommands()).toContain("ios_context_menu"));
+    expect(calledCommands()).not.toContain("ios_delete_file");
+    expect(screen.getByText("doomed.md")).toBeTruthy();
   });
 
   it("directories expose no swipe actions (folder deletion stays off the surface)", async () => {

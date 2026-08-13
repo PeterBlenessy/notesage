@@ -6,6 +6,14 @@ import { renderWithProviders, screen } from "@/test/component-harness";
 import type { FileEntry } from "@/lib/tauri";
 import { GalleryView } from "@/components/mobile/GalleryView";
 
+/** Minimal long-press action context (#680) — these suites cover rendering
+ *  and activation, not the menu; the menu has its own suite. */
+const noopActions = {
+  isPinned: () => false,
+  togglePin: async () => {},
+};
+
+
 const getThumbnailMock = vi.fn();
 vi.mock("@/lib/mobile-thumbnails", () => ({
   getThumbnail: (...args: unknown[]) => getThumbnailMock(...args),
@@ -63,6 +71,7 @@ describe("GalleryView (#633)", () => {
   it("renders a 3-column grid with title, modified date, and containing folder for files", () => {
     renderWithProviders(
       <GalleryView
+        actionContext={noopActions}
         entries={[
           entry({ name: "note.md", modified: new Date(2026, 0, 5, 10, 0).getTime() / 1000 }),
         ]}
@@ -81,6 +90,7 @@ describe("GalleryView (#633)", () => {
   it("renders directory cards without a modified/folder line", () => {
     renderWithProviders(
       <GalleryView
+        actionContext={noopActions}
         entries={[entry({ name: "Sub", path: "Sub", is_directory: true })]}
         currentFolderName="Notesage"
         theme="light"
@@ -94,6 +104,7 @@ describe("GalleryView (#633)", () => {
   it("does not request a thumbnail for a card that has not become visible", () => {
     renderWithProviders(
       <GalleryView
+        actionContext={noopActions}
         entries={[entry({ name: "note.md" })]}
         currentFolderName="Ideas"
         theme="light"
@@ -106,6 +117,7 @@ describe("GalleryView (#633)", () => {
   it("requests a thumbnail once a card becomes visible, and only that card", () => {
     renderWithProviders(
       <GalleryView
+        actionContext={noopActions}
         entries={[entry({ name: "a.md" }), entry({ name: "b.md" })]}
         currentFolderName="Ideas"
         theme="light"
@@ -133,6 +145,7 @@ describe("GalleryView (#633)", () => {
   it("never requests a thumbnail for a directory card, even once visible", () => {
     renderWithProviders(
       <GalleryView
+        actionContext={noopActions}
         entries={[entry({ name: "Sub", path: "Sub", is_directory: true })]}
         currentFolderName="Notesage"
         theme="light"
@@ -150,6 +163,7 @@ describe("GalleryView (#633)", () => {
     const onActivate = vi.fn();
     renderWithProviders(
       <GalleryView
+        actionContext={noopActions}
         entries={[entry({ name: "note.md" })]}
         currentFolderName="Ideas"
         theme="light"

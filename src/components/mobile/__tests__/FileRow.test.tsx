@@ -4,6 +4,14 @@ import { describe, it, expect } from "vitest";
 import { renderWithProviders, screen } from "@/test/component-harness";
 import { FileRow, formatModified } from "@/components/mobile/FileRow";
 
+/** Minimal long-press action context (#680) — these suites cover rendering
+ *  and activation, not the menu; the menu has its own suite. */
+const noopActions = {
+  isPinned: () => false,
+  togglePin: async () => {},
+};
+
+
 describe("formatModified (#588 — Files-app row metadata)", () => {
   // A fixed "now" keeps every branch deterministic regardless of wall clock.
   const now = new Date(2026, 7, 11, 15, 30); // 11 Aug 2026, 15:30 local
@@ -31,6 +39,7 @@ describe("FileRow modified line", () => {
   it("renders the modified date beneath the name when present", () => {
     renderWithProviders(
       <FileRow
+        actionContext={noopActions}
         entry={{
           name: "note.md",
           path: "note.md",
@@ -48,6 +57,7 @@ describe("FileRow modified line", () => {
   it("omits the secondary line entirely when modified is absent", () => {
     renderWithProviders(
       <FileRow
+        actionContext={noopActions}
         entry={{ name: "plain.md", path: "plain.md", is_directory: false, hidden: false }}
         onActivate={() => {}}
       />,

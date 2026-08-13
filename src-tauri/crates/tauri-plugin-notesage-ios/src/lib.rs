@@ -129,6 +129,36 @@ struct TextPromptArgs<'a> {
     confirm_label: &'a str,
 }
 
+/// One row of the native action sheet (#680).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ContextMenuItem {
+    pub id: String,
+    pub title: String,
+    /// Rendered in red and sunk below the plain rows, per iOS convention.
+    #[serde(default)]
+    pub destructive: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextMenuArgs {
+    #[serde(default)]
+    pub title: Option<String>,
+    pub items: Vec<ContextMenuItem>,
+    /// Long-press point in webview coordinates — anchors the iPad popover.
+    #[serde(default)]
+    pub x: Option<f64>,
+    #[serde(default)]
+    pub y: Option<f64>,
+}
+
+/// `id` is absent when the user cancelled the sheet.
+#[derive(Deserialize, Default)]
+struct ContextMenuResult {
+    #[serde(default)]
+    id: Option<String>,
+}
+
 /// `text` is absent when the user cancelled the prompt.
 #[derive(Deserialize, Default)]
 struct TextPromptResponse {
@@ -243,6 +273,17 @@ impl<R: Runtime> NotesageIos<R> {
             .map(|r| r.rel_path)
     }
 
+    /// Create a directory at an exact relative path if absent (no dedupe).
+    pub fn ensure_directory(&self, rel: &str) -> Result<()> {
+        self.call("ensureDirectory", RelPathArgs { rel_path: rel })
+    }
+
+    /// Present a native action sheet for a long-pressed item. Returns the
+    /// chosen item id, or `None` when the user cancels.
+    pub fn context_menu(&self, payload: ContextMenuArgs) -> Result<Option<String>> {
+        self.call::<_, ContextMenuResult>("contextMenu", payload).map(|r| r.id)
+    }
+
     /// Tell the native layer the webview has painted, so it can drop the
     /// launch cover held over it (#675).
     pub fn content_ready(&self) -> Result<()> {
@@ -334,6 +375,12 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn content_ready(&self) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn context_menu(&self, _p: ContextMenuArgs) -> Result<Option<String>> {
+        Err(Error::Unavailable)
+    }
+    pub fn ensure_directory(&self, _rel: &str) -> Result<()> {
         Err(Error::Unavailable)
     }
     pub fn text_prompt(&self, _t: &str, _p: &str, _c: &str) -> Result<Option<String>> {

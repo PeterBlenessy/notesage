@@ -152,6 +152,40 @@ export function iosRenameFile(relPath: string, newName: string): Promise<string>
 }
 
 /**
+ * Create `relPath` if it doesn't exist (no dedupe, unlike
+ * `iosCreateDirectory`). Idempotent — safe to call before every write.
+ */
+export function iosEnsureDirectory(relPath: string): Promise<void> {
+  return invoke("ios_ensure_directory", { relPath });
+}
+
+export interface IosContextMenuItem {
+  id: string;
+  title: string;
+  /** Red, and sunk below the plain rows — iOS never stacks one higher. */
+  destructive?: boolean;
+}
+
+/**
+ * Present a native action sheet and resolve the chosen item id (`null` when
+ * cancelled). `at` is the press point in CSS pixels; it only anchors the
+ * iPad popover, but omitting it there would crash UIKit.
+ */
+export async function iosContextMenu(options: {
+  title?: string;
+  items: IosContextMenuItem[];
+  at?: { x: number; y: number };
+}): Promise<string | null> {
+  const chosen = await invoke<string | null>("ios_context_menu", {
+    title: options.title ?? null,
+    items: options.items,
+    x: options.at?.x ?? null,
+    y: options.at?.y ?? null,
+  });
+  return chosen ?? null;
+}
+
+/**
  * Tell the native layer the webview has painted, so it drops the launch
  * cover held over it (#675). Fire-and-forget: rejects off-iOS, and the
  * native side removes the cover on a timeout anyway.

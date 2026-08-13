@@ -226,6 +226,34 @@ enum LibraryAccess {
     }
 
     /// Create a new folder, deduping the name. Returns the final relative path.
+    /// Create `rel` (and any missing parents) if absent, WITHOUT the dedupe
+    /// `createDirectory` applies. Idempotent by design: the caller wants a
+    /// directory to exist at an exact path (`.notesage/` for the shared pins
+    /// file), not a uniquely-named new one — deduping there would silently
+    /// produce `.notesage-1` and split the state.
+    static func ensureDirectory(_ rel: String) throws {
+        guard !rel.isEmpty else { throw LibraryAccessError.ioError("folder name is empty") }
+        let root = try resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let dirURL = root.appendingPathComponent(rel)
+        var isDir: ObjCBool = false
+        if FileManager.default.fileExists(atPath: dirURL.path, isDirectory: &isDir) {
+            if isDir.boolValue { return }
+            throw LibraryAccessError.ioError("\(rel) exists and is not a folder")
+        }
+        var coordError: NSError?
+        var result: Result<Void, Error> = .failure(LibraryAccessError.ioError("uncoordinated"))
+        NSFileCoordinator().coordinate(writingItemAt: dirURL, options: [], error: &coordError) { url in
+            do {
+                try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+                result = .success(())
+            } catch { result = .failure(error) }
+        }
+        if let coordError { throw coordError }
+        try result.get()
+    }
+
     static func createDirectory(_ rel: String) throws -> String {
         guard !rel.isEmpty else { throw LibraryAccessError.ioError("folder name is empty") }
         let root = try resolveRoot()
