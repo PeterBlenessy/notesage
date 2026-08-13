@@ -31,6 +31,25 @@
 extern "C" {
 #endif
 
+/// The provider's official oEmbed endpoint for a video URL, or NULL when the
+/// URL is not a recognised video page. Fetch it and pass the JSON to the two
+/// video builders below. Caller frees with notesage_capture_string_free().
+char *notesage_capture_oembed_url(const char *url);
+
+/// Relative path for a video capture note (named from the provider's title
+/// when the sharer gave us none). Caller frees.
+char *notesage_capture_video_rel_path(const char *url,
+                                      const char *title,
+                                      const char *oembed_json);
+
+/// Contents of a video capture note: a labelled source link, the author, and
+/// the provider's clean poster as a plain image. Caller frees.
+char *notesage_capture_video_contents(const char *url,
+                                      const char *title,
+                                      const char *selection_text,
+                                      const char *tags,
+                                      const char *oembed_json);
+
 /// Relative path for the note, using the fetched page's own metadata
 /// (og:title / twitter:title / <title>) when the sharer's title is missing or
 /// is merely the URL again — which is what YouTube and friends hand over.

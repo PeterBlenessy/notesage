@@ -96,6 +96,179 @@ pub fn build_capture_note(input: &CaptureInput, now_rfc3339: &str) -> CaptureNot
     }
 }
 
+/// A video page's public metadata, from the provider's own oEmbed endpoint.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct VideoMeta {
+    pub title: Option<String>,
+    pub author: Option<String>,
+    pub author_url: Option<String>,
+    pub provider: Option<String>,
+    pub thumbnail_url: Option<String>,
+}
+
+/// The provider's **official, documented, public** oEmbed endpoint for `url`,
+/// or `None` if we don't recognise the host as a video page.
+///
+/// oEmbed is deliberately the whole extraction story here. Downloading the
+/// video itself would mean reimplementing stream extraction and signature
+/// deciphering — which breaks whenever the provider changes its player, and
+/// which App Store review treats as unauthorized access to third-party
+/// content (guideline 5.2.3). A capture note wants the *readable* part of a
+/// video anyway: what it is, who made it, and a link back.
+pub fn oembed_url(url: &str) -> Option<String> {
+    let host = url
+        .split("://")
+        .nth(1)?
+        .split('/')
+        .next()?
+        .trim_start_matches("www.")
+        .to_lowercase();
+    let encoded = percent_encode_url(url);
+    match host.as_str() {
+        "youtube.com" | "m.youtube.com" | "youtu.be" | "music.youtube.com" => {
+            Some(format!("https://www.youtube.com/oembed?url={encoded}&format=json"))
+        }
+        "vimeo.com" | "player.vimeo.com" => {
+            Some(format!("https://vimeo.com/api/oembed.json?url={encoded}"))
+        }
+        _ => None,
+    }
+}
+
+/// Minimal percent-encoding for embedding a URL in a query string.
+fn percent_encode_url(url: &str) -> String {
+    let mut out = String::with_capacity(url.len() + 16);
+    for byte in url.trim().bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+/// Parse the handful of oEmbed fields a capture note uses. Hand-rolled rather
+/// than pulling serde_json into the Share Extension's static library: the
+/// shape is five flat string fields, and everything is optional so a provider
+/// that omits one degrades instead of failing the capture.
+pub fn parse_oembed(json: &str) -> VideoMeta {
+    fn field(json: &str, key: &str) -> Option<String> {
+        let needle = format!("\"{key}\"");
+        let at = json.find(&needle)? + needle.len();
+        let rest = json[at..].trim_start();
+        let rest = rest.strip_prefix(':')?.trim_start();
+        let rest = rest.strip_prefix('"')?;
+        // Walk to the closing quote, honouring backslash escapes.
+        let mut value = String::new();
+        let mut chars = rest.chars();
+        while let Some(c) = chars.next() {
+            match c {
+                '"' => {
+                    let value = decode_json_escapes(&value);
+                    return if value.is_empty() { None } else { Some(value) };
+                }
+                '\\' => match chars.next() {
+                    Some(escaped) => {
+                        value.push('\\');
+                        value.push(escaped);
+                    }
+                    None => break,
+                },
+                _ => value.push(c),
+            }
+        }
+        None
+    }
+
+    VideoMeta {
+        title: field(json, "title").filter(|t| !is_url_like(t)),
+        author: field(json, "author_name"),
+        author_url: field(json, "author_url"),
+        provider: field(json, "provider_name"),
+        thumbnail_url: field(json, "thumbnail_url"),
+    }
+}
+
+fn decode_json_escapes(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars();
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next() {
+            Some('n') => out.push('\n'),
+            Some('t') => out.push('\t'),
+            Some('u') => {
+                let hex: String = chars.by_ref().take(4).collect();
+                match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+                    Some(decoded) => out.push(decoded),
+                    None => out.push_str(&format!("\\u{hex}")),
+                }
+            }
+            Some(other) => out.push(other),
+            None => break,
+        }
+    }
+    out.trim().to_string()
+}
+
+/// Video capture note (`capture_format: video`).
+///
+/// The body leads with a labelled link to the source and shows the poster as
+/// a PLAIN image. This is the fix for the note that looked like a video and
+/// wasn't (#682): the page's own composite poster carries a drawn-on play
+/// button, so embedding it produced a control that could never work. The
+/// provider's oEmbed thumbnail is the clean frame, and the link is the thing
+/// that actually plays it.
+pub fn build_video_note(input: &CaptureInput, meta: &VideoMeta, now_rfc3339: &str) -> CaptureNote {
+    let title = meaningful_title(input.title.as_deref()).or_else(|| meta.title.clone());
+    let base = build_capture_note(
+        &CaptureInput { title: title.clone(), ..input.clone() },
+        now_rfc3339,
+    );
+
+    let mut fm = String::new();
+    fm.push_str("capture_format: video");
+    if let Some(author) = meta.author.as_ref().filter(|a| !a.trim().is_empty()) {
+        fm.push_str(&format!("\nauthor: {}", yaml_quote(author)));
+    }
+    if let Some(provider) = meta.provider.as_ref().filter(|p| !p.trim().is_empty()) {
+        fm.push_str(&format!("\nprovider: {}", yaml_quote(provider)));
+    }
+    let mut contents = base.contents;
+    if let Some(close) = contents[3..].find("\n---") {
+        contents.insert_str(3 + close, &format!("\n{fm}"));
+    }
+
+    let provider = meta.provider.clone().unwrap_or_else(|| "source".to_string());
+    let mut body = String::new();
+    body.push_str(&format!("[Watch on {provider}]({})\n", input.url.trim()));
+    if let Some(author) = meta.author.as_ref().filter(|a| !a.trim().is_empty()) {
+        match meta.author_url.as_ref().filter(|u| !u.trim().is_empty()) {
+            Some(author_url) => body.push_str(&format!("\nBy [{author}]({author_url})\n")),
+            None => body.push_str(&format!("\nBy {author}\n")),
+        }
+    }
+    if let Some(thumb) = meta.thumbnail_url.as_ref().filter(|t| !t.trim().is_empty()) {
+        let alt = title.as_deref().unwrap_or("Video");
+        body.push_str(&format!("\n![{}]({})\n", alt.replace(']', ")"), thumb));
+    }
+    if let Some(sel) = input.selection_text.as_ref().filter(|s| !s.trim().is_empty()) {
+        body.push_str(&format!("\n{}\n", sel.trim()));
+    }
+
+    // Replace the link-only body (everything after the frontmatter fence).
+    let split = contents.find("---\n\n").map(|i| i + 5).unwrap_or(0);
+    CaptureNote {
+        rel_path: base.rel_path,
+        contents: format!("{}{body}", &contents[..split]),
+    }
+}
+
 /// Is this "title" really just the URL?
 ///
 /// A share sheet's title is whatever the source app put in
@@ -777,5 +950,105 @@ mod title_tests {
     fn meta_title_survives_a_page_with_no_title_at_all() {
         assert_eq!(extract_meta_title("<html><body>hi</body></html>"), None);
         assert_eq!(extract_meta_title(""), None);
+    }
+}
+
+#[cfg(test)]
+mod video_tests {
+    use super::*;
+
+    fn input(url: &str, title: Option<&str>) -> CaptureInput {
+        CaptureInput {
+            url: url.to_string(),
+            title: title.map(str::to_string),
+            selection_text: None,
+            tags: vec![],
+        }
+    }
+
+    const YT_OEMBED: &str = r#"{"title":"A zseni, aki mindent hagyott",
+        "author_name":"Csendes Kronikak","author_url":"https://www.youtube.com/@csendes",
+        "provider_name":"YouTube","thumbnail_url":"https://i.ytimg.com/vi/3zk1WjrxCSw/hqdefault.jpg"}"#;
+
+    #[test]
+    fn recognises_the_video_hosts_we_support_and_no_others() {
+        assert!(oembed_url("https://youtu.be/3zk1WjrxCSw").is_some());
+        assert!(oembed_url("https://www.youtube.com/watch?v=x").is_some());
+        assert!(oembed_url("https://m.youtube.com/watch?v=x").is_some());
+        assert!(oembed_url("https://vimeo.com/12345").is_some());
+        assert!(oembed_url("https://example.com/an-article").is_none());
+        // A host that merely mentions youtube is not YouTube.
+        assert!(oembed_url("https://notyoutube.com/watch?v=x").is_none());
+    }
+
+    #[test]
+    fn the_shared_url_is_percent_encoded_into_the_endpoint() {
+        let endpoint = oembed_url("https://youtu.be/abc?is=A_b-c").unwrap();
+        assert!(endpoint.contains("url=https%3A%2F%2Fyoutu.be%2Fabc%3Fis%3DA_b-c"), "{endpoint}");
+        assert!(endpoint.starts_with("https://www.youtube.com/oembed"));
+    }
+
+    #[test]
+    fn parses_the_fields_a_note_uses() {
+        let meta = parse_oembed(YT_OEMBED);
+        assert_eq!(meta.title.as_deref(), Some("A zseni, aki mindent hagyott"));
+        assert_eq!(meta.author.as_deref(), Some("Csendes Kronikak"));
+        assert_eq!(meta.provider.as_deref(), Some("YouTube"));
+        assert!(meta.thumbnail_url.unwrap().starts_with("https://i.ytimg.com/"));
+    }
+
+    #[test]
+    fn parses_escapes_without_a_json_dependency() {
+        let meta = parse_oembed(r#"{"title":"Quote \" and \u00e9 and newline \n end"}"#);
+        let title = meta.title.unwrap();
+        assert!(title.contains('"'), "{title}");
+        assert!(title.contains('é'), "{title}");
+    }
+
+    #[test]
+    fn a_missing_or_broken_payload_degrades_instead_of_failing() {
+        assert_eq!(parse_oembed("not json at all"), VideoMeta::default());
+        assert_eq!(parse_oembed(""), VideoMeta::default());
+        // Present but empty values are treated as absent.
+        assert_eq!(parse_oembed(r#"{"title":"","author_name":""}"#), VideoMeta::default());
+    }
+
+    #[test]
+    fn the_note_leads_with_a_working_link_and_a_plain_poster() {
+        let note = build_video_note(
+            &input("https://youtu.be/3zk1WjrxCSw", Some("https://youtu.be/3zk1WjrxCSw")),
+            &parse_oembed(YT_OEMBED),
+            "2026-08-13T10:00:00Z",
+        );
+        // Named from the oEmbed title, not the URL the share sheet handed us.
+        assert_eq!(note.rel_path, "Inbox/A zseni, aki mindent hagyott.md");
+        assert!(note.contents.contains("capture_format: video"));
+        assert!(note.contents.contains("author: \"Csendes Kronikak\""));
+        assert!(note.contents.contains("[Watch on YouTube](https://youtu.be/3zk1WjrxCSw)"));
+        assert!(note.contents.contains("![A zseni, aki mindent hagyott](https://i.ytimg.com/"));
+        // The poster is a plain image — never a link that pretends to play.
+        assert!(!note.contents.contains("[!["));
+    }
+
+    #[test]
+    fn a_provider_that_returns_nothing_still_produces_a_usable_note() {
+        let note = build_video_note(
+            &input("https://youtu.be/abc", None),
+            &VideoMeta::default(),
+            "2026-08-13T10:00:00Z",
+        );
+        assert!(note.contents.contains("[Watch on source](https://youtu.be/abc)"));
+        assert!(note.contents.contains("type: capture"));
+        assert!(!note.contents.contains("!["));
+    }
+
+    #[test]
+    fn a_title_the_user_actually_shared_beats_the_providers() {
+        let note = build_video_note(
+            &input("https://youtu.be/abc", Some("My own title")),
+            &parse_oembed(YT_OEMBED),
+            "2026-08-13T10:00:00Z",
+        );
+        assert_eq!(note.rel_path, "Inbox/My own title.md");
     }
 }

@@ -24,8 +24,8 @@ use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use crate::{
-    build_article_note, build_capture_note, extract_article, extract_meta_title, meaningful_title,
-    timestamps, CaptureInput,
+    build_article_note, build_capture_note, build_video_note, extract_article, extract_meta_title,
+    meaningful_title, oembed_url, parse_oembed, timestamps, CaptureInput,
 };
 
 /// Borrow a C string as `Option<String>`; `NULL` or invalid UTF-8 → `None`.
@@ -112,6 +112,68 @@ pub unsafe extern "C" fn notesage_capture_rel_path_from_html(
         }
         let (now, _stamp) = timestamps();
         into_c_string(build_capture_note(&input, &now).rel_path)
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// The provider's official oEmbed endpoint for a video URL, or NULL when the
+/// URL is not a video page we recognise. The caller fetches it and hands the
+/// JSON back to the two builders below.
+///
+/// # Safety
+/// `url` must be a NUL-terminated C string or NULL. The returned pointer is
+/// owned by the caller and must be freed with `notesage_capture_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn notesage_capture_oembed_url(url: *const c_char) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| match opt_str(url).and_then(|u| oembed_url(&u)) {
+        Some(endpoint) => into_c_string(endpoint),
+        None => std::ptr::null_mut(),
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Rel path for a video capture note, named from the provider's title when
+/// the sharer gave us nothing better.
+///
+/// # Safety
+/// All arguments must be NUL-terminated C strings or NULL. The returned
+/// pointer is owned by the caller and must be freed with
+/// `notesage_capture_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn notesage_capture_video_rel_path(
+    url: *const c_char,
+    title: *const c_char,
+    oembed_json: *const c_char,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        let input = input_from(url, title, std::ptr::null(), std::ptr::null());
+        let meta = opt_str(oembed_json).map(|j| parse_oembed(&j)).unwrap_or_default();
+        let (now, _stamp) = timestamps();
+        into_c_string(build_video_note(&input, &meta, &now).rel_path)
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Contents of a video capture note: a labelled link to the source, the
+/// author, and the provider's clean poster frame as a plain image.
+///
+/// # Safety
+/// All arguments must be NUL-terminated C strings or NULL. The returned
+/// pointer is owned by the caller and must be freed with
+/// `notesage_capture_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn notesage_capture_video_contents(
+    url: *const c_char,
+    title: *const c_char,
+    selection_text: *const c_char,
+    tags: *const c_char,
+    oembed_json: *const c_char,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        let input = input_from(url, title, selection_text, tags);
+        let meta = opt_str(oembed_json).map(|j| parse_oembed(&j)).unwrap_or_default();
+        let (now, _stamp) = timestamps();
+        into_c_string(build_video_note(&input, &meta, &now).contents)
     }))
     .unwrap_or(std::ptr::null_mut())
 }

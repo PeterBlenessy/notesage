@@ -4,6 +4,7 @@
 "share.save" = "Spara";
 "share.loading" = "Läser in…";
 "share.format" = "Format";
+"share.formatVideo" = "Video (länk + detaljer)";
 "share.formatArticle" = "Artikel (Markdown)";
 "share.formatLink" = "Länkanteckning";
 "share.formatHtml" = "Sida (HTML)";

@@ -5,6 +5,7 @@
 "share.save" = "Save";
 "share.loading" = "Loading…";
 "share.format" = "Format";
+"share.formatVideo" = "Video (link + details)";
 "share.formatArticle" = "Article (Markdown)";
 "share.formatLink" = "Link note";
 "share.formatHtml" = "Page (HTML)";

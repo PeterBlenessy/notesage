@@ -281,6 +281,35 @@ move command), Duplicate (needs a binary-safe copy, or it would silently skip
 non-markdown files), Info (repeats the date already on the row), and
 Quick Look (a plain tap already does it).
 
+## Capturing a video link (#682)
+
+A video page has no article to extract and its saved HTML is a player that
+cannot play — capturing one produced a note showing the page's composite
+poster with a drawn-on ▶ that did nothing. For a URL whose host has an oEmbed
+endpoint the format picker therefore offers only **Video** and **Link note**,
+with Video first.
+
+The video note carries a labelled `[Watch on YouTube](url)` link, the author
+(linked to their channel), and the provider's **clean** poster frame as a
+plain image — never a fake control. Frontmatter adds
+`capture_format: video`, `author`, and `provider`. The provider's title also
+names the file, which is what makes a shared YouTube link land as its real
+title rather than a mangled URL.
+
+Metadata comes from the provider's **official public oEmbed endpoint**
+(`youtube.com/oembed`, `vimeo.com/api/oembed.json`) — 5 s budget, 256 KB cap,
+and every field optional so a provider that answers with nothing still yields
+a usable note.
+
+**Downloading the video itself is deliberately out of scope.** It would mean
+reimplementing stream extraction and signature deciphering (no yt-dlp on iOS),
+which breaks whenever a provider changes its player; it violates YouTube's
+terms; and App Store review treats it as unauthorized access to third-party
+content (guideline 5.2.3) — a real risk for an app heading to TestFlight. The
+readable part of a video is what a note wants anyway. Transcribing a shared
+media FILE with the desktop's Whisper stack is the planned next step, and
+carries none of those problems.
+
 ## Launch: no white flash (#675)
 
 WKWebView paints **white** for its own first frames regardless of what the
