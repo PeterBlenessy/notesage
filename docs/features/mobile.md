@@ -299,9 +299,14 @@ the folder list):
 
 - **A pinned Inbox card** above the root listing, with the item count, in a
   fixed position no sort or grouping can move. Its geometry is IDENTICAL to a
-  `FileRow` — same icon size, gap, text size, count, chevron — so it reads as
-  one of the list's own rows that happens to be highlighted, rather than a
-  different kind of control. Only the background and radius differ. Root only — one level down it
+  `FileRow` — same icon size, gap, text size, weight, count, chevron — so it
+  reads as one of the list's own rows that happens to be highlighted, rather
+  than a different kind of control. Only the background and radius differ.
+  The horizontal inset is SPLIT between the card wrapper and the button
+  (8 + 8) so it totals `FileRow`'s own `px-4`; putting the full 16 px on the
+  button stacks it on the wrapper's and pushes icon, count and chevron a
+  further 16 px inward, visibly breaking the column the rows below establish
+  (which is exactly what shipped first). Root only — one level down it
   is noise — and only when an Inbox exists. The folder is filtered out of the
   list below so it is never offered twice.
 - **A permanent "Inbox" entry in the breadcrumb island's menu**, after the
