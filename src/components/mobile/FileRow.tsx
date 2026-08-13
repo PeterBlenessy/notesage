@@ -155,7 +155,7 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext }:
         {...longPress}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "ios-press-row flex w-full items-center gap-3 px-4 py-1.5 text-left",
+          "ios-press-row flex w-full items-center gap-3 px-4 py-2.5 text-left",
           "border-b border-border last:border-b-0",
           "hover:bg-muted/50",
           active && "bg-muted",
@@ -169,26 +169,27 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext }:
             entry.hidden && "opacity-50",
           )}
         />
-        <span className="min-w-0 flex-1">
-          <span
-            className={cn(
-              "block truncate text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground",
-              entry.hidden && "opacity-60",
-            )}
-            style={{
-              fontWeight: active
-                ? "max(500, var(--ns-a11y-weight, 400))"
-                : "var(--ns-a11y-weight, 400)",
-            }}
-          >
-            {entry.name}
-          </span>
-          {entry.modified !== undefined && (
-            <span className="mt-0.5 block truncate text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground">
-              {formatModified(entry.modified)}
-            </span>
+        {/* One line, so the icon reads as aligned WITH the name rather than
+            floating between two lines of unequal weight (#684). The modified
+            date moved to the section headers — see `dateSection`. */}
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground",
+            entry.hidden && "opacity-60",
           )}
+          style={{
+            fontWeight: active
+              ? "max(500, var(--ns-a11y-weight, 400))"
+              : "var(--ns-a11y-weight, 400)",
+          }}
+        >
+          {entry.name}
         </span>
+        {entry.is_directory && entry.child_count !== undefined && (
+          <span className="shrink-0 text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] tabular-nums text-muted-foreground">
+            {entry.child_count}
+          </span>
+        )}
         {entry.is_directory && (
           <ChevronRight strokeWidth={1.5} className="h-4 w-4 shrink-0 text-muted-foreground" />
         )}

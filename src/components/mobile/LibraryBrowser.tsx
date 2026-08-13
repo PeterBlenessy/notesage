@@ -244,22 +244,49 @@ export function LibraryBrowser() {
 
     // Date buckets, newest first — undated entries sink to "Older".
     const now = new Date();
+    // "Recently changed" for the last week, then one section per month
+    // (#684). Coarser than the old Today / Yesterday / Previous 7 Days, and
+    // deliberately so: the rows no longer carry a date line, so the header is
+    // now the ONLY place the date shows, and a header that changes every day
+    // fragments a folder into slivers. Months are stable and scannable.
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
-    const startOfYesterday = startOfToday - 86400;
     const weekAgo = startOfToday - 6 * 86400;
-    const buckets: Array<{ key: string; title: string; items: FileEntry[] }> = [
-      { key: "today", title: t("section.today"), items: [] },
-      { key: "yesterday", title: t("section.yesterday"), items: [] },
-      { key: "week", title: t("section.previous7Days"), items: [] },
-      { key: "older", title: t("section.older"), items: [] },
-    ];
+    const recent: FileEntry[] = [];
+    const byMonth = new Map<string, { title: string; sortKey: number; items: FileEntry[] }>();
     for (const file of files) {
       const m = file.modified ?? 0;
-      const bucket =
-        m >= startOfToday ? 0 : m >= startOfYesterday ? 1 : m >= weekAgo ? 2 : 3;
-      buckets[bucket].items.push(file);
+      if (m >= weekAgo) {
+        recent.push(file);
+        continue;
+      }
+      const d = new Date(m * 1000);
+      const key = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, "0")}`;
+      let bucket = byMonth.get(key);
+      if (!bucket) {
+        bucket = {
+          // The year is dropped within the current year, as everywhere else
+          // in the app — "August" reads better than "August 2026" in 2026.
+          title: d.toLocaleDateString(undefined, {
+            month: "long",
+            year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",
+          }),
+          sortKey: -(d.getFullYear() * 12 + d.getMonth()),
+          items: [],
+        };
+        byMonth.set(key, bucket);
+      }
+      bucket.items.push(file);
     }
-    return [...sections, ...buckets.filter((b) => b.items.length > 0)];
+    const months = [...byMonth.entries()]
+      .sort((a, b) => a[1].sortKey - b[1].sortKey)
+      .map(([key, bucket]) => ({ key, title: bucket.title, items: bucket.items }));
+    return [
+      ...sections,
+      ...(recent.length > 0
+        ? [{ key: "recent-changed", title: t("section.recentlyChanged"), items: recent }]
+        : []),
+      ...months,
+    ];
   };
 
   const onActivate = (entry: FileEntry) => {
@@ -618,14 +645,17 @@ export function LibraryBrowser() {
             // The Inbox card sits above whatever the listing shows, so no
             // sort or grouping choice can move it — and it is excluded from
             // the list below so the folder is not offered twice.
-            const inboxCard =
-              folderStack.length === 0 &&
-              !query &&
-              state.entries.some((e) => e.is_directory && e.name === INBOX_NAME) ? (
-                <InboxCard
-                  onOpen={() => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME })}
-                />
-              ) : null;
+            const inboxEntry =
+              folderStack.length === 0 && !query
+                ? state.entries.find((e) => e.is_directory && e.name === INBOX_NAME)
+                : undefined;
+            const inboxCard = inboxEntry ? (
+              // The count rides along on the listing (#684) — no extra read.
+              <InboxCard
+                count={inboxEntry.child_count}
+                onOpen={() => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME })}
+              />
+            ) : null;
             const listed = inboxCard
               ? visible.filter((e) => !(e.is_directory && e.name === INBOX_NAME))
               : visible;

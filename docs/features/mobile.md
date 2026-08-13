@@ -298,7 +298,10 @@ following Apple Notes (which pins Quick Notes / Shared in their own card above
 the folder list):
 
 - **A pinned Inbox card** above the root listing, with the item count, in a
-  fixed position no sort or grouping can move. Root only — one level down it
+  fixed position no sort or grouping can move. Its geometry is IDENTICAL to a
+  `FileRow` — same icon size, gap, text size, count, chevron — so it reads as
+  one of the list's own rows that happens to be highlighted, rather than a
+  different kind of control. Only the background and radius differ. Root only — one level down it
   is noise — and only when an Inbox exists. The folder is filtered out of the
   list below so it is never offered twice.
 - **A permanent "Inbox" entry in the breadcrumb island's menu**, after the
@@ -310,6 +313,31 @@ Deliberately not: pinning Inbox via `pins.json` (shared with the desktop, so a
 mobile navigation fix would rearrange the Mac sidebar), a sort default (only
 works while that mode is kept), or opening the app into Inbox after a share
 (wrong the moment you shared yesterday and want your notes today).
+
+## List rows: one line, aligned, counted (#684)
+
+A row was two lines (name over modified date) with the icon centred between
+them, which left the icon looking unaligned with the name it belongs to. Rows
+are now a single line — `[icon] [name] … [count] [chevron]` — so icon and
+title sit on the same baseline, and folders carry their item count on the
+right like the Inbox card.
+
+**The count rides along on the listing.** `FileEntry.child_count` is filled in
+natively for directories during the same directory walk, using the same
+visibility rule as the listing itself (so a folder of dotfiles reads as empty
+rather than lying). The alternative — one `ios_list_directory` per visible
+folder row — would be a burst of IPC on every folder open.
+
+**The date moved to the section headers.** Grouping by date is now
+**Recently changed** (last week) then one section per month, replacing
+Today / Yesterday / Previous 7 Days / Older. Coarser deliberately: the rows no
+longer carry a date, so the header is the only place the date shows, and a
+header that changes every day fragments a folder into slivers. Months are
+stable and scannable. The year is dropped within the current year.
+
+Note the consequence: with grouping set to **none**, dates are not shown at
+all. That is the trade for a single-line row — the date is available whenever
+you want it by grouping on date.
 
 ## Capturing a video link (#682)
 

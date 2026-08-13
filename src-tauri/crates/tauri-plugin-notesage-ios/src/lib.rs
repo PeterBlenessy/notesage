@@ -55,6 +55,10 @@ pub struct FileEntry {
     /// Files-app-style row metadata (mobile listings only; absent on desktop).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modified: Option<f64>,
+    /// Visible children, for DIRECTORIES only — counted natively in the same
+    /// pass so a folder row can show a count without an IPC call per row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

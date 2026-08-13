@@ -35,8 +35,8 @@ describe("formatModified (#588 — Files-app row metadata)", () => {
   });
 });
 
-describe("FileRow modified line", () => {
-  it("renders the modified date beneath the name when present", () => {
+describe("FileRow layout (#684)", () => {
+  it("is a single line — the date lives in the section header, not the row", () => {
     renderWithProviders(
       <FileRow
         actionContext={noopActions}
@@ -51,10 +51,27 @@ describe("FileRow modified line", () => {
       />,
     );
     expect(screen.getByText("note.md")).toBeTruthy();
-    expect(screen.getByText(/2025/)).toBeTruthy();
+    // A second line under the name is what made the icon look unaligned.
+    expect(screen.queryByText(/2025/)).toBeNull();
   });
 
-  it("omits the secondary line entirely when modified is absent", () => {
+  it("shows a folder's item count, and nothing for a file", () => {
+    const { unmount } = renderWithProviders(
+      <FileRow
+        actionContext={noopActions}
+        entry={{
+          name: "Ideas",
+          path: "Ideas",
+          is_directory: true,
+          hidden: false,
+          child_count: 12,
+        }}
+        onActivate={() => {}}
+      />,
+    );
+    expect(screen.getByText("12")).toBeTruthy();
+    unmount();
+
     renderWithProviders(
       <FileRow
         actionContext={noopActions}
@@ -62,8 +79,23 @@ describe("FileRow modified line", () => {
         onActivate={() => {}}
       />,
     );
-    const name = screen.getByText("plain.md");
-    // The name column has exactly one line — no metadata sibling.
-    expect(name.parentElement?.childElementCount).toBe(1);
+    expect(screen.queryByText(/^\d+$/)).toBeNull();
+  });
+
+  it("shows an empty folder as 0 rather than omitting the count", () => {
+    renderWithProviders(
+      <FileRow
+        actionContext={noopActions}
+        entry={{
+          name: "Empty",
+          path: "Empty",
+          is_directory: true,
+          hidden: false,
+          child_count: 0,
+        }}
+        onActivate={() => {}}
+      />,
+    );
+    expect(screen.getByText("0")).toBeTruthy();
   });
 });

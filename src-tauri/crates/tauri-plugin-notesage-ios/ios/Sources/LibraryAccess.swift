@@ -25,6 +25,9 @@ struct FileEntryDTO: Codable {
     let hidden: Bool
     // Files-app-style row metadata (nil when unavailable).
     let modified: Double?     // seconds since 1970
+    // Visible children, directories only — counted in the same pass so a
+    // folder row can show a count without an IPC call per row (#684).
+    let child_count: Int?
 }
 enum DownloadState: String, Codable { case ready, downloading, failed }
 
@@ -132,9 +135,21 @@ enum LibraryAccess {
             if displayName.hasPrefix(".") { return nil }
             let relPath = url.path.replacingOccurrences(of: root.path + "/", with: "")
             let values = try? url.resourceValues(forKeys: [.contentModificationDateKey])
+            // Count with the SAME visibility rule as the listing itself, so a
+            // folder of dotfiles reads as empty rather than lying about it.
+            let childCount: Int? = isDir
+                ? (try? fm.contentsOfDirectory(at: url, includingPropertiesForKeys: nil, options: []))?
+                    .filter { child in
+                        let n = child.lastPathComponent
+                        let display = n.hasPrefix(".") && n.hasSuffix(".icloud")
+                            ? String(n.dropFirst().dropLast(7)) : n
+                        return !display.hasPrefix(".")
+                    }.count
+                : nil
             return FileEntryDTO(name: displayName, path: relPath, is_directory: isDir,
                                 children: nil, hidden: false,
-                                modified: values?.contentModificationDate?.timeIntervalSince1970)
+                                modified: values?.contentModificationDate?.timeIntervalSince1970,
+                                child_count: childCount)
         }.sorted { ($0.is_directory ? 0 : 1, $0.name.lowercased()) < ($1.is_directory ? 0 : 1, $1.name.lowercased()) }
     }
 

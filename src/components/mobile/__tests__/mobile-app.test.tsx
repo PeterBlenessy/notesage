@@ -360,21 +360,34 @@ describe("group by (#652)", () => {
     expect(headings).not.toContain("PDFs");
   });
 
-  it("buckets by modified date when grouping by date", async () => {
+  it("groups by 'Recently changed' then by month when grouping by date", async () => {
     const now = Date.now() / 1000;
+    const old = new Date();
+    old.setMonth(old.getMonth() - 2);
+    const monthName = old.toLocaleDateString(undefined, { month: "long" });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "today.md", path: "today.md", is_directory: false, hidden: false, modified: now },
-      { name: "ancient.md", path: "ancient.md", is_directory: false, hidden: false, modified: now - 40 * 86400 },
+      {
+        name: "ancient.md",
+        path: "ancient.md",
+        is_directory: false,
+        hidden: false,
+        modified: old.getTime() / 1000,
+      },
     ]);
     useMobileStore.setState({ groupMode: "date" });
 
     renderWithProviders(<LibraryBrowser />);
     await screen.findByText("today.md");
-    expect(screen.getByRole("heading", { name: "Today" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Older" })).toBeTruthy();
+    // Coarser than Today/Yesterday on purpose: the rows no longer carry a
+    // date, so a header that changes daily would shred the folder (#684).
+    expect(screen.getByRole("heading", { name: "Recently changed" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: monthName })).toBeTruthy();
     // No grouping headers leak into the default mode.
     useMobileStore.setState({ groupMode: "none" });
-    await waitFor(() => expect(screen.queryByRole("heading", { name: "Today" })).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "Recently changed" })).toBeNull(),
+    );
   });
 });
 
@@ -1648,19 +1661,11 @@ describe("library re-pick", () => {
 
 describe("Inbox shortcut (#683)", () => {
   it("pins Inbox above the root listing and omits it from the list below", async () => {
-    setMockInvokeHandler("ios_list_directory", (args) => {
-      const rel = (args as { relPath: string }).relPath;
-      if (rel === "Inbox") {
-        return [
-          { name: "a.md", path: "Inbox/a.md", is_directory: false, hidden: false },
-          { name: "b.md", path: "Inbox/b.md", is_directory: false, hidden: false },
-        ];
-      }
-      return [
-        { name: "Inbox", path: "Inbox", is_directory: true, hidden: false },
-        { name: "Zebra", path: "Zebra", is_directory: true, hidden: false },
-      ];
-    });
+    // The count rides along on the listing itself (#684) — no second read.
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 2 },
+      { name: "Zebra", path: "Zebra", is_directory: true, hidden: false, child_count: 7 },
+    ]);
 
     renderWithProviders(<LibraryBrowser />);
     // The card carries the count; the folder appears exactly once overall.
