@@ -72,3 +72,11 @@ required for our own testing.
 
 Screenshots, description/keywords/category, support + privacy-policy URLs,
 age rating. Those belong to the store submission, not the beta.
+
+All of that copy is drafted in [`app-store/`](app-store/) so it is reviewable
+and versioned rather than typed into a web form: the App Privacy answers (with
+the evidence for "Data Not Collected"), the privacy policy itself, the
+TestFlight "What to Test" and beta-review notes, the listing copy, the
+screenshot shot list, and the age-rating answers. Three decisions there need a
+human: where the privacy policy is hosted, what the support URL is, and
+whether the store name "Notesage" is free.
