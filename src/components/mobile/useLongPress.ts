@@ -10,13 +10,20 @@ const MOVE_TOLERANCE = 10;
  * Long-press detection for a web element that must still scroll and tap
  * normally (#680).
  *
- * `onLongPress` receives the press point in CSS pixels, which is what the
- * native action sheet wants for its iPad anchor. The returned `suppressClick`
- * handler must be spread onto the same element: iOS still delivers a `click`
- * after the finger lifts, and without swallowing it a long press that opened
- * the menu would ALSO open the document behind it.
+ * `onLongPress` receives the pressed element's rect in CSS pixels — the
+ * native preview grows out of it and shrinks back into it. The handlers must
+ * be spread onto that element as a set: iOS still delivers a `click` after
+ * the finger lifts, and without swallowing it a long press that opened the
+ * menu would ALSO open the document behind it.
  */
-export function useLongPress(onLongPress: (at: { x: number; y: number }) => void) {
+export interface PressRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export function useLongPress(onLongPress: (rect: PressRect | undefined) => void) {
   const timer = useRef<number | null>(null);
   const origin = useRef<{ x: number; y: number } | null>(null);
   const fired = useRef(false);
@@ -32,12 +39,18 @@ export function useLongPress(onLongPress: (at: { x: number; y: number }) => void
   return {
     onPointerDown: (e: React.PointerEvent) => {
       fired.current = false;
-      const at = { x: e.clientX, y: e.clientY };
-      origin.current = at;
+      origin.current = { x: e.clientX, y: e.clientY };
+      // Measure NOW, while the element is still where the finger landed —
+      // by the time the hold completes the list may have settled elsewhere.
+      const box = (e.currentTarget as HTMLElement).getBoundingClientRect();
+      const rect: PressRect | undefined =
+        box.width > 0 && box.height > 0
+          ? { x: box.x, y: box.y, width: box.width, height: box.height }
+          : undefined;
       timer.current = window.setTimeout(() => {
         timer.current = null;
         fired.current = true;
-        onLongPress(at);
+        onLongPress(rect);
       }, HOLD_MS);
     },
     onPointerMove: (e: React.PointerEvent) => {

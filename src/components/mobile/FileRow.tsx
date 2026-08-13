@@ -109,8 +109,8 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext }:
   const Icon = iconFor(entry);
   // Hold for the full menu — iOS itself offers both swipe AND hold on a list
   // row (Files, Notes), and hold is the only way to reach Rename/Pin here.
-  const longPress = useLongPress((at) => {
-    void presentEntryMenu(entry, at, actionContext);
+  const longPress = useLongPress((rect) => {
+    void presentEntryMenu(entry, rect, actionContext);
   });
   // Directories have no share concept in Notesage today — `ios_share_file`
   // copies a single file to a temp location for the share sheet, mirroring

@@ -159,6 +159,38 @@ export function iosEnsureDirectory(relPath: string): Promise<void> {
   return invoke("ios_ensure_directory", { relPath });
 }
 
+export interface IosEntryMenuItem {
+  id: string;
+  title: string;
+  /** SF Symbol name — the menu is drawn natively. */
+  systemImage: string;
+  destructive?: boolean;
+  /** `true` → the compact icon row at the top of the panel. */
+  inline?: boolean;
+}
+
+export interface IosEntryMenuSpec {
+  title: string;
+  subtitle?: string;
+  /** File to render into the preview card (QuickLook). Omit for folders. */
+  previewRelPath?: string;
+  isDirectory: boolean;
+  /** The pressed element's rect in CSS pixels — the preview grows out of it
+   *  and shrinks back into it on dismiss. */
+  sourceRect?: { x: number; y: number; width: number; height: number };
+  items: IosEntryMenuItem[];
+}
+
+/**
+ * Long-press preview + action menu (#680): a preview card over a blurred
+ * backdrop with the actions beneath, morphing out of the pressed row.
+ * Resolves the chosen item id, or `null` when dismissed.
+ */
+export async function iosEntryMenu(spec: IosEntryMenuSpec): Promise<string | null> {
+  const chosen = await invoke<string | null>("ios_entry_menu", { spec });
+  return chosen ?? null;
+}
+
 export interface IosContextMenuItem {
   id: string;
   title: string;

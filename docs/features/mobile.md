@@ -233,8 +233,17 @@ that raises a native action sheet. List rows get the same press as a second
 route to their swipe actions, which is what iOS itself does (Files and Notes
 both offer swipe *and* hold).
 
-Menu: **Share** (files only — `ios_share_file` copies a single file to temp),
-**Rename**, **Pin/Unpin**, **Delete** (destructive, last). Both surfaces build
+**Shape (Apple Notes):** the pressed item lifts out of the list as a large
+rounded **preview card** over a blurred backdrop, with the actions in a panel
+beneath — an inline icon row (Share / Pin / Delete) above full-width rows
+(Rename). The card **morphs out of the pressed row and back into it**: the web
+layer measures the element at pointer-down and passes its rect, and the native
+view interpolates position and scale from there. Dismiss by tapping the
+backdrop or **swiping the preview down**. Files render a real QuickLook
+preview; folders and unrenderable files fall back to an icon + name card.
+
+Menu content: **Share** (files only — `ios_share_file` copies a single file to
+temp), **Pin/Unpin**, **Delete** (destructive), **Rename**. Both surfaces build
 their rows from `entryMenuItems` in `src/lib/mobile-entry-actions.ts`, so they
 cannot drift.
 
@@ -250,12 +259,15 @@ stale in-memory copy. `.notesage/` is created if missing via
 `ios_ensure_directory`, which unlike `ios_create_directory` does NOT dedupe
 (deduping there would silently produce `.notesage-1` and split the state).
 
-**Why an action sheet, not a `UIMenu`.** A real context menu needs a
-`UIContextMenuInteraction` bound to the pressed *view*, and the item here is
-web content — there is no native view to attach to, and UIKit exposes no way
-to raise a `UIMenu` at a point. The action sheet is the standard fallback, and
-unlike `UIMenu` it needs no private KVC to carry icons (it simply has none),
-so it stays App Store safe.
+**Why the menu is hand-built, not a real `UIContextMenu`.** A system context
+menu is driven by `UIContextMenuInteraction`, which must be attached to the
+pressed *view* and starts tracking at touch-down. The pressed item is web
+content inside one WKWebView — there is no native view per row to attach to,
+and UIKit exposes no way to raise a context menu programmatically at a point.
+`EntryContextMenu.swift` therefore draws the same control in SwiftUI: real
+material, real spring physics, real haptics, so it reads as the system control
+it imitates. The plain action sheet (`ios_context_menu`) remains, but only
+where a sheet is genuinely the right control — the delete confirmation.
 
 Deliberately **not** in the menu: Move (needs a folder picker plus a native
 move command), Duplicate (needs a binary-safe copy, or it would silently skip

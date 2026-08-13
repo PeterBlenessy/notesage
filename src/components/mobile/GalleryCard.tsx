@@ -34,8 +34,8 @@ export function GalleryCard({
   onActivate,
   actionContext,
 }: GalleryCardProps) {
-  const longPress = useLongPress((at) => {
-    void presentEntryMenu(entry, at, actionContext);
+  const longPress = useLongPress((rect) => {
+    void presentEntryMenu(entry, rect, actionContext);
   });
   const rootRef = useRef<HTMLButtonElement | null>(null);
   const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(

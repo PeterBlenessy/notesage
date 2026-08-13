@@ -4,6 +4,7 @@ import type { FileEntry } from "@/lib/tauri";
 
 vi.mock("@/lib/ios-api", () => ({
   iosContextMenu: vi.fn(),
+  iosEntryMenu: vi.fn(),
   iosDeleteFile: vi.fn(async () => {}),
   iosRenameFile: vi.fn(async () => "renamed.md"),
   iosShareFile: vi.fn(async () => {}),
@@ -12,6 +13,7 @@ vi.mock("@/lib/ios-api", () => ({
 
 import {
   iosContextMenu,
+  iosEntryMenu,
   iosDeleteFile,
   iosRenameFile,
   iosShareFile,
@@ -44,22 +46,26 @@ function ctx(overrides: Partial<Parameters<typeof runEntryAction>[2]> = {}) {
 beforeEach(() => vi.clearAllMocks());
 
 describe("entryMenuItems", () => {
-  it("offers share, rename, pin and delete for a file, with delete destructive", () => {
+  it("offers share, pin and delete as the icon row, with rename beneath", () => {
     const items = entryMenuItems(file, ctx());
-    expect(items.map((i) => i.id)).toEqual(["share", "rename", "pin", "delete"]);
+    expect(items.filter((i) => i.inline).map((i) => i.id)).toEqual(["share", "pin", "delete"]);
+    expect(items.filter((i) => !i.inline).map((i) => i.id)).toEqual(["rename"]);
     expect(items.find((i) => i.id === "delete")?.destructive).toBe(true);
+    // Every row must carry an SF Symbol — the menu is drawn natively and a
+    // missing symbol renders as a blank slot.
+    expect(items.every((i) => i.systemImage.length > 0)).toBe(true);
   });
 
   it("omits share for a folder — ios_share_file copies a single file", () => {
-    expect(entryMenuItems(folder, ctx()).map((i) => i.id)).toEqual([
-      "rename",
-      "pin",
-      "delete",
-    ]);
+    expect(entryMenuItems(folder, ctx()).map((i) => i.id)).toEqual(["pin", "delete", "rename"]);
   });
 
   it("labels the pin row by current state", () => {
     expect(entryMenuItems(file, ctx()).find((i) => i.id === "pin")?.title).toBe("Pin");
+    expect(entryMenuItems(file, ctx()).find((i) => i.id === "pin")?.systemImage).toBe("pin");
+    expect(
+      entryMenuItems(file, ctx({ isPinned: () => true })).find((i) => i.id === "pin")?.systemImage,
+    ).toBe("pin.slash");
     expect(
       entryMenuItems(file, ctx({ isPinned: () => true })).find((i) => i.id === "pin")?.title,
     ).toBe("Unpin");
@@ -117,14 +123,24 @@ describe("confirmDelete", () => {
 });
 
 describe("presentEntryMenu", () => {
-  it("passes the press point through for the iPad popover anchor", async () => {
-    vi.mocked(iosContextMenu).mockResolvedValueOnce(null);
-    await presentEntryMenu(file, { x: 12, y: 34 }, ctx());
-    expect(vi.mocked(iosContextMenu).mock.calls[0][0].at).toEqual({ x: 12, y: 34 });
+  const rect = { x: 12, y: 34, width: 300, height: 56 };
+
+  it("passes the pressed rect through so the preview can morph out of the row", async () => {
+    vi.mocked(iosEntryMenu).mockResolvedValueOnce(null);
+    await presentEntryMenu(file, rect, ctx());
+    expect(vi.mocked(iosEntryMenu).mock.calls[0][0].sourceRect).toEqual(rect);
+  });
+
+  it("gives a file a QuickLook preview path and a folder none", async () => {
+    vi.mocked(iosEntryMenu).mockResolvedValue(null);
+    await presentEntryMenu(file, rect, ctx());
+    expect(vi.mocked(iosEntryMenu).mock.calls[0][0].previewRelPath).toBe("Ideas/note.md");
+    await presentEntryMenu(folder, rect, ctx());
+    expect(vi.mocked(iosEntryMenu).mock.calls[1][0].previewRelPath).toBeUndefined();
   });
 
   it("swallows a failed presentation rather than rejecting into the render", async () => {
-    vi.mocked(iosContextMenu).mockRejectedValueOnce(new Error("no presenter"));
-    await expect(presentEntryMenu(file, { x: 0, y: 0 }, ctx())).resolves.toBeUndefined();
+    vi.mocked(iosEntryMenu).mockRejectedValueOnce(new Error("no presenter"));
+    await expect(presentEntryMenu(file, rect, ctx())).resolves.toBeUndefined();
   });
 });

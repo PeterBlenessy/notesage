@@ -278,6 +278,12 @@ impl<R: Runtime> NotesageIos<R> {
         self.call("ensureDirectory", RelPathArgs { rel_path: rel })
     }
 
+    /// Present the long-press preview + action menu. `spec` is the JSON
+    /// `EntryMenuSpec` shape EntryContextMenu.swift decodes.
+    pub fn entry_menu(&self, spec: serde_json::Value) -> Result<Option<String>> {
+        self.call::<_, ContextMenuResult>("entryMenu", spec).map(|r| r.id)
+    }
+
     /// Present a native action sheet for a long-pressed item. Returns the
     /// chosen item id, or `None` when the user cancels.
     pub fn context_menu(&self, payload: ContextMenuArgs) -> Result<Option<String>> {
@@ -381,6 +387,9 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn ensure_directory(&self, _rel: &str) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn entry_menu(&self, _spec: serde_json::Value) -> Result<Option<String>> {
         Err(Error::Unavailable)
     }
     pub fn text_prompt(&self, _t: &str, _p: &str, _c: &str) -> Result<Option<String>> {

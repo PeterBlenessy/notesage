@@ -15,11 +15,12 @@ import { toast } from "sonner";
 import type { FileEntry } from "@/lib/tauri";
 import {
   iosContextMenu,
+  iosEntryMenu,
   iosDeleteFile,
   iosRenameFile,
   iosShareFile,
   iosTextPrompt,
-  type IosContextMenuItem,
+  type IosEntryMenuItem,
 } from "@/lib/ios-api";
 import { t } from "@/lib/i18n";
 
@@ -44,17 +45,35 @@ export interface EntryActionContext {
  * - **Info** would only repeat the date already printed on the row/card.
  * - **Quick Look / Open** is what a plain tap already does.
  */
-export function entryMenuItems(entry: FileEntry, ctx: EntryActionContext): IosContextMenuItem[] {
-  const items: IosContextMenuItem[] = [];
+export function entryMenuItems(entry: FileEntry, ctx: EntryActionContext): IosEntryMenuItem[] {
+  const pinned = ctx.isPinned(entry.path);
+  // Layout mirrors Notes: the frequent actions as an icon row, the rest as
+  // full-width rows beneath. Delete is last in the row and red.
+  const items: IosEntryMenuItem[] = [];
   // Directories have no share concept — `ios_share_file` copies a single
   // file to temp for the share sheet (same reason the swipe row omits it).
-  if (!entry.is_directory) items.push({ id: "share", title: t("action.share") });
-  items.push({ id: "rename", title: t("action.rename") });
+  if (!entry.is_directory) {
+    items.push({
+      id: "share",
+      title: t("action.share"),
+      systemImage: "square.and.arrow.up",
+      inline: true,
+    });
+  }
   items.push({
     id: "pin",
-    title: ctx.isPinned(entry.path) ? t("action.unpin") : t("action.pin"),
+    title: pinned ? t("action.unpin") : t("action.pin"),
+    systemImage: pinned ? "pin.slash" : "pin",
+    inline: true,
   });
-  items.push({ id: "delete", title: t("action.delete"), destructive: true });
+  items.push({
+    id: "delete",
+    title: t("action.delete"),
+    systemImage: "trash",
+    destructive: true,
+    inline: true,
+  });
+  items.push({ id: "rename", title: t("action.rename"), systemImage: "pencil" });
   return items;
 }
 
@@ -115,16 +134,26 @@ export async function runEntryAction(
   }
 }
 
-/** Present the menu for `entry` at a press point and run the choice. */
+/**
+ * Present the preview menu for `entry` and run the choice.
+ *
+ * `sourceRect` is the pressed element's rect: the preview card grows out of
+ * it and shrinks back into it, so the card reads as the row itself lifting
+ * off the list rather than a panel appearing over it.
+ */
 export async function presentEntryMenu(
   entry: FileEntry,
-  at: { x: number; y: number },
+  sourceRect: { x: number; y: number; width: number; height: number } | undefined,
   ctx: EntryActionContext,
 ): Promise<void> {
-  const chosen = await iosContextMenu({
+  const chosen = await iosEntryMenu({
     title: entry.name,
+    // Only files have something QuickLook can render; folders fall back to
+    // the name + icon card.
+    previewRelPath: entry.is_directory ? undefined : entry.path,
+    isDirectory: entry.is_directory,
+    sourceRect,
     items: entryMenuItems(entry, ctx),
-    at,
   }).catch(() => null);
   await runEntryAction(chosen, entry, ctx);
 }

@@ -386,6 +386,24 @@ pub async fn ios_ensure_directory(app: tauri::AppHandle, rel_path: String) -> Re
     }
 }
 
+/// Present the long-press preview + action menu (#680) and return the chosen
+/// item id (`None` = dismissed). Pure UI — the caller performs the action.
+#[tauri::command]
+pub async fn ios_entry_menu(
+    app: tauri::AppHandle,
+    spec: serde_json::Value,
+) -> Result<Option<String>, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::entry_menu(&app, spec).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, spec);
+        Err("ios_entry_menu is only available on iOS".into())
+    }
+}
+
 /// One row of the native action sheet. Declared HERE rather than reused from
 /// the plugin crate because that crate is an iOS-only dependency, while this
 /// command's signature has to compile on every target.
@@ -614,6 +632,13 @@ mod ios_impl {
 
     pub async fn ensure_directory(app: &AppHandle, rel: &str) -> Result<(), String> {
         app.notesage_ios().ensure_directory(rel).map_err(|e| e.to_string())
+    }
+
+    pub async fn entry_menu(
+        app: &AppHandle,
+        spec: serde_json::Value,
+    ) -> Result<Option<String>, String> {
+        app.notesage_ios().entry_menu(spec).map_err(|e| e.to_string())
     }
 
     pub async fn context_menu(

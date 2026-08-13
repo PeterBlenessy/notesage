@@ -81,6 +81,7 @@ const ALLOWED = new Set([
   "ios_content_ready",
   // Long-press action sheet + its idempotent dir helper (#680).
   "ios_context_menu",
+  "ios_entry_menu",
   "ios_ensure_directory",
 ]);
 

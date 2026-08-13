@@ -622,6 +622,32 @@ class NotesageIosPlugin: Plugin {
     } catch { invoke.reject(String(describing: error)) }
   }
 
+  /// Long-press preview + action menu for a library item (#680) — the Apple
+  /// Notes shape: a preview card over a blurred backdrop with the actions
+  /// beneath it. See EntryContextMenu.swift for why this is hand-built.
+  @objc public func entryMenu(_ invoke: Invoke) {
+    do {
+      let spec = try invoke.parseArgs(EntryMenuSpec.self)
+      DispatchQueue.main.async {
+        guard let presenter = self.topViewController else {
+          invoke.reject("No view controller to present the menu")
+          return
+        }
+        guard presenter.presentedViewController == nil else {
+          invoke.reject("Another sheet is already open")
+          return
+        }
+        EntryContextMenu.present(spec, over: presenter) { id in
+          if let id {
+            invoke.resolve(["id": id])
+          } else {
+            invoke.resolve([:] as [String: String])
+          }
+        }
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
   /// Native action sheet for a long-pressed list/gallery item (#680).
   ///
   /// A `UIAlertController(.actionSheet)` rather than a `UIMenu`: a real
