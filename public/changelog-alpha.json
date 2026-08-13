@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.33",
+      "date": "2026-08-13",
+      "previousVersion": "0.48.0-alpha.32",
+      "sections": {},
+      "underTheHood": [
+        "iOS: group by file type (#671)",
+        "i18n foundation + Swedish; mobile UI fully localized (#672)",
+        "iOS: localize the Share Extension (Swedish) (#673)",
+        "iOS: name captures after their title, not a timestamp (#674)",
+        "iOS: kill the white launch flash (root cause found by measurement) (#676)",
+        "fix(mobile): kill the white launch flash — the light CSS default painted before the dark media query",
+        "feat(mobile): name captures after their title, not a timestamp",
+        "feat(mobile): localize the Share Extension (Swedish) — prioritized over desktop",
+        "feat: i18n foundation with Swedish, mobile UI fully localized (#653)",
+        "feat(mobile): group by file type — the last mode from #652"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.32",
       "date": "2026-08-12",
       "previousVersion": "0.48.0-alpha.31",
