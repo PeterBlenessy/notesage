@@ -152,6 +152,15 @@ export function iosRenameFile(relPath: string, newName: string): Promise<string>
 }
 
 /**
+ * Tell the native layer the webview has painted, so it drops the launch
+ * cover held over it (#675). Fire-and-forget: rejects off-iOS, and the
+ * native side removes the cover on a timeout anyway.
+ */
+export function iosContentReady(): Promise<void> {
+  return invoke("ios_content_ready");
+}
+
+/**
  * Native single-line text prompt (UIAlertController with a text field).
  * Resolves the entered text, or `null` when the user cancels. Rejects
  * off-iOS — callers fall back to a web prompt.

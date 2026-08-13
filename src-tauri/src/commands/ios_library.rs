@@ -366,6 +366,21 @@ pub async fn ios_rename_file(
     }
 }
 
+/// Signal that the webview has painted its first frame, so the native
+/// launch cover can fade out (#675). Pure UI; no filesystem, no arguments.
+#[tauri::command]
+pub async fn ios_content_ready(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::content_ready(&app).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = &app;
+        Err("ios_content_ready is only available on iOS".into())
+    }
+}
+
 /// Present a native single-line text prompt (UIAlertController with a text
 /// field) — the create flow's name entry (#586). `Ok(None)` = cancelled.
 /// Pure UI: takes no path and touches no filesystem.
@@ -542,6 +557,10 @@ mod ios_impl {
 
     pub async fn rename_file(app: &AppHandle, rel: &str, new_name: &str) -> Result<String, String> {
         app.notesage_ios().rename_file(rel, new_name).map_err(|e| e.to_string())
+    }
+
+    pub async fn content_ready(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().content_ready().map_err(|e| e.to_string())
     }
 
     pub async fn text_prompt(

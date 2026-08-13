@@ -243,6 +243,12 @@ impl<R: Runtime> NotesageIos<R> {
             .map(|r| r.rel_path)
     }
 
+    /// Tell the native layer the webview has painted, so it can drop the
+    /// launch cover held over it (#675).
+    pub fn content_ready(&self) -> Result<()> {
+        self.call("contentReady", ())
+    }
+
     /// Present a native single-line text prompt (UIAlertController). Returns
     /// `None` when the user cancels.
     pub fn text_prompt(
@@ -325,6 +331,9 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn rename_file(&self, _rel: &str, _new_name: &str) -> Result<String> {
+        Err(Error::Unavailable)
+    }
+    pub fn content_ready(&self) -> Result<()> {
         Err(Error::Unavailable)
     }
     pub fn text_prompt(&self, _t: &str, _p: &str, _c: &str) -> Result<Option<String>> {
