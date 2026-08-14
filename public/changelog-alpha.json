@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.35",
+      "date": "2026-08-14",
+      "previousVersion": "0.48.0-alpha.34",
+      "sections": {
+        "features": [
+          "feat(mobile): long-press menu, capture fixes, Inbox shortcut, row redesign (#684)"
+        ]
+      },
+      "underTheHood": [
+        "feat(mobile): long-press menu, capture fixes, Inbox shortcut, row redesign (#684)"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.34",
       "date": "2026-08-13",
       "previousVersion": "0.48.0-alpha.33",
