@@ -43,7 +43,13 @@ Do this twice — once for the app, once for the Share Extension.
 1. Same **Identifiers** page, filter back to *App IDs* → **+** → *App IDs* →
    Continue → *App* → Continue.
 2. Description: `Notesage` (then `Notesage Share`). Bundle ID: **Explicit**,
-   `com.notesage.app` (then `com.notesage.app.share`).
+   `com.notesage.app` (then **`com.notesage.app.ShareExtension`** — the exact
+   string in `project.yml` and `integrate-share-extension.py`; NOT
+   `com.notesage.app.share`).
+
+   Both App IDs may ALREADY EXIST, auto-registered by Xcode during dev builds.
+   If Apple offers them, edit the existing entry instead of creating a new
+   one — the capability work below is identical either way.
 3. In **Capabilities**, tick **App Groups**.
 4. Continue → Register.
 5. Reopen the App ID you just made, click **Configure** next to App Groups,
