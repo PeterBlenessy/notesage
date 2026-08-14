@@ -194,16 +194,28 @@ export function LibraryBrowser() {
     const folders = entries.filter((e) => e.is_directory);
     const files = entries.filter((e) => !e.is_directory);
     const sections: Array<{ key: string; title: string | null; items: FileEntry[] }> = [];
-    if (folders.length > 0) sections.push({ key: "folders", title: t("section.folders"), items: folders });
 
     if (groupMode === "pinned") {
+      // Pinned FOLDERS belong in the Pinned section too. Previously folders
+      // were hoisted into their own leading section before this ran, so
+      // pinning a folder wrote to pins.json and then changed nothing on
+      // screen — it read as "folders can't be pinned" (Peter, 2026-08-14).
+      // The desktop's `pinFile` is path-agnostic, so a folder pin survives
+      // the shared file in both directions.
       const pinned = new Set(pinnedPaths);
-      const inPinned = files.filter((e) => pinned.has(e.path));
-      const rest = files.filter((e) => !pinned.has(e.path));
+      const inPinned = entries.filter((e) => pinned.has(e.path));
+      const restFolders = folders.filter((e) => !pinned.has(e.path));
+      const restFiles = files.filter((e) => !pinned.has(e.path));
       if (inPinned.length > 0) sections.push({ key: "pinned", title: t("section.pinned"), items: inPinned });
-      if (rest.length > 0) sections.push({ key: "other", title: t("section.allNotes"), items: rest });
+      if (restFolders.length > 0)
+        sections.push({ key: "folders", title: t("section.folders"), items: restFolders });
+      if (restFiles.length > 0) sections.push({ key: "other", title: t("section.allNotes"), items: restFiles });
       return sections;
     }
+
+    // Every other mode keeps folders in their own leading section — grouping
+    // files under date headers while folders float loose reads as a bug.
+    if (folders.length > 0) sections.push({ key: "folders", title: t("section.folders"), items: folders });
 
     if (groupMode === "recent") {
       const recent = new Set(recentlyRead);
