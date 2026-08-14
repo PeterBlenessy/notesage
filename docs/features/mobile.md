@@ -204,6 +204,188 @@ verified basis for the App Store privacy label **"Data Not Collected"**:
   mirrored from the app) and re-runs `xcodegen generate`. Idempotent — run it
   after any `tauri ios init`.
 
+## Swipe gestures: axis lock + `touch-action`
+
+A swipe row that competes with a vertical scroller needs BOTH halves of the
+contract, or it will drop gestures:
+
+1. **`touch-action: pan-y`** on the draggable content. Without it WebKit owns
+   the whole gesture and fires `pointercancel` the moment it decides the
+   finger is scrolling — the swipe snaps back mid-drag, which reads as "it
+   only works sometimes".
+2. **An axis lock** decided once at 8 px and never revisited
+   (`resolveDragAxis`). Horizontal wins ties and gets a 0.75 bias, because a
+   thumb swipe always arcs downward; a gesture that starts vertical is
+   terminal and never becomes a swipe no matter how far it later travels
+   sideways. Once locked horizontal, later vertical movement is IGNORED
+   rather than gradually turning the drag back into a scroll.
+3. **`setPointerCapture`** on lock, so a finger that drifts onto the
+   neighbouring row keeps feeding the gesture instead of silently ending it.
+
+Long-press (below) covers the same actions, so a user who cannot land a swipe
+— or a layout with no swipe at all, like the gallery — is never stuck.
+
+## Long-press actions (#680)
+
+Gallery cards have no swipe affordance — the grid scrolls and a horizontal
+drag on a card is ambiguous — so their actions live behind a **long press**
+that raises a native action sheet. List rows get the same press as a second
+route to their swipe actions, which is what iOS itself does (Files and Notes
+both offer swipe *and* hold).
+
+**Rename starts from the current name**, pre-filled and editable with the
+stem preselected (Files/Finder behaviour), so a small correction is a small
+edit rather than retyping the whole name. The listing also **restores its
+scroll position** when you come back from a document — the browser unmounts
+while the Reader is open, so the offset is kept per folder in the store
+(session-only) and reapplied once the rows exist.
+
+**Shape (Apple Notes):** the pressed item lifts out of the list as a large
+rounded **preview card** over a blurred backdrop, with the actions in a panel
+beneath — an inline icon row (Share / Pin / Delete) above full-width rows
+(Rename). The card **morphs out of the pressed row and back into it**: the web
+layer measures the element at pointer-down and passes its rect, and the native
+view interpolates position and scale from there. Dismiss by tapping the
+backdrop or **swiping the preview down**. Notes render through the app's OWN markdown pipeline (a `WKWebView` on the
+card, fed the same fragment the Reader and the gallery cards use) — QuickLook
+renders a `.md` file as its RAW TEXT, so a note whose point is an image
+previewed as a wall of markup. Other file types fall back to a QuickLook
+thumbnail; folders and unrenderable files to an icon + name card.
+
+The drag-to-dismiss gesture measures in the **global** coordinate space, not
+the card's own. The card moves with the drag, so a local-space translation is
+measured against a moving origin and each frame feeds back into the next —
+which shows up as the card shaking under the finger.
+
+Menu content: **Share** (files only — `ios_share_file` copies a single file to
+temp), **Pin/Unpin**, **Delete** (destructive), **Rename**. Both surfaces build
+their rows from `entryMenuItems` in `src/lib/mobile-entry-actions.ts`, so they
+cannot drift.
+
+**Delete confirms.** iCloud's Recently Deleted does give 30-day recovery, but
+a long press or a full swipe is easy to trigger by accident and the recovery
+path is not discoverable from inside Notesage. Both the menu row and the
+swipe action route through `confirmDelete`.
+
+**Pin writes the shared file.** `togglePin` read-modify-writes the same
+library-root `.notesage/pins.json` the desktop sidebar reads — re-reading the
+file first, so a pin made on the desktop since launch is not clobbered by a
+stale in-memory copy. `.notesage/` is created if missing via
+`ios_ensure_directory`, which unlike `ios_create_directory` does NOT dedupe
+(deduping there would silently produce `.notesage-1` and split the state).
+
+**Why the menu is hand-built, not a real `UIContextMenu`.** A system context
+menu is driven by `UIContextMenuInteraction`, which must be attached to the
+pressed *view* and starts tracking at touch-down. The pressed item is web
+content inside one WKWebView — there is no native view per row to attach to,
+and UIKit exposes no way to raise a context menu programmatically at a point.
+`EntryContextMenu.swift` therefore draws the same control in SwiftUI: real
+material, real spring physics, real haptics, so it reads as the system control
+it imitates. The plain action sheet (`ios_context_menu`) remains, but only
+where a sheet is genuinely the right control — the delete confirmation.
+
+Deliberately **not** in the menu: Move (needs a folder picker plus a native
+move command), Duplicate (needs a binary-safe copy, or it would silently skip
+non-markdown files), Info (repeats the date already on the row), and
+Quick Look (a plain tap already does it).
+
+## Search island: fade, then collapse
+
+Closing the folder search made the ✕ appear to fly toward the middle of the
+screen. The expanded state is a field capsule filling the container with the
+✕ riding its trailing edge, and both states stay MOUNTED in a ZStack — so
+animating the container's width back to the pill while that content is still
+visible re-lays it out every frame and drags the ✕ inward.
+
+The two are now choreographed: the states cross-fade over `SEARCH_FADE`
+(0.14 s, linear — the old 0.35 s spring's tail kept the content visible deep
+into the collapse), and the width animation waits that long before starting.
+Expanding is unchanged and immediate; only the collapse needed sequencing.
+
+## Reaching the Inbox (#683)
+
+Shared items land in `Inbox/`, but it was an ordinary folder in an
+alphabetical list — after sharing a few links from Safari, reaching them meant
+scrolling, or switching the whole listing to sort-by-date. Two affordances,
+following Apple Notes (which pins Quick Notes / Shared in their own card above
+the folder list):
+
+- **A pinned Inbox card** above the root listing, with the item count, in a
+  fixed position no sort or grouping can move. Its geometry is IDENTICAL to a
+  `FileRow` — same icon size, gap, text size, weight, count, chevron — so it
+  reads as one of the list's own rows that happens to be highlighted, rather
+  than a different kind of control. Only the background and radius differ.
+  The horizontal inset is SPLIT between the card wrapper and the button
+  (8 + 8) so it totals `FileRow`'s own `px-4`; putting the full 16 px on the
+  button stacks it on the wrapper's and pushes icon, count and chevron a
+  further 16 px inward, visibly breaking the column the rows below establish
+  (which is exactly what shipped first). Root only — one level down it
+  is noise — and only when an Inbox exists. The folder is filtered out of the
+  list below so it is never offered twice.
+- **A permanent "Inbox" entry in the breadcrumb island's menu**, after the
+  ancestors, so it is one tap from ANY depth without new corner chrome. It
+  uses `jumpToFolder`, which REPLACES the folder stack — entering it would
+  otherwise nest Inbox under wherever you happened to be.
+
+Deliberately not: pinning Inbox via `pins.json` (shared with the desktop, so a
+mobile navigation fix would rearrange the Mac sidebar), a sort default (only
+works while that mode is kept), or opening the app into Inbox after a share
+(wrong the moment you shared yesterday and want your notes today).
+
+## List rows: one line, aligned, counted (#684)
+
+A row was two lines (name over modified date) with the icon centred between
+them, which left the icon looking unaligned with the name it belongs to. Rows
+are now a single line — `[icon] [name] … [count] [chevron]` — so icon and
+title sit on the same baseline, and folders carry their item count on the
+right like the Inbox card.
+
+**The count rides along on the listing.** `FileEntry.child_count` is filled in
+natively for directories during the same directory walk, using the same
+visibility rule as the listing itself (so a folder of dotfiles reads as empty
+rather than lying). The alternative — one `ios_list_directory` per visible
+folder row — would be a burst of IPC on every folder open.
+
+**The date moved to the section headers.** Grouping by date is now
+**Recently changed** (last week) then one section per month, replacing
+Today / Yesterday / Previous 7 Days / Older. Coarser deliberately: the rows no
+longer carry a date, so the header is the only place the date shows, and a
+header that changes every day fragments a folder into slivers. Months are
+stable and scannable. The year is dropped within the current year.
+
+Note the consequence: with grouping set to **none**, dates are not shown at
+all. That is the trade for a single-line row — the date is available whenever
+you want it by grouping on date.
+
+## Capturing a video link (#682)
+
+A video page has no article to extract and its saved HTML is a player that
+cannot play — capturing one produced a note showing the page's composite
+poster with a drawn-on ▶ that did nothing. For a URL whose host has an oEmbed
+endpoint the format picker therefore offers only **Video** and **Link note**,
+with Video first.
+
+The video note carries a labelled `[Watch on YouTube](url)` link, the author
+(linked to their channel), and the provider's **clean** poster frame as a
+plain image — never a fake control. Frontmatter adds
+`capture_format: video`, `author`, and `provider`. The provider's title also
+names the file, which is what makes a shared YouTube link land as its real
+title rather than a mangled URL.
+
+Metadata comes from the provider's **official public oEmbed endpoint**
+(`youtube.com/oembed`, `vimeo.com/api/oembed.json`) — 5 s budget, 256 KB cap,
+and every field optional so a provider that answers with nothing still yields
+a usable note.
+
+**Downloading the video itself is deliberately out of scope.** It would mean
+reimplementing stream extraction and signature deciphering (no yt-dlp on iOS),
+which breaks whenever a provider changes its player; it violates YouTube's
+terms; and App Store review treats it as unauthorized access to third-party
+content (guideline 5.2.3) — a real risk for an app heading to TestFlight. The
+readable part of a video is what a note wants anyway. Transcribing a shared
+media FILE with the desktop's Whisper stack is the planned next step, and
+carries none of those problems.
+
 ## Launch: no white flash (#675)
 
 WKWebView paints **white** for its own first frames regardless of what the

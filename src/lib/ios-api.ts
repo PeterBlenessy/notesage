@@ -152,6 +152,75 @@ export function iosRenameFile(relPath: string, newName: string): Promise<string>
 }
 
 /**
+ * Create `relPath` if it doesn't exist (no dedupe, unlike
+ * `iosCreateDirectory`). Idempotent — safe to call before every write.
+ */
+export function iosEnsureDirectory(relPath: string): Promise<void> {
+  return invoke("ios_ensure_directory", { relPath });
+}
+
+export interface IosEntryMenuItem {
+  id: string;
+  title: string;
+  /** SF Symbol name — the menu is drawn natively. */
+  systemImage: string;
+  destructive?: boolean;
+  /** `true` → the compact icon row at the top of the panel. */
+  inline?: boolean;
+}
+
+export interface IosEntryMenuSpec {
+  title: string;
+  subtitle?: string;
+  /** File to render into the preview card via QuickLook. Omit for folders. */
+  previewRelPath?: string;
+  /** Pre-rendered note HTML — preferred over `previewRelPath`, since
+   *  QuickLook renders a `.md` file as its raw text. */
+  previewHtml?: string;
+  isDirectory: boolean;
+  /** The pressed element's rect in CSS pixels — the preview grows out of it
+   *  and shrinks back into it on dismiss. */
+  sourceRect?: { x: number; y: number; width: number; height: number };
+  items: IosEntryMenuItem[];
+}
+
+/**
+ * Long-press preview + action menu (#680): a preview card over a blurred
+ * backdrop with the actions beneath, morphing out of the pressed row.
+ * Resolves the chosen item id, or `null` when dismissed.
+ */
+export async function iosEntryMenu(spec: IosEntryMenuSpec): Promise<string | null> {
+  const chosen = await invoke<string | null>("ios_entry_menu", { spec });
+  return chosen ?? null;
+}
+
+export interface IosContextMenuItem {
+  id: string;
+  title: string;
+  /** Red, and sunk below the plain rows — iOS never stacks one higher. */
+  destructive?: boolean;
+}
+
+/**
+ * Present a native action sheet and resolve the chosen item id (`null` when
+ * cancelled). `at` is the press point in CSS pixels; it only anchors the
+ * iPad popover, but omitting it there would crash UIKit.
+ */
+export async function iosContextMenu(options: {
+  title?: string;
+  items: IosContextMenuItem[];
+  at?: { x: number; y: number };
+}): Promise<string | null> {
+  const chosen = await invoke<string | null>("ios_context_menu", {
+    title: options.title ?? null,
+    items: options.items,
+    x: options.at?.x ?? null,
+    y: options.at?.y ?? null,
+  });
+  return chosen ?? null;
+}
+
+/**
  * Tell the native layer the webview has painted, so it drops the launch
  * cover held over it (#675). Fire-and-forget: rejects off-iOS, and the
  * native side removes the cover on a timeout anyway.
@@ -169,11 +238,20 @@ export async function iosTextPrompt(
   title: string,
   placeholder: string,
   confirmLabel: string,
+  options: {
+    /** Pre-filled, editable text — rename starts from the current name. */
+    value?: string;
+    /** Preselect the filename stem so typing replaces the name but keeps the
+     *  extension, as Files and Finder do. */
+    selectStem?: boolean;
+  } = {},
 ): Promise<string | null> {
   const text = await invoke<string | null>("ios_text_prompt", {
     title,
     placeholder,
     confirmLabel,
+    value: options.value ?? null,
+    selectStem: options.selectStem ?? false,
   });
   return text ?? null;
 }

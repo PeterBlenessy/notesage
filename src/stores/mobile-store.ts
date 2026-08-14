@@ -15,8 +15,14 @@ import {
   iosPickLibraryFolder,
   iosClearLibraryGrant,
   iosReadFile,
+  iosWriteFile,
+  iosEnsureDirectory,
 } from "@/lib/ios-api";
-import { PINS_FILE_REL_PATH, parsePinsFileContent } from "@/lib/pins-file";
+import {
+  PINS_FILE_REL_PATH,
+  parsePinsFileContent,
+  serializePinsFileContent,
+} from "@/lib/pins-file";
 
 /**
  * - `unknown`  — not yet resolved (initial; show a neutral splash)
@@ -91,6 +97,10 @@ interface MobileStore {
 
   /** Push a folder onto the breadcrumb. */
   enterFolder: (ref: FolderRef) => void;
+  /** Jump straight to a folder, replacing the whole stack — the Inbox
+   *  shortcut, which must work from any depth rather than pushing Inbox
+   *  under wherever you happened to be. */
+  jumpToFolder: (ref: FolderRef) => void;
   /** Open a document (records it in recents). */
   openDocument: (ref: OpenDocRef) => void;
   /** Close the open document. */
@@ -109,6 +119,20 @@ interface MobileStore {
    *  Tolerant of a missing file — resolves to an empty array, never throws. */
   loadPinnedPaths: () => Promise<void>;
 
+  /** Listing scroll offset per folder, so opening a document and coming
+   *  back lands where you were rather than at the top (Peter, 2026-08-13 —
+   *  the browser unmounts while the Reader is open, taking the DOM scroll
+   *  position with it). Session-only: not worth persisting, and a stale
+   *  offset into a folder that changed on another device is worse than
+   *  starting at the top. */
+  scrollOffsets: Record<string, number>;
+  rememberScroll: (relPath: string, offset: number) => void;
+
+  /** Pin or unpin a root-relative path, writing the shared
+   *  `.notesage/pins.json` the desktop reads. Re-reads the file first so a
+   *  pin made on the desktop since the last load is not clobbered. */
+  togglePin: (relPath: string) => Promise<void>;
+
   /** Test/reset helper. */
   reset: () => void;
 }
@@ -125,6 +149,7 @@ export const useMobileStore = create<MobileStore>()(
       groupMode: "none",
       viewMode: "list",
       pinnedPaths: [],
+      scrollOffsets: {},
 
       currentRelPath: () => {
         const stack = get().folderStack;
@@ -184,6 +209,8 @@ export const useMobileStore = create<MobileStore>()(
       enterFolder: (ref) =>
         set((s) => ({ folderStack: [...s.folderStack, ref], openDoc: null })),
 
+      jumpToFolder: (ref) => set({ folderStack: [ref], openDoc: null }),
+
       openDocument: (ref) =>
         set((s) => ({
           openDoc: ref,
@@ -231,6 +258,30 @@ export const useMobileStore = create<MobileStore>()(
       },
 
 
+      rememberScroll: (relPath, offset) =>
+        set((s) => ({ scrollOffsets: { ...s.scrollOffsets, [relPath]: offset } })),
+
+      togglePin: async (relPath) => {
+        // Read-modify-write against the file rather than the cached array:
+        // this file is shared with the desktop, and a stale in-memory copy
+        // would silently drop pins made there since app launch.
+        let current: string[] = [];
+        try {
+          current = parsePinsFileContent(await iosReadFile(PINS_FILE_REL_PATH));
+        } catch {
+          current = [];
+        }
+        const next = current.includes(relPath)
+          ? current.filter((p) => p !== relPath)
+          : [...current, relPath];
+        // `.notesage/` may not exist in a library the desktop has never
+        // written to. `iosEnsureDirectory` is idempotent (no dedupe), so this
+        // is safe on every call.
+        await iosEnsureDirectory(".notesage");
+        await iosWriteFile(PINS_FILE_REL_PATH, serializePinsFileContent(next));
+        set({ pinnedPaths: next });
+      },
+
       reset: () =>
         set({
           grantState: "unknown",
@@ -242,6 +293,7 @@ export const useMobileStore = create<MobileStore>()(
           groupMode: "none",
           viewMode: "list",
           pinnedPaths: [],
+          scrollOffsets: {},
             }),
     }),
     {

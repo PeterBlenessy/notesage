@@ -279,11 +279,24 @@ final class ChromeManager {
       .dropFirst()
       .sink { [weak self, weak container] expanded in
         guard let self, let container else { return }
-        NSLayoutConstraint.deactivate(
-          expanded ? self.searchCollapsedConstraints : self.searchExpandedConstraints)
-        NSLayoutConstraint.activate(
-          expanded ? self.searchExpandedConstraints : self.searchCollapsedConstraints)
-        UIView.animate(withDuration: 0.25) { container.layoutIfNeeded() }
+        let resize = {
+          NSLayoutConstraint.deactivate(
+            expanded ? self.searchCollapsedConstraints : self.searchExpandedConstraints)
+          NSLayoutConstraint.activate(
+            expanded ? self.searchExpandedConstraints : self.searchCollapsedConstraints)
+          UIView.animate(withDuration: 0.25) { container.layoutIfNeeded() }
+        }
+        if expanded {
+          resize()
+        } else {
+          // Collapsing: let the expanded content fade out FIRST, in place.
+          // The field capsule fills the container and the ✕ rides its
+          // trailing edge, so shrinking the container while that content is
+          // still visible drags the ✕ inward across the screen — the button
+          // appeared to fly to the middle before vanishing (Peter,
+          // 2026-08-13). The delay matches SEARCH_FADE below.
+          DispatchQueue.main.asyncAfter(deadline: .now() + SEARCH_FADE, execute: resize)
+        }
       }
     searchHost = host
   }
@@ -546,7 +559,24 @@ struct GlassSearchIsland: View {
         .opacity(model.expanded ? 1 : 0)
         .allowsHitTesting(model.expanded)
     }
-    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: model.expanded)
+    // A short LINEAR fade, not the old 0.35 s spring: the container's width
+    // animation is choreographed around it (see the `expanded` sink), and a
+    // spring's long tail left the expanded content visible — and therefore
+    // re-laying out — well into the collapse.
+    .animation(.easeOut(duration: SEARCH_FADE), value: model.expanded)
+    // Dismissing the keyboard (a tap outside the field) should put the island
+    // back too — an expanded bar with no keyboard and nothing typed is just
+    // stranded chrome (Peter, 2026-08-13).
+    //
+    // ONLY when the field is empty: losing focus with a live query is the
+    // user tapping away to READ the filtered list, and collapsing there would
+    // discard their filter and leave a filtered listing with no visible
+    // reason for being filtered. `model.expanded` guards re-entry, since
+    // `endSearch` itself drops focus.
+    .onChange(of: focused) { isFocused in
+      guard !isFocused, model.expanded, model.text.isEmpty else { return }
+      endSearch()
+    }
   }
 
   private var collapsedPill: some View {
@@ -670,6 +700,11 @@ struct GlassSearchIsland: View {
     .frame(maxWidth: .infinity)
   }
 }
+
+/// How long the search island's two states cross-fade. The container's width
+/// animation waits this long before collapsing, so the expanded content is
+/// already invisible by the time it would start sliding.
+let SEARCH_FADE: Double = 0.14
 
 /// Glass capsule for a tappable pill (button styles).
 struct GlassCapsule: ViewModifier {

@@ -110,6 +110,77 @@ extension LibraryAccess {
         return "Inbox/\(name)"
     }
 
+    /// The provider's official oEmbed endpoint for `url`, or nil when the URL
+    /// is not a video page we recognise. See `oembed_url` in the Rust crate
+    /// for why oEmbed is the whole story here rather than downloading video.
+    static func oembedEndpoint(for url: String) -> String? {
+        url.withCString { u in
+            guard let raw = notesage_capture_oembed_url(u) else { return nil }
+            defer { notesage_capture_string_free(raw) }
+            return String(cString: raw)
+        }
+    }
+
+    /// Write a VIDEO capture note: a labelled link to the source, the author,
+    /// and the provider's clean poster as a plain image. `oembedJson` may be
+    /// nil — a provider that answers with nothing still yields a usable note.
+    static func writeVideoCapture(
+        url: String, title: String?, tags: [String], oembedJson: String?
+    ) throws -> String {
+        let joinedTags = tags.joined(separator: ",")
+        let build: (String?) -> (String?, String?) = { json in
+            func withJson<R>(_ body: (UnsafePointer<CChar>?) -> R) -> R {
+                guard let json else { return body(nil) }
+                return json.withCString { body($0) }
+            }
+            return withJson { jsonPtr in
+                (
+                    callCapture({ u, t, _, _ in
+                        notesage_capture_video_rel_path(u, t, jsonPtr)
+                    }, url, title, nil, ""),
+                    callCapture({ u, t, sel, tg in
+                        notesage_capture_video_contents(u, t, sel, tg, jsonPtr)
+                    }, url, title, nil, joinedTags)
+                )
+            }
+        }
+        let (relPath, contents) = build(oembedJson)
+        guard let relPath, let contents else {
+            throw NSError(
+                domain: "Notesage", code: 3,
+                userInfo: [NSLocalizedDescriptionKey: "Could not build the video note"])
+        }
+
+        let root = try resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+
+        // Same dedupe as the other capture writers: the Rust name is the
+        // note's TITLE, so re-sharing the same video collides by design.
+        var name = (relPath as NSString).lastPathComponent
+        var target = inbox.appendingPathComponent(name)
+        var n = 1
+        let stem = (name as NSString).deletingPathExtension
+        while FileManager.default.fileExists(atPath: target.path) {
+            name = "\(stem)-\(n).md"
+            target = inbox.appendingPathComponent(name)
+            n += 1
+        }
+
+        var coordError: NSError?
+        var writeError: Error?
+        NSFileCoordinator().coordinate(
+            writingItemAt: target, options: .forReplacing, error: &coordError
+        ) { url in
+            do { try contents.data(using: .utf8)?.write(to: url) } catch { writeError = error }
+        }
+        if let coordError { throw coordError }
+        if let writeError { throw writeError }
+        return "Inbox/\(name)"
+    }
+
     /// Save the fetched page's RAW HTML as a real `.html` file in Inbox/
     /// (user-chosen "Page (HTML)" capture format). Named by the same
     /// timestamp-slug scheme as capture notes.
@@ -126,7 +197,15 @@ extension LibraryAccess {
                 html = baseTag + html
             }
         }
-        guard let relPath = callCapture(notesage_capture_rel_path, url, title, nil, "") else {
+        // Name from the PAGE's own title when the sharer's "title" is missing
+        // or is just the URL again (YouTube shares the URL) — otherwise the
+        // file lands as `https---youtube.com-watchv=…` (Peter, 2026-08-13).
+        let relPath = html.withCString { htmlPtr -> String? in
+            callCapture({ u, t, _, _ in
+                notesage_capture_rel_path_from_html(u, t, htmlPtr)
+            }, url, title, nil, "")
+        }
+        guard let relPath else {
             throw NSError(
                 domain: "Notesage", code: 2,
                 userInfo: [NSLocalizedDescriptionKey: "Could not derive a capture name"])

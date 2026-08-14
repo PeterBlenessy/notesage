@@ -366,6 +366,77 @@ pub async fn ios_rename_file(
     }
 }
 
+/// Create a directory at an exact relative path if it does not exist yet —
+/// unlike `ios_create_directory`, which dedupes and would turn a second call
+/// into `.notesage-1`. Used before writing the shared pins file (#680).
+#[tauri::command]
+pub async fn ios_ensure_directory(app: tauri::AppHandle, rel_path: String) -> Result<(), String> {
+    let rel = sanitize_rel_path(&rel_path)?;
+    if rel.is_empty() {
+        return Err("Refusing to operate on the library root".into());
+    }
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::ensure_directory(&app, &rel).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, &rel);
+        Err("ios_ensure_directory is only available on iOS".into())
+    }
+}
+
+/// Present the long-press preview + action menu (#680) and return the chosen
+/// item id (`None` = dismissed). Pure UI — the caller performs the action.
+#[tauri::command]
+pub async fn ios_entry_menu(
+    app: tauri::AppHandle,
+    spec: serde_json::Value,
+) -> Result<Option<String>, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::entry_menu(&app, spec).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, spec);
+        Err("ios_entry_menu is only available on iOS".into())
+    }
+}
+
+/// One row of the native action sheet. Declared HERE rather than reused from
+/// the plugin crate because that crate is an iOS-only dependency, while this
+/// command's signature has to compile on every target.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ContextMenuItemInput {
+    pub id: String,
+    pub title: String,
+    #[serde(default)]
+    pub destructive: bool,
+}
+
+/// Present a native action sheet for a long-pressed library item (#680) and
+/// return the chosen item id (`None` = cancelled). Pure UI; the caller
+/// performs whatever the choice means through the existing commands.
+#[tauri::command]
+pub async fn ios_context_menu(
+    app: tauri::AppHandle,
+    title: Option<String>,
+    items: Vec<ContextMenuItemInput>,
+    x: Option<f64>,
+    y: Option<f64>,
+) -> Result<Option<String>, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::context_menu(&app, title, items, x, y).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, title, items, x, y);
+        Err("ios_context_menu is only available on iOS".into())
+    }
+}
+
 /// Signal that the webview has painted its first frame, so the native
 /// launch cover can fade out (#675). Pure UI; no filesystem, no arguments.
 #[tauri::command]
@@ -390,14 +461,24 @@ pub async fn ios_text_prompt(
     title: String,
     placeholder: String,
     confirm_label: String,
+    value: Option<String>,
+    select_stem: Option<bool>,
 ) -> Result<Option<String>, String> {
     #[cfg(target_os = "ios")]
     {
-        ios_impl::text_prompt(&app, &title, &placeholder, &confirm_label).await
+        ios_impl::text_prompt(
+            &app,
+            &title,
+            &placeholder,
+            &confirm_label,
+            value.as_deref(),
+            select_stem.unwrap_or(false),
+        )
+        .await
     }
     #[cfg(not(target_os = "ios"))]
     {
-        let _ = (&app, title, placeholder, confirm_label);
+        let _ = (&app, title, placeholder, confirm_label, value, select_stem);
         Err("ios_text_prompt is only available on iOS".into())
     }
 }
@@ -515,6 +596,7 @@ mod ios_impl {
                 children: None,
                 hidden: e.hidden,
                 modified: e.modified,
+                child_count: e.child_count,
             })
             .collect()
     }
@@ -559,6 +641,37 @@ mod ios_impl {
         app.notesage_ios().rename_file(rel, new_name).map_err(|e| e.to_string())
     }
 
+    pub async fn ensure_directory(app: &AppHandle, rel: &str) -> Result<(), String> {
+        app.notesage_ios().ensure_directory(rel).map_err(|e| e.to_string())
+    }
+
+    pub async fn entry_menu(
+        app: &AppHandle,
+        spec: serde_json::Value,
+    ) -> Result<Option<String>, String> {
+        app.notesage_ios().entry_menu(spec).map_err(|e| e.to_string())
+    }
+
+    pub async fn context_menu(
+        app: &AppHandle,
+        title: Option<String>,
+        items: Vec<super::ContextMenuItemInput>,
+        x: Option<f64>,
+        y: Option<f64>,
+    ) -> Result<Option<String>, String> {
+        let items = items
+            .into_iter()
+            .map(|item| tauri_plugin_notesage_ios::ContextMenuItem {
+                id: item.id,
+                title: item.title,
+                destructive: item.destructive,
+            })
+            .collect();
+        app.notesage_ios()
+            .context_menu(tauri_plugin_notesage_ios::ContextMenuArgs { title, items, x, y })
+            .map_err(|e| e.to_string())
+    }
+
     pub async fn content_ready(app: &AppHandle) -> Result<(), String> {
         app.notesage_ios().content_ready().map_err(|e| e.to_string())
     }
@@ -568,9 +681,11 @@ mod ios_impl {
         title: &str,
         placeholder: &str,
         confirm_label: &str,
+        value: Option<&str>,
+        select_stem: bool,
     ) -> Result<Option<String>, String> {
         app.notesage_ios()
-            .text_prompt(title, placeholder, confirm_label)
+            .text_prompt(title, placeholder, confirm_label, value, select_stem)
             .map_err(|e| e.to_string())
     }
 

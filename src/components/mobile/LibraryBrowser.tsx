@@ -5,13 +5,19 @@ import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory, iosCreateDirectory, iosTextPrompt, iosQuickLook } from "@/lib/ios-api";
 import { toast } from "sonner";
 import { useMobileStore } from "@/stores/mobile-store";
+import type { EntryActionContext } from "@/lib/mobile-entry-actions";
 import { FileRow, classifyFile } from "./FileRow";
 import { GalleryView } from "./GalleryView";
+import { InboxCard } from "./InboxCard";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
 import { t } from "@/lib/i18n";
 import { useLocale } from "@/lib/useLocale";
+
+/** The share extension's landing folder. A literal by contract: the Rust
+ *  capture crate writes to `Inbox/` and the desktop reads it there. */
+const INBOX_NAME = "Inbox";
 
 type LoadState =
   | { status: "loading" }
@@ -26,6 +32,7 @@ export function LibraryBrowser() {
   const libraryName = useMobileStore((s) => s.libraryName);
   const folderStack = useMobileStore((s) => s.folderStack);
   const enterFolder = useMobileStore((s) => s.enterFolder);
+  const jumpToFolder = useMobileStore((s) => s.jumpToFolder);
   const openDocument = useMobileStore((s) => s.openDocument);
   const goBack = useMobileStore((s) => s.goBack);
   const goToDepth = useMobileStore((s) => s.goToDepth);
@@ -36,6 +43,7 @@ export function LibraryBrowser() {
   const setGroupMode = useMobileStore((s) => s.setGroupMode);
   const recentlyRead = useMobileStore((s) => s.recentlyRead);
   const pinnedPaths = useMobileStore((s) => s.pinnedPaths);
+  const togglePin = useMobileStore((s) => s.togglePin);
   const loadPinnedPaths = useMobileStore((s) => s.loadPinnedPaths);
   const viewMode = useMobileStore((s) => s.viewMode);
   const setViewMode = useMobileStore((s) => s.setViewMode);
@@ -101,6 +109,32 @@ export function LibraryBrowser() {
   // that gesture could never fire (removed). This tracks the pull on the
   // real scroller: drag down from the top past the threshold to reload.
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // Restore the folder's scroll position once its rows exist (#680 follow-up:
+  // opening a document unmounts this browser, so the DOM offset is gone by
+  // the time we come back). Guarded by a ref so a later refresh — pull, or
+  // the foreground reload — never yanks the user back up.
+  const restoredFor = useRef<string | null>(null);
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el || state.status !== "ready" || state.entries.length === 0) return;
+    if (restoredFor.current === currentRelPath) return;
+    restoredFor.current = currentRelPath;
+    const offset = useMobileStore.getState().scrollOffsets[currentRelPath] ?? 0;
+    if (offset > 0) el.scrollTop = offset;
+  }, [state, currentRelPath]);
+
+  // Record the offset as it changes, cheaply: rAF-coalesced, and written to
+  // the store rather than React state so scrolling never re-renders the list.
+  const scrollTick = useRef(0);
+  const onScroll = () => {
+    if (scrollTick.current) return;
+    scrollTick.current = requestAnimationFrame(() => {
+      scrollTick.current = 0;
+      const el = scrollerRef.current;
+      if (el) useMobileStore.getState().rememberScroll(currentRelPath, el.scrollTop);
+    });
+  };
+  useEffect(() => () => cancelAnimationFrame(scrollTick.current), []);
   const pullStart = useRef<number | null>(null);
   const [pullPx, setPullPx] = useState(0);
   const [pullBusy, setPullBusy] = useState(false);
@@ -210,22 +244,49 @@ export function LibraryBrowser() {
 
     // Date buckets, newest first — undated entries sink to "Older".
     const now = new Date();
+    // "Recently changed" for the last week, then one section per month
+    // (#684). Coarser than the old Today / Yesterday / Previous 7 Days, and
+    // deliberately so: the rows no longer carry a date line, so the header is
+    // now the ONLY place the date shows, and a header that changes every day
+    // fragments a folder into slivers. Months are stable and scannable.
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
-    const startOfYesterday = startOfToday - 86400;
     const weekAgo = startOfToday - 6 * 86400;
-    const buckets: Array<{ key: string; title: string; items: FileEntry[] }> = [
-      { key: "today", title: t("section.today"), items: [] },
-      { key: "yesterday", title: t("section.yesterday"), items: [] },
-      { key: "week", title: t("section.previous7Days"), items: [] },
-      { key: "older", title: t("section.older"), items: [] },
-    ];
+    const recent: FileEntry[] = [];
+    const byMonth = new Map<string, { title: string; sortKey: number; items: FileEntry[] }>();
     for (const file of files) {
       const m = file.modified ?? 0;
-      const bucket =
-        m >= startOfToday ? 0 : m >= startOfYesterday ? 1 : m >= weekAgo ? 2 : 3;
-      buckets[bucket].items.push(file);
+      if (m >= weekAgo) {
+        recent.push(file);
+        continue;
+      }
+      const d = new Date(m * 1000);
+      const key = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, "0")}`;
+      let bucket = byMonth.get(key);
+      if (!bucket) {
+        bucket = {
+          // The year is dropped within the current year, as everywhere else
+          // in the app — "August" reads better than "August 2026" in 2026.
+          title: d.toLocaleDateString(undefined, {
+            month: "long",
+            year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",
+          }),
+          sortKey: -(d.getFullYear() * 12 + d.getMonth()),
+          items: [],
+        };
+        byMonth.set(key, bucket);
+      }
+      bucket.items.push(file);
     }
-    return [...sections, ...buckets.filter((b) => b.items.length > 0)];
+    const months = [...byMonth.entries()]
+      .sort((a, b) => a[1].sortKey - b[1].sortKey)
+      .map(([key, bucket]) => ({ key, title: bucket.title, items: bucket.items }));
+    return [
+      ...sections,
+      ...(recent.length > 0
+        ? [{ key: "recent-changed", title: t("section.recentlyChanged"), items: recent }]
+        : []),
+      ...months,
+    ];
   };
 
   const onActivate = (entry: FileEntry) => {
@@ -254,6 +315,14 @@ export function LibraryBrowser() {
   // note's title will become the filename once editing lands) and
   // long-press offers New Folder via the native UIMenu.
   const atRoot = folderStack.length === 0;
+
+  // One action set for both layouts (#680) — built here so the pin state and
+  // the listing reload are wired once rather than per row.
+  const actionContext: EntryActionContext = {
+    isPinned: (relPath) => pinnedPaths.includes(relPath),
+    togglePin,
+    onChanged: () => void load(true),
+  };
 
   const promptName = useCallback(async (title: string): Promise<string | null> => {
     try {
@@ -319,14 +388,19 @@ export function LibraryBrowser() {
         // second line.
         subtitle:
           folderStack.length > 0 ? ancestors.map((f) => f.name).join(" › ") : undefined,
-        menu:
-          folderStack.length > 0
+        // Ancestors (when nested) plus a PERMANENT Inbox jump: shared items
+        // land there, and hunting for the folder in a long root listing was
+        // the tedious part (Peter, 2026-08-13). Reachable from any depth.
+        menu: [
+          ...(folderStack.length > 0
             ? ancestors.map((f, depth) => ({
                 id: `jump-${depth}`,
                 title: f.name,
                 icon: depth === 0 ? "house" : "folder",
               }))
-            : undefined,
+            : []),
+          { id: "goto-inbox", title: INBOX_NAME, icon: "tray" },
+        ],
       },
       // Files-style "..." view-options menu (Peter's design): view mode on
       // top (List / Gallery, #633), sort selection below its divider, room
@@ -425,6 +499,7 @@ export function LibraryBrowser() {
       "group-recent": () => setGroupMode("recent"),
       "group-date": () => setGroupMode("date"),
       "group-type": () => setGroupMode("type"),
+      "goto-inbox": () => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME }),
       "create-note": () => createNote(),
       "create-folder": () => void createFolder(),
       "search-query": (value?: string) => setQuery(value ?? ""),
@@ -487,6 +562,7 @@ export function LibraryBrowser() {
       <div
         key={currentRelPath}
         ref={scrollerRef}
+        onScroll={onScroll}
         onTouchStart={onPullStart}
         onTouchMove={onPullMove}
         onTouchEnd={onPullEnd}
@@ -566,6 +642,23 @@ export function LibraryBrowser() {
                 ? state.entries.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()))
                 : state.entries,
             );
+            // The Inbox card sits above whatever the listing shows, so no
+            // sort or grouping choice can move it — and it is excluded from
+            // the list below so the folder is not offered twice.
+            const inboxEntry =
+              folderStack.length === 0 && !query
+                ? state.entries.find((e) => e.is_directory && e.name === INBOX_NAME)
+                : undefined;
+            const inboxCard = inboxEntry ? (
+              // The count rides along on the listing (#684) — no extra read.
+              <InboxCard
+                count={inboxEntry.child_count}
+                onOpen={() => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME })}
+              />
+            ) : null;
+            const listed = inboxCard
+              ? visible.filter((e) => !(e.is_directory && e.name === INBOX_NAME))
+              : visible;
             if (state.entries.length === 0) return <EmptyFolder />;
             if (visible.length === 0)
               return (
@@ -578,12 +671,16 @@ export function LibraryBrowser() {
               );
             if (viewMode === "gallery") {
               return (
+                <>
+                  {inboxCard}
                 <GalleryView
-                  entries={visible}
+                  entries={listed}
                   currentFolderName={currentName}
                   theme={theme}
                   onActivate={onActivate}
+                  actionContext={actionContext}
                 />
+                </>
               );
             }
             // Grouped rendering (#652): one <ul> per section with a sticky
@@ -591,7 +688,8 @@ export function LibraryBrowser() {
             // markup below has exactly one shape.
             return (
               <>
-                {groupEntries(visible).map((section) => (
+                {inboxCard}
+                {groupEntries(listed).map((section) => (
                   <section key={section.key}>
                     {section.title && (
                       <h2 className="sticky top-0 z-10 bg-background/85 px-4 py-1.5 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
@@ -605,6 +703,7 @@ export function LibraryBrowser() {
                             entry={entry}
                             onActivate={onActivate}
                             onChanged={() => void load(true)}
+                            actionContext={actionContext}
                           />
                         </li>
                       ))}

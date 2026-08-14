@@ -18,11 +18,76 @@ const ACTION_WIDTH = 72;
  *  edge action (full-swipe-to-delete, #618) — the Mail/Notes gesture. */
 const FULL_SWIPE_EXTRA = 96;
 /** Pointer movement (px) before a press counts as a drag rather than a tap —
- *  keeps a few pixels of jitter from hijacking a normal row tap. */
+ *  keeps a few pixels of jitter from hijacking a normal row tap, and is the
+ *  point at which the gesture's axis is decided. */
 const DRAG_THRESHOLD = 8;
+/** How much more vertical than horizontal a gesture must be before it is
+ *  handed to the scroller. Slightly forgiving (a thumb swipe arcs, so it
+ *  always carries some vertical), but nowhere near enough to hijack a
+ *  deliberate scroll. */
+const HORIZONTAL_BIAS = 0.75;
+/** Trailing corner radius once the FIRST action has fully emerged. */
+const RADIUS_REVEALED = 14;
+/** Trailing corner radius at maximum drag — near-circular on a ~60 px row,
+ *  deliberately short of a true pill so the row still reads as a row. */
+const RADIUS_MAX = 26;
+
+/**
+ * How far action `index` of `count` has emerged, 0 → 1.
+ *
+ * The strip is pinned to the right edge and the row slides left over it, so
+ * actions are uncovered RIGHT TO LEFT: the last action (Delete) is out before
+ * the one before it (Share) has begun. Each action therefore gets its own
+ * progress over its own 72 px of travel rather than sharing one global ramp —
+ * Delete finishes zooming in as Share starts, which is the Notes cadence.
+ */
+export function actionRevealProgress(offsetPx: number, index: number, count: number): number {
+  const start = (count - 1 - index) * ACTION_WIDTH;
+  return Math.max(0, Math.min(1, (Math.abs(offsetPx) - start) / ACTION_WIDTH));
+}
+
+/**
+ * Trailing corner radius for the row content at a given drag distance.
+ *
+ * Two phases, which is what gives it the "sticky" feel: square → 14 px over
+ * the first action's reveal (quick, so the row detaches from the edge as soon
+ * as anything shows), then a slow creep 14 → 26 px across the rest of the
+ * travel, including the full-swipe overshoot.
+ */
+export function rowCornerRadius(offsetPx: number, count: number): number {
+  if (count <= 0) return 0;
+  const dragged = Math.abs(offsetPx);
+  if (dragged <= ACTION_WIDTH) {
+    return RADIUS_REVEALED * (dragged / ACTION_WIDTH);
+  }
+  const tail = count * ACTION_WIDTH + FULL_SWIPE_EXTRA - ACTION_WIDTH;
+  const t = tail > 0 ? Math.min(1, (dragged - ACTION_WIDTH) / tail) : 1;
+  return RADIUS_REVEALED + (RADIUS_MAX - RADIUS_REVEALED) * t;
+}
+
+/**
+ * Which way a gesture went, decided ONCE at `DRAG_THRESHOLD` and then locked.
+ *
+ * The lock is what makes a swipe survive a thumb that arcs: after the axis is
+ * horizontal, later vertical movement is ignored entirely instead of
+ * gradually turning the gesture into a scroll. `scroll` is terminal too — a
+ * gesture that started vertical never becomes a swipe, however far it later
+ * travels sideways.
+ */
+export type DragAxis = "undecided" | "swipe" | "scroll";
+
+/** Decide the axis from the movement so far. Pure, so the angle tolerance is
+ *  testable rather than something to re-derive on a phone. */
+export function resolveDragAxis(dx: number, dy: number): DragAxis {
+  const [ax, ay] = [Math.abs(dx), Math.abs(dy)];
+  if (Math.max(ax, ay) < DRAG_THRESHOLD) return "undecided";
+  return ax >= ay * HORIZONTAL_BIAS ? "swipe" : "scroll";
+}
 
 interface DragState {
   startX: number;
+  startY: number;
+  axis: DragAxis;
   startOffset: number;
   isDrag: boolean;
   lastOffset: number;
@@ -53,17 +118,14 @@ export function SwipeRevealRow({
   const suppressClickRef = useRef(false);
 
   const offset = dragOffset ?? (open ? -revealWidth : 0);
-  // 0 → fully closed, 1 → strip fully revealed. Drives BOTH polish effects
-  // (#651, Notes reference): the action circles zoom in with the swipe (and
-  // zoom back out on release/close), and the row content's trailing corners
-  // round in step with the drag — never an instant square→rounded jump.
-  const revealProgress = revealWidth > 0 ? Math.min(1, Math.abs(offset) / revealWidth) : 0;
   const animating = dragOffset === null;
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (actions.length === 0) return;
     dragRef.current = {
       startX: e.clientX,
+      startY: e.clientY,
+      axis: "undecided",
       startOffset: open ? -revealWidth : 0,
       isDrag: false,
       lastOffset: open ? -revealWidth : 0,
@@ -72,11 +134,21 @@ export function SwipeRevealRow({
 
   const onPointerMove = (e: React.PointerEvent) => {
     const drag = dragRef.current;
-    if (!drag) return;
+    if (!drag || drag.axis === "scroll") return;
     const delta = e.clientX - drag.startX;
-    if (!drag.isDrag) {
-      if (Math.abs(delta) < DRAG_THRESHOLD) return;
+    if (drag.axis === "undecided") {
+      drag.axis = resolveDragAxis(delta, e.clientY - drag.startY);
+      if (drag.axis !== "swipe") return;
       drag.isDrag = true;
+      // Capture the pointer so the row keeps receiving moves even if the
+      // finger wanders off it — without this a thumb that drifts a few pixels
+      // onto the next row silently ends the swipe mid-gesture.
+      try {
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+      } catch {
+        // Not all environments implement capture (jsdom); the gesture still
+        // works, it is just less forgiving.
+      }
     }
     const next = Math.min(
       0,
@@ -132,8 +204,10 @@ export function SwipeRevealRow({
               buttons with small captions beneath — not full-height panes.
               Delete keeps the destructive red carve-out; everything else
               stays neutral per the strict palette. */}
-          {actions.map((action) => {
+          {actions.map((action, index) => {
             const Icon = action.icon;
+            // Per-action, not shared: see `actionRevealProgress`.
+            const progress = actionRevealProgress(offset, index, actions.length);
             return (
               <button
                 key={action.id}
@@ -154,8 +228,8 @@ export function SwipeRevealRow({
                       : "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]",
                   )}
                   style={{
-                    transform: `scale(${0.4 + 0.6 * revealProgress})`,
-                    opacity: 0.2 + 0.8 * revealProgress,
+                    transform: `scale(${0.4 + 0.6 * progress})`,
+                    opacity: 0.2 + 0.8 * progress,
                     transition: animating
                       ? "transform 260ms cubic-bezier(0.34, 1.4, 0.5, 1), opacity 200ms ease"
                       : "none",
@@ -166,7 +240,7 @@ export function SwipeRevealRow({
                 <span
                   className="text-[11px] font-medium text-muted-foreground"
                   style={{
-                    opacity: revealProgress,
+                    opacity: progress,
                     transition: animating ? "opacity 200ms ease" : "none",
                   }}
                 >
@@ -184,9 +258,14 @@ export function SwipeRevealRow({
         onPointerCancel={endDrag}
         onClickCapture={onContentClickCapture}
         style={{
+          // Tell WebKit we own horizontal panning and it owns vertical. This
+          // is the difference between a swipe that works and one that gets
+          // cancelled the instant the browser decides the gesture is a
+          // scroll — the reason swipes "sometimes didn't take".
+          touchAction: "pan-y",
           transform: `translateX(${offset}px)`,
-          borderTopRightRadius: 14 * revealProgress,
-          borderBottomRightRadius: 14 * revealProgress,
+          borderTopRightRadius: rowCornerRadius(offset, actions.length),
+          borderBottomRightRadius: rowCornerRadius(offset, actions.length),
           transition: animating
             ? "transform 240ms cubic-bezier(0.25, 0.8, 0.35, 1), border-top-right-radius 240ms ease, border-bottom-right-radius 240ms ease"
             : "none",

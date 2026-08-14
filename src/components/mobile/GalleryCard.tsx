@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { Folder } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
+import { presentEntryMenu, type EntryActionContext } from "@/lib/mobile-entry-actions";
+import { useLongPress } from "./useLongPress";
 import { formatModified, iconFor } from "./FileRow";
 import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
 
@@ -11,6 +13,10 @@ interface GalleryCardProps {
   currentFolderName: string;
   theme: "light" | "dark";
   onActivate: (entry: FileEntry) => void;
+  /** Long-press actions (#680). Gallery cards have no swipe affordance —
+   *  the grid scrolls and a horizontal drag on a card is ambiguous — so
+   *  hold-to-act is the only route to Share / Rename / Pin / Delete here. */
+  actionContext: EntryActionContext;
 }
 
 /**
@@ -21,7 +27,16 @@ interface GalleryCardProps {
  * whole gallery, so opening a folder with hundreds of notes never bursts.
  * Directories never fetch a thumbnail at all — a folder icon is immediate.
  */
-export function GalleryCard({ entry, currentFolderName, theme, onActivate }: GalleryCardProps) {
+export function GalleryCard({
+  entry,
+  currentFolderName,
+  theme,
+  onActivate,
+  actionContext,
+}: GalleryCardProps) {
+  const longPress = useLongPress((rect) => {
+    void presentEntryMenu(entry, rect, actionContext);
+  });
   const rootRef = useRef<HTMLButtonElement | null>(null);
   const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(
     entry.is_directory ? { kind: "icon" } : null,
@@ -70,6 +85,7 @@ export function GalleryCard({ entry, currentFolderName, theme, onActivate }: Gal
       ref={rootRef}
       type="button"
       onClick={() => onActivate(entry)}
+      {...longPress}
       className="ios-press-row flex flex-col items-start gap-1.5 rounded-lg text-left"
     >
       <span className="relative aspect-square w-full overflow-hidden rounded-lg bg-muted">

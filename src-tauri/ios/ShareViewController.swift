@@ -38,12 +38,14 @@ final class ShareViewController: UIViewController {
     private static let formatKey = "capture-format"
 
     private enum CaptureFormat: String, CaseIterable {
+        case video
         case article
         case link
         case html
 
         var label: String {
             switch self {
+            case .video: return L("share.formatVideo")
             case .article: return L("share.formatArticle")
             case .link: return L("share.formatLink")
             case .html: return L("share.formatHtml")
@@ -53,6 +55,17 @@ final class ShareViewController: UIViewController {
         var fileExtension: String {
             self == .html ? "html" : "md"
         }
+    }
+
+    /// Formats worth offering for THIS url. A video page has no article to
+    /// extract and its saved HTML is a player that cannot play (#682), so
+    /// those two are hidden there and Video is offered instead — and only
+    /// there, since it needs a provider oEmbed endpoint to describe.
+    private var availableFormats: [CaptureFormat] {
+        guard let url = sharedUrl, LibraryAccess.oembedEndpoint(for: url) != nil else {
+            return CaptureFormat.allCases.filter { $0 != .video }
+        }
+        return [.video, .link]
     }
 
     private var format: CaptureFormat =
@@ -178,7 +191,7 @@ final class ShareViewController: UIViewController {
     }
 
     private func makeFormatMenu() -> UIMenu {
-        UIMenu(children: CaptureFormat.allCases.map { f in
+        UIMenu(children: availableFormats.map { f in
             UIAction(title: f.label, state: f == format ? .on : .off) { [weak self] _ in
                 guard let self else { return }
                 self.format = f
@@ -263,6 +276,13 @@ final class ShareViewController: UIViewController {
             return
         }
         sharedUrl = url
+        // The remembered format may not apply to THIS url — a video page
+        // offers only Video and Link. Fall to the first available rather than
+        // showing a selection the save path would not honour.
+        if !availableFormats.contains(format) {
+            format = availableFormats.first ?? .link
+        }
+        formatButton?.menu = makeFormatMenu()
         let title = sharedTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
         previewLabel.text = (title?.isEmpty == false) ? "\(title!)\n\(url)" : url
         saveButton?.isEnabled = true
@@ -312,6 +332,19 @@ final class ShareViewController: UIViewController {
         switch format {
         case .link:
             saveLink(url: url)
+        case .video:
+            // Metadata only, from the provider's own public oEmbed endpoint —
+            // see `oembed_url` in the capture crate for why we do not fetch
+            // the video itself.
+            fetchOembed(url: url) { [weak self] json in
+                guard let self else { return }
+                if (try? LibraryAccess.writeVideoCapture(
+                    url: url, title: self.sharedTitle, tags: [], oembedJson: json)) != nil {
+                    self.finish()
+                } else {
+                    self.saveLink(url: url)
+                }
+            }
         case .article, .html:
             fetch(url: url) { [weak self] html in
                 guard let self else { return }
@@ -361,6 +394,32 @@ final class ShareViewController: UIViewController {
                 } else {
                     completion(nil)
                 }
+            }
+        }.resume()
+    }
+
+    /// Fetch the provider's oEmbed JSON (5 s, 256 KB — the payload is five
+    /// short fields). nil on any failure; the note still builds without it.
+    private func fetchOembed(url: String, completion: @escaping (String?) -> Void) {
+        guard let endpoint = LibraryAccess.oembedEndpoint(for: url),
+              let parsed = URL(string: endpoint)
+        else {
+            completion(nil)
+            return
+        }
+        var request = URLRequest(url: parsed)
+        request.timeoutInterval = 5
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        URLSession(configuration: .ephemeral).dataTask(with: request) { data, response, _ in
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+            DispatchQueue.main.async {
+                guard ok, let data, data.count <= 256 * 1024,
+                      let json = String(data: data, encoding: .utf8)
+                else {
+                    completion(nil)
+                    return
+                }
+                completion(json)
             }
         }.resume()
     }

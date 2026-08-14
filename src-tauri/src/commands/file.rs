@@ -15,6 +15,11 @@ pub struct FileEntry {
     /// the iOS library listing (#588); absent on every desktop path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modified: Option<f64>,
+    /// Number of visible children, for DIRECTORIES only. Populated by the iOS
+    /// library listing (#684) so folder rows can show a count without one IPC
+    /// round trip per row; absent on every desktop path.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_count: Option<u32>,
 }
 
 #[tauri::command]
@@ -107,6 +112,7 @@ async fn list_directory_recursive(
             hidden: is_hidden,
             children,
             modified: None,
+            child_count: None,
         });
     }
 
@@ -168,6 +174,7 @@ pub async fn list_files_shallow(path: String, show_hidden: Option<bool>) -> Resu
             hidden: is_hidden,
             children: None,
             modified: None,
+            child_count: None,
         });
     }
 

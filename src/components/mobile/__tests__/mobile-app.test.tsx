@@ -79,6 +79,10 @@ const ALLOWED = new Set([
   "ios_text_prompt",
   // Pure UI signal: drops the native launch cover once painted (#675).
   "ios_content_ready",
+  // Long-press action sheet + its idempotent dir helper (#680).
+  "ios_context_menu",
+  "ios_entry_menu",
+  "ios_ensure_directory",
 ]);
 
 /** Commands that would mutate paths OUTSIDE the granted library, or reach
@@ -269,14 +273,22 @@ describe("breadcrumb island (#615)", () => {
     // The island carries the PATH too — it replaces the in-content title +
     // breadcrumb row, which must not render while native chrome is active.
     expect(captured.topCenter?.subtitle).toBe("Notesage › Projects");
-    expect(captured.topCenter?.menu?.map((m) => m.title)).toEqual(["Notesage", "Projects"]);
+    // Ancestors first, then the permanent Inbox jump (#683) — shared items
+    // land there and must be one tap away from any depth.
+    expect(captured.topCenter?.menu?.map((m) => m.title)).toEqual([
+      "Notesage",
+      "Projects",
+      "Inbox",
+    ]);
     expect(captured.topCenter?.menu?.[0]?.id).toBe("jump-0");
+    const rows = captured.topCenter?.menu ?? [];
+    expect(rows[rows.length - 1]?.id).toBe("goto-inbox");
     await waitFor(() =>
       expect(screen.queryByRole("heading", { name: "Deep" })).toBeNull(),
     );
   });
 
-  it("renders a passive breadcrumb (no menu) at the library root", async () => {
+  it("offers only the Inbox jump at the root — there are no ancestors to list", async () => {
     let captured: CapturedChromeSpec = {};
     setMockInvokeHandler("ios_set_chrome", (args) => {
       captured = (args as { spec: CapturedChromeSpec }).spec;
@@ -286,7 +298,7 @@ describe("breadcrumb island (#615)", () => {
 
     renderWithProviders(<LibraryBrowser />);
     await waitFor(() => expect(captured.topCenter?.title).toBe("Notesage"));
-    expect(captured.topCenter?.menu).toBeUndefined();
+    expect(captured.topCenter?.menu?.map((m) => m.id)).toEqual(["goto-inbox"]);
   });
 });
 
@@ -348,21 +360,34 @@ describe("group by (#652)", () => {
     expect(headings).not.toContain("PDFs");
   });
 
-  it("buckets by modified date when grouping by date", async () => {
+  it("groups by 'Recently changed' then by month when grouping by date", async () => {
     const now = Date.now() / 1000;
+    const old = new Date();
+    old.setMonth(old.getMonth() - 2);
+    const monthName = old.toLocaleDateString(undefined, { month: "long" });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "today.md", path: "today.md", is_directory: false, hidden: false, modified: now },
-      { name: "ancient.md", path: "ancient.md", is_directory: false, hidden: false, modified: now - 40 * 86400 },
+      {
+        name: "ancient.md",
+        path: "ancient.md",
+        is_directory: false,
+        hidden: false,
+        modified: old.getTime() / 1000,
+      },
     ]);
     useMobileStore.setState({ groupMode: "date" });
 
     renderWithProviders(<LibraryBrowser />);
     await screen.findByText("today.md");
-    expect(screen.getByRole("heading", { name: "Today" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Older" })).toBeTruthy();
+    // Coarser than Today/Yesterday on purpose: the rows no longer carry a
+    // date, so a header that changes daily would shred the folder (#684).
+    expect(screen.getByRole("heading", { name: "Recently changed" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: monthName })).toBeTruthy();
     // No grouping headers leak into the default mode.
     useMobileStore.setState({ groupMode: "none" });
-    await waitFor(() => expect(screen.queryByRole("heading", { name: "Today" })).toBeNull());
+    await waitFor(() =>
+      expect(screen.queryByRole("heading", { name: "Recently changed" })).toBeNull(),
+    );
   });
 });
 
@@ -400,7 +425,7 @@ describe("native QuickLook routing", () => {
 });
 
 describe("swipe delete (#618)", () => {
-  it("the Delete action removes the file and refreshes the listing", async () => {
+  it("the Delete action removes the file and refreshes the listing once confirmed", async () => {
     let entries = [
       { name: "doomed.md", path: "doomed.md", is_directory: false, hidden: false },
       { name: "keeper.md", path: "keeper.md", is_directory: false, hidden: false },
@@ -411,6 +436,8 @@ describe("swipe delete (#618)", () => {
       entries = entries.filter((e) => e.path !== "doomed.md");
       return null;
     });
+    // Delete confirms natively (#680) — accept the sheet.
+    setMockInvokeHandler("ios_context_menu", () => "delete");
 
     renderWithProviders(<LibraryBrowser />);
     await screen.findByText("doomed.md");
@@ -424,6 +451,23 @@ describe("swipe delete (#618)", () => {
     await waitFor(() => expect(calledCommands()).toContain("ios_delete_file"));
     await waitFor(() => expect(screen.queryByText("doomed.md")).toBeNull());
     expect(screen.getByText("keeper.md")).toBeTruthy();
+  });
+
+  it("dismissing the confirmation leaves the file alone", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "doomed.md", path: "doomed.md", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("ios_delete_file", () => null);
+    // Cancelled sheet — the native side resolves with no id.
+    setMockInvokeHandler("ios_context_menu", () => null);
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("doomed.md");
+    fireEvent.click(screen.getAllByRole("button", { name: /Delete/, hidden: true })[0]);
+
+    await waitFor(() => expect(calledCommands()).toContain("ios_context_menu"));
+    expect(calledCommands()).not.toContain("ios_delete_file");
+    expect(screen.getByText("doomed.md")).toBeTruthy();
   });
 
   it("directories expose no swipe actions (folder deletion stays off the surface)", async () => {
@@ -1612,5 +1656,45 @@ describe("library re-pick", () => {
     fireEvent.click(btn);
     await waitFor(() => expect(calledCommands()).toContain("ios_pick_library_folder"));
     expect(toast.error).not.toHaveBeenCalled();
+  });
+});
+
+describe("Inbox shortcut (#683)", () => {
+  it("pins Inbox above the root listing and omits it from the list below", async () => {
+    // The count rides along on the listing itself (#684) — no second read.
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 2 },
+      { name: "Zebra", path: "Zebra", is_directory: true, hidden: false, child_count: 7 },
+    ]);
+
+    renderWithProviders(<LibraryBrowser />);
+    // The card carries the count; the folder appears exactly once overall.
+    await waitFor(() => expect(screen.getByText("2")).toBeTruthy());
+    expect(screen.getAllByText("Inbox")).toHaveLength(1);
+    expect(screen.getByText("Zebra")).toBeTruthy();
+  });
+
+  it("jumps to Inbox from the card, replacing the stack rather than nesting", async () => {
+    setMockInvokeHandler("ios_list_directory", (args) => {
+      const rel = (args as { relPath: string }).relPath;
+      if (rel === "") {
+        return [{ name: "Inbox", path: "Inbox", is_directory: true, hidden: false }];
+      }
+      return [];
+    });
+    useMobileStore.getState().enterFolder({ relPath: "Deep", name: "Deep" });
+    useMobileStore.getState().jumpToFolder({ relPath: "Inbox", name: "Inbox" });
+    expect(useMobileStore.getState().folderStack).toEqual([
+      { relPath: "Inbox", name: "Inbox" },
+    ]);
+  });
+
+  it("shows no card when nothing has ever been shared", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Ideas", path: "Ideas", is_directory: true, hidden: false },
+    ]);
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Ideas");
+    expect(screen.queryByText("Inbox")).toBeNull();
   });
 });

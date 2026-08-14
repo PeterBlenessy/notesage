@@ -29,6 +29,29 @@ struct TextPromptArgs: Decodable {
   let title: String
   let placeholder: String
   let confirmLabel: String
+  /// Pre-filled, editable text (rename starts from the current name).
+  let value: String?
+  /// Select only the filename stem, so typing replaces the name but keeps
+  /// the extension — what Files and Finder do.
+  let selectStem: Bool?
+}
+
+struct ContextMenuItemSpec: Decodable {
+  let id: String
+  let title: String
+  /// Rendered in red and sunk to the bottom of the sheet, per iOS.
+  let destructive: Bool?
+}
+
+struct ContextMenuArgs: Decodable {
+  /// Shown as the sheet's title — the file being acted on.
+  let title: String?
+  let items: [ContextMenuItemSpec]
+  /// Where the long press happened, in webview (CSS pixel) coordinates.
+  /// Only used to anchor the popover on iPad; iPhone sheets come up from
+  /// the bottom edge regardless.
+  let x: Double?
+  let y: Double?
 }
 
 // MARK: - Keyboard accessory removal
@@ -571,9 +594,11 @@ class NotesageIosPlugin: Plugin {
           removeObserver()
           invoke.resolve(["text": alert?.textFields?.first?.text ?? ""])
         }
-        confirm.isEnabled = false
+        // A pre-filled field is already valid; an empty one is not.
+        confirm.isEnabled = !(args.value ?? "").trimmingCharacters(in: .whitespaces).isEmpty
         alert.addTextField { field in
           field.placeholder = args.placeholder
+          field.text = args.value
           field.autocapitalizationType = .sentences
           field.clearButtonMode = .whileEditing
           // Enable the confirm action only once there is real input.
@@ -589,7 +614,112 @@ class NotesageIosPlugin: Plugin {
           invoke.resolve([:] as [String: String])
         })
         alert.addAction(confirm)
-        presenter.present(alert, animated: true)
+        presenter.present(alert, animated: true) {
+          // Preselect the stem AFTER presentation — before it, the field has
+          // no window and `selectedTextRange` is ignored.
+          guard args.selectStem == true, let field = alert.textFields?.first,
+            let text = field.text, let dot = text.lastIndex(of: "."), dot != text.startIndex,
+            let start = field.position(from: field.beginningOfDocument, offset: 0),
+            let end = field.position(
+              from: field.beginningOfDocument,
+              offset: text.distance(from: text.startIndex, to: dot))
+          else { return }
+          field.selectedTextRange = field.textRange(from: start, to: end)
+        }
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Create a directory at an exact relative path if it doesn't exist yet
+  /// (no dedupe) — used for `.notesage/` before writing the shared pins file.
+  @objc public func ensureDirectory(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(RelPathArgs.self)
+      try LibraryAccess.ensureDirectory(args.relPath)
+      invoke.resolve()
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Long-press preview + action menu for a library item (#680) — the Apple
+  /// Notes shape: a preview card over a blurred backdrop with the actions
+  /// beneath it. See EntryContextMenu.swift for why this is hand-built.
+  @objc public func entryMenu(_ invoke: Invoke) {
+    do {
+      let spec = try invoke.parseArgs(EntryMenuSpec.self)
+      DispatchQueue.main.async {
+        guard let presenter = self.topViewController else {
+          invoke.reject("No view controller to present the menu")
+          return
+        }
+        guard presenter.presentedViewController == nil else {
+          invoke.reject("Another sheet is already open")
+          return
+        }
+        EntryContextMenu.present(spec, over: presenter) { id in
+          if let id {
+            invoke.resolve(["id": id])
+          } else {
+            invoke.resolve([:] as [String: String])
+          }
+        }
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Native action sheet for a long-pressed list/gallery item (#680).
+  ///
+  /// A `UIAlertController(.actionSheet)` rather than a `UIMenu`: a real
+  /// context menu needs a `UIContextMenuInteraction` bound to the pressed
+  /// VIEW, and the item here is web content — there is no native view to
+  /// attach to, and UIKit exposes no way to raise a `UIMenu` at a point.
+  /// The action sheet is the standard iOS fallback for exactly this case,
+  /// and unlike `UIMenu` it needs no private KVC to carry icons (it simply
+  /// has none), so it stays App Store safe.
+  ///
+  /// Resolves `{ id: "<chosen>" }`, or `{}` when the user cancels.
+  @objc public func contextMenu(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(ContextMenuArgs.self)
+      DispatchQueue.main.async {
+        guard let presenter = self.topViewController else {
+          invoke.reject("No view controller to present the menu")
+          return
+        }
+        guard presenter.presentedViewController == nil else {
+          invoke.reject("Another sheet is already open")
+          return
+        }
+        let sheet = UIAlertController(
+          title: args.title, message: nil, preferredStyle: .actionSheet)
+        for item in args.items where item.destructive != true {
+          sheet.addAction(
+            UIAlertAction(title: item.title, style: .default) { _ in
+              invoke.resolve(["id": item.id])
+            })
+        }
+        // Destructive actions last — iOS never puts one above a plain action.
+        for item in args.items where item.destructive == true {
+          sheet.addAction(
+            UIAlertAction(title: item.title, style: .destructive) { _ in
+              invoke.resolve(["id": item.id])
+            })
+        }
+        sheet.addAction(
+          UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            invoke.resolve([:] as [String: String])
+          })
+        // iPad presents an action sheet as a popover and CRASHES without an
+        // anchor. Point it at the pressed spot in the webview.
+        if let popover = sheet.popoverPresentationController {
+          let source = self.webViewRef ?? presenter.view
+          popover.sourceView = source
+          popover.sourceRect = CGRect(
+            x: args.x ?? (source?.bounds.midX ?? 0),
+            y: args.y ?? (source?.bounds.midY ?? 0), width: 1, height: 1)
+          popover.permittedArrowDirections = [.up, .down]
+        }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        presenter.present(sheet, animated: true)
       }
     } catch { invoke.reject(String(describing: error)) }
   }

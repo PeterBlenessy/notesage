@@ -55,6 +55,10 @@ pub struct FileEntry {
     /// Files-app-style row metadata (mobile listings only; absent on desktop).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modified: Option<f64>,
+    /// Visible children, for DIRECTORIES only — counted natively in the same
+    /// pass so a folder row can show a count without an IPC call per row.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -127,6 +131,38 @@ struct TextPromptArgs<'a> {
     title: &'a str,
     placeholder: &'a str,
     confirm_label: &'a str,
+    value: Option<&'a str>,
+    select_stem: bool,
+}
+
+/// One row of the native action sheet (#680).
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct ContextMenuItem {
+    pub id: String,
+    pub title: String,
+    /// Rendered in red and sunk below the plain rows, per iOS convention.
+    #[serde(default)]
+    pub destructive: bool,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextMenuArgs {
+    #[serde(default)]
+    pub title: Option<String>,
+    pub items: Vec<ContextMenuItem>,
+    /// Long-press point in webview coordinates — anchors the iPad popover.
+    #[serde(default)]
+    pub x: Option<f64>,
+    #[serde(default)]
+    pub y: Option<f64>,
+}
+
+/// `id` is absent when the user cancelled the sheet.
+#[derive(Deserialize, Default)]
+struct ContextMenuResult {
+    #[serde(default)]
+    id: Option<String>,
 }
 
 /// `text` is absent when the user cancelled the prompt.
@@ -243,6 +279,23 @@ impl<R: Runtime> NotesageIos<R> {
             .map(|r| r.rel_path)
     }
 
+    /// Create a directory at an exact relative path if absent (no dedupe).
+    pub fn ensure_directory(&self, rel: &str) -> Result<()> {
+        self.call("ensureDirectory", RelPathArgs { rel_path: rel })
+    }
+
+    /// Present the long-press preview + action menu. `spec` is the JSON
+    /// `EntryMenuSpec` shape EntryContextMenu.swift decodes.
+    pub fn entry_menu(&self, spec: serde_json::Value) -> Result<Option<String>> {
+        self.call::<_, ContextMenuResult>("entryMenu", spec).map(|r| r.id)
+    }
+
+    /// Present a native action sheet for a long-pressed item. Returns the
+    /// chosen item id, or `None` when the user cancels.
+    pub fn context_menu(&self, payload: ContextMenuArgs) -> Result<Option<String>> {
+        self.call::<_, ContextMenuResult>("contextMenu", payload).map(|r| r.id)
+    }
+
     /// Tell the native layer the webview has painted, so it can drop the
     /// launch cover held over it (#675).
     pub fn content_ready(&self) -> Result<()> {
@@ -256,10 +309,12 @@ impl<R: Runtime> NotesageIos<R> {
         title: &str,
         placeholder: &str,
         confirm_label: &str,
+        value: Option<&str>,
+        select_stem: bool,
     ) -> Result<Option<String>> {
         self.call::<_, TextPromptResponse>(
             "textPrompt",
-            TextPromptArgs { title, placeholder, confirm_label },
+            TextPromptArgs { title, placeholder, confirm_label, value, select_stem },
         )
         .map(|r| r.text)
     }
@@ -336,7 +391,23 @@ impl<R: Runtime> NotesageIos<R> {
     pub fn content_ready(&self) -> Result<()> {
         Err(Error::Unavailable)
     }
-    pub fn text_prompt(&self, _t: &str, _p: &str, _c: &str) -> Result<Option<String>> {
+    pub fn context_menu(&self, _p: ContextMenuArgs) -> Result<Option<String>> {
+        Err(Error::Unavailable)
+    }
+    pub fn ensure_directory(&self, _rel: &str) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn entry_menu(&self, _spec: serde_json::Value) -> Result<Option<String>> {
+        Err(Error::Unavailable)
+    }
+    pub fn text_prompt(
+        &self,
+        _t: &str,
+        _p: &str,
+        _c: &str,
+        _v: Option<&str>,
+        _s: bool,
+    ) -> Result<Option<String>> {
         Err(Error::Unavailable)
     }
     pub fn create_file(&self, _rel: &str, _text: &str) -> Result<String> {
