@@ -8,6 +8,7 @@ import {
   Cog,
   Mic,
   Zap,
+  FlaskConical,
 } from 'lucide-react';
 import { SettingsShell, type SettingsShellNavGroup } from './SettingsShell';
 import {
@@ -17,6 +18,7 @@ import {
   useSettingsSearchShortcut,
 } from './SettingsSearch';
 import { AppearanceSettings } from './AppearanceSettings';
+import { LabsSettings } from './LabsSettings';
 import { EditorSettings } from './EditorSettings';
 import { AISettings } from './AISettings';
 import { SkillsSettings } from './SkillsSettings';
@@ -93,6 +95,7 @@ const NAV: SettingsShellNavGroup[] = [
       { id: 'projects', label: 'Projects', icon: FolderOpen },
       { id: 'automations', label: 'Automations', icon: Zap },
       { id: 'system', label: 'System', icon: Cog },
+      { id: 'labs', label: 'Labs', icon: FlaskConical },
     ],
   },
 ];
@@ -136,6 +139,7 @@ const PANELS: PanelEntry[] = [
   { id: 'ai', label: 'AI Providers', render: () => <AISettings /> },
   { id: 'skills', label: 'Skills & Agents', render: () => <SkillsSettings /> },
   { id: 'voice', label: 'Voice', render: () => <VoiceSettings /> },
+  { id: 'labs', label: 'Labs', render: () => <LabsSettings /> },
   { id: 'projects', label: 'Projects', render: () => <ProjectsSettings /> },
   { id: 'automations', label: 'Automations', render: () => <AutomationsSettings /> },
   {
