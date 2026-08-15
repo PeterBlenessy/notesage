@@ -13,6 +13,25 @@ import { flagIds, isKnownFlag, type FlagId } from "@/lib/flags";
  * Persisted state is filtered through the registry on rehydrate — a flag that
  * has since graduated or been removed cannot resurrect from an old blob.
  */
+/**
+ * Reports a flag change for the graduation signal.
+ *
+ * Injected rather than imported, because this store is reachable from the iOS
+ * shell and `lib/telemetry` must NOT be — the mobile app is telemetry-free by
+ * construction and its App Store "Data Not Collected" answer rests on that,
+ * locked by `telemetry-unreachable.test.ts` (which scans dynamic imports too,
+ * so a lazy import would not have helped). The desktop root registers the
+ * real reporter; mobile registers nothing and therefore emits nothing.
+ */
+type FlagReporter = (flag: string, enabled: boolean) => void;
+
+let reporter: FlagReporter | null = null;
+
+/** Desktop-only. Called once at startup. */
+export function setFlagReporter(fn: FlagReporter | null): void {
+  reporter = fn;
+}
+
 interface FlagStore {
   /** Only ENABLED flags are stored. Absence means off, which keeps the
    *  persisted shape honest as ids are added and removed. */
@@ -33,18 +52,27 @@ export const useFlagStore = create<FlagStore>()(
 
       isEnabled: (id) => get().enabled.includes(id),
 
-      setEnabled: (id, on) =>
+      setEnabled: (id, on) => {
+        if (get().isEnabled(id) === on) return;
         set((s) => ({
-          enabled: on
-            ? s.enabled.includes(id)
-              ? s.enabled
-              : [...s.enabled, id]
-            : s.enabled.filter((f) => f !== id),
-        })),
+          enabled: on ? [...s.enabled, id] : s.enabled.filter((f) => f !== id),
+        }));
+        // Reported from the STORE so every route into a flag is covered, not
+        // just the Labs switch. The reporter is a no-op while telemetry is
+        // off, and turning the first flag ON is itself what flips the
+        // default — so this is the first event a new Labs user sends.
+        reporter?.(id, on);
+      },
 
       anyEnabled: () => get().enabled.length > 0,
 
-      resetAll: () => set({ enabled: [] }),
+      resetAll: () => {
+        // Report each one: a bulk reset is a strong signal about the
+        // features that were on, and collapsing it to a single event would
+        // lose exactly the information graduation needs.
+        for (const id of get().enabled) reporter?.(id, false);
+        set({ enabled: [] });
+      },
     }),
     {
       name: "notesage-flags",
