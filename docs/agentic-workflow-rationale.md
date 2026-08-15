@@ -249,6 +249,10 @@ Self-improvement loop. On claude\[bot\] PR merge, look for divergence between th
 
 ### Choice: aw-alpha-cut splits cut + tag-after-merge (#317)
 
+> Renamed `aw-release-cut.yml` on 2026-08-15 when the alpha channel was
+> removed (PRD `2026-08-15-single-binary-feature-flags.md`). The split
+> below is unchanged; only the name and the version scheme differ.
+
 **The pivot.** Original `aw-alpha-cut` bumped `package.json`, generated the history file, regenerated the changelog, then committed + tagged + pushed directly to `main` in one job. First time we actually fired it (run 26247447578 on 2026-05-21), the push was rejected: `GH006: Protected branch update failed for refs/heads/main` — branch protection requires the 4 Tests status checks to have passed on the commit being pushed, and a runner's local commit doesn't satisfy that. Every prior alpha (e.g. `v0.45.0-alpha.1` = #312) had actually shipped as a PR; alpha-cut had been dead-code-against-branch-protection the whole time.
 
 **The fix.** Split into two jobs in the same workflow file:

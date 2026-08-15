@@ -1,12 +1,12 @@
 name: AW — Auto-merge (Tier A)
 
-# Fires when `aw-alpha-prep` adds the `tier:A` label to a bot PR.
+# Fires when `aw-tier-prep` adds the `tier:A` label to a bot PR.
 # Enables GitHub's native auto-merge so the PR merges as soon as CI is
 # green and any required reviews are satisfied. The merge happens via
 # squash to keep history clean.
 #
 # Tier B PRs are NOT auto-merged here — they queue for the periodic
-# alpha-cut batch (`aw-alpha-cut.yml`). Tier C is left alone for
+# release-cut batch (`aw-release-cut.yml`). Tier C is left alone for
 # human review.
 
 on:
