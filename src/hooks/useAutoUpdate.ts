@@ -1,33 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { check, Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { useSettingsStore } from "@/stores/settings-store";
 import { isPrereleaseVersion } from "@/lib/version";
 
-/**
- * Metadata returned by our custom `alpha_check` Tauri command. Shape matches
- * `@tauri-apps/plugin-updater`'s `UpdateMetadata` exactly (camelCased on the
- * wire by serde rename_all). Wrapping in `new Update(metadata)` gives us a
- * plugin-updater `Update` instance backed by the rid we returned from Rust;
- * `update.downloadAndInstall()` then routes through plugin-updater's own
- * `download` + `install` IPC handlers, which resolve the rid in the same
- * resources_table our Rust command inserted into. Signature verification
- * against the bundled `pubkey` in `tauri.conf.json` happens regardless of
- * which endpoint produced the manifest — same install pipeline as stable.
- */
-interface AlphaUpdateMetadata {
-  rid: number;
-  currentVersion: string;
-  version: string;
-  date?: string;
-  body?: string;
-  rawJson: Record<string, unknown>;
-}
 
-export const ALPHA_UPDATE_ENDPOINT =
-  "https://github.com/PeterBlenessy/notesage/releases/download/latest-alpha/latest.json";
 
 // Semver-style prerelease detection (`0.44.0-alpha.2` → true, `0.44.0` → false).
 // Single source of truth lives in `@/lib/version` (pure, import-cycle-safe so the
@@ -127,7 +105,6 @@ export function useAutoUpdate() {
 
   const autoCheckUpdates = useSettingsStore((s) => s.autoCheckUpdates);
   const dismissedVersion = useSettingsStore((s) => s.dismissedVersion);
-  const releaseChannel = useSettingsStore((s) => s.releaseChannel);
   const setLastUpdateCheck = useSettingsStore((s) => s.setLastUpdateCheck);
   const setDismissedVersion = useSettingsStore((s) => s.setDismissedVersion);
 
@@ -135,16 +112,12 @@ export function useAutoUpdate() {
     setState((s) => ({ ...s, status: "checking", error: null }));
 
     try {
-      if (releaseChannel === "alpha") {
-        await checkAlphaChannel();
-      } else {
-        await checkStableChannel();
-      }
+      await checkForUpdateOnce();
     } finally {
       setLastUpdateCheck(new Date().toISOString());
     }
 
-    async function checkStableChannel() {
+    async function checkForUpdateOnce() {
       try {
         // When the user is running a prerelease (alpha) binary and they
         // switched to Stable, they want to LEAVE alpha. Without
@@ -203,56 +176,7 @@ export function useAutoUpdate() {
       }
     }
 
-    async function checkAlphaChannel() {
-      try {
-        // Drive plugin-updater against the alpha rolling-pointer URL via our
-        // custom Rust command. Returns the same metadata shape the plugin's
-        // own `check()` produces; wrapping in `new Update(metadata)` gives us
-        // a plugin-updater Update instance whose `downloadAndInstall()` is
-        // the SAME pipeline stable users get (signature verify, download,
-        // bundle replace, restart). See `src-tauri/src/commands/alpha_update.rs`
-        // for the Rust side and the long-form rationale.
-        //
-        // Earlier we tried (a) renderer `fetch()` — CORS-blocked on
-        // GitHub's cross-origin redirect to release-assets.githubusercontent.com,
-        // (b) Tauri's HTTP plugin fetch + manual `openUrl` to the release page
-        // for manual DMG install — worked but high-friction. The Rust-side
-        // UpdaterBuilder.endpoints() path is the supported in-app install
-        // for runtime-URL switching; the plugin's own `check` command uses
-        // the same pattern, just without the runtime URL.
-        const metadata = await invoke<AlphaUpdateMetadata | null>("alpha_check", {
-          url: ALPHA_UPDATE_ENDPOINT,
-        });
-
-        if (metadata) {
-          const update = new Update(metadata);
-          updateRef.current = update;
-
-          const info: UpdateInfo = {
-            version: update.version,
-            currentVersion: update.currentVersion,
-            notes: update.body ?? null,
-            date: update.date ?? null,
-          };
-
-          if (dismissedVersion === update.version) {
-            setState({ status: "idle", updateInfo: info, progress: null, error: null });
-          } else {
-            setState({ status: "available", updateInfo: info, progress: null, error: null });
-          }
-        } else {
-          updateRef.current = null;
-          setState({ status: "idle", updateInfo: null, progress: null, error: null });
-        }
-      } catch (err) {
-        setState((s) => ({
-          ...s,
-          status: "error",
-          error: err instanceof Error ? err.message : String(err),
-        }));
-      }
-    }
-  }, [dismissedVersion, releaseChannel, setLastUpdateCheck]);
+  }, [dismissedVersion, setLastUpdateCheck]);
 
   const downloadAndInstall = useCallback(async () => {
     const update = updateRef.current;
@@ -320,18 +244,6 @@ export function useAutoUpdate() {
 
     return () => clearTimeout(timer);
   }, [autoCheckUpdates, checkForUpdate]);
-
-  // Auto-check when the user changes release channel. Critical for the
-  // leave-alpha flow: switching from Alpha to Stable should immediately
-  // surface the "Switch back to Stable" prompt without making the user
-  // click "Check for updates" in Settings. Skips the initial mount —
-  // that's already covered by the auto-check above.
-  const lastChannelRef = useRef(releaseChannel);
-  useEffect(() => {
-    if (lastChannelRef.current === releaseChannel) return;
-    lastChannelRef.current = releaseChannel;
-    checkForUpdate();
-  }, [releaseChannel, checkForUpdate]);
 
   return {
     state,

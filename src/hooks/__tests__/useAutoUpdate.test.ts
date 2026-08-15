@@ -127,7 +127,6 @@ vi.mock('@/stores/settings-store', () => ({
 
 import {
   useAutoUpdate,
-  ALPHA_UPDATE_ENDPOINT,
   isPrereleaseVersion,
   isLeaveAlphaDowngrade,
 } from '../useAutoUpdate';
@@ -159,37 +158,7 @@ beforeEach(() => {
   mockInvoke.mockReset();
 });
 
-/**
- * Build a stub `AlphaUpdateMetadata` payload matching the shape our Rust
- * `alpha_check` command returns. Used by alpha-channel tests to mock the
- * invoke result.
- */
-function buildAlphaMetadata(version: string, currentVersion = '0.42.0') {
-  return {
-    rid: 1,
-    currentVersion,
-    version,
-    date: '2026-05-09T00:00:00Z',
-    body: `Alpha release notes for ${version}`,
-    rawJson: { version },
-  };
-}
 
-// ===========================================================================
-// ALPHA_UPDATE_ENDPOINT constant
-// ===========================================================================
-
-describe('ALPHA_UPDATE_ENDPOINT', () => {
-  it('is exported and is a non-empty string', () => {
-    expect(typeof ALPHA_UPDATE_ENDPOINT).toBe('string');
-    expect(ALPHA_UPDATE_ENDPOINT.length).toBeGreaterThan(0);
-  });
-
-  it('points to the latest-alpha release manifest', () => {
-    expect(ALPHA_UPDATE_ENDPOINT).toContain('latest-alpha');
-    expect(ALPHA_UPDATE_ENDPOINT).toContain('latest.json');
-  });
-});
 
 // ===========================================================================
 // Stable channel — existing behavior (regression guards)
@@ -234,94 +203,6 @@ describe('stable channel (regression guard)', () => {
   });
 });
 
-// ===========================================================================
-// Alpha channel
-// ===========================================================================
-
-describe('alpha channel', () => {
-  it('invokes alpha_check with ALPHA_UPDATE_ENDPOINT', async () => {
-    channelRef.value = 'alpha';
-    mockInvoke.mockResolvedValue(buildAlphaMetadata('0.43.0-alpha.1'));
-
-    const { result } = renderHook(() => useAutoUpdate());
-    await act(async () => {
-      await result.current.checkForUpdate();
-    });
-
-    // Custom Rust command — wraps plugin-updater's UpdaterBuilder with the
-    // alpha rolling-pointer URL and returns a `Resource` rid that maps back
-    // to a real Update inside Tauri's resources_table. Lets us reuse the
-    // same install pipeline as the stable channel.
-    expect(mockInvoke).toHaveBeenCalledTimes(1);
-    expect(mockInvoke).toHaveBeenCalledWith('alpha_check', {
-      url: ALPHA_UPDATE_ENDPOINT,
-    });
-  });
-
-  it('does NOT call Tauri check() when channel is alpha', async () => {
-    channelRef.value = 'alpha';
-    mockInvoke.mockResolvedValue(buildAlphaMetadata('0.43.0-alpha.1'));
-
-    const { result } = renderHook(() => useAutoUpdate());
-    await act(async () => {
-      await result.current.checkForUpdate();
-    });
-
-    expect(mockCheck).not.toHaveBeenCalled();
-  });
-
-  it('sets status available when alpha_check returns metadata', async () => {
-    channelRef.value = 'alpha';
-    mockInvoke.mockResolvedValue(buildAlphaMetadata('0.43.0-alpha.1', '0.42.0'));
-
-    const { result } = renderHook(() => useAutoUpdate());
-    await act(async () => {
-      await result.current.checkForUpdate();
-    });
-
-    expect(result.current.state.status).toBe('available');
-    expect(result.current.state.updateInfo?.version).toBe('0.43.0-alpha.1');
-    expect(result.current.state.updateInfo?.currentVersion).toBe('0.42.0');
-  });
-
-  it('sets status idle when alpha_check returns null (no update)', async () => {
-    channelRef.value = 'alpha';
-    mockInvoke.mockResolvedValue(null);
-
-    const { result } = renderHook(() => useAutoUpdate());
-    await act(async () => {
-      await result.current.checkForUpdate();
-    });
-
-    expect(result.current.state.status).toBe('idle');
-    expect(result.current.state.updateInfo).toBeNull();
-  });
-
-  it('sets status error when alpha_check throws', async () => {
-    channelRef.value = 'alpha';
-    mockInvoke.mockRejectedValue(new Error('Network failure'));
-
-    const { result } = renderHook(() => useAutoUpdate());
-    await act(async () => {
-      await result.current.checkForUpdate();
-    });
-
-    expect(result.current.state.status).toBe('error');
-    expect(result.current.state.error).toContain('Network failure');
-  });
-
-  it('calls setLastUpdateCheck after alpha check completes', async () => {
-    channelRef.value = 'alpha';
-    mockInvoke.mockResolvedValue(buildAlphaMetadata('0.43.0-alpha.1'));
-
-    const { result } = renderHook(() => useAutoUpdate());
-    await act(async () => {
-      await result.current.checkForUpdate();
-    });
-
-    expect(mockSetLastUpdateCheck).toHaveBeenCalledTimes(1);
-  });
-});
 
 // ===========================================================================
 // HARD GUARANTEE: stable channel must NEVER offer a prerelease build.
@@ -373,46 +254,8 @@ describe('stable channel — prerelease guard (HARD GUARANTEE)', () => {
     expect(result.current.state.updateInfo?.version).toBe(stableVersion);
   });
 
-  it('alpha channel is UNAFFECTED by the prerelease guard (alphas are expected there)', async () => {
-    channelRef.value = 'alpha';
-    mockInvoke.mockResolvedValue(buildAlphaMetadata('0.44.0-alpha.3', '0.42.0'));
-
-    const { result } = renderHook(() => useAutoUpdate());
-    await act(async () => {
-      await result.current.checkForUpdate();
-    });
-
-    // Alpha channel offers the prerelease — exactly what the user signed up for.
-    expect(result.current.state.status).toBe('available');
-    expect(result.current.state.updateInfo?.version).toBe('0.44.0-alpha.3');
-  });
 });
 
-// ===========================================================================
-// Alpha install flow — real in-app install via plugin-updater (no browser open)
-// ===========================================================================
-
-describe('alpha channel install flow', () => {
-  it('downloadAndInstall on alpha drives the Update returned by alpha_check', async () => {
-    channelRef.value = 'alpha';
-    mockInvoke.mockResolvedValue(buildAlphaMetadata('0.44.0-alpha.2', '0.44.0-alpha.1'));
-
-    const { result } = renderHook(() => useAutoUpdate());
-    await act(async () => {
-      await result.current.checkForUpdate();
-    });
-    expect(result.current.state.status).toBe('available');
-
-    await act(async () => {
-      await result.current.downloadAndInstall();
-    });
-
-    // The Update instance constructed from alpha_check's metadata receives
-    // the downloadAndInstall call — same path as stable. No browser open.
-    // After install completes, status flips to 'downloaded' waiting for restart.
-    expect(result.current.state.status).toBe('downloaded');
-  });
-});
 
 // ===========================================================================
 // isPrereleaseVersion — unit tests
@@ -537,46 +380,3 @@ describe('leave-alpha flow (stable channel + current is prerelease)', () => {
   });
 });
 
-// ===========================================================================
-// Auto-check on channel change
-// ===========================================================================
-
-describe('auto-check on channel change', () => {
-  it('triggers a fresh check when the user switches alpha → stable', async () => {
-    channelRef.value = 'alpha';
-    mockGetVersion.mockResolvedValue('0.44.0-alpha.3');
-    mockInvoke.mockResolvedValue(null);
-    mockCheck.mockResolvedValue(null);
-
-    const { rerender } = renderHook(() => useAutoUpdate());
-
-    // Mount triggers no auto-check (autoCheckUpdates is false in beforeEach).
-    expect(mockCheck).not.toHaveBeenCalled();
-    expect(mockInvoke).not.toHaveBeenCalled();
-
-    // Switch channel. The `checkForUpdate` effect should re-fire on the new channel.
-    channelRef.value = 'stable';
-    await act(async () => {
-      rerender();
-      // Wait for the async checkForUpdate to settle.
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-
-    // Stable channel was checked, alpha was not (channel changed before).
-    expect(mockCheck).toHaveBeenCalled();
-  });
-
-  it('does NOT trigger a check on initial mount (no false fire)', () => {
-    channelRef.value = 'stable';
-    mockGetVersion.mockResolvedValue('0.43.0');
-    mockCheck.mockResolvedValue(null);
-
-    renderHook(() => useAutoUpdate());
-
-    // The "channel-change" effect tracks initial mount via lastChannelRef and
-    // skips it. Only the auto-check-on-mount effect (gated by autoCheckUpdates,
-    // which is false here) would fire — and we've already mocked that off.
-    expect(mockCheck).not.toHaveBeenCalled();
-  });
-});

@@ -1,4 +1,4 @@
-import { Sparkles, Bug, Zap, Wrench, ChevronDown } from 'lucide-react';
+import { Sparkles, Bug, Zap, Wrench, Smartphone, ChevronDown } from 'lucide-react';
 import { renderInlineMarkdown } from '@/lib/render-inline-markdown';
 import {
   Dialog,
@@ -97,6 +97,14 @@ function ReleaseCard({ release }: { release: Release }) {
             title="Improvements"
             icon={Zap}
             items={release.sections.improvements ?? []}
+          />
+          {/* The iOS app ships to different people through a different
+              store, so its changes get their own heading rather than being
+              mixed into a desktop release's Features and Fixes. */}
+          <ReleaseSection
+            title="iOS app"
+            icon={Smartphone}
+            items={release.sections.ios ?? []}
           />
           <ReleaseSection
             title="Under the hood"

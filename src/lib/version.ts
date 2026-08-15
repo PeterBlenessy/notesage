@@ -31,14 +31,3 @@ export function appVersion(): string {
   return typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "";
 }
 
-/**
- * Whether THIS build is an alpha/prerelease, derived synchronously from the
- * build-time version. This is the default for telemetry consent: alpha *builds*
- * default both telemetry streams on (the per-stream toggle always overrides it).
- * Keyed on the build — not the user's chosen update channel — so a user running
- * an alpha build defaults on even if they never opted into the alpha update
- * channel.
- */
-export function buildIsAlpha(): boolean {
-  return isPrereleaseVersion(appVersion());
-}

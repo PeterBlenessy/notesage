@@ -1,6 +1,773 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.36",
+      "date": "2026-08-15",
+      "previousVersion": "0.48.0-alpha.35",
+      "sections": {
+        "features": [
+          "Notesage is moving to a **single build** for everyone. Experimental features",
+          "**This build switches your update channel back to the standard one.** No",
+          "Usage and crash reporting now follow Labs: they turn on if you enable an"
+        ],
+        "ios": [
+          "Pinning a folder now shows it under Pinned instead of appearing to do",
+          "Closing a note no longer flashes the title and breadcrumb in the list before",
+          "Opening an HTML report no longer flashes white before its content appears."
+        ]
+      },
+      "underTheHood": [
+        "Flag registry (`src/lib/flags.ts`) with a typed id, plus `flag-store` — its",
+        "`flags.test.ts` carries the channel-isolation guarantee across: every flag",
+        "`labs_flag_changed` / `labs_feature_used` added to the fixed telemetry",
+        "The flag store reports through an injected function rather than importing",
+        "Settings migration `v26` rewrites `releaseChannel` `alpha` → `stable`.",
+        "PRD `docs/prds/2026-08-15-single-binary-feature-flags.md`, tasks"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.35",
+      "date": "2026-08-14",
+      "previousVersion": "0.48.0-alpha.34",
+      "sections": {
+        "ios": [
+          "feat(mobile): long-press menu, capture fixes, Inbox shortcut, row redesign (#684)"
+        ]
+      },
+      "underTheHood": [
+        "feat(mobile): long-press menu, capture fixes, Inbox shortcut, row redesign (#684)"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.34",
+      "date": "2026-08-13",
+      "previousVersion": "0.48.0-alpha.33",
+      "sections": {
+        "ios": [
+          "fix(mobile): hold a native cover over the webview until it has painted (#678)"
+        ]
+      },
+      "underTheHood": [
+        "fix(mobile): hold a native cover over the webview until it has painted (#678)"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.33",
+      "date": "2026-08-13",
+      "previousVersion": "0.48.0-alpha.32",
+      "sections": {},
+      "underTheHood": [
+        "iOS: group by file type (#671)",
+        "i18n foundation + Swedish; mobile UI fully localized (#672)",
+        "iOS: localize the Share Extension (Swedish) (#673)",
+        "iOS: name captures after their title, not a timestamp (#674)",
+        "iOS: kill the white launch flash (root cause found by measurement) (#676)",
+        "fix(mobile): kill the white launch flash — the light CSS default painted before the dark media query",
+        "feat(mobile): name captures after their title, not a timestamp",
+        "feat(mobile): localize the Share Extension (Swedish) — prioritized over desktop",
+        "feat: i18n foundation with Swedish, mobile UI fully localized (#653)",
+        "feat(mobile): group by file type — the last mode from #652"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.32",
+      "date": "2026-08-12",
+      "previousVersion": "0.48.0-alpha.31",
+      "sections": {
+        "ios": [
+          "feat(mobile): iOS Pinned group backed by shared pins.json (#660)",
+          "feat(mobile): iOS Pinned group backed by shared pins.json (#661)"
+        ]
+      },
+      "underTheHood": [
+        "chore(deps): bump mermaid from 11.15.0 to 11.16.1 in the npm_and_yarn group across 1 directory (#580)",
+        "iOS: group by recent or date in the view-options menu (#664)",
+        "iOS: TestFlight prerequisites — export compliance, icon alpha, upload runbook (#665)",
+        "iOS: size gallery folder/file icons to the card (#667)",
+        "iOS: shared pins.json integrated into the existing Group by menu (#668)",
+        "iOS: flatten the top chrome — bare breadcrumb, soft gradient band (#669)",
+        "feat(mobile): shared pins.json — desktop writes, iOS reads, Pinned joins Group by",
+        "feat(mobile): iOS Pinned group backed by shared pins.json",
+        "feat(mobile): flatten the top chrome — bare breadcrumb, gradient band",
+        "fix(mobile): gallery folder icons were a speck — size them to the card",
+        "feat(mobile): group by recent or date in the view-options menu",
+        "build(mobile): TestFlight prerequisites — export compliance, icon alpha, upload runbook",
+        "chore(deps): bump mermaid in the npm_and_yarn group across 1 directory"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.31",
+      "date": "2026-08-12",
+      "previousVersion": "0.48.0-alpha.30",
+      "sections": {},
+      "underTheHood": [
+        "iOS: native QuickLook preview for videos, audio and office documents (#648)",
+        "iOS: system-generated thumbnails via QLThumbnailGenerator (#649)",
+        "iOS: foreground refresh after shares + working pull-to-refresh (#654)",
+        "iOS: swipe-action polish — zoom-in circles, animated rounded trailing edge (#659)",
+        "feat(mobile): swipe-action polish — circles zoom with the swipe, trailing edge rounds in step",
+        "fix(mobile): foreground refresh after a share + working pull-to-refresh (#650)",
+        "feat(mobile): system-generated thumbnails — QLThumbnailGenerator replaces the web raster",
+        "feat(mobile): native QuickLook for videos, audio and office documents"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.30",
+      "date": "2026-08-12",
+      "previousVersion": "0.48.0-alpha.29",
+      "sections": {},
+      "underTheHood": [
+        "iOS: fix gallery markdown thumbnails — full-size headings shoved right by editor padding (#644)",
+        "iOS: thumbnail queue cancellation + pacing — no more frozen back-out (#645)",
+        "iOS: accept images, videos and audio in the share sheet (#646)",
+        "feat(mobile): share images, videos and audio into the library",
+        "fix(mobile): abort in-flight thumbnail jobs at every stage checkpoint",
+        "fix(mobile): free the UI thread from thumbnail generation — cancel on back-out, pace the queue",
+        "fix(mobile): gallery markdown thumbnails rendered at full editor size, shoved right"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.29",
+      "date": "2026-08-12",
+      "previousVersion": "0.48.0-alpha.28",
+      "sections": {
+        "ios": [
+          "feat(mobile): respect Dynamic Type text size and Bold Text in folder views (#624)",
+          "feat(mobile): iOS capture — modern readability crate + ad/tracker image filtering (#625)",
+          "feat(mobile): respect Dynamic Type text size and Bold Text in folder views (#626)",
+          "feat(mobile): respect Dynamic Type text size and Bold Text in folder views (#627)",
+          "feat(mobile): gallery view for the library — grid of note preview cards (#639)",
+          "fix(mobile): decline oversized text files instead of hanging on open (#623)"
+        ]
+      },
+      "underTheHood": [
+        "Refactor Copilot LSP sign-in flow to handle three-phase auth (#3)",
+        "iOS: swipe-delete — floating Notes-style actions, full-swipe commit (#640)",
+        "iOS: fix inert sort/view menu picks and the search island's corner fly-in (#642)",
+        "feat(mobile): respect Dynamic Type text size and Bold Text in folder views",
+        "fix(mobile): dead sort/view menu picks + search island flying in from the corner",
+        "feat(mobile): iOS capture — modern readability crate + ad/tracker image filtering",
+        "fix(mobile): decline oversized text files instead of hanging on open",
+        "feat(mobile): gallery view for the library — grid of note preview cards",
+        "feat(mobile): Files-style \"...\" view-options menu replaces the standalone sort control",
+        "feat(mobile): swipe-delete with Notes-style floating actions and full-swipe commit"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.28",
+      "date": "2026-08-11",
+      "previousVersion": "0.48.0-alpha.27",
+      "sections": {},
+      "underTheHood": [
+        "iOS: create and edit notes — native + island, instant Untitled, editor with title-becomes-filename (#629)",
+        "iOS: Files-style modified date beneath library row names (#630)",
+        "iOS: verified telemetry-free binary — backs the App Store privacy label (#631)",
+        "iOS: WebContent-process crash recovery + local-only JS diagnostics (#635)",
+        "iOS: breadcrumb island — current folder on a top-center glass capsule (#636)",
+        "iOS: sort toggle — alphabetical or modified-newest listing order (#637)",
+        "iOS: breadcrumb island replaces the in-content title; sort becomes a labeled menu (#638)",
+        "fix(mobile): the breadcrumb island REPLACES the in-content title; sort gets a labeled menu",
+        "feat(mobile): sort toggle — alphabetical or modified-newest listing order",
+        "feat(mobile): breadcrumb island — current folder on a top-center glass capsule",
+        "feat(mobile): WebContent-process crash recovery + local-only JS diagnostics",
+        "fix(mobile): stop the pending-note load from tricking the theme effect into a stray render",
+        "fix(mobile): halve the folder-view row padding — the gap between items read too large",
+        "feat(mobile): never create empty notes — the file exists only once there is content",
+        "feat(mobile): Files-style modified date beneath library row names",
+        "feat(mobile): verified telemetry-free iOS binary — the \"Data Not Collected\" basis",
+        "fix(mobile): stop the cold-start white flash — theme the webview canvas before first paint",
+        "feat(mobile): create + edit notes — native + island, instant Untitled, raw-markdown editor, title becomes filename",
+        "feat(mobile): allowlisted write surface — three note-editing commands behind the grant"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.27",
+      "date": "2026-08-11",
+      "previousVersion": "0.48.0-alpha.26",
+      "sections": {
+        "ios": [
+          "feat(mobile): swipe a folder-view row to reveal a Share action (#621)"
+        ]
+      },
+      "underTheHood": [
+        "feat(mobile): swipe a folder-view row to reveal a Share action"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.26",
+      "date": "2026-08-11",
+      "previousVersion": "0.48.0-alpha.25",
+      "sections": {
+        "ios": [
+          "feat(mobile): replace manual refresh button with native pull-to-refresh (#622)"
+        ]
+      },
+      "underTheHood": [
+        "iOS: rich web capture — article extraction + compose-page share sheet (#613)",
+        "feat(mobile): replace manual refresh button with native pull-to-refresh (#622)",
+        "feat(mobile): rich web capture — article extraction + compose-page share sheet"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.25",
+      "date": "2026-08-10",
+      "previousVersion": "0.48.0-alpha.24",
+      "sections": {
+        "ios": [
+          "feat(mobile): refresh-spin state on the native chrome button (#607)",
+          "fix(mobile): stop Reader's innerHTML reset from wiping find-in-document marks (#608)"
+        ]
+      },
+      "underTheHood": [
+        "iOS: native Liquid Glass chrome + find-in-document across all readers (#600)",
+        "iOS: capture shared documents — Notesage in the share sheet for PDFs (#601)",
+        "CI: scoped audit ignores for advisories blocked on upstream bumps (#603)",
+        "fix(mobile): stop Reader's innerHTML reset from wiping find-in-document marks (#608)",
+        "feat(mobile): refresh-spin state on the native chrome button (#607)",
+        "ci: scoped audit ignores for advisories blocked on upstream bumps",
+        "feat(mobile): capture shared documents — Notesage in the share sheet for PDFs",
+        "fix(mobile): find-in-document round — deterministic scroll, healing, hidden content",
+        "fix(mobile): native search matches Apple Notes anatomy",
+        "feat(mobile): native search island — glass capsule, field, and match nav",
+        "docs(mobile): ADR 0009 — iOS chrome is native SwiftUI over the webview",
+        "feat(mobile): native Liquid Glass chrome — real SwiftUI buttons over the webview",
+        "feat(mobile): Liquid Glass press feedback + motion for the web chrome"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.24",
+      "date": "2026-08-10",
+      "previousVersion": "0.48.0-alpha.23",
+      "sections": {
+        "fixes": [
+          "fix(html-viewer): render iframe paths from blob: URL so document styles survive the CSP (#447)"
+        ]
+      },
+      "underTheHood": [
+        "Bump rollup from 4.57.1 to 4.59.0 in the npm_and_yarn group across 1 directory (#1)",
+        "Fix Copilot LSP sign-in: handle server→client signIn request for device code (#2)",
+        "Refactor Copilot LSP sign-in flow to handle three-phase auth (#3)",
+        "Add configurable debug logging and fix Copilot LSP issues (#4)",
+        "Bump @mozilla/readability from 0.5.0 to 0.6.0 in /bundled-skills/download-webpage/scripts in the npm_and_yarn group across 1 directory (#5)",
+        "Add hardcoded values audit research (#6)",
+        "Bump quinn-proto from 0.11.13 to 0.11.14 in /src-tauri in the cargo group across 1 directory (#7)",
+        "Add 6 PRDs for local AI agentic features and productivity enhancements (#8)",
+        "Add PRD for always-on memory agent (ported from Google Cloud Platform) (#9)",
+        "Add CLI/ACP vs Agent SDK analysis document (#10)",
+        "Add App Store launch readiness research document (#11)",
+        "Add sandbox-runtime comparison research with identified gaps (#12)",
+        "iOS mobile app — on-device reader, island chrome, share capture (#521)",
+        "fix(mobile): code-review round — load races, share lifecycle, injection safety",
+        "feat(mobile): keyboard-aware islands, PDF island chrome, HTML search, share",
+        "fix(editor): PDF text search was dead on WebKit — polyfill stream iteration",
+        "fix(mobile): islands are chrome, not page — portal, fixed, zoom-proofed",
+        "fix(mobile): keep chrome islands anchored when the keyboard appears",
+        "feat(mobile): search islands + platform island metrics and glass",
+        "feat(mobile): corner button islands — Apple Notes / Files chrome (#581 round 2)",
+        "docs(mobile): mark bottom-navigation task done",
+        "perf(mobile): raw IPC bytes for binary reads — big-PDF spinner freeze, part 2",
+        "feat(mobile): iOS-style floating bottom navigation (#581)",
+        "docs(mobile): add bottom-navigation adoption (issue #581) to the MVP tasks",
+        "test(mobile): lock the review findings",
+        "chore(mobile): drop dead surface and fix doc drift",
+        "fix: iOS registers only the mobile reader's command surface",
+        "fix: give pdf.js a blob: worker — custom-scheme URLs can't spawn workers",
+        "fix(mobile): HIG touch targets, spinning refresh, JS hidden filter",
+        "fix(mobile): link handling, theme-flip re-reads, mermaid doc leak",
+        "fix(mobile): friendly picker cancel, hidden entries excluded, stale headers",
+        "docs(mobile): PRD + tasks for the App Store launch MVP",
+        "docs(mobile): mark the remaining v1 tasks done in the ledger",
+        "docs(mobile): bring the feature description up to shipped reality",
+        "ci: make the tauri-webdriver install idempotent",
+        "chore(deps): bump pdfjs-dist and nanoid past new high-severity advisories",
+        "fix(test): stop the tree-install test from racing the suite via $HOME",
+        "fix(mobile): re-render markdown when the theme flips",
+        "fix(mobile): mermaid via sandboxed iframe — WebKit refuses foreignObject in SVG images",
+        "fix(mobile): serve mermaid SVGs from the htmlpreview scheme — data: images break on device",
+        "fix(mobile): survive the embedded build's CSP — htmlpreview scheme, img-based mermaid, themed code blocks",
+        "fix: follow the OS appearance while the app is running",
+        "feat(mobile): render mermaid diagrams in the reader",
+        "test(mobile): follow the HTML iframe to the data: URL contract",
+        "fix(mobile): render HTML reports from a data: URL — blob: is blank on device",
+        "fix(mobile): real app icon on iOS — edge-bled full-bleed set from the master",
+        "chore(mobile): sync extension version keys with the app; doc the plugin/script layout",
+        "feat(mobile): wire the Share Extension with a script, not Xcode clicks",
+        "fix(mobile): key the PDF byte-cache cleanup on the path, not state identity",
+        "perf(mobile): base64 binary reads — 10 MB PDF from ~10 s frozen to ~0.5 s",
+        "build(ios): set the ADDABLE AB development team for device signing",
+        "build: force cargo to re-embed the frontend, drop the inert ios build overlay",
+        "fix: install the rustls CryptoProvider before anything builds a reqwest client",
+        "fix(mobile): stop comrak's pretty-printed newlines rendering as line breaks",
+        "fix(mobile): single typography system, and stop shipping stale frontends",
+        "fix(mobile): reader was using desktop-sized margins on a phone",
+        "fix(mobile): drop 100vh from the shell root",
+        "fix(mobile): name the action after what it does, and stop silent cancels",
+        "ci(mobile): stop grep -q from SIGPIPE-ing the symbol check",
+        "feat(mobile): port library access onto the plugin crate — the bridge is live",
+        "feat(mobile): iOS native bridge as a plugin crate — the Swift now links",
+        "ci(mobile): tolerate nm's exit code when verifying the capture C ABI",
+        "build(mobile): integrate the iOS native sources into the Xcode project",
+        "fix(mobile): drop whisper.cpp from the iOS build — the app now launches",
+        "fix(mobile): make the Rust crate actually compile for iOS",
+        "ci(mobile): type-check the iOS Swift and build the capture staticlib",
+        "feat(mobile): render HTML reports, share the desktop renderer, one capture format",
+        "docs(mobile): note the missing iOS CI build path as a follow-up",
+        "feat(mobile): stage more iOS native layer (plugin bridge, entitlements, plists)",
+        "docs(mobile): update PRD + tasks status (in-app PDF, per-task ledger)",
+        "feat(mobile): render PDFs in-app via the desktop PdfViewer",
+        "feat(mobile): scaffold iOS reader + share-capture app",
+        "docs: add task breakdown for iOS mobile app PRD",
+        "docs: clarify iOS iCloud access rationale in mobile PRD",
+        "docs: add PRD for Notesage iOS mobile app (reader + share capture)"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.23",
+      "date": "2026-08-02",
+      "previousVersion": "0.48.0-alpha.22",
+      "sections": {
+        "features": [
+          "**A second engine for the Local Agent: pi (beta).** \"Add\" in AI Providers now offers *Local agent using Goose* and *Local agent using pi*, so you can pick the engine when you create the connection. Goose remains the default and the more thoroughly tested of the two; pi is marked Beta. An engine you have already set up is shown as configured rather than offered again, and connections are labelled with their engine so two local agents are tellable apart.",
+          "**Permission modes for the Local Agent.** The mode picker now works for local agents as it does for the other agents, with three levels: *Read Only* (reads and searches, refuses writes and commands), *Agent* (asks before writing files or running commands — the default), and *Full Access* (no prompts). Refusals in Read Only explain that the restriction applies to the whole session, so the agent proposes an alternative instead of retrying the same blocked action."
+        ],
+        "fixes": [
+          "**Updating an agent could leave it unable to start.** On Apple Silicon, updating an already-installed agent replaced the file in a way macOS treats as tampering, so the next launch was killed by the system with no error message. Affected every managed agent after an update; fresh installs were fine."
+        ]
+      },
+      "underTheHood": [
+        "The ACP↔pi bridge moved to its own repository (`PeterBlenessy/notesage-acp-pi`) with an independent version line, and is installed from its releases at an exact pin (`0.1.1`) with checksum verification. The in-repo copy is gone; only the two pi extensions Notesage embeds at compile time remain, vendored, with the wire constants they share with the bridge pinned by tests on both sides.",
+        "Session modes are enforced in the bridge rather than in the pi extension, so switching mode takes effect on the next tool call without respawning the agent. Forks inherit their parent's mode instead of widening to the default, and `session/load` re-advertises a session's own mode.",
+        "Auto-approved and auto-blocked tool calls are now logged with the mode that decided them — previously a Full Access session left no record of what ran on the user's behalf.",
+        "Agent binaries are installed by staging and renaming rather than overwriting in place; the regression test asserts the inode changed, since asserting file contents passes against the broken behaviour.",
+        "First direct tests for the shipped permission gate, which runs inside pi and had never been exercised by the suite, and for `backfillAcpCapabilities`, which was mocked at every call site.",
+        "Removed the CI jobs that published bridge binaries as Notesage release assets; nothing installs those now that the binary is resolved from the bridge's own repository."
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.22",
+      "date": "2026-07-31",
+      "previousVersion": "0.48.0-alpha.21",
+      "sections": {
+        "features": [
+          "feat(acp): surface agent slash commands in the / menu (#567)"
+        ]
+      },
+      "underTheHood": [
+        "feat(acp): surface agent slash commands in the / menu"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.21",
+      "date": "2026-07-31",
+      "previousVersion": "0.48.0-alpha.20",
+      "sections": {
+        "features": [
+          "feat(local-ai): give local agentic work room to work, and make its failures visible (#566)"
+        ],
+        "fixes": [
+          "fix(acp): tell the user when an agent stops before finishing (#565)"
+        ]
+      },
+      "underTheHood": [
+        "feat(telemetry): count how often context compaction fires",
+        "feat(local-ai): add Qwen3.5 9B — 256K context in place of Qwen3 8B's 32K",
+        "feat(local-ai): opt-in agentic eval harness for local models",
+        "feat(local-ai): compact context at the turn boundary instead of deleting it",
+        "feat(ai): context compaction core — summarize what a trim would delete",
+        "docs(local-ai): record that tool calls are already grammar-constrained",
+        "fix(local-ai): cap tool schemas against the local context window",
+        "feat(local-ai): let users read the inference engine's log",
+        "perf(local-ai): size the context to the model and the machine",
+        "perf(local-ai): quantize the KV cache and give agentic turns room to work",
+        "fix(local-ai): stream the inference server's log instead of burying it",
+        "feat(telemetry): report how agent turns end",
+        "fix(acp): bound the injected conversation history",
+        "test(acp): cover the early-stop wiring, and stop the mock from rotting",
+        "feat(acp): let the user continue a turn that ran out of room",
+        "fix(acp): tell the user when an agent stops before finishing",
+        "fix(acp): return the turn stop reason instead of discarding it"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.20",
+      "date": "2026-07-29",
+      "previousVersion": "0.48.0-alpha.19",
+      "sections": {
+        "features": [
+          "feat: queue messages sent during ongoing agent work instead of interrupting (#563)"
+        ]
+      },
+      "underTheHood": [
+        "chore(deps): Bump dompurify from 3.4.11 to 3.4.12 in the npm_and_yarn group across 1 directory (#561)",
+        "chore(deps): resolve new npm audit advisories blocking CI",
+        "feat: queue messages sent during ongoing agent work instead of interrupting",
+        "chore(deps): Bump dompurify in the npm_and_yarn group across 1 directory"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.19",
+      "date": "2026-07-21",
+      "previousVersion": "0.48.0-alpha.18",
+      "sections": {
+        "features": [
+          "feat(relations): surface relations in the file hover preview; fix comet replay (#558)"
+        ],
+        "fixes": [
+          "fix(aw): add `blocked` state so externally-gated issues stop burning tdd runs (#556)"
+        ]
+      },
+      "underTheHood": [
+        "chore(deps): Bump serde_with from 3.20.0 to 3.21.0 in /src-tauri in the cargo group across 1 directory (#557)",
+        "docs: document the llama-server sidecar dev/prod build split (#559)",
+        "docs: document the llama-server sidecar dev/prod build split",
+        "feat(relations): surface relations in the file hover preview; fix comet replay",
+        "chore(deps): Bump serde_with",
+        "fix(aw): add blocked state so externally-gated issues stop burning tdd runs"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.18",
+      "date": "2026-07-10",
+      "previousVersion": "0.48.0-alpha.17",
+      "sections": {},
+      "underTheHood": [
+        "docs: 2026-07-08 test-coverage audit (#545)",
+        "test(markdown): cover Mermaid in round-trip gate + add drift guard (#546)",
+        "test(hooks): direct tests for agent-task + acp extracted functions (#547)",
+        "test(markdown): cover untested converters in markdown-html-converters (#548)",
+        "ci(coverage): enforce the coverage gate — instrument the full tree (#549)",
+        "test(editor-store): cover the v0/v1 → v2 persist migration (#550)",
+        "test(chat): cover the chat/message segment renderers (#551)",
+        "test(cmd): cover FloatingCommandBar split hooks + resize handles (#552)",
+        "test(settings/cmd): cover MCP settings dialogs + command-bar context pills (#553)",
+        "docs(audit): reference the full coverage-PR batch (#546–#553)",
+        "docs(audit): mark §2 findings resolved by the coverage PRs",
+        "test: add unit tests for MCP settings and cmd context components",
+        "test(cmd): cover command-bar split hooks and resize handles",
+        "test: add unit tests for chat message renderers",
+        "test(editor-store): cover the v0/v1 → v2 persist migration",
+        "ci(coverage): regenerate baseline against the full instrumented tree",
+        "test: add unit tests for markdown-html-converters helpers",
+        "ci(coverage): instrument the full tree + flag new-but-uncovered files",
+        "docs: add 2026-07-08 test-coverage audit"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.17",
+      "date": "2026-07-09",
+      "previousVersion": "0.48.0-alpha.16",
+      "sections": {
+        "fixes": [
+          "fix(security): reject unregistered agent ids in agent_uninstall (path traversal) (#536)",
+          "fix(security): mcp_oauth redirect SSRF + mcp command wrapper bypass + CI audit gating (#537)",
+          "fix(security): gate zero-click link-preview fetch, narrow process cap, extend IPv6 blocklist (#538)",
+          "fix(deps): bump crossbeam-epoch 0.9.18 → 0.9.20 (RUSTSEC-2026-0204) (#542)"
+        ]
+      },
+      "underTheHood": [
+        "Bump rollup from 4.57.1 to 4.59.0 in the npm_and_yarn group across 1 directory (#1)",
+        "docs: 2026-07-05 security re-audit + dependency health reports (#535)",
+        "chore(deps): bump @tiptap/* 3.23.6 → 3.27.3 (#540)",
+        "chore(deps): bump pdfjs-dist 5.7.284 → 6.1.200 (#541)",
+        "test(markdown): cover Mermaid in round-trip gate + add drift guard (#546)",
+        "test(hooks): direct tests for agent-task + acp extracted functions (#547)",
+        "test: cover extracted agent-task + acp session-config units",
+        "test(markdown): cover Mermaid in round-trip gate + add drift guard",
+        "docs: add resolution notes to 2026-07-05 audit reports",
+        "docs: add 2026-07-05 security re-audit and dependency health reports"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.16",
+      "date": "2026-07-08",
+      "previousVersion": "0.48.0-alpha.15",
+      "sections": {
+        "fixes": [
+          "fix(security): gate zero-click link-preview fetch, narrow process cap, extend IPv6 blocklist (#538)"
+        ]
+      },
+      "underTheHood": [
+        "chore(deps): bump @tiptap/* 3.23.6 → 3.27.3 (#540)",
+        "chore(deps): bump @tiptap/* 3.23.6 → 3.27.3",
+        "fix(security): gate zero-click link-preview fetch, narrow process cap, extend IPv6 blocklist"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.15",
+      "date": "2026-07-08",
+      "previousVersion": "0.48.0-alpha.14",
+      "sections": {
+        "fixes": [
+          "fix(security): mcp_oauth redirect SSRF + mcp command wrapper bypass + CI audit gating (#537)",
+          "fix(deps): bump crossbeam-epoch 0.9.18 → 0.9.20 (RUSTSEC-2026-0204) (#542)"
+        ]
+      },
+      "underTheHood": [
+        "fix(deps): bump crossbeam-epoch 0.9.18 → 0.9.20 (RUSTSEC-2026-0204)"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.14",
+      "date": "2026-07-07",
+      "previousVersion": "0.48.0-alpha.13",
+      "sections": {
+        "fixes": [
+          "fix(security): reject unregistered agent ids in agent_uninstall (path traversal) (#536)",
+          "fix(security): mcp_oauth redirect SSRF + mcp command wrapper bypass + CI audit gating (#537)"
+        ]
+      },
+      "underTheHood": [
+        "fix(security): harden mcp_oauth redirects + mcp command guard, gate CI audits",
+        "fix(security): reject unregistered agent ids in agent_uninstall"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.13",
+      "date": "2026-07-05",
+      "previousVersion": "0.48.0-alpha.12",
+      "sections": {},
+      "underTheHood": [
+        "Deep review refactor 1: decompose useAgentTaskOperations (#523)",
+        "refactor(hooks): decompose useAgentTaskOperations into agent-task modules"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.12",
+      "date": "2026-07-05",
+      "previousVersion": "0.48.0-alpha.11",
+      "sections": {},
+      "underTheHood": [
+        "Deep review batch 1: runtime bug fixes (races, boundaries, chat rendering, cancel gaps) (#512)",
+        "Deep review batch 2: dead-code removal, doc drift, listener-lifecycle fixes (#513)",
+        "Deep review batch 3: Rust backend hardening (#514)",
+        "Deep review batch 4: runtime validation at trust boundaries (#515)",
+        "Deep review batch 5a: wire five half-implemented features (#516)",
+        "Deep review batch 5b: rewire git branch diff review via the Quiet sidebar (#518)",
+        "Deep review batch 5c: typewriter scrolling, Copilot progress segments, sandbox activity panel (#519)",
+        "test: reference PR #516 in the deflake comment (CI trigger)",
+        "fix(settings): guard SandboxActivitySettings against non-array IPC results",
+        "test: deflake keyboard-nav tests in cmd-bar mode pickers",
+        "feat: typewriter scrolling, Copilot progress segments, sandbox activity panel",
+        "feat(git): rewire branch diff review via the Quiet sidebar",
+        "feat: wire five half-implemented features end-to-end",
+        "fix: runtime validation at trust boundaries",
+        "fix(backend): harden proxy, downloads, process cleanup, and shared SSRF guard",
+        "chore: delete orphaned legacy sidebar subtree",
+        "fix: listener-lifecycle guards and render hot-path polish",
+        "chore: remove dead code confirmed by the deep review",
+        "docs: fix drift found by the 2026-07-03 deep review",
+        "fix(proxy): remove dead network-domain-always emit; lock Allow Always persistence with tests",
+        "fix(ai): cancel gating, completion supersede guard, reactive deps, ACP session-id gating",
+        "fix(chat): stable keys, batched autoscroll, memo hygiene, error boundaries",
+        "fix(editor): close instant-load pipeline races"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.11",
+      "date": "2026-07-05",
+      "previousVersion": "0.48.0-alpha.10",
+      "sections": {},
+      "underTheHood": [
+        "Deep review 2026-07-03: audit report + batch-0 remediation decisions (#517)",
+        "docs: record batch-0 decisions for deep-review remediation",
+        "docs: add 2026-07-03 deep-review audit report"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.10",
+      "date": "2026-07-04",
+      "previousVersion": "0.48.0-alpha.9",
+      "sections": {},
+      "underTheHood": [
+        "chore(deps): resolve Rust dependency audit (RustSec advisories) (#510)",
+        "chore(deps): resolve Rust audit — bump anyhow/memmap2, ignore transitive quick-xml DoS"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.9",
+      "date": "2026-07-03",
+      "previousVersion": "0.48.0-alpha.8",
+      "sections": {
+        "features": [
+          "feat(marketing): notesage.io static-site generator — 5 pages, real product shots, a11y gate (#217)"
+        ]
+      },
+      "underTheHood": [
+        "fix(styles): accent test parses `@theme static`",
+        "fix(styles): teach contrast-audit to parse `@theme static`",
+        "feat(marketing): accessibility quality pass + CI quality gate",
+        "feat(marketing): add Getting Started and About pages",
+        "feat(marketing): add Features and Privacy pages on a shared shell",
+        "refactor(marketing): reframe audience band as use cases",
+        "fix(marketing): make audience personas consistent (people, not work areas)",
+        "feat(marketing): audience band + real chart shots; isolate gen-site from CI",
+        "feat(marketing): premium landing redesign with varied product shots",
+        "feat(marketing): app-window frame, command bar, and landing assembler",
+        "feat(marketing): deterministic HTML generation of demo docs",
+        "fix(styles): emit editor-only theme tokens with @theme static",
+        "feat(content): single-source content-atom system for notesage.io",
+        "chore(docs): add end-user marketing content package with screenshots"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.8",
+      "date": "2026-07-01",
+      "previousVersion": "0.48.0-alpha.7",
+      "sections": {
+        "features": [
+          "feat(automations): scheduled & event-triggered task automation engine (#505)",
+          "feat(sidebar): discoverable Settings button + relocate status strip to sidebar footer (#506)"
+        ]
+      },
+      "underTheHood": [
+        "Bump rollup from 4.57.1 to 4.59.0 in the npm_and_yarn group across 1 directory (#1)",
+        "Fix Copilot LSP sign-in: handle server→client signIn request for device code (#2)",
+        "Refactor Copilot LSP sign-in flow to handle three-phase auth (#3)",
+        "Add configurable debug logging and fix Copilot LSP issues (#4)",
+        "Bump @mozilla/readability from 0.5.0 to 0.6.0 in /bundled-skills/download-webpage/scripts in the npm_and_yarn group across 1 directory (#5)",
+        "Add hardcoded values audit research (#6)",
+        "Bump quinn-proto from 0.11.13 to 0.11.14 in /src-tauri in the cargo group across 1 directory (#7)",
+        "Add 6 PRDs for local AI agentic features and productivity enhancements (#8)",
+        "Add PRD for always-on memory agent (ported from Google Cloud Platform) (#9)",
+        "Add CLI/ACP vs Agent SDK analysis document (#10)",
+        "Add App Store launch readiness research document (#11)",
+        "Add sandbox-runtime comparison research with identified gaps (#12)",
+        "Claude/analyze notesage competitors pe7w6 (#13)",
+        "feat(sidebar): discoverable Settings button + relocate status strip to sidebar footer",
+        "docs(automations): reword Agent Tasks routing description",
+        "docs(automations): feature doc + agent-step provider/permissions guidance",
+        "ci: re-trigger run for the Playwright scan-crash fix",
+        "fix(automations): don't crash the startup scan when list_automations is empty",
+        "fix(ci): sync pnpm-lock with the picomatch override specifier",
+        "feat(automations): interactive pills, folder picker, removable conditions; drop skill step",
+        "fix(automations): make clicking an \"Insert variable\" pill actually insert",
+        "feat(automations): magic-variable pills in step fields (redesign Pass 2)",
+        "feat(automations): intuitive dialog — recipe gallery + When/Do framing",
+        "feat(automations): rework the New/Edit automation dialog UX",
+        "feat(automations): Phase 4 Track A — per-step conditional `if`",
+        "refactor(automations): harden foundation per 3-reviewer audit (pre-Phase-4)",
+        "docs(automations): Phase 4 task breakdown (3 optional tracks)",
+        "feat(automations): Phase 3 — workflow/app-event triggers",
+        "docs(automations): Phase 3 task breakdown + cross-links",
+        "feat(automations): Phase 2 — file-event triggers + skill step",
+        "docs(automations): Phase 2 task breakdown + cross-links",
+        "fix(automations): address design-review findings",
+        "fix(automations): address security-review findings (SEC-1/3/4/5)",
+        "docs(automations): mark Phase 1 complete (tasks + PRD)",
+        "test(automations): automation-store + restart-mode coverage (Task #13)",
+        "feat(automations): runs history view + AgentOrb branch (Task #12)",
+        "feat(automations): arm dialog + missed-runs chooser (Task #11)",
+        "feat(automations): form builder (Task #10)",
+        "feat(automations): Settings -> Automations list panel (Task #9)",
+        "feat(automations): approve-to-arm (Task #8)",
+        "feat(automations): pipeline executor + always-mounted runner (Task #7)",
+        "feat(automations): template renderer for {{ }} tokens (Task #6)",
+        "feat(automations): settings master toggle + failure-notify + flag sync (Task #5)",
+        "feat(automations): activity-store kind + durable runs history (Task #4)",
+        "feat(automations): TS types, automation-store, discovery hook (Task #3)",
+        "feat(automations): tokio scheduler + catch-up reconciliation (Task #2)",
+        "feat(automations): add automations command module (Task #1)",
+        "docs(automations): PRD, Phase-1 tasks, and format research"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.7",
+      "date": "2026-06-27",
+      "previousVersion": "0.48.0-alpha.6",
+      "sections": {
+        "features": [
+          "feat(relations): morph handle⇄panel + comet attention cue (#502)"
+        ]
+      },
+      "underTheHood": [
+        "feat(relations): morph handle⇄panel + comet attention cue (#502)"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.6",
+      "date": "2026-06-26",
+      "previousVersion": "0.48.0-alpha.5",
+      "sections": {},
+      "underTheHood": [
+        "test: run files sequentially to fix order-dependent flaky tests (#501)",
+        "test: run files sequentially to fix order-dependent flaky tests (#501)"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.5",
+      "date": "2026-06-26",
+      "previousVersion": "0.48.0-alpha.4",
+      "sections": {
+        "features": [
+          "feat(telemetry): instrument rich-block inserts + settings changes (#499)"
+        ]
+      },
+      "underTheHood": [
+        "feat(telemetry): instrument rich-block inserts + settings changes (#499)"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.4",
+      "date": "2026-06-23",
+      "previousVersion": "0.48.0-alpha.3",
+      "sections": {
+        "features": [
+          "feat(telemetry): diagnostic logging on both sides of the Aptabase path (#497)"
+        ]
+      },
+      "underTheHood": [
+        "feat(telemetry): diagnostic logging on both sides of the Aptabase path (#497)"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.3",
+      "date": "2026-06-22",
+      "previousVersion": "0.48.0-alpha.2",
+      "sections": {
+        "fixes": [
+          "fix(telemetry): wire Aptabase usage events (v2 IPC) + default consent on for alpha builds (#493)"
+        ]
+      },
+      "underTheHood": [
+        "Bump rollup from 4.57.1 to 4.59.0 in the npm_and_yarn group across 1 directory (#1)",
+        "Add hardcoded values audit research (#6)",
+        "Bump quinn-proto from 0.11.13 to 0.11.14 in /src-tauri in the cargo group across 1 directory (#7)",
+        "Add CLI/ACP vs Agent SDK analysis document (#10)",
+        "Add App Store launch readiness research document (#11)",
+        "Claude/analyze notesage competitors pe7w6 (#13)",
+        "Bump picomatch from 4.0.3 to 4.0.4 in the npm_and_yarn group across 1 directory (#14)",
+        "Add Skills-to-Tools Glue Layer PRD and Research (#15)",
+        "Bump @xmldom/xmldom from 0.8.11 to 0.8.12 in the npm_and_yarn group across 1 directory (#16)",
+        "OKF Wiki-Navigation: link graph, Relations panel, hover preview, [[wikilinks]] + enrich skill (#487)",
+        "chore(deps): bump quinn-proto to clear RUSTSEC-2026-0185 (#494)",
+        "docs(telemetry): consent default is build-derived, not channel-derived (#495)",
+        "docs(telemetry): consent default is build-derived, not channel-derived (#495)",
+        "chore(deps): bump quinn-proto 0.11.14 → 0.11.15 (RUSTSEC-2026-0185) (#494)",
+        "fix(telemetry): wire Aptabase usage events (v2 IPC) + default consent on for alpha builds (#493)",
+        "OKF Wiki-Navigation: link graph, Relations panel, hover preview, [[wikilinks]] + enrich skill (#487)"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.2",
+      "date": "2026-06-20",
+      "previousVersion": "0.48.0-alpha.1",
+      "sections": {},
+      "underTheHood": [
+        "docs(history): add v0.47.0 stable release notes to main (#491)",
+        "docs(history): add v0.47.0 stable release notes to main (#491)"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.1",
+      "date": "2026-06-19",
+      "previousVersion": "0.47.0-alpha.8",
+      "sections": {},
+      "underTheHood": [
+        "chore(deps): patch undici, js-yaml & @babel/core security advisories (#489)",
+        "chore(deps): patch undici, js-yaml, @babel/core advisories via pnpm overrides (#489)"
+      ]
+    },
+    {
       "version": "0.47.0",
       "date": "2026-06-19",
       "previousVersion": "0.46.0",
@@ -19,6 +786,147 @@
           "**Network restrictions no longer get agents stuck.** When an agent is restricted to certain sites, its requests are handled correctly instead of leaving the conversation hanging."
         ]
       }
+    },
+    {
+      "version": "0.47.0-alpha.8",
+      "date": "2026-06-19",
+      "previousVersion": "0.47.0-alpha.7",
+      "sections": {
+        "features": [
+          "feat(shortcuts): centralize keyboard shortcuts into an App-root dispatcher (#486)"
+        ]
+      },
+      "underTheHood": [
+        "feat(shortcuts): centralize keyboard shortcuts into an App-root dispatcher (#486)"
+      ]
+    },
+    {
+      "version": "0.47.0-alpha.7",
+      "date": "2026-06-19",
+      "previousVersion": "0.47.0-alpha.6",
+      "sections": {},
+      "underTheHood": [
+        "chore(deps): bump dompurify from 3.4.9 to 3.4.11 in the npm_and_yarn group across 1 directory (#484)",
+        "chore(deps): bump dompurify in the npm_and_yarn group across 1 directory (#484)"
+      ]
+    },
+    {
+      "version": "0.47.0-alpha.6",
+      "date": "2026-06-19",
+      "previousVersion": "0.47.0-alpha.5",
+      "sections": {
+        "fixes": [
+          "fix(drawing): stub the CJK font so drawings stop spamming font errors (#481)",
+          "fix(editor): grant asset scope early/ungated so doc images load on first paint (#482)"
+        ]
+      },
+      "underTheHood": [
+        "fix(editor): grant asset scope early/ungated so doc images load on first paint (#482)",
+        "fix(drawing): stub the CJK font so drawings stop spamming font errors (#481)"
+      ]
+    },
+    {
+      "version": "0.47.0-alpha.5",
+      "date": "2026-06-17",
+      "previousVersion": "0.47.0-alpha.4",
+      "sections": {
+        "fixes": [
+          "fix(editor): images show on first paint, not just after a refresh (#478)",
+          "fix(drawing): bundle Excalidraw's Latin fonts locally (no CDN, no CSP spam) (#479)"
+        ]
+      },
+      "underTheHood": [
+        "fix(drawing): bundle Excalidraw's Latin fonts locally (no CDN, no CSP spam) (#479)",
+        "fix(editor): images show on first paint, not just after a refresh (#478)"
+      ]
+    },
+    {
+      "version": "0.47.0-alpha.4",
+      "date": "2026-06-17",
+      "previousVersion": "0.47.0-alpha.3",
+      "sections": {
+        "fixes": [
+          "fix(network): always-mounted domain approvals so restrictions don't wedge agents (#474)"
+        ]
+      },
+      "underTheHood": [
+        "fix(network): always-mounted domain approvals so restrictions don't wedge agents (#474)"
+      ]
+    },
+    {
+      "version": "0.47.0-alpha.3",
+      "date": "2026-06-17",
+      "previousVersion": "0.47.0-alpha.2",
+      "sections": {
+        "fixes": [
+          "fix(drawing): skip Excalidraw font inlining so drawings don't hang the app (#475)"
+        ]
+      },
+      "underTheHood": [
+        "chore(deps): bump the npm_and_yarn group across 2 directories with 5 updates (#473)",
+        "fix(drawing): skip Excalidraw font inlining so drawings don't hang the app",
+        "chore(deps): bump the npm_and_yarn group across 2 directories with 5 updates"
+      ]
+    },
+    {
+      "version": "0.47.0-alpha.2",
+      "date": "2026-06-16",
+      "previousVersion": "0.47.0-alpha.1",
+      "sections": {
+        "features": [
+          "feat(cmd-bar): session lifecycle & concurrent multitasking (#469)"
+        ]
+      },
+      "underTheHood": [
+        "Bump rollup from 4.57.1 to 4.59.0 in the npm_and_yarn group across 1 directory (#1)",
+        "Fix Copilot LSP sign-in: handle server→client signIn request for device code (#2)",
+        "Refactor Copilot LSP sign-in flow to handle three-phase auth (#3)",
+        "Add configurable debug logging and fix Copilot LSP issues (#4)",
+        "Bump @mozilla/readability from 0.5.0 to 0.6.0 in /bundled-skills/download-webpage/scripts in the npm_and_yarn group across 1 directory (#5)",
+        "Add hardcoded values audit research (#6)",
+        "Bump quinn-proto from 0.11.13 to 0.11.14 in /src-tauri in the cargo group across 1 directory (#7)",
+        "Add 6 PRDs for local AI agentic features and productivity enhancements (#8)",
+        "Add PRD for always-on memory agent (ported from Google Cloud Platform) (#9)",
+        "Add CLI/ACP vs Agent SDK analysis document (#10)",
+        "Add App Store launch readiness research document (#11)",
+        "Add sandbox-runtime comparison research with identified gaps (#12)",
+        "Claude/analyze notesage competitors pe7w6 (#13)",
+        "Bump picomatch from 4.0.3 to 4.0.4 in the npm_and_yarn group across 1 directory (#14)",
+        "Add Skills-to-Tools Glue Layer PRD and Research (#15)",
+        "Bump @xmldom/xmldom from 0.8.11 to 0.8.12 in the npm_and_yarn group across 1 directory (#16)",
+        "docs(cmd-bar): record post-review hardening pass + defer #11 to issue #468",
+        "perf(cmd-bar): single-pass run-state derivations in orb + history rows (review perf)",
+        "fix(cmd-bar): per-conversation ACP stream cleanup + targeted cancel (review #3,#13)",
+        "refactor(cmd-bar): per-conversation tool-permission map + shared approval UI (review #4,#6,#7,#8,#9)",
+        "fix(cmd-bar): route streaming writes to the owning conversation (review #1,#2,#5)",
+        "test(cmd-bar): cross-cutting integration pass + mark feature complete (task #16)",
+        "fix(cmd-bar): preserve the typed draft when closing via the X button",
+        "feat(cmd-bar): desktop notifications for backgrounded sessions (task #15)",
+        "feat(cmd-bar): orb shows unwatched sessions + needs-you pulse + panel list (tasks #12, #13, #14)",
+        "feat(cmd-bar): inline permission card in history rows (task #10)",
+        "feat(cmd-bar): history row status badges + switcher (tasks #9, #11)",
+        "feat(cmd-bar): per-conversation permission ownership + foreground-aware auto-deny (tasks #6, #7)",
+        "feat(cmd-bar): concurrency cap + FIFO queue (task #5)",
+        "feat(cmd-bar): maxConcurrentSessions + permission-notify settings (task #8)",
+        "feat(cmd-bar): session run-state owner + per-conversation loading (task #4)",
+        "feat(cmd-bar): per-conversation streaming writes (task #3)",
+        "feat(cmd-bar): ACP agent registry, per-conversation (task #2)",
+        "feat(cmd-bar): session run-state store (task #1)",
+        "docs: PRD + tasks for command-bar session lifecycle & concurrent multitasking"
+      ]
+    },
+    {
+      "version": "0.47.0-alpha.1",
+      "date": "2026-06-15",
+      "previousVersion": "0.46.0-alpha.30",
+      "sections": {
+        "fixes": [
+          "fix(cmd-bar): sort skill list + preserve input draft on close (#466)"
+        ]
+      },
+      "underTheHood": [
+        "fix(cmd-bar): sort the skill list and preserve the input draft on close (#466)"
+      ]
     },
     {
       "version": "0.46.0",
@@ -49,6 +957,416 @@
       }
     },
     {
+      "version": "0.46.0-alpha.30",
+      "date": "2026-06-14",
+      "previousVersion": "0.46.0-alpha.29",
+      "sections": {},
+      "underTheHood": [
+        "chore(deps): pin esbuild >=0.28.1 (security) (#463)",
+        "chore(deps): pin esbuild >=0.28.1 to clear two Dependabot alerts (#463)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.29",
+      "date": "2026-06-14",
+      "previousVersion": "0.46.0-alpha.28",
+      "sections": {
+        "fixes": [
+          "fix(local-agent): harden setup/heartbeat + in-app re-authentication (#461)"
+        ]
+      },
+      "underTheHood": [
+        "fix(local-agent): harden setup/heartbeat + in-app re-authentication (#461)",
+        "docs(perf): record v0.46.0 startup baseline"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.28",
+      "date": "2026-06-14",
+      "previousVersion": "0.46.0-alpha.27",
+      "sections": {},
+      "underTheHood": [
+        "Add PRD: Local AI Agents — offline agentic chat for local models (#458)",
+        "feat(ai): Local AI Agents — offline agentic chat for local models (#458)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.27",
+      "date": "2026-06-12",
+      "previousVersion": "0.46.0-alpha.26",
+      "sections": {},
+      "underTheHood": [
+        "test: deflake the test suite — remove wall-clock timing asserts, make perf benchmarks advisory (#456)",
+        "test: deflake the test suite — remove wall-clock timing asserts, make perf benchmarks advisory (#456)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.26",
+      "date": "2026-06-11",
+      "previousVersion": "0.46.0-alpha.25",
+      "sections": {
+        "fixes": [
+          "fix(html-viewer): render under production CSP, keep shortcuts in the sandboxed iframe, animate find bar (#451)",
+          "fix(html-viewer): re-apply find query on iframe load (fixes find-in-frame flake) (#454)"
+        ]
+      },
+      "underTheHood": [
+        "security: harden skill/MCP execution, link-preview beacons, CSP, asset scope (#444)",
+        "fix(html-viewer): re-apply the find query on iframe load (fixes find-in-frame flake)",
+        "feat(html-viewer): animate the find-bar morph open and closed",
+        "fix(html-viewer): keep app keyboard shortcuts working when the sandboxed iframe has focus",
+        "fix(html-viewer): serve sandboxed iframe from htmlpreview:// so it renders under the production CSP"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.25",
+      "date": "2026-06-11",
+      "previousVersion": "0.46.0-alpha.24",
+      "sections": {
+        "features": [
+          "feat(quiet): optional title bar, resizable sidebar, and sidebar polish (#452)"
+        ]
+      },
+      "underTheHood": [
+        "test(e2e-real): enable the title bar for the dirty-dot spec + update docs",
+        "feat(quiet-sidebar): empty-Pinned hide, sticky header, list-all children, nested indent guides, active-doc highlight, resize handle",
+        "feat(quiet-layout): hide-able title bar + flush/transparent top, resizable sidebar width"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.24",
+      "date": "2026-06-10",
+      "previousVersion": "0.46.0-alpha.23",
+      "sections": {
+        "fixes": [
+          "fix(html-viewer): fix 10 bugs from v0.46.0 code review (#375) (#377)",
+          "fix(html-viewer): restore find-in-document in the sandboxed iframe modes (#449)"
+        ]
+      },
+      "underTheHood": [
+        "fix(html-viewer): restore find-in-document in the sandboxed iframe modes (#449)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.23",
+      "date": "2026-06-10",
+      "previousVersion": "0.46.0-alpha.22",
+      "sections": {
+        "fixes": [
+          "fix(html-viewer): render iframe paths from blob: URL so document styles survive the CSP (#447)"
+        ]
+      },
+      "underTheHood": [
+        "security: harden skill/MCP execution, link-preview beacons, CSP, asset scope (#444)",
+        "fix(html-viewer): render iframe paths from blob: URL so document styles survive the CSP (#447)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.22",
+      "date": "2026-06-10",
+      "previousVersion": "0.46.0-alpha.21",
+      "sections": {
+        "fixes": [
+          "fix(ci): alpha-cut gates on any merged PR, no-ops cleanly when idle (#442)",
+          "fix(acp): conversation/session/branch state integrity (#445)"
+        ]
+      },
+      "underTheHood": [
+        "chore(editor): split StatusTray.tsx into one-component-per-file (#440)",
+        "security: harden skill/MCP execution, link-preview beacons, CSP, asset scope (#444)",
+        "fix(acp): conversation/session/branch state integrity (#445)",
+        "security: harden skill/MCP execution, link-preview beacons, CSP, asset scope (#444)",
+        "fix(ci): alpha-cut gates on any merged PR, no-ops cleanly when idle (#442)",
+        "chore(editor): split StatusTray.tsx into one-component-per-file (#439) (#440)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.21",
+      "date": "2026-06-09",
+      "previousVersion": "0.46.0-alpha.20",
+      "sections": {
+        "fixes": [
+          "fix(transcription): auto-detect spoken language instead of forcing English (#437)"
+        ],
+        "improvements": [
+          "refactor(status-bar): remove dead full variant, sync Local AI dot, add background-activity ring (#438)"
+        ]
+      },
+      "underTheHood": [
+        "refactor(status-bar): remove dead full variant, sync Local AI dot, add activity ring (#438)",
+        "fix(transcription): auto-detect spoken language instead of forcing English (#437)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.20",
+      "date": "2026-06-08",
+      "previousVersion": "0.46.0-alpha.19",
+      "sections": {
+        "fixes": [
+          "fix(mcp): close deep-link RCE + OAuth SSRF (security) (#419)"
+        ],
+        "improvements": [
+          "refactor(sidebar): extract ProjectRow, ChildRow + inline-edit/drag hooks from ProjectsSection (#416)"
+        ]
+      },
+      "underTheHood": [
+        "Fix ArrowUp re-render race in ProjectsSection focusRow (#350)",
+        "MCP server registration UX overhaul (#410)",
+        "chore(skills): suite-wide review fixes + Autonomy policy (#411)",
+        "docs(changelog): backfill real alpha.14–19 notes + fix the generator (#434)",
+        "test(e2e-real): sidebar keyboard-nav regression lock (#349) that actually loads (#435)",
+        "chore(skills): suite-wide review fixes + Autonomy policy (#411)",
+        "test(e2e-real): sidebar keyboard-nav regression lock (#349) that actually loads (#435)",
+        "docs(changelog): backfill real alpha.14–19 notes + fix the generator (#434)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.19",
+      "date": "2026-06-08",
+      "previousVersion": "0.46.0-alpha.18",
+      "sections": {
+        "fixes": [
+          "**Fixed the launch crash** affecting alpha.16, .17, and .18 (#432). The telemetry plugin ran `tokio::spawn` during startup with no Tokio runtime entered, panicking immediately; the app now enters a runtime before the Tauri builder so it launches cleanly."
+        ]
+      },
+      "underTheHood": [
+        "`run()` builds a Tokio runtime, hands it to Tauri (`async_runtime::set`), and enters it for the process lifetime before the builder runs (#432)",
+        "Rust unit test proving the entered runtime gives plugin-setup `tokio::spawn` a reactor (#432)",
+        "CI smoke-launch step builds with the telemetry key and actually starts the app, failing if the reactor panic returns or startup is never reached (#432)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.18",
+      "date": "2026-06-08",
+      "previousVersion": "0.46.0-alpha.17",
+      "sections": {
+        "fixes": [
+          "Primary and destructive buttons now keep a legible **white label + icon on the accent fill** in both light and dark mode (matching macOS System Settings), including a readable disabled state (#430)."
+        ]
+      },
+      "underTheHood": [
+        "New `--color-on-accent` token: white on a chromatic accent in both themes, falling back to `--color-primary-foreground` on the neutral no-accent button (#430)",
+        "Default `Button` label uses `--color-on-accent` instead of `--color-primary-foreground` (which was dark-on-accent in dark mode) (#430)",
+        "Disabled buttons keep their label and dim via `opacity-70` instead of the unreadable grey `disabled:text-muted-foreground` (#430)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.17",
+      "date": "2026-06-08",
+      "previousVersion": "0.46.0-alpha.16",
+      "sections": {
+        "features": [
+          "**Recording controls in the agent orb** (#427): stop, pause, and resume a meeting recording inline, with a pause-aware timer and a clock-style seconds animation distinct from the agent-activity pulse.",
+          "**Richer transcript items** (#427): click a finished transcript to open it, reveal it in Finder, or move it to a project; each shows **start – stop · length**."
+        ],
+        "fixes": [
+          "Stop the StatusTray mic tooltip from auto-opening when the popover opens (#428).",
+          "Focus mode (⌘.) now **fully hides the sidebar** instead of just dimming it (#428).",
+          "Fix transcript frontmatter rendering `[object Object]` for the `segments` array (#427)."
+        ]
+      },
+      "underTheHood": [
+        "AgentOrb recording panel: stop/pause/resume controls + pause-aware duration from written samples (#427)",
+        "Seconds-ray ring animation that builds up one ray per second (#427)",
+        "Transcript card: open / Reveal in Finder / Move to project actions + start–stop · length info row (#427)",
+        "Rename recording bundles from \"Meeting <timestamp>\" to \"Recording <timestamp>\" (#427)",
+        "`pause_recording` / `resume_recording` Tauri commands; capture pause discards samples without tearing down the cpal stream (#427)",
+        "StatusTray popover: prevent default autofocus so the mic tooltip doesn't fire on open (#428)",
+        "Focus-mode CSS: collapse the sidebar's grid track so the document reclaims the space (#428)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.16",
+      "date": "2026-06-07",
+      "previousVersion": "0.46.0-alpha.15",
+      "sections": {
+        "features": [
+          "**Opt-in telemetry** (#423):"
+        ]
+      },
+      "underTheHood": [
+        "Usage analytics (Aptabase) + crash reporting (Sentry) with channel-based opt-out (#423)",
+        "Sentry client initialised once up front; crash egress gated at runtime by binding/unbinding the Hub client (#423)",
+        "`before_send` PII scrubber + breadcrumb capture disabled to avoid leaking file paths (#423)",
+        "Remove unused `WWW-Authenticate` parsing helpers from MCP OAuth (dead code) (#425)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.15",
+      "date": "2026-06-07",
+      "previousVersion": "0.46.0-alpha.14",
+      "sections": {
+        "improvements": [
+          "AI settings: the access / isolation controls are now grouped under a clearer **\"Permission scopes\"** heading (#422)."
+        ]
+      },
+      "underTheHood": [
+        "Rename the access/isolation grouping to \"Permission scopes\" in AI settings (#422)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.14",
+      "date": "2026-06-04",
+      "previousVersion": "0.46.0-alpha.13",
+      "sections": {
+        "features": [
+          "Connect to **remote (Streamable HTTP) MCP servers**, not just local stdio ones — added end to end (backend transport + settings UI) (#410).",
+          "**OAuth 2.1 for protected MCP servers**: authorization-code + PKCE, RFC 9728/8414 discovery, dynamic client registration, a loopback callback, and token refresh — tokens stored in the OS keychain with an in-app \"Re-authenticate\" / \"Sign out\" flow (#410).",
+          "**Curated MCP server catalog**: a \"Browse catalog\" picker seeded with the official reference servers (Filesystem, Fetch, Memory, Git, Sequential Thinking, Time, Everything), each badged \"Official\" with provenance links (#410).",
+          "**Validate-on-add**: adding a server runs a dry-run handshake (connect → initialize → list tools) and previews its tools before anything is written to `mcp.json` (#410).",
+          "**Env secrets in the keychain**: MCP server environment values flagged secret are stored in the OS keychain and resolved only at spawn — `mcp.json` keeps just a reference, never the value (#410).",
+          "**One-click install** via `notesage://mcp/install?…` deep-links that open the validate-first Add dialog pre-filled (#410)."
+        ],
+        "fixes": [
+          "**Security**: closed a deep-link RCE and an OAuth SSRF on the MCP surface, and fixed an MCP server auto-start transport bug (#419)."
+        ]
+      },
+      "underTheHood": [
+        "Add remote (Streamable HTTP) MCP transport — backend (#410)",
+        "Wire remote (HTTP) MCP servers into the UI (#410)",
+        "Validate MCP servers before writing them (validate-on-add) (#410)",
+        "Add MCP catalog scaffolding (empty manifest), then seed it with official reference servers + provenance badges (#410)",
+        "Add OAuth 2.1 core for remote MCP servers (PKCE, token storage) — part 1 (#410)",
+        "Wire the OAuth authorization-code + PKCE flow — part 2 (#410)",
+        "Add OAuth authorize / re-auth UI for remote MCP servers — part 3 (#410)",
+        "Use the `oauth2` crate for MCP OAuth instead of hand-rolling (#410)",
+        "Resolve MCP env secrets from the keychain at spawn — backend (#410)",
+        "Store MCP env secrets in the keychain from the UI — frontend (#410)",
+        "Add `notesage://mcp/install` deep-link for one-click MCP add (#410)",
+        "Polish MCP catalog card + fix pre-existing design-system violations in MCP settings (#410)",
+        "Document the MCP registration UX overhaul (PRD + task breakdown) (#410)",
+        "Refactor: extract `ProjectRow`, `ChildRow` + inline-edit/drag hooks from `ProjectsSection` (#416)",
+        "Reconcile `Cargo.lock` after dropping the unused `tauri-plugin-fs` during merge (#419)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.13",
+      "date": "2026-06-03",
+      "previousVersion": "0.46.0-alpha.12",
+      "sections": {},
+      "underTheHood": [
+        "Hardware-aware local model recommendation (Phase 1 + Phase 2 runtime calibration) (#409)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.12",
+      "date": "2026-06-01",
+      "previousVersion": "0.46.0-alpha.11",
+      "sections": {},
+      "underTheHood": [
+        "chore(deps): bump tar from 0.4.45 to 0.4.46 in /src-tauri in the cargo group across 1 directory (#403)",
+        "refactor(acp): migrate to agent-client-protocol 0.12.1 builder API (#405)",
+        "test(cmd): fix flaky FileMode Enter-key test (#406)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.11",
+      "date": "2026-05-31",
+      "previousVersion": "0.46.0-alpha.10",
+      "sections": {},
+      "underTheHood": [
+        "feat(transcription): meeting recording with background transcription (#398)",
+        "Fix Claude Code agent auto-install by routing through npm (#399)",
+        "Route OpenAI Codex agent install through npm (#400)",
+        "Route Copilot CLI + LSP through npm and remove the GitHub-binary installer (#401)",
+        "Add opt-in smoke test for the managed agent install flow (#402)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.10",
+      "date": "2026-05-30",
+      "previousVersion": "0.46.0-alpha.9",
+      "sections": {},
+      "underTheHood": [
+        "ci(e2e-real): contain the WebDriver session-timeout cascade (#396)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.9",
+      "date": "2026-05-30",
+      "previousVersion": "0.46.0-alpha.8",
+      "sections": {},
+      "underTheHood": [
+        "fix(sidebar): prune Recent and Pinned on external file delete (#392)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.8",
+      "date": "2026-05-29",
+      "previousVersion": "0.46.0-alpha.7",
+      "sections": {},
+      "underTheHood": [
+        "fix(ci): fold auto-labelled PRs into alpha-cut ship list to dodge search lag (#387)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.7",
+      "date": "2026-05-29",
+      "previousVersion": "0.46.0-alpha.6",
+      "sections": {},
+      "underTheHood": [
+        "feat(release): surface merged-PR dump in alpha release notes (#385)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.6",
+      "date": "2026-05-29",
+      "previousVersion": "0.46.0-alpha.5",
+      "sections": {},
+      "underTheHood": [
+        "feat(ai): plumb response_format for schema-constrained local LLM output (#383)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.5",
+      "date": "2026-05-28",
+      "previousVersion": "0.46.0-alpha.4",
+      "sections": {},
+      "underTheHood": [
+        "feat(quiet-chrome): extend Aggressive preset with title bar + cmd bar fade and mouse-only unfade (#381)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.4",
+      "date": "2026-05-27",
+      "previousVersion": "0.46.0-alpha.3",
+      "sections": {},
+      "underTheHood": [
+        "fix(ci): exclude release PRs from alpha cut to prevent infinite loop (#374)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.3",
+      "date": "2026-05-27",
+      "previousVersion": "0.46.0-alpha.2",
+      "sections": {},
+      "underTheHood": [
+        "fix(html-viewer): fix 10 bugs from v0.46.0 code review (#375) (#377)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.2",
+      "date": "2026-05-26",
+      "previousVersion": "0.46.0-alpha.1",
+      "sections": {},
+      "underTheHood": [
+        "chore: release v0.46.0-alpha.1 (#372)"
+      ]
+    },
+    {
+      "version": "0.46.0-alpha.1",
+      "date": "2026-05-26",
+      "previousVersion": "0.45.0-alpha.5",
+      "sections": {},
+      "underTheHood": [
+        "fix(ci): bump minor (not patch) when starting new alpha series (#367)",
+        "fix(ci): auto-label untiered merged PRs as tier:B in alpha cut (#365)",
+        "chore: release v0.45.0-alpha.6 (#364)",
+        "fix(viewer): replace HtmlViewer static toolbar with floating pill (#363)",
+        "fix(html-viewer): enforce blockExternal on all three render paths (#360) (#362)"
+      ]
+    },
+    {
       "version": "0.45.0",
       "date": "2026-05-24",
       "previousVersion": "0.44.0",
@@ -65,6 +1383,104 @@
         "fixes": [
           "**`⌘⇧E` (Export), `⌘⇧L` (Sidebar), `⌘⇧R` (Recording) work again.** An editor extension was silently capturing these chords for paragraph alignment.",
           "**mermaid diagram security alerts closed.** The bundled mermaid renderer was advanced to close four alerts about Gantt-chart DoS, classDef HTML injection, configuration CSS injection, and classDef CSS injection."
+        ]
+      }
+    },
+    {
+      "version": "0.45.0-alpha.6",
+      "date": "2026-05-26",
+      "previousVersion": "0.45.0-alpha.5",
+      "sections": {},
+      "underTheHood": [
+        "fix(viewer): replace HtmlViewer static toolbar with floating pill (#363)",
+        "fix(html-viewer): enforce blockExternal on all three render paths (#360) (#362)"
+      ]
+    },
+    {
+      "version": "0.45.0-alpha.5",
+      "date": "2026-05-24",
+      "previousVersion": "0.45.0-alpha.4",
+      "sections": {
+        "improvements": [
+          "**Quiet Composer is now the only editor shell.** The earlier multi-column workspace with tab strips, the activity panel rail, the chat panel, and the command palette modal has been removed. Everything you used to do there now lives in one of the surfaces you already know: the floating command bar (⌘K) for prompts, palettes, and quick switches; the flat sidebar for Pinned / Projects / Recent / Tags / Mentions; and the document switcher (⌃Tab / ⌃⇧Tab) for cycling recent files. One coherent interface instead of two parallel ones.",
+          "**Large markdown documents reopen in under a second.** A regression introduced during the layout transition meant the editor's document state was being thrown away every time you switched to another file and back. Returning to a long note now feels instant — roughly six times faster on a 500 KB document — and your undo history is preserved across switches."
+        ],
+        "fixes": [
+          "**PDF, DOCX, and EPUB viewers no longer log a teardown error.** Switching from an open EPUB to a different file fired one final layout callback after the EPUB had unmounted, throwing a `paginator.js` error into the developer console. The error was non-fatal — the new viewer rendered normally — but it cluttered the console and broke the \"clean console after viewer swap\" expectation."
+        ]
+      }
+    },
+    {
+      "version": "0.45.0-alpha.4",
+      "date": "2026-05-22",
+      "previousVersion": "0.45.0-alpha.3",
+      "sections": {},
+      "underTheHood": [
+        "fix(release): generator writes honest placeholder; fix alpha-3 notes (#323)",
+        "chore: release v0.45.0-alpha.3 (#322)"
+      ]
+    },
+    {
+      "version": "0.45.0-alpha.3",
+      "date": "2026-05-22",
+      "previousVersion": "0.45.0-alpha.2",
+      "sections": {},
+      "underTheHood": [
+        "Corrected the alpha.2 release notes to remove placeholder text and add honest user-facing prose. (#320)",
+        "Documented the agentic-workflow release half in `docs/agentic-workflow.md` and fixed a Mermaid syntax error. (#319)",
+        "Split `docs/agentic-workflow.md` into an operational reference and a companion rationale file (`docs/agentic-workflow-rationale.md`) to keep session context lean. (#321)"
+      ]
+    },
+    {
+      "version": "0.45.0-alpha.2",
+      "date": "2026-05-21",
+      "previousVersion": "0.45.0-alpha.1",
+      "sections": {
+        "improvements": [
+          "**Infrastructure-only release.** No user-visible changes vs. alpha.1 — same features, same behaviour. This alpha ships the CI plumbing that makes future auto-cuts actually work, plus two routine dependency patches."
+        ]
+      },
+      "underTheHood": [
+        "`openssl` 0.10.79 → 0.10.80 (Rust transitive, security patch) — #314.",
+        "`ws` 8.19.0 → 8.20.1 inside the `bundled-skills/download-webpage` Node script — `npm audit fix` (#313)."
+      ]
+    },
+    {
+      "version": "0.45.0-alpha.1",
+      "date": "2026-05-21",
+      "previousVersion": "0.45.0-alpha.0",
+      "sections": {
+        "improvements": [
+          "**Agent mode picker reappears for existing AI connections.** If your Claude Code / Codex / Copilot / Gemini connection was set up before the recent capability-probe change, the mode picker (Shield icon) in the chat footer had silently disappeared. Opening the chat now restores it automatically — no need to re-add the connection or visit the connection config dialog.",
+          "**Read Only mode tooltip describes what actually happens.** The previous wording suggested the agent would ask for permission before writes — but in Read Only mode the agent is told it has read-only access and silently doesn't try those operations, so no permission card ever surfaces. New tooltip: *\"Read access only — agent is denied any write or execute tool calls.\"*",
+          "**Image hover toolbar matches the chart / drawing / link-preview toolbars.** Visual consistency known issue from alpha.0 is resolved. The width and alignment popover now positions and styles the same as the other block-size toolbars."
+        ],
+        "fixes": [
+          "**`Cmd+Shift+E` (Export), `Cmd+Shift+L` (Sidebar), `Cmd+Shift+R` (Recording) work again.** An editor extension was silently capturing these chords for paragraph alignment. The export dialog opens, the sidebar pins / unpins, and recording starts / stops from the keyboard as documented."
+        ]
+      }
+    },
+    {
+      "version": "0.45.0-alpha.0",
+      "date": "2026-05-15",
+      "previousVersion": "0.44.0",
+      "sections": {
+        "features": [
+          "**Update dialog renders markdown.** \"Update available\" and \"Switch back to Stable?\" dialogs now render markdown (bold, bullets, links) instead of plain text. Release notes for v0.45.0 onwards arrive formatted.",
+          "**In-app changelog respects your channel.** Stable users now see only stable releases in the \"What's new\" view. Alpha users see the full list including alphas. Each channel fetches its own feed so a stable user no longer scrolls past alpha entries they never had."
+        ],
+        "improvements": [
+          "**MicButton stays in sync across instances.** Clicking the dictation button in the StatusTray and the Toolbar now share a single source of truth — clicking one to start, then clicking the other to stop, works as expected. Previously the second instance was unaware the first had started a session.",
+          "**Image hover toolbar works in production builds.** Hovering an image in a release / production build now shows the width and alignment popover. Previously the popover only fired in dev mode — a long-standing regression tracked in `docs/history/112-release-v0.44.0-alpha.0.md` as a known issue.",
+          "**Empty HTML files show a placeholder.** Opening a 0-byte or whitespace-only `.html` file now displays \"This HTML file is empty\" instead of a blank pane.",
+          "**Multi-line table cells survive export.** Cells containing `<br>`-separated lines now round-trip through PDF, DOCX, and HTML export without flattening to a single line.",
+          "**Editor scroll-restore is more reliable.** Reopening a doc with a zero-height collapsed cursor no longer fails to scroll to position.",
+          "**Build infrastructure: 22 frontend deps and 10 Rust deps refreshed.** Tiptap 3.22 → 3.23, React 19.2.5 → 19.2.6, Vite 8.0.8 → 8.0.13, tokio 1.49 → 1.52, pdfjs-dist 5.6 → 5.7, and the rest of the patch-version drift since v0.43.0. Frontend test suite ran clean against the new versions; existing functionality is unaffected."
+        ],
+        "fixes": [
+          "**mermaid security alerts (4) closed.** mermaid 11.14.0 → 11.15.0 closes Dependabot alerts about Gantt-chart DoS, classDef HTML injection, configuration CSS injection, and classDef CSS injection. If you embed mermaid diagrams in your documents, this is a meaningful security pickup.",
+          "**rand low-severity alert closed (transitive).** A Rust dependency that pulls in the `rand` crate was advanced; the unsoundness with custom loggers no longer applies.",
+          "**Tauri IPC Origin Confusion alert closed.** Tauri framework advanced from 2.10.2 to 2.11.1 (Rust crate) + matching `@tauri-apps/*` JS package alignment. Closes Dependabot alert #57. The bump was a side effect of `cargo update`'s global resolution within the existing `tauri = \"2\"` constraint; the JS-side packages were aligned to match because Tauri requires JS and Rust majors/minors to agree at build time."
         ]
       }
     },
@@ -97,6 +1513,129 @@
           "**Image markdown serializer closes the block correctly.** Without a trailing `\\n\\n`, the next heading was concatenated and its `#` was backslash-escaped, corrupting the saved file."
         ]
       }
+    },
+    {
+      "version": "0.44.0-alpha.3",
+      "date": "2026-05-12",
+      "previousVersion": "0.43.0",
+      "sections": {
+        "features": [
+          "**Block external resources in the HTML viewer.** Settings → System → HTML viewer → \"Block external resources\" — toggle ON to strip `https://...` URLs from `<img src>`, `<link href>`, `<source srcset>`. Local relative paths still load.",
+          "**Allow scripts in local HTML files (opt-in).** Settings → System → HTML viewer → \"Allow scripts\" — toggle ON to render HTML files in an isolated `allow-scripts` iframe so same-directory `<script src=\"./local.js\">` can execute. External CDN scripts are NOT included.",
+          "**Unsafe preview mode (per-tab, session-only).** A toolbar button on each open HTML file shows a security acknowledgment dialog; accept and the file renders with raw HTML including CDN and inline scripts. Switching tabs resets it.",
+          "**Allow `<form>` submissions in HTML viewer.** Settings → System → HTML viewer → \"Allow forms\" — keeps `<form>`, `<input>`, `<button>`, action / method attributes in the sanitised tree.",
+          "**Width + alignment persist on charts, drawings, link-previews, and images.** Hover the block → pick 25 / 50 / 75 / 100% width and left / center / right alignment from the popover. The choice survives a save and reappears the next time you open the file.",
+          "**`Cmd+= / Cmd+- / Cmd+0` zoom in the PDF viewer.** Markdown editor and PDF share the same shortcut.",
+          "**Research and templates folders visible at project root.** Previously hidden under `.notesage/`; now `research/` and `templates/` are first-class folders. Existing hidden content is migrated on next launch."
+        ],
+        "improvements": [
+          "**HTML files open as a real rendered page.** No iframe wrapper — `.html` files render inline with the same toolbar, theme toggle, `Cmd+T`, and `Cmd+F` as every other viewer.",
+          "**Embedded blocks have more breathing room.** Images, charts, drawings, and link-preview cards sit with a generous margin above and below.",
+          "**Status tray completion picker is now a dropdown.** Settings → Inline Completion and the StatusTray popover show the same control.",
+          "**Switching back from Alpha to Stable is one click.** Pick Stable in Settings → Updates → Release Channel and a clear \"Switch back to Stable?\" dialog appears with the version you'll move to. Decline and you stay on the alpha until a stable release exceeds your version.",
+          "**Checking for updates fires automatically when you change channel.** No more manual \"Check for updates\" click after toggling between Stable and Alpha."
+        ],
+        "fixes": [
+          "**Width / alignment values stop disappearing after a tab-switch.** The worker that parses markdown for tab-switch now mirrors the production extensions; ProseMirror's DOMParser no longer drops those attributes during reload.",
+          "**Editor no longer crashes when you insert a chart, drawing, or link preview.** Fixed a missing `<TooltipProvider>` that the error boundary was catching on every block render.",
+          "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** Restores from the live saved ratio instead of the stale viewport-cache value.",
+          "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** Source-mode chord was matching the physical key position (which is `-` on Swedish ISO). Now matches the produced character.",
+          "**Image markdown serializer closes the block correctly.** Without a trailing `\\n\\n`, the next heading was concatenated and its `#` was backslash-escaped, corrupting the saved file."
+        ]
+      },
+      "underTheHood": [
+        "`isLeaveAlphaDowngrade(current, manifest)` checks: current is prerelease AND manifest is stable AND the X.Y.Z triple of the manifest is strictly less than the triple of the current.",
+        "`checkStableChannel()` passes `allowDowngrades: true` to `check()` only when the running binary is a prerelease.",
+        "`UpdateInfo.isLeaveAlphaDowngrade?: boolean` is the discriminator that drives the dialog's switched copy.",
+        "`useAutoUpdate` adds a `useEffect` that re-runs `checkForUpdate()` when `releaseChannel` changes."
+      ]
+    },
+    {
+      "version": "0.44.0-alpha.2",
+      "date": "2026-05-11",
+      "previousVersion": "0.44.0-alpha.1",
+      "sections": {
+        "features": [
+          "**Block external resources in the HTML viewer.** Settings → System → HTML viewer → \"Block external resources\" — toggle ON to strip `https://...` URLs from `<img src>`, `<link href>`, `<source srcset>`, and similar attributes before render. Local relative paths and same-directory files still load. Default OFF.",
+          "**Allow scripts in local HTML files (opt-in).** Settings → System → HTML viewer → \"Allow scripts\" — toggle ON to render HTML files in an isolated `allow-scripts`-only iframe so same-directory `<script src=\"./local.js\">` can execute. External CDN scripts are NOT included (separate toggle below). Default OFF.",
+          "**Unsafe preview mode (per-tab, session-only).** A new toolbar button on each open HTML file shows a security acknowledgment dialog; accept and the file renders in `allow-scripts`-only iframe with raw HTML — CDN scripts and inline `<script>` blocks all execute. Switching tabs resets the toggle. For \"I trust this single file\" workflows that don't warrant flipping the persistent allow-scripts setting on.",
+          "**Allow `<form>` submissions in HTML viewer.** Settings → System → HTML viewer → \"Allow forms\" — toggle ON to keep `<form>`, `<input>`, `<button>`, `<select>`, and form-submission attributes (action / method) in the sanitised tree. Useful for local docs that legitimately contain forms. Default OFF.",
+          "**Width + alignment now persist on charts, drawings, link-previews, and images.** Hover the block → pick 25 / 50 / 75 / 100% width and left / center / right alignment from the popover. The choice survives a save and reappears the next time you open the file. *(Originally in alpha.0; first time effectively shipping.)*",
+          "**`Cmd+=` / `Cmd+-` / `Cmd+0` zoom now also works in the PDF viewer.** Markdown editor and PDF share the same shortcut. *(Originally in alpha.0.)*"
+        ],
+        "improvements": [
+          "**Research and templates folders are now visible in the workspace.** They used to live under `.notesage/` (hidden) and were only reachable through the AI chat. Notesage now creates `research/` and `templates/` at the project root the first time you save research or open a template picker. Existing hidden content is migrated on next launch.",
+          "**HTML files open as a real rendered page.** No iframe wrapper — `.html` files render inline with the same toolbar, theme toggle, `Cmd+T`, and `Cmd+F` as every other viewer. Dangerous tags (`<script>`, `<iframe>`, `<object>`, `<embed>`) are stripped before rendering. *(Originally in alpha.0; the four security toggles above are layered on top of this rewrite.)*",
+          "**Embedded blocks have more breathing room.** Images, charts, drawings, and link-preview cards now sit with a generous margin above and below. *(Originally in alpha.0.)*",
+          "**Status tray completion picker is now a dropdown.** Settings → Inline Completion and the StatusTray popover now show the same control. *(Originally in alpha.0.)*",
+          "**The 494 KB book opens in ~3 seconds again.** Fixes a regression introduced during the alpha.0 branch where the editor's CSS `zoom` property was applied unconditionally and put every descendant in a slow layout-containment path. *(Originally in alpha.0.)*"
+        ],
+        "fixes": [
+          "**Width / alignment values stop disappearing after a tab-switch.** Schemas in the markdown-parse worker now mirror the production extensions; ProseMirror's DOMParser no longer drops those attributes during reload. *(Originally in alpha.0.)*",
+          "**Editor no longer crashes when you insert a chart, drawing, or link preview.** `<Tooltip>` outside any `<TooltipProvider>` caught by the error boundary; now all four reference implementations are regression-tested. *(Originally in alpha.0.)*",
+          "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** Restores from the live saved ratio (tracked on every scroll, debounced 150 ms) instead of the stale viewport-cache value. *(Originally in alpha.0.)*",
+          "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** The source-mode chord was matching the physical key position (`event.code === \"Slash\"`), which on Swedish ISO is the `-` key. Now matches the produced character. *(Originally in alpha.0.)*",
+          "**Image markdown serializer closes the block correctly.** Without the trailing `\\n\\n` separator, the next heading was concatenated to the same line and its `#` got backslash-escaped — corrupting the saved file. *(Originally in alpha.0.)*"
+        ]
+      },
+      "underTheHood": [
+        "**#187 (`aw-pipeline`)** — every stage now reads human comments since the latest `refined` marker. Before this fix, override comments on issues only reached `aw-review`; `aw-refine` / `aw-slice` / `aw-tdd` worked from the body alone and silently dropped corrections, producing PRs that ignored explicit user feedback. Closes the \"I said that twice and the agent ignored it\" loop.",
+        "**#193 (`aw-review`)** — branch-prefix filter now matches `claude/*` instead of PR author. After the `WORKFLOW_PAT` switch, bot-authored PRs are authored by the PAT owner (not `claude[bot]`), so the old author-based filter rejected every bot PR and `aw-review` silently skipped them.",
+        "**#194 (PRD docs)** — the `aw-ci-repair` PRD + tasks breakdown land before the implementation, so the AW pipeline has filesystem references to read.",
+        "**#202 (`aw-ci-repair`)** — new pipeline addition that auto-fixes recurring CI perf-budget flakes. Two pieces compose: (a) a vitest regression-lock test (`no-bare-perf-budget.test.ts`) that fails when a perf assertion uses a bare numeric literal as its budget; (b) a new `aw-ci-repair` skill + workflow triggered by `workflow_run.completed: failure` on bot-authored draft PRs, auto-patching the same `PERF_BUDGET_MULTIPLIER` wrap on tests missing it. Comments-and-exits on snapshot drift / DOM-changed / anything else outside the documented pattern set. One repair attempt per PR."
+      ]
+    },
+    {
+      "version": "0.44.0-alpha.1",
+      "date": "2026-05-10",
+      "previousVersion": "0.44.0-alpha.0",
+      "sections": {
+        "fixes": [
+          "**Release pipeline unblocked.** Removed the obsolete"
+        ]
+      },
+      "underTheHood": [
+        "`src/perf/status-tray.perf.test.ts` — segmented-picker benchmark deleted.",
+        "`package.json` — bumped to `0.44.0-alpha.1`."
+      ]
+    },
+    {
+      "version": "0.44.0-alpha.0",
+      "date": "2026-05-10",
+      "previousVersion": "0.43.0",
+      "sections": {
+        "features": [
+          "**Width + alignment now persist on charts, drawings, and link-previews.** Hover the block → pick 25 / 50 / 75 / 100% width and left / center / right alignment from the popover. The choice survives a save and reappears the next time you open the file. Saved as a small metadata comment at the end of the markdown line so you can edit the value by hand if you want to.",
+          "**`Cmd+=` / `Cmd+-` / `Cmd+0` zoom now also works in the PDF viewer.** Markdown editor and PDF zoom share the same shortcut."
+        ],
+        "improvements": [
+          "**HTML files open as a real rendered page.** Notesage no longer wraps `.html` files in an isolated iframe — the body renders inline, the toolbar is always visible with a Source / Rendered toggle, `Cmd+T` theme toggling and `Cmd+F` find work straight away. `<script>` and other risky tags are stripped before rendering.",
+          "**Embedded blocks have more breathing room.** Images, charts, drawings, and link-preview cards now sit with a generous margin above and below so they don't visually crowd the surrounding text.",
+          "**Status tray completion picker is now a dropdown.** Settings → Inline Completion and the StatusTray popover now show the same control — a dropdown with a status dot per provider — instead of a segmented toggle.",
+          "**The 494 KB book opens in ~3 seconds again.** A regression introduced during this branch (the editor's CSS `zoom` property was applied unconditionally and put every descendant in a slow layout-containment path) is fixed. The conditional zoom only applies when actually zoomed."
+        ],
+        "fixes": [
+          "**Width / alignment values stop disappearing after a tab-switch.** The worker that parses markdown for tab-switch and file-load was missing the `blockWidth` / `align` attribute slots on its chart, drawing, and link-preview shims, so ProseMirror's DOMParser silently dropped those attributes during reload. Schemas now mirror the production extensions; new regression test catches future drift.",
+          "**Editor no longer crashes when you insert a chart, drawing, or link preview.** PR #173 shipped a `<Tooltip>` outside any `<TooltipProvider>` — the editor's error boundary caught it on every block render. New design-system rule documents that every `<Tooltip>` must be inside a `<TooltipProvider>`, with a regression test that covers the four reference implementations.",
+          "**Reopening a doc no longer scrolls \"a few paragraphs down\" before snapping to the right place.** The viewport cache only captured `scrollY` 5 seconds after an *edit*, so if you scrolled to the top without editing, the cache restored the old pre-scroll position on reopen. Now restores from the live saved ratio (tracked on every scroll, debounced 150 ms).",
+          "**`Cmd+-` no longer toggles raw markdown mode on Swedish keyboards.** The source-mode chord was matching the physical key position (`event.code === \"Slash\"`), which on Swedish ISO is the `-` key. Now matches the produced character; Nordic `Shift+7` fallback for true `Cmd+/` preserved.",
+          "**Image markdown serializer closes the block correctly.** Without the trailing `\\n\\n`, the next heading was concatenated to the same line and its `#` got backslash-escaped — corrupting the saved file."
+        ]
+      },
+      "underTheHood": [
+        "`0da4b00f` chart/drawing/link-preview block-size persistence + worker shim fix (#173)",
+        "`0d5ba65` zoom chord scope, Swedish keyboard collision, embedded-block breathing room (#188)",
+        "`33e1ef59` HtmlViewer rewrite — sanitised inline render via DOMPurify (#169)",
+        "`799582ae` StatusTray completion picker → dropdown (#181)",
+        "`408f1894` image block-size hover controls + persistence (later partially reverted for perf)",
+        "`f1548d4e` image alignment auto-default width",
+        "`c2d6f55` unified alignment via TextAlign expansion (later reverted for perf)",
+        "`ad8d1362` perf: conditional CSS zoom + image vanilla DOM revert",
+        "`2c9eb9f1` scroll-restore-from-saved-ratio fix",
+        "`ba4fe785` revert TextAlign expansion (perf bisect — confirmed cause of 494 KB book slowdown)",
+        "`19b9fdb5` revert image React NodeView restore (perf bisect — confirmed contribution to slowdown)",
+        "`20707bdc` image markdown serializer adds trailing block separator"
+      ]
     },
     {
       "version": "0.43.1",

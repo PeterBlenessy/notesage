@@ -1,4 +1,3 @@
-pub mod alpha_update;
 pub mod file;
 pub mod ios_library;
 pub mod dialog;
@@ -63,7 +62,6 @@ pub mod net_guard;
 pub mod process_guard;
 pub mod theme;
 
-pub use alpha_update::*;
 pub use file::*;
 pub use ios_library::*;
 pub use dialog::*;
