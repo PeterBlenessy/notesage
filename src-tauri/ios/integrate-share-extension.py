@@ -158,8 +158,61 @@ def patch_project_yml() -> None:
     if APP_GROUP not in groups:
         groups.append(APP_GROUP)
 
+    exclude_static_lib_from_bundle(data)
+    declare_document_handling(data)
     PROJECT_YML.write_text(yaml.safe_dump(data, sort_keys=False, width=1000))
     print(f"patched {PROJECT_YML.relative_to(REPO)}")
+
+
+def declare_document_handling(data: dict) -> None:
+    """Answer App Store validation's document-configuration question.
+
+        WARN ITMS-90737: Missing Document Configuration. By declaring the
+        CFBundleDocumentTypes key ... set LSSupportsOpeningDocumentsInPlace.
+
+    We declare document types (`.md` and friends) so Notesage appears in
+    "Open with". `false` is the truthful answer: the app reads and writes ONLY
+    inside the security-scoped library folder the user granted, so it cannot
+    edit a document sitting anywhere else in place. iOS therefore hands us a
+    COPY in our own container — which is the same shape the Share Extension's
+    capture already uses.
+
+    A warning today, but Apple has a habit of promoting these to errors.
+    """
+    for target in data.get("targets", {}).values():
+        info = target.get("info")
+        if not isinstance(info, dict):
+            continue
+        if "notesage_iOS/Info.plist" not in str(info.get("path", "")):
+            continue
+        info.setdefault("properties", {})["LSSupportsOpeningDocumentsInPlace"] = False
+
+
+def exclude_static_lib_from_bundle(data: dict) -> None:
+    """`libapp.a` must not ship INSIDE the app bundle.
+
+    Tauri's generated `project.yml` lists `Externals` as a source path of the
+    app target, which makes XcodeGen copy everything under it — including the
+    1.4 GB Rust staticlib — into the bundle as a resource, ON TOP of linking
+    it properly via LIBRARY_SEARCH_PATHS. App Store validation rejects that
+    outright:
+
+        ERROR ITMS-90171: Invalid bundle structure. The
+        "Notesage.app/libapp.a" binary file is not permitted.
+
+    `buildPhase: none` keeps the folder visible in the project (and the
+    linker's search paths untouched) while adding it to no build phase.
+    Re-applied here because `tauri ios init` regenerates project.yml.
+    """
+    for target in data.get("targets", {}).values():
+        sources = target.get("sources")
+        if not isinstance(sources, list):
+            continue
+        for i, entry in enumerate(sources):
+            if isinstance(entry, str) and entry == "Externals":
+                sources[i] = {"path": "Externals", "buildPhase": "none"}
+            elif isinstance(entry, dict) and entry.get("path") == "Externals":
+                entry["buildPhase"] = "none"
 
 
 def strip_icon_alpha() -> None:

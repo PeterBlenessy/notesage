@@ -151,15 +151,73 @@ screenshots, description, support URL or privacy-policy URL required.
 
 ## Upload
 
+**Validate first.** It costs a minute and catches the things that would
+otherwise fail after uploading hundreds of megabytes. Both problems below
+were caught this way on the first attempt.
+
 ```bash
 # 1. Archive with App Store distribution signing (needs the account side done)
 npx tauri ios build --export-method app-store-connect
 
-# 2. Upload the IPA
+# 2. Validate — do NOT skip
+xcrun altool --validate-app -f src-tauri/gen/apple/build/arm64/Notesage.ipa \
+  -t ios --apiKey SFHN49Z8HX --apiIssuer "$ASC_ISSUER_ID"
+
+# 3. Upload
 xcrun altool --upload-app -f src-tauri/gen/apple/build/arm64/Notesage.ipa \
-  -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+  -t ios --apiKey SFHN49Z8HX --apiIssuer "$ASC_ISSUER_ID"
 # (or drag the archive through Xcode → Organizer → Distribute App)
 ```
+
+The API key lives at `~/.appstoreconnect/private_keys/AuthKey_<KEYID>.p8`;
+the issuer id is on the same App Store Connect page that generated it. Prefer
+the key over an Xcode account session: Xcode persists the ACCOUNT in its
+preferences but keeps the SESSION token in the login keychain, and under 2FA
+that token expires — `xcodebuild` then reports "No Accounts" even though the
+account is plainly listed, which is what blocked the first export.
+
+### Two things that failed validation the first time
+
+Both are fixed permanently in `integrate-share-extension.py`, so they cannot
+come back when `tauri ios init` regenerates the project.
+
+- **ITMS-90171, "libapp.a is not permitted"** — Tauri's generated
+  `project.yml` lists `Externals` as a SOURCE path of the app target, so
+  XcodeGen copied the 1.4 GB Rust staticlib into the bundle as a resource on
+  top of linking it properly. `buildPhase: none` keeps the folder in the
+  project and the linker untouched while adding it to no copy phase. The IPA
+  went from 386 MB to 16 MB.
+- **ITMS-90737, "Missing Document Configuration"** — we declare
+  `CFBundleDocumentTypes` for `.md`, so Apple wants to know what happens when
+  a document is opened. `LSSupportsOpeningDocumentsInPlace: false` is the
+  truthful answer: the app reads and writes only inside the granted library,
+  so iOS hands it a copy instead. A warning today; Apple promotes these.
+
+### Querying App Store Connect without installing anything
+
+Useful when TestFlight and the web UI disagree. An ES256 JWT can be minted
+with openssl and the standard library alone — no `pyjwt`, no `cryptography`:
+sign `base64url(header).base64url(payload)` with
+`openssl dgst -sha256 -sign AuthKey_<KEYID>.p8`, then convert the DER
+signature to raw `r||s` (32 bytes each). Tokens last 20 minutes maximum.
+Quote the URLs — zsh eats the `filter[...]` brackets.
+
+Fields worth knowing: `builds.processingState` (VALID = processed),
+`buildBetaDetails.internalBuildState` (IN_BETA_TESTING = live for internal
+testers), and `betaTesters.state` (INVITED = the invitation has not been
+redeemed).
+
+### If the build never appears in TestFlight
+
+Seen once, on the first ever build: everything read correct server-side —
+build VALID, attached to the internal group, `IN_BETA_TESTING` — and the app
+still would not list, with the invite link reporting "not available". The
+tester was stuck at `INVITED` from a redemption attempted BEFORE the build
+was attached to the group, and nothing re-checks after that.
+
+The fix: DELETE the `betaTesters` entry and POST it again, which issues a
+fresh invitation. Force-quitting TestFlight and re-tapping the old link did
+not clear it.
 
 Then in App Store Connect → TestFlight: add Peter as an **internal** tester
 (up to 100 of the team's own devices, **no beta review**, available within
