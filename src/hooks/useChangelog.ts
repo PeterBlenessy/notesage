@@ -6,8 +6,6 @@ export interface Release {
   date: string;
   previousVersion: string;
   sections: {
-    /** iOS-app changes, kept out of the desktop sections. */
-    ios?: string[];
     features?: string[];
     fixes?: string[];
     improvements?: string[];
