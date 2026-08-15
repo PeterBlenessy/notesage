@@ -1,8 +1,18 @@
-name: AW — Alpha Cut (periodic)
+name: AW — Release Cut (periodic)
 
-# Cuts a new alpha tag when conditions are met:
-#   - At least one non-release PR has merged to main since the last alpha tag.
-#     Tier is NOT considered: the alpha is just `main` HEAD, so it ships every
+# Cuts a new RELEASE tag when conditions are met.
+#
+# Was the alpha cutter until 2026-08-15. Notesage now ships ONE binary —
+# the alpha channel and its update endpoint are gone (PRD
+# `docs/prds/2026-08-15-single-binary-feature-flags.md`), so every cut is a
+# real release: a plain `vX.Y.0` tag, which `release.yml` publishes with
+# `prerelease: false`. That flag is load-bearing in the OTHER direction now
+# — GitHub's `releases/latest` resolver skips prereleases, so an `-alpha.N`
+# tag would produce a release the app's own updater cannot see.
+#
+# Conditions:
+#   - At least one non-release PR has merged to main since the last release tag.
+#     Tier is NOT considered: the cut is just `main` HEAD, so it ships every
 #     merged PR regardless of label. Deciding what may merge (tier A/B may
 #     merge when green; tier C waits) is a *pipeline* concern, upstream of and
 #     separate from this cutter.
@@ -18,12 +28,12 @@ name: AW — Alpha Cut (periodic)
 # Cadence: every 6 hours via cron. Also dispatchable manually.
 #
 # When all conditions hold, this workflow:
-#   1. Computes the next alpha version (bumps the prerelease counter).
-#   2. Generates a new history file at `docs/history/NNN-release-vX.Y.Z-alpha.M.md`
-#      from the PRs merged since the previous alpha tag.
-#   3. Bumps `package.json` and regenerates `public/changelog-alpha.json`.
+#   1. Computes the next release version (minor bump, patch reset).
+#   2. Generates a new history file at `docs/history/NNN-release-vX.Y.0.md`
+#      from the PRs merged since the previous release tag.
+#   3. Bumps `package.json` and regenerates `public/changelog.json`.
 #   4. Commits + tags + pushes. The existing `release.yml` workflow picks
-#      up the new tag and builds/publishes the alpha.
+#      up the new tag and builds/publishes the release.
 
 on:
   schedule:
@@ -62,28 +72,30 @@ jobs:
         with:
           fetch-depth: 0    # need full history for `git describe` and PR enumeration
 
-      - name: Determine whether to cut a new alpha
+      - name: Determine whether to cut a release
         id: check
         env:
           GH_TOKEN: ${{ secrets.WORKFLOW_PAT }}
         run: |
           set -euo pipefail
 
-          # 1. Last alpha tag.
-          previous_tag=$(git tag --list 'v*-alpha.*' --sort=-v:refname | head -1 || echo "")
+          # 1. Newest RELEASE tag. Prereleases are filtered out — the historical
+          # `-alpha.N` line is not something to count forward from.
+          previous_tag=$(git tag --list 'v*' --sort=-v:refname \
+            | grep -vE -- '-(alpha|beta|rc)([.]|$)' | head -1 || echo "")
           if [[ -z "$previous_tag" ]]; then
-            echo "No previous alpha tag found — would need to bootstrap. Skipping."
+            echo "No previous release tag found — would need to bootstrap. Skipping."
             echo "should_cut=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
-          echo "Previous alpha: $previous_tag"
+          echo "Previous release: $previous_tag"
 
-          # 2. Gate: did ANY non-release PR merge since the last alpha?
+          # 2. Gate: did ANY non-release PR merge since the last release?
           #
-          # The alpha build is just `main` HEAD, so it already contains every
+          # The build is just `main` HEAD, so it already contains every
           # merged PR regardless of tier — so the only question is "has main
-          # moved since the last alpha?". We enumerate merged PR numbers
+          # moved since the last release?". We enumerate merged PR numbers
           # straight from the git range (the same source the history step
           # uses), so nothing is missed and there's no tier-search / label-lag
           # race to get wrong.
@@ -141,26 +153,15 @@ jobs:
           fi
           echo "Latest Real-E2E on main is green (run $latest_run)."
 
-          # 4. Compute next alpha version.
-          # previous_tag format: vX.Y.Z-alpha.M
+          # 4. Compute the next release version: minor bump, patch reset.
+          # One stream means every cut is a feature release; patch releases
+          # are cut by hand when a fix must ship without the rest of main.
           version=${previous_tag#v}
-          base=${version%-alpha.*}
-          counter=${version#*-alpha.}
+          base=${version%%-*}          # tolerate a historical -alpha.N tag
 
-          # If the stable tag for this base already exists (e.g. v0.45.0 is
-          # released but the last alpha was v0.45.0-alpha.5), bump the minor
-          # version and start a new alpha series. Alphas are always for the
-          # next feature release, never for patch releases.
-          if git tag --list "v${base}" | grep -q .; then
-            IFS='.' read -r major minor patch <<< "$base"
-            base="${major}.$(( minor + 1 )).0"
-            next_version="${base}-alpha.1"
-            echo "Stable v${version%-alpha.*} exists — starting new series: v$next_version"
-          else
-            next_counter=$(( counter + 1 ))
-            next_version="${base}-alpha.${next_counter}"
-          fi
-          echo "Next alpha: v$next_version"
+          IFS='.' read -r major minor patch <<< "$base"
+          next_version="${major}.$(( minor + 1 )).0"
+          echo "Next release: v$next_version"
           echo "next_version=$next_version" >> "$GITHUB_OUTPUT"
 
           # 5. Next history file number.
@@ -252,9 +253,8 @@ jobs:
             echo ""
             echo "**Date:** ${DATE}"
             echo "**Previous version:** ${PREVIOUS_TAG#v}"
-            echo "**Channel:** Alpha"
             echo ""
-            echo "Auto-cut by \`aw-alpha-cut\`. Sections below are auto-classified from merged PRs; refine the prose before promoting to stable."
+            echo "Auto-cut from merged PRs. Sections below are auto-classified; refine the prose if this release deserves it."
             echo ""
             echo "## Changes"
             echo ""
@@ -268,7 +268,7 @@ jobs:
             fi
             echo "## Under the hood"
             echo ""
-            echo "Auto-generated from merged PRs + commits since \`${PREVIOUS_TAG}\`. Alpha builds list commit-level detail for technical users."
+            echo "Auto-generated from merged PRs + commits since \`${PREVIOUS_TAG}\`."
             echo ""
             if [ ${#hood[@]} -gt 0 ]; then printf '%s\n' "${hood[@]}"; fi
             # Commit-level detail (alpha channel targets technical users). These
@@ -287,7 +287,7 @@ jobs:
           NEXT_NUMBER: ${{ needs.preflight.outputs.next_history_number }}
         run: |
           set -euo pipefail
-          line="| ${NEXT_NUMBER} | [Release v${NEXT_VERSION}](${NEXT_NUMBER}-release-v${NEXT_VERSION}.md) | Auto-cut alpha by \`aw-alpha-cut\`. See merged PRs for details. |"
+          line="| ${NEXT_NUMBER} | [Release v${NEXT_VERSION}](${NEXT_NUMBER}-release-v${NEXT_VERSION}.md) | Auto-cut release. See merged PRs for details. |"
           echo "$line" >> docs/history/README.md
 
       - name: Regenerate changelog
@@ -313,7 +313,7 @@ jobs:
           BRANCH="release/v${NEXT_VERSION}"
           git checkout -b "$BRANCH"
           git add package.json docs/history/ public/
-          git commit -m "chore: release v${NEXT_VERSION} (auto-cut by aw-alpha-cut)"
+          git commit -m "chore: release v${NEXT_VERSION} (auto-cut)"
           git push -u origin "$BRANCH"
 
           # PR body: one bullet per Tier-A/B PR that earned this alpha cut.
