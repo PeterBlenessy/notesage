@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.37",
+      "date": "2026-08-15",
+      "previousVersion": "0.48.0-alpha.36",
+      "sections": {
+        "features": [
+          "feat(flags): delete the alpha release channel (#688)"
+        ]
+      },
+      "underTheHood": [
+        "feat(flags): delete the alpha release channel (#688)"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.36",
       "date": "2026-08-15",
       "previousVersion": "0.48.0-alpha.35",
