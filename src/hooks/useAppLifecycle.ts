@@ -18,7 +18,14 @@ import { log, setLogLevel } from "@/lib/logger";
 import { stopAllAcpAgents } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
-import { track, coarseOs } from "@/lib/telemetry";
+import { track, coarseOs, trackLabsFlag } from "@/lib/telemetry";
+import { setFlagReporter } from "@/stores/flag-store";
+
+// Wire the Labs graduation signal to telemetry. Done HERE because this module
+// is desktop-only (App.tsx mounts it; MobileApp never imports it) — the flag
+// store itself must not name `lib/telemetry`, or the iOS shell's
+// telemetry-free guarantee breaks. See `setFlagReporter`.
+setFlagReporter(trackLabsFlag);
 import { buildIsAlpha } from "@/lib/version";
 import { toastTelemetryNotice } from "@/lib/notifications";
 import { toast } from "sonner";

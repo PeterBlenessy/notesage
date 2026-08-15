@@ -163,6 +163,19 @@ export function Reader() {
   const [pdfFind, setPdfFind] = useState<PdfMobileFindState>({ current: -1, total: 0, page: 0, pages: 0 });
   const isPdf = state.status === "pdf";
   const htmlFrameRef = useRef<HTMLIFrameElement | null>(null);
+  // Which html url has finished loading and may therefore be shown. Keyed by
+  // url rather than a boolean so opening a SECOND report re-hides the frame
+  // instead of showing the previous one's last painted frame.
+  const [htmlShownUrl, setHtmlShownUrl] = useState<string | null>(null);
+  const htmlUrl = state.status === "html" ? state.url : null;
+  useEffect(() => {
+    if (!htmlUrl) return;
+    // A frame that never fires `load` must not leave a blank pane: reveal it
+    // regardless after a beat. Worst case that restores the old behaviour
+    // (a brief white frame) rather than losing the document entirely.
+    const timer = window.setTimeout(() => setHtmlShownUrl(htmlUrl), 1200);
+    return () => window.clearTimeout(timer);
+  }, [htmlUrl]);
   const searchable =
     state.status === "markdown" || state.status === "text" || state.status === "html";
   const isHtml = state.status === "html";
@@ -880,14 +893,24 @@ export function Reader() {
         // report can execute its own charts but cannot reach this app's DOM,
         // storage, or the Tauri IPC bridge. The document scrolls itself,
         // starting below the top islands.
-        <div className="absolute inset-x-0 bottom-0" style={{ top: "calc(3.75rem + env(safe-area-inset-top))" }}>
+        // Backed by the APP's background, and the frame itself stays
+        // invisible until it has loaded. WebKit gives a sandboxed iframe an
+        // opaque WHITE backing that no styling inside the document can
+        // change, so a dark report flashed white on open — the same failure
+        // as the launch flash, one layer down (Peter, 2026-08-14).
+        <div
+          className="absolute inset-x-0 bottom-0 bg-background"
+          style={{ top: "calc(3.75rem + env(safe-area-inset-top))" }}
+        >
           <iframe
             ref={htmlFrameRef}
             key={state.url}
             src={state.url}
             title={name}
             sandbox="allow-scripts"
-            className="h-full w-full border-0 bg-white"
+            onLoad={() => setHtmlShownUrl(state.url)}
+            className="h-full w-full border-0 transition-opacity duration-150"
+            style={{ opacity: htmlShownUrl === state.url ? 1 : 0 }}
           />
         </div>
       ) : (

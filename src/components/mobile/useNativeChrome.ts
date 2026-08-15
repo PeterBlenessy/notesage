@@ -19,11 +19,24 @@ export interface NativeChromeSpec {
  * The action map is kept in a ref so tap handling always sees current
  * state without re-declaring the chrome on every render.
  */
+/**
+ * Whether the native chrome layer answered, remembered for the life of the
+ * process.
+ *
+ * The layer cannot appear or vanish at runtime — it is either compiled into
+ * this build or it is not — so once it has answered, a later mount can trust
+ * the answer immediately. Starting every mount at `false` meant closing a
+ * document rendered the WEB fallback header (large title + breadcrumb, in the
+ * content) for the frame or two until `ios_set_chrome` resolved, and it then
+ * jumped up into the island (Peter, 2026-08-14).
+ */
+let nativeChromeAnswered: boolean | null = null;
+
 export function useNativeChrome(
   spec: NativeChromeSpec,
   actions: Record<string, (value?: string) => void>,
 ): boolean {
-  const [active, setActive] = useState(false);
+  const [active, setActive] = useState(nativeChromeAnswered ?? false);
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
 
@@ -34,9 +47,11 @@ export function useNativeChrome(
     const parsed = JSON.parse(specKey) as NativeChromeSpec;
     iosSetChrome(parsed)
       .then(() => {
+        nativeChromeAnswered = true;
         if (!cancelled) setActive(true);
       })
       .catch(() => {
+        nativeChromeAnswered = false;
         if (!cancelled) setActive(false);
       });
     return () => {

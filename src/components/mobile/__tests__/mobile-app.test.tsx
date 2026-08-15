@@ -1659,6 +1659,58 @@ describe("library re-pick", () => {
   });
 });
 
+describe("pinning a folder (#685)", () => {
+  it("puts a pinned FOLDER in the Pinned section, not stranded under Folders", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Kept", path: "Kept", is_directory: true, hidden: false, child_count: 2 },
+      { name: "Loose", path: "Loose", is_directory: true, hidden: false, child_count: 1 },
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false },
+    ]);
+    // Through the real path: the browser reloads pins from the shared file
+    // on mount, so seeding the store alone would be overwritten.
+    setMockInvokeHandler("ios_read_file", () => JSON.stringify({ paths: ["Kept"] }));
+    useMobileStore.setState({ groupMode: "pinned" });
+    await useMobileStore.getState().loadPinnedPaths();
+
+    renderWithProviders(<LibraryBrowser />);
+    const pinned = await screen.findByRole("heading", { name: "Pinned" });
+    // The pinned folder sits under Pinned; the unpinned one under Folders.
+    const section = pinned.closest("section");
+    expect(section?.textContent).toContain("Kept");
+    expect(section?.textContent).not.toContain("Loose");
+    expect(screen.getByRole("heading", { name: "Folders" })).toBeTruthy();
+  });
+
+  it("drops the Folders header when every folder is pinned", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Kept", path: "Kept", is_directory: true, hidden: false, child_count: 2 },
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("ios_read_file", () => JSON.stringify({ paths: ["Kept"] }));
+    useMobileStore.setState({ groupMode: "pinned" });
+    await useMobileStore.getState().loadPinnedPaths();
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByRole("heading", { name: "Pinned" });
+    expect(screen.queryByRole("heading", { name: "Folders" })).toBeNull();
+  });
+
+  it("keeps folders in their own leading section in every other mode", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Kept", path: "Kept", is_directory: true, hidden: false, child_count: 1 },
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false, modified: Date.now() / 1000 },
+    ]);
+    setMockInvokeHandler("ios_read_file", () => JSON.stringify({ paths: ["Kept"] }));
+    useMobileStore.setState({ groupMode: "date" });
+    await useMobileStore.getState().loadPinnedPaths();
+
+    renderWithProviders(<LibraryBrowser />);
+    const folders = await screen.findByRole("heading", { name: "Folders" });
+    expect(folders.closest("section")?.textContent).toContain("Kept");
+    expect(screen.queryByRole("heading", { name: "Pinned" })).toBeNull();
+  });
+});
+
 describe("Inbox shortcut (#683)", () => {
   it("pins Inbox above the root listing and omits it from the list below", async () => {
     // The count rides along on the listing itself (#684) — no second read.

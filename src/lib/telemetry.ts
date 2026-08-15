@@ -192,6 +192,18 @@ export interface TelemetryEventProps {
   feature_used: { feature: FeatureName };
   block_inserted: { kind: BlockKind };
   setting_changed: { setting: SettingKey; value: SettingValue };
+  /**
+   * A Labs flag was switched. The signal that decides graduation — and the
+   * OFF direction is the valuable half: a feature enabled and then turned
+   * back off says more than one nobody touched (PRD
+   * `2026-08-15-single-binary-feature-flags.md`).
+   *
+   * Flag ids are low-cardinality by construction — they come from the
+   * registry in `src/lib/flags.ts`, not from user input.
+   */
+  labs_flag_changed: { flag: string; value: "on" | "off" };
+  /** A flagged feature was actually USED, not merely enabled. */
+  labs_feature_used: { flag: string };
 }
 
 /** Allowed event names. */
@@ -303,4 +315,20 @@ export function track<E extends TelemetryEvent>(
  */
 export function trackSettingToggle(setting: SettingKey, enabled: boolean): void {
   track("setting_changed", { setting, value: enabled ? "on" : "off" });
+}
+
+/** A Labs flag was switched on or off. */
+export function trackLabsFlag(flag: string, enabled: boolean): void {
+  track("labs_flag_changed", { flag, value: enabled ? "on" : "off" });
+}
+
+/**
+ * A flagged feature was exercised.
+ *
+ * Call this from the feature itself, not from the toggle — "enabled" and
+ * "used" are different claims, and only the second one supports graduating a
+ * flag.
+ */
+export function trackLabsFeatureUsed(flag: string): void {
+  track("labs_feature_used", { flag });
 }
