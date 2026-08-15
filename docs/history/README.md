@@ -204,3 +204,4 @@ Chronological log of major implementation milestones and changes.
 | 198 | [Release v0.48.0-alpha.33](198-release-v0.48.0-alpha.33.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 199 | [Release v0.48.0-alpha.34](199-release-v0.48.0-alpha.34.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 200 | [Release v0.48.0-alpha.35](200-release-v0.48.0-alpha.35.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 201 | [Release v0.48.0-alpha.36](201-release-v0.48.0-alpha.36.md) | The migration alpha: switches alpha-channel users to the single stream ahead of removing the alpha update path. |
