@@ -19,14 +19,13 @@ import { stopAllAcpAgents } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { track, coarseOs, trackLabsFlag } from "@/lib/telemetry";
-import { setFlagReporter } from "@/stores/flag-store";
+import { setFlagReporter, useFlagStore } from "@/stores/flag-store";
 
 // Wire the Labs graduation signal to telemetry. Done HERE because this module
 // is desktop-only (App.tsx mounts it; MobileApp never imports it) — the flag
 // store itself must not name `lib/telemetry`, or the iOS shell's
 // telemetry-free guarantee breaks. See `setFlagReporter`.
 setFlagReporter(trackLabsFlag);
-import { buildIsAlpha } from "@/lib/version";
 import { toastTelemetryNotice } from "@/lib/notifications";
 import { toast } from "sonner";
 
@@ -97,16 +96,15 @@ export function useAppLifecycle() {
     telemetryRanRef.current = true;
 
     const settings = useSettingsStore.getState();
-    // Telemetry tracks the BUILD, not the chosen update channel: an alpha build
-    // defaults telemetry on (see selectEffectiveTelemetry*), so the analytics
-    // channel dimension and the first-run disclosure both key on the build.
-    const channel = buildIsAlpha() ? "alpha" : "stable";
+    // One binary, one stream — there is no channel dimension left to report.
+    // The first-run disclosure now fires for anyone who has opted into Labs,
+    // which is what turns telemetry on in the first place.
     const version =
       typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
 
-    track("app_launched", { version, os: coarseOs(), channel });
+    track("app_launched", { version, os: coarseOs() });
 
-    if (channel === "alpha" && !settings.telemetryNoticeSeen) {
+    if (useFlagStore.getState().enabled.length > 0 && !settings.telemetryNoticeSeen) {
       toastTelemetryNotice({
         onOpenSettings: () =>
           window.dispatchEvent(

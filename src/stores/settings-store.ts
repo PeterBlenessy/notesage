@@ -33,7 +33,6 @@ export type ExportTemplate = "clean" | "academic" | "report";
 export type ExportPageSize = "a4" | "letter" | "a5";
 export type ExportFormat = "pdf" | "pptx" | "docx";
 export type PptxTemplate = "simple" | "business" | "report";
-export type ReleaseChannel = 'stable' | 'alpha';
 interface SettingsStore {
   theme: Theme;
   /**
@@ -103,7 +102,6 @@ interface SettingsStore {
   autoCheckUpdates: boolean;
   lastUpdateCheck: string | null;
   dismissedVersion: string | null;
-  releaseChannel: ReleaseChannel;
   /**
    * Telemetry consent — usage analytics (Aptabase). Tri-state:
    * `null` = follow LABS (any experimental feature enabled → on, none → off);
@@ -311,7 +309,6 @@ interface SettingsStore {
   setAutoCheckUpdates: (enabled: boolean) => void;
   setLastUpdateCheck: (timestamp: string | null) => void;
   setDismissedVersion: (version: string | null) => void;
-  setReleaseChannel: (channel: ReleaseChannel) => void;
   setTelemetryUsageEnabled: (v: boolean | null) => void;
   setTelemetryCrashEnabled: (v: boolean | null) => void;
   setTelemetryNoticeSeen: (v: boolean) => void;
@@ -530,7 +527,6 @@ export const useSettingsStore = create<SettingsStore>()(
       autoCheckUpdates: true,
       lastUpdateCheck: null,
       dismissedVersion: null,
-      releaseChannel: 'stable' as ReleaseChannel,
       telemetryUsageEnabled: null,
       telemetryCrashEnabled: null,
       telemetryNoticeSeen: false,
@@ -716,12 +712,6 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ dismissedVersion: version });
       },
 
-      setReleaseChannel: (channel: ReleaseChannel) => {
-        // Update channel only — telemetry defaults track LABS, not the chosen
-        // channel, so there's nothing to re-sync here. The two telemetry
-        // toggles are the single opt-out.
-        set({ releaseChannel: channel });
-      },
 
       setTelemetryUsageEnabled: (v: boolean | null) => {
         set({ telemetryUsageEnabled: v });
@@ -1098,13 +1088,8 @@ export const useSettingsStore = create<SettingsStore>()(
             state.cmdBarExpandedHeight = 480;
           }
         }
-        if (version < 14) {
-          // Issue #143 — alpha release channel. Existing users default to
-          // 'stable' so upgrading does not silently opt anyone into alpha.
-          if (typeof state.releaseChannel !== 'string') {
-            state.releaseChannel = 'stable';
-          }
-        }
+        // (v14 backfilled `releaseChannel`; v26 below removes it — the
+        // single-binary change deleted the channel concept entirely.)
         if (version < 15) {
           // Issue #186 — HTML viewer allow-forms. Default false (forms blocked)
           // so existing users see no behaviour change after upgrade.
@@ -1233,6 +1218,8 @@ export const useSettingsStore = create<SettingsStore>()(
           delete state.searchProvider;
         }
         if (version < 26) {
+          // Also drop the key itself — the picker and the alpha update path
+          // are gone; a lingering value would only confuse a future reader.
           // Single binary (PRD 2026-08-15-single-binary-feature-flags): the
           // alpha update channel is going away. Move everyone back to the one
           // remaining stream BEFORE the alpha endpoint is deleted — a user
@@ -1242,7 +1229,7 @@ export const useSettingsStore = create<SettingsStore>()(
           // This ships in an ALPHA build on purpose: it has to reach exactly
           // the users who are on the alpha channel. One-way and idempotent —
           // there is no longer anything to switch back to.
-          state.releaseChannel = 'stable';
+          delete state.releaseChannel;
         }
         return state;
       },

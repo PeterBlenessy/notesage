@@ -23,7 +23,7 @@ hand-pushed tag still ships, because `release.yml` needs no PAT).
   experimental feature — that is how a feature earns its way out of Labs —
   and stay off otherwise. Your own choice in Settings → Privacy always wins.
 
-### Fixes (iOS)
+### iOS
 
 - Pinning a folder now shows it under Pinned instead of appearing to do
   nothing.

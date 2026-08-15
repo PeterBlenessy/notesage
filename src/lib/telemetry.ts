@@ -175,7 +175,7 @@ export type SettingValue =
  * Adding an event means adding a key here; the call site is then type-checked.
  */
 export interface TelemetryEventProps {
-  app_launched: { version: string; os: string; channel: "stable" | "alpha" };
+  app_launched: { version: string; os: string };
   document_opened: { format: DocumentFormat };
   ai_chat_sent: { path: AiPath; provider_kind: ProviderKind };
   /**

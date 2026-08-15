@@ -10,12 +10,21 @@ interface ReleaseEntry {
     features?: string[];
     fixes?: string[];
     improvements?: string[];
+    /**
+     * Changes to the iOS app, kept OUT of the desktop sections.
+     *
+     * The two apps share a repo and a version line but ship to different
+     * people through different stores — a desktop alpha announcing "folder
+     * pinning fixed on iPhone" reads as noise to someone who just updated
+     * their Mac (Peter, 2026-08-15). Routed by conventional-commit scope, so
+     * it works for hand-written notes and auto-cut ones alike.
+     */
+    ios?: string[];
   };
   // Verbatim merged-PR dump from the history file's "## Under the hood"
   // section. Populated ONLY for prerelease (alpha) entries so the alpha
-  // changelog feed shows what landed in each auto-cut. Stable entries never
-  // carry it — `main()` filters prereleases out of the stable feed, and
-  // `parseReleaseFile` only attaches it when the version has a `-` segment.
+  // changelog feed shows what landed in each auto-cut. Only attached when the
+  // version carries a `-` segment, so curated releases keep their prose.
   underTheHood?: string[];
 }
 
@@ -25,19 +34,31 @@ interface Changelog {
 
 const HISTORY_DIR = join(import.meta.dirname, '..', 'docs', 'history');
 const OUTPUT_DIR = join(import.meta.dirname, '..', 'public');
-// `changelog.json` is the stable-channel feed — entries whose version has no
-// `-` prerelease segment. `changelog-alpha.json` is the alpha-channel feed —
-// every entry including the alpha line. The naming convention follows the
-// release-asset/bundled-file/fetch-URL story: unmarked = stable default,
-// `-alpha` suffix = the variant. See `useChangelog.ts` for the channel-aware
-// URL picker.
-const STABLE_OUTPUT_FILE = join(OUTPUT_DIR, 'changelog.json');
-const ALPHA_OUTPUT_FILE = join(OUTPUT_DIR, 'changelog-alpha.json');
+// `changelog.json` is THE feed — one release stream, so every entry is in it,
+// historical `-alpha.N` releases included. Until 2026-08-15 a second
+// `changelog-alpha.json` carried the prerelease line; the single-binary change
+// (PRD `2026-08-15-single-binary-feature-flags.md`) removed the channel the
+// split existed to serve.
+const OUTPUT_FILE = join(OUTPUT_DIR, 'changelog.json');
 
 function parseVersion(filename: string): string | null {
   // Accepts stable (`0.43.0`) and pre-release (`0.44.0-alpha.0`) suffixes.
   const match = filename.match(/release-v([\d.]+(?:-[\w.]+)?)\.md$/);
   return match ? match[1] : null;
+}
+
+/**
+ * Is this bullet about the iOS app rather than the desktop one?
+ *
+ * Matched on the conventional-commit scope (`feat(mobile): …`, `fix(ios): …`),
+ * which is what both hand-written and auto-cut notes carry. Deliberately
+ * narrow: a desktop change that merely mentions the word "mobile" in prose
+ * must not be misfiled, so only a leading scope counts.
+ */
+function isMobileScoped(bullet: string): boolean {
+  return /^\**(?:feat|fix|perf|refactor|style|docs|chore|build|ci|test)\s*\((?:mobile|ios)[^)]*\)/i.test(
+    bullet.trim(),
+  );
 }
 
 /**
@@ -79,7 +100,7 @@ export function parseReleaseFile(filepath: string): ReleaseEntry | null {
   // Parse sections
   const sections: ReleaseEntry['sections'] = {};
 
-  const sectionPattern = /###\s+(Features|Fixes|Improvements)\s*\n([\s\S]*?)(?=###|\n## |$)/g;
+  const sectionPattern = /###\s+(Features|Fixes|Improvements|iOS)\s*\n([\s\S]*?)(?=###|\n## |$)/g;
   let match: RegExpExecArray | null;
 
   while ((match = sectionPattern.exec(content)) !== null) {
@@ -95,9 +116,19 @@ export function parseReleaseFile(filepath: string): ReleaseEntry | null {
       }
     }
 
-    if (items.length > 0) {
-      sections[sectionName] = items;
+    if (items.length === 0) continue;
+
+    // Route by platform. A bullet scoped to the mobile app belongs in the iOS
+    // bucket wherever it was written — auto-cut alphas classify by commit type
+    // alone and would otherwise file `feat(mobile): …` under desktop Features.
+    if (sectionName === 'ios') {
+      sections.ios = [...(sections.ios ?? []), ...items];
+      continue;
     }
+    const desktop = items.filter((item) => !isMobileScoped(item));
+    const mobile = items.filter((item) => isMobileScoped(item));
+    if (desktop.length > 0) sections[sectionName] = desktop;
+    if (mobile.length > 0) sections.ios = [...(sections.ios ?? []), ...mobile];
   }
 
   // Prerelease (alpha) entries surface the verbatim merged-PR dump so the
@@ -111,7 +142,16 @@ export function parseReleaseFile(filepath: string): ReleaseEntry | null {
   // counts as content even when the curated sections are empty — otherwise
   // auto-cut alphas (which have no curated sections yet) would vanish from the
   // feed entirely.
-  if (!sections.features && !sections.fixes && !sections.improvements && !underTheHood) {
+  // `sections.ios` counts as content too — a release whose changes were ALL
+  // mobile would otherwise be dropped from the feed entirely, which is how
+  // the platform split could silently lose a whole entry.
+  if (
+    !sections.features &&
+    !sections.fixes &&
+    !sections.improvements &&
+    !sections.ios &&
+    !underTheHood
+  ) {
     return null;
   }
 
@@ -256,23 +296,18 @@ function main() {
   // Warn-only linter: flag user-facing bullets that contain forbidden patterns.
   lintUserFacingBullets(releases);
 
-  // Alpha feed = every release. Stable feed = entries without a prerelease
-  // segment. The `-` test mirrors how `isPrereleaseVersion()` classifies
-  // updates in `useAutoUpdate.ts` — same source of truth across the codebase.
-  const alphaChangelog: Changelog = { releases };
-  const stableChangelog: Changelog = {
-    releases: releases.filter((r) => !r.version.includes('-')),
-  };
+  // ONE feed. There is one release stream now, so every entry belongs in it —
+  // including the historical `-alpha.N` ones, which are simply older releases
+  // (PRD `2026-08-15-single-binary-feature-flags.md`). Filtering them out
+  // would blank the in-app changelog for anyone upgrading FROM an alpha.
+  const changelog: Changelog = { releases };
 
   if (!existsSync(OUTPUT_DIR)) {
     mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
-  writeFileSync(STABLE_OUTPUT_FILE, JSON.stringify(stableChangelog, null, 2) + '\n');
-  writeFileSync(ALPHA_OUTPUT_FILE, JSON.stringify(alphaChangelog, null, 2) + '\n');
-  console.log(
-    `Generated changelog.json (${stableChangelog.releases.length} stable) + changelog-alpha.json (${alphaChangelog.releases.length} total)`,
-  );
+  writeFileSync(OUTPUT_FILE, JSON.stringify(changelog, null, 2) + '\n');
+  console.log(`Generated changelog.json (${changelog.releases.length} releases)`);
 }
 
 // Run only when executed directly (via `tsx scripts/generate-changelog.ts`),

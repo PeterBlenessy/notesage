@@ -318,7 +318,6 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
             open_devtools,
             set_log_level,
-            alpha_check,
             read_file,
             read_binary_file,
             write_file,

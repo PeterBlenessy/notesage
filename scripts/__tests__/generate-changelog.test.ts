@@ -101,3 +101,113 @@ describe('parseReleaseFile — alpha vs stable Under the hood', () => {
     expect(entry).toBeNull();
   });
 });
+
+// ── Platform routing ────────────────────────────────────────────────────────
+//
+// Desktop and iOS share a repo and a version line but ship to different people
+// through different stores. A desktop alpha announcing "folder pinning fixed
+// on iPhone" reads as noise to someone who just updated their Mac, so
+// mobile-scoped bullets get their own section (Peter, 2026-08-15).
+
+const AUTO_CUT_WITH_MOBILE = `# Release v0.48.0-alpha.35
+
+**Date:** 2026-08-14
+**Previous version:** 0.48.0-alpha.34
+**Channel:** Alpha
+
+## Changes
+
+### Features
+- feat(mobile): long-press menu, Inbox shortcut, row redesign (#684)
+- feat(editor): callout blocks land in the toolbar (#690)
+
+### Fixes
+- fix(ios): stop the scroller stealing swipe gestures (#688)
+- fix(export): PDF footers no longer clip (#691)
+`;
+
+const HAND_WRITTEN_IOS = `# Release v0.48.0-alpha.36
+
+**Date:** 2026-08-15
+**Previous version:** 0.48.0-alpha.35
+**Channel:** Alpha
+
+## Changes
+
+### Features
+- Notesage now ships as a single build for everyone.
+
+### iOS
+- Pinning a folder now shows it under Pinned.
+`;
+
+describe('platform routing', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'changelog-platform-'));
+  });
+  afterEach(() => rmSync(dir, { recursive: true, force: true }));
+
+  function parse(content: string) {
+    // The version comes from the FILENAME, not the heading — parseReleaseFile
+    // returns null for anything that does not match `release-vX.Y.Z.md`.
+    const version = content.match(/# Release v([\d.]+(?:-[\w.]+)?)/)![1];
+    const file = join(dir, `900-release-v${version}.md`);
+    writeFileSync(file, content);
+    return parseReleaseFile(file)!;
+  }
+
+  it('moves mobile-scoped bullets out of the desktop sections', () => {
+    const entry = parse(AUTO_CUT_WITH_MOBILE);
+    expect(entry.sections.features).toEqual([
+      'feat(editor): callout blocks land in the toolbar (#690)',
+    ]);
+    expect(entry.sections.fixes).toEqual(['fix(export): PDF footers no longer clip (#691)']);
+    expect(entry.sections.ios).toEqual([
+      'feat(mobile): long-press menu, Inbox shortcut, row redesign (#684)',
+      'fix(ios): stop the scroller stealing swipe gestures (#688)',
+    ]);
+  });
+
+  it('reads an explicit ### iOS section from a hand-written note', () => {
+    const entry = parse(HAND_WRITTEN_IOS);
+    expect(entry.sections.ios).toEqual(['Pinning a folder now shows it under Pinned.']);
+    expect(entry.sections.features).toEqual([
+      'Notesage now ships as a single build for everyone.',
+    ]);
+  });
+
+  it('does not misfile a desktop bullet that merely mentions mobile', () => {
+    // Only a LEADING conventional-commit scope counts — prose about mobile
+    // in a desktop change must stay where it was written.
+    const entry = parse(`# Release v0.48.0-alpha.37
+
+**Date:** 2026-08-16
+**Previous version:** 0.48.0-alpha.36
+**Channel:** Alpha
+
+## Changes
+
+### Fixes
+- Sync no longer stalls when a mobile device writes concurrently (#700)
+`);
+    expect(entry.sections.fixes).toHaveLength(1);
+    expect(entry.sections.ios).toBeUndefined();
+  });
+
+  it('drops the desktop section entirely when every bullet was mobile', () => {
+    const entry = parse(`# Release v0.48.0-alpha.38
+
+**Date:** 2026-08-17
+**Previous version:** 0.48.0-alpha.37
+**Channel:** Alpha
+
+## Changes
+
+### Features
+- feat(mobile): gallery view (#633)
+`);
+    expect(entry.sections.features).toBeUndefined();
+    expect(entry.sections.ios).toEqual(['feat(mobile): gallery view (#633)']);
+  });
+});
