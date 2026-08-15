@@ -160,7 +160,7 @@ The unit is **user value**, not "issue" and not "layer." A PR that delivers half
 
 ## Workflows
 
-Fifteen workflow files. One *pipeline* + one *sweep* + four *standalones* + one *retrospect* + two *feedback loops* + one *review* + one *CI repair* + four *release infrastructure* (`aw-alpha-prep`, `aw-merge`, `aw-rebase`, `aw-alpha-cut`).
+Fifteen workflow files. One *pipeline* + one *sweep* + four *standalones* + one *retrospect* + two *feedback loops* + one *review* + one *CI repair* + four *release infrastructure* (`aw-tier-prep`, `aw-merge`, `aw-rebase`, `aw-release-cut`).
 
 | Workflow | Triggers | Purpose |
 | --- | --- | --- |
@@ -176,23 +176,29 @@ Fifteen workflow files. One *pipeline* + one *sweep* + four *standalones* + one 
 | `aw-feedback.yml` | `issue_comment.created`, `pull_request_review.submitted` | Interpret human feedback on hitl issues or bot PRs; redirect pipeline by flipping labels AND explicitly dispatching the next standalone (since `GITHUB_TOKEN`-driven label changes don't fire downstream events). |
 | `aw-iterate.yml` | `workflow_dispatch` (called by aw-feedback) | Push follow-up commit on a draft PR's branch when the requested change is small + specific. |
 | `aw-ci-repair.yml` | `workflow_run.completed` (Tests workflow, failure), `workflow_dispatch` | Narrow CI auto-repair: detects recurring perf-budget flake patterns on bot-authored `claude/*` draft PRs and applies one-line fixes (Patterns A+B). Posts a comment for C/D/E. One-attempt cap per PR. |
-| `aw-alpha-prep.yml` | `pull_request.ready_for_review`, `pull_request.opened` | Tier classifier. Labels bot PRs `tier:A` / `tier:B` / `tier:C` based on issue labels (hitl/visual), touched paths (load-bearing list), and diff size. `chore(deps):` PRs with prod_additions < 50 fast-path to Tier A. Single source of truth for the release routing decision. |
+| `aw-tier-prep.yml` | `pull_request.ready_for_review`, `pull_request.opened` | Tier classifier. Labels bot PRs `tier:A` / `tier:B` / `tier:C` based on issue labels (hitl/visual), touched paths (load-bearing list), and diff size. `chore(deps):` PRs with prod_additions < 50 fast-path to Tier A. Single source of truth for the release routing decision. |
 | `aw-merge.yml` | `pull_request.labeled` (filter `tier:A` + `claude/*` head ref), `workflow_dispatch` | Enables GitHub native auto-merge (squash) on Tier-A bot PRs. Merge fires when CI green + required reviews satisfied. Tier B/C are NOT touched here. |
 | `aw-rebase.yml` | cron `*/15`, `workflow_dispatch` | Queue-collision recovery: when a Tier-A merge knocks other auto-merge PRs BEHIND main, this sweep calls `update-branch` (clean three-way merge). DIRTY conflicts or lockfile conflicts → disable auto-merge, add `needs-human`, post comment. |
-| `aw-alpha-cut.yml` | cron `0 */6 * * *`, `workflow_dispatch`, `pull_request.closed` (head ref `release/v*`) | Two-job release cutter. `cut` (cron + dispatch): bumps `package.json`, generates `docs/history/NNN-release-vX.Y.Z-alpha.M.md` (merged PRs dumped verbatim under `## Under the hood`), regenerates `public/changelog-alpha.json`, pushes to `release/v${NEXT_VERSION}`, opens an auto-merge PR. `tag-after-merge` (PR closed): tags the merge commit `v${NEXT_VERSION}` and pushes the tag, which fires `release.yml`. |
+| `aw-release-cut.yml` | cron `0 */6 * * *`, `workflow_dispatch`, `pull_request.closed` (head ref `release/v*`) | Two-job release cutter. `cut` (cron + dispatch): bumps `package.json`, generates `docs/history/NNN-release-vX.Y.0.md` (merged PRs dumped verbatim under `## Under the hood`), regenerates `public/changelog.json` + `public/changelog-ios.json`, pushes to `release/v${NEXT_VERSION}`, opens an auto-merge PR. `tag-after-merge` (PR closed): tags the merge commit `v${NEXT_VERSION}` and pushes the tag, which fires `release.yml`. |
 
-### Alpha release notes surface the merged-PR dump
+### Auto-cut release notes surface the merged-PR dump
 
-Auto-cut alphas have no curated `## Changes` yet, so their user-facing notes would otherwise read only "_No user-visible changes._". To let alpha testers see what made each cut, the `## Under the hood` PR dump is surfaced for **prerelease** versions only:
+An auto-cut release has no curated `## Changes` yet, so its user-facing notes
+would otherwise read only "_No user-visible changes._". The `## Under the
+hood` PR dump is therefore surfaced so testers can see what made each cut:
+`scripts/generate-changelog.ts` attaches it to the entry as `underTheHood[]`
+and the in-app Changelog renders it as an "Under the hood" section.
 
-- `scripts/generate-changelog.ts` attaches the dump to the entry as `underTheHood[]`; the in-app Changelog (alpha channel) renders it as an "Under the hood" section. The stable feed (`changelog.json`) strips prerelease entries entirely, so stable never carries it.
-- `release.yml` includes the `## Under the hood` section in the GitHub Release body when the tag is a prerelease; stable tags stop at `## Under the hood` exactly as before.
+A curated release — one written by the `/release` skill rather than auto-cut —
+rewrites that dump into user-facing prose. `v0.48.0` is the reference example.
 
-Promotion to stable (the `release` skill) still rewrites the dump into curated prose — the raw PR list never reaches stable release notes.
+**There is no alpha channel.** Notesage ships ONE binary; experimental work is
+opt-in under Settings → Labs, and every cut is a real release with
+`prerelease: false` (PRD `docs/prds/2026-08-15-single-binary-feature-flags.md`).
+A `-alpha.N` tag would be actively harmful now: `release.yml` derives the
+prerelease flag from the tag, and GitHub's `releases/latest` resolver skips
+prereleases, so the release would be invisible to the app's own updater.
 
-Each precheck-bearing workflow finds candidates with `gh + jq` before invoking the LLM (zero token cost on empty sweeps). Cron tick is every 15 minutes.
-
-**Token usage per workflow.** Workflows that create PRs or push to PR branches use `WORKFLOW_PAT`: `aw-tdd.yml`, `aw-iterate.yml`, `aw-retrospect.yml`, `aw-ci-repair.yml`, and the `tdd:` jobs in `aw-pipeline.yml` and `aw-sweep.yml`. Everything else (`aw-triage`, `aw-refine`, `aw-slice`, `aw-feedback`, `aw-review`, and the non-tdd jobs in pipeline/sweep) uses `GITHUB_TOKEN` so label/comment edits are suppressed by the recursion guard.
 
 ## Lifecycle (worked example, default path — owner-filed issue)
 
@@ -210,15 +216,15 @@ Total wall time: \~10–15 min from `gh issue create` to draft PR.
 
 **External-author flow.** Issues from non-trusted authors (anyone other than OWNER / COLLABORATOR / MEMBER) get labelled `external` by `aw-mark-external.yml` and a comment is posted explaining the gate. The pipeline + sweep skip them entirely. Owner reviews each one and either closes it (spam / off-topic / malicious) or adds `aw-approved`. The next sweep tick (\~15 min) picks up `aw-approved` issues and runs the same lifecycle as above.
 
-## Release pipeline (PR → alpha)
+## Release pipeline (PR → release)
 
-The release half of AW takes merged Tier-A/B PRs and turns them into a tagged alpha build. Same `aw-` namespace, same WORKFLOW_PAT, same auto-merge + branch-protection conventions as the issue half.
+The release half of AW takes merged Tier-A/B PRs and turns them into a tagged release build. Same `aw-` namespace, same WORKFLOW_PAT, same auto-merge + branch-protection conventions as the issue half.
 
 ```mermaid
 flowchart TD
-  P1[Bot PR opens] -->|pull_request.ready_for_review| TP[aw-alpha-prep]
+  P1[Bot PR opens] -->|pull_request.ready_for_review| TP[aw-tier-prep]
   TP -->|+ tier:A| ME[aw-merge]
-  TP -.->|+ tier:B| Q[Queue for next alpha cut]
+  TP -.->|+ tier:B| Q[Queue for next release cut]
   TP -.->|+ tier:C| HR[Sits at ready,<br/>human review]
   ME -->|enable auto-merge| WAIT[CI green +<br/>required reviews]
   WAIT -.->|fellow Tier-A merged first,<br/>this one is BEHIND| RB[aw-rebase]
@@ -226,10 +232,10 @@ flowchart TD
   RB -.->|DIRTY or lockfile| ESC[+ needs-human,<br/>disable auto-merge]
   WAIT -->|all green| MM[Merged to main]
   HR -->|human merges| MM
-  MM -.->|cron every 6h<br/>OR manual dispatch| AC[aw-alpha-cut: cut job]
+  MM -.->|cron every 6h<br/>OR manual dispatch| AC[aw-release-cut: cut job]
   AC -->|push to release/vX.Y.Z| RPR[Auto-merge PR<br/>chore: release vX.Y.Z]
   RPR -->|CI green| RMM[Release PR merged]
-  RMM -->|pull_request.closed| AT[aw-alpha-cut:<br/>tag-after-merge]
+  RMM -->|pull_request.closed| AT[aw-release-cut:<br/>tag-after-merge]
   AT -->|push tag vX.Y.Z| RY[release.yml]
   RY -->|build + publish| AR[GitHub Release<br/>+ artifacts]
 
@@ -241,21 +247,21 @@ flowchart TD
   class HR,Q,ESC,WAIT stop
 ```
 
-**Lifecycle (worked example, Tier-A PR → alpha):**
+**Lifecycle (worked example, Tier-A PR → release):**
 
 | Step | PR / repo state |
 | --- | --- |
 | `aw-tdd` opens draft PR | label: none |
 | `aw-review` flips draft → ready | label: none |
-| `aw-alpha-prep` classifies (small diff, no hitl/visual) | label: `tier:A` |
+| `aw-tier-prep` classifies (small diff, no hitl/visual) | label: `tier:A` |
 | `aw-merge` enables GitHub auto-merge | merge pending CI |
 | CI green → PR merges to main | merge commit on main |
-| Cron tick (every 6h): `aw-alpha-cut` cut job runs | branch `release/v0.45.0-alpha.N` + auto-merge PR opened |
+| Cron tick (every 6h): `aw-release-cut` cut job runs | branch `release/v0.46.0` + auto-merge PR opened |
 | Release PR's CI passes → auto-merges | merge commit on main |
-| `aw-alpha-cut` tag-after-merge fires (PR closed event) | tag `v0.45.0-alpha.N` pushed |
+| `aw-release-cut` tag-after-merge fires (PR closed event) | tag `v0.46.0` pushed |
 | `release.yml` builds + publishes | GitHub Release with artifacts |
 
-Total wall time: \~25–35 min from bot-PR merge to published alpha (build dominates).
+Total wall time: \~25–35 min from bot-PR merge to published release (build dominates).
 
 **Tier B PRs** skip `aw-merge` and queue for the next 6h alpha-cut tick, which still picks them up via the `label:tier:A,tier:B` enumeration. **Tier C PRs** sit at ready until a human merges them; the alpha-cut still fires (Tier C is the *stable*-promotion gate, not the alpha gate).
 

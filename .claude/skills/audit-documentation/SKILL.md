@@ -29,7 +29,7 @@ as the index.
 - Enumerate command MODULES: `ls src-tauri/src/commands/*.rs`. Cross-check each against
   the `commands/` inventory in architecture.md AND against tauri-commands.md. A module
   present in code but absent from both docs is a MEDIUM drift (the IPC reference is
-  incomplete) (e.g. a newly-added `alpha_update.rs` or `preview.rs` documented in
+  incomplete) (e.g. a newly-added `preview.rs` documented in
   neither tauri-commands.md nor the architecture.md module inventory).
 - Enumerate commands: `rg -n "#\[tauri::command\]" src-tauri/src/commands` and list the
   fn names. For each command that tauri-commands.md DOES document, confirm:
@@ -112,10 +112,11 @@ each drift against CODE, grep the asserted value across ALL docs and confirm the
 - Grep EVERY hardcoded version string in docs (`rg -n "[Vv]ersion:?\s*\d+\.\d+" CLAUDE.md docs/`)
   — the same stale string is usually duplicated across CLAUDE.md and product-description.md;
   report each occurrence with its file:line, not just "docs are stale".
-- If `package.json` carries a pre-release suffix (`-alpha`, `-beta`, `-rc`), check the
-  docs acknowledge the pre-release channel AND that any channel-specific command module
-  exists in the docs (e.g. an alpha update command). A docs set that names no channel
-  while the build ships one is a HIGH drift.
+- Notesage ships ONE binary — there is no release channel and no alpha update
+  path (PRD `docs/prds/2026-08-15-single-binary-feature-flags.md`). Docs that
+  describe `releaseChannel`, `alpha_check`, `changelog-alpha.json` or a channel
+  picker are describing deleted code. Experimental work is opt-in under
+  Settings → Labs.
 - Check technology versions (React, Tiptap, Tailwind) against the installed versions in
   `package.json` dependencies, not against prose memory.
 

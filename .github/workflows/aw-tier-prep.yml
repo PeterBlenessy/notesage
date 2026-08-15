@@ -1,11 +1,11 @@
-name: AW — Alpha Prep (Tier Classifier)
+name: AW — Tier Prep (PR Classifier)
 
 # Classifies a bot-authored PR into Tier A / B / C after aw-review approves
 # it (i.e. flips it from draft → ready). The tier label gates downstream
 # automation:
 #
 #   - tier:A — auto-merge on green CI (`aw-merge.yml` enables `gh pr merge --auto`)
-#   - tier:B — batched merge in periodic alpha cuts (manual or cron)
+#   - tier:B — batched merge in periodic release cuts (manual or cron)
 #   - tier:C — sits at ready, waits for human review/merge (visual or
 #               load-bearing subsystem changes)
 #
@@ -56,7 +56,7 @@ permissions:
   issues: read            # read originating issue's labels
 
 concurrency:
-  group: aw-alpha-prep-pr-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
+  group: aw-tier-prep-pr-${{ github.event.pull_request.number || inputs.pr_number || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -170,7 +170,7 @@ jobs:
             echo "Classified: $label  ($reason)"
             gh pr edit "$PR_NUMBER" --add-label "$label"
             comment_body=$(cat <<EOF
-          🧮 **aw-alpha-prep:** \`$label\` — $reason
+          🧮 **aw-tier-prep:** \`$label\` — $reason
 
           Auto-merge eligibility:
           - **tier:A** → enabled by \`aw-merge\` workflow; merges automatically when CI is green.
@@ -194,7 +194,7 @@ jobs:
             echo "Classified: $label  ($reason)"
             gh pr edit "$PR_NUMBER" --add-label "$label"
             comment_body=$(cat <<EOF
-          🧮 **aw-alpha-prep:** \`$label\` — $reason
+          🧮 **aw-tier-prep:** \`$label\` — $reason
 
           Auto-merge eligibility:
           - **tier:A** → enabled by \`aw-merge\` workflow; merges automatically when CI is green.
@@ -243,7 +243,7 @@ jobs:
           # Post a one-line comment summarising the classification — visible
           # in the PR timeline for human review.
           comment_body=$(cat <<EOF
-          🧮 **aw-alpha-prep:** \`$label\` — $reason
+          🧮 **aw-tier-prep:** \`$label\` — $reason
 
           Auto-merge eligibility:
           - **tier:A** → enabled by \`aw-merge\` workflow; merges automatically when CI is green.

@@ -53,7 +53,7 @@ permissions:
   pull-requests: write     # open auto-merge PR for the release commit
 
 concurrency:
-  group: aw-alpha-cut-${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || 'cut' }}
+  group: aw-release-cut-${{ github.event_name == 'pull_request' && github.event.pull_request.head.ref || 'cut' }}
   cancel-in-progress: false
 
 jobs:
@@ -318,7 +318,7 @@ jobs:
 
           # PR body: one bullet per Tier-A/B PR that earned this alpha cut.
           {
-            echo "Auto-cut by \`aw-alpha-cut\`. The history file at \`docs/history/${{ needs.preflight.outputs.next_history_number }}-release-v${NEXT_VERSION}.md\` lists the merged PRs."
+            echo "Auto-cut. The history file at \`docs/history/${{ needs.preflight.outputs.next_history_number }}-release-v${NEXT_VERSION}.md\` lists the merged PRs."
             echo ""
             echo "## PRs included"
             echo ""
@@ -327,7 +327,7 @@ jobs:
               echo "- #${pr}"
             done
             echo ""
-            echo "Auto-merge enabled. Once the 4 required status checks pass, this merges to main, and the \`tag-after-merge\` job in \`aw-alpha-cut.yml\` tags + pushes \`v${NEXT_VERSION}\`. \`release.yml\` then builds and publishes."
+            echo "Auto-merge enabled. Once the 4 required status checks pass, this merges to main, and the \`tag-after-merge\` job in \`aw-release-cut.yml\` tags + pushes \`v${NEXT_VERSION}\`. \`release.yml\` then builds and publishes."
           } > /tmp/pr-body.md
 
           gh pr create \
