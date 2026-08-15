@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.48.0-alpha.36",
+      "date": "2026-08-15",
+      "previousVersion": "0.48.0-alpha.35",
+      "sections": {
+        "features": [
+          "Notesage is moving to a **single build** for everyone. Experimental features",
+          "**This build switches your update channel back to the standard one.** No",
+          "Usage and crash reporting now follow Labs: they turn on if you enable an"
+        ]
+      },
+      "underTheHood": [
+        "Flag registry (`src/lib/flags.ts`) with a typed id, plus `flag-store` — its",
+        "`flags.test.ts` carries the channel-isolation guarantee across: every flag",
+        "`labs_flag_changed` / `labs_feature_used` added to the fixed telemetry",
+        "The flag store reports through an injected function rather than importing",
+        "Settings migration `v26` rewrites `releaseChannel` `alpha` → `stable`.",
+        "PRD `docs/prds/2026-08-15-single-binary-feature-flags.md`, tasks"
+      ]
+    },
+    {
       "version": "0.48.0-alpha.35",
       "date": "2026-08-14",
       "previousVersion": "0.48.0-alpha.34",
