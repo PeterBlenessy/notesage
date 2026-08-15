@@ -19,49 +19,18 @@
       "previousVersion": "0.48.0-alpha.35",
       "sections": {
         "features": [
-          "Notesage is moving to a **single build** for everyone. Experimental features",
-          "**This build switches your update channel back to the standard one.** No",
-          "Usage and crash reporting now follow Labs: they turn on if you enable an"
-        ],
-        "ios": [
-          "Pinning a folder now shows it under Pinned instead of appearing to do",
-          "Closing a note no longer flashes the title and breadcrumb in the list before",
-          "Opening an HTML report no longer flashes white before its content appears."
+          "Notesage is moving to a **single build** for everyone. Experimental features now ship in every release, switched off, and are opted into under **Settings → Labs**. There is no separate alpha download any more.",
+          "**This build switches your update channel back to the standard one.** No action needed; you keep receiving updates as before.",
+          "Usage and crash reporting now follow Labs: they turn on if you enable an experimental feature — that is how a feature earns its way out of Labs — and stay off otherwise. Your own choice in Settings → Privacy always wins."
         ]
       },
       "underTheHood": [
-        "Flag registry (`src/lib/flags.ts`) with a typed id, plus `flag-store` — its",
-        "`flags.test.ts` carries the channel-isolation guarantee across: every flag",
-        "`labs_flag_changed` / `labs_feature_used` added to the fixed telemetry",
-        "The flag store reports through an injected function rather than importing",
+        "Flag registry (`src/lib/flags.ts`) with a typed id, plus `flag-store` — its own store, so a corrupted settings blob cannot enable unfinished behaviour, and rehydrate filters unknown ids so a removed flag cannot resurrect.",
+        "`flags.test.ts` carries the channel-isolation guarantee across: every flag defaults off, a fresh store enables nothing. Previously enforced by the release's `prerelease` flag, which stops existing once there is one stream.",
+        "`labs_flag_changed` / `labs_feature_used` added to the fixed telemetry taxonomy; crash reports carry a `labs_flags` tag so a crash can be attributed to — or cleared of — an experimental feature.",
+        "The flag store reports through an injected function rather than importing `lib/telemetry`: `settings-store` imports it and `MobileApp` imports `settings-store`, so a direct import made telemetry reachable from the iOS shell and broke the telemetry-free guarantee behind its App Store \"Data Not Collected\" answer.",
         "Settings migration `v26` rewrites `releaseChannel` `alpha` → `stable`.",
-        "PRD `docs/prds/2026-08-15-single-binary-feature-flags.md`, tasks"
-      ]
-    },
-    {
-      "version": "0.48.0-alpha.35",
-      "date": "2026-08-14",
-      "previousVersion": "0.48.0-alpha.34",
-      "sections": {
-        "ios": [
-          "feat(mobile): long-press menu, capture fixes, Inbox shortcut, row redesign (#684)"
-        ]
-      },
-      "underTheHood": [
-        "feat(mobile): long-press menu, capture fixes, Inbox shortcut, row redesign (#684)"
-      ]
-    },
-    {
-      "version": "0.48.0-alpha.34",
-      "date": "2026-08-13",
-      "previousVersion": "0.48.0-alpha.33",
-      "sections": {
-        "ios": [
-          "fix(mobile): hold a native cover over the webview until it has painted (#678)"
-        ]
-      },
-      "underTheHood": [
-        "fix(mobile): hold a native cover over the webview until it has painted (#678)"
+        "PRD `docs/prds/2026-08-15-single-binary-feature-flags.md`, tasks `docs/tasks/2026-08-15-single-binary-feature-flags-tasks.md`. Deletion of the alpha update path, `releaseChannel`, the second changelog and `buildIsAlpha()` follows once this build has been taken."
       ]
     },
     {
@@ -75,23 +44,14 @@
         "iOS: localize the Share Extension (Swedish) (#673)",
         "iOS: name captures after their title, not a timestamp (#674)",
         "iOS: kill the white launch flash (root cause found by measurement) (#676)",
-        "fix(mobile): kill the white launch flash — the light CSS default painted before the dark media query",
-        "feat(mobile): name captures after their title, not a timestamp",
-        "feat(mobile): localize the Share Extension (Swedish) — prioritized over desktop",
-        "feat: i18n foundation with Swedish, mobile UI fully localized (#653)",
-        "feat(mobile): group by file type — the last mode from #652"
+        "feat: i18n foundation with Swedish, mobile UI fully localized (#653)"
       ]
     },
     {
       "version": "0.48.0-alpha.32",
       "date": "2026-08-12",
       "previousVersion": "0.48.0-alpha.31",
-      "sections": {
-        "ios": [
-          "feat(mobile): iOS Pinned group backed by shared pins.json (#660)",
-          "feat(mobile): iOS Pinned group backed by shared pins.json (#661)"
-        ]
-      },
+      "sections": {},
       "underTheHood": [
         "chore(deps): bump mermaid from 11.15.0 to 11.16.1 in the npm_and_yarn group across 1 directory (#580)",
         "iOS: group by recent or date in the view-options menu (#664)",
@@ -99,12 +59,6 @@
         "iOS: size gallery folder/file icons to the card (#667)",
         "iOS: shared pins.json integrated into the existing Group by menu (#668)",
         "iOS: flatten the top chrome — bare breadcrumb, soft gradient band (#669)",
-        "feat(mobile): shared pins.json — desktop writes, iOS reads, Pinned joins Group by",
-        "feat(mobile): iOS Pinned group backed by shared pins.json",
-        "feat(mobile): flatten the top chrome — bare breadcrumb, gradient band",
-        "fix(mobile): gallery folder icons were a speck — size them to the card",
-        "feat(mobile): group by recent or date in the view-options menu",
-        "build(mobile): TestFlight prerequisites — export compliance, icon alpha, upload runbook",
         "chore(deps): bump mermaid in the npm_and_yarn group across 1 directory"
       ]
     },
@@ -117,11 +71,7 @@
         "iOS: native QuickLook preview for videos, audio and office documents (#648)",
         "iOS: system-generated thumbnails via QLThumbnailGenerator (#649)",
         "iOS: foreground refresh after shares + working pull-to-refresh (#654)",
-        "iOS: swipe-action polish — zoom-in circles, animated rounded trailing edge (#659)",
-        "feat(mobile): swipe-action polish — circles zoom with the swipe, trailing edge rounds in step",
-        "fix(mobile): foreground refresh after a share + working pull-to-refresh (#650)",
-        "feat(mobile): system-generated thumbnails — QLThumbnailGenerator replaces the web raster",
-        "feat(mobile): native QuickLook for videos, audio and office documents"
+        "iOS: swipe-action polish — zoom-in circles, animated rounded trailing edge (#659)"
       ]
     },
     {
@@ -132,38 +82,18 @@
       "underTheHood": [
         "iOS: fix gallery markdown thumbnails — full-size headings shoved right by editor padding (#644)",
         "iOS: thumbnail queue cancellation + pacing — no more frozen back-out (#645)",
-        "iOS: accept images, videos and audio in the share sheet (#646)",
-        "feat(mobile): share images, videos and audio into the library",
-        "fix(mobile): abort in-flight thumbnail jobs at every stage checkpoint",
-        "fix(mobile): free the UI thread from thumbnail generation — cancel on back-out, pace the queue",
-        "fix(mobile): gallery markdown thumbnails rendered at full editor size, shoved right"
+        "iOS: accept images, videos and audio in the share sheet (#646)"
       ]
     },
     {
       "version": "0.48.0-alpha.29",
       "date": "2026-08-12",
       "previousVersion": "0.48.0-alpha.28",
-      "sections": {
-        "ios": [
-          "feat(mobile): respect Dynamic Type text size and Bold Text in folder views (#624)",
-          "feat(mobile): iOS capture — modern readability crate + ad/tracker image filtering (#625)",
-          "feat(mobile): respect Dynamic Type text size and Bold Text in folder views (#626)",
-          "feat(mobile): respect Dynamic Type text size and Bold Text in folder views (#627)",
-          "feat(mobile): gallery view for the library — grid of note preview cards (#639)",
-          "fix(mobile): decline oversized text files instead of hanging on open (#623)"
-        ]
-      },
+      "sections": {},
       "underTheHood": [
         "Refactor Copilot LSP sign-in flow to handle three-phase auth (#3)",
         "iOS: swipe-delete — floating Notes-style actions, full-swipe commit (#640)",
-        "iOS: fix inert sort/view menu picks and the search island's corner fly-in (#642)",
-        "feat(mobile): respect Dynamic Type text size and Bold Text in folder views",
-        "fix(mobile): dead sort/view menu picks + search island flying in from the corner",
-        "feat(mobile): iOS capture — modern readability crate + ad/tracker image filtering",
-        "fix(mobile): decline oversized text files instead of hanging on open",
-        "feat(mobile): gallery view for the library — grid of note preview cards",
-        "feat(mobile): Files-style \"...\" view-options menu replaces the standalone sort control",
-        "feat(mobile): swipe-delete with Notes-style floating actions and full-swipe commit"
+        "iOS: fix inert sort/view menu picks and the search island's corner fly-in (#642)"
       ]
     },
     {
@@ -178,73 +108,28 @@
         "iOS: WebContent-process crash recovery + local-only JS diagnostics (#635)",
         "iOS: breadcrumb island — current folder on a top-center glass capsule (#636)",
         "iOS: sort toggle — alphabetical or modified-newest listing order (#637)",
-        "iOS: breadcrumb island replaces the in-content title; sort becomes a labeled menu (#638)",
-        "fix(mobile): the breadcrumb island REPLACES the in-content title; sort gets a labeled menu",
-        "feat(mobile): sort toggle — alphabetical or modified-newest listing order",
-        "feat(mobile): breadcrumb island — current folder on a top-center glass capsule",
-        "feat(mobile): WebContent-process crash recovery + local-only JS diagnostics",
-        "fix(mobile): stop the pending-note load from tricking the theme effect into a stray render",
-        "fix(mobile): halve the folder-view row padding — the gap between items read too large",
-        "feat(mobile): never create empty notes — the file exists only once there is content",
-        "feat(mobile): Files-style modified date beneath library row names",
-        "feat(mobile): verified telemetry-free iOS binary — the \"Data Not Collected\" basis",
-        "fix(mobile): stop the cold-start white flash — theme the webview canvas before first paint",
-        "feat(mobile): create + edit notes — native + island, instant Untitled, raw-markdown editor, title becomes filename",
-        "feat(mobile): allowlisted write surface — three note-editing commands behind the grant"
-      ]
-    },
-    {
-      "version": "0.48.0-alpha.27",
-      "date": "2026-08-11",
-      "previousVersion": "0.48.0-alpha.26",
-      "sections": {
-        "ios": [
-          "feat(mobile): swipe a folder-view row to reveal a Share action (#621)"
-        ]
-      },
-      "underTheHood": [
-        "feat(mobile): swipe a folder-view row to reveal a Share action"
+        "iOS: breadcrumb island replaces the in-content title; sort becomes a labeled menu (#638)"
       ]
     },
     {
       "version": "0.48.0-alpha.26",
       "date": "2026-08-11",
       "previousVersion": "0.48.0-alpha.25",
-      "sections": {
-        "ios": [
-          "feat(mobile): replace manual refresh button with native pull-to-refresh (#622)"
-        ]
-      },
+      "sections": {},
       "underTheHood": [
-        "iOS: rich web capture — article extraction + compose-page share sheet (#613)",
-        "feat(mobile): replace manual refresh button with native pull-to-refresh (#622)",
-        "feat(mobile): rich web capture — article extraction + compose-page share sheet"
+        "iOS: rich web capture — article extraction + compose-page share sheet (#613)"
       ]
     },
     {
       "version": "0.48.0-alpha.25",
       "date": "2026-08-10",
       "previousVersion": "0.48.0-alpha.24",
-      "sections": {
-        "ios": [
-          "feat(mobile): refresh-spin state on the native chrome button (#607)",
-          "fix(mobile): stop Reader's innerHTML reset from wiping find-in-document marks (#608)"
-        ]
-      },
+      "sections": {},
       "underTheHood": [
         "iOS: native Liquid Glass chrome + find-in-document across all readers (#600)",
         "iOS: capture shared documents — Notesage in the share sheet for PDFs (#601)",
         "CI: scoped audit ignores for advisories blocked on upstream bumps (#603)",
-        "fix(mobile): stop Reader's innerHTML reset from wiping find-in-document marks (#608)",
-        "feat(mobile): refresh-spin state on the native chrome button (#607)",
-        "ci: scoped audit ignores for advisories blocked on upstream bumps",
-        "feat(mobile): capture shared documents — Notesage in the share sheet for PDFs",
-        "fix(mobile): find-in-document round — deterministic scroll, healing, hidden content",
-        "fix(mobile): native search matches Apple Notes anatomy",
-        "feat(mobile): native search island — glass capsule, field, and match nav",
-        "docs(mobile): ADR 0009 — iOS chrome is native SwiftUI over the webview",
-        "feat(mobile): native Liquid Glass chrome — real SwiftUI buttons over the webview",
-        "feat(mobile): Liquid Glass press feedback + motion for the web chrome"
+        "ci: scoped audit ignores for advisories blocked on upstream bumps"
       ]
     },
     {
@@ -270,65 +155,15 @@
         "Add App Store launch readiness research document (#11)",
         "Add sandbox-runtime comparison research with identified gaps (#12)",
         "iOS mobile app — on-device reader, island chrome, share capture (#521)",
-        "fix(mobile): code-review round — load races, share lifecycle, injection safety",
-        "feat(mobile): keyboard-aware islands, PDF island chrome, HTML search, share",
         "fix(editor): PDF text search was dead on WebKit — polyfill stream iteration",
-        "fix(mobile): islands are chrome, not page — portal, fixed, zoom-proofed",
-        "fix(mobile): keep chrome islands anchored when the keyboard appears",
-        "feat(mobile): search islands + platform island metrics and glass",
-        "feat(mobile): corner button islands — Apple Notes / Files chrome (#581 round 2)",
-        "docs(mobile): mark bottom-navigation task done",
-        "perf(mobile): raw IPC bytes for binary reads — big-PDF spinner freeze, part 2",
-        "feat(mobile): iOS-style floating bottom navigation (#581)",
-        "docs(mobile): add bottom-navigation adoption (issue #581) to the MVP tasks",
-        "test(mobile): lock the review findings",
-        "chore(mobile): drop dead surface and fix doc drift",
         "fix: iOS registers only the mobile reader's command surface",
         "fix: give pdf.js a blob: worker — custom-scheme URLs can't spawn workers",
-        "fix(mobile): HIG touch targets, spinning refresh, JS hidden filter",
-        "fix(mobile): link handling, theme-flip re-reads, mermaid doc leak",
-        "fix(mobile): friendly picker cancel, hidden entries excluded, stale headers",
-        "docs(mobile): PRD + tasks for the App Store launch MVP",
-        "docs(mobile): mark the remaining v1 tasks done in the ledger",
-        "docs(mobile): bring the feature description up to shipped reality",
         "ci: make the tauri-webdriver install idempotent",
         "chore(deps): bump pdfjs-dist and nanoid past new high-severity advisories",
         "fix(test): stop the tree-install test from racing the suite via $HOME",
-        "fix(mobile): re-render markdown when the theme flips",
-        "fix(mobile): mermaid via sandboxed iframe — WebKit refuses foreignObject in SVG images",
-        "fix(mobile): serve mermaid SVGs from the htmlpreview scheme — data: images break on device",
-        "fix(mobile): survive the embedded build's CSP — htmlpreview scheme, img-based mermaid, themed code blocks",
         "fix: follow the OS appearance while the app is running",
-        "feat(mobile): render mermaid diagrams in the reader",
-        "test(mobile): follow the HTML iframe to the data: URL contract",
-        "fix(mobile): render HTML reports from a data: URL — blob: is blank on device",
-        "fix(mobile): real app icon on iOS — edge-bled full-bleed set from the master",
-        "chore(mobile): sync extension version keys with the app; doc the plugin/script layout",
-        "feat(mobile): wire the Share Extension with a script, not Xcode clicks",
-        "fix(mobile): key the PDF byte-cache cleanup on the path, not state identity",
-        "perf(mobile): base64 binary reads — 10 MB PDF from ~10 s frozen to ~0.5 s",
-        "build(ios): set the ADDABLE AB development team for device signing",
         "build: force cargo to re-embed the frontend, drop the inert ios build overlay",
         "fix: install the rustls CryptoProvider before anything builds a reqwest client",
-        "fix(mobile): stop comrak's pretty-printed newlines rendering as line breaks",
-        "fix(mobile): single typography system, and stop shipping stale frontends",
-        "fix(mobile): reader was using desktop-sized margins on a phone",
-        "fix(mobile): drop 100vh from the shell root",
-        "fix(mobile): name the action after what it does, and stop silent cancels",
-        "ci(mobile): stop grep -q from SIGPIPE-ing the symbol check",
-        "feat(mobile): port library access onto the plugin crate — the bridge is live",
-        "feat(mobile): iOS native bridge as a plugin crate — the Swift now links",
-        "ci(mobile): tolerate nm's exit code when verifying the capture C ABI",
-        "build(mobile): integrate the iOS native sources into the Xcode project",
-        "fix(mobile): drop whisper.cpp from the iOS build — the app now launches",
-        "fix(mobile): make the Rust crate actually compile for iOS",
-        "ci(mobile): type-check the iOS Swift and build the capture staticlib",
-        "feat(mobile): render HTML reports, share the desktop renderer, one capture format",
-        "docs(mobile): note the missing iOS CI build path as a follow-up",
-        "feat(mobile): stage more iOS native layer (plugin bridge, entitlements, plists)",
-        "docs(mobile): update PRD + tasks status (in-app PDF, per-task ledger)",
-        "feat(mobile): render PDFs in-app via the desktop PdfViewer",
-        "feat(mobile): scaffold iOS reader + share-capture app",
         "docs: add task breakdown for iOS mobile app PRD",
         "docs: clarify iOS iCloud access rationale in mobile PRD",
         "docs: add PRD for Notesage iOS mobile app (reader + share capture)"
@@ -1455,7 +1290,7 @@
       },
       "underTheHood": [
         "`openssl` 0.10.79 → 0.10.80 (Rust transitive, security patch) — #314.",
-        "`ws` 8.19.0 → 8.20.1 inside the `bundled-skills/download-webpage` Node script — `npm audit fix` (#313)."
+        "`ws` 8.19.0 → 8.20.1 inside the `bundled-skills/download-webpage` Node script — `npm audit fix` (#313). Both are mechanical bumps, no behaviour change."
       ]
     },
     {
@@ -1560,7 +1395,7 @@
         "`isLeaveAlphaDowngrade(current, manifest)` checks: current is prerelease AND manifest is stable AND the X.Y.Z triple of the manifest is strictly less than the triple of the current.",
         "`checkStableChannel()` passes `allowDowngrades: true` to `check()` only when the running binary is a prerelease.",
         "`UpdateInfo.isLeaveAlphaDowngrade?: boolean` is the discriminator that drives the dialog's switched copy.",
-        "`useAutoUpdate` adds a `useEffect` that re-runs `checkForUpdate()` when `releaseChannel` changes."
+        "`useAutoUpdate` adds a `useEffect` that re-runs `checkForUpdate()` when `releaseChannel` changes. ~80+ files across all alpha.0–alpha.3 work. Notable adds include the HTML viewer security toggles, block-size persistence, the `alpha_update` Rust command, and assorted regression locks."
       ]
     },
     {
@@ -1595,7 +1430,7 @@
         "**#187 (`aw-pipeline`)** — every stage now reads human comments since the latest `refined` marker. Before this fix, override comments on issues only reached `aw-review`; `aw-refine` / `aw-slice` / `aw-tdd` worked from the body alone and silently dropped corrections, producing PRs that ignored explicit user feedback. Closes the \"I said that twice and the agent ignored it\" loop.",
         "**#193 (`aw-review`)** — branch-prefix filter now matches `claude/*` instead of PR author. After the `WORKFLOW_PAT` switch, bot-authored PRs are authored by the PAT owner (not `claude[bot]`), so the old author-based filter rejected every bot PR and `aw-review` silently skipped them.",
         "**#194 (PRD docs)** — the `aw-ci-repair` PRD + tasks breakdown land before the implementation, so the AW pipeline has filesystem references to read.",
-        "**#202 (`aw-ci-repair`)** — new pipeline addition that auto-fixes recurring CI perf-budget flakes. Two pieces compose: (a) a vitest regression-lock test (`no-bare-perf-budget.test.ts`) that fails when a perf assertion uses a bare numeric literal as its budget; (b) a new `aw-ci-repair` skill + workflow triggered by `workflow_run.completed: failure` on bot-authored draft PRs, auto-patching the same `PERF_BUDGET_MULTIPLIER` wrap on tests missing it. Comments-and-exits on snapshot drift / DOM-changed / anything else outside the documented pattern set. One repair attempt per PR."
+        "**#202 (`aw-ci-repair`)** — new pipeline addition that auto-fixes recurring CI perf-budget flakes. Two pieces compose: (a) a vitest regression-lock test (`no-bare-perf-budget.test.ts`) that fails when a perf assertion uses a bare numeric literal as its budget; (b) a new `aw-ci-repair` skill + workflow triggered by `workflow_run.completed: failure` on bot-authored draft PRs, auto-patching the same `PERF_BUDGET_MULTIPLIER` wrap on tests missing it. Comments-and-exits on snapshot drift / DOM-changed / anything else outside the documented pattern set. One repair attempt per PR. The four new HTML viewer toggles compose on top of alpha.0's DOMPurify rewrite. Render-path priority in the rebuilt viewer: 1. **Unsafe preview mode** (toolbar toggle + dialog, session-only) — raw `content` in `sandbox=\"allow-scripts\"` iframe. Most aggressive. 2. **`htmlViewerAllowScripts` setting** (persistent) — pre-processed HTML (local `<script src=\"./...\">` resolved via `read_file` and inlined) in `sandbox=\"allow-scripts\"` iframe. Local scripts only. 3. **DOMPurify sanitised inline div** — default safe path. `<script>` / `<iframe>` / `<object>` / `<embed>` always stripped regardless of any toggle. The `htmlViewerAllowForms` and `htmlViewerBlockExternalResources` settings modify the DOMPurify sanitiser config (FORBID_TAGS / attribute hooks), not the render path. `test.yml` now sets `PERF_BUDGET_MULTIPLIER=4` for the frontend perf job (up from 3x), and `preview-fidelity.spec.ts`'s p95 timer-delay assertion now honors the same env var instead of a hardcoded 500 ms ceiling. macOS GitHub runners under shared load consistently land 3.3–3.5x the local baseline; 3x left no headroom and three of the last five bot PRs flaked. 4x absorbs current variance without hiding ≥25% real regressions. ~50 files across 10 PRs (#174, #186, #187, #189, #191, #193, #194, #196, #197, #201, #202) merged on `main` since the v0.44.0-alpha.1 tag."
       ]
     },
     {
@@ -1604,7 +1439,7 @@
       "previousVersion": "0.44.0-alpha.0",
       "sections": {
         "fixes": [
-          "**Release pipeline unblocked.** Removed the obsolete"
+          "**Release pipeline unblocked.** Removed the obsolete `status-tray segmented picker click` performance benchmark — it asserted on `role=\"radio\"` elements that were replaced by a Radix `Select` dropdown in `v0.44.0-alpha.0`. Behavioural coverage for the picker is unchanged (lives in `StatusTray.test.tsx`)."
         ]
       },
       "underTheHood": [
@@ -1647,7 +1482,7 @@
         "`2c9eb9f1` scroll-restore-from-saved-ratio fix",
         "`ba4fe785` revert TextAlign expansion (perf bisect — confirmed cause of 494 KB book slowdown)",
         "`19b9fdb5` revert image React NodeView restore (perf bisect — confirmed contribution to slowdown)",
-        "`20707bdc` image markdown serializer adds trailing block separator"
+        "`20707bdc` image markdown serializer adds trailing block separator The 494 KB Swedish investment book regressed from ~3 s to ~12 s during this branch. Two contributing causes were identified by manual bisect: 1. **CSS `zoom` applied unconditionally** on the editor wrapper. WebKit treats `zoom: 1` as a transform context and switches every descendant into a slower layout-containment path. Fixed in `ad8d1362` by spreading the style only when the value is actually != 1. 2. **TextAlign extension's `addGlobalAttributes` expansion to include image / chart / drawing / linkPreview** added a `textAlign` attribute slot to those types schema-wide, which inflated the parsed JSON shape and slowed `streamingHydrate`'s `setContent` calls. Reverted in `ba4fe785`. Confirmed by the user's perf logs going from `streamMs: 12054` → `streamMs: 2186` after the partial revert, and back to ~12 s when the image React NodeView was briefly restored in `43997b4f` (also reverted in `19b9fdb5`). ~22 files across 14 commits."
       ]
     },
     {
@@ -1892,7 +1727,7 @@
           "Branching from the current leaf with a fork-capable agent calls `session/fork` — each branch gets isolated agent context going forward; historical branches continue to share the parent session (ACP has no primitive to rewind agent state)",
           "Conversation delete fires best-effort `session/close` for the shared session and any forked branches so agents can free resources",
           "Added four new Tauri commands: `acp_session_close`, `acp_session_list`, `acp_session_resume`, `acp_session_fork`",
-          "Per-branch `acpSessionId` tracking via `Conversation.branchSessions` with a `getSessionIdForLeaf` resolver; existing conversations continue to work without migration",
+          "Per-branch `acpSessionId` tracking via `Conversation.branchSessions` with a `getSessionIdForLeaf` resolver; existing conversations continue to work without migration **ACP rich tool content (Batch B)**",
           "File diffs render inline in chat as collapsible unified diffs with +/- coloring (via `--color-diff-*` CSS variables) — \"N additions, M deletions in filename.ext\" summary, click-to-open path header, new-file and deleted-file badges",
           "Text content blocks from `tool_call_update` render as collapsible monospace output below the tool label",
           "Terminal content blocks render as a muted placeholder (full terminal support requires the `terminal/create` client capability — out of scope)",

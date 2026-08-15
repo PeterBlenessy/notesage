@@ -26,6 +26,8 @@ interface ReleaseEntry {
   // changelog feed shows what landed in each auto-cut. Only attached when the
   // version carries a `-` segment, so curated releases keep their prose.
   underTheHood?: string[];
+  /** Under-the-hood detail for the iOS app, split out with the rest. */
+  iosUnderTheHood?: string[];
 }
 
 interface Changelog {
@@ -40,11 +42,32 @@ const OUTPUT_DIR = join(import.meta.dirname, '..', 'public');
 // (PRD `2026-08-15-single-binary-feature-flags.md`) removed the channel the
 // split existed to serve.
 const OUTPUT_FILE = join(OUTPUT_DIR, 'changelog.json');
+// The iOS feed. No in-app consumer yet — it is the source for TestFlight /
+// App Store release notes, which are written by hand today.
+const IOS_OUTPUT_FILE = join(OUTPUT_DIR, 'changelog-ios.json');
 
 function parseVersion(filename: string): string | null {
   // Accepts stable (`0.43.0`) and pre-release (`0.44.0-alpha.0`) suffixes.
   const match = filename.match(/release-v([\d.]+(?:-[\w.]+)?)\.md$/);
   return match ? match[1] : null;
+}
+
+/**
+ * Turn a bullet into something readable as a RELEASE NOTE.
+ *
+ * The iOS feed inherits auto-cut bullets, which are commit subjects:
+ * `feat(mobile): long-press menu, capture fixes (#684)`. That is fine for a
+ * developer scanning what landed, and useless as text to paste into
+ * TestFlight. Strip the conventional-commit scope and the PR reference, and
+ * capitalise — the result is not prose, but it is a note rather than a commit.
+ */
+export function humanizeBullet(bullet: string): string {
+  const withoutScope = bullet.replace(
+    /^\**(?:feat|fix|perf|refactor|style|docs|chore|build|ci|test)\s*\([^)]*\):\s*/i,
+    '',
+  );
+  const withoutPr = withoutScope.replace(/\s*\(#\d+\)\s*$/, '').trim();
+  return withoutPr.charAt(0).toUpperCase() + withoutPr.slice(1);
 }
 
 /**
@@ -72,12 +95,34 @@ export function parseUnderTheHood(content: string): string[] {
   const match = content.match(/##\s+Under the hood\s*\n([\s\S]*?)(?=\n## |$)/);
   if (!match) return [];
 
+  return parseBullets(match[1]);
+}
+
+/**
+ * Bullets from a markdown block, JOINING wrapped continuation lines.
+ *
+ * Curated notes wrap at ~80 columns, so a bullet routinely spans several
+ * lines. Reading only the line that starts with `- ` truncated every one of
+ * them mid-sentence — silently, and in the user-facing sections, which is
+ * where it mattered most. Found when the generated iOS notes read
+ * "…instead of appearing to do" (Peter, 2026-08-15).
+ *
+ * A continuation is any non-empty line that does not itself begin a bullet
+ * and is not a heading. Nested list items (`  - …`) stay excluded, matching
+ * the previous top-level-only behaviour.
+ */
+function parseBullets(block: string): string[] {
   const items: string[] = [];
-  for (const line of match[1].split('\n')) {
-    const itemMatch = line.match(/^- (.+)/);
-    if (itemMatch) {
-      items.push(itemMatch[1].trim());
+  for (const line of block.split('\n')) {
+    const start = line.match(/^- (.+)/);
+    if (start) {
+      items.push(start[1].trim());
+      continue;
     }
+    const trimmed = line.trim();
+    if (items.length === 0 || trimmed === '' || trimmed.startsWith('#')) continue;
+    if (/^[-*]\s/.test(trimmed)) continue;
+    items[items.length - 1] += ` ${trimmed}`;
   }
   return items;
 }
@@ -107,14 +152,7 @@ export function parseReleaseFile(filepath: string): ReleaseEntry | null {
     const sectionName = match[1].toLowerCase() as keyof typeof sections;
     const sectionContent = match[2];
 
-    // Parse list items — supports nested items by only capturing top-level
-    const items: string[] = [];
-    for (const line of sectionContent.split('\n')) {
-      const itemMatch = line.match(/^- (.+)/);
-      if (itemMatch) {
-        items.push(itemMatch[1].trim());
-      }
-    }
+    const items = parseBullets(sectionContent);
 
     if (items.length === 0) continue;
 
@@ -136,7 +174,10 @@ export function parseReleaseFile(filepath: string): ReleaseEntry | null {
   // `/release` flow rewrites that detail into curated prose.
   const isPrerelease = version.includes('-');
   const uth = isPrerelease ? parseUnderTheHood(content) : [];
-  const underTheHood = uth.length > 0 ? uth : undefined;
+  const desktopUth = uth.filter((b) => !isMobileScoped(b));
+  const mobileUth = uth.filter((b) => isMobileScoped(b));
+  const underTheHood = desktopUth.length > 0 ? desktopUth : undefined;
+  const iosUnderTheHood = mobileUth.length > 0 ? mobileUth : undefined;
 
   // Skip releases with nothing to show. For alphas, an "Under the hood" dump
   // counts as content even when the curated sections are empty — otherwise
@@ -155,7 +196,7 @@ export function parseReleaseFile(filepath: string): ReleaseEntry | null {
     return null;
   }
 
-  return { version, date, previousVersion, sections, underTheHood };
+  return { version, date, previousVersion, sections, underTheHood, iosUnderTheHood };
 }
 
 /**
@@ -276,6 +317,42 @@ function lintUserFacingBullets(releases: ReleaseEntry[]): void {
   }
 }
 
+/**
+ * Render the iOS feed as a markdown document.
+ *
+ * The iOS app has no in-app changelog — its notes are typed into TestFlight
+ * and App Store Connect by hand. This is the source for that text, so it is
+ * written to `docs/app-store/` beside the rest of the store copy rather than
+ * to `public/`, which is for things the app itself fetches.
+ */
+function writeIosReleaseNotes(
+  releases: Array<{ version: string; date: string; sections: { features?: string[] } }>,
+): void {
+  const lines = [
+    '# iOS release notes',
+    '',
+    '**Generated** by `scripts/generate-changelog.ts` from the iOS half of the',
+    'release history — do not edit by hand, the next run overwrites it.',
+    '',
+    'Paste the relevant section into TestFlight "What to Test" or App Store',
+    '"What\'s New". Bullets come from merged PR titles with the commit scope',
+    'stripped; tighten the wording before shipping a public release.',
+    '',
+  ];
+
+  for (const release of releases) {
+    lines.push(`## ${release.version} — ${release.date}`, '');
+    for (const bullet of release.sections.features ?? []) {
+      lines.push(`- ${humanizeBullet(bullet)}`);
+    }
+    lines.push('');
+  }
+
+  const dir = join(import.meta.dirname, '..', 'docs', 'app-store');
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'ios-release-notes.md'), lines.join('\n'));
+}
+
 function main() {
   const files = readdirSync(HISTORY_DIR).filter(
     (f) => f.match(/^\d+-release-v[\d.]+(?:-[\w.]+)?\.md$/),
@@ -296,18 +373,52 @@ function main() {
   // Warn-only linter: flag user-facing bullets that contain forbidden patterns.
   lintUserFacingBullets(releases);
 
-  // ONE feed. There is one release stream now, so every entry belongs in it —
-  // including the historical `-alpha.N` ones, which are simply older releases
-  // (PRD `2026-08-15-single-binary-feature-flags.md`). Filtering them out
-  // would blank the in-app changelog for anyone upgrading FROM an alpha.
-  const changelog: Changelog = { releases };
+  // TWO feeds, one per PRODUCT. Not because the readers are different people
+  // — usually they are the SAME person — but because the context is: when
+  // you are reading the changelog of the app in front of you, changes to the
+  // other one are noise. "Folder pinning fixed on iPhone" does not belong in
+  // a Mac release, and vice versa (Peter, 2026-08-15). Version numbers stay
+  // shared, which is correct: one commit, one release, described twice for
+  // the two places it lands.
+  //
+  // An entry with nothing for a platform is OMITTED from that platform's
+  // feed rather than listed empty: a release that only touched iOS genuinely
+  // changed nothing for desktop users, and saying so honestly beats an entry
+  // with no bullets under it.
+  const desktopReleases = releases
+    .map(({ iosUnderTheHood: _ios, ...entry }) => ({
+      ...entry,
+      sections: { ...entry.sections, ios: undefined },
+    }))
+    .filter(
+      (r) =>
+        r.sections.features || r.sections.fixes || r.sections.improvements || r.underTheHood,
+    );
+
+  const iosReleases = releases
+    .filter((r) => r.sections.ios || r.iosUnderTheHood)
+    .map((r) => ({
+      version: r.version,
+      date: r.date,
+      previousVersion: r.previousVersion,
+      // The iOS feed's "features" ARE the iOS bullets — a reader of this feed
+      // has no desktop sections to compare them against.
+      sections: { features: r.sections.ios },
+      underTheHood: r.iosUnderTheHood,
+    }));
 
   if (!existsSync(OUTPUT_DIR)) {
     mkdirSync(OUTPUT_DIR, { recursive: true });
   }
 
-  writeFileSync(OUTPUT_FILE, JSON.stringify(changelog, null, 2) + '\n');
-  console.log(`Generated changelog.json (${changelog.releases.length} releases)`);
+  writeFileSync(OUTPUT_FILE, JSON.stringify({ releases: desktopReleases }, null, 2) + '\n');
+  writeFileSync(IOS_OUTPUT_FILE, JSON.stringify({ releases: iosReleases }, null, 2) + '\n');
+  writeIosReleaseNotes(iosReleases);
+
+  console.log(
+    `Generated changelog.json (${desktopReleases.length} desktop) + ` +
+      `changelog-ios.json (${iosReleases.length} iOS) + ios-release-notes.md`,
+  );
 }
 
 // Run only when executed directly (via `tsx scripts/generate-changelog.ts`),
