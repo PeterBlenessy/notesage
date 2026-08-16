@@ -128,7 +128,17 @@ jobs:
               pr_numbers="${pr_numbers:+$pr_numbers,}$pr"
               # Same classification the history step applies, so the gate and
               # the notes can never disagree about what counts.
+              #
+              # Mobile-scoped work is NOT counted. `generate-changelog.ts`
+              # routes `feat(mobile):` / `fix(ios):` bullets to the iOS feed
+              # (`isMobileScoped`), so a period of iOS-only work would cut a
+              # DESKTOP release whose desktop notes are empty — the same
+              # nothing-to-read release this gate exists to prevent, arriving
+              # through the door the platform split opened. iOS ships on its
+              # own cadence through TestFlight; it does not need a desktop tag.
               case "$title" in
+                feat\(mobile*|feat\(ios*|fix\(mobile*|fix\(ios*|\
+                perf\(mobile*|perf\(ios*|refactor\(mobile*|refactor\(ios*) ;;
                 feat*|fix*|perf*|refactor*) user_facing=$(( user_facing + 1 ));;
               esac
             done
