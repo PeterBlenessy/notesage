@@ -26,6 +26,7 @@ import { SidebarRowIndicators } from "./SidebarRowIndicators";
 import { SidebarContextMenu } from "@/components/sidebar/quiet/SidebarContextMenu";
 import { FileIcon } from "@/components/sidebar/FileIcon";
 import { formatSavedShort } from "@/lib/saved-ago";
+import { useFormattingLocale } from "@/lib/useLocale";
 import {
   isAnyContextMenuOpen,
   isAnyCustomizePopoverOpen,
@@ -170,6 +171,7 @@ export function FolderPeek({
   const triggerRef = useRef<HTMLDivElement | null>(null);
   const reducedMotion = useReducedMotion();
   const openTab = useEditorStore((s) => s.openTab);
+  const formattingLocale = useFormattingLocale();
 
   const projectName = useMemo(() => projectBasename(projectPath), [projectPath]);
   const showHiddenFiles = useSettingsStore((s) => s.showHiddenFiles);
@@ -600,7 +602,7 @@ export function FolderPeek({
                               return lastAt ? (
                                 <span
                                   className="text-[11px] text-muted-foreground shrink-0 tabular-nums"
-                                  title={new Date(lastAt).toLocaleString()}
+                                  title={new Date(lastAt).toLocaleString(formattingLocale)}
                                 >
                                   {formatSavedShort(Date.now() - lastAt)}
                                 </span>

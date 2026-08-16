@@ -129,6 +129,7 @@ export type BlockKind =
  */
 export type SettingKey =
   | "theme"
+  | "language"
   | "accent"
   | "quiet_preset"
   | "title_bar"
@@ -158,6 +159,8 @@ export type SettingValue =
   | "light"
   | "dark"
   | "system"
+  | "en"
+  | "sv"
   | "orange"
   | "blue"
   | "relaxed"

@@ -9,6 +9,7 @@ import {
   type QuietChromeTargets,
 } from '@/lib/quiet-chrome-presets';
 import { useFlagStore } from '@/stores/flag-store';
+import { setLocale as setI18nLocale, type Locale } from '@/lib/i18n';
 
 
 type Theme = "light" | "dark" | "system";
@@ -35,6 +36,13 @@ export type ExportFormat = "pdf" | "pptx" | "docx";
 export type PptxTemplate = "simple" | "business" | "report";
 interface SettingsStore {
   theme: Theme;
+  /**
+   * UI display language override (#705). `null` follows the OS/device
+   * locale (`navigator.language`) — the pre-#705 default. An explicit value
+   * ("en" | "sv") wins regardless of OS locale and also drives date/number
+   * formatting at the audited call sites (see `useFormattingLocale`).
+   */
+  locale: Locale | null;
   /**
    * UI accent color: "default" (neutral primary), "orange", "blue", or "system"
    * (macOS NSColor.controlAccentColor). Scaffolded by ui-refresh task #3 — task
@@ -268,6 +276,8 @@ interface SettingsStore {
   icloudAvailable: boolean;
   icloudNotesagePath: string | null;
   setTheme: (theme: Theme) => void;
+  /** Set the language override; `null` reverts to following the OS locale. */
+  setLocale: (locale: Locale | null) => void;
   setAccent: (accent: AccentName) => void;
   setContrastLevel: (level: number) => void;
   setTintHue: (hue: number) => void;
@@ -455,6 +465,7 @@ export const useSettingsStore = create<SettingsStore>()(
   persist(
     (set, get) => ({
       theme: "system",
+      locale: null,
       accent: "default",
       contrastLevel: 0,
       tintHue: 60,
@@ -539,6 +550,11 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setTheme: (theme: Theme) => {
         set({ theme });
+      },
+
+      setLocale: (locale: Locale | null) => {
+        set({ locale });
+        setI18nLocale(locale);
       },
 
       setAccent: (accent: AccentName) => {
@@ -937,7 +953,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 26,
+      version: 27,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -1231,6 +1247,15 @@ export const useSettingsStore = create<SettingsStore>()(
           // there is no longer anything to switch back to.
           delete state.releaseChannel;
         }
+        if (version < 27) {
+          // Localization (#705) — UI language override. Default null (follow
+          // the OS/device locale) so existing users see no change: the app
+          // keeps resolving via `navigator.language`, exactly as before this
+          // field existed.
+          if (typeof state.locale !== 'string' && state.locale !== null) {
+            state.locale = null;
+          }
+        }
         return state;
       },
 
@@ -1244,7 +1269,10 @@ export const useSettingsStore = create<SettingsStore>()(
       // alpha install would show crash reporting ON in Settings while the Rust
       // consent file (absent) leaves Sentry unbound until the user toggled it.
       onRehydrateStorage: () => (state) => {
-        if (state) applyTelemetryConsent(state);
+        if (state) {
+          applyTelemetryConsent(state);
+          setI18nLocale(state.locale);
+        }
       },
     }
   )

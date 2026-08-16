@@ -42,6 +42,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { formatSavedShort } from "@/lib/saved-ago";
+import { useFormattingLocale } from "@/lib/useLocale";
 import {
   FILE_DRAG_MIME,
   beginFileDrag,
@@ -159,6 +160,7 @@ function PinnedRowImpl({
     const rec = s.recentFiles.find((r) => r.path === path);
     return rec?.lastAccessedAt;
   });
+  const formattingLocale = useFormattingLocale();
   const rowRef = useRef<HTMLDivElement | null>(null);
   const { onKeyDown: shortcutKeyDown } = useSidebarItemShortcuts({
     filePath: path,
@@ -337,7 +339,7 @@ function PinnedRowImpl({
                 <span
                   aria-hidden="true"
                   className="text-[11px] text-muted-foreground tabular-nums shrink-0 w-[36px] text-right"
-                  title={`Opened ${new Date(lastAccessedAt).toLocaleString()}`}
+                  title={`Opened ${new Date(lastAccessedAt).toLocaleString(formattingLocale)}`}
                 >
                   {formatSavedShort(Date.now() - lastAccessedAt)}
                 </span>

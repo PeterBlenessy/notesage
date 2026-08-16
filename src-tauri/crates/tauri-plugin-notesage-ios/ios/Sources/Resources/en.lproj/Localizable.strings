@@ -1,0 +1,6 @@
+/* Main-app Tauri plugin UI (#705). Keys mirror src/lib/i18n.ts naming where
+   the surfaces overlap. Native alert/action-sheet titles (text prompt
+   confirm/cancel, long-press action sheet) are passed in from the web layer
+   already localized — only the Cancel action, which the plugin builds
+   itself, needs its own table entry. */
+"cancel" = "Cancel";

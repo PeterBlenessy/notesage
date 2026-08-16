@@ -23,6 +23,7 @@ import { QUIET_CHROME_PRESETS } from '@/lib/quiet-chrome-presets';
 function resetStores() {
   useSettingsStore.setState({
     theme: 'system',
+    locale: null,
     accent: 'default',
     contrastLevel: 0,
     tintHue: 60,
@@ -42,6 +43,7 @@ describe('AppearanceSettings', () => {
 
   it('renders all group labels', () => {
     renderWithProviders(<AppearanceSettings />);
+    expect(screen.getByText('Language')).toBeTruthy();
     expect(screen.getByText('Theme')).toBeTruthy();
     // "Color tint" is now an inline block within the Theme group
     // (merged 2026-04-26), not a standalone group label.
@@ -265,4 +267,60 @@ describe('AppearanceSettings', () => {
     expect(useSettingsStore.getState().sidebarMentionsCap).toBe(8);
   });
 
+});
+
+describe('Language (#705)', () => {
+  beforeEach(() => {
+    resetStores();
+  });
+
+  it('offers System, English, and Svenska', () => {
+    renderWithProviders(<AppearanceSettings />);
+    const group = screen.getByTestId('appearance-language');
+    expect(group.querySelector('[aria-label="System"]')).toBeTruthy();
+    expect(group.querySelector('[aria-label="English"]')).toBeTruthy();
+    expect(group.querySelector('[aria-label="Svenska"]')).toBeTruthy();
+  });
+
+  it('reflects "System" as checked when locale is null (default)', () => {
+    renderWithProviders(<AppearanceSettings />);
+    const group = screen.getByTestId('appearance-language');
+    const systemBtn = group.querySelector<HTMLButtonElement>('[aria-label="System"]');
+    expect(systemBtn!.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('reflects "Svenska" as checked when locale is "sv"', () => {
+    useSettingsStore.setState({ locale: 'sv' });
+    renderWithProviders(<AppearanceSettings />);
+    const group = screen.getByTestId('appearance-language');
+    const svenskaBtn = group.querySelector<HTMLButtonElement>('[aria-label="Svenska"]');
+    const systemBtn = group.querySelector<HTMLButtonElement>('[aria-label="System"]');
+    expect(svenskaBtn!.getAttribute('aria-checked')).toBe('true');
+    expect(systemBtn!.getAttribute('aria-checked')).toBe('false');
+  });
+
+  it('clicking Svenska calls setLocale("sv")', () => {
+    renderWithProviders(<AppearanceSettings />);
+    const group = screen.getByTestId('appearance-language');
+    const svenskaBtn = group.querySelector<HTMLButtonElement>('[aria-label="Svenska"]');
+
+    act(() => {
+      fireEvent.click(svenskaBtn!);
+    });
+
+    expect(useSettingsStore.getState().locale).toBe('sv');
+  });
+
+  it('clicking System reverts an override to null', () => {
+    useSettingsStore.setState({ locale: 'sv' });
+    renderWithProviders(<AppearanceSettings />);
+    const group = screen.getByTestId('appearance-language');
+    const systemBtn = group.querySelector<HTMLButtonElement>('[aria-label="System"]');
+
+    act(() => {
+      fireEvent.click(systemBtn!);
+    });
+
+    expect(useSettingsStore.getState().locale).toBeNull();
+  });
 });

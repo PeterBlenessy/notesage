@@ -21,6 +21,7 @@ import { Switch } from '@/components/ui/switch';
 import { useSettingsStore } from '@/stores/settings-store';
 import { track, trackSettingToggle } from '@/lib/telemetry';
 import type { AccentName } from '@/lib/accent';
+import type { Locale } from '@/lib/i18n';
 import type { QuietChromeTargets } from '@/lib/quiet-chrome-presets';
 import { cn } from '@/lib/utils';
 
@@ -42,6 +43,13 @@ const THEME_OPTIONS = [
   { value: 'light' as const, label: 'Light', Icon: Sun },
   { value: 'dark' as const, label: 'Dark', Icon: Moon },
   { value: 'system' as const, label: 'System', Icon: Monitor },
+];
+
+/** `'system'` is the UI sentinel for `settings-store.locale === null` (#705). */
+const LANGUAGE_OPTIONS: ReadonlyArray<{ value: 'system' | Locale; label: string }> = [
+  { value: 'system', label: 'System' },
+  { value: 'en', label: 'English' },
+  { value: 'sv', label: 'Svenska' },
 ];
 
 interface AccentOption {
@@ -150,6 +158,8 @@ export function AppearanceSettings() {
   // ── Settings store ────────────────────────────────────────────────────
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
+  const locale = useSettingsStore((s) => s.locale);
+  const setLocale = useSettingsStore((s) => s.setLocale);
   const accent = useSettingsStore((s) => s.accent);
   const setAccent = useSettingsStore((s) => s.setAccent);
   const contrastLevel = useSettingsStore((s) => s.contrastLevel);
@@ -202,6 +212,31 @@ export function AppearanceSettings() {
           shows which panel is active. The tagline lives there as a
           column-header tooltip if we ever need it. Removing the hero
           tightens the panel meaningfully and matches the comp. */}
+
+      {/* ── Language ─────────────────────────────────────────────── */}
+      <SettingsGroup label="Language">
+        <SettingsRow
+          label="Display language"
+          description="Choose the app's display language, or follow the system language. Also drives date and number formatting."
+          control={
+            <Segmented
+              dataTestId="appearance-language"
+              options={LANGUAGE_OPTIONS.map((o) => ({
+                value: o.value,
+                label: o.label,
+                ariaLabel: o.label,
+              }))}
+              value={locale ?? 'system'}
+              onChange={(v) => {
+                const next = v === 'system' ? null : v;
+                setLocale(next);
+                track("setting_changed", { setting: "language", value: v });
+              }}
+              columns={3}
+            />
+          }
+        />
+      </SettingsGroup>
 
       {/* ── Theme ────────────────────────────────────────────────── */}
       <SettingsGroup label="Theme">

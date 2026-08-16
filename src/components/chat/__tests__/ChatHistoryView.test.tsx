@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@/test/component-harness';
 import { ChatHistoryView } from '../ChatHistoryView';
 import type { Conversation } from '@/stores/chat-store';
+import { useSettingsStore } from '@/stores/settings-store';
 
 // Mock the acp-agent-state module so session/close paths are harmless
 vi.mock('@/lib/ai/acp-agent-state', () => ({
@@ -194,5 +195,51 @@ describe('ChatHistoryView — project scope filter', () => {
 
     fireEvent.click(screen.getByText('Project A chat'));
     expect(onSelect).toHaveBeenCalledWith('a');
+  });
+});
+
+describe('ChatHistoryView — locale-aware date/time formatting (#705)', () => {
+  const fixedTimestamp = new Date(2026, 0, 15, 14, 30).getTime();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDeleteConversation.mockReset();
+    mockActiveId = null;
+    mockConversations = [
+      makeConv({ id: 'a', title: 'Timed chat', projectPaths: [], updatedAt: fixedTimestamp }),
+    ];
+  });
+
+  afterEach(() => {
+    useSettingsStore.setState({ locale: null });
+  });
+
+  it('formats the row date/time with the OS locale by default (regression baseline, unchanged from before #705)', () => {
+    const expectedDate = new Date(fixedTimestamp).toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+    });
+    const expectedTime = new Date(fixedTimestamp).toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    render(<ChatHistoryView onSelectConversation={vi.fn()} selectedProjectPaths={[]} />);
+
+    const row = screen.getByText('Timed chat').closest('[role="button"]');
+    expect(row?.textContent).toContain(expectedDate);
+    expect(row?.textContent).toContain(expectedTime);
+  });
+
+  it('formats the row date/time in Swedish when the Settings language override is "sv"', () => {
+    useSettingsStore.setState({ locale: 'sv' });
+
+    render(<ChatHistoryView onSelectConversation={vi.fn()} selectedProjectPaths={[]} />);
+
+    const row = screen.getByText('Timed chat').closest('[role="button"]');
+    // Swedish: day-before-month with an abbreviated, lower-case month, and a
+    // 24-hour clock — both distinct from the `en-US` default asserted above.
+    expect(row?.textContent).toContain('15 jan');
+    expect(row?.textContent).toContain('14:30');
   });
 });

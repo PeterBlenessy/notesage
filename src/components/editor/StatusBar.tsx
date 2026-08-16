@@ -1,6 +1,7 @@
 import {
   useState,
   useEffect,
+  useMemo,
   useRef,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
@@ -12,6 +13,7 @@ import { useSidebarStatusSlotStore } from "@/stores/sidebar-status-slot-store";
 import { useLocalAIStore } from "@/stores/local-ai-store";
 import { useConnectionsStore } from "@/stores/connections-store";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { useFormattingLocale } from "@/lib/useLocale";
 import type { ViewMode } from "@/lib/file-utils";
 import type { Comment } from "@/stores/comment-store";
 import {
@@ -23,12 +25,6 @@ import {
 import { StatusTray, type StatusTrayGroup } from "./StatusTray";
 import { localAiDotClass, localAiStatusLabel } from "./local-ai-dot";
 import { useBackgroundActivity } from "./status/use-background-activity";
-
-/** Format number with localized thousand separators (uses host locale). */
-const fmt = new Intl.NumberFormat(navigator.languages as string[], { useGrouping: true });
-function fmtNum(n: number): string {
-  return fmt.format(n);
-}
 
 /**
  * Trailing debounce for the word-count recompute. `editor.getText()` + the
@@ -274,6 +270,16 @@ export function StatusBar({
   onOpenTray,
 }: StatusBarProps) {
   const reducedMotion = useReducedMotion();
+
+  // Word-count thousand separators follow the Settings language override
+  // (#705); `formattingLocale` is `undefined` with no override, which
+  // `Intl.NumberFormat` already treats as "use the host locale" — the
+  // pre-#705 behavior.
+  const formattingLocale = useFormattingLocale();
+  const fmtNum = useMemo(() => {
+    const fmt = new Intl.NumberFormat(formattingLocale, { useGrouping: true });
+    return (n: number) => fmt.format(n);
+  }, [formattingLocale]);
 
   // Re-read word count when the editor transacts so it tracks typing.
   // Debounced (trailing): the recompute below runs `editor.getText()` over the

@@ -126,6 +126,7 @@ async function simulateRestart(
 
 const SETTINGS_DEFAULTS: Record<string, unknown> = {
   theme: 'system',
+  locale: null,
   contrastLevel: 0,
   showFloatingToolbar: true,
   toolbarVisible: true,
@@ -209,6 +210,7 @@ describe('initial state defaults', () => {
     const s = useSettingsStore.getState();
 
     expect(s.theme).toBe('system');
+    expect(s.locale).toBeNull();
     expect(s.contrastLevel).toBe(0);
     expect(s.showFloatingToolbar).toBe(true);
     expect(s.toolbarVisible).toBe(true);
@@ -285,6 +287,101 @@ describe('setTheme', () => {
     expect(useSettingsStore.getState().theme).toBe('dark');
     setTheme('system');
     expect(useSettingsStore.getState().theme).toBe('system');
+  });
+});
+
+// ===========================================================================
+// locale (#705) — UI language override, wired into src/lib/i18n.ts
+// ===========================================================================
+
+describe('locale (#705)', () => {
+  afterEach(() => {
+    // Reset the i18n module's resolved locale so this suite never leaks
+    // state into unrelated tests that call `t()`/`getLocale()`.
+    useSettingsStore.getState().setLocale(null);
+  });
+
+  it('defaults to null (follow the OS/device locale)', () => {
+    expect(useSettingsStore.getState().locale).toBeNull();
+  });
+
+  it('setLocale("sv") updates the store field', () => {
+    useSettingsStore.getState().setLocale('sv');
+    expect(useSettingsStore.getState().locale).toBe('sv');
+  });
+
+  it('setLocale("sv") updates the i18n resolved locale immediately (useLocale() reads this)', async () => {
+    const { getLocale } = await import('@/lib/i18n');
+    useSettingsStore.getState().setLocale('sv');
+    expect(getLocale()).toBe('sv');
+  });
+
+  it('setLocale(null) reverts the i18n resolved locale to the OS/platform-derived value — the pre-#705, regression-lock baseline', async () => {
+    const { getLocale, detectPlatformLocale } = await import('@/lib/i18n');
+    useSettingsStore.getState().setLocale('sv');
+    expect(getLocale()).toBe('sv');
+
+    useSettingsStore.getState().setLocale(null);
+    expect(getLocale()).toBe(detectPlatformLocale());
+  });
+
+  it('persists locale across restart', async () => {
+    useSettingsStore.getState().setLocale('sv');
+    await waitForPersist();
+
+    await simulateRestart(useSettingsStore, STORAGE_KEY, SETTINGS_DEFAULTS);
+
+    expect(useSettingsStore.getState().locale).toBe('sv');
+  });
+});
+
+describe('v26 → v27 migration (locale field)', () => {
+  it('adds locale: null to a v26 state lacking it', async () => {
+    const v26State = {
+      state: {
+        theme: 'dark',
+        logLevel: 'warn',
+        autoCheckUpdates: true,
+        contrastLevel: 0,
+        printLayout: false,
+        accent: 'default',
+      },
+      version: 26,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v26State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    const s = useSettingsStore.getState();
+    expect(s.locale).toBeNull();
+
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(raw!);
+    expect(parsed.version).toBeGreaterThanOrEqual(27);
+    expect(parsed.state.locale).toBeNull();
+  });
+
+  it('preserves an existing locale value when present (idempotent)', async () => {
+    const v26State = {
+      state: {
+        theme: 'dark',
+        logLevel: 'warn',
+        autoCheckUpdates: true,
+        contrastLevel: 0,
+        printLayout: false,
+        accent: 'default',
+        locale: 'sv',
+      },
+      version: 26,
+    };
+    localStorageMock.setItem(STORAGE_KEY, JSON.stringify(v26State));
+
+    await useSettingsStore.persist.rehydrate();
+    await waitForPersist();
+
+    expect(useSettingsStore.getState().locale).toBe('sv');
+    useSettingsStore.getState().setLocale(null);
   });
 });
 
@@ -1429,7 +1526,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(26);
+    expect(parsed.version).toBe(27);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -2489,7 +2586,7 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(26);
+    expect(parsed.version).toBe(27);
   });
 
   it('v22 migration backfills linkPreviewRemoteImages=false (privacy by default)', async () => {

@@ -15,6 +15,7 @@ import type { ChatMessage } from '@/lib/ai/types';
 import { getAcpAgent } from '@/lib/ai/acp-agent-state';
 import { hasSessionCapability } from '@/lib/ai/acp-utils';
 import { HistoryRowLeadingIcon } from '@/components/cmd/SessionStatusBadge';
+import { useFormattingLocale } from '@/lib/useLocale';
 
 /**
  * Fire best-effort `session/close` for every ACP session owned by the conversation
@@ -129,6 +130,7 @@ export const ChatHistoryView = memo(function ChatHistoryView({
   const conversations = useChatStore((s) => s.conversations);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const deleteConversation = useChatStore((s) => s.deleteConversation);
+  const formattingLocale = useFormattingLocale();
 
   const hasScope = selectedProjectPaths.length > 0;
   const [showAllProjects, setShowAllProjects] = useState(false);
@@ -256,9 +258,9 @@ export const ChatHistoryView = memo(function ChatHistoryView({
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                       <Clock className="h-2.5 w-2.5" strokeWidth={1.5} />
-                      {new Date(conv.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      {new Date(conv.updatedAt).toLocaleDateString(formattingLocale, { month: 'short', day: 'numeric' })}
                       {' '}
-                      {new Date(conv.updatedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(conv.updatedAt).toLocaleTimeString(formattingLocale, { hour: '2-digit', minute: '2-digit' })}
                     </span>
                     <span className="text-[10px] text-muted-foreground">
                       {conv.messages.length} message{conv.messages.length !== 1 ? 's' : ''}

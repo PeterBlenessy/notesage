@@ -1,0 +1,6 @@
+/* Tauri-pluginets UI i huvudappen (#705). Nycklarna speglar src/lib/i18n.ts
+   där ytorna överlappar. Titlar på inbyggda varningar/åtgärdslistor
+   (bekräfta/avbryt för textprompten, åtgärdslistan vid långtryck) skickas
+   redan lokaliserade från webbagret — bara Avbryt-åtgärden, som pluginet
+   bygger själv, behöver en egen tabellpost. */
+"cancel" = "Avbryt";

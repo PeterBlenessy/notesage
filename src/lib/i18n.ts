@@ -257,6 +257,30 @@ export function subscribeLocale(listener: () => void): () => void {
 }
 
 /**
+ * BCP-47 tag for each supported locale, used when formatting dates/numbers
+ * under an explicit Settings language override (#705) — `toLocaleDateString()`
+ * and `Intl.*` constructors need something more specific than the internal
+ * two-letter `Locale` union.
+ */
+const FORMATTING_LOCALES: Record<Locale, string> = {
+  en: "en-US",
+  sv: "sv-SE",
+};
+
+/**
+ * Locale to pass as the first argument to `toLocaleDateString()` / `Intl.*`
+ * constructors so date/number formatting follows the same override as `t()`.
+ * `override` is the raw Settings value (`Locale | null` — `null` means
+ * "follow the OS/device locale"). Returns `undefined` for `null`, which
+ * every `toLocaleDateString()`/`Intl.*` call already treats as "use the
+ * runtime's default locale" — the pre-#705 behavior, preserved when no
+ * override is set.
+ */
+export function getFormattingLocale(override: Locale | null): string | undefined {
+  return override ? FORMATTING_LOCALES[override] : undefined;
+}
+
+/**
  * Translate `key`, interpolating `{name}` placeholders. Falls back to the
  * English string when a translation is missing (never to the raw key — a
  * half-translated UI beats a UI showing `library.empty`).

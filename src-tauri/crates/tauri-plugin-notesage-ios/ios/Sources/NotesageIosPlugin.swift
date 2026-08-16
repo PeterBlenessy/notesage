@@ -149,6 +149,15 @@ private final class QuickLookPresenter: NSObject, QLPreviewControllerDataSource,
   }
 }
 
+/// Localized "Cancel" title for the native alert/action-sheet Cancel action
+/// this plugin builds itself (#705). The text prompt's title/confirm labels
+/// and the action-sheet's item titles arrive already localized from the web
+/// layer — only this plugin-owned Cancel literal needed a table entry, so it
+/// pulls from the plugin's own resource bundle (`Bundle.module`), not the
+/// host app's `Bundle.main`.
+private let cancelActionTitle = NSLocalizedString(
+  "cancel", bundle: .module, comment: "Cancel button on a native alert/action sheet")
+
 // MARK: - Plugin
 
 /// Bridges the mobile reader's library access to iOS.
@@ -609,7 +618,7 @@ class NotesageIosPlugin: Plugin {
               .trimmingCharacters(in: .whitespaces).isEmpty
           }
         }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+        alert.addAction(UIAlertAction(title: cancelActionTitle, style: .cancel) { _ in
           removeObserver()
           invoke.resolve([:] as [String: String])
         })
@@ -705,7 +714,7 @@ class NotesageIosPlugin: Plugin {
             })
         }
         sheet.addAction(
-          UIAlertAction(title: "Cancel", style: .cancel) { _ in
+          UIAlertAction(title: cancelActionTitle, style: .cancel) { _ in
             invoke.resolve([:] as [String: String])
           })
         // iPad presents an action sheet as a popover and CRASHES without an

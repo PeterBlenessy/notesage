@@ -40,6 +40,7 @@ import {
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { AgentIcon } from '@/components/AgentIcon';
 import { formatDisplayPath } from '@/lib/utils';
+import { useFormattingLocale } from '@/lib/useLocale';
 
 interface ProjectSettingsProps {
   projectPath: string;
@@ -53,6 +54,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
   const connections = useConnectionsStore((s) => s.connections);
   const getUserInvocableAgents = useSkillStore((s) => s.getUserInvocableAgents);
   const { icloudAvailable, icloudNotesagePath, notesRootPath } = useSettingsStore();
+  const formattingLocale = useFormattingLocale();
 
   const [pendingSync, setPendingSync] = useState<boolean | null>(null);
   const [applying, setApplying] = useState(false);
@@ -177,7 +179,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
   const lockedConnection = aiLock ? connections.find((c) => c.id === aiLock.connectionId) : undefined;
   const lockedAtDate = aiLock ? new Date(aiLock.lockedAt) : null;
   const lockedAtLabel = lockedAtDate
-    ? lockedAtDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    ? lockedAtDate.toLocaleDateString(formattingLocale, { year: 'numeric', month: 'short', day: 'numeric' })
     : '';
 
   const handleConfirmUnlock = () => {

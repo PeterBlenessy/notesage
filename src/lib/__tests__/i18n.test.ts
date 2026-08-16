@@ -1,5 +1,12 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { t, setLocale, getLocale, resolveLocale, SUPPORTED_LOCALES } from "@/lib/i18n";
+import {
+  t,
+  setLocale,
+  getLocale,
+  resolveLocale,
+  getFormattingLocale,
+  SUPPORTED_LOCALES,
+} from "@/lib/i18n";
 
 afterEach(() => setLocale("en"));
 
@@ -24,6 +31,15 @@ describe("i18n (#653)", () => {
 
   it("leaves unknown placeholders untouched instead of blanking them", () => {
     expect(t("library.noMatches", {})).toContain("{query}");
+  });
+
+  it("getFormattingLocale maps an explicit override to a BCP-47 tag (#705)", () => {
+    expect(getFormattingLocale("sv")).toBe("sv-SE");
+    expect(getFormattingLocale("en")).toBe("en-US");
+  });
+
+  it("getFormattingLocale returns undefined for no override — callers fall back to the runtime's default (OS) locale, unchanged from before #705", () => {
+    expect(getFormattingLocale(null)).toBeUndefined();
   });
 
   it("every locale table covers every English key — no silent English leaks", async () => {
