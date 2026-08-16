@@ -3,6 +3,7 @@ import {
   parseNumericValue,
   formatValue,
   formatDateValue,
+  parseDateValue,
 } from "../number-format";
 
 describe("parseNumericValue", () => {
@@ -210,9 +211,17 @@ describe("formatValue", () => {
     it("passes through for text type", () => {
       expect(formatValue(42, "text")).toBe("42");
     });
+  });
 
-    it("passes through for date type", () => {
-      expect(formatValue(42, "date")).toBe("42");
+  describe("date formatting (wired to formatDateValue)", () => {
+    it("formats an epoch value parsed from an ISO date", () => {
+      const epoch = parseDateValue("2026-03-29");
+      expect(formatValue(epoch, "date")).toBe("Mar 29, 2026");
+    });
+
+    it("formats an epoch value parsed from a slash date", () => {
+      const epoch = parseDateValue("1/5/2026");
+      expect(formatValue(epoch, "date")).toBe("Jan 5, 2026");
     });
   });
 });
@@ -301,5 +310,81 @@ describe("formatDateValue", () => {
       expect(formatDateValue(null as unknown as string)).toBe(null);
       expect(formatDateValue(undefined as unknown as string)).toBe(undefined);
     });
+  });
+});
+
+describe("parseDateValue", () => {
+  it("parses ISO date to epoch milliseconds", () => {
+    expect(parseDateValue("2026-03-29")).toBe(new Date(2026, 2, 29).getTime());
+  });
+
+  it("parses slash date to epoch milliseconds", () => {
+    expect(parseDateValue("03/29/2026")).toBe(new Date(2026, 2, 29).getTime());
+  });
+
+  it("parses single-digit month/day slash dates", () => {
+    expect(parseDateValue("1/5/2026")).toBe(new Date(2026, 0, 5).getTime());
+  });
+
+  it("returns NaN for unparseable text", () => {
+    expect(parseDateValue("not a date")).toBeNaN();
+  });
+
+  // Sorting reads dates through this function, so a misread here is worse than
+  // a misread in display: the column silently orders itself wrongly and there
+  // is nothing on screen to reveal it. These mirror the `formatDateValue`
+  // cases — the two share `parseDateText` precisely so they cannot disagree.
+  describe("day-first slash dates", () => {
+    it("parses 25/12/2026 as Christmas, not January 2028", () => {
+      expect(parseDateValue("25/12/2026")).toBe(new Date(2026, 11, 25).getTime());
+    });
+
+    it("parses 31/01/2026 as the last of January", () => {
+      expect(parseDateValue("31/01/2026")).toBe(new Date(2026, 0, 31).getTime());
+    });
+
+    // The point of the whole exercise: a date column has to order itself the
+    // way a reader would. Before this, `25/12/2026` parsed to January 2028 and
+    // sorted last by more than a year.
+    //
+    // `01/06/2026` is ambiguous and keeps the month-first reading (6 January),
+    // so it lands first. The other two are unambiguous: 13 May, then Christmas.
+    it("sorts day-first dates chronologically", () => {
+      const dates = ["25/12/2026", "01/06/2026", "13/05/2026"];
+      const sorted = [...dates].sort((a, b) => parseDateValue(a) - parseDateValue(b));
+      expect(sorted).toEqual(["01/06/2026", "13/05/2026", "25/12/2026"]);
+    });
+  });
+
+  describe("dates that name no real day", () => {
+    it("returns NaN for 31 February rather than rolling into March", () => {
+      expect(parseDateValue("31/02/2026")).toBeNaN();
+    });
+
+    it("returns NaN when neither component can be a month", () => {
+      expect(parseDateValue("13/13/2026")).toBeNaN();
+    });
+
+    it("returns NaN for an impossible ISO day", () => {
+      expect(parseDateValue("2026-02-31")).toBeNaN();
+    });
+  });
+
+  it("round-trips a day-first date back to the same day", () => {
+    const epoch = parseDateValue("25/12/2026");
+    expect(formatValue(epoch, "date")).toBe("Dec 25, 2026");
+  });
+
+  it("returns NaN for a partial date", () => {
+    expect(parseDateValue("2026-03")).toBeNaN();
+  });
+
+  it("returns NaN for empty string", () => {
+    expect(parseDateValue("")).toBeNaN();
+  });
+
+  it("returns NaN for null-ish input", () => {
+    expect(parseDateValue(null as unknown as string)).toBeNaN();
+    expect(parseDateValue(undefined as unknown as string)).toBeNaN();
   });
 });

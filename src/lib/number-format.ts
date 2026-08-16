@@ -107,10 +107,99 @@ export function formatValue(
       return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value * 100)}%`;
 
     case "date":
+      return formatDateValue(epochToLocalIsoDate(value));
+
     case "text":
     default:
       return String(value);
   }
+}
+
+/**
+ * Convert an epoch-millisecond timestamp to a local `YYYY-MM-DD` date string.
+ *
+ * Uses local date components (not UTC) so that round-tripping a value through
+ * `parseDateValue` → `epochToLocalIsoDate` → `formatDateValue` always recovers
+ * the same calendar date, regardless of the viewer's UTC offset.
+ */
+function epochToLocalIsoDate(ms: number): string {
+  const date = new Date(ms);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Parse common date formats into a `Date` object.
+ *
+ * Supported input formats:
+ * - ISO: `2026-03-29`
+ * - US slash: `03/29/2026` or `3/29/2026`
+ *
+ * @param trimmed - Already-trimmed raw date text
+ * @returns Parsed `Date`, or `null` if unparseable
+ */
+/**
+ * Build a calendar date, or return `null` when those numbers name no real day.
+ *
+ * The `null` matters. `new Date(2026, 24, 12)` does not fail — it rolls the
+ * excess months into the next year and hands back a perfectly valid Date, so
+ * an `isNaN` guard never fires. That is how `25/12/2026` used to render as
+ * "Jan 12, 2028". Reading the fields back off the constructed Date is the only
+ * way to catch it: if they don't match what went in, the input named no such
+ * day (31 February, month 13) and the caller should keep the user's raw text
+ * rather than show — or sort on — a date they never wrote.
+ */
+function makeDate(year: number, month: number, day: number): Date | null {
+  const date = new Date(year, month - 1, day);
+  if (
+    isNaN(date.getTime()) ||
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day
+  ) {
+    return null;
+  }
+  return date;
+}
+
+function parseDateText(trimmed: string): Date | null {
+  // Try ISO format: YYYY-MM-DD
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (isoMatch) {
+    const date = makeDate(
+      Number(isoMatch[1]),
+      Number(isoMatch[2]),
+      Number(isoMatch[3]),
+    );
+    if (date) return date;
+  }
+
+  // Try slash format. Two conventions share this shape — `MM/DD/YYYY` (US) and
+  // `DD/MM/YYYY` (most of Europe, Sweden included) — and nothing in the text
+  // says which was meant. Resolve only what arithmetic can settle: a first
+  // component above 12 cannot be a month, so it must be the day. Genuinely
+  // ambiguous input (`03/04/2026`) keeps the historical month-first reading;
+  // choosing by locale is #653's job, not this function's.
+  //
+  // This is the single parsing path for BOTH display and sorting, so a fix
+  // here reaches `formatDateValue` and `parseDateValue` alike — the two must
+  // never disagree about what a cell's date means.
+  const slashMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
+  if (slashMatch) {
+    const first = Number(slashMatch[1]);
+    const second = Number(slashMatch[2]);
+    const dayFirst = first > 12;
+    const date = makeDate(
+      Number(slashMatch[3]),
+      dayFirst ? second : first,
+      dayFirst ? first : second,
+    );
+    if (date) return date;
+  }
+
+  return null;
 }
 
 /**
@@ -123,28 +212,18 @@ export function formatValue(
  * @param text - Raw date text
  * @returns Formatted date string (e.g., `Mar 29, 2026`), or the original text if unparseable
  */
-/**
- * Format a calendar date, or return `null` when those numbers name no real day.
- *
- * The `null` matters. `new Date(2026, 24, 12)` does not fail — it rolls the
- * excess months into the next year and hands back a perfectly valid Date, so
- * an `isNaN` guard never fires. That is how `25/12/2026` used to render as
- * "Jan 12, 2028": silently wrong, and wrong in a way the table then sorted and
- * aggregated on. Reading the fields back off the constructed Date is the only
- * way to catch it — if they don't match what went in, the input named no such
- * day (31 February, month 13) and the caller should keep the user's raw text
- * rather than show them a date they never wrote.
- */
-function formatYmd(year: number, month: number, day: number): string | null {
-  const date = new Date(year, month - 1, day);
-  if (
-    isNaN(date.getTime()) ||
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) {
-    return null;
-  }
+export function formatDateValue(text: string): string {
+  if (!text || typeof text !== "string") return text;
+
+  const trimmed = text.trim();
+  if (trimmed === "") return text;
+
+  // Parsing lives in `parseDateText` so display and sorting can never read the
+  // same cell differently. Unparseable text is handed back untouched — showing
+  // someone a date they did not write is worse than showing them their input.
+  const date = parseDateText(trimmed);
+  if (!date) return text;
+
   return new Intl.DateTimeFormat("en-US", {
     year: "numeric",
     month: "short",
@@ -152,42 +231,19 @@ function formatYmd(year: number, month: number, day: number): string | null {
   }).format(date);
 }
 
-export function formatDateValue(text: string): string {
-  if (!text || typeof text !== "string") return text;
+/**
+ * Parse common date formats (see `formatDateValue`) into an epoch-millisecond
+ * timestamp, for numeric comparison (sorting, aggregation).
+ *
+ * @param text - Raw date text
+ * @returns Epoch milliseconds, or `NaN` if unparseable
+ */
+export function parseDateValue(text: string): number {
+  if (!text || typeof text !== "string") return NaN;
 
   const trimmed = text.trim();
-  if (trimmed === "") return text;
+  if (trimmed === "") return NaN;
 
-  // Try ISO format: YYYY-MM-DD
-  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
-  if (isoMatch) {
-    const formatted = formatYmd(
-      Number(isoMatch[1]),
-      Number(isoMatch[2]),
-      Number(isoMatch[3]),
-    );
-    if (formatted) return formatted;
-  }
-
-  // Try slash format. Two conventions share this shape — `MM/DD/YYYY` (US) and
-  // `DD/MM/YYYY` (most of Europe, Sweden included) — and nothing in the text
-  // says which one was meant. Resolve only what arithmetic can settle: a first
-  // component above 12 cannot be a month, so it must be the day. Genuinely
-  // ambiguous input (`03/04/2026`) keeps the historical month-first reading;
-  // choosing by locale is #653's job, not this function's.
-  const slashMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
-  if (slashMatch) {
-    const first = Number(slashMatch[1]);
-    const second = Number(slashMatch[2]);
-    const dayFirst = first > 12;
-    const formatted = formatYmd(
-      Number(slashMatch[3]),
-      dayFirst ? second : first,
-      dayFirst ? first : second,
-    );
-    if (formatted) return formatted;
-  }
-
-  // Could not parse — return original text
-  return text;
+  const date = parseDateText(trimmed);
+  return date ? date.getTime() : NaN;
 }
