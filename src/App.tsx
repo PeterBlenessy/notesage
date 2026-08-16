@@ -37,6 +37,7 @@ import { useLocalAI } from "@/hooks/useLocalAI";
 import { useSandboxViolations } from "@/hooks/useSandboxViolations";
 import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
 import { useActivityNavigation } from "@/hooks/useActivityNavigation";
+import { useRecordingShortcut } from "@/hooks/useRecordingShortcut";
 import { useAppLifecycle } from "@/hooks/useAppLifecycle";
 import { useSessionManager } from "@/hooks/useSessionManager";
 import { useNetworkDomainApprovals } from "@/hooks/useNetworkDomainApprovals";
@@ -223,6 +224,8 @@ function App() {
 
   // Consolidated startup effects and event listeners
   useAppLifecycle();
+  // ⌘⇧R must work with no editor mounted — see the hook's note (#696).
+  useRecordingShortcut();
 
   // Cross-conversation session run-state owner (task #4) — keeps the orb /
   // history / foreground-loading reading per-session status independently of
