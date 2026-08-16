@@ -67,6 +67,12 @@ export function useMeetingRecording(): MeetingRecordingHook {
       const startedAt = useRecordingStore.getState().recordingStartTime ?? undefined;
       const result = await stopRecording();
       const itemId = liveRecordingItemId;
+      // Capture the recording item's per-recording language override (if the
+      // user picked one on the orb card) BEFORE removing the item — once
+      // removed, its `language` field is gone from the store.
+      const language = itemId
+        ? useActivityStore.getState().tasks.find((t) => t.id === itemId)?.language
+        : undefined;
       if (itemId) {
         removeRecordingItem(itemId);
         liveRecordingItemId = null;
@@ -77,6 +83,7 @@ export function useMeetingRecording(): MeetingRecordingHook {
           recordingStartedAt: startedAt,
           recordingStoppedAt: Date.now(),
           recordingDurationSecs: result.duration_secs,
+          language,
         });
       }
     } else {

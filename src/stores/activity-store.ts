@@ -63,6 +63,15 @@ export interface AgentTask {
    * action is hidden — the bundle has already been filed.
    */
   moved?: boolean;
+
+  /**
+   * Whisper language code (e.g. `'sv'`, `'auto'`). For `kind === 'recording'`
+   * this is the per-recording override picked on the live item, defaulting to
+   * `recording-store.speechLanguage` when unset. For `kind === 'transcription'`
+   * this is the language actually used for the run, carried forward so a
+   * re-run reuses it without re-prompting.
+   */
+  language?: string;
 }
 
 interface ActivityStore {
@@ -88,6 +97,8 @@ interface ActivityStore {
     recordingStoppedAt?: number;
     /** Recorded length in seconds (pause-aware). */
     recordingDurationSecs?: number;
+    /** Whisper language code actually used for this run. */
+    language?: string;
   }): void;
   /** Update a transcription job's progress (0–100). */
   setTranscriptionProgress(id: string, percent: number): void;
@@ -99,13 +110,28 @@ interface ActivityStore {
    * Record that a completed transcription job's bundle has been moved into a
    * project. Sets `moved: true` (hides the "Move to project" action) and
    * repoints `transcriptPath` at the relocated note so click-to-open still
-   * resolves. No-op if the job is not a transcription.
+   * resolves. `newAudioPath`, when given, repoints `audioPath` too — the
+   * bundle move relocates the audio file as well, and without this the
+   * retained `audioPath` kept pointing at the now-deleted inbox location.
+   * No-op if the job is not a transcription.
    */
-  setTranscriptionMoved(id: string, newTranscriptPath: string): void;
+  setTranscriptionMoved(id: string, newTranscriptPath: string, newAudioPath?: string): void;
+  /**
+   * Flip a finished (`done` or `error`) transcription job back to `running`
+   * with progress reset to 0, for the "re-run transcription with a different
+   * model" action. Updates the existing task in place — does NOT create a new
+   * entry — so the card stays the same list item across the re-run.
+   */
+  resetTranscriptionForRerun(id: string): void;
 
   // --- recording item lifecycle (kind === 'recording') ---
   /** Create a running recording item representing live capture. */
   addRecordingItem(item: { id: string; label: string; recordingStartedAt?: number }): void;
+  /**
+   * Set the per-recording language override on a live recording item. No-op
+   * if `id` doesn't match a `kind === 'recording'` task.
+   */
+  setRecordingLanguage(id: string, language: string): void;
   /** Remove a recording item (e.g. when it transitions to a transcription job). */
   removeRecordingItem(id: string): void;
   resetTaskForContinuation(id: string): void;
@@ -173,6 +199,7 @@ export const useActivityStore = create<ActivityStore>()(
         recordingStartedAt,
         recordingStoppedAt,
         recordingDurationSecs,
+        language,
       }) => {
         const task: AgentTask = {
           id,
@@ -185,6 +212,7 @@ export const useActivityStore = create<ActivityStore>()(
           recordingStartedAt,
           recordingStoppedAt,
           recordingDurationSecs,
+          language,
           progress: 0,
           activities: [],
           startedAt: Date.now(),
@@ -237,12 +265,35 @@ export const useActivityStore = create<ActivityStore>()(
         }));
       },
 
-      setTranscriptionMoved: (id, newTranscriptPath) => {
+      setTranscriptionMoved: (id, newTranscriptPath, newAudioPath) => {
         set((state) => ({
           tasks: state.tasks.map((t) =>
             t.id === id && t.kind === 'transcription'
-              ? { ...t, moved: true, transcriptPath: newTranscriptPath }
+              ? {
+                  ...t,
+                  moved: true,
+                  transcriptPath: newTranscriptPath,
+                  audioPath: newAudioPath ?? t.audioPath,
+                }
               : t
+          ),
+        }));
+      },
+
+      resetTranscriptionForRerun: (id) => {
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === id && t.kind === 'transcription'
+              ? { ...t, status: 'running' as const, progress: 0, completedAt: undefined }
+              : t
+          ),
+        }));
+      },
+
+      setRecordingLanguage: (id, language) => {
+        set((state) => ({
+          tasks: state.tasks.map((t) =>
+            t.id === id && t.kind === 'recording' ? { ...t, language } : t
           ),
         }));
       },
