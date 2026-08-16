@@ -24,6 +24,7 @@
     "audit:contrast": "pnpm dlx tsx scripts/contrast-audit.ts",
     "calibrate:model-fit": "pnpm dlx tsx scripts/calibrate-model-fit.ts",
     "compare:whisper": "cd src-tauri && cargo run --release --example compare_whisper_models --",
+    "compare:whisper-corpus": "scripts/compare-whisper-corpus.sh",
     "fetch:speech-fixtures": "pnpm dlx tsx scripts/fetch-speech-fixtures.ts",
     "coverage:check": "bash scripts/coverage-check.sh",
     "coverage:update-baseline": "vitest run --coverage && node scripts/update-coverage-baseline.js",

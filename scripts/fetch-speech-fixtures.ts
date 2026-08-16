@@ -108,8 +108,8 @@ async function main(): Promise<void> {
   written.push('en-jfk.wav (no reference transcript — timings only)');
 
   const sets: Array<[string, string, string, number, string]> = [
-    ['openslr/librispeech_asr', 'clean', 'test', 3, 'en-librispeech'],
-    ['google/fleurs', 'sv_se', 'validation', 3, 'sv-fleurs'],
+    ['openslr/librispeech_asr', 'clean', 'test', 10, 'en-librispeech'],
+    ['google/fleurs', 'sv_se', 'validation', 10, 'sv-fleurs'],
   ];
 
   for (const [dataset, config, split, count, prefix] of sets) {
