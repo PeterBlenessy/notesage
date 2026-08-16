@@ -78,3 +78,7 @@ content/screenshots/
 # every build and version-locked to the tauri crate — committing it would let a
 # stale copy drift from the Rust side.
 src-tauri/crates/*/.tauri/
+
+# Speech baseline fixtures — third-party audio, reproducible via
+# `pnpm fetch:speech-fixtures`. Never committed.
+tests/fixtures/speech/
