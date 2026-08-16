@@ -3,6 +3,7 @@ import {
   parseNumericValue,
   formatValue,
   formatDateValue,
+  parseDateValue,
 } from "../number-format";
 
 describe("parseNumericValue", () => {
@@ -210,9 +211,17 @@ describe("formatValue", () => {
     it("passes through for text type", () => {
       expect(formatValue(42, "text")).toBe("42");
     });
+  });
 
-    it("passes through for date type", () => {
-      expect(formatValue(42, "date")).toBe("42");
+  describe("date formatting (wired to formatDateValue)", () => {
+    it("formats an epoch value parsed from an ISO date", () => {
+      const epoch = parseDateValue("2026-03-29");
+      expect(formatValue(epoch, "date")).toBe("Mar 29, 2026");
+    });
+
+    it("formats an epoch value parsed from a slash date", () => {
+      const epoch = parseDateValue("1/5/2026");
+      expect(formatValue(epoch, "date")).toBe("Jan 5, 2026");
     });
   });
 });
@@ -259,5 +268,36 @@ describe("formatDateValue", () => {
       expect(formatDateValue(null as unknown as string)).toBe(null);
       expect(formatDateValue(undefined as unknown as string)).toBe(undefined);
     });
+  });
+});
+
+describe("parseDateValue", () => {
+  it("parses ISO date to epoch milliseconds", () => {
+    expect(parseDateValue("2026-03-29")).toBe(new Date(2026, 2, 29).getTime());
+  });
+
+  it("parses slash date to epoch milliseconds", () => {
+    expect(parseDateValue("03/29/2026")).toBe(new Date(2026, 2, 29).getTime());
+  });
+
+  it("parses single-digit month/day slash dates", () => {
+    expect(parseDateValue("1/5/2026")).toBe(new Date(2026, 0, 5).getTime());
+  });
+
+  it("returns NaN for unparseable text", () => {
+    expect(parseDateValue("not a date")).toBeNaN();
+  });
+
+  it("returns NaN for a partial date", () => {
+    expect(parseDateValue("2026-03")).toBeNaN();
+  });
+
+  it("returns NaN for empty string", () => {
+    expect(parseDateValue("")).toBeNaN();
+  });
+
+  it("returns NaN for null-ish input", () => {
+    expect(parseDateValue(null as unknown as string)).toBeNaN();
+    expect(parseDateValue(undefined as unknown as string)).toBeNaN();
   });
 });

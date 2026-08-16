@@ -13,10 +13,36 @@ import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey, type EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 import { Fragment, type Node as PMNode } from "@tiptap/pm/model";
+import { parseDateValue } from "@/lib/number-format";
 
 export const TableSortPluginKey = new PluginKey("tableSort");
 
 type SortDirection = "asc" | "desc" | null;
+
+const textCollator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: "base",
+});
+
+/**
+ * Compare two cell text values for table sorting.
+ *
+ * Date columns compare by parsed chronological value so non-ISO formats
+ * (e.g. slash dates) sort correctly even when their lexical order disagrees
+ * with the calendar order. Falls back to locale-aware natural text
+ * comparison for every other column type, and for date values that can't be
+ * parsed.
+ */
+export function compareSortKeys(a: string, b: string, colType: string): number {
+  if (colType === "date") {
+    const aTime = parseDateValue(a);
+    const bTime = parseDateValue(b);
+    if (!isNaN(aTime) && !isNaN(bTime)) {
+      return aTime - bTime;
+    }
+  }
+  return textCollator.compare(a, b);
+}
 
 /** Plugin state: tracks which header cell position the mouse is hovering over. */
 interface TableSortState {
@@ -78,13 +104,12 @@ export function sortTableByColumn(
 
   // Build sorted index array
   const indices = bodyRowNodes.map((_, i) => i);
-  const collator = new Intl.Collator(undefined, {
-    numeric: true,
-    sensitivity: "base",
-  });
+  const headerCell =
+    columnIndex < headerRow.childCount ? headerRow.child(columnIndex) : null;
+  const colType = (headerCell?.attrs.colType as string) ?? "text";
   const multiplier = direction === "asc" ? 1 : -1;
   indices.sort(
-    (a, b) => multiplier * collator.compare(sortKeys[a], sortKeys[b]),
+    (a, b) => multiplier * compareSortKeys(sortKeys[a], sortKeys[b], colType),
   );
 
   // Skip reordering if already in the right order

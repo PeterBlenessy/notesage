@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TableSort, TableSortPluginKey } from '../table-sort';
+import { TableSort, TableSortPluginKey, compareSortKeys } from '../table-sort';
 
 // ---------------------------------------------------------------------------
 // TableSort extension — structural tests
@@ -117,5 +117,42 @@ describe('Sort comparator edge cases', () => {
     const sorted = sortAsc(values);
     expect(sorted[0]).toBe('');
     expect(sorted[1]).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// compareSortKeys — date-aware column sort comparator
+//
+// Date columns must sort chronologically (by parsed date value), not
+// lexically. Non-ISO formats (slash dates) can disagree with the plain
+// Intl.Collator ordering the extension used before this fix.
+// ---------------------------------------------------------------------------
+
+describe('compareSortKeys (date-aware column sort)', () => {
+  it('sorts slash-format dates chronologically even when lexical order differs', () => {
+    // Numeric-aware text collation ranks "12/25/2025" after "3/1/2026"
+    // (12 > 3), which is chronologically wrong — Dec 2025 precedes Mar 2026.
+    const values = ['12/25/2025', '3/1/2026', '6/15/2025'];
+    const sorted = [...values].sort((a, b) => compareSortKeys(a, b, 'date'));
+    expect(sorted).toEqual(['6/15/2025', '12/25/2025', '3/1/2026']);
+  });
+
+  it('sorts ISO date strings chronologically', () => {
+    const values = ['2026-01-15', '2025-12-01', '2026-03-30', '2025-06-20'];
+    const sorted = [...values].sort((a, b) => compareSortKeys(a, b, 'date'));
+    expect(sorted).toEqual(['2025-06-20', '2025-12-01', '2026-01-15', '2026-03-30']);
+  });
+
+  it('falls back to text comparison when a value is not a parseable date', () => {
+    const values = ['2026-01-15', 'not-a-date', '2025-12-01'];
+    const sorted = [...values].sort((a, b) => compareSortKeys(a, b, 'date'));
+    expect(sorted).toContain('not-a-date');
+    expect(sorted.indexOf('2025-12-01')).toBeLessThan(sorted.indexOf('2026-01-15'));
+  });
+
+  it('does not change comparison behavior for non-date columns', () => {
+    const values = ['100', '20', '3', '1'];
+    const sorted = [...values].sort((a, b) => compareSortKeys(a, b, 'number'));
+    expect(sorted).toEqual(['1', '3', '20', '100']);
   });
 });

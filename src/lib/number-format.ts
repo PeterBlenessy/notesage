@@ -107,10 +107,63 @@ export function formatValue(
       return `${new Intl.NumberFormat("en-US", { maximumFractionDigits: 2 }).format(value * 100)}%`;
 
     case "date":
+      return formatDateValue(epochToLocalIsoDate(value));
+
     case "text":
     default:
       return String(value);
   }
+}
+
+/**
+ * Convert an epoch-millisecond timestamp to a local `YYYY-MM-DD` date string.
+ *
+ * Uses local date components (not UTC) so that round-tripping a value through
+ * `parseDateValue` → `epochToLocalIsoDate` → `formatDateValue` always recovers
+ * the same calendar date, regardless of the viewer's UTC offset.
+ */
+function epochToLocalIsoDate(ms: number): string {
+  const date = new Date(ms);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/**
+ * Parse common date formats into a `Date` object.
+ *
+ * Supported input formats:
+ * - ISO: `2026-03-29`
+ * - US slash: `03/29/2026` or `3/29/2026`
+ *
+ * @param trimmed - Already-trimmed raw date text
+ * @returns Parsed `Date`, or `null` if unparseable
+ */
+function parseDateText(trimmed: string): Date | null {
+  // Try ISO format: YYYY-MM-DD
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+  if (isoMatch) {
+    const date = new Date(
+      Number(isoMatch[1]),
+      Number(isoMatch[2]) - 1,
+      Number(isoMatch[3]),
+    );
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  // Try US slash format: MM/DD/YYYY
+  const slashMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
+  if (slashMatch) {
+    const date = new Date(
+      Number(slashMatch[3]),
+      Number(slashMatch[1]) - 1,
+      Number(slashMatch[2]),
+    );
+    if (!isNaN(date.getTime())) return date;
+  }
+
+  return null;
 }
 
 /**
@@ -129,40 +182,29 @@ export function formatDateValue(text: string): string {
   const trimmed = text.trim();
   if (trimmed === "") return text;
 
-  // Try ISO format: YYYY-MM-DD
-  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
-  if (isoMatch) {
-    const date = new Date(
-      Number(isoMatch[1]),
-      Number(isoMatch[2]) - 1,
-      Number(isoMatch[3]),
-    );
-    if (!isNaN(date.getTime())) {
-      return new Intl.DateTimeFormat("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      }).format(date);
-    }
-  }
+  const date = parseDateText(trimmed);
+  if (!date) return text;
 
-  // Try US slash format: MM/DD/YYYY
-  const slashMatch = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(trimmed);
-  if (slashMatch) {
-    const date = new Date(
-      Number(slashMatch[3]),
-      Number(slashMatch[1]) - 1,
-      Number(slashMatch[2]),
-    );
-    if (!isNaN(date.getTime())) {
-      return new Intl.DateTimeFormat("en-US", {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      }).format(date);
-    }
-  }
+  return new Intl.DateTimeFormat("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
 
-  // Could not parse — return original text
-  return text;
+/**
+ * Parse common date formats (see `formatDateValue`) into an epoch-millisecond
+ * timestamp, for numeric comparison (sorting, aggregation).
+ *
+ * @param text - Raw date text
+ * @returns Epoch milliseconds, or `NaN` if unparseable
+ */
+export function parseDateValue(text: string): number {
+  if (!text || typeof text !== "string") return NaN;
+
+  const trimmed = text.trim();
+  if (trimmed === "") return NaN;
+
+  const date = parseDateText(trimmed);
+  return date ? date.getTime() : NaN;
 }
