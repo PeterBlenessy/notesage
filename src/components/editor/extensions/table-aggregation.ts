@@ -13,7 +13,11 @@ import { Extension } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import { parseNumericValue, formatValue as formatNumericValue } from "@/lib/number-format";
+import {
+  parseNumericValue,
+  parseDateValue,
+  formatValue as formatNumericValue,
+} from "@/lib/number-format";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -66,7 +70,8 @@ function extractColumnValues(
     const cell = row.child(colIndex);
     const text = cell.textContent.trim();
 
-    const num = parseNumericValue(text, colType);
+    const num =
+      colType === "date" ? parseDateValue(text) : parseNumericValue(text, colType);
     if (!isNaN(num) && isFinite(num)) {
       values.push(num);
     }

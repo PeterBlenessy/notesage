@@ -312,4 +312,40 @@ describe('computeAggregations', () => {
     expect(r.value).toBe(2);
     expect(r.formattedValue).toBe('2'); // plain number, not "$2.00"
   });
+
+  describe('date column aggregation', () => {
+    it('computes min of a date column using parsed dates, not lexical text', () => {
+      const table = mockTable(
+        [{ text: 'Date', colType: 'date', colAggregation: 'min' }],
+        [['12/25/2025'], ['3/1/2026'], ['6/15/2025']],
+      );
+      const results = computeAggregations(table as never);
+      const r = resultFor(results, 0)!;
+      expect(r.type).toBe('min');
+      expect(r.value).toBe(new Date(2025, 5, 15).getTime());
+      expect(r.formattedValue).toBe('Jun 15, 2025');
+    });
+
+    it('computes max of a date column using parsed dates, not lexical text', () => {
+      const table = mockTable(
+        [{ text: 'Date', colType: 'date', colAggregation: 'max' }],
+        [['12/25/2025'], ['3/1/2026'], ['6/15/2025']],
+      );
+      const results = computeAggregations(table as never);
+      const r = resultFor(results, 0)!;
+      expect(r.type).toBe('max');
+      expect(r.value).toBe(new Date(2026, 2, 1).getTime());
+      expect(r.formattedValue).toBe('Mar 1, 2026');
+    });
+
+    it('skips unparseable cells when aggregating a date column', () => {
+      const table = mockTable(
+        [{ text: 'Date', colType: 'date', colAggregation: 'min' }],
+        [['not-a-date'], ['2026-01-15'], ['garbage']],
+      );
+      const results = computeAggregations(table as never);
+      const r = resultFor(results, 0)!;
+      expect(r.value).toBe(new Date(2026, 0, 15).getTime());
+    });
+  });
 });
