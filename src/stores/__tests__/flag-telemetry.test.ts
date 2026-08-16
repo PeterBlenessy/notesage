@@ -82,7 +82,7 @@ describe("graduation signal", () => {
   });
 
   it("reports every flag individually on reset, not one collapsed event", () => {
-    useFlagStore.setState({ enabled: ["a", "b"] as FlagId[] });
+    useFlagStore.setState({ enabled: ["a", "b"] as unknown as FlagId[] });
     tracked.length = 0;
     useFlagStore.getState().resetAll();
     expect(tracked.map((t) => t.props.flag)).toEqual(["a", "b"]);

@@ -4,6 +4,8 @@ import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
 import { useActivityStore } from '@/stores/activity-store';
 import { useRecordingStore } from '@/stores/recording-store';
+import { isFlagEnabled } from '@/stores/flag-store';
+import { trackLabsFeatureUsed } from '@/lib/telemetry';
 import { renderTranscript } from '@/lib/transcription/render-transcript';
 import { emitWorkflowEvent } from '@/lib/automations/event-bus';
 import { writeTranscriptToBundle } from '@/lib/transcription/bundle';
@@ -35,6 +37,14 @@ export interface StartTranscriptionDetail {
   recordingStoppedAt?: number;
   /** Recorded length in seconds (pause-aware, from the backend). */
   recordingDurationSecs?: number;
+  /**
+   * Explicit per-recording language choice — a forward-compatible seam for
+   * #698 (the per-recording language picker, not yet built). When present it
+   * always wins over the `transcription-autodetect-language` Labs flag and
+   * the Settings-configured default: a deliberate per-recording choice must
+   * never be silently overridden by the flag.
+   */
+  languageOverride?: string;
 }
 
 /** Convenience dispatcher so callers don't hand-build the CustomEvent. */
@@ -64,11 +74,14 @@ function deriveLabel(audioPath: string): string {
  * mounted never runs — see the auto-memory "Startup Hooks in App.tsx" rule).
  *
  * On a `notesage:start-transcription` event it:
- *   1. mints a job id, reads the configured model + language from recording-store,
+ *   1. mints a job id, resolves the language to transcribe with (explicit
+ *      per-recording override > the `transcription-autodetect-language` Labs
+ *      flag > the Settings-configured default) and the configured model,
  *   2. adds a `transcription` activity item,
  *   3. streams `transcription-progress` (filtered by job id) into the store,
  *   4. runs the whole-file transcription command,
- *   5. on success: renders the note → writes it into the bundle → marks done,
+ *   5. on success: renders the note → writes it into the bundle → marks done
+ *      (recording the language Whisper actually used),
  *   6. on error: marks the job errored + toasts (failed jobs are re-runnable).
  */
 export function useTranscriptionJob(): void {
@@ -77,8 +90,14 @@ export function useTranscriptionJob(): void {
     let disposed = false;
 
     async function runJob(detail: StartTranscriptionDetail): Promise<void> {
-      const { audioPath, documentId, recordingStartedAt, recordingStoppedAt, recordingDurationSecs } =
-        detail;
+      const {
+        audioPath,
+        documentId,
+        recordingStartedAt,
+        recordingStoppedAt,
+        recordingDurationSecs,
+        languageOverride,
+      } = detail;
       if (!audioPath) return;
 
       const jobId =
@@ -88,6 +107,16 @@ export function useTranscriptionJob(): void {
 
       const { defaultModel, speechLanguage } = useRecordingStore.getState();
       const label = deriveLabel(audioPath);
+
+      // Precedence: an explicit per-recording choice always wins (a
+      // deliberate choice must never be silently overridden); otherwise the
+      // Labs flag overrides the Settings default with auto-detect
+      // (`language: undefined`, which the backend treats as "auto").
+      const autoDetect = !languageOverride && isFlagEnabled('transcription-autodetect-language');
+      const language = languageOverride ?? (autoDetect ? undefined : speechLanguage || undefined);
+      if (autoDetect) {
+        trackLabsFeatureUsed('transcription-autodetect-language');
+      }
 
       const activity = useActivityStore.getState();
       activity.addTranscriptionJob({
@@ -122,12 +151,7 @@ export function useTranscriptionJob(): void {
       }
 
       try {
-        const result = await tauriApi.transcribeFile(
-          jobId,
-          audioPath,
-          defaultModel,
-          speechLanguage || undefined,
-        );
+        const result = await tauriApi.transcribeFile(jobId, audioPath, defaultModel, language);
 
         const markdown = renderTranscript(result.segments, {
           title: label,
@@ -136,7 +160,7 @@ export function useTranscriptionJob(): void {
         });
         const transcriptPath = await writeTranscriptToBundle(audioPath, markdown);
 
-        useActivityStore.getState().setTranscriptionDone(jobId, transcriptPath);
+        useActivityStore.getState().setTranscriptionDone(jobId, transcriptPath, result.language);
         // Phase 3: surface a transcription-done workflow event for automations.
         emitWorkflowEvent({ event: 'transcription-done', transcriptPath });
       } catch (err) {

@@ -48,6 +48,12 @@ export interface AgentTask {
   transcriptPath?: string;
   /** Whole-file transcription progress, 0–100. */
   progress?: number;
+  /**
+   * Language Whisper actually transcribed with, set when the job completes
+   * (from `TranscriptionResult.language`). Surfaces a wrong auto-detect guess
+   * on the orb's transcription item rather than leaving it mysterious.
+   */
+  detectedLanguage?: string;
 
   // --- recording-item fields (kind === 'recording' / 'transcription') ---
   /** ms-epoch when capture began, for the live elapsed-time affordance. */
@@ -91,8 +97,12 @@ interface ActivityStore {
   }): void;
   /** Update a transcription job's progress (0–100). */
   setTranscriptionProgress(id: string, percent: number): void;
-  /** Mark a transcription job done and record the output transcript path. */
-  setTranscriptionDone(id: string, transcriptPath: string): void;
+  /**
+   * Mark a transcription job done and record the output transcript path.
+   * `detectedLanguage`, when provided, is the language Whisper transcribed
+   * with (auto-detected or pinned).
+   */
+  setTranscriptionDone(id: string, transcriptPath: string, detectedLanguage?: string): void;
   /** Mark a transcription job as failed (re-runnable from the inbox). */
   setTranscriptionError(id: string): void;
   /**
@@ -211,7 +221,7 @@ export const useActivityStore = create<ActivityStore>()(
         }));
       },
 
-      setTranscriptionDone: (id, transcriptPath) => {
+      setTranscriptionDone: (id, transcriptPath, detectedLanguage) => {
         set((state) => ({
           tasks: state.tasks.map((t) =>
             t.id === id
@@ -220,6 +230,7 @@ export const useActivityStore = create<ActivityStore>()(
                   status: 'done' as const,
                   progress: 100,
                   transcriptPath,
+                  detectedLanguage,
                   completedAt: Date.now(),
                 }
               : t

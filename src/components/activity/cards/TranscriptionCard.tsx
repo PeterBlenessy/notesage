@@ -61,6 +61,22 @@ function formatLength(secs?: number): string | null {
 }
 
 /**
+ * Friendly display name for an ISO 639-1 code (e.g. "sv" → "Swedish"), via the
+ * built-in `Intl.DisplayNames` — Whisper can auto-detect any of its ~99
+ * supported languages, far more than the curated picker list in
+ * `TranscriptionSettings.tsx`, so a static lookup table would fall short.
+ * Falls back to the raw code if the environment lacks the API or the code is
+ * unrecognized.
+ */
+function languageDisplayName(code: string): string {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+/**
  * "start – stop · length" summary for a recording. Falls back to the start time
  * encoded in the bundle folder name when the live metadata is absent, so even
  * legacy / disk-restored items show what they can. Returns null only when
@@ -229,6 +245,11 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
           </p>
           {summary && (
             <p className="text-[11px] text-muted-foreground/80 tabular-nums">{summary}</p>
+          )}
+          {task.status === 'done' && task.detectedLanguage && (
+            <p className="text-[11px] text-muted-foreground/80">
+              Detected language: {languageDisplayName(task.detectedLanguage)}
+            </p>
           )}
         </div>
         {/* Top-right action cluster — icon-only, hover-revealed, left of the

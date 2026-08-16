@@ -231,6 +231,22 @@ describe('ActivityTaskCard — transcription kind', () => {
     expect(screen.queryByRole('button', { name: /move to project/i })).toBeNull();
   });
 
+  it('surfaces the detected language on a completed transcription', () => {
+    renderWithProviders(
+      <ActivityTaskCard
+        task={txTask({ status: 'done', progress: 100, completedAt: Date.now(), detectedLanguage: 'sv' })}
+      />,
+    );
+    expect(screen.getByText(/detected language:\s*swedish/i)).toBeTruthy();
+  });
+
+  it('omits the detected-language line when none is recorded', () => {
+    renderWithProviders(
+      <ActivityTaskCard task={txTask({ status: 'done', progress: 100, completedAt: Date.now() })} />,
+    );
+    expect(screen.queryByText(/detected language/i)).toBeNull();
+  });
+
   it('shows "Move to project" on completion and not before', () => {
     useWorkspaceStore.setState({ projects: [{ path: '/Users/me/Code/acme', fileTree: [] }] });
     renderWithProviders(

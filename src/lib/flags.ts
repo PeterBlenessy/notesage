@@ -38,7 +38,14 @@ export interface FlagSpec {
  * The live registry. Empty is a valid state — it means nothing experimental
  * is in flight, which is the goal between features rather than a gap.
  */
-export const FLAGS = {} as const satisfies Record<string, FlagSpec>;
+export const FLAGS = {
+  "transcription-autodetect-language": {
+    stage: "experimental",
+    summary: "Detect the spoken language automatically",
+    introducedIn: "0.49.0",
+    default: false,
+  },
+} as const satisfies Record<string, FlagSpec>;
 
 export type FlagId = keyof typeof FLAGS;
 

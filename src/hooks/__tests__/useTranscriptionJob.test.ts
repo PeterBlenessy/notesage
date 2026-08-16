@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { useTranscriptionJob, startTranscription } from '@/hooks/useTranscriptionJob';
 import { useActivityStore } from '@/stores/activity-store';
 import { useRecordingStore } from '@/stores/recording-store';
+import { useFlagStore } from '@/stores/flag-store';
 import type { TranscriptionResult } from '@/lib/tauri';
 
 // `sonner` is mocked by `@/test/tauri-mock` (toast.error is a vi.fn) — use that
@@ -23,15 +24,17 @@ const toastError = toast.error as ReturnType<typeof vi.fn>;
 // Module mocks — isolate the hook from the real Tauri command + bundle I/O.
 // ---------------------------------------------------------------------------
 
-const { transcribeFile, renderTranscript, writeTranscriptToBundle } = vi.hoisted(() => ({
+const { transcribeFile, renderTranscript, writeTranscriptToBundle, trackLabsFeatureUsed } = vi.hoisted(() => ({
   transcribeFile: vi.fn(),
   renderTranscript: vi.fn(() => '# Transcript\n\nhello world'),
   writeTranscriptToBundle: vi.fn(async () => '/inbox/Meeting A/transcript.md'),
+  trackLabsFeatureUsed: vi.fn(),
 }));
 
 vi.mock('@/lib/tauri', () => ({ tauriApi: { transcribeFile } }));
 vi.mock('@/lib/transcription/render-transcript', () => ({ renderTranscript }));
 vi.mock('@/lib/transcription/bundle', () => ({ writeTranscriptToBundle }));
+vi.mock('@/lib/telemetry', () => ({ trackLabsFeatureUsed }));
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -63,6 +66,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   useActivityStore.setState({ tasks: [] });
   useRecordingStore.setState({ defaultModel: 'small', speechLanguage: 'sv' });
+  useFlagStore.setState({ enabled: [] });
 });
 
 function jobTask() {
@@ -167,5 +171,110 @@ describe('useTranscriptionJob', () => {
     act(() => startTranscription({ audioPath: AUDIO }));
     expect(useActivityStore.getState().tasks).toHaveLength(0);
     expect(transcribeFile).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// `transcription-autodetect-language` Labs flag (issue #699)
+// ---------------------------------------------------------------------------
+
+describe('useTranscriptionJob — auto-detect language flag', () => {
+  it('flag off: uses the Settings-configured language and never fires labs telemetry', async () => {
+    useFlagStore.setState({ enabled: [] });
+    useRecordingStore.setState({ defaultModel: 'small', speechLanguage: 'sv' });
+    const d = deferred<TranscriptionResult>();
+    transcribeFile.mockReturnValue(d.promise);
+
+    renderHook(() => useTranscriptionJob());
+    act(() => startTranscription({ audioPath: AUDIO }));
+    const jobId = jobTask().id;
+
+    await waitFor(() => expect(transcribeFile).toHaveBeenCalled());
+    expect(transcribeFile).toHaveBeenCalledWith(jobId, AUDIO, 'small', 'sv');
+    expect(trackLabsFeatureUsed).not.toHaveBeenCalled();
+
+    await act(async () => {
+      d.resolve(SUCCESS);
+      await d.promise.catch(() => {});
+    });
+  });
+
+  it('flag on: overrides the Settings language with auto-detect (undefined) and fires labs telemetry', async () => {
+    useFlagStore.setState({ enabled: ['transcription-autodetect-language'] });
+    useRecordingStore.setState({ defaultModel: 'small', speechLanguage: 'sv' });
+    const d = deferred<TranscriptionResult>();
+    transcribeFile.mockReturnValue(d.promise);
+
+    renderHook(() => useTranscriptionJob());
+    act(() => startTranscription({ audioPath: AUDIO }));
+    const jobId = jobTask().id;
+
+    await waitFor(() => expect(transcribeFile).toHaveBeenCalled());
+    expect(transcribeFile).toHaveBeenCalledWith(jobId, AUDIO, 'small', undefined);
+    expect(trackLabsFeatureUsed).toHaveBeenCalledWith('transcription-autodetect-language');
+
+    await act(async () => {
+      d.resolve(SUCCESS);
+      await d.promise.catch(() => {});
+    });
+  });
+
+  it('an explicit per-recording language override wins over the flag, even when it is on', async () => {
+    useFlagStore.setState({ enabled: ['transcription-autodetect-language'] });
+    useRecordingStore.setState({ defaultModel: 'small', speechLanguage: 'sv' });
+    const d = deferred<TranscriptionResult>();
+    transcribeFile.mockReturnValue(d.promise);
+
+    renderHook(() => useTranscriptionJob());
+    act(() => startTranscription({ audioPath: AUDIO, languageOverride: 'fr' }));
+    const jobId = jobTask().id;
+
+    await waitFor(() => expect(transcribeFile).toHaveBeenCalled());
+    expect(transcribeFile).toHaveBeenCalledWith(jobId, AUDIO, 'small', 'fr');
+    // Detection wasn't actually used — the override pre-empted it — so the
+    // "actually used" telemetry event must not fire.
+    expect(trackLabsFeatureUsed).not.toHaveBeenCalled();
+
+    await act(async () => {
+      d.resolve(SUCCESS);
+      await d.promise.catch(() => {});
+    });
+  });
+
+  it('an explicit per-recording language override wins even when the flag is off (unchanged precedence)', async () => {
+    useFlagStore.setState({ enabled: [] });
+    useRecordingStore.setState({ defaultModel: 'small', speechLanguage: 'sv' });
+    const d = deferred<TranscriptionResult>();
+    transcribeFile.mockReturnValue(d.promise);
+
+    renderHook(() => useTranscriptionJob());
+    act(() => startTranscription({ audioPath: AUDIO, languageOverride: 'fr' }));
+    const jobId = jobTask().id;
+
+    await waitFor(() => expect(transcribeFile).toHaveBeenCalled());
+    expect(transcribeFile).toHaveBeenCalledWith(jobId, AUDIO, 'small', 'fr');
+
+    await act(async () => {
+      d.resolve(SUCCESS);
+      await d.promise.catch(() => {});
+    });
+  });
+
+  it('records the language Whisper actually used on the completed task', async () => {
+    useFlagStore.setState({ enabled: ['transcription-autodetect-language'] });
+    const d = deferred<TranscriptionResult>();
+    transcribeFile.mockReturnValue(d.promise);
+
+    renderHook(() => useTranscriptionJob());
+    act(() => startTranscription({ audioPath: AUDIO }));
+    await waitFor(() => expect(transcribeFile).toHaveBeenCalled());
+
+    await act(async () => {
+      d.resolve({ ...SUCCESS, language: 'sv' });
+      await d.promise.catch(() => {});
+    });
+
+    await waitFor(() => expect(jobTask().status).toBe('done'));
+    expect(jobTask().detectedLanguage).toBe('sv');
   });
 });
