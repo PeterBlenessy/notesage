@@ -205,6 +205,47 @@ describe('useMeetingRecording', () => {
     );
   });
 
+  // ---------------------------------------------------------------------
+  // Recording UX recovery (#698) — per-recording language override
+  // ---------------------------------------------------------------------
+
+  it("forwards the recording item's picked language override to the transcription job", async () => {
+    const { result, rerender } = renderHook(() => useMeetingRecording());
+    await act(async () => {
+      await result.current.toggleRecording();
+    });
+
+    const item = recordingItems()[0];
+    expect(item).toBeTruthy();
+    act(() => {
+      useActivityStore.getState().setRecordingLanguage(item.id, 'sv');
+    });
+
+    rerender();
+    await act(async () => {
+      await result.current.toggleRecording();
+    });
+
+    expect(startTranscription).toHaveBeenCalledWith(
+      expect.objectContaining({ audioPath: MOCK_AUDIO_INFO.path, language: 'sv' }),
+    );
+  });
+
+  it('omits language when no per-recording override was picked (transcription job falls back to the global default)', async () => {
+    const { result, rerender } = renderHook(() => useMeetingRecording());
+    await act(async () => {
+      await result.current.toggleRecording();
+    });
+
+    rerender();
+    await act(async () => {
+      await result.current.toggleRecording();
+    });
+
+    const call = (startTranscription as ReturnType<typeof vi.fn>).mock.calls[0][0] as { language?: string };
+    expect(call.language).toBeUndefined();
+  });
+
   it('removes the orb item even when stop_recording errors', async () => {
     setMockInvokeHandler('stop_recording', () => {
       throw new Error('backend gone');

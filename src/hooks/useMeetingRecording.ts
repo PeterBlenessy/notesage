@@ -20,7 +20,7 @@ import { track } from "@/lib/telemetry";
  *
  * The live recording activity-item id is MODULE-scoped, not component-scoped:
  * the hook is instantiated by several surfaces (StatusTray popover MicButton,
- * pill-toolbar MicButton, TranscriptionOverlay), and the popover instances
+ * pill-toolbar MicButton, the orb's RecordingControl), and the popover instances
  * unmount whenever the popover closes. A `useRef` id would be lost on
  * unmount — stopping from a different (or remounted) instance then leaked the
  * orb's "Recording" indicator forever (#stuck-orb). Only one recording can
@@ -67,6 +67,12 @@ export function useMeetingRecording(): MeetingRecordingHook {
       const startedAt = useRecordingStore.getState().recordingStartTime ?? undefined;
       const result = await stopRecording();
       const itemId = liveRecordingItemId;
+      // Capture the recording item's per-recording language override (if the
+      // user picked one on the orb card) BEFORE removing the item — once
+      // removed, its `language` field is gone from the store.
+      const language = itemId
+        ? useActivityStore.getState().tasks.find((t) => t.id === itemId)?.language
+        : undefined;
       if (itemId) {
         removeRecordingItem(itemId);
         liveRecordingItemId = null;
@@ -77,6 +83,7 @@ export function useMeetingRecording(): MeetingRecordingHook {
           recordingStartedAt: startedAt,
           recordingStoppedAt: Date.now(),
           recordingDurationSecs: result.duration_secs,
+          language,
         });
       }
     } else {

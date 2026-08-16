@@ -28,9 +28,10 @@ const toastError = toast.error as ReturnType<typeof vi.fn>;
 
 // Hoisted spy — `vi.mock` factories are hoisted above the module body, so any
 // variable they close over must be created via `vi.hoisted` to exist at that point.
-const { moveBundleToProjectMock, openFileMock } = vi.hoisted(() => ({
+const { moveBundleToProjectMock, openFileMock, startTranscriptionMock } = vi.hoisted(() => ({
   moveBundleToProjectMock: vi.fn<(dir: string, root: string) => Promise<string>>(),
   openFileMock: vi.fn<(path: string, name: string) => Promise<void>>(),
+  startTranscriptionMock: vi.fn(),
 }));
 
 // Mock the bundle move so the move-to-project flow doesn't touch Tauri.
@@ -47,6 +48,12 @@ vi.mock('@/lib/transcription/bundle', async () => {
 // Mock the file-open hook — TranscriptionCard's click-to-open goes through it.
 vi.mock('@/hooks/useFileOperations', () => ({
   useFileOperations: () => ({ openFile: openFileMock }),
+}));
+
+// Mock the transcription-job trigger — the re-run action (#698) dispatches
+// through it; assert on the payload without mounting the real background job.
+vi.mock('@/hooks/useTranscriptionJob', () => ({
+  startTranscription: (detail: unknown) => startTranscriptionMock(detail),
 }));
 
 // Radix DropdownMenu uses PointerEvent APIs jsdom lacks — stub them so the
@@ -474,6 +481,111 @@ describe('ActivityTaskCard — transcription kind', () => {
     const moved = useActivityStore.getState().tasks.find((t) => t.id === 'tx-1');
     expect(moved?.moved).toBe(true);
     expect(moved?.transcriptPath).toBe('/Users/me/Code/acme/Recording 2026-05-30/transcript.md');
+    // Regression fix (#698): the retained audioPath must follow the move too —
+    // it used to keep pointing at the now-deleted inbox location, which broke
+    // "re-run transcription" and "reveal in Finder" after a move.
+    expect(moved?.audioPath).toBe('/Users/me/Code/acme/Recording 2026-05-30/audio.wav');
+  });
+
+  // -------------------------------------------------------------------------
+  // Bundle path display (#698)
+  // -------------------------------------------------------------------------
+
+  describe('bundle path display (#698)', () => {
+    it("shows the bundle's on-disk path text next to Reveal", () => {
+      const task = txTask({
+        status: 'done',
+        completedAt: Date.now(),
+        transcriptPath: '/Users/me/Notesage/Recordings/Recording 2026-05-30/transcript.md',
+      });
+      renderWithProviders(<ActivityTaskCard task={task} />);
+      expect(screen.getByText('/Users/me/Notesage/Recordings/Recording 2026-05-30')).toBeTruthy();
+    });
+
+    it("falls back to the audio's folder when transcription failed before a note was written", () => {
+      const task = txTask({ status: 'error', completedAt: Date.now() }); // no transcriptPath
+      renderWithProviders(<ActivityTaskCard task={task} />);
+      expect(screen.getByText('/Users/me/Notesage/Recordings/Recording 2026-05-30')).toBeTruthy();
+    });
+
+    it('omits the path row while still transcribing', () => {
+      renderWithProviders(<ActivityTaskCard task={txTask({ status: 'running', progress: 40 })} />);
+      expect(screen.queryByText('/Users/me/Notesage/Recordings/Recording 2026-05-30')).toBeNull();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Re-run transcription (#698)
+  // -------------------------------------------------------------------------
+
+  describe('re-run transcription (#698)', () => {
+    beforeEach(() => {
+      startTranscriptionMock.mockReset();
+      useRecordingStore.setState({
+        availableModels: [
+          { name: 'base', size_bytes: 1, downloaded: true },
+          { name: 'small', size_bytes: 2, downloaded: false },
+          { name: 'large-v3', size_bytes: 3, downloaded: true },
+        ],
+      });
+    });
+
+    function openRerunMenu() {
+      const trigger = screen.getByRole('button', { name: /re-run transcription/i });
+      act(() => {
+        fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+        fireEvent.pointerUp(trigger, { button: 0 });
+        fireEvent.click(trigger);
+      });
+    }
+
+    it('lists only downloaded models', async () => {
+      const task = txTask({ status: 'done', completedAt: Date.now(), transcriptPath: '/x/transcript.md' });
+      renderWithProviders(<ActivityTaskCard task={task} />);
+
+      openRerunMenu();
+
+      expect(await screen.findByRole('menuitem', { name: 'Base' })).toBeTruthy();
+      expect(await screen.findByRole('menuitem', { name: 'Large V3' })).toBeTruthy();
+      expect(screen.queryByRole('menuitem', { name: 'Small' })).toBeNull();
+    });
+
+    it('picking a model re-transcribes the retained audio, reusing the same card via jobId', async () => {
+      const task = txTask({
+        status: 'done',
+        completedAt: Date.now(),
+        transcriptPath: '/x/transcript.md',
+        language: 'sv',
+      });
+      renderWithProviders(<ActivityTaskCard task={task} />);
+
+      openRerunMenu();
+      const item = await screen.findByRole('menuitem', { name: 'Large V3' });
+      act(() => {
+        fireEvent.click(item);
+      });
+
+      expect(startTranscriptionMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audioPath: task.audioPath,
+          jobId: 'tx-1',
+          model: 'large-v3',
+          language: 'sv',
+        }),
+      );
+    });
+
+    it('is hidden while a transcription is running', () => {
+      renderWithProviders(<ActivityTaskCard task={txTask({ status: 'running', progress: 40 })} />);
+      expect(screen.queryByRole('button', { name: /re-run transcription/i })).toBeNull();
+    });
+
+    it('is offered for a failed transcription too (re-runnable from the inbox)', () => {
+      renderWithProviders(
+        <ActivityTaskCard task={txTask({ status: 'error', completedAt: Date.now() })} />,
+      );
+      expect(screen.getByRole('button', { name: /re-run transcription/i })).toBeTruthy();
+    });
   });
 });
 
@@ -622,6 +734,53 @@ describe('ActivityTaskCard — recording kind', () => {
           useActivityStore.getState().tasks.filter((t) => t.kind === 'recording'),
         ).toHaveLength(0);
       });
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // Per-recording language picker (#698)
+  // -------------------------------------------------------------------------
+
+  describe('language picker (#698)', () => {
+    beforeEach(() => {
+      seedRecordingStore();
+      useRecordingStore.setState({ speechLanguage: 'auto' });
+    });
+
+    it('defaults to the global recording language when the task has no override', () => {
+      renderWithProviders(<ActivityTaskCard task={recTask()} />);
+      const trigger = document.querySelector('[role="combobox"][aria-label="Recording language"]');
+      expect(trigger?.textContent).toMatch(/auto-detect/i);
+    });
+
+    it('shows the per-recording override when the task already has one', () => {
+      renderWithProviders(<ActivityTaskCard task={recTask({ language: 'sv' })} />);
+      const trigger = document.querySelector('[role="combobox"][aria-label="Recording language"]');
+      expect(trigger?.textContent).toMatch(/swedish/i);
+    });
+
+    it('selecting a language updates the task, not the global setting', async () => {
+      // Seed the store — `setRecordingLanguage` looks the task up by id, so
+      // the task must actually exist in the store, not just be passed as a prop.
+      useActivityStore.getState().addRecordingItem({ id: 'rec-1', label: 'Recording' });
+      const task = useActivityStore.getState().tasks[0];
+      renderWithProviders(<ActivityTaskCard task={task} />);
+      const trigger = document.querySelector(
+        '[role="combobox"][aria-label="Recording language"]',
+      ) as HTMLElement;
+      fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+      fireEvent.click(trigger);
+      await Promise.resolve();
+      const option = Array.from(document.querySelectorAll('[role="option"]')).find(
+        (el) => el.textContent?.trim() === 'Swedish',
+      ) as HTMLElement | undefined;
+      expect(option).toBeTruthy();
+      if (option) fireEvent.click(option);
+
+      await waitFor(() => {
+        expect(useActivityStore.getState().tasks.find((t) => t.id === 'rec-1')?.language).toBe('sv');
+      });
+      expect(useRecordingStore.getState().speechLanguage).toBe('auto');
     });
   });
 });

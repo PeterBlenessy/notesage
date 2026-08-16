@@ -1,9 +1,42 @@
 import { useState } from 'react';
 import { Loader2, Square, Mic, Pause, Circle } from 'lucide-react';
-import type { AgentTask } from '@/stores/activity-store';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useActivityStore, type AgentTask } from '@/stores/activity-store';
+import { useRecordingStore } from '@/stores/recording-store';
 import { useMeetingRecording } from '@/hooks/useMeetingRecording';
 import { formatStopwatchMs } from '@/lib/recording-time';
 import { IconActionButton, formatClock } from './shared';
+
+// Whisper supports 99 languages; "Auto-detect" covers them all. Mirrors the
+// explicit-pick subset in `TranscriptionSettings` — this is the per-recording
+// override, made available right where the decision belongs (at record time,
+// not buried in Settings). Keep "Auto-detect" first.
+const LANGUAGES = [
+  { value: 'auto', label: 'Auto-detect' },
+  { value: 'ar', label: 'Arabic' },
+  { value: 'zh', label: 'Chinese' },
+  { value: 'cs', label: 'Czech' },
+  { value: 'da', label: 'Danish' },
+  { value: 'nl', label: 'Dutch' },
+  { value: 'en', label: 'English' },
+  { value: 'fi', label: 'Finnish' },
+  { value: 'fr', label: 'French' },
+  { value: 'de', label: 'German' },
+  { value: 'el', label: 'Greek' },
+  { value: 'hi', label: 'Hindi' },
+  { value: 'it', label: 'Italian' },
+  { value: 'ja', label: 'Japanese' },
+  { value: 'ko', label: 'Korean' },
+  { value: 'no', label: 'Norwegian' },
+  { value: 'pl', label: 'Polish' },
+  { value: 'pt', label: 'Portuguese' },
+  { value: 'ru', label: 'Russian' },
+  { value: 'es', label: 'Spanish' },
+  { value: 'sv', label: 'Swedish' },
+  { value: 'tr', label: 'Turkish' },
+  { value: 'uk', label: 'Ukrainian' },
+  { value: 'vi', label: 'Vietnamese' },
+];
 
 /**
  * Live-recording card (kind === 'recording'). Recording glyph + a pause-aware
@@ -19,6 +52,9 @@ export function RecordingCard({ task }: { task: AgentTask }) {
   const { toggleRecording, pauseRecording, resumeRecording, isPaused, elapsedTime } =
     useMeetingRecording();
   const [stopping, setStopping] = useState(false);
+  const settingsLanguage = useRecordingStore((s) => s.speechLanguage);
+  const setRecordingLanguage = useActivityStore((s) => s.setRecordingLanguage);
+  const effectiveLanguage = task.language ?? settingsLanguage;
 
   const handleStop = async () => {
     if (stopping) return;
@@ -86,6 +122,32 @@ export function RecordingCard({ task }: { task: AgentTask }) {
             <Square className="h-3 w-3" strokeWidth={1.5} />
           )}
         </IconActionButton>
+      </div>
+
+      {/* Per-recording language override (#698) — defaults to the Settings
+          value, made overridable right here at record time. */}
+      <div className="pl-5 mt-1.5 flex items-center gap-1.5">
+        <span className="text-[11px] text-muted-foreground/80">Language</span>
+        <Select
+          value={effectiveLanguage}
+          onValueChange={(value) => setRecordingLanguage(task.id, value)}
+        >
+          <SelectTrigger
+            size="sm"
+            aria-label="Recording language"
+            className="h-6 w-28 px-2 text-xs"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent onClick={(e) => e.stopPropagation()}>
+            {LANGUAGES.map((lang) => (
+              <SelectItem key={lang.value} value={lang.value}>
+                {lang.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
     </div>
   );
