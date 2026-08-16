@@ -33,6 +33,25 @@ function projectDisplayName(projectRoot: string): string {
   return pathBasename(projectRoot) || projectRoot;
 }
 
+/**
+ * Friendly name for an ISO 639-1 code (`"sv"` → `"Swedish"`), via the built-in
+ * `Intl.DisplayNames`. Whisper detects ~99 languages, far more than the curated
+ * picker list, so a lookup table here would fall short of what it can return.
+ * Falls back to the raw code when the runtime lacks the API or the code is
+ * unrecognized — a bare `"sv"` still tells the user more than nothing.
+ *
+ * Pinned to English for now because the surrounding UI is English; once #653
+ * lands its locale accessor this should follow the app locale, so a Swedish UI
+ * reads "Svenska".
+ */
+function languageDisplayName(code: string): string {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'language' }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
 /** "large-v3" -> "Large V3" — mirrors `TranscriptionSettings`' model label. */
 function modelDisplayName(name: string): string {
   return name.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -260,6 +279,12 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
   const revealTarget = transcriptPath ?? task.audioPath;
   const canReveal = task.status !== 'running' && !!revealTarget;
   const summary = recordingSummary(task);
+  // Show the detected language only when the run actually auto-detected. If the
+  // user pinned a language, Whisper reports back the one they picked, and
+  // echoing their own choice at them is noise rather than information.
+  const autoDetected = !task.language || task.language === 'auto';
+  const detectedLanguage =
+    task.status === 'done' && autoDetected ? task.detectedLanguage : undefined;
   // The bundle folder holding audio.wav + transcript.md — "where did my
   // recording go" should never be a question (#698).
   const bundlePath = revealTarget ? dirname(revealTarget) : undefined;
@@ -314,6 +339,11 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
           </p>
           {summary && (
             <p className="text-[11px] text-muted-foreground/80 tabular-nums">{summary}</p>
+          )}
+          {detectedLanguage && (
+            <p className="text-[11px] text-muted-foreground/80">
+              Detected language: {languageDisplayName(detectedLanguage)}
+            </p>
           )}
         </div>
         {/* Top-right action cluster — icon-only, hover-revealed, left of the

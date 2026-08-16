@@ -171,7 +171,9 @@ export function useTranscriptionJob(): void {
         });
         const transcriptPath = await writeTranscriptToBundle(audioPath, markdown);
 
-        useActivityStore.getState().setTranscriptionDone(jobId, transcriptPath);
+        useActivityStore
+          .getState()
+          .setTranscriptionDone(jobId, transcriptPath, result.language);
         // Phase 3: surface a transcription-done workflow event for automations.
         emitWorkflowEvent({ event: 'transcription-done', transcriptPath });
       } catch (err) {
