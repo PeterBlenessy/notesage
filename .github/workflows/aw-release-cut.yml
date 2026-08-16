@@ -91,14 +91,22 @@ jobs:
           echo "previous_tag=$previous_tag" >> "$GITHUB_OUTPUT"
           echo "Previous release: $previous_tag"
 
-          # 2. Gate: did ANY non-release PR merge since the last release?
+          # 2. Gate: is there anything a USER would notice since the last
+          #    release?
           #
-          # The build is just `main` HEAD, so it already contains every
-          # merged PR regardless of tier — so the only question is "has main
-          # moved since the last release?". We enumerate merged PR numbers
-          # straight from the git range (the same source the history step
-          # uses), so nothing is missed and there's no tier-search / label-lag
-          # race to get wrong.
+          # Not "has main moved" — that cut v0.49.0 from a single CI-and-docs
+          # PR, whose notes read "_No user-visible changes._". A release with
+          # nothing to say gives nobody a reason to update and teaches people
+          # to ignore the notes (Peter, 2026-08-16).
+          #
+          # So the gate is the same classification the history step uses: at
+          # least one `feat` / `fix` / `perf` / `refactor` PR. Infrastructure
+          # work is not lost — it accumulates and ships under "Under the hood"
+          # with the next real change.
+          #
+          # We enumerate merged PR numbers straight from the git range (the
+          # same source the history step uses), so nothing is missed and
+          # there's no tier-search / label-lag race to get wrong.
           #
           # Release PRs ("chore: release v*" / auto-cut) are excluded — they
           # are infra artifacts of a previous cut. Without this, a cut's own
@@ -109,6 +117,7 @@ jobs:
           )
 
           pr_numbers=""
+          user_facing=0
           if [ ${#MERGED_PRS[@]} -gt 0 ]; then
             for pr in "${MERGED_PRS[@]}"; do
               [ -z "$pr" ] && continue
@@ -117,6 +126,11 @@ jobs:
                 chore*release*|*auto-cut*) continue;;
               esac
               pr_numbers="${pr_numbers:+$pr_numbers,}$pr"
+              # Same classification the history step applies, so the gate and
+              # the notes can never disagree about what counts.
+              case "$title" in
+                feat*|fix*|perf*|refactor*) user_facing=$(( user_facing + 1 ));;
+              esac
             done
           fi
 
@@ -125,6 +139,15 @@ jobs:
             echo "should_cut=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          if [[ "$user_facing" -eq 0 ]]; then
+            echo "Only infrastructure changes since $previous_tag (ci/docs/chore/test)."
+            echo "Refusing to cut a release with nothing to tell users; this work"
+            echo "ships under 'Under the hood' with the next feat/fix."
+            echo "should_cut=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "User-facing PRs since $previous_tag: $user_facing
           echo "PRs to ship: $pr_numbers"
           echo "pr_numbers=$pr_numbers" >> "$GITHUB_OUTPUT"
 
