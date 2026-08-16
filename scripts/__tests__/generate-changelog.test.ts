@@ -159,13 +159,12 @@ describe('platform routing', () => {
 
   it('moves mobile-scoped bullets out of the desktop sections', () => {
     const entry = parse(AUTO_CUT_WITH_MOBILE);
-    expect(entry.sections.features).toEqual([
-      'feat(editor): callout blocks land in the toolbar (#690)',
-    ]);
-    expect(entry.sections.fixes).toEqual(['fix(export): PDF footers no longer clip (#691)']);
+    // Routed by scope, then stripped of it — these reach users as "What's new".
+    expect(entry.sections.features).toEqual(['Callout blocks land in the toolbar']);
+    expect(entry.sections.fixes).toEqual(['PDF footers no longer clip']);
     expect(entry.sections.ios).toEqual([
-      'feat(mobile): long-press menu, Inbox shortcut, row redesign (#684)',
-      'fix(ios): stop the scroller stealing swipe gestures (#688)',
+      'Long-press menu, Inbox shortcut, row redesign',
+      'Stop the scroller stealing swipe gestures',
     ]);
   });
 
@@ -208,7 +207,93 @@ describe('platform routing', () => {
 - feat(mobile): gallery view (#633)
 `);
     expect(entry.sections.features).toBeUndefined();
-    expect(entry.sections.ios).toEqual(['feat(mobile): gallery view (#633)']);
+    expect(entry.sections.ios).toEqual(['Gallery view']);
+  });
+
+  // The ordering here is load-bearing and easy to "tidy" into breakage:
+  // humanizing strips the very scope `isMobileScoped` routes on, so doing it
+  // first sends every iOS bullet to the desktop feed. This test fails loudly
+  // if the two steps are ever swapped.
+  it('routes on the scope before stripping it', () => {
+    const entry = parse(`# Release v0.51.0
+
+**Date:** 2026-08-17
+**Previous version:** 0.50.0
+
+## Changes
+
+### Fixes
+- fix(ios): reader no longer loses scroll position (#688)
+- fix(recording): transcription re-runs with the chosen model (#701)
+`);
+    expect(entry.sections.ios).toEqual(['Reader no longer loses scroll position']);
+    expect(entry.sections.fixes).toEqual(['Transcription re-runs with the chosen model']);
+  });
+
+  it('strips an unscoped prefix rather than capitalising it', () => {
+    // The scope is optional in real PR titles. Requiring it produced
+    // "Feat: queue messages…" in the shipped feed — worse than not trying.
+    const entry = parse(`# Release v0.53.0
+
+**Date:** 2026-08-19
+**Previous version:** 0.52.0
+
+## Changes
+
+### Features
+- feat: queue messages sent during agent work instead of interrupting (#563)
+`);
+    expect(entry.sections.features).toEqual([
+      'Queue messages sent during agent work instead of interrupting',
+    ]);
+  });
+
+  it('does not sentence-case a leading identifier', () => {
+    // "Mcp_oauth" reads as a typo rather than a name.
+    const entry = parse(`# Release v0.54.0
+
+**Date:** 2026-08-20
+**Previous version:** 0.53.0
+
+## Changes
+
+### Fixes
+- fix(security): mcp_oauth redirect SSRF + CI audit gating (#537)
+`);
+    expect(entry.sections.fixes).toEqual(['mcp_oauth redirect SSRF + CI audit gating']);
+  });
+
+  it('strips every trailing PR ref, not just the last', () => {
+    // A squashed PR that references another carries two: `… (#375) (#377)`.
+    const entry = parse(`# Release v0.55.0
+
+**Date:** 2026-08-21
+**Previous version:** 0.54.0
+
+## Changes
+
+### Fixes
+- fix(html-viewer): fix 10 bugs from the v0.46.0 code review (#375) (#377)
+`);
+    expect(entry.sections.fixes).toEqual(['Fix 10 bugs from the v0.46.0 code review']);
+  });
+
+  it('leaves curated prose alone', () => {
+    // Hand-written notes match neither the scope nor the trailing-PR pattern,
+    // so humanizing must be a no-op rather than a re-capitalisation.
+    const entry = parse(`# Release v0.52.0
+
+**Date:** 2026-08-18
+**Previous version:** 0.51.0
+
+## Changes
+
+### Features
+- **One build for everyone.** Notesage no longer ships a separate alpha download.
+`);
+    expect(entry.sections.features).toEqual([
+      '**One build for everyone.** Notesage no longer ships a separate alpha download.',
+    ]);
   });
 });
 
