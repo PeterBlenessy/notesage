@@ -224,6 +224,54 @@ describe('ActivityTaskCard — transcription kind', () => {
     });
   }
 
+  // -------------------------------------------------------------------------
+  // Detected language readout (#710)
+  // -------------------------------------------------------------------------
+
+  describe('detected language (#710)', () => {
+    const done = { status: 'done' as const, progress: 100, completedAt: Date.now() };
+
+    it('names the language Whisper decoded when the run auto-detected', () => {
+      renderWithProviders(
+        <ActivityTaskCard task={txTask({ ...done, language: 'auto', detectedLanguage: 'sv' })} />,
+      );
+      expect(screen.getByText(/detected language:\s*swedish/i)).toBeTruthy();
+    });
+
+    it('treats an unset language as auto-detected', () => {
+      renderWithProviders(<ActivityTaskCard task={txTask({ ...done, detectedLanguage: 'sv' })} />);
+      expect(screen.getByText(/detected language:\s*swedish/i)).toBeTruthy();
+    });
+
+    // The user pinned a language, so Whisper reports back the one they chose.
+    // Repeating it tells them nothing they did not just decide themselves.
+    it('stays quiet when the user pinned the language', () => {
+      renderWithProviders(
+        <ActivityTaskCard task={txTask({ ...done, language: 'sv', detectedLanguage: 'sv' })} />,
+      );
+      expect(screen.queryByText(/detected language/i)).toBeNull();
+    });
+
+    it('shows nothing when no language was recorded', () => {
+      renderWithProviders(<ActivityTaskCard task={txTask({ ...done, language: 'auto' })} />);
+      expect(screen.queryByText(/detected language/i)).toBeNull();
+    });
+
+    it('waits until the job is done rather than announcing mid-run', () => {
+      renderWithProviders(
+        <ActivityTaskCard
+          task={txTask({ status: 'running', progress: 40, detectedLanguage: 'sv' })}
+        />,
+      );
+      expect(screen.queryByText(/detected language/i)).toBeNull();
+    });
+
+    it('falls back to the raw code for a language Intl cannot name', () => {
+      renderWithProviders(<ActivityTaskCard task={txTask({ ...done, detectedLanguage: 'zzz' })} />);
+      expect(screen.getByText(/detected language:\s*zzz/i)).toBeTruthy();
+    });
+  });
+
   it('shows a spinner + "Starting…" while running with progress 0', () => {
     renderWithProviders(<ActivityTaskCard task={txTask({ progress: 0 })} />);
     expect(screen.getByText('Recording 2026-05-30')).toBeTruthy();

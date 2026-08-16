@@ -759,6 +759,22 @@ describe('transcription jobs', () => {
     expect(task.completedAt).toBe(Date.now());
   });
 
+  it('setTranscriptionDone records the language Whisper reported (#710)', () => {
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+
+    useActivityStore.getState().setTranscriptionDone('tx-1', '/t.md', 'sv');
+
+    expect(useActivityStore.getState().tasks[0].detectedLanguage).toBe('sv');
+  });
+
+  it('setTranscriptionDone leaves detectedLanguage unset when none was reported', () => {
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+
+    useActivityStore.getState().setTranscriptionDone('tx-1', '/t.md');
+
+    expect(useActivityStore.getState().tasks[0].detectedLanguage).toBeUndefined();
+  });
+
   it('setTranscriptionError marks the job as error with completedAt', () => {
     useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
     useActivityStore.getState().setTranscriptionError('tx-1');
