@@ -47,7 +47,6 @@ import { EditorEmptyState } from "./EditorEmptyState";
 import { BubbleMenu } from "./BubbleMenu";
 import { FindBar } from "./FindBar";
 import { DiffReviewPill } from "./DiffReviewPill";
-import { TranscriptionOverlay } from "./TranscriptionOverlay";
 import { EditorCommentPopover } from "./EditorCommentPopover";
 import { EditorDatePicker } from "./EditorDatePicker";
 import { SidebarStatusBar } from "./StatusBar";
@@ -622,12 +621,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
           onOpenActions={onOpenActions}
         />
       )}
-      <TranscriptionOverlay
-        projectPath={projectPath}
-        onInsertAtCursor={editor ? (text) => {
-          editor.chain().focus().insertContent(text).run();
-        } : undefined}
-      />
       <DocumentOutline open={outlineOpen ?? false} onOpenChange={(open) => onOutlineOpenChange?.(open)} editor={editor} />
       <Suspense fallback={null}>
         <ExportDialog
