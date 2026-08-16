@@ -5,6 +5,7 @@ import { useSessionRunStore, selectUnwatchedRunning } from '@/stores/session-run
 import { useChatStore, selectConversationTitle } from '@/stores/chat-store';
 import { SessionStatusBadge } from '@/components/cmd/SessionStatusBadge';
 import { ActivityTaskCard } from './ActivityTaskCard';
+import { RecordingControl } from './RecordingControl';
 
 interface AgentPanelProps {
   onCancelTask?: (taskId: string) => void;
@@ -55,13 +56,17 @@ export function AgentPanel({ onCancelTask, onClickTask, onSelectSession }: Agent
       className="flex flex-col max-h-[min(60vh,480px)] w-[340px] overflow-hidden"
     >
       {/* Header */}
-      <div className="flex items-center px-3 py-2 border-b border-border shrink-0">
+      <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border shrink-0">
         <span
           id="agent-panel-heading"
           className="text-xs font-medium text-foreground whitespace-nowrap"
         >
           Activity
         </span>
+        {/* Recording starts HERE (#696): the orb already owns recording and
+            transcription state, and unlike the editor-scoped status tray it
+            is always mounted. */}
+        <RecordingControl />
       </div>
 
       {/* Session list + task list, or empty state */}

@@ -86,6 +86,8 @@ import {
   RELATIONS_PANEL_MIN_HEIGHT,
   RELATIONS_PANEL_MAX_HEIGHT,
 } from '../settings-store';
+import { useFlagStore } from '@/stores/flag-store';
+import type { FlagId } from '@/lib/flags';
 import { invoke } from '@tauri-apps/api/core';
 
 // ---------------------------------------------------------------------------
@@ -1427,7 +1429,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(25);
+    expect(parsed.version).toBe(26);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -2161,40 +2163,6 @@ describe('cmdBarExpandedHeight', () => {
   });
 });
 
-// ===========================================================================
-// releaseChannel — alpha / stable release channel (issue #143)
-// ===========================================================================
-
-describe('releaseChannel', () => {
-  it("defaults to 'stable'", () => {
-    useSettingsStore.setState(SETTINGS_DEFAULTS);
-    expect(useSettingsStore.getState().releaseChannel).toBe('stable');
-  });
-
-  it("setReleaseChannel changes channel to 'alpha'", () => {
-    useSettingsStore.getState().setReleaseChannel('alpha');
-    expect(useSettingsStore.getState().releaseChannel).toBe('alpha');
-  });
-
-  it("setReleaseChannel changes channel back to 'stable'", () => {
-    useSettingsStore.getState().setReleaseChannel('alpha');
-    useSettingsStore.getState().setReleaseChannel('stable');
-    expect(useSettingsStore.getState().releaseChannel).toBe('stable');
-  });
-
-  it('persists releaseChannel across restart', async () => {
-    useSettingsStore.getState().setReleaseChannel('alpha');
-    await waitForPersist();
-
-    const snapshot = localStorageMock.getItem(STORAGE_KEY);
-    useSettingsStore.setState({ ...SETTINGS_DEFAULTS, releaseChannel: 'stable' } as Record<string, unknown>);
-    if (snapshot) localStorageMock.setItem(STORAGE_KEY, snapshot);
-    await useSettingsStore.persist.rehydrate();
-    await waitForPersist();
-
-    expect(useSettingsStore.getState().releaseChannel).toBe('alpha');
-  });
-});
 
 // ===========================================================================
 // v14 migration — releaseChannel defaults to 'stable' on upgrade
@@ -2218,16 +2186,23 @@ describe('v14 migration: releaseChannel', () => {
     await useSettingsStore.persist.rehydrate();
     await waitForPersist();
 
-    expect(useSettingsStore.getState().releaseChannel).toBe('stable');
+    expect(
+      (useSettingsStore.getState() as unknown as Record<string, unknown>).releaseChannel,
+    ).toBeUndefined();
   });
 
-  it('preserves existing releaseChannel when already present', async () => {
+  it('drops a persisted alpha channel entirely — v26 removed the concept', async () => {
+    // v14's intent was "do not clobber a channel the user already chose", and
+    // it held until there was only one stream. v26 deletes the key: the
+    // picker and the alpha update path are gone, so a lingering value would
+    // only mislead a future reader.
     localStorageMock.setItem(STORAGE_KEY, buildV13State({ releaseChannel: 'alpha' }));
 
     await useSettingsStore.persist.rehydrate();
     await waitForPersist();
 
-    expect(useSettingsStore.getState().releaseChannel).toBe('alpha');
+    const raw = JSON.parse(localStorageMock.getItem(STORAGE_KEY)!);
+    expect(raw.state.releaseChannel).toBeUndefined();
   });
 
   it('bumps persisted version to 18 after migration', async () => {
@@ -2514,7 +2489,7 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(25);
+    expect(parsed.version).toBe(26);
   });
 
   it('v22 migration backfills linkPreviewRemoteImages=false (privacy by default)', async () => {
@@ -2536,8 +2511,12 @@ describe('telemetry consent', () => {
   // `buildAlpha` simulates running an alpha vs stable BUILD (the real signal is
   // `buildIsAlpha()`, mocked at the top of this file). Telemetry defaults key on
   // the build, not the update channel.
-  function resetTelemetry(buildAlpha = false) {
-    buildChannel.isAlpha = buildAlpha;
+  // `labsOn` replaces the old `buildAlpha` argument: with one binary there is
+  // no alpha build to key on, so the default follows Labs instead (PRD
+  // 2026-08-15-single-binary-feature-flags).
+  function resetTelemetry(labsOn = false) {
+    buildChannel.isAlpha = false;
+    useFlagStore.setState({ enabled: labsOn ? (['demo'] as FlagId[]) : [] });
     useSettingsStore.setState({
       ...SETTINGS_DEFAULTS,
       telemetryUsageEnabled: null,
@@ -2558,23 +2537,20 @@ describe('telemetry consent', () => {
     expect(s.telemetryNoticeSeen).toBe(false);
   });
 
-  it('effective default follows the BUILD when not overridden', () => {
-    resetTelemetry(false); // stable build → off
+  it('effective default follows LABS when not overridden', () => {
+    resetTelemetry(false); // nothing experimental enabled → off
     expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
     expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(false);
 
-    resetTelemetry(true); // alpha build → on
+    resetTelemetry(true); // an experimental feature enabled → on
     expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(true);
     expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
   });
 
-  it('alpha-build default is ON even when the update channel is stable', () => {
-    // The whole point of keying on the build: a user running an alpha build who
-    // never switched the update channel (releaseChannel stays 'stable') still
-    // defaults on. This is the case the channel-derived model missed.
+  it('Labs default is ON regardless of the update channel', () => {
+    // Keying on Labs. (The release channel this once contrasted with no
+    // longer exists — one binary, one stream.)
     resetTelemetry(true);
-    useSettingsStore.setState({ releaseChannel: 'stable' } as Record<string, unknown>);
-    expect(useSettingsStore.getState().releaseChannel).toBe('stable');
     expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(true);
     expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
   });
@@ -2589,15 +2565,6 @@ describe('telemetry consent', () => {
     expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
   });
 
-  it('release channel does NOT affect telemetry defaults or re-sync Rust', () => {
-    resetTelemetry(false); // stable build → off
-    vi.mocked(invoke).mockClear();
-    useSettingsStore.getState().setReleaseChannel('alpha');
-    // Switching the update channel must not flip telemetry...
-    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
-    // ...and must not push a consent change to Rust.
-    expect(invoke).not.toHaveBeenCalledWith('telemetry_apply_consent', expect.anything());
-  });
 
   it('syncs effective consent to Rust via telemetry_apply_consent on toggle', () => {
     resetTelemetry(false); // stable build
@@ -2611,8 +2578,8 @@ describe('telemetry consent', () => {
     });
   });
 
-  it('toggle sync reflects the build default for the untouched stream', () => {
-    resetTelemetry(true); // alpha build → both default on
+  it('toggle sync reflects the Labs default for the untouched stream', () => {
+    resetTelemetry(true); // an experimental feature enabled → both default on
     vi.mocked(invoke).mockClear();
 
     // Explicitly disabling crash → crash false, usage still build default (true).
@@ -2621,6 +2588,38 @@ describe('telemetry consent', () => {
       usage: true,
       crash: false,
     });
+  });
+});
+
+describe('single-binary migration (v26)', () => {
+  // Shipped in alpha.36 as "rewrite the channel to stable", which is what got
+  // existing alpha users onto the single stream before the endpoint went
+  // away. Now that the channel concept is gone entirely, the same step DROPS
+  // the key — a lingering value would only mislead a future reader.
+  function migrate(persisted: Record<string, unknown>, from: number) {
+    const opts = (useSettingsStore as unknown as {
+      persist: { getOptions: () => { migrate?: (s: unknown, v: number) => unknown } };
+    }).persist.getOptions();
+    return opts.migrate!(persisted, from) as Record<string, unknown>;
+  }
+
+  it('drops the channel key for an alpha-channel user', () => {
+    expect(migrate({ releaseChannel: 'alpha' }, 25).releaseChannel).toBeUndefined();
+  });
+
+  it('drops it for a stable user too — the concept is gone, not the value', () => {
+    expect(migrate({ releaseChannel: 'stable' }, 25).releaseChannel).toBeUndefined();
+  });
+
+  it('is idempotent — re-running cannot resurrect the key', () => {
+    const once = migrate({ releaseChannel: 'alpha' }, 25);
+    expect(migrate(once, 25).releaseChannel).toBeUndefined();
+  });
+
+  it('does not re-run for a blob already past it', () => {
+    // Version-gated, so it is a one-time migration rather than a permanent
+    // filter over every rehydrate.
+    expect(migrate({ releaseChannel: 'alpha' }, 26).releaseChannel).toBe('alpha');
   });
 });
 

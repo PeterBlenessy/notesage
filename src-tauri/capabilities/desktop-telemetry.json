@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop-telemetry",
+  "description": "Telemetry invoke bridges (usage + crash), split out of `default` and platform-scoped: `tauri-plugin-aptabase` and `tauri-plugin-sentry` are both gated off the iOS target in Cargo.toml (#587 \u2014 the App Store privacy label \"Data Not Collected\" relies on the SDKs not even linking there), and a capability referencing a permission from a plugin that isn't built fails the build outright.",
+  "platforms": [
+    "macOS",
+    "windows",
+    "linux"
+  ],
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "aptabase:allow-track-event",
+    "sentry:default"
+  ]
+}

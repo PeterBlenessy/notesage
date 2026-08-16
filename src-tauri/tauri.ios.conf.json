@@ -1,0 +1,19 @@
+{
+  "$schema": "gen/schemas/mobile-schema.json",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "visible": true,
+        "backgroundColor": "#121211"
+      }
+    ]
+  },
+  "bundle": {
+    "externalBin": [],
+    "iOS": {
+      "minimumSystemVersion": "16.0",
+      "developmentTeam": "M39TDQ2D7L"
+    }
+  }
+}

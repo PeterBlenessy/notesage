@@ -8,7 +8,7 @@ import {
   type QuietChromePreset,
   type QuietChromeTargets,
 } from '@/lib/quiet-chrome-presets';
-import { buildIsAlpha } from '@/lib/version';
+import { useFlagStore } from '@/stores/flag-store';
 
 
 type Theme = "light" | "dark" | "system";
@@ -33,7 +33,6 @@ export type ExportTemplate = "clean" | "academic" | "report";
 export type ExportPageSize = "a4" | "letter" | "a5";
 export type ExportFormat = "pdf" | "pptx" | "docx";
 export type PptxTemplate = "simple" | "business" | "report";
-export type ReleaseChannel = 'stable' | 'alpha';
 interface SettingsStore {
   theme: Theme;
   /**
@@ -103,11 +102,9 @@ interface SettingsStore {
   autoCheckUpdates: boolean;
   lastUpdateCheck: string | null;
   dismissedVersion: string | null;
-  releaseChannel: ReleaseChannel;
   /**
    * Telemetry consent — usage analytics (Aptabase). Tri-state:
-   * `null` = follow the running build via `buildIsAlpha()` (alpha build → on,
-   * stable build → off — NOT the user's chosen update channel);
+   * `null` = follow LABS (any experimental feature enabled → on, none → off);
    * `true`/`false` = explicit user choice that always wins. The effective
    * value is computed by `selectEffectiveTelemetryUsage`. PRD 2026-06-07-telemetry.
    */
@@ -312,7 +309,6 @@ interface SettingsStore {
   setAutoCheckUpdates: (enabled: boolean) => void;
   setLastUpdateCheck: (timestamp: string | null) => void;
   setDismissedVersion: (version: string | null) => void;
-  setReleaseChannel: (channel: ReleaseChannel) => void;
   setTelemetryUsageEnabled: (v: boolean | null) => void;
   setTelemetryCrashEnabled: (v: boolean | null) => void;
   setTelemetryNoticeSeen: (v: boolean) => void;
@@ -397,15 +393,35 @@ interface SettingsStore {
 /**
  * Effective usage-analytics consent. When the user hasn't made an explicit
  * choice (`telemetryUsageEnabled === null`), the default follows the BUILD: an
- * alpha/prerelease build defaults on, a stable build defaults off. Keyed on the
- * build (`buildIsAlpha()`), NOT the user's chosen update channel, so everyone
- * running an alpha build defaults on — including those who never opted into the
- * alpha update channel (a default `releaseChannel: 'stable'`). An explicit
- * toggle always wins.
+ * default follows LABS: on once the user has enabled any experimental
+ * feature, off otherwise. An explicit toggle always wins, in both directions.
+ *
+ * This replaces the old build-derived default (`buildIsAlpha()`). Once
+ * everyone runs the same binary there is no "alpha build" to key on, and the
+ * justification that carried the old default — "they opted into alpha" —
+ * transfers to Labs: enabling an experimental feature IS the opt-in now, and
+ * it is what produces the usage and crash signal that decides when that
+ * feature has earned its way out of Labs (PRD
+ * `2026-08-15-single-binary-feature-flags.md`).
+ *
+ * Because a feature toggle therefore also turns on data collection, the Labs
+ * panel states so above the toggles — see `LabsSettings`.
  */
+/**
+ * Has the user opted into any experimental feature?
+ *
+ * Read imperatively rather than through a hook: the selectors below are pure
+ * functions over the SETTINGS state and are called from non-React code
+ * (`applyTelemetryConsent`, `main.tsx`'s error handlers) as well as from
+ * components.
+ */
+function anyLabsFlagEnabled(): boolean {
+  return useFlagStore.getState().enabled.length > 0;
+}
+
 export const selectEffectiveTelemetryUsage = (
   state: Pick<SettingsStore, 'telemetryUsageEnabled'>,
-): boolean => state.telemetryUsageEnabled ?? buildIsAlpha();
+): boolean => state.telemetryUsageEnabled ?? anyLabsFlagEnabled();
 
 /**
  * Effective crash-reporting consent. Same build-derived default semantics as
@@ -413,7 +429,7 @@ export const selectEffectiveTelemetryUsage = (
  */
 export const selectEffectiveTelemetryCrash = (
   state: Pick<SettingsStore, 'telemetryCrashEnabled'>,
-): boolean => state.telemetryCrashEnabled ?? buildIsAlpha();
+): boolean => state.telemetryCrashEnabled ?? anyLabsFlagEnabled();
 
 /**
  * Push the recomputed effective consent booleans to the Rust backend so it can
@@ -511,7 +527,6 @@ export const useSettingsStore = create<SettingsStore>()(
       autoCheckUpdates: true,
       lastUpdateCheck: null,
       dismissedVersion: null,
-      releaseChannel: 'stable' as ReleaseChannel,
       telemetryUsageEnabled: null,
       telemetryCrashEnabled: null,
       telemetryNoticeSeen: false,
@@ -697,12 +712,6 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ dismissedVersion: version });
       },
 
-      setReleaseChannel: (channel: ReleaseChannel) => {
-        // Update channel only — telemetry defaults track the build
-        // (`buildIsAlpha`), not the chosen channel, so there's nothing to
-        // re-sync here. The two telemetry toggles are the single opt-out.
-        set({ releaseChannel: channel });
-      },
 
       setTelemetryUsageEnabled: (v: boolean | null) => {
         set({ telemetryUsageEnabled: v });
@@ -928,7 +937,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 25,
+      version: 26,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -1079,13 +1088,8 @@ export const useSettingsStore = create<SettingsStore>()(
             state.cmdBarExpandedHeight = 480;
           }
         }
-        if (version < 14) {
-          // Issue #143 — alpha release channel. Existing users default to
-          // 'stable' so upgrading does not silently opt anyone into alpha.
-          if (typeof state.releaseChannel !== 'string') {
-            state.releaseChannel = 'stable';
-          }
-        }
+        // (v14 backfilled `releaseChannel`; v26 below removes it — the
+        // single-binary change deleted the channel concept entirely.)
         if (version < 15) {
           // Issue #186 — HTML viewer allow-forms. Default false (forms blocked)
           // so existing users see no behaviour change after upgrade.
@@ -1212,6 +1216,20 @@ export const useSettingsStore = create<SettingsStore>()(
           // directly in the Rust `web_search` command). Drop the persisted key
           // so the name is free for future reuse.
           delete state.searchProvider;
+        }
+        if (version < 26) {
+          // Also drop the key itself — the picker and the alpha update path
+          // are gone; a lingering value would only confuse a future reader.
+          // Single binary (PRD 2026-08-15-single-binary-feature-flags): the
+          // alpha update channel is going away. Move everyone back to the one
+          // remaining stream BEFORE the alpha endpoint is deleted — a user
+          // left pointing at it would simply stop receiving updates, with no
+          // error and no way to notice.
+          //
+          // This ships in an ALPHA build on purpose: it has to reach exactly
+          // the users who are on the alpha channel. One-way and idempotent —
+          // there is no longer anything to switch back to.
+          delete state.releaseChannel;
         }
         return state;
       },

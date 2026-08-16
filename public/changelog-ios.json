@@ -1,0 +1,248 @@
+{
+  "releases": [
+    {
+      "version": "0.48.0-alpha.36",
+      "date": "2026-08-15",
+      "previousVersion": "0.48.0-alpha.35",
+      "sections": {
+        "features": [
+          "Pinning a folder now shows it under Pinned instead of appearing to do nothing.",
+          "Closing a note no longer flashes the title and breadcrumb in the list before they settle into the top bar.",
+          "Opening an HTML report no longer flashes white before its content appears."
+        ]
+      }
+    },
+    {
+      "version": "0.48.0-alpha.35",
+      "date": "2026-08-14",
+      "previousVersion": "0.48.0-alpha.34",
+      "sections": {
+        "features": [
+          "Long-press menu, capture fixes, Inbox shortcut, row redesign"
+        ]
+      },
+      "underTheHood": [
+        "feat(mobile): long-press menu, capture fixes, Inbox shortcut, row redesign (#684)"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.34",
+      "date": "2026-08-13",
+      "previousVersion": "0.48.0-alpha.33",
+      "sections": {
+        "features": [
+          "Hold a native cover over the webview until it has painted"
+        ]
+      },
+      "underTheHood": [
+        "fix(mobile): hold a native cover over the webview until it has painted (#678)"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.33",
+      "date": "2026-08-13",
+      "previousVersion": "0.48.0-alpha.32",
+      "sections": {},
+      "underTheHood": [
+        "fix(mobile): kill the white launch flash — the light CSS default painted before the dark media query",
+        "feat(mobile): name captures after their title, not a timestamp",
+        "feat(mobile): localize the Share Extension (Swedish) — prioritized over desktop",
+        "feat(mobile): group by file type — the last mode from #652"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.32",
+      "date": "2026-08-12",
+      "previousVersion": "0.48.0-alpha.31",
+      "sections": {
+        "features": [
+          "IOS Pinned group backed by shared pins.json",
+          "IOS Pinned group backed by shared pins.json"
+        ]
+      },
+      "underTheHood": [
+        "feat(mobile): shared pins.json — desktop writes, iOS reads, Pinned joins Group by",
+        "feat(mobile): iOS Pinned group backed by shared pins.json",
+        "feat(mobile): flatten the top chrome — bare breadcrumb, gradient band",
+        "fix(mobile): gallery folder icons were a speck — size them to the card",
+        "feat(mobile): group by recent or date in the view-options menu",
+        "build(mobile): TestFlight prerequisites — export compliance, icon alpha, upload runbook"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.31",
+      "date": "2026-08-12",
+      "previousVersion": "0.48.0-alpha.30",
+      "sections": {},
+      "underTheHood": [
+        "feat(mobile): swipe-action polish — circles zoom with the swipe, trailing edge rounds in step",
+        "fix(mobile): foreground refresh after a share + working pull-to-refresh (#650)",
+        "feat(mobile): system-generated thumbnails — QLThumbnailGenerator replaces the web raster",
+        "feat(mobile): native QuickLook for videos, audio and office documents"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.30",
+      "date": "2026-08-12",
+      "previousVersion": "0.48.0-alpha.29",
+      "sections": {},
+      "underTheHood": [
+        "feat(mobile): share images, videos and audio into the library",
+        "fix(mobile): abort in-flight thumbnail jobs at every stage checkpoint",
+        "fix(mobile): free the UI thread from thumbnail generation — cancel on back-out, pace the queue",
+        "fix(mobile): gallery markdown thumbnails rendered at full editor size, shoved right"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.29",
+      "date": "2026-08-12",
+      "previousVersion": "0.48.0-alpha.28",
+      "sections": {
+        "features": [
+          "Respect Dynamic Type text size and Bold Text in folder views",
+          "IOS capture — modern readability crate + ad/tracker image filtering",
+          "Respect Dynamic Type text size and Bold Text in folder views",
+          "Respect Dynamic Type text size and Bold Text in folder views",
+          "Gallery view for the library — grid of note preview cards",
+          "Decline oversized text files instead of hanging on open"
+        ]
+      },
+      "underTheHood": [
+        "feat(mobile): respect Dynamic Type text size and Bold Text in folder views",
+        "fix(mobile): dead sort/view menu picks + search island flying in from the corner",
+        "feat(mobile): iOS capture — modern readability crate + ad/tracker image filtering",
+        "fix(mobile): decline oversized text files instead of hanging on open",
+        "feat(mobile): gallery view for the library — grid of note preview cards",
+        "feat(mobile): Files-style \"...\" view-options menu replaces the standalone sort control",
+        "feat(mobile): swipe-delete with Notes-style floating actions and full-swipe commit"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.28",
+      "date": "2026-08-11",
+      "previousVersion": "0.48.0-alpha.27",
+      "sections": {},
+      "underTheHood": [
+        "fix(mobile): the breadcrumb island REPLACES the in-content title; sort gets a labeled menu",
+        "feat(mobile): sort toggle — alphabetical or modified-newest listing order",
+        "feat(mobile): breadcrumb island — current folder on a top-center glass capsule",
+        "feat(mobile): WebContent-process crash recovery + local-only JS diagnostics",
+        "fix(mobile): stop the pending-note load from tricking the theme effect into a stray render",
+        "fix(mobile): halve the folder-view row padding — the gap between items read too large",
+        "feat(mobile): never create empty notes — the file exists only once there is content",
+        "feat(mobile): Files-style modified date beneath library row names",
+        "feat(mobile): verified telemetry-free iOS binary — the \"Data Not Collected\" basis",
+        "fix(mobile): stop the cold-start white flash — theme the webview canvas before first paint",
+        "feat(mobile): create + edit notes — native + island, instant Untitled, raw-markdown editor, title becomes filename",
+        "feat(mobile): allowlisted write surface — three note-editing commands behind the grant"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.27",
+      "date": "2026-08-11",
+      "previousVersion": "0.48.0-alpha.26",
+      "sections": {
+        "features": [
+          "Swipe a folder-view row to reveal a Share action"
+        ]
+      },
+      "underTheHood": [
+        "feat(mobile): swipe a folder-view row to reveal a Share action"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.26",
+      "date": "2026-08-11",
+      "previousVersion": "0.48.0-alpha.25",
+      "sections": {
+        "features": [
+          "Replace manual refresh button with native pull-to-refresh"
+        ]
+      },
+      "underTheHood": [
+        "feat(mobile): replace manual refresh button with native pull-to-refresh (#622)",
+        "feat(mobile): rich web capture — article extraction + compose-page share sheet"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.25",
+      "date": "2026-08-10",
+      "previousVersion": "0.48.0-alpha.24",
+      "sections": {
+        "features": [
+          "Refresh-spin state on the native chrome button",
+          "Stop Reader's innerHTML reset from wiping find-in-document marks"
+        ]
+      },
+      "underTheHood": [
+        "fix(mobile): stop Reader's innerHTML reset from wiping find-in-document marks (#608)",
+        "feat(mobile): refresh-spin state on the native chrome button (#607)",
+        "feat(mobile): capture shared documents — Notesage in the share sheet for PDFs",
+        "fix(mobile): find-in-document round — deterministic scroll, healing, hidden content",
+        "fix(mobile): native search matches Apple Notes anatomy",
+        "feat(mobile): native search island — glass capsule, field, and match nav",
+        "docs(mobile): ADR 0009 — iOS chrome is native SwiftUI over the webview",
+        "feat(mobile): native Liquid Glass chrome — real SwiftUI buttons over the webview",
+        "feat(mobile): Liquid Glass press feedback + motion for the web chrome"
+      ]
+    },
+    {
+      "version": "0.48.0-alpha.24",
+      "date": "2026-08-10",
+      "previousVersion": "0.48.0-alpha.23",
+      "sections": {},
+      "underTheHood": [
+        "fix(mobile): code-review round — load races, share lifecycle, injection safety",
+        "feat(mobile): keyboard-aware islands, PDF island chrome, HTML search, share",
+        "fix(mobile): islands are chrome, not page — portal, fixed, zoom-proofed",
+        "fix(mobile): keep chrome islands anchored when the keyboard appears",
+        "feat(mobile): search islands + platform island metrics and glass",
+        "feat(mobile): corner button islands — Apple Notes / Files chrome (#581 round 2)",
+        "docs(mobile): mark bottom-navigation task done",
+        "perf(mobile): raw IPC bytes for binary reads — big-PDF spinner freeze, part 2",
+        "feat(mobile): iOS-style floating bottom navigation (#581)",
+        "docs(mobile): add bottom-navigation adoption (issue #581) to the MVP tasks",
+        "test(mobile): lock the review findings",
+        "chore(mobile): drop dead surface and fix doc drift",
+        "fix(mobile): HIG touch targets, spinning refresh, JS hidden filter",
+        "fix(mobile): link handling, theme-flip re-reads, mermaid doc leak",
+        "fix(mobile): friendly picker cancel, hidden entries excluded, stale headers",
+        "docs(mobile): PRD + tasks for the App Store launch MVP",
+        "docs(mobile): mark the remaining v1 tasks done in the ledger",
+        "docs(mobile): bring the feature description up to shipped reality",
+        "fix(mobile): re-render markdown when the theme flips",
+        "fix(mobile): mermaid via sandboxed iframe — WebKit refuses foreignObject in SVG images",
+        "fix(mobile): serve mermaid SVGs from the htmlpreview scheme — data: images break on device",
+        "fix(mobile): survive the embedded build's CSP — htmlpreview scheme, img-based mermaid, themed code blocks",
+        "feat(mobile): render mermaid diagrams in the reader",
+        "test(mobile): follow the HTML iframe to the data: URL contract",
+        "fix(mobile): render HTML reports from a data: URL — blob: is blank on device",
+        "fix(mobile): real app icon on iOS — edge-bled full-bleed set from the master",
+        "chore(mobile): sync extension version keys with the app; doc the plugin/script layout",
+        "feat(mobile): wire the Share Extension with a script, not Xcode clicks",
+        "fix(mobile): key the PDF byte-cache cleanup on the path, not state identity",
+        "perf(mobile): base64 binary reads — 10 MB PDF from ~10 s frozen to ~0.5 s",
+        "build(ios): set the ADDABLE AB development team for device signing",
+        "fix(mobile): stop comrak's pretty-printed newlines rendering as line breaks",
+        "fix(mobile): single typography system, and stop shipping stale frontends",
+        "fix(mobile): reader was using desktop-sized margins on a phone",
+        "fix(mobile): drop 100vh from the shell root",
+        "fix(mobile): name the action after what it does, and stop silent cancels",
+        "ci(mobile): stop grep -q from SIGPIPE-ing the symbol check",
+        "feat(mobile): port library access onto the plugin crate — the bridge is live",
+        "feat(mobile): iOS native bridge as a plugin crate — the Swift now links",
+        "ci(mobile): tolerate nm's exit code when verifying the capture C ABI",
+        "build(mobile): integrate the iOS native sources into the Xcode project",
+        "fix(mobile): drop whisper.cpp from the iOS build — the app now launches",
+        "fix(mobile): make the Rust crate actually compile for iOS",
+        "ci(mobile): type-check the iOS Swift and build the capture staticlib",
+        "feat(mobile): render HTML reports, share the desktop renderer, one capture format",
+        "docs(mobile): note the missing iOS CI build path as a follow-up",
+        "feat(mobile): stage more iOS native layer (plugin bridge, entitlements, plists)",
+        "docs(mobile): update PRD + tasks status (in-app PDF, per-task ledger)",
+        "feat(mobile): render PDFs in-app via the desktop PdfViewer",
+        "feat(mobile): scaffold iOS reader + share-capture app"
+      ]
+    }
+  ]
+}

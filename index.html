@@ -3,13 +3,31 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, viewport-fit=cover"
+    />
     <title>Tauri + React + Typescript</title>
     <style>
-      /* Immediate background color before any JS/CSS loads — prevents white flash.
-         Uses prefers-color-scheme as a best-effort match for the app theme.
-         Colors match oklch values in globals.css: dark oklch(18% 0 0), light oklch(100% 0 0). */
-      html, body { background-color: #fff; }
+      /* Pre-paint background (#675).
+
+         MEASURED, not assumed: with a plain `html,body{background:#fff}`
+         default plus a dark media query, WebKit painted the WHITE default
+         for ~3 frames before the media query resolved — the severe launch
+         flash on a dark device. Recoloring that default made the flash
+         follow it exactly, which is how the source was identified.
+
+         So the default is TRANSPARENT: until the media query resolves, the
+         native layer shows through, and that layer is UIColor.systemBackground
+         (set on the webview and its whole superview chain in
+         NotesageIosPlugin.load) — already the right colour in BOTH themes,
+         because it is a dynamic system colour. Each theme then paints its
+         own colour explicitly. Colours match globals.css: light
+         oklch(100% 0 0), dark oklch(18% 0 0). */
+      html, body { background-color: transparent; }
+      @media (prefers-color-scheme: light) {
+        html, body { background-color: #fff; }
+      }
       @media (prefers-color-scheme: dark) {
         html, body { background-color: #121211; }
       }

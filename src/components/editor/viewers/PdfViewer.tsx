@@ -12,21 +12,68 @@ import { Button } from "@/components/ui/button";
 import { getBinaryData } from "@/lib/binary-cache";
 import { FindBar } from "@/components/editor/FindBar";
 import { ViewerToolbarPill } from "./ViewerToolbarPill";
+import { SearchIsland } from "@/components/mobile/Chrome";
 import { usePdfStore } from "@/stores/pdf-store";
 import { registerZoomController } from "@/hooks/useEditorZoom";
 import { cn } from "@/lib/utils";
+import "@/lib/readablestream-asynciterator-polyfill"; // WebKit lacks ReadableStream async iteration; pdf.js getTextContent needs it
 import * as pdfjsLib from "pdfjs-dist";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
 
-// Configure pdf.js worker
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url,
-).toString();
+// Configure pdf.js worker. In embedded builds the app is served from Tauri's
+// custom URI scheme, and WKWebView refuses to spawn a Worker from a
+// custom-scheme URL — pdf.js then silently falls back to its main-thread
+// "fake worker", which freezes the whole UI (spinner included) for the entire
+// parse of a large document. Fetching the bundled worker script and handing
+// pdf.js a blob: URL sidesteps the scheme restriction (`worker-src blob:` is
+// already in the CSP). Falls back to the direct URL where fetch fails (dev
+// server, tests) — those contexts spawn workers from http(s) fine.
+const pdfWorkerUrl = new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url).toString();
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
+let workerBlobReady: Promise<void> | null = null;
+function ensureBlobWorker(): Promise<void> {
+  workerBlobReady ??= fetch(pdfWorkerUrl)
+    .then(async (res) => {
+      if (!res.ok) return;
+      const blob = await res.blob();
+      pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(
+        new Blob([blob], { type: "text/javascript" }),
+      );
+    })
+    .catch(() => {});
+  return workerBlobReady;
+}
 
 interface PdfViewerProps {
   filePath: string;
   fileName: string;
+  /**
+   * iOS island chrome instead of the desktop pill + FindBar (issue #581):
+   * search lives in the bottom-center SearchIsland (collapsed status = the
+   * page indicator, Files-style), zoom is fit-width, and the mobile Reader
+   * owns the back island. Nothing from the desktop toolbar renders.
+   */
+  mobileChrome?: boolean;
+  /** When the native chrome owns search, the CSS island is not rendered and
+   * the viewer is driven through `mobileFindRef` instead. */
+  nativeFind?: boolean;
+  /** Imperative find handle for the native search island (mobile). */
+  mobileFindRef?: React.MutableRefObject<PdfMobileFindHandle | null>;
+  /** Live find/page state for the native island's counter + status. */
+  onMobileFindState?: (s: PdfMobileFindState) => void;
+}
+
+export interface PdfMobileFindHandle {
+  setQuery: (q: string) => void;
+  next: () => void;
+  prev: () => void;
+}
+
+export interface PdfMobileFindState {
+  current: number;
+  total: number;
+  page: number;
+  pages: number;
 }
 
 const ZOOM_STEPS = [
@@ -273,7 +320,14 @@ function clearTextLayerHighlights(container: HTMLDivElement) {
   }
 }
 
-export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
+export function PdfViewer({
+  filePath,
+  fileName,
+  mobileChrome = false,
+  nativeFind = false,
+  mobileFindRef,
+  onMobileFindState,
+}: PdfViewerProps) {
   const viewerRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const canvasRefs = useRef<Map<number, HTMLCanvasElement>>(new Map());
@@ -318,7 +372,11 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
     }
 
     let cancelled = false;
-    const loadTask = pdfjsLib.getDocument({
+    let loadTask: ReturnType<typeof pdfjsLib.getDocument> | null = null;
+    const startLoad = async () => {
+    await ensureBlobWorker();
+    if (cancelled) return;
+    loadTask = pdfjsLib.getDocument({
       data: data.slice(),
       // Disable ReadableStream transport — WKWebView doesn't fully support it
       disableStream: true,
@@ -352,6 +410,8 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
         if (cancelled) return;
         setError(`Failed to load PDF: ${err.message}`);
       });
+    };
+    void startLoad();
 
     return () => {
       cancelled = true;
@@ -859,6 +919,40 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
     setFindBarOpen((open) => !open);
   }, []);
 
+  // Mobile island search: the SearchIsland is controlled (query in/out), the
+  // desktop FindBar owns its own input — so mobile keeps a query string here
+  // and debounces it into the shared handleSearch pipeline.
+  const [mobileQuery, setMobileQuery] = useState("");
+  useEffect(() => {
+    if (!mobileChrome) return;
+    const t = window.setTimeout(() => void handleSearch(mobileQuery), 200);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mobileChrome, mobileQuery]);
+
+  // Native-island bridge: the Reader drives search through this handle and
+  // mirrors our counter/page state into the native chrome spec.
+  useEffect(() => {
+    if (!mobileFindRef) return;
+    mobileFindRef.current = {
+      setQuery: (q: string) => setMobileQuery(q),
+      next: handleSearchNext,
+      prev: handleSearchPrev,
+    };
+    return () => {
+      mobileFindRef.current = null;
+    };
+  }, [mobileFindRef, handleSearchNext, handleSearchPrev]);
+  useEffect(() => {
+    onMobileFindState?.({
+      current: searchCurrentIndex,
+      total: displayMatchCount,
+      page: currentPage,
+      pages: totalPages,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchCurrentIndex, displayMatchCount, currentPage, totalPages]);
+
   // Compute placeholder dimensions for unrendered pages so scroll positions are correct
   // even before canvases render (critical for deterministic search navigation)
   const placeholderScale = pageBaseDims
@@ -889,6 +983,25 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
     >
       {/* Scrollable page area with floating pill toolbar + FindBar overlay */}
       <div className="flex-1 overflow-hidden relative">
+        {mobileChrome && !nativeFind && (
+          <SearchIsland
+            query={mobileQuery}
+            onQueryChange={setMobileQuery}
+            placeholder="Find in document"
+            status={totalPages > 0 ? `${currentPage} / ${totalPages}` : undefined}
+            matches={
+              mobileQuery && displayMatchCount > 0
+                ? {
+                    current: searchCurrentIndex + 1,
+                    total: displayMatchCount,
+                    onNext: handleSearchNext,
+                    onPrev: handleSearchPrev,
+                  }
+                : undefined
+            }
+          />
+        )}
+        {!mobileChrome && (
         <ViewerToolbarPill viewerId="pdf" scrollRef={scrollContainerRef}>
           <PillIconButton
             onClick={zoomOut}
@@ -949,6 +1062,8 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
             <Search className="h-3.5 w-3.5" strokeWidth={1.5} />
           </PillIconButton>
         </ViewerToolbarPill>
+        )}
+        {!mobileChrome && (
         <FindBar
           open={findBarOpen}
           onClose={handleFindClose}
@@ -961,9 +1076,21 @@ export function PdfViewer({ filePath, fileName }: PdfViewerProps) {
           replaceExpanded={false}
           onReplaceExpandedChange={() => {}}
         />
+        )}
         <div
           ref={scrollContainerRef}
-          className="h-full overflow-auto bg-muted/50 px-8 pb-8 pt-16"
+          className={cn(
+            "h-full overflow-auto bg-muted/50",
+            mobileChrome ? "px-2" : "px-8 pb-8 pt-16",
+          )}
+          style={
+            mobileChrome
+              ? {
+                  paddingTop: "calc(3.75rem + env(safe-area-inset-top))",
+                  paddingBottom: "calc(4.25rem + env(safe-area-inset-bottom))",
+                }
+              : undefined
+          }
         >
           <div className="flex flex-col items-center" style={{ gap: `${PAGE_GAP}px` }}>
             {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (

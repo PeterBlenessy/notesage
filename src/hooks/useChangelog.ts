@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
-import { useSettingsStore } from '@/stores/settings-store';
 
 export interface Release {
   version: string;
@@ -26,8 +25,6 @@ export interface Changelog {
 // `scripts/generate-changelog.ts` and the workflow upload step.
 const STABLE_CHANGELOG_URL =
   'https://github.com/PeterBlenessy/notesage/releases/latest/download/changelog.json';
-const ALPHA_CHANGELOG_URL =
-  'https://github.com/PeterBlenessy/notesage/releases/latest-alpha/download/changelog-alpha.json';
 
 /**
  * SemVer comparator (ASCENDING — standard).
@@ -91,17 +88,15 @@ function splitSemver(v: string): [[number, number, number], string | null] {
 export function useChangelog() {
   const [changelog, setChangelog] = useState<Changelog | null>(null);
   const [loading, setLoading] = useState(false);
-  const releaseChannel = useSettingsStore((s) => s.releaseChannel);
-  const fetchedRef = useRef<string | null>(null);
+  const fetchedRef = useRef(false);
 
   useEffect(() => {
-    // Re-fetch when the user toggles channels — different feed, different content.
-    if (fetchedRef.current === releaseChannel) return;
-    fetchedRef.current = releaseChannel;
+    // One stream, one feed (PRD 2026-08-15-single-binary-feature-flags).
+    if (fetchedRef.current) return;
+    fetchedRef.current = true;
 
-    const isAlpha = releaseChannel === 'alpha';
-    const bundledUrl = isAlpha ? '/changelog-alpha.json' : '/changelog.json';
-    const remoteUrl = isAlpha ? ALPHA_CHANGELOG_URL : STABLE_CHANGELOG_URL;
+    const bundledUrl = '/changelog.json';
+    const remoteUrl = STABLE_CHANGELOG_URL;
 
     let cancelled = false;
 
@@ -140,7 +135,7 @@ export function useChangelog() {
     return () => {
       cancelled = true;
     };
-  }, [releaseChannel]);
+  }, []);
 
   const getChangesBetween = useCallback(
     (fromVersion: string, toVersion: string): Release[] => {

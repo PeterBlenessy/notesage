@@ -1,0 +1,976 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { ChevronLeft, FolderOpen, AlertCircle, Plus, FolderPlus, ArrowDownAZ, Clock, LayoutGrid, List } from "lucide-react";
+import type { FileEntry } from "@/lib/tauri";
+import { iosListDirectory, iosCreateDirectory, iosTextPrompt, iosQuickLook } from "@/lib/ios-api";
+import { toast } from "sonner";
+import { useMobileStore } from "@/stores/mobile-store";
+import type { EntryActionContext } from "@/lib/mobile-entry-actions";
+import { FileRow, classifyFile } from "./FileRow";
+import { GalleryView } from "./GalleryView";
+import { InboxCard } from "./InboxCard";
+import { Button } from "@/components/ui/button";
+import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
+import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
+
+/** The share extension's landing folder. A literal by contract: the Rust
+ *  capture crate writes to `Inbox/` and the desktop reads it there. */
+const INBOX_NAME = "Inbox";
+
+type LoadState =
+  | { status: "loading" }
+  | { status: "error"; message: string }
+  | { status: "ready"; entries: FileEntry[] };
+
+/**
+ * Mobile library browser — push-navigation list over the granted folder
+ * (PRD task #13). Folders push a level; files open the reader.
+ */
+export function LibraryBrowser() {
+  const libraryName = useMobileStore((s) => s.libraryName);
+  const folderStack = useMobileStore((s) => s.folderStack);
+  const enterFolder = useMobileStore((s) => s.enterFolder);
+  const jumpToFolder = useMobileStore((s) => s.jumpToFolder);
+  const openDocument = useMobileStore((s) => s.openDocument);
+  const goBack = useMobileStore((s) => s.goBack);
+  const goToDepth = useMobileStore((s) => s.goToDepth);
+  const pickFolder = useMobileStore((s) => s.pickFolder);
+  const sortMode = useMobileStore((s) => s.sortMode);
+  const setSortMode = useMobileStore((s) => s.setSortMode);
+  const groupMode = useMobileStore((s) => s.groupMode);
+  const setGroupMode = useMobileStore((s) => s.setGroupMode);
+  const recentlyRead = useMobileStore((s) => s.recentlyRead);
+  const pinnedPaths = useMobileStore((s) => s.pinnedPaths);
+  const togglePin = useMobileStore((s) => s.togglePin);
+  const loadPinnedPaths = useMobileStore((s) => s.loadPinnedPaths);
+  const viewMode = useMobileStore((s) => s.viewMode);
+  const setViewMode = useMobileStore((s) => s.setViewMode);
+  const a11y = useA11yPrefs();
+  // Re-render on a language change so every t() below re-evaluates.
+  useLocale();
+
+  const currentRelPath = folderStack.length === 0 ? "" : folderStack[folderStack.length - 1].relPath;
+  const currentName = folderStack.length === 0 ? libraryName || "Notesage" : folderStack[folderStack.length - 1].name;
+
+  const [state, setState] = useState<LoadState>({ status: "loading" });
+  const [query, setQuery] = useState("");
+
+  // Generation counter: rapid folder navigation can resolve listings out of
+  // order — a superseded load must not put a stale listing under the new
+  // breadcrumb (same idiom as the Reader's loader).
+  const loadIdRef = useRef(0);
+  const load = useCallback(async (viaRefresh = false) => {
+    const loadId = ++loadIdRef.current;
+    // A refresh (pull gesture or the bridge event it dispatches) keeps the
+    // current listing on screen instead of flashing back to the skeleton —
+    // the native UIRefreshControl already shows its own spinner for the
+    // duration, so there is no busy state to track here.
+    if (!viaRefresh) setState({ status: "loading" });
+    try {
+      const entries = await iosListDirectory(currentRelPath);
+      if (loadIdRef.current !== loadId) return;
+      // Hidden entries (dotfiles, `.notesage/`, `.git/`) are excluded outright
+      // — mirroring the desktop's default — as defense-in-depth on top of the
+      // native layer's own filter: internal machinery and comment sidecars
+      // must not be one tap away in the browser.
+      const visible = entries.filter((e) => !e.hidden && !e.name.startsWith("."));
+      setState({ status: "ready", entries: visible });
+    } catch (err) {
+      if (loadIdRef.current !== loadId) return;
+      setState({ status: "error", message: String(err) });
+    }
+  }, [currentRelPath]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  // Pins live in `<library>/.notesage/pins.json`, written through by the
+  // desktop (#652). Read once on mount — mobile is a read-only consumer.
+  useEffect(() => {
+    void loadPinnedPaths();
+  }, [loadPinnedPaths]);
+
+  // Refresh when the app returns to the foreground (#650): a share-extension
+  // save happens while the app is backgrounded, so the open folder (Inbox)
+  // was stale until re-entered. visibilitychange fires on every return.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void load(true);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [load]);
+
+  // Web pull-to-refresh (#650). The native UIRefreshControl hung off the
+  // WEBVIEW's scroll view — but the listing scrolls in this inner div, so
+  // that gesture could never fire (removed). This tracks the pull on the
+  // real scroller: drag down from the top past the threshold to reload.
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // Restore the folder's scroll position once its rows exist (#680 follow-up:
+  // opening a document unmounts this browser, so the DOM offset is gone by
+  // the time we come back). Guarded by a ref so a later refresh — pull, or
+  // the foreground reload — never yanks the user back up.
+  const restoredFor = useRef<string | null>(null);
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el || state.status !== "ready" || state.entries.length === 0) return;
+    if (restoredFor.current === currentRelPath) return;
+    restoredFor.current = currentRelPath;
+    const offset = useMobileStore.getState().scrollOffsets[currentRelPath] ?? 0;
+    if (offset > 0) el.scrollTop = offset;
+  }, [state, currentRelPath]);
+
+  // Record the offset as it changes, cheaply: rAF-coalesced, and written to
+  // the store rather than React state so scrolling never re-renders the list.
+  const scrollTick = useRef(0);
+  const onScroll = () => {
+    if (scrollTick.current) return;
+    scrollTick.current = requestAnimationFrame(() => {
+      scrollTick.current = 0;
+      const el = scrollerRef.current;
+      if (el) useMobileStore.getState().rememberScroll(currentRelPath, el.scrollTop);
+    });
+  };
+  useEffect(() => () => cancelAnimationFrame(scrollTick.current), []);
+  const pullStart = useRef<number | null>(null);
+  const [pullPx, setPullPx] = useState(0);
+  const [pullBusy, setPullBusy] = useState(false);
+  const PULL_TRIGGER = 64;
+  const onPullStart = (e: React.TouchEvent) => {
+    const el = scrollerRef.current;
+    pullStart.current = el && el.scrollTop <= 0 ? e.touches[0].clientY : null;
+  };
+  const onPullMove = (e: React.TouchEvent) => {
+    const el = scrollerRef.current;
+    if (pullStart.current === null || !el || el.scrollTop > 0 || pullBusy) return;
+    const delta = e.touches[0].clientY - pullStart.current;
+    // Rubber-band factor so the indicator trails the finger like UIKit.
+    setPullPx(delta > 0 ? Math.min(90, delta * 0.45) : 0);
+  };
+  const onPullEnd = () => {
+    pullStart.current = null;
+    if (pullPx >= PULL_TRIGGER && !pullBusy) {
+      setPullBusy(true);
+      // A floor keeps the spinner visible long enough to read as an action
+      // even when the listing returns instantly.
+      const floor = new Promise((r) => setTimeout(r, 500));
+      void Promise.all([load(true), floor]).finally(() => setPullBusy(false));
+    }
+    setPullPx(0);
+  };
+
+  // Sorting happens at render time (#632) so a mode toggle re-orders the
+  // listing instantly with no reload. Alphabetical mirrors the desktop
+  // (folders first); modified is newest-first with folders and files
+  // interleaved, matching the Files app.
+  const sortEntries = (entries: FileEntry[]): FileEntry[] => {
+    const copy = [...entries];
+    if (sortMode === "modified") {
+      return copy.sort((a, b) => (b.modified ?? 0) - (a.modified ?? 0));
+    }
+    return copy.sort((a, b) => {
+      if (a.is_directory !== b.is_directory) return a.is_directory ? -1 : 1;
+      return a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+    });
+  };
+
+  // List ↔ gallery view (#633) lives in the "..." view-options menu beside
+  // the sort picks (Peter's Files-app design supersedes the standalone
+  // toggle the gallery branch shipped). Global preference, not per-folder.
+  const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+
+  /** Split the (already sorted) entries into labeled sections (#652).
+   *  `recent` lifts anything in the app's recently-read list to the top;
+   *  `date` buckets by modified date the way Notes does. Folders always
+   *  stay in their own leading section — grouping files under date headers
+   *  while folders float loose reads as a bug. */
+  const groupEntries = (
+    entries: FileEntry[],
+  ): Array<{ key: string; title: string | null; items: FileEntry[] }> => {
+    if (groupMode === "none") return [{ key: "all", title: null, items: entries }];
+    const folders = entries.filter((e) => e.is_directory);
+    const files = entries.filter((e) => !e.is_directory);
+    const sections: Array<{ key: string; title: string | null; items: FileEntry[] }> = [];
+
+    if (groupMode === "pinned") {
+      // Pinned FOLDERS belong in the Pinned section too. Previously folders
+      // were hoisted into their own leading section before this ran, so
+      // pinning a folder wrote to pins.json and then changed nothing on
+      // screen — it read as "folders can't be pinned" (Peter, 2026-08-14).
+      // The desktop's `pinFile` is path-agnostic, so a folder pin survives
+      // the shared file in both directions.
+      const pinned = new Set(pinnedPaths);
+      const inPinned = entries.filter((e) => pinned.has(e.path));
+      const restFolders = folders.filter((e) => !pinned.has(e.path));
+      const restFiles = files.filter((e) => !pinned.has(e.path));
+      if (inPinned.length > 0) sections.push({ key: "pinned", title: t("section.pinned"), items: inPinned });
+      if (restFolders.length > 0)
+        sections.push({ key: "folders", title: t("section.folders"), items: restFolders });
+      if (restFiles.length > 0) sections.push({ key: "other", title: t("section.allNotes"), items: restFiles });
+      return sections;
+    }
+
+    // Every other mode keeps folders in their own leading section — grouping
+    // files under date headers while folders float loose reads as a bug.
+    if (folders.length > 0) sections.push({ key: "folders", title: t("section.folders"), items: folders });
+
+    if (groupMode === "recent") {
+      const recent = new Set(recentlyRead);
+      const inRecent = files.filter((e) => recent.has(e.path));
+      const rest = files.filter((e) => !recent.has(e.path));
+      if (inRecent.length > 0) sections.push({ key: "recent", title: t("section.recent"), items: inRecent });
+      if (rest.length > 0) sections.push({ key: "other", title: t("section.allNotes"), items: rest });
+      return sections;
+    }
+
+    if (groupMode === "type") {
+      // One section per kind, in a fixed reading order so the listing does
+      // not reshuffle as a folder's mix changes. `classifyFile`'s kinds are
+      // the source of truth; empty sections are dropped below.
+      const order: Array<[ReturnType<typeof classifyFile>, string]> = [
+        ["markdown", "Notes"],
+        ["text", "Text & Code"],
+        ["pdf", "PDFs"],
+        ["image", "Images"],
+        ["media", "Audio & Video"],
+        ["doc", "Documents"],
+        ["html", "Web Pages"],
+        ["other", "Other"],
+      ];
+      const byKind = new Map<string, FileEntry[]>();
+      for (const file of files) {
+        const kind = classifyFile(file.name);
+        const list = byKind.get(kind);
+        if (list) list.push(file);
+        else byKind.set(kind, [file]);
+      }
+      for (const [kind, title] of order) {
+        const items = byKind.get(kind);
+        if (items && items.length > 0) sections.push({ key: kind, title, items });
+      }
+      return sections;
+    }
+
+    // Date buckets, newest first — undated entries sink to "Older".
+    const now = new Date();
+    // "Recently changed" for the last week, then one section per month
+    // (#684). Coarser than the old Today / Yesterday / Previous 7 Days, and
+    // deliberately so: the rows no longer carry a date line, so the header is
+    // now the ONLY place the date shows, and a header that changes every day
+    // fragments a folder into slivers. Months are stable and scannable.
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() / 1000;
+    const weekAgo = startOfToday - 6 * 86400;
+    const recent: FileEntry[] = [];
+    const byMonth = new Map<string, { title: string; sortKey: number; items: FileEntry[] }>();
+    for (const file of files) {
+      const m = file.modified ?? 0;
+      if (m >= weekAgo) {
+        recent.push(file);
+        continue;
+      }
+      const d = new Date(m * 1000);
+      const key = `${d.getFullYear()}-${String(d.getMonth()).padStart(2, "0")}`;
+      let bucket = byMonth.get(key);
+      if (!bucket) {
+        bucket = {
+          // The year is dropped within the current year, as everywhere else
+          // in the app — "August" reads better than "August 2026" in 2026.
+          title: d.toLocaleDateString(undefined, {
+            month: "long",
+            year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",
+          }),
+          sortKey: -(d.getFullYear() * 12 + d.getMonth()),
+          items: [],
+        };
+        byMonth.set(key, bucket);
+      }
+      bucket.items.push(file);
+    }
+    const months = [...byMonth.entries()]
+      .sort((a, b) => a[1].sortKey - b[1].sortKey)
+      .map(([key, bucket]) => ({ key, title: bucket.title, items: bucket.items }));
+    return [
+      ...sections,
+      ...(recent.length > 0
+        ? [{ key: "recent-changed", title: t("section.recentlyChanged"), items: recent }]
+        : []),
+      ...months,
+    ];
+  };
+
+  const onActivate = (entry: FileEntry) => {
+    if (entry.is_directory) {
+      enterFolder({ relPath: entry.path, name: entry.name });
+      return;
+    }
+    const kind = classifyFile(entry.name);
+    if (kind === "media" || kind === "doc") {
+      // Native QuickLook: video/audio playback and DOCX/PPTX/EPUB rendering
+      // the web reader doesn't do. Presented OVER the browser — no
+      // navigation. Falls back to the Reader (its unsupported card) when the
+      // native layer is absent (desktop dev, tests).
+      void iosQuickLook(entry.path).catch(() =>
+        openDocument({ relPath: entry.path, name: entry.name }),
+      );
+      return;
+    }
+    openDocument({ relPath: entry.path, name: entry.name });
+  };
+
+  // --- Create flow (#586): "+" bottom-right. At the library root only
+  // folders may be created (notes live inside project folders — Peter's
+  // design), so the tap prompts for a folder name. Inside a folder the tap
+  // creates an untitled note IMMEDIATELY (Notes-style — no prompt; the
+  // note's title will become the filename once editing lands) and
+  // long-press offers New Folder via the native UIMenu.
+  const atRoot = folderStack.length === 0;
+
+  // One action set for both layouts (#680) — built here so the pin state and
+  // the listing reload are wired once rather than per row.
+  const actionContext: EntryActionContext = {
+    isPinned: (relPath) => pinnedPaths.includes(relPath),
+    togglePin,
+    onChanged: () => void load(true),
+  };
+
+  const promptName = useCallback(async (title: string): Promise<string | null> => {
+    try {
+      return await iosTextPrompt(title, t("action.name"), t("action.create"));
+    } catch {
+      // Web fallback (desktop dev, builds without the native layer). Plain,
+      // but it is only ever the fallback path.
+      return window.prompt(title) ?? null;
+    }
+  }, []);
+
+  // Slashes would read as nested paths on the Rust side; entered names are a
+  // single path segment by definition.
+  const cleanName = (raw: string) => raw.trim().replace(/\//g, "-");
+
+  const createNote = useCallback(() => {
+    // No prompt AND no file yet: the editor opens on an empty pending note,
+    // and the file is only created on save/back when the draft is non-empty
+    // (under its title-derived name directly). An accidental "+" tap backs
+    // out leaving no trace — Notes semantics.
+    const rel = currentRelPath ? `${currentRelPath}/Untitled.md` : "Untitled.md";
+    openDocument({ relPath: rel, name: "Untitled.md", isNew: true });
+  }, [currentRelPath, openDocument]);
+
+  const createFolder = useCallback(async () => {
+    const name = cleanName((await promptName(t("menu.newFolder"))) ?? "");
+    if (!name) return;
+    const rel = currentRelPath ? `${currentRelPath}/${name}` : name;
+    try {
+      const finalRel = await iosCreateDirectory(rel);
+      await load();
+      // Enter the new folder — creating one is almost always to put
+      // something in it.
+      enterFolder({ relPath: finalRel, name: finalRel.split("/").pop() ?? name });
+    } catch (err) {
+      toast.error(t("action.createFolderFailed", { error: String(err) }));
+    }
+  }, [currentRelPath, promptName, load, enterFolder]);
+
+  // Native Liquid Glass chrome when the build has it; the web islands below
+  // stay as the fallback (desktop dev, tests, older builds).
+  // Ancestors for the native back button's long-press UIMenu (Files
+  // pattern): root first, then every level above the current folder.
+  const ancestors = [
+    { relPath: "", name: libraryName || "Notesage" },
+    ...folderStack.slice(0, -1),
+  ];
+  const nativeChrome = useNativeChrome(
+    {
+      topLeft:
+        folderStack.length > 0
+          ? { id: "back", icon: "chevron.backward" }
+          : { id: "pick", icon: "folder" },
+      // Breadcrumb island (#615): current folder on a glass capsule between
+      // the corner buttons; tap opens the ancestor jump menu (root first).
+      // At the root it is a passive label carrying the library name. The
+      // ancestor menu that used to hide behind the back button's long-press
+      // moved here — a visible affordance beats a hidden gesture.
+      topCenter: {
+        title: currentName,
+        // The island REPLACES the in-content title + breadcrumb row (they
+        // only render on the web fallback) — the path rides as a compact
+        // second line.
+        subtitle:
+          folderStack.length > 0 ? ancestors.map((f) => f.name).join(" › ") : undefined,
+        // Ancestors (when nested) plus a PERMANENT Inbox jump: shared items
+        // land there, and hunting for the folder in a long root listing was
+        // the tedious part (Peter, 2026-08-13). Reachable from any depth.
+        menu: [
+          ...(folderStack.length > 0
+            ? ancestors.map((f, depth) => ({
+                id: `jump-${depth}`,
+                title: f.name,
+                icon: depth === 0 ? "house" : "folder",
+              }))
+            : []),
+          { id: "goto-inbox", title: INBOX_NAME, icon: "tray" },
+        ],
+      },
+      // Files-style "..." view-options menu (Peter's design): view mode on
+      // top (List / Gallery, #633), sort selection below its divider, room
+      // for advanced options as they arrive. (Tap-to-refresh left this slot
+      // in #620 — the `refresh` action below is fired by the native pull
+      // gesture, never a button.)
+      topRight: {
+        id: "view-options",
+        icon: "ellipsis",
+        menuOnTap: true,
+        menu: [
+          {
+            id: "view-list",
+            title: t("menu.list"),
+            icon: "list.bullet",
+            selected: viewMode === "list",
+          },
+          {
+            id: "view-gallery",
+            title: t("menu.gallery"),
+            icon: "square.grid.2x2",
+            selected: viewMode === "gallery",
+          },
+          {
+            id: "sort-name",
+            title: t("menu.sortName"),
+            icon: "textformat.abc",
+            selected: sortMode === "name",
+            sectionBreak: true,
+          },
+          {
+            id: "sort-modified",
+            title: t("menu.sortModified"),
+            icon: "clock",
+            selected: sortMode === "modified",
+          },
+          {
+            id: "group-none",
+            title: t("menu.groupNone"),
+            icon: "rectangle.grid.1x2",
+            selected: groupMode === "none",
+            sectionBreak: true,
+          },
+          {
+            id: "group-pinned",
+            title: t("menu.groupPinned"),
+            icon: "pin.fill",
+            selected: groupMode === "pinned",
+          },
+          {
+            id: "group-recent",
+            title: t("menu.groupRecent"),
+            icon: "clock.arrow.circlepath",
+            selected: groupMode === "recent",
+          },
+          {
+            id: "group-date",
+            title: t("menu.groupDate"),
+            icon: "calendar",
+            selected: groupMode === "date",
+          },
+          {
+            id: "group-type",
+            title: "Group by type",
+            icon: "doc.on.doc",
+            selected: groupMode === "type",
+          },
+        ],
+      },
+      bottomRight: atRoot
+        ? { id: "create-folder", icon: "plus" }
+        : {
+            // Tap = new note instantly (primaryAction); hold = UIMenu.
+            id: "create-note",
+            icon: "plus",
+            menu: [{ id: "create-folder", title: t("menu.newFolder"), icon: "folder.badge.plus" }],
+          },
+      search: {
+        placeholder: t("library.searchFolder"),
+        status:
+          state.status === "ready"
+            ? state.entries.length === 1
+              ? t("library.itemsOne")
+              : t("library.items", { count: state.entries.length })
+            : undefined,
+      },
+    },
+    {
+      back: () => void goBack(),
+      "view-list": () => setViewMode("list"),
+      "view-gallery": () => setViewMode("gallery"),
+      "sort-name": () => setSortMode("name"),
+      "sort-modified": () => setSortMode("modified"),
+      "group-none": () => setGroupMode("none"),
+      "group-pinned": () => setGroupMode("pinned"),
+      "group-recent": () => setGroupMode("recent"),
+      "group-date": () => setGroupMode("date"),
+      "group-type": () => setGroupMode("type"),
+      "goto-inbox": () => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME }),
+      "create-note": () => createNote(),
+      "create-folder": () => void createFolder(),
+      "search-query": (value?: string) => setQuery(value ?? ""),
+      "search-close": () => setQuery(""),
+      ...Object.fromEntries(
+        ancestors.map((_, depth) => [`jump-${depth}`, () => goToDepth(depth)]),
+      ),
+      pick: () => {
+        void pickFolder()
+          .then(() => void load())
+          .catch((err) => {
+            if (!String(err).includes("No folder was selected")) {
+              toast.error(t("library.changeFolderFailed", { error: String(err) }));
+            }
+          });
+      },
+      // Fired by the native pull-to-refresh gesture (WKWebView's
+      // UIRefreshControl), never by a button — the topRight island for tap
+      // refresh was removed (issue #620).
+      refresh: () => void load(true),
+    },
+  );
+
+  // Web-fallback create menu (native builds get a UIMenu instead), opened by
+  // long-pressing the "+" — same hold pattern as the back button's
+  // ancestor menu.
+  const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const createHoldTimer = useRef<number | null>(null);
+  const createSuppressClick = useRef(false);
+  const cancelCreateHold = () => {
+    if (createHoldTimer.current !== null) {
+      window.clearTimeout(createHoldTimer.current);
+      createHoldTimer.current = null;
+    }
+  };
+
+  // Long-press on Back opens the ancestor-jump menu (Files' pattern: hold
+  // the back control, get the path hierarchy). Timer-based: 450ms hold with
+  // the resulting click suppressed so releasing over the button doesn't ALSO
+  // navigate back one level.
+  const [ancestorMenuOpen, setAncestorMenuOpen] = useState(false);
+  const holdTimer = useRef<number | null>(null);
+  const suppressClick = useRef(false);
+  const cancelHold = () => {
+    if (holdTimer.current !== null) {
+      window.clearTimeout(holdTimer.current);
+      holdTimer.current = null;
+    }
+  };
+  // The ancestor-jump menu below is portaled to document.body, so it needs
+  // its own a11y CSS scope computed here (see the comment at its render site).
+  const menuA11yProps = a11yRootProps(a11y);
+
+  return (
+    <div className="relative h-full w-full bg-background" {...a11yRootProps(a11y)}>
+      {/* Full-height scroller — content flows edge to edge and passes UNDER
+          the translucent top/bottom chrome (Apple Notes / Quiet Composer
+          pattern, issue #581). The large title lives IN the content, so it
+          scrolls away like Notes' does. */}
+      <div
+        key={currentRelPath}
+        ref={scrollerRef}
+        onScroll={onScroll}
+        onTouchStart={onPullStart}
+        onTouchMove={onPullMove}
+        onTouchEnd={onPullEnd}
+        onTouchCancel={onPullEnd}
+        className="view-enter absolute inset-0 overflow-y-auto"
+        style={{
+          ...CONTENT_INSETS,
+          overscrollBehaviorY: "contain",
+          transform:
+            pullPx > 0 ? `translateY(${pullPx}px)` : pullBusy ? "translateY(48px)" : undefined,
+          transition: pullPx > 0 ? "none" : "transform 260ms cubic-bezier(0.25, 0.8, 0.35, 1)",
+        }}
+      >
+        {/* Pull-to-refresh indicator: rides above the content, revealed by
+            the pull translate; spins while the reload runs. */}
+        <div
+          aria-hidden={!pullBusy && pullPx === 0}
+          className="pointer-events-none absolute -top-12 left-0 right-0 flex h-12 items-center justify-center"
+        >
+          <div
+            className={
+              pullBusy
+                ? "h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground"
+                : "h-5 w-5 rounded-full border-2 border-muted border-t-foreground"
+            }
+            style={
+              pullBusy
+                ? undefined
+                : { opacity: Math.min(1, pullPx / 64), transform: `rotate(${pullPx * 3.2}deg)` }
+            }
+          />
+        </div>
+        {/* The large in-content title + breadcrumb row exist ONLY on the web
+            fallback: with native chrome the breadcrumb ISLAND carries both
+            the folder name and the path (Peter's #615 design — the island
+            replaces them, it does not duplicate them). */}
+        {!nativeChrome && (
+        <div className="px-4 pb-1 pt-2">
+          <h1 className="truncate text-[length:calc(1.5rem*var(--ns-a11y-scale,1))] font-bold text-foreground">
+            {currentName}
+          </h1>
+          {folderStack.length > 0 && (
+            <nav
+              className="mt-0.5 flex items-center gap-1 overflow-x-auto text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground"
+              style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
+            >
+              <button type="button" className="ios-press-row shrink-0 rounded px-1 hover:text-foreground" onClick={() => goToDepth(0)}>
+                {libraryName || "Notesage"}
+              </button>
+              {folderStack.map((f, i) => (
+                <span key={f.relPath} className="flex shrink-0 items-center gap-1">
+                  <span>/</span>
+                  <button
+                    type="button"
+                    className={
+                      i === folderStack.length - 1
+                        ? "ios-press-row rounded px-1 text-foreground"
+                        : "ios-press-row rounded px-1 hover:text-foreground"
+                    }
+                    onClick={() => goToDepth(i + 1)}
+                  >
+                    {f.name}
+                  </button>
+                </span>
+              ))}
+            </nav>
+          )}
+        </div>
+        )}
+
+        {state.status === "loading" && <BrowserSkeleton />}
+        {state.status === "error" && <BrowserError message={state.message} onRetry={() => void load()} />}
+        {state.status === "ready" &&
+          (() => {
+            const visible = sortEntries(
+              query
+                ? state.entries.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()))
+                : state.entries,
+            );
+            // The Inbox card sits above whatever the listing shows, so no
+            // sort or grouping choice can move it — and it is excluded from
+            // the list below so the folder is not offered twice.
+            const inboxEntry =
+              folderStack.length === 0 && !query
+                ? state.entries.find((e) => e.is_directory && e.name === INBOX_NAME)
+                : undefined;
+            const inboxCard = inboxEntry ? (
+              // The count rides along on the listing (#684) — no extra read.
+              <InboxCard
+                count={inboxEntry.child_count}
+                onOpen={() => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME })}
+              />
+            ) : null;
+            const listed = inboxCard
+              ? visible.filter((e) => !(e.is_directory && e.name === INBOX_NAME))
+              : visible;
+            if (state.entries.length === 0) return <EmptyFolder />;
+            if (visible.length === 0)
+              return (
+                <p
+                  className="px-4 py-10 text-center text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-muted-foreground"
+                  style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
+                >
+                  {t("library.noMatches", { query })}
+                </p>
+              );
+            if (viewMode === "gallery") {
+              return (
+                <>
+                  {inboxCard}
+                <GalleryView
+                  entries={listed}
+                  currentFolderName={currentName}
+                  theme={theme}
+                  onActivate={onActivate}
+                  actionContext={actionContext}
+                />
+                </>
+              );
+            }
+            // Grouped rendering (#652): one <ul> per section with a sticky
+            // header. Ungrouped is a single untitled section, so the row
+            // markup below has exactly one shape.
+            return (
+              <>
+                {inboxCard}
+                {groupEntries(listed).map((section) => (
+                  <section key={section.key}>
+                    {section.title && (
+                      <h2 className="sticky top-0 z-10 bg-background/85 px-4 py-1.5 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
+                        {section.title}
+                      </h2>
+                    )}
+                    <ul>
+                      {section.items.map((entry) => (
+                        <li key={entry.path}>
+                          <FileRow
+                            entry={entry}
+                            onActivate={onActivate}
+                            onChanged={() => void load(true)}
+                            actionContext={actionContext}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </>
+            );
+          })()}
+      </div>
+
+      {/* Button islands (iOS 26 / Notes layout): nav top-left, actions
+          top-right, passive status bottom-center. */}
+      {!nativeChrome && (
+        <Island corner="top-right">
+          <ChromeButton
+            label={viewMode === "gallery" ? "Switch to list view" : "Switch to gallery view"}
+            onClick={() => setViewMode(viewMode === "gallery" ? "list" : "gallery")}
+          >
+            {viewMode === "gallery" ? (
+              <List strokeWidth={1.5} className="h-4 w-4" />
+            ) : (
+              <LayoutGrid strokeWidth={1.5} className="h-4 w-4" />
+            )}
+          </ChromeButton>
+          <ChromeButton
+            label={sortMode === "name" ? "Sort by modified date" : "Sort by name"}
+            onClick={() => setSortMode(sortMode === "name" ? "modified" : "name")}
+          >
+            {sortMode === "name" ? (
+              <ArrowDownAZ strokeWidth={1.5} className="h-4 w-4" />
+            ) : (
+              <Clock strokeWidth={1.5} className="h-4 w-4" />
+            )}
+          </ChromeButton>
+        </Island>
+      )}
+      {!nativeChrome && (
+      <Island corner="top-left" className={ancestorMenuOpen ? "invisible" : undefined}>
+        {folderStack.length > 0 ? (
+          <div
+            onPointerDown={() => {
+              cancelHold();
+              holdTimer.current = window.setTimeout(() => {
+                suppressClick.current = true;
+                setAncestorMenuOpen(true);
+              }, 450);
+            }}
+            onPointerUp={cancelHold}
+            onPointerCancel={cancelHold}
+            onPointerLeave={cancelHold}
+            onClickCapture={(e) => {
+              if (suppressClick.current) {
+                suppressClick.current = false;
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
+          >
+            <ChromeButton label="Back" onClick={() => goBack()}>
+              <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
+            </ChromeButton>
+          </div>
+        ) : (
+          <ChromeButton
+            label={t("library.changeFolder")}
+            onClick={() => {
+              // The explicit reload IS needed: at the root, currentRelPath
+              // stays "" after a re-pick, so the load effect never refires on
+              // its own. The generation guard de-races it.
+              void pickFolder()
+                .then(() => void load())
+                .catch((err) => {
+                  // Dismissing the picker is a normal outcome, not an error.
+                  if (!String(err).includes("No folder was selected")) {
+                    toast.error(t("library.changeFolderFailed", { error: String(err) }));
+                  }
+                });
+            }}
+          >
+            <FolderOpen strokeWidth={1.5} className="h-5 w-5" />
+          </ChromeButton>
+        )}
+      </Island>
+      )}
+      {!nativeChrome && (
+        <Island corner="bottom-right">
+          <div
+            onPointerDown={() => {
+              if (atRoot) return;
+              cancelCreateHold();
+              createHoldTimer.current = window.setTimeout(() => {
+                createSuppressClick.current = true;
+                setCreateMenuOpen(true);
+              }, 450);
+            }}
+            onPointerUp={cancelCreateHold}
+            onPointerCancel={cancelCreateHold}
+            onPointerLeave={cancelCreateHold}
+            onClickCapture={(e) => {
+              if (createSuppressClick.current) {
+                createSuppressClick.current = false;
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
+          >
+            <ChromeButton
+              label={atRoot ? t("action.newFolderShort") : t("action.newNote")}
+              onClick={() => (atRoot ? void createFolder() : createNote())}
+            >
+              <Plus strokeWidth={1.5} className="h-5 w-5" />
+            </ChromeButton>
+          </div>
+        </Island>
+      )}
+      {createMenuOpen &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              aria-hidden
+              onClick={() => setCreateMenuOpen(false)}
+            />
+            <div
+              role="menu"
+              aria-label="Create"
+              className="island-glass morph-from-button fixed right-3 z-50 min-w-44 rounded-2xl py-1"
+              style={{ bottom: "max(4.25rem, calc(3.5rem + env(safe-area-inset-bottom)))" }}
+            >
+              <button
+                type="button"
+                role="menuitem"
+                className="ios-press-row flex w-full items-center gap-2.5 px-4 py-2.5 text-left text-sm text-foreground"
+                onClick={() => {
+                  setCreateMenuOpen(false);
+                  void createFolder();
+                }}
+              >
+                <FolderPlus strokeWidth={1.5} className="h-4 w-4 text-muted-foreground" />
+                New Folder
+              </button>
+            </div>
+          </>,
+          document.body,
+        )}
+      {ancestorMenuOpen &&
+        createPortal(
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              aria-hidden
+              onClick={() => setAncestorMenuOpen(false)}
+            />
+            {/* Portaled to document.body — outside the root div's DOM subtree
+                above, so the a11y CSS custom properties set there don't
+                inherit here. Re-apply them on this menu's own root the same
+                way Chrome.tsx's Island does for its portaled content. */}
+            <div
+              role="menu"
+              aria-label="Jump to folder"
+              className="island-glass morph-from-button fixed left-3 z-50 min-w-44 rounded-2xl py-1"
+              data-a11y-scale={menuA11yProps["data-a11y-scale"]}
+              data-a11y-bold={menuA11yProps["data-a11y-bold"]}
+              style={{ ...menuA11yProps.style, top: "max(0.5rem, env(safe-area-inset-top))" }}
+            >
+              {[{ relPath: "", name: libraryName || "Notesage" }, ...folderStack.slice(0, -1)].map(
+                (f, depth) => (
+                  <button
+                    key={f.relPath || "__root"}
+                    type="button"
+                    role="menuitem"
+                    className="ios-press-row block w-full px-4 py-2.5 text-left text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground"
+                    style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
+                    onClick={() => {
+                      setAncestorMenuOpen(false);
+                      goToDepth(depth);
+                    }}
+                  >
+                    {f.name}
+                  </button>
+                ),
+              )}
+            </div>
+          </>,
+          document.body,
+        )}
+      {!nativeChrome && state.status === "ready" && (
+        <SearchIsland
+          query={query}
+          onQueryChange={setQuery}
+          placeholder={t("library.searchFolder")}
+          status={
+            state.entries.length === 1
+              ? t("library.itemsOne")
+              : t("library.items", { count: state.entries.length })
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+function BrowserSkeleton() {
+  return (
+    <ul className="animate-pulse" aria-hidden>
+      {Array.from({ length: 8 }).map((_, i) => (
+        <li key={i} className="flex items-center gap-3 border-b border-border px-4 py-3">
+          <div className="h-5 w-5 rounded bg-muted" />
+          <div className="h-3 flex-1 rounded bg-muted" style={{ maxWidth: `${50 + ((i * 7) % 40)}%` }} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function EmptyFolder() {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-8 py-16 text-center">
+      <FolderOpen strokeWidth={1.25} className="h-8 w-8 text-muted-foreground" />
+      <p
+        className="mt-3 text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground"
+        style={{ fontWeight: "max(500, var(--ns-a11y-weight, 400))" }}
+      >
+        Nothing here yet
+      </p>
+      <p
+        className="mt-1 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground"
+        style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
+      >
+        This folder is empty.
+      </p>
+    </div>
+  );
+}
+
+function BrowserError({ message, onRetry }: { message: string; onRetry: () => void }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-8 py-16 text-center">
+      <AlertCircle strokeWidth={1.25} className="h-8 w-8 text-muted-foreground" />
+      <p
+        className="mt-3 text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground"
+        style={{ fontWeight: "max(500, var(--ns-a11y-weight, 400))" }}
+      >
+        Couldn't open this folder
+      </p>
+      <p
+        className="mt-1 max-w-xs text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground break-words"
+        style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
+      >
+        {message}
+      </p>
+      <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={onRetry}>
+        {t("library.tryAgain")}
+      </Button>
+    </div>
+  );
+}

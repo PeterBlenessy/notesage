@@ -37,6 +37,7 @@ import { useLocalAI } from "@/hooks/useLocalAI";
 import { useSandboxViolations } from "@/hooks/useSandboxViolations";
 import { useAgentTaskOperations } from "@/hooks/useAgentTaskOperations";
 import { useActivityNavigation } from "@/hooks/useActivityNavigation";
+import { useRecordingShortcut } from "@/hooks/useRecordingShortcut";
 import { useAppLifecycle } from "@/hooks/useAppLifecycle";
 import { useSessionManager } from "@/hooks/useSessionManager";
 import { useNetworkDomainApprovals } from "@/hooks/useNetworkDomainApprovals";
@@ -56,9 +57,70 @@ import { useActivityStore } from "@/stores/activity-store";
 import { useCommentStore, clearPartialReply } from "@/stores/comment-store";
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { tauriApi } from "@/lib/tauri";
-import { log } from "@/lib/logger";
+import { log, PERF } from "@/lib/logger";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
+
+/**
+ * If the theme/CSS readiness check (`hasThemeClass && cssLoaded`) never
+ * resolves — CSS load failure, a `ThemeProvider` crash before it stamps the
+ * class, an error boundary swallowing the render — this is how long the
+ * fallback below waits before showing the window unconditionally. Matches
+ * the reporter's suggested ~3-4s range (see #679, and the iOS launch
+ * cover's 4s self-removal in #675).
+ */
+export const SHOW_WINDOW_FALLBACK_DEADLINE_MS = 3500;
+
+/**
+ * Polls for the theme/CSS readiness signal and shows the main window once
+ * ready, via `requestAnimationFrame`. Falls back to showing the window
+ * unconditionally after `deadlineMs` even if the readiness check never
+ * resolves, so a broken frontend degrades to a brief white flash instead of
+ * a permanently invisible window (#679). Returns a cleanup function that
+ * cancels the pending rAF loop and the fallback timer.
+ */
+export function setupShowWindowWhenReady(
+  deadlineMs: number = SHOW_WINDOW_FALLBACK_DEADLINE_MS,
+): () => void {
+  let cancelled = false;
+  let shown = false;
+  let rafId: number | null = null;
+
+  const showWindow = () => {
+    if (shown || cancelled) return;
+    shown = true;
+    invoke("show_main_window_command").catch(() => {});
+  };
+
+  const poll = () => {
+    if (cancelled) return;
+    const root = document.documentElement;
+    const hasThemeClass = root.classList.contains("dark") || root.classList.contains("light");
+    const bg = getComputedStyle(document.body).backgroundColor;
+    const cssLoaded = bg !== "" && bg !== "rgba(0, 0, 0, 0)";
+    if (hasThemeClass && cssLoaded) {
+      rafId = requestAnimationFrame(showWindow);
+    } else {
+      rafId = requestAnimationFrame(poll);
+    }
+  };
+  rafId = requestAnimationFrame(poll);
+
+  const fallbackTimer = setTimeout(() => {
+    if (cancelled || shown) return;
+    log.warn(
+      PERF.startup,
+      `show_main_window fallback fired after ${deadlineMs}ms — theme/CSS readiness check never resolved`,
+    );
+    showWindow();
+  }, deadlineMs);
+
+  return () => {
+    cancelled = true;
+    if (rafId !== null) cancelAnimationFrame(rafId);
+    clearTimeout(fallbackTimer);
+  };
+}
 
 /**
  * Close every open Radix popover / context menu / dropdown by dispatching
@@ -112,26 +174,13 @@ function App() {
   // shell that ships beyond Phase 2.
 
   // --- Show main window after first themed paint (window starts hidden to prevent white flash) ---
-  useEffect(() => {
-    // Wait for ThemeProvider to apply the dark/light class and for Tailwind CSS
-    // to be loaded (the computed background-color will change from the inline
-    // fallback to the CSS variable value). Poll briefly to handle dev mode where
-    // Vite serves CSS on-demand. In production the first check succeeds immediately.
-    const showWhenReady = () => {
-      const root = document.documentElement;
-      const hasThemeClass = root.classList.contains("dark") || root.classList.contains("light");
-      const bg = getComputedStyle(document.body).backgroundColor;
-      const cssLoaded = bg !== "" && bg !== "rgba(0, 0, 0, 0)";
-      if (hasThemeClass && cssLoaded) {
-        requestAnimationFrame(() => {
-          invoke("show_main_window_command").catch(() => {});
-        });
-      } else {
-        requestAnimationFrame(showWhenReady);
-      }
-    };
-    requestAnimationFrame(showWhenReady);
-  }, []);
+  // Wait for ThemeProvider to apply the dark/light class and for Tailwind CSS
+  // to be loaded (the computed background-color will change from the inline
+  // fallback to the CSS variable value). Poll briefly to handle dev mode where
+  // Vite serves CSS on-demand. In production the first check succeeds immediately.
+  // Falls back to showing the window unconditionally after a bounded deadline
+  // so a broken readiness check can't leave the window permanently hidden (#679).
+  useEffect(() => setupShowWindowWhenReady(), []);
 
   // ============================================================
   // CRITICAL: All lifecycle hooks MUST remain mounted here.
@@ -175,6 +224,8 @@ function App() {
 
   // Consolidated startup effects and event listeners
   useAppLifecycle();
+  // ⌘⇧R must work with no editor mounted — see the hook's note (#696).
+  useRecordingShortcut();
 
   // Cross-conversation session run-state owner (task #4) — keeps the orb /
   // history / foreground-loading reading per-session status independently of

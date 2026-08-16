@@ -6,6 +6,15 @@ authors = ["Peter Blenessy"]
 license = "MIT"
 edition = "2021"
 
+
+# `notesage-capture` is a member rather than a plain path dependency: the app
+# binary does NOT link it (captures are written by the iOS Share Extension, a
+# separate process that links its staticlib directly). Making it a workspace
+# member is what puts it in `cargo test`, so the one implementation of the
+# capture-note format stays covered by the same gate as everything else.
+[workspace]
+members = ["crates/notesage-capture", "crates/tauri-plugin-notesage-ios"]
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
@@ -129,21 +138,42 @@ ppt-rs = "0.2"
 # DOCX export
 docx-rs = "0.4"
 
-# Voice transcription
-whisper-rs = "0.16"
-cpal = "0.17"
+# Voice transcription — desktop only; see the non-iOS target table below.
 
 # E2E testing (optional — only enabled via `--features e2e-testing`)
 tauri-plugin-webdriver = { version = "0.2", optional = true }
 tauri-plugin-deep-link = "2.4.9"
+# Only for installing the process-default CryptoProvider at startup — reqwest
+# 0.13's rustls path panics "No provider set" without one. Ring is already in
+# the tree transitively; this makes it explicit and selectable.
+base64 = "0.22"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+# Telemetry — privacy-first usage analytics (first-party Tauri v2 plugin).
+# NOT available on iOS: the plugin's `sys.rs` leaves `ENGINE_NAME` undefined
+# for that target, so it fails to compile there. Gated off rather than patched
+# because the mobile app ships no usage telemetry by design (PRD
+# `2026-06-28-ios-mobile-app.md` § Non-Goals) — there is nothing to lose.
+[target.'cfg(target_os = "ios")'.dependencies]
+tauri-plugin-notesage-ios = { path = "crates/tauri-plugin-notesage-ios" }
+
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+tauri-plugin-aptabase = "1.0.0"
 # Telemetry — crash/error reporting (Sentry, DSN-swappable to GlitchTip).
+# Desktop-only, like aptabase above: the iOS binary must not even LINK the
+# telemetry SDKs — that absence is what backs the App Store privacy label
+# "Data Not Collected" (#587), regression-locked by
+# `telemetry_crates_are_gated_off_the_ios_target`.
 # Pin to match tauri-plugin-sentry 0.5's internal sentry version (0.42) so the
 # ClientInitGuard passed to the plugin is the same type — a newer top-level
 # sentry pulls a second major into the tree and breaks `init(&client)`.
 sentry = "0.42"
 tauri-plugin-sentry = "0.5.0"
-# Telemetry — privacy-first usage analytics (first-party Tauri v2 plugin).
-tauri-plugin-aptabase = "1.0.0"
+# `whisper-rs` vendors whisper.cpp, whose ggml kernels reference Accelerate
+# symbols (`_vDSP_vsub`, `cblas_*`) that fail to link on iOS; `cpal` drives
+# microphone capture. Mobile ships no recording or transcription (PRD § Non-
+# Goals), so both stay off rather than being dead weight in a read-only reader.
+whisper-rs = "0.16"
+cpal = "0.17"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.16", features = ["metal"] }

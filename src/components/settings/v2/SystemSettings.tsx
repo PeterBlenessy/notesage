@@ -172,8 +172,6 @@ export function SystemSettings({
   const autoCheckUpdates = useSettingsStore((s) => s.autoCheckUpdates);
   const setAutoCheckUpdates = useSettingsStore((s) => s.setAutoCheckUpdates);
   const lastUpdateCheck = useSettingsStore((s) => s.lastUpdateCheck);
-  const releaseChannel = useSettingsStore((s) => s.releaseChannel);
-  const setReleaseChannel = useSettingsStore((s) => s.setReleaseChannel);
 
   // Telemetry — switches bind to the *effective* value (explicit override or
   // build default) so the toggle reflects what's actually happening; the setters
@@ -294,33 +292,6 @@ export function SystemSettings({
               checked={autoCheckUpdates}
               onCheckedChange={setAutoCheckUpdates}
             />
-          }
-        />
-        <SettingsRow
-          label="Release channel"
-          description="Stable receives tested releases. Alpha receives pre-release builds."
-          control={
-            <Select
-              value={releaseChannel ?? 'stable'}
-              onValueChange={(v) => {
-                // Update channel only — this controls which builds the updater
-                // offers, NOT telemetry. Telemetry defaults track the build the
-                // user is actually running (see useAppLifecycle's first-run
-                // disclosure + selectEffectiveTelemetry*), so switching the
-                // update channel no longer turns telemetry on/off.
-                const next = v as 'stable' | 'alpha';
-                setReleaseChannel(next);
-                track("setting_changed", { setting: "release_channel", value: next });
-              }}
-            >
-              <SelectTrigger className="w-[120px] h-8 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="stable">Stable</SelectItem>
-                <SelectItem value="alpha">Alpha</SelectItem>
-              </SelectContent>
-            </Select>
           }
         />
       </SettingsGroup>

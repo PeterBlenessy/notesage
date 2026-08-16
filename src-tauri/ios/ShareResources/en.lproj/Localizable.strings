@@ -1,0 +1,18 @@
+/* Share Extension UI (#653). Keys mirror src/lib/i18n.ts naming where the
+   surfaces overlap; Cancel is a system bar-button item and is localized by
+   iOS itself, so it has no key here. */
+"share.title" = "Notesage";
+"share.save" = "Save";
+"share.loading" = "Loading…";
+"share.format" = "Format";
+"share.formatVideo" = "Video (link + details)";
+"share.formatArticle" = "Article (Markdown)";
+"share.formatLink" = "Link note";
+"share.formatHtml" = "Page (HTML)";
+"share.savesToInbox" = "Saves to Inbox in your Notesage library.";
+"share.savesToInboxAs" = "Saves to Inbox in your Notesage library as\n%@";
+"share.setUpFirst" = "Open Notesage to set up before sharing.";
+"share.nothingToSave" = "Nothing to save.";
+"share.oneFile" = "1 file";
+"share.manyFiles" = "%d files";
+"share.savesToInboxKeepName" = "Saves to Inbox in your Notesage library, keeping the original filename.";

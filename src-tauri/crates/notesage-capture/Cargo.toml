@@ -1,0 +1,27 @@
+[package]
+name = "notesage-capture"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Capture-note formatting for Notesage's iOS share extension — one implementation, callable from Rust and from Swift over a C ABI"
+
+[lib]
+# `staticlib` so the iOS Share Extension can link it directly: the extension is
+# a separate process and cannot reach the Tauri app's Rust, and linking the
+# whole app crate into a share extension (which has a hard ~120MB memory cap)
+# is not viable. `rlib` so the app crate can depend on it normally.
+crate-type = ["staticlib", "rlib"]
+
+# Kept dependency-LIGHT (linked into a share extension with a hard memory
+# cap): the extraction stack for rich web capture (#584, upgraded #610) is
+# dom_smoothie (actively-maintained Mozilla Readability port; replaced the
+# abandoned 2019-era `readability` 0.3 crate) + dom_query (re-parses the
+# extracted fragment to strip ad/tracker `<img>`s — already pulled in
+# transitively by dom_smoothie, so pinning it directly adds no extra compiled
+# dependency) + htmd (HTML→Markdown). String formatting and the civil-time
+# conversion remain dependency-free. `url` was dropped: dom_smoothie's
+# `Readability::new` already validates the document URL is absolute.
+[dependencies]
+dom_smoothie = "0.18"
+dom_query = "0.28"
+htmd = "0.2"

@@ -123,26 +123,15 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            // Stable release → upload `public/changelog.json` (filtered to
-            // stable-only entries) as the asset `changelog.json`. Stable users
-            // hit `releases/latest/download/changelog.json` and see only
-            // stable releases.
-            //
-            // Alpha release → upload `public/changelog-alpha.json` (full list
-            // including alphas) as the asset `changelog-alpha.json`. Alpha
-            // users hit `releases/latest-alpha/download/changelog-alpha.json`.
-            //
-            // The naming convention is consistent at every layer:
-            //   stable: changelog.json (unmarked default)
-            //   alpha:  changelog-alpha.json (variant suffix)
-            // See `useChangelog.ts` for the channel-aware URL picker and
-            // `scripts/generate-changelog.ts` for the dual-file generator.
+            // ONE feed. Every release uploads `public/changelog.json` as the
+            // asset `changelog.json`, and the app fetches it from
+            // `releases/latest/download/changelog.json`. The stable/alpha
+            // split was removed with the release channel itself — PRD
+            // `docs/prds/2026-08-15-single-binary-feature-flags.md`.
             const fs = require('fs');
-            const tag = context.ref.replace('refs/tags/', '');
-            const isPrerelease = /-(alpha|beta|rc)(\.|$)/.test(tag);
             const releaseId = ${{ steps.create-release.outputs.result }};
-            const assetName = isPrerelease ? 'changelog-alpha.json' : 'changelog.json';
-            const sourceFile = isPrerelease ? 'public/changelog-alpha.json' : 'public/changelog.json';
+            const assetName = 'changelog.json';
+            const sourceFile = 'public/changelog.json';
             await github.rest.repos.uploadReleaseAsset({
               owner: context.repo.owner,
               repo: context.repo.repo,

@@ -1,4 +1,6 @@
-// Regression-lock for the `chore(deps):` fast-path in aw-alpha-prep.yml.
+// Regression-lock for the `chore(deps):` fast-path in aw-tier-prep.yml
+// (named aw-alpha-prep.yml until 2026-08-15 — it classifies PR TIERS and
+// never had anything to do with alphas).
 //
 // Background: dep-bump PRs that touch load-bearing paths (`/index/`,
 // `/watcher.rs`, etc.) were classified Tier C even when the diff was a
@@ -27,7 +29,7 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { parse as parseYaml } from 'yaml';
 
-const WORKFLOW_PATH = resolve(__dirname, '../../../.github/workflows/aw-alpha-prep.yml');
+const WORKFLOW_PATH = resolve(__dirname, '../../../.github/workflows/aw-tier-prep.yml');
 const YAML_TEXT = readFileSync(WORKFLOW_PATH, 'utf-8');
 
 interface Step {
@@ -50,7 +52,7 @@ function classifyStepBody(): string {
   return step?.run ?? '';
 }
 
-describe('aw-alpha-prep — chore(deps) fast-path', () => {
+describe('aw-tier-prep — chore(deps) fast-path', () => {
   const body = classifyStepBody();
 
   it('reads PR title into a pr_title variable', () => {

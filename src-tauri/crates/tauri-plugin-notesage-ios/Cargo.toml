@@ -1,0 +1,23 @@
+[package]
+name = "tauri-plugin-notesage-ios"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "iOS-only Tauri plugin: security-scoped access to the user's iCloud Notesage library"
+# Required by `tauri-plugin`'s build helper, and must equal package.name — it is
+# how Tauri correlates the crate with its mobile (Swift) sources.
+links = "tauri-plugin-notesage-ios"
+
+[dependencies]
+tauri = { version = "2", features = ["wry"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[build-dependencies]
+# `.ios_path("ios")` in build.rs is the whole reason this is a plugin crate
+# rather than loose Swift added to the Xcode target by hand: it is what makes
+# Tauri add the Swift Package to the generated project AND resolve the
+# `@_cdecl` entry point at the right point in the link. Doing it manually
+# produced an undefined `init_plugin_notesage` with no mention of Swift.
+tauri-plugin = { version = "2.5", features = ["build"] }

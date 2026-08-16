@@ -1,0 +1,1101 @@
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { toast } from "sonner";
+import { ChevronLeft, CloudDownload, AlertCircle, FileQuestion, FileWarning, Share, Pencil, Check } from "lucide-react";
+import {
+  iosReadFile,
+  iosReadBinary,
+  iosEnsureDownloaded,
+  iosShareFile,
+  iosWriteFile,
+  iosRenameFile,
+  iosCreateFile,
+  iosStatFile,
+} from "@/lib/ios-api";
+import { renderMarkdownFragment } from "@/lib/markdown-render";
+import { useMobileStore } from "@/stores/mobile-store";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
+import { classifyFile } from "./FileRow";
+import { Button } from "@/components/ui/button";
+import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
+import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
+import { useNativeChrome } from "./useNativeChrome";
+import { withFindAgent } from "./html-find-agent";
+import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
+
+// Lazy-loaded — pdf.js is heavy (and pulls in browser-only globals like
+// DOMMatrix), so it's only imported when a PDF is actually opened.
+const PdfViewer = lazy(() =>
+  import("@/components/editor/viewers/PdfViewer").then((m) => ({ default: m.PdfViewer })),
+);
+import type { PdfMobileFindHandle, PdfMobileFindState } from "@/components/editor/viewers/PdfViewer";
+
+/**
+ * Resolve a relative markdown link against the directory of the current doc.
+ * Returns null when the link would escape the library root — the reader must
+ * never navigate outside the grant.
+ */
+export function resolveRelativeLink(currentRelPath: string, href: string): string | null {
+  const clean = decodeURIComponent(href.split(/[?#]/)[0]);
+  if (!clean) return null;
+  const baseDir = currentRelPath.includes("/")
+    ? currentRelPath.slice(0, currentRelPath.lastIndexOf("/"))
+    : "";
+  const joined = clean.startsWith("/") ? clean.slice(1) : baseDir ? `${baseDir}/${clean}` : clean;
+  const out: string[] = [];
+  for (const seg of joined.split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") {
+      if (out.length === 0) return null; // escapes the library root
+      out.pop();
+      continue;
+    }
+    out.push(seg);
+  }
+  return out.length ? out.join("/") : null;
+}
+
+type ReaderState =
+  | { status: "loading" }
+  | { status: "downloading" }
+  | { status: "error"; message: string }
+  | { status: "unsupported" }
+  | { status: "too-large"; sizeBytes: number }
+  | { status: "text"; content: string }
+  | { status: "markdown"; html: string }
+  | { status: "image"; url: string }
+  | { status: "html"; url: string; previewId: string }
+  | { status: "pdf"; filePath: string };
+
+/**
+ * Above this, a text/markdown/html file is declined instead of read (issue
+ * #616): `ios_read_file` ships the whole file across IPC as one JSON string,
+ * and for a multi-hundred-MB file that parse blocks the WebView's main
+ * thread — the loading spinner freezes and the back button stops responding.
+ * "A few MB" per the issue's own assumption; the exact value is an
+ * implementation detail, not a contract.
+ */
+const MAX_INLINE_TEXT_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Mobile reader (PRD task #14). Renders markdown (via the shared Rust comrak
+ * pipeline, same as the desktop preview), self-contained HTML reports with
+ * their scripts running, plain text / code, images, and PDFs (lazy-loaded
+ * desktop PdfViewer); EPUB/DOCX/PPTX show an unsupported state in v1. iCloud
+ * placeholders are downloaded on demand.
+ */
+export function Reader() {
+  useLocale();
+  const openDoc = useMobileStore((s) => s.openDoc);
+  const goBack = useMobileStore((s) => s.goBack);
+  const openDocument = useMobileStore((s) => s.openDocument);
+  const [state, setState] = useState<ReaderState>({ status: "loading" });
+  const articleRef = useRef<HTMLElement | null>(null);
+  // Raw markdown of the open doc — kept so a theme flip can re-render without
+  // re-reading the file (and without re-fetching PDFs/images at all).
+  const rawMarkdownRef = useRef<string | null>(null);
+  const renderedThemeRef = useRef<"light" | "dark" | null>(null);
+
+  // The resolved app theme, tracked via the `.dark` class ThemeProvider owns.
+  // Markdown must re-render when it flips: syntect's syntax colors are inline
+  // styles from the Rust renderer, and mermaid diagrams bake their theme and
+  // background at render time — neither follows a CSS-variable swap.
+  const [resolvedTheme, setResolvedTheme] = useState<"light" | "dark">(() =>
+    document.documentElement.classList.contains("dark") ? "dark" : "light",
+  );
+  useEffect(() => {
+    const root = document.documentElement;
+    const observer = new MutationObserver(() => {
+      setResolvedTheme(root.classList.contains("dark") ? "dark" : "light");
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
+
+  const relPath = openDoc?.relPath ?? "";
+  const name = openDoc?.name ?? "";
+  // Pending note (#586 follow-up): nothing exists on disk yet. The editor
+  // opens on an empty draft and the file is only created on save/back when
+  // the draft is non-empty — an accidental "+" tap leaves no file behind.
+  const isNew = openDoc?.isNew === true;
+  const kind = useMemo(() => (name ? classifyFile(name) : "other"), [name]);
+
+  // Root cause of issue #605 (the article's rendered markup silently
+  // reverting to pristine, detaching find-in-document marks): React's DOM
+  // renderer diffs `dangerouslySetInnerHTML` by OBJECT IDENTITY, not by the
+  // `__html` string's value — `{ __html: state.html }` is a fresh object
+  // literal on every JSX evaluation, so React unconditionally re-executes
+  // `element.innerHTML = html` on every commit that touches this component,
+  // even when the html string itself hasn't changed and the only real state
+  // change was something unrelated (find match index/count, a theme
+  // MutationObserver firing, native-chrome activation, ...). That silently
+  // wipes any DOM mutation made outside React — exactly what the find-in-
+  // document marks are. Confirmed directly (not inferred) by reading React
+  // 19's `updateProperties`/`setProp` in react-dom's dev bundle and by a
+  // regression test below that reproduces the wipe deterministically in
+  // jsdom via an ordinary match-navigation re-render — no device needed.
+  // Memoizing the object so its reference only changes when the html STRING
+  // does closes this at the source.
+  const markdownHtml = state.status === "markdown" ? state.html : null;
+  const articleInnerHtml = useMemo(
+    () => (markdownHtml === null ? null : { __html: markdownHtml }),
+    [markdownHtml],
+  );
+
+  // Find-in-document. Markdown/text: matches marked via the shared
+  // dom-search utility the desktop's DOCX/plain viewers use. HTML reports:
+  // the document is a cross-origin sandboxed frame, so search runs INSIDE it
+  // via the injected find agent (html-find-agent.ts), driven over
+  // postMessage. PDFs search through the PdfViewer's own island.
+  const [findQuery, setFindQuery] = useState("");
+  const [findIndex, setFindIndex] = useState(0);
+  const [findTotal, setFindTotal] = useState(0);
+  const findMarksRef = useRef<HTMLElement[]>([]);
+  // Mirror of findIndex for event handlers: native chrome taps can arrive
+  // faster than re-renders, and a stale state read wedges the navigation.
+  const findIndexRef = useRef(0);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  // PDF find lives inside PdfViewer; the native island drives it through
+  // this handle and mirrors its state from the callback below.
+  const pdfFindRef = useRef<PdfMobileFindHandle | null>(null);
+  const [pdfFind, setPdfFind] = useState<PdfMobileFindState>({ current: -1, total: 0, page: 0, pages: 0 });
+  const isPdf = state.status === "pdf";
+  const htmlFrameRef = useRef<HTMLIFrameElement | null>(null);
+  // Which html url has finished loading and may therefore be shown. Keyed by
+  // url rather than a boolean so opening a SECOND report re-hides the frame
+  // instead of showing the previous one's last painted frame.
+  const [htmlShownUrl, setHtmlShownUrl] = useState<string | null>(null);
+  const htmlUrl = state.status === "html" ? state.url : null;
+  useEffect(() => {
+    if (!htmlUrl) return;
+    // A frame that never fires `load` must not leave a blank pane: reveal it
+    // regardless after a beat. Worst case that restores the old behaviour
+    // (a brief white frame) rather than losing the document entirely.
+    const timer = window.setTimeout(() => setHtmlShownUrl(htmlUrl), 1200);
+    return () => window.clearTimeout(timer);
+  }, [htmlUrl]);
+  const searchable =
+    state.status === "markdown" || state.status === "text" || state.status === "html";
+  const isHtml = state.status === "html";
+
+  useEffect(() => {
+    if (isHtml) {
+      const t = setTimeout(() => {
+        htmlFrameRef.current?.contentWindow?.postMessage(
+          { ns: "notesage-find", type: "query", q: findQuery },
+          "*",
+        );
+      }, 150);
+      return () => clearTimeout(t);
+    }
+    const root = articleRef.current;
+    if (!root) return;
+    const t = setTimeout(() => {
+      // Mark-based highlighting, same mechanism as the HTML agent and the
+      // PDF text layer — the ONLY one of the three that both paints and
+      // scrolls in this WKWebView. (The CSS Custom Highlight API was tried
+      // and registers ranges but never paints in the embedded webview —
+      // matches were invisible; do not bring it back without an on-device
+      // paint check.) Capped for hundreds-of-pages documents.
+      clearDomHighlights(root);
+      findMarksRef.current = findQuery ? highlightDomMatches(root, findQuery, 300) : [];
+      findIndexRef.current = 0;
+      setFindIndex(0);
+      setFindTotal(findMarksRef.current.length);
+      if (findMarksRef.current.length > 0) {
+        findMarksRef.current[0].classList.add("dom-find-highlight-active");
+        scrollMarkIntoView(findMarksRef.current[0]);
+      }
+    }, 150);
+    return () => clearTimeout(t);
+  }, [findQuery, state, isHtml]);
+
+  // Watchdog (issue #605). The root cause of the article's innerHTML
+  // silently reverting to pristine was found this session — see the
+  // `articleInnerHtml` memo above — and the earlier framing here ("trigger
+  // not yet identified", suspects "eliminated" including React's own
+  // dangerouslySetInnerHTML diffing) was WRONG: it was exactly that diffing,
+  // just not in the form that had been tested. React compares
+  // `dangerouslySetInnerHTML` by object identity, not by the `__html`
+  // string's value, so any unrelated re-render (e.g. a find-match nav
+  // updating findIndex/findTotal, the theme observer firing, native-chrome
+  // activation) re-executed `element.innerHTML = html` and wiped whatever
+  // had been mutated outside React — including these marks. That is now
+  // fixed at the source.
+  //
+  // This watchdog stays anyway, downgraded from "the fix" to a defense-in-
+  // depth backstop: nothing rules out some OTHER actor (WebKit itself, a
+  // future regression) also mutating this subtree outside React, and the
+  // cost of keeping a cheap periodic connectivity check is far lower than
+  // the cost of find-in-document silently breaking again undetected. Two
+  // real gaps were closed while re-evaluating it: the connectivity check
+  // only ever looked at marks[0], so a rewrite that detached SOME marks but
+  // left the first one connected went undetected — the affected matches
+  // stayed permanently dead. Checking every mark closes that gap.
+  // Re-wrapping now also clears first: blindly re-highlighting over a
+  // survivor (rather than a fully pristine subtree) nested a fresh <mark>
+  // inside it instead of replacing it.
+  useEffect(() => {
+    if (isHtml || !findQuery) return;
+    const t = window.setInterval(() => {
+      const root = articleRef.current;
+      if (!root) return;
+      const marks = findMarksRef.current;
+      if (marks.length > 0 && marks.some((m) => !m.isConnected)) {
+        clearDomHighlights(root);
+        findMarksRef.current = highlightDomMatches(root, findQuery, 300);
+        const bounded = Math.min(findIndexRef.current, Math.max(0, findMarksRef.current.length - 1));
+        findIndexRef.current = bounded;
+        setFindTotal(findMarksRef.current.length);
+        findMarksRef.current[bounded]?.classList.add("dom-find-highlight-active");
+      }
+    }, 500);
+    return () => window.clearInterval(t);
+  }, [isHtml, findQuery]);
+
+
+  // Counter updates from the HTML find agent. Untrusted (the report's own
+  // scripts share the frame) — shape-checked, and worst case a hostile report
+  // lies about its own match count.
+  useEffect(() => {
+    if (!isHtml) return;
+    const onMessage = (e: MessageEvent) => {
+      // No e.source identity check: WKWebView does not reliably preserve
+      // source identity for opaque-origin (sandboxed) frames, and a strict
+      // comparison silently dropped every agent reply on-device — the match
+      // counter stayed 0 and the nav chevrons rendered permanently disabled.
+      // The payload is shape-checked and only ever drives a bounded counter
+      // (worst case: a hostile report lies about its own match count).
+      const d = e.data as { ns?: string; type?: string; total?: number; current?: number };
+      if (!d || d.ns !== "notesage-find" || d.type !== "state") return;
+      if (typeof d.total === "number" && Number.isFinite(d.total)) setFindTotal(Math.max(0, d.total));
+      if (typeof d.current === "number" && Number.isFinite(d.current)) setFindIndex(Math.max(0, d.current));
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [isHtml]);
+
+  // Scroll to the active mark and KEEP it there: content above a match can
+  // change height after the scroll (mermaid fences swap to sized iframes,
+  // images resolve, fonts settle), which strands the viewport where the
+  // match USED to be — in a long document that reads as "scrolled to the
+  // wrong place entirely". The PDF viewer solves this with pre-sized page
+  // placeholders; markdown can't know sizes up front, so navigation
+  // re-checks the mark's real position after layout settles and corrects.
+  const correctionTimersRef = useRef<number[]>([]);
+  const scrollMarkIntoView = (mark: HTMLElement) => {
+    for (const t of correctionTimersRef.current) window.clearTimeout(t);
+    correctionTimersRef.current = [];
+    mark.scrollIntoView({ block: "center" });
+    for (const delay of [250, 700, 1500]) {
+      correctionTimersRef.current.push(
+        window.setTimeout(() => {
+          if (!mark.isConnected) return; // the watchdog will re-wrap
+          const scroller = scrollerRef.current;
+          if (!scroller) return;
+          const rect = mark.getBoundingClientRect();
+          const srect = scroller.getBoundingClientRect();
+          const offCenter = rect.top + rect.height / 2 - (srect.top + scroller.clientHeight / 2);
+          if (Math.abs(offCenter) > 48) mark.scrollIntoView({ block: "center" });
+        }, delay),
+      );
+    }
+  };
+  useEffect(
+    () => () => {
+      for (const t of correctionTimersRef.current) window.clearTimeout(t);
+    },
+    [],
+  );
+
+  const goToMatch = (next: boolean) => {
+    if (isHtml) {
+      htmlFrameRef.current?.contentWindow?.postMessage(
+        { ns: "notesage-find", type: "nav", dir: next ? 1 : -1 },
+        "*",
+      );
+      return;
+    }
+    let marks = findMarksRef.current;
+    // Heal before use: if the article was rewritten since the last walk,
+    // some (not necessarily all) of the stored marks are detached husks —
+    // clear and re-wrap from the live DOM rather than trust a first-mark
+    // check (see the watchdog comment above for why marks[0] alone isn't
+    // enough, and why the clear has to happen before the re-wrap).
+    if (marks.length > 0 && marks.some((m) => !m.isConnected)) {
+      const root = articleRef.current;
+      if (root) clearDomHighlights(root);
+      marks = root && findQuery ? highlightDomMatches(root, findQuery, 300) : [];
+      findMarksRef.current = marks;
+      setFindTotal(marks.length);
+    }
+    if (marks.length === 0) return;
+    const cur = Math.min(findIndexRef.current, marks.length - 1);
+    const idx = (cur + (next ? 1 : marks.length - 1)) % marks.length;
+    marks[cur]?.classList.remove("dom-find-highlight-active");
+    marks[idx].classList.add("dom-find-highlight-active");
+    scrollMarkIntoView(marks[idx]);
+    findIndexRef.current = idx;
+    setFindIndex(idx);
+  };
+
+  // Generation counter: every load() invocation takes a ticket, and a
+  // superseded invocation (doc switched or component unmounted mid-flight)
+  // must not setState — and must RELEASE what it just acquired (object URL,
+  // html_preview registration; the Rust-side preview store has no eviction).
+  // Same idiom as the theme + mermaid effects below.
+  const loadIdRef = useRef(0);
+  useEffect(() => () => { loadIdRef.current++; }, []);
+
+  // --- Edit mode (#586): markdown/text notes edit as raw source in a
+  // full-screen textarea. Save writes through ios_write_file; for markdown
+  // the note's TITLE (first heading / non-empty line) becomes the filename
+  // via ios_rename_file (deduped natively). A brand-new empty note drops
+  // straight into edit mode, Notes-style.
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+  const editable = state.status === "markdown" || state.status === "text";
+
+  const startEdit = useCallback(() => {
+    setFindQuery("");
+    setDraft(
+      state.status === "text" ? state.content : (rawMarkdownRef.current ?? ""),
+    );
+    setEditing(true);
+  }, [state]);
+
+  // A just-created empty note opens directly in edit mode (once per doc —
+  // the ref guards against re-entering after the user deliberately saves an
+  // empty draft and stays on the page).
+  const autoEditRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (editing || autoEditRef.current === relPath) return;
+    const empty =
+      (state.status === "markdown" && (rawMarkdownRef.current ?? "").trim() === "") ||
+      (state.status === "text" && state.content.trim() === "");
+    if (empty) {
+      autoEditRef.current = relPath;
+      startEdit();
+    }
+  }, [state, editing, relPath, startEdit]);
+
+  /** Persist the draft. Existing notes: write + title-rename. Pending notes
+   *  (`isNew`): CREATE the file — directly under its title-derived name — but
+   *  only when the draft is non-empty; an empty draft returns null and leaves
+   *  no file behind. Returns the final relative path, or null when nothing
+   *  was (or should be) persisted. */
+  const persistDraft = useCallback(async (): Promise<string | null> => {
+    if (isNew) {
+      if (draft.trim() === "") return null;
+      const title = deriveNoteTitle(draft) ?? "Untitled";
+      const folder = relPath.includes("/") ? relPath.slice(0, relPath.lastIndexOf("/")) : "";
+      const rel = folder ? `${folder}/${title}.md` : `${title}.md`;
+      // The native side dedupes and returns the path actually created.
+      return await iosCreateFile(rel, draft);
+    }
+    await iosWriteFile(relPath, draft);
+    if (kind === "markdown") {
+      const title = deriveNoteTitle(draft);
+      const stem = name.replace(/\.[^.]+$/, "");
+      if (title && title !== stem) {
+        return await iosRenameFile(relPath, `${title}.md`);
+      }
+    }
+    return relPath;
+  }, [isNew, relPath, draft, kind, name]);
+
+  // `load` is declared further down (it needs the chrome hook's siblings);
+  // the ref indirection lets save re-trigger it without reordering the
+  // component.
+  const loadRef = useRef<(() => Promise<void>) | null>(null);
+  const saveEdit = useCallback(async () => {
+    try {
+      const finalRel = await persistDraft();
+      if (finalRel === null) {
+        // Empty pending note — nothing to keep. Leave without a file.
+        goBack();
+        return;
+      }
+      setEditing(false);
+      if (isNew || finalRel !== relPath) {
+        // Re-open under the new name (the Reader is keyed by relPath — this
+        // remounts with a fresh load of what was actually saved).
+        openDocument({ relPath: finalRel, name: finalRel.split("/").pop() ?? name });
+      } else {
+        rawMarkdownRef.current = null;
+        renderedThemeRef.current = null;
+        await loadRef.current?.();
+      }
+    } catch (err) {
+      toast.error(t("reader.saveFailed", { error: String(err) }));
+    }
+  }, [persistDraft, relPath, name, isNew, goBack, openDocument]);
+
+  // Back while editing saves first (Notes semantics — no unsaved-changes
+  // dialog), then leaves; the browser relists on mount so a rename shows.
+  const backAction = useCallback(() => {
+    if (!editing) {
+      goBack();
+      return;
+    }
+    void (async () => {
+      try {
+        await persistDraft();
+      } catch (err) {
+        toast.error(t("reader.saveFailed", { error: String(err) }));
+      }
+      goBack();
+    })();
+  }, [editing, persistDraft, goBack]);
+
+  const nativeChrome = useNativeChrome(
+    {
+      topLeft: { id: "back", icon: "chevron.backward" },
+      // Editable notes: tap = edit (pencil), long-press = Share menu. While
+      // editing the slot becomes the ✓ save. Non-editable docs keep Share.
+      topRight: editing
+        ? { id: "save", icon: "checkmark" }
+        : editable
+          ? {
+              id: "edit",
+              icon: "square.and.pencil",
+              menu: [{ id: "share", title: "Share", icon: "square.and.arrow.up" }],
+            }
+          : { id: "share", icon: "square.and.arrow.up" },
+      search: editing
+        ? undefined
+        : isPdf
+        ? {
+            kind: "find" as const,
+            placeholder: t("reader.find"),
+            status: pdfFind.pages > 0 ? `${pdfFind.page} / ${pdfFind.pages}` : undefined,
+            current: pdfFind.total > 0 ? pdfFind.current + 1 : undefined,
+            total: pdfFind.total > 0 ? pdfFind.total : undefined,
+          }
+        : searchable
+          ? {
+              kind: "find" as const,
+              placeholder: t("reader.find"),
+              current: findTotal > 0 ? findIndex + 1 : undefined,
+              total: findTotal > 0 ? findTotal : undefined,
+            }
+          : undefined,
+    },
+    {
+      back: backAction,
+      edit: () => startEdit(),
+      save: () => void saveEdit(),
+      share: () => {
+        void iosShareFile(relPath).catch((err) => toast.error(t("action.shareFailed", { error: String(err) })));
+      },
+      "search-query": (value?: string) =>
+        isPdf ? pdfFindRef.current?.setQuery(value ?? "") : setFindQuery(value ?? ""),
+      "search-close": () => (isPdf ? pdfFindRef.current?.setQuery("") : setFindQuery("")),
+      "search-next": () => (isPdf ? pdfFindRef.current?.next() : goToMatch(true)),
+      "search-prev": () => (isPdf ? pdfFindRef.current?.prev() : goToMatch(false)),
+    },
+  );
+
+  const load = useCallback(async () => {
+    if (!relPath) return;
+    if (isNew) {
+      // Nothing on disk yet — an empty rendered doc; the auto-edit effect
+      // opens the editor immediately. Created only on save/back with content.
+      // renderedThemeRef must be the CURRENT theme, not null: a null makes
+      // the theme-re-render effect below think the theme changed and fire a
+      // pointless renderMarkdownFragment("") — which in tests lands as an
+      // unhandled post-teardown rejection (the CI-only #630 failure).
+      rawMarkdownRef.current = "";
+      renderedThemeRef.current = document.documentElement.classList.contains("dark")
+        ? "dark"
+        : "light";
+      setState({ status: "markdown", html: "" });
+      return;
+    }
+    const loadId = ++loadIdRef.current;
+    const isCurrent = () => loadIdRef.current === loadId;
+    setState({ status: "loading" });
+    try {
+      if (kind === "image") {
+        const bytes = await iosReadBinary(relPath);
+        if (!isCurrent()) return;
+        // Copy into a fresh ArrayBuffer-backed view so the BlobPart type is
+        // unambiguous (TS 6 distinguishes ArrayBuffer from SharedArrayBuffer).
+        const buffer = bytes.slice().buffer;
+        const blob = new Blob([buffer], { type: imageMimeFor(name) });
+        setState({ status: "image", url: URL.createObjectURL(blob) });
+        return;
+      }
+      if (kind === "pdf") {
+        // pdf.js renders from in-memory bytes (works in WKWebView). Feed the
+        // shared binary cache the desktop PdfViewer reads from, keyed by the
+        // relative path, then mount the full viewer (zoom / fit / search).
+        const bytes = await iosReadBinary(relPath);
+        if (!isCurrent()) return;
+        setBinaryData(relPath, bytes);
+        setState({ status: "pdf", filePath: relPath });
+        return;
+      }
+      if (kind === "markdown" || kind === "text" || kind === "html") {
+        // Size guard (issue #616): stat before reading. A cheap metadata
+        // probe with none of the cost `ios_read_file` has for an oversized
+        // file — see MAX_INLINE_TEXT_BYTES above. A stat failure (older
+        // native build, off-iOS test harness, transient IPC error) fails
+        // OPEN: falls through to the normal read path exactly as before
+        // this guard existed, rather than blocking an ordinary read.
+        try {
+          const stat = await iosStatFile(relPath);
+          if (!isCurrent()) return;
+          if (stat.sizeBytes > MAX_INLINE_TEXT_BYTES) {
+            setState({ status: "too-large", sizeBytes: stat.sizeBytes });
+            return;
+          }
+        } catch {
+          /* size unknown — fall through to the normal read path */
+        }
+      }
+      if (kind === "html") {
+        // Served from the `htmlpreview://` custom scheme — the same mechanism
+        // as the desktop HtmlViewer, for the same reason: srcDoc, blob: AND
+        // data: documents all INHERIT the host window's CSP, and in the
+        // embedded build Tauri's nonce injection neutralises 'unsafe-inline',
+        // so a report's own <style>/<script> blocks are refused and it renders
+        // bare (dev builds hide this — Vite serves the app with no CSP). A
+        // custom-scheme response carries its own empty policy; the
+        // `sandbox="allow-scripts"` attribute is what isolates the document.
+        const raw = await iosReadFile(relPath);
+        const id = crypto.randomUUID();
+        // The find agent rides along inside the document — the only place
+        // search can run in a sandboxed cross-origin frame.
+        await invoke("html_preview_register", { id, content: withFindAgent(raw) });
+        if (!isCurrent()) {
+          // Superseded after registering — release the doc immediately or it
+          // is orphaned forever (the preview store has no eviction).
+          void invoke("html_preview_unregister", { id }).catch(() => {});
+          return;
+        }
+        setState({ status: "html", url: `htmlpreview://localhost/${id}`, previewId: id });
+        return;
+      }
+      if (kind === "markdown" || kind === "text") {
+        const raw = await iosReadFile(relPath);
+        if (!isCurrent()) return;
+        if (kind === "markdown") {
+          // Rendered by the same comrak pipeline as the desktop, so a note
+          // looks the same on both. Frontmatter stripping happens there too.
+          // The theme drives syntect's syntax-highlight colors, which are
+          // inline styles — without it, code blocks stay light in dark mode.
+          // Read the theme from the DOM at call time (not a dependency):
+          // depending on resolvedTheme here made EVERY document kind re-load
+          // on a theme flip — re-downloading an open PDF because the sun set.
+          // The raw source is cached so the theme effect below can re-render
+          // markdown without touching the file again.
+          const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+          const html = await renderMarkdownFragment(raw, theme);
+          if (!isCurrent()) return;
+          rawMarkdownRef.current = raw;
+          renderedThemeRef.current = theme;
+          setState({ status: "markdown", html });
+        } else {
+          setState({ status: "text", content: raw });
+        }
+        return;
+      }
+      // EPUB / DOCX / PPTX / unknown — not previewable in v1.
+      setState({ status: "unsupported" });
+    } catch (err) {
+      // The file may be an iCloud placeholder — kick off a download and let the
+      // user retry once it's local.
+      try {
+        const dl = await iosEnsureDownloaded(relPath);
+        if (!isCurrent()) return;
+        if (dl === "downloading") {
+          setState({ status: "downloading" });
+          return;
+        }
+      } catch {
+        /* fall through to the original read error */
+      }
+      if (!isCurrent()) return;
+      setState({ status: "error", message: String(err) });
+    }
+  }, [relPath, kind, isNew]);
+
+  loadRef.current = load;
+
+  useEffect(() => {
+    rawMarkdownRef.current = null;
+    renderedThemeRef.current = null;
+    void load();
+  }, [load]);
+
+  // Re-render the open MARKDOWN doc when the theme flips — from the cached
+  // raw source, never by re-reading the file. Other kinds are untouched.
+  useEffect(() => {
+    const raw = rawMarkdownRef.current;
+    if (raw === null || renderedThemeRef.current === resolvedTheme) return;
+    let cancelled = false;
+    void (async () => {
+      const html = await renderMarkdownFragment(raw, resolvedTheme);
+      if (cancelled) return;
+      renderedThemeRef.current = resolvedTheme;
+      setState({ status: "markdown", html });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [resolvedTheme]);
+
+  // Intercept link taps in the rendered article. Without this, an external
+  // link navigates the app's own WebView (a dead end with no back chrome —
+  // a store-review rejection class) and a relative note link 404s the frame.
+  useEffect(() => {
+    if (state.status !== "markdown") return;
+    const root = articleRef.current;
+    if (!root) return;
+    const onClick = (e: MouseEvent) => {
+      const anchor = (e.target as HTMLElement).closest?.("a");
+      if (!anchor) return;
+      const href = anchor.getAttribute("href");
+      if (!href) return;
+      e.preventDefault();
+      if (/^(https?:|mailto:)/i.test(href)) {
+        void openUrl(href).catch(() => toast.error("Couldn't open the link"));
+        return;
+      }
+      if (href.startsWith("#")) return; // in-page anchors: no-op in v1
+      const target = resolveRelativeLink(relPath, href);
+      if (!target) {
+        toast.error("This link points outside your library");
+        return;
+      }
+      openDocument({ relPath: target, name: target.split("/").pop() ?? target });
+    };
+    root.addEventListener("click", onClick);
+    return () => root.removeEventListener("click", onClick);
+  }, [state, relPath, openDocument]);
+
+  // Revoke the image object URL when the document changes or unmounts.
+  useEffect(() => {
+    if (state.status !== "image") return;
+    const url = state.url;
+    return () => URL.revokeObjectURL(url);
+  }, [state]);
+
+  // Free the registered HTML preview document when it changes or unmounts.
+  const htmlPreviewId = state.status === "html" ? state.previewId : null;
+  useEffect(() => {
+    if (!htmlPreviewId) return;
+    return () => {
+      void invoke("html_preview_unregister", { id: htmlPreviewId }).catch(() => {});
+    };
+  }, [htmlPreviewId]);
+
+  // Render ```mermaid fences into SVG diagrams — parity with the desktop
+  // editor's Mermaid node view, using the same lazily-imported library. The
+  // Rust renderer leaves these fences as code blocks with a
+  // `language-mermaid` class (it only swaps them for SVG when the desktop
+  // passes pre-rendered ones). A diagram that fails to parse keeps its code
+  // block — same graceful degradation as the desktop.
+  useEffect(() => {
+    if (state.status !== "markdown") return;
+    const root = articleRef.current;
+    if (!root) return;
+    const blocks = Array.from(root.querySelectorAll('pre code[class*="language-mermaid"]'));
+    if (blocks.length === 0) return;
+    let cancelled = false;
+    // The cleanup closure iterates this array by REFERENCE, and ids are pushed
+    // as soon as each diagram registers — populating it only after the loop
+    // finished leaked every already-registered document when the user backed
+    // out mid-render (the htmlpreview store has no eviction).
+    const cleanupIds: string[] = [];
+    void (async () => {
+      const mermaid = (await import("mermaid")).default;
+      if (cancelled) return;
+      mermaid.initialize({
+        startOnLoad: false,
+        theme: resolvedTheme === "dark" ? "dark" : "default",
+        fontFamily: "var(--font-sans, system-ui, sans-serif)",
+        securityLevel: "strict",
+        flowchart: { useMaxWidth: true },
+        sequence: { useMaxWidth: true },
+      });
+      for (const [i, code] of blocks.entries()) {
+        const source = code.textContent ?? "";
+        try {
+          const { svg } = await mermaid.render(`mobile-mermaid-${Date.now()}-${i}`, source);
+          if (cancelled) return;
+          const wrap = document.createElement("div");
+          // Inline styles, not Tailwind: editor.css is un-layered and would
+          // beat utility classes; inline always wins.
+          wrap.style.cssText = "margin:1em 0;max-width:100%";
+          // The SVG goes into a fully sandboxed iframe served from the
+          // htmlpreview:// scheme — the same own-empty-policy mechanism as the
+          // HTML reports. Every lighter-weight option fails somewhere:
+          // innerHTML loses the SVG's internal <style> to the embedded
+          // build's CSP nonce rewrite (black boxes); an <img> — whether from
+          // a data: URL or the scheme — hits WebKit's refusal to render
+          // <foreignObject> inside an SVG-as-image, which mermaid emits for
+          // composite-state labels (broken-image icon on exactly the bigger
+          // diagrams). A sandboxed document renders foreignObject fine.
+          // `sandbox=""` (no allowances at all): the diagram needs no
+          // scripts, so it gets none.
+          const ratio = /viewBox="[\d.\s-]*?([\d.]+)\s+([\d.]+)"/.exec(svg);
+          // WebKit gives a sandboxed iframe an opaque white backing —
+          // `background: transparent` in the framed document does nothing —
+          // so paint it with the app's actual computed background instead.
+          const bg = getComputedStyle(root).backgroundColor || "transparent";
+          const doc =
+            `<!doctype html><html><head><meta charset="utf-8">` +
+            `<style>html,body{margin:0;padding:0;background:${bg}}svg{display:block;width:100%;height:auto}</style>` +
+            `</head><body>${svg}</body></html>`;
+          const id = crypto.randomUUID();
+          await invoke("html_preview_register", { id, content: doc });
+          if (cancelled) {
+            void invoke("html_preview_unregister", { id }).catch(() => {});
+            return;
+          }
+          cleanupIds.push(id);
+          const frame = document.createElement("iframe");
+          frame.src = `htmlpreview://localhost/${id}`;
+          frame.setAttribute("sandbox", "");
+          frame.title = "Mermaid diagram";
+          frame.style.cssText =
+            "display:block;width:100%;border:0;" +
+            (ratio ? `aspect-ratio:${ratio[1]}/${ratio[2]}` : "height:20rem");
+          wrap.appendChild(frame);
+          code.closest("pre")?.replaceWith(wrap);
+        } catch {
+          /* leave the code block as readable source */
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+      for (const id of cleanupIds) {
+        void invoke("html_preview_unregister", { id }).catch(() => {});
+      }
+    };
+  }, [state]);
+
+  // Free cached PDF bytes when the open document changes / unmounts. Keyed on
+  // the path, NOT the state object: load() can commit the pdf state twice
+  // (React StrictMode double-invokes the load effect in dev), and a cleanup
+  // keyed on object identity would clear the cache out from under the mounted
+  // PdfViewer on the second commit ("No PDF data available").
+  const pdfPath = state.status === "pdf" ? state.filePath : null;
+  useEffect(() => {
+    if (!pdfPath) return;
+    return () => clearBinaryData(pdfPath);
+  }, [pdfPath]);
+
+  if (!openDoc) return null;
+
+  return (
+    <div className="view-enter relative h-full w-full bg-background">
+      {/* Button islands (iOS 26 / Notes layout, #581). Back is ALWAYS the
+          top-left island — placement must not depend on the document type.
+          Top-right holds Share (issue #582) — the native share sheet over a
+          temp copy of the file. */}
+      {!nativeChrome && searchable && !editing && (
+        <SearchIsland
+          query={findQuery}
+          onQueryChange={setFindQuery}
+          placeholder={t("reader.find")}
+          matches={
+            findQuery && findTotal > 0
+              ? {
+                  current: findIndex + 1,
+                  total: findTotal,
+                  onNext: () => goToMatch(true),
+                  onPrev: () => goToMatch(false),
+                }
+              : undefined
+          }
+        />
+      )}
+      {!nativeChrome && (
+        <>
+          <Island corner="top-left">
+            <ChromeButton label={t("reader.back")} onClick={backAction}>
+              <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
+            </ChromeButton>
+          </Island>
+          <Island corner="top-right">
+            {editing ? (
+              <ChromeButton label={t("reader.save")} onClick={() => void saveEdit()}>
+                <Check strokeWidth={1.5} className="h-4 w-4" />
+              </ChromeButton>
+            ) : (
+              <>
+                {editable && (
+                  <ChromeButton label={t("reader.edit")} onClick={startEdit}>
+                    <Pencil strokeWidth={1.5} className="h-4 w-4" />
+                  </ChromeButton>
+                )}
+                <ChromeButton
+                  label={t("action.share")}
+                  onClick={() => {
+                    void iosShareFile(relPath).catch((err) => toast.error(t("action.shareFailed", { error: String(err) })));
+                  }}
+                >
+                  <Share strokeWidth={1.5} className="h-4 w-4" />
+                </ChromeButton>
+              </>
+            )}
+          </Island>
+        </>
+      )}
+      {state.status !== "pdf" && (
+        <h1 className="pointer-events-none absolute left-1/2 top-[max(1.25rem,env(safe-area-inset-top))] z-40 max-w-[55vw] -translate-x-1/2 truncate text-sm font-medium text-muted-foreground">
+          {name}
+        </h1>
+      )}
+
+      {editing ? (
+        // Raw-source editor. 16px font is REQUIRED — iOS auto-zooms the
+        // viewport into any focused input with a smaller font, and never
+        // zooms back out.
+        <div className="absolute inset-0" style={CONTENT_INSETS}>
+          <textarea
+            autoFocus
+            aria-label={t("reader.editor")}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            autoCapitalize="sentences"
+            autoCorrect="on"
+            spellCheck
+            className="h-full w-full resize-none border-0 bg-background px-5 py-6 text-[16px] leading-relaxed text-foreground outline-none"
+            style={kind === "text" ? { fontFamily: "ui-monospace, monospace" } : undefined}
+          />
+        </div>
+      ) : state.status === "pdf" ? (
+        // The PdfViewer owns the full screen in island chrome mode: no
+        // desktop pill, search + page indicator in its bottom-center
+        // SearchIsland, back in our top-left island.
+        <div className="absolute inset-0">
+          <Suspense fallback={<ReaderMessage spinner>{t("reader.loading")}</ReaderMessage>}>
+            <PdfViewer
+              filePath={state.filePath}
+              fileName={name}
+              mobileChrome
+              nativeFind={nativeChrome}
+              mobileFindRef={pdfFindRef}
+              onMobileFindState={setPdfFind}
+            />
+          </Suspense>
+        </div>
+      ) : state.status === "html" ? (
+        // Scripts run; nothing else does. `allow-scripts` WITHOUT
+        // `allow-same-origin` leaves the document on an opaque origin, so a
+        // report can execute its own charts but cannot reach this app's DOM,
+        // storage, or the Tauri IPC bridge. The document scrolls itself,
+        // starting below the top islands.
+        // Backed by the APP's background, and the frame itself stays
+        // invisible until it has loaded. WebKit gives a sandboxed iframe an
+        // opaque WHITE backing that no styling inside the document can
+        // change, so a dark report flashed white on open — the same failure
+        // as the launch flash, one layer down (Peter, 2026-08-14).
+        <div
+          className="absolute inset-x-0 bottom-0 bg-background"
+          style={{ top: "calc(3.75rem + env(safe-area-inset-top))" }}
+        >
+          <iframe
+            ref={htmlFrameRef}
+            key={state.url}
+            src={state.url}
+            title={name}
+            sandbox="allow-scripts"
+            onLoad={() => setHtmlShownUrl(state.url)}
+            className="h-full w-full border-0 transition-opacity duration-150"
+            style={{ opacity: htmlShownUrl === state.url ? 1 : 0 }}
+          />
+        </div>
+      ) : (
+      <div ref={scrollerRef} className="absolute inset-0 overflow-y-auto" style={CONTENT_INSETS}>
+        {state.status === "loading" && <ReaderMessage spinner>{t("reader.loading")}</ReaderMessage>}
+
+        {state.status === "downloading" && (
+          <ReaderMessage icon={CloudDownload} title={t("reader.downloading")}>
+            {t("reader.downloadingHint")}
+            <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={() => void load()}>
+              {t("reader.retry")}
+            </Button>
+          </ReaderMessage>
+        )}
+
+        {state.status === "error" && (
+          <ReaderMessage icon={AlertCircle} title={t("reader.openFailed")}>
+            <span className="break-words">{state.message}</span>
+            <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={() => void load()}>
+              {t("library.tryAgain")}
+            </Button>
+          </ReaderMessage>
+        )}
+
+        {state.status === "unsupported" && (
+          <ReaderMessage icon={FileQuestion} title={t("reader.unsupported")}>
+            {name.split(".").pop()?.toUpperCase()} files aren't viewable in the
+            mobile app yet — open it on your Mac.
+          </ReaderMessage>
+        )}
+
+        {state.status === "too-large" && (
+          <ReaderMessage icon={FileWarning} title={t("reader.tooLarge")}>
+            This file is {formatBytes(state.sizeBytes)} — too large to preview
+            safely in Notesage.
+            <Button
+              variant="outline"
+              size="sm"
+              className="ios-press-row mt-4"
+              onClick={() => {
+                void iosShareFile(relPath).catch((err) => toast.error(t("action.shareFailed", { error: String(err) })));
+              }}
+            >
+              Share instead
+            </Button>
+          </ReaderMessage>
+        )}
+
+        {state.status === "image" && (
+          <div className="flex justify-center p-4">
+            <img src={state.url} alt={name} className="max-h-full max-w-full rounded-md" />
+          </div>
+        )}
+
+        {state.status === "text" && (
+          // Shares articleRef with the markdown article (they never render
+          // together) so find-in-document walks this text too.
+          <pre
+            ref={(el) => {
+              articleRef.current = el;
+            }}
+            className="mx-auto max-w-[720px] whitespace-pre-wrap break-words px-5 py-8 font-mono text-sm leading-relaxed text-foreground"
+          >
+            {state.content}
+          </pre>
+        )}
+
+        {state.status === "markdown" && (
+          // Safe to inject: the fragment comes from comrak run WITHOUT
+          // `unsafe_`, which strips raw HTML (including <script>) from the
+          // source. Pinned by a Rust test in preview.rs.
+          <article
+            ref={articleRef}
+            // `.ProseMirror` is reused for typographic parity with the desktop,
+            // but its padding is desktop-sized (6rem each side) and `prose`
+            // caps the measure at 65ch — together they left barely half the
+            // width of a phone for text. The padding is variable-driven, so
+            // retune it here rather than fight the cascade; `max-w-none` drops
+            // the measure cap so the column follows the screen.
+            // `.ProseMirror` alone, no Tailwind `prose`: editor.css is the
+            // complete desktop rendering (headings, lists, tables, code), and
+            // stacking prose on top double-applied paragraph/list margins —
+            // every line break gained prose's extra 1.25em on top of the
+            // editor's own spacing.
+            // The inline `whiteSpace: "normal"` overrides the editor
+            // container's `white-space: pre-wrap` (a ProseMirror requirement).
+            // This is static comrak HTML, and comrak pretty-prints — newlines
+            // between <li> tags and at source-wrap points inside paragraphs.
+            // Under pre-wrap every one of those renders as a literal line
+            // break: phantom mid-paragraph breaks and huge gaps between
+            // bullets. It must be an inline style, not the Tailwind
+            // `whitespace-normal` utility: editor.css is un-layered while
+            // Tailwind v4 utilities live in `@layer utilities`, so the
+            // utility class loses to `.ProseMirror` no matter the order.
+            // <pre> code blocks keep their own UA white-space and are unaffected.
+            className="ProseMirror pb-[max(2rem,env(safe-area-inset-bottom))]"
+            style={
+              {
+                whiteSpace: "normal",
+                "--editor-padding-left": "1.25rem",
+                "--editor-padding-right": "1.25rem",
+                "--editor-padding-top": "1.5rem",
+                "--editor-padding-bottom": "1.5rem",
+              } as React.CSSProperties
+            }
+            dangerouslySetInnerHTML={articleInnerHtml ?? { __html: "" }}
+          />
+        )}
+      </div>
+      )}
+
+    </div>
+  );
+}
+
+/**
+ * The note's title for filename purposes (#586 — "title in doc becomes file
+ * name"): first non-empty line after frontmatter, `#` markers stripped,
+ * path-hostile characters replaced, capped at 60 chars. Null when the note
+ * has no usable title (filename is left alone).
+ */
+export function deriveNoteTitle(md: string): string | null {
+  let src = md;
+  const fm = /^---\n[\s\S]*?\n---\n?/.exec(src);
+  if (fm) src = src.slice(fm[0].length);
+  for (const line of src.split("\n")) {
+    const text = line.replace(/^#+\s*/, "").trim();
+    if (!text) continue;
+    const clean = text
+      .replace(/[/\\:]/g, "-")
+      .replace(/^\.+/, "")
+      .slice(0, 60)
+      .trim();
+    return clean || null;
+  }
+  return null;
+}
+
+/** Human-readable file size for the too-large decline card. */
+function formatBytes(bytes: number): string {
+  if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`;
+  return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+}
+
+/** Map an image filename to a MIME type so blob-URL `<img>` renders correctly. */
+function imageMimeFor(name: string): string {
+  const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+  switch (ext) {
+    case "png":
+      return "image/png";
+    case "jpg":
+    case "jpeg":
+      return "image/jpeg";
+    case "gif":
+      return "image/gif";
+    case "webp":
+      return "image/webp";
+    case "svg":
+      return "image/svg+xml";
+    case "bmp":
+      return "image/bmp";
+    default:
+      return "application/octet-stream";
+  }
+}
+
+function ReaderMessage({
+  icon: Icon,
+  title,
+  spinner,
+  children,
+}: {
+  icon?: typeof AlertCircle;
+  title?: string;
+  spinner?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center px-8 py-16 text-center">
+      {spinner && (
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-foreground" aria-hidden />
+      )}
+      {Icon && <Icon strokeWidth={1.25} className="h-8 w-8 text-muted-foreground" />}
+      {title && <p className="mt-3 text-sm font-medium text-foreground">{title}</p>}
+      <div className="mt-1 max-w-xs text-xs leading-relaxed text-muted-foreground">{children}</div>
+    </div>
+  );
+}

@@ -1,5 +1,6 @@
 use tauri::AppHandle;
 
+#[cfg(desktop)]
 #[tauri::command]
 pub async fn open_folder_dialog(app: AppHandle) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::DialogExt;
@@ -13,6 +14,17 @@ pub async fn open_folder_dialog(app: AppHandle) -> Result<Option<String>, String
         Some(path) => Ok(Some(path.to_string())),
         None => Ok(None),
     }
+}
+
+/// iOS has no folder picker in `tauri-plugin-dialog` (`blocking_pick_folder`
+/// is desktop-only). The mobile app doesn't use this: granting access to the
+/// library folder goes through `ios_pick_library_folder`, which presents
+/// `UIDocumentPickerViewController` and persists a security-scoped bookmark —
+/// a different mechanism with a different security model, not a port of this.
+#[cfg(mobile)]
+#[tauri::command]
+pub async fn open_folder_dialog(_app: AppHandle) -> Result<Option<String>, String> {
+    Err("Folder picking on iOS goes through ios_pick_library_folder".to_string())
 }
 
 #[tauri::command]

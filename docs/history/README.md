@@ -192,3 +192,20 @@ Chronological log of major implementation milestones and changes.
 | 186 | [Release v0.48.0-alpha.21](186-release-v0.48.0-alpha.21.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 187 | [Release v0.48.0-alpha.22](187-release-v0.48.0-alpha.22.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 188 | [Release v0.48.0-alpha.23](188-release-v0.48.0-alpha.23.md) | pi as a second Local Agent engine (beta), permission modes for local agents, fix for agents failing to start after an update |
+| 189 | [Release v0.48.0-alpha.24](189-release-v0.48.0-alpha.24.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 190 | [Release v0.48.0-alpha.25](190-release-v0.48.0-alpha.25.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 191 | [Release v0.48.0-alpha.26](191-release-v0.48.0-alpha.26.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 192 | [Release v0.48.0-alpha.27](192-release-v0.48.0-alpha.27.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 193 | [Release v0.48.0-alpha.28](193-release-v0.48.0-alpha.28.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 194 | [Release v0.48.0-alpha.29](194-release-v0.48.0-alpha.29.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 195 | [Release v0.48.0-alpha.30](195-release-v0.48.0-alpha.30.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 196 | [Release v0.48.0-alpha.31](196-release-v0.48.0-alpha.31.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 197 | [Release v0.48.0-alpha.32](197-release-v0.48.0-alpha.32.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 198 | [Release v0.48.0-alpha.33](198-release-v0.48.0-alpha.33.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 199 | [Release v0.48.0-alpha.34](199-release-v0.48.0-alpha.34.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 200 | [Release v0.48.0-alpha.35](200-release-v0.48.0-alpha.35.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 201 | [Release v0.48.0-alpha.36](201-release-v0.48.0-alpha.36.md) | The migration alpha: switches alpha-channel users to the single stream ahead of removing the alpha update path. |
+| 202 | [Release v0.48.0-alpha.37](202-release-v0.48.0-alpha.37.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
+| 203 | [Release v0.48.0](203-release-v0.48.0.md) | First stable since 0.47: one build for everyone, Labs, the iOS companion app, Local Agent pi engine, Automations. |
+| 204 | [Release v0.49.0](204-release-v0.49.0.md) | Auto-cut release. See merged PRs for details. |
+| 205 | [Release v0.50.0](205-release-v0.50.0.md) | Auto-cut release. See merged PRs for details. |

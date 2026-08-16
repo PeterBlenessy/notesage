@@ -43,6 +43,7 @@ fn set_log_level(level: String) {
 // `option_env!` resolves to `None` when the var is unset at compile time, so a
 // no-key local/dev build compiles and runs as a clean telemetry no-op — never
 // `env!` (compile error) and never a runtime panic.
+#[cfg_attr(target_os = "ios", allow(dead_code))]
 const SENTRY_DSN: Option<&str> = option_env!("NOTESAGE_SENTRY_DSN");
 const APTABASE_KEY: Option<&str> = option_env!("NOTESAGE_APTABASE_KEY");
 
@@ -72,6 +73,13 @@ pub fn run() {
     // registered, so the panic never fired — which is why dev/local builds and
     // earlier alphas were unaffected. `runtime` + `_runtime_guard` are held as
     // locals through the blocking `builder.run(...)` call below.
+    // reqwest 0.13's rustls backend requires a process-default CryptoProvider
+    // and panics "No provider set" when building any client without one. On
+    // desktop the panic lands in a worker thread and hides; on iOS, Tauri's
+    // dev-server proxy builds a client during startup and the panic kills the
+    // app before the first frame. Install ring exactly once, up front.
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
     let runtime = build_app_runtime();
     tauri::async_runtime::set(runtime.handle().clone());
     let _runtime_guard = runtime.enter();
@@ -84,6 +92,9 @@ pub fn run() {
     // crash toggle takes effect immediately with no second panic-hook install.
     //
     // `None` DSN → no client is built → all telemetry helpers are clean no-ops.
+    // Not compiled for iOS at all: the sentry crates are absent from that
+    // target (#587), so this block would not even name-resolve there.
+    #[cfg(not(target_os = "ios"))]
     if let Some(dsn) = SENTRY_DSN {
         let guard = sentry::init((
             dsn,
@@ -126,15 +137,32 @@ pub fn run() {
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
-        .plugin(tauri_plugin_window_state::Builder::new().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_notification::init())
-        .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
-            None,
-        ));
+        .plugin(tauri_plugin_notification::init());
+
+    // iOS native bridge (security-scoped library access). A plugin crate with
+    // its own Swift Package — see crates/tauri-plugin-notesage-ios — because
+    // that is the only shape where Tauri resolves the Swift `@_cdecl` entry
+    // point at link time.
+    #[cfg(target_os = "ios")]
+    {
+        builder = builder.plugin(tauri_plugin_notesage_ios::init());
+    }
+
+    // Desktop-only plugins. `tauri_plugin_window_state` restores window
+    // geometry and `tauri_plugin_autostart` installs a LaunchAgent — neither
+    // concept exists on iOS, where both crates' APIs are compiled out.
+    #[cfg(desktop)]
+    {
+        builder = builder
+            .plugin(tauri_plugin_window_state::Builder::new().build())
+            .plugin(tauri_plugin_autostart::init(
+                tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+                None,
+            ));
+    }
 
     // Telemetry — usage analytics (Aptabase). Registered unconditionally when a
     // build-time key is present; the plugin emits nothing until the frontend
@@ -175,7 +203,15 @@ pub fn run() {
                     "Aptabase key is malformed (expected A-<REGION>-<id>) → tracking disabled."
                 ),
             }
-            builder = builder.plugin(tauri_plugin_aptabase::Builder::new(key).build());
+            // iOS has no aptabase plugin (dependency is gated off in
+            // Cargo.toml — mobile ships no usage telemetry). `key` is still
+            // read above so the diagnostics stay identical across platforms.
+            #[cfg(not(target_os = "ios"))]
+            {
+                builder = builder.plugin(tauri_plugin_aptabase::Builder::new(key).build());
+            }
+            #[cfg(target_os = "ios")]
+            let _ = key;
         }
     }
 
@@ -185,6 +221,7 @@ pub fn run() {
     // so frontend egress rides the Rust SDK — no widening of the JS HTTP
     // capability surface. Runtime crash-consent gating is handled by binding /
     // unbinding the client on the Hub (`telemetry::set_sentry_enabled`).
+    #[cfg(not(target_os = "ios"))]
     if let Some(client) = telemetry::sentry_client() {
         builder = builder.plugin(tauri_plugin_sentry::init(&client));
     }
@@ -195,7 +232,7 @@ pub fn run() {
         builder = builder.plugin(tauri_plugin_webdriver::init());
     }
 
-    builder
+    let builder = builder
         .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
@@ -231,10 +268,56 @@ pub fn run() {
         .register_uri_scheme_protocol("htmlpreview", |ctx, request| {
             html_preview::handle_request(ctx, request)
         })
-        .invoke_handler(tauri::generate_handler![
+        ;
+
+    // iOS registers ONLY the mobile shell's command surface. The desktop list
+    // below contains broad write/exec/credential commands (`write_file` on
+    // arbitrary absolute paths, `delete_path`, `get_credential`,
+    // `acp_agent_spawn`, `run_in_terminal`, …) that the mobile shell never
+    // calls — but "the frontend doesn't call it" is not a security boundary.
+    // Gating them out of the iOS binary keeps the documented posture real at
+    // the IPC layer. Since #586 the posture is "reads + three allowlisted
+    // note-editing writes", not read-only: `ios_write_file` /
+    // `ios_create_file` / `ios_create_directory` are library-root-confined
+    // (sanitized relative paths, no delete/rename/exec) — an XSS-class bug in
+    // the mobile WebView can at worst scribble text inside the granted
+    // Notesage folder, never touch credentials, arbitrary paths, or spawn
+    // anything.
+    #[cfg(target_os = "ios")]
+    let builder = builder.invoke_handler(tauri::generate_handler![
+        ios_pick_library_folder,
+        ios_get_library_grant,
+        ios_clear_library_grant,
+        ios_list_directory,
+        ios_read_file,
+        ios_read_binary,
+        ios_write_file,
+        ios_create_file,
+        ios_create_directory,
+        ios_rename_file,
+        ios_delete_file,
+        ios_quick_look,
+        ios_thumbnail,
+        ios_text_prompt,
+        ios_content_ready,
+        ios_context_menu,
+        ios_entry_menu,
+        ios_ensure_directory,
+        ios_set_chrome,
+            ios_share_file,
+            ios_ensure_downloaded,
+            ios_stat_file,
+        render_markdown_fragment,
+        html_preview_register,
+        html_preview_unregister,
+        log_frontend,
+        set_log_level,
+    ]);
+
+    #[cfg(not(target_os = "ios"))]
+    let builder = builder.invoke_handler(tauri::generate_handler![
             open_devtools,
             set_log_level,
-            alpha_check,
             read_file,
             read_binary_file,
             write_file,
@@ -255,6 +338,37 @@ pub fn run() {
             delete_path,
             path_exists,
             allow_asset_dir,
+            ios_pick_library_folder,
+            ios_get_library_grant,
+            ios_clear_library_grant,
+            ios_list_directory,
+            ios_read_file,
+            ios_read_binary,
+            ios_write_file,
+            ios_create_file,
+            ios_create_directory,
+            ios_rename_file,
+            ios_delete_file,
+            ios_quick_look,
+            ios_thumbnail,
+            ios_text_prompt,
+            ios_content_ready,
+            ios_context_menu,
+            ios_entry_menu,
+        ios_entry_menu,
+            ios_ensure_directory,
+        ios_ensure_directory,
+        ios_context_menu,
+        ios_entry_menu,
+        ios_ensure_directory,
+        ios_content_ready,
+        ios_context_menu,
+        ios_entry_menu,
+        ios_ensure_directory,
+            ios_set_chrome,
+            ios_share_file,
+            ios_ensure_downloaded,
+            ios_stat_file,
             open_folder_dialog,
             open_file_dialog,
             run_in_terminal,
@@ -289,6 +403,7 @@ pub fn run() {
             export_docx,
             render_html,
             render_markdown_preview,
+            render_markdown_fragment,
             save_binary_file,
             import_pptx_template,
             list_pptx_templates,
@@ -474,7 +589,9 @@ pub fn run() {
             tray::show_main_window_command,
             html_preview_register,
             html_preview_unregister,
-        ])
+        ]);
+
+    builder
         .setup(|app| {
             // Log startup at Info before restricting to Warn — this line always appears.
             log::info!(target: "notesage::lifecycle", "Notesage starting up (version {})", app.package_info().version);
@@ -495,6 +612,7 @@ pub fn run() {
             log::debug!(target: "notesage::lifecycle", "Cleaned up orphaned agent processes");
 
             // Set up system tray
+            #[cfg(desktop)]
             if let Err(e) = tray::setup_tray(app) {
                 log::error!(target: "notesage::tray", "Failed to set up tray: {}", e);
             }
