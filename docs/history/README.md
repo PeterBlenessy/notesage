@@ -207,3 +207,4 @@ Chronological log of major implementation milestones and changes.
 | 201 | [Release v0.48.0-alpha.36](201-release-v0.48.0-alpha.36.md) | The migration alpha: switches alpha-channel users to the single stream ahead of removing the alpha update path. |
 | 202 | [Release v0.48.0-alpha.37](202-release-v0.48.0-alpha.37.md) | Auto-cut alpha by `aw-alpha-cut`. See merged PRs for details. |
 | 203 | [Release v0.48.0](203-release-v0.48.0.md) | First stable since 0.47: one build for everyone, Labs, the iOS companion app, Local Agent pi engine, Automations. |
+| 204 | [Release v0.49.0](204-release-v0.49.0.md) | Auto-cut release. See merged PRs for details. |
