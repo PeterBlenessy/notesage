@@ -910,6 +910,120 @@ describe('v1 → v2 migration', () => {
   });
 });
 
+// ===========================================================================
+// Recording UX recovery (#698) — per-recording language override, moved
+// audio path fix, and re-run-transcription lifecycle.
+// ===========================================================================
+
+describe('setRecordingLanguage', () => {
+  it("sets language on a matching kind:'recording' task", () => {
+    useActivityStore.getState().addRecordingItem({ id: 'rec-1', label: 'Recording' });
+    useActivityStore.getState().setRecordingLanguage('rec-1', 'sv');
+
+    expect(useActivityStore.getState().tasks[0].language).toBe('sv');
+  });
+
+  it('does nothing for a non-existent task id', () => {
+    useActivityStore.getState().addRecordingItem({ id: 'rec-1', label: 'Recording' });
+    useActivityStore.getState().setRecordingLanguage('nonexistent', 'sv');
+
+    expect(useActivityStore.getState().tasks[0].language).toBeUndefined();
+  });
+
+  it('does not set language on a non-recording task with the same id', () => {
+    useActivityStore.getState().addTask(makeTask({ id: 'shared', kind: 'agent' }));
+    useActivityStore.getState().setRecordingLanguage('shared', 'sv');
+
+    expect(useActivityStore.getState().tasks[0].language).toBeUndefined();
+  });
+});
+
+describe('addTranscriptionJob language', () => {
+  it('stores an optional language field on the created job', () => {
+    useActivityStore.getState().addTranscriptionJob({
+      id: 'tx-1',
+      label: 'x',
+      audioPath: '/a.wav',
+      language: 'en',
+    });
+
+    expect(useActivityStore.getState().tasks[0].language).toBe('en');
+  });
+
+  it('leaves language undefined when omitted', () => {
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+    expect(useActivityStore.getState().tasks[0].language).toBeUndefined();
+  });
+});
+
+describe('setTranscriptionMoved — audio path fix', () => {
+  it('updates audioPath alongside transcriptPath when a new audio path is provided', () => {
+    useActivityStore.getState().addTranscriptionJob({
+      id: 'tx-1',
+      label: 'x',
+      audioPath: '/inbox/Recording m/audio.wav',
+    });
+
+    useActivityStore
+      .getState()
+      .setTranscriptionMoved('tx-1', '/proj/Recording m/transcript.md', '/proj/Recording m/audio.wav');
+
+    const task = useActivityStore.getState().tasks[0];
+    expect(task.transcriptPath).toBe('/proj/Recording m/transcript.md');
+    expect(task.audioPath).toBe('/proj/Recording m/audio.wav');
+    expect(task.moved).toBe(true);
+  });
+
+  it('leaves audioPath unchanged when no new audio path is provided (back-compat)', () => {
+    useActivityStore.getState().addTranscriptionJob({
+      id: 'tx-1',
+      label: 'x',
+      audioPath: '/inbox/Recording m/audio.wav',
+    });
+
+    useActivityStore.getState().setTranscriptionMoved('tx-1', '/proj/Recording m/transcript.md');
+
+    expect(useActivityStore.getState().tasks[0].audioPath).toBe('/inbox/Recording m/audio.wav');
+  });
+});
+
+describe('resetTranscriptionForRerun', () => {
+  it('flips a done transcription back to running and resets progress + completedAt', () => {
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+    useActivityStore.getState().setTranscriptionDone('tx-1', '/t.md');
+
+    useActivityStore.getState().resetTranscriptionForRerun('tx-1');
+
+    const task = useActivityStore.getState().tasks[0];
+    expect(task.status).toBe('running');
+    expect(task.progress).toBe(0);
+    expect(task.completedAt).toBeUndefined();
+    // Everything else about the job — including where the audio and the
+    // previous transcript live — survives the re-run reset.
+    expect(task.audioPath).toBe('/a.wav');
+    expect(task.transcriptPath).toBe('/t.md');
+  });
+
+  it('flips an errored transcription back to running (re-run from the inbox)', () => {
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+    useActivityStore.getState().setTranscriptionError('tx-1');
+
+    useActivityStore.getState().resetTranscriptionForRerun('tx-1');
+
+    expect(useActivityStore.getState().tasks[0].status).toBe('running');
+    expect(useActivityStore.getState().tasks[0].progress).toBe(0);
+  });
+
+  it('does not create a duplicate task — updates the existing entry in place', () => {
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'x', audioPath: '/a.wav' });
+    useActivityStore.getState().setTranscriptionDone('tx-1', '/t.md');
+
+    useActivityStore.getState().resetTranscriptionForRerun('tx-1');
+
+    expect(useActivityStore.getState().tasks).toHaveLength(1);
+  });
+});
+
 // `setManuallyHidden` describe deleted with Classic Layout removal (#325).
 // The flag was ActivityStrip's hide state; ActivityStrip is gone and the
 // AgentOrb popover open/closed state lives in the agent-orb-events bus.
