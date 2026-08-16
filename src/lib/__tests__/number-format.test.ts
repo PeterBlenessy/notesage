@@ -251,6 +251,48 @@ describe("formatDateValue", () => {
     });
   });
 
+  // A first component above 12 cannot be a month, so it must be a day. These
+  // used to roll silently into another year (`new Date` accepts month 24 and
+  // returns a valid Date, so the isNaN guard never fired) — `25/12/2026`
+  // rendered as "Jan 12, 2028", and the table sorted on that.
+  describe("day-first slash format (unambiguous)", () => {
+    it("reads 25/12/2026 as Christmas, not Jan 2028", () => {
+      expect(formatDateValue("25/12/2026")).toBe("Dec 25, 2026");
+    });
+
+    it("reads 31/01/2026 as the last of January", () => {
+      expect(formatDateValue("31/01/2026")).toBe("Jan 31, 2026");
+    });
+
+    it("reads 13/05/2026 as the 13th, the first day-only value", () => {
+      expect(formatDateValue("13/05/2026")).toBe("May 13, 2026");
+    });
+  });
+
+  describe("dates that name no real day", () => {
+    it("returns raw text for 31 February rather than rolling into March", () => {
+      expect(formatDateValue("31/02/2026")).toBe("31/02/2026");
+    });
+
+    it("returns raw text when neither component can be a month", () => {
+      expect(formatDateValue("13/13/2026")).toBe("13/13/2026");
+    });
+
+    it("returns raw text for an impossible ISO day", () => {
+      expect(formatDateValue("2026-02-31")).toBe("2026-02-31");
+    });
+  });
+
+  describe("genuinely ambiguous slash dates", () => {
+    // Nothing in "03/04/2026" says whether the writer meant 3 April or 4
+    // March; only a locale can. Until #653 supplies one, the historical
+    // month-first reading stands. Pinned so the limit is a decision rather
+    // than an oversight — and so changing it later is a visible choice.
+    it("keeps the month-first reading when both components could be a month", () => {
+      expect(formatDateValue("03/04/2026")).toBe("Mar 4, 2026");
+    });
+  });
+
   describe("invalid dates", () => {
     it("returns original text for invalid format", () => {
       expect(formatDateValue("not a date")).toBe("not a date");
@@ -286,6 +328,51 @@ describe("parseDateValue", () => {
 
   it("returns NaN for unparseable text", () => {
     expect(parseDateValue("not a date")).toBeNaN();
+  });
+
+  // Sorting reads dates through this function, so a misread here is worse than
+  // a misread in display: the column silently orders itself wrongly and there
+  // is nothing on screen to reveal it. These mirror the `formatDateValue`
+  // cases — the two share `parseDateText` precisely so they cannot disagree.
+  describe("day-first slash dates", () => {
+    it("parses 25/12/2026 as Christmas, not January 2028", () => {
+      expect(parseDateValue("25/12/2026")).toBe(new Date(2026, 11, 25).getTime());
+    });
+
+    it("parses 31/01/2026 as the last of January", () => {
+      expect(parseDateValue("31/01/2026")).toBe(new Date(2026, 0, 31).getTime());
+    });
+
+    // The point of the whole exercise: a date column has to order itself the
+    // way a reader would. Before this, `25/12/2026` parsed to January 2028 and
+    // sorted last by more than a year.
+    //
+    // `01/06/2026` is ambiguous and keeps the month-first reading (6 January),
+    // so it lands first. The other two are unambiguous: 13 May, then Christmas.
+    it("sorts day-first dates chronologically", () => {
+      const dates = ["25/12/2026", "01/06/2026", "13/05/2026"];
+      const sorted = [...dates].sort((a, b) => parseDateValue(a) - parseDateValue(b));
+      expect(sorted).toEqual(["01/06/2026", "13/05/2026", "25/12/2026"]);
+    });
+  });
+
+  describe("dates that name no real day", () => {
+    it("returns NaN for 31 February rather than rolling into March", () => {
+      expect(parseDateValue("31/02/2026")).toBeNaN();
+    });
+
+    it("returns NaN when neither component can be a month", () => {
+      expect(parseDateValue("13/13/2026")).toBeNaN();
+    });
+
+    it("returns NaN for an impossible ISO day", () => {
+      expect(parseDateValue("2026-02-31")).toBeNaN();
+    });
+  });
+
+  it("round-trips a day-first date back to the same day", () => {
+    const epoch = parseDateValue("25/12/2026");
+    expect(formatValue(epoch, "date")).toBe("Dec 25, 2026");
   });
 
   it("returns NaN for a partial date", () => {
