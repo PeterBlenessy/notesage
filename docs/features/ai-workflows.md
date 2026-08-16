@@ -206,7 +206,7 @@ On-device speech-to-text powered by whisper-rs with Metal GPU acceleration — f
 ⏺ Recording (02:14)  →  ⟳ Transcribing…  →  ✓ Ready to file  →  📁 Moved to project
 ```
 
-1. **Record.** The StatusTray microphone (or `⌘⇧R`) starts capture. A single mic-stream owner appends samples to a WAV file in the `~/Notesage/Recordings/Recording <timestamp>/` inbox folder. The orb shows a `recording` item with a pause-aware elapsed time and inline pause/stop controls; while recording the orb draws a clock-style seconds-ray ring (distinct from the agent-activity pulse). Capture is deliberately dumb — samples → file, no Whisper, no chunking — so it can never contend with a transcription. Pause/resume discards samples without tearing down the stream.
+1. **Record.** The microphone in the AgentOrb panel header (or `⌘⇧R`) starts capture. A single mic-stream owner appends samples to a WAV file in the `~/Notesage/Recordings/Recording <timestamp>/` inbox folder. The orb shows a `recording` item with a pause-aware elapsed time and inline pause/stop controls; while recording the orb draws a clock-style seconds-ray ring (distinct from the agent-activity pulse). Capture is deliberately dumb — samples → file, no Whisper, no chunking — so it can never contend with a transcription. Pause/resume discards samples without tearing down the stream.
 2. **Stop.** A second click (or `⌘⇧R`) signals the stream owner to stop; teardown (stream drop + thread join) is awaited before the command returns and the WAV is finalized. A rapid stop→start is safe because the new stream can only open after the previous owner has fully released CoreAudio.
 3. **Transcribe.** A background **transcription job** (tracked in `activity-store`, surfaced in the orb / `AgentPanel`) runs whole-file Whisper once with the configured model and produces timestamped segments. Progress streams into the activity item via `transcription-progress` events.
 4. **File it.** On completion the panel offers "Move to project"; picking one relocates the whole bundle (audio + transcript note) into that project. No pick leaves it in the inbox, re-openable and re-runnable.
@@ -281,7 +281,9 @@ Assistant messages render as an ordered stream of typed segments, matching the U
 | `src/hooks/useAgentTaskOperations.ts` | Background agent task management |
 | `src/hooks/useSkillOperations.ts` | Skill/agent discovery |
 | `src/hooks/useRecording.ts` | Mic capture lifecycle (start/stop → WAV file, elapsed timer, `recording-level` events) |
-| `src/hooks/useMeetingRecording.ts` | StatusTray mic / `⌘⇧R` start-stop trigger for a meeting recording |
+| `src/hooks/useMeetingRecording.ts` | Start-stop trigger for a meeting recording |
+| `src/components/activity/RecordingControl.tsx` | The mic / stop control in the AgentOrb panel header (#696) |
+| `src/hooks/useRecordingShortcut.ts` | `⌘⇧R` wiring, mounted at the app root so it survives with no editor open |
 | `src/hooks/useTranscriptionJob.ts` | Background transcription-job orchestrator (mounted in `App.tsx`) — capture stop → whole-file transcribe → render note → bundle → "Move to project" |
 | `src/lib/transcription/render-transcript.ts` | `TranscriptSegment[]` → transcript note (paragraphs + segments in frontmatter) |
 | `src/lib/transcription/bundle.ts` | Recording-bundle folder creation + move-to-project |

@@ -341,7 +341,7 @@ export function QuietLayout(props: QuietLayoutProps) {
               switches, dirty tracking, and the per-tab EditorState
               cache. The editor itself owns its inner chrome (Toolbar,
               FindBar, BubbleMenu, StatusBar, ExportDialog,
-              CommentPopover, TranscriptionOverlay, DocumentOutline).
+              CommentPopover, DocumentOutline).
               `focusMode` is
               driven by QuietLayout's local `useFocusMode` hook (see
               `editorFocusMode` above) so the editor hides its toolbar /
