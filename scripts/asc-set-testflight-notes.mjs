@@ -150,6 +150,7 @@ const build = await findBuild();
 // One localization per locale. Update where one exists rather than failing,
 // so re-running fixes a typo without needing another upload.
 const existing = await api(`builds/${build.id}/betaBuildLocalizations?limit=50`);
+let failed = 0;
 
 for (const { locale, text, file } of localized) {
   const match = existing.data?.find((l) => l.attributes?.locale === locale);
@@ -180,5 +181,17 @@ for (const { locale, text, file } of localized) {
     // app does not declare, and that is worth reporting rather than aborting
     // a release over — the English note is already in place by then.
     console.warn(`    ${locale}: FAILED (${file}) — ${String(e.message).slice(0, 160)}`);
+    failed += 1;
   }
+}
+
+// Exit non-zero if ANY locale failed, so the caller's recovery message fires.
+// Warning and exiting 0 meant a systemic failure — a key without
+// betaBuildLocalizations permission, an Apple outage, a wrong bundle scope —
+// failed every locale and still took the success branch, printing "Released"
+// while no notes existed. Reporting a failure as success is the one outcome
+// worse than failing.
+if (failed > 0) {
+  console.error(`${failed} of ${localized.length} locale(s) failed. Notes are incomplete.`);
+  process.exitCode = 1;
 }

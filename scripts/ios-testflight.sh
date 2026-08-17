@@ -264,18 +264,33 @@ if ! confirm "Upload?"; then
   # The export directory is temporary and the EXIT trap removes it, so the
   # .ipa has to be moved somewhere durable before saying where it is —
   # otherwise this prints a path that is deleted a second later.
-  KEPT="src-tauri/gen/apple/build/Notesage-${GOT_BUILD}.ipa"
-  mkdir -p "$(dirname "$KEPT")"
-  cp "$IPA" "$KEPT"
-  echo "Stopped. The build is at ${KEPT}"
+  DECLINED="src-tauri/gen/apple/build/Notesage-${GOT_BUILD}.ipa"
+  mkdir -p "$(dirname "$DECLINED")"
+  cp "$IPA" "$DECLINED"
+  echo "Stopped. The build is at ${DECLINED}"
   exit 0
 fi
 
+# Keep the verified .ipa somewhere durable BEFORE talking to Apple. Validation
+# and upload are the two steps most likely to fail for reasons that have
+# nothing to do with the build — a network blip, a transient Apple error — and
+# the cleanup trap would otherwise delete the artifact along with the temp
+# directory, costing a full rebuild to retry a thirty-second upload.
+KEPT="src-tauri/gen/apple/build/Notesage-${GOT_BUILD}.ipa"
+mkdir -p "$(dirname "$KEPT")"
+cp "$IPA" "$KEPT"
+
 echo "==> Validating with Apple"
-xcrun altool --validate-app -f "$IPA" -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+if ! xcrun altool --validate-app -f "$KEPT" -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"; then
+  echo "Validation failed. The build is kept at ${KEPT} — fix and retry the upload without rebuilding."
+  exit 1
+fi
 
 echo "==> Uploading"
-xcrun altool --upload-app -f "$IPA" -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"
+if ! xcrun altool --upload-app -f "$KEPT" -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"; then
+  echo "Upload failed. The build is kept at ${KEPT} — retry the upload without rebuilding."
+  exit 1
+fi
 
 # --- 5b. record which commit this build came from ------------------------------
 #
