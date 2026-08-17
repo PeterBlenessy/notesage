@@ -1,0 +1,129 @@
+name: iOS — TestFlight
+
+# Releases the iOS app to TestFlight by running the SAME script used from a
+# laptop: `scripts/ios-testflight.sh`. This workflow only prepares the
+# environment and hands over.
+#
+# That is deliberate. An earlier draft of this file reimplemented the steps in
+# YAML and was wrong in a way nobody would have noticed until a release failed
+# in CI: it used `tauri ios build --export-method app-store-connect`, which
+# cannot work (see docs/ios-testflight.md — the distribution certificate is
+# cloud-managed, and Tauri cannot pass authentication to xcodebuild). Two
+# implementations of a procedure this fiddly will drift, and the copy that
+# drifts is the one nobody runs by hand.
+#
+# ---------------------------------------------------------------------------
+# NOT YET PROVEN — this has never run
+# ---------------------------------------------------------------------------
+#
+# Releases are cut from a laptop for now, on purpose, until the procedure has
+# earned some trust. Nothing here is enabled by adding this file: it is manual
+# dispatch only, and it stops immediately without the secrets below.
+#
+# One thing is genuinely untested and will decide whether this works at all:
+# whether a bare runner can complete the ARCHIVE step. Cloud signing covers the
+# export, but Apple's guidance suggests archiving still wants a development
+# certificate present, and a fresh runner has none. If that turns out to be
+# required, this needs a development certificate as a secret — at which point
+# the "no certificate secrets" advantage below is half lost, and the trade
+# deserves rethinking rather than patching.
+#
+# ---------------------------------------------------------------------------
+# Secrets
+# ---------------------------------------------------------------------------
+#
+#   ASC_KEY_ID       App Store Connect API key id
+#   ASC_ISSUER_ID    issuer id (per account, shown above the key list)
+#   ASC_PRIVATE_KEY  the .p8 contents
+#
+# The key must have the **Admin** role. Anything less authenticates fine and
+# then fails with "Cloud signing permission error".
+#
+# Note what is NOT needed: no distribution certificate, no provisioning
+# profiles. Signing happens on Apple's servers, so there is nothing to export
+# from a keychain, nothing to base64 into a secret, and nothing to re-issue
+# every year when it expires.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Two runs would ask App Store Connect for the same "next" build number and
+  # the loser would be rejected after a full build.
+  group: ios-testflight
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Build and upload
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Check the secrets are present
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          missing=""
+          [ -n "${ASC_KEY_ID:-}" ]      || missing="$missing ASC_KEY_ID"
+          [ -n "${ASC_ISSUER_ID:-}" ]   || missing="$missing ASC_ISSUER_ID"
+          [ -n "${ASC_PRIVATE_KEY:-}" ] || missing="$missing ASC_PRIVATE_KEY"
+          if [ -n "$missing" ]; then
+            echo "Missing secrets:$missing"
+            echo
+            echo "Releases are cut from a laptop until this is trusted; see"
+            echo "docs/ios-testflight.md. Add the secrets to enable this workflow."
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+
+      - uses: pnpm/action-setup@v5
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - name: Place the API key where the script looks for it
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_PRIVATE_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          # altool's canonical directory — the same layout as a laptop, so the
+          # script discovers everything identically and needs no CI-specific
+          # branch inside it.
+          DIR="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$DIR"
+          printf '%s' "$ASC_PRIVATE_KEY" > "$DIR/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s\n' "$ASC_KEY_ID"    > "$DIR/key_id"
+          printf '%s\n' "$ASC_ISSUER_ID" > "$DIR/issuer_id"
+          chmod 600 "$DIR"/*
+
+      - name: Release
+        env:
+          # The runner is idle by definition, so skip the load check's prompt
+          # and the upload confirmation. On a laptop both still ask.
+          ASSUME_YES: "1"
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          NOTESAGE_APTABASE_KEY: ${{ secrets.NOTESAGE_APTABASE_KEY }}
+          NOTESAGE_SENTRY_DSN: ${{ secrets.NOTESAGE_SENTRY_DSN }}
+        run: scripts/ios-testflight.sh
+
+      - name: Remove the key
+        if: always()
+        run: rm -rf "$HOME/.appstoreconnect"
