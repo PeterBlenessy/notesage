@@ -197,6 +197,21 @@ were caught this way on the first attempt.
 scripts/ios-testflight.sh
 ```
 
+**Releases are cut from `main`, and everything in them is merged first.** The
+script refuses otherwise.
+
+That rule exists because the alternative was tried: on 2026-08-17 four builds
+went to testers from an integration branch merging five open PRs, and by the
+end no commit on `main` matched what anyone was running — shipping `main`
+would have silently removed features testers already had. The `ios-build/*`
+tags kept it traceable, but traceable-to-a-throwaway-branch is not
+reproducible.
+
+`RELEASE_OFF_MAIN=1` overrides, for verifying a fix on device before merging
+it. That is a real need — it is how the HTML-height fix was checked — and the
+override prints what is being shipped that `main` lacks, so it stays an
+exception rather than becoming the habit.
+
 No arguments. Proven end to end on 2026-08-17 with build `0.50.0.1`. It asks
 App Store Connect for the next build number, builds, exports a
 distribution-signed `.ipa`, checks it, and uploads.

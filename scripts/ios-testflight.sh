@@ -11,13 +11,14 @@
 # The three steps, and why each is the way it is
 # ---------------------------------------------------------------------------
 #
-# 1. BUILD. Tauri archives the app. The version it is given decides the bundle
-#    versions, and it overwrites anything stamped into the generated Xcode
-#    project afterwards — so the project cannot be edited into submission.
-#    Instead the version is handed to Tauri as `<marketing>-build.<N>`: Tauri
-#    strips the prerelease tag and appends its trailing number, producing
-#    CFBundleVersion `<marketing>.<N>` and CFBundleShortVersionString
-#    `<marketing>`. Using its own mapping rather than fighting it.
+# 1. BUILD. Tauri archives the app. The marketing version comes from
+#    `tauri.ios.conf.json`, which Tauri merges for iOS builds — iOS has its own
+#    version line, separate from the desktop's in package.json.
+#
+#    The build number is NOT handed to Tauri. Tauri derives CFBundleVersion
+#    from the version string, so the best it could produce is `0.50.0.3`; the
+#    number is meant to be a plain counter, since the version is carried
+#    separately. It is stamped onto the archive in step 2b instead.
 #
 # 2. EXPORT. NOT `tauri ios build --export-method app-store-connect`. Tauri has
 #    no way to pass authentication to xcodebuild, and the export needs it: the
@@ -78,15 +79,103 @@ confirm() {
   [ "$reply" = "y" ] || [ "$reply" = "Y" ]
 }
 
-MARKETING="$(node -p "require('./package.json').version.split('-')[0]")"
+# The iOS marketing version is its OWN line, in `tauri.ios.conf.json` — the
+# file Tauri already merges for iOS builds, verified to override the base
+# config's version. It moves when iOS ships something worth a new version,
+# which is rarely the same moment the desktop moves.
+#
+# It deliberately does NOT bump per release. Several builds under one marketing
+# version is the correct shape: the build number carries per-build identity, so
+# testers see `0.50.0 (0.50.0.3)`. Bumping the marketing version on every
+# upload would produce a stream of numbers that mean nothing.
+#
+# Falling back to package.json would silently re-merge the two lines, which is
+# exactly the drift this replaced — so a missing key is an error, not a default.
+IOS_CONF=src-tauri/tauri.ios.conf.json
+MARKETING="$(node -e "
+  const c = require('./$IOS_CONF');
+  if (!c.version) {
+    console.error('No version in $IOS_CONF — the iOS marketing version lives there.');
+    process.exit(1);
+  }
+  console.log(c.version.split('-')[0]);
+")" || exit 2
 TEAM_ID="${APPLE_TEAM_ID:-M39TDQ2D7L}"
-echo "Notesage ${MARKETING} · key ${ASC_KEY_ID} · team ${TEAM_ID}"
+echo "Notesage iOS ${MARKETING} · key ${ASC_KEY_ID} · team ${TEAM_ID}"
 
 CORES="$(sysctl -n hw.ncpu)"
 LOAD="$(uptime | sed -E 's/.*load averages?: *([0-9.]+).*/\1/')"
 if awk -v l="$LOAD" -v c="$CORES" 'BEGIN { exit !(l / c > 0.7) }'; then
   echo "Machine is busy: load ${LOAD} on ${CORES} cores — the build will be slow."
   confirm "Continue anyway?" || exit 1
+fi
+
+# --- 0a. is this actually main? -----------------------------------------------
+#
+# Releases are cut from `main`, and everything in them is merged first. The
+# alternative was tried on 2026-08-17 and does not hold up: four builds went to
+# testers from an integration branch merging five open PRs, and by the end
+# there was no commit on `main` that corresponded to what anyone was running.
+# Shipping `main` would have silently REMOVED features testers already had.
+#
+# The `ios-build/*` tags kept it traceable, but traceable-to-a-throwaway-branch
+# is not the same as reproducible.
+#
+# `RELEASE_OFF_MAIN=1` overrides, for deliberately testing a fix on device
+# before merging it — that is a real need, and it is exactly how the HTML
+# height fix was verified. It prints what is being shipped that `main` lacks,
+# so the exception stays visible rather than becoming the habit.
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+if [ "${RELEASE_OFF_MAIN:-0}" != "1" ]; then
+  if [ "$BRANCH" != "main" ]; then
+    echo "On '${BRANCH}', not main."
+    echo
+    echo "Releases are cut from main, with everything merged first — otherwise"
+    echo "no commit on main matches what testers are running."
+    echo
+    echo "Merge first, or set RELEASE_OFF_MAIN=1 to ship this branch anyway."
+    exit 1
+  fi
+  git fetch -q origin main 2>/dev/null || true
+  BEHIND=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
+  if [ "${BEHIND:-0}" -gt 0 ]; then
+    echo "main is ${BEHIND} commit(s) behind origin/main — pull before releasing,"
+    echo "or the build omits work that is already merged."
+    exit 1
+  fi
+else
+  AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo "?")
+  echo "RELEASE_OFF_MAIN: shipping '${BRANCH}', ${AHEAD} commit(s) that main does not have."
+  echo "Fine for verifying a fix on device; merge it before this becomes a release."
+fi
+
+# --- 0b. are the tester notes actually for THIS release? -----------------------
+#
+# The failure this guards is silent and lands on the tester: notes describing
+# the previous release, sending people to try something that already shipped.
+# Nothing about a build reveals it — the notes look fine, they are simply
+# about the wrong thing.
+#
+# The `ios-build/*` tags make it checkable. If no note file has changed since
+# the last tagged build, they are last release's notes. That is often correct
+# (a second build of the same release is meant to reuse them) and sometimes
+# not, so this asks rather than refuses.
+LAST_BUILD_TAG=$(git tag --list 'ios-build/*' --sort=-creatordate 2>/dev/null | head -1)
+if [ -z "$LAST_BUILD_TAG" ]; then
+  # Say so rather than passing quietly. The tags are not pushed, so a fresh
+  # clone or a CI runner has none — meaning this check silently does nothing
+  # in exactly the places least likely to notice stale notes.
+  echo "No ios-build/* tags here, so the notes cannot be checked for staleness."
+  echo "Read docs/app-store/testflight-whats-new*.md before continuing."
+else
+  if git diff --quiet "$LAST_BUILD_TAG" -- docs/app-store/testflight-whats-new*.md 2>/dev/null; then
+    echo
+    echo "The tester notes have not changed since ${LAST_BUILD_TAG}."
+    echo "Fine for another build of the same release; wrong for a new one —"
+    echo "testers would be told to try something that already shipped."
+    echo "  docs/app-store/testflight-whats-new*.md"
+    confirm "Ship the existing notes?" || { echo "Stopped. Rewrite the notes and run again."; exit 1; }
+  fi
 fi
 
 # --- 1. build number ----------------------------------------------------------
@@ -99,7 +188,6 @@ FULL=$(
   ASC_BUNDLE_ID=com.notesage.app \
   node scripts/asc-next-build-number.mjs
 )
-N="${FULL##*.}"
 echo "    ${FULL}"
 
 # --- 2. build -----------------------------------------------------------------
@@ -115,32 +203,59 @@ if [ ! -d src-tauri/gen/apple ]; then
   python3 src-tauri/ios/integrate-share-extension.py
 fi
 
-CONF=src-tauri/tauri.conf.json
-cp "$CONF" "$CONF.release-backup"
-restore() { mv -f "$CONF.release-backup" "$CONF" 2>/dev/null || true; }
-trap restore EXIT
-
-node -e '
-const fs = require("fs");
-const p = "src-tauri/tauri.conf.json";
-const c = JSON.parse(fs.readFileSync(p, "utf8"));
-// Replaces the "../package.json" pointer with a literal, for this build only.
-// package.json is untouched, so the version the app reports about itself and
-// everything keyed off it are unaffected.
-c.version = process.argv[1];
-fs.writeFileSync(p, JSON.stringify(c, null, 2) + "\n");
-' "${MARKETING}-build.${N}"
-
-echo "==> Building ${MARKETING}-build.${N}"
+# Nothing is rewritten before the build any more. The version comes from
+# `tauri.ios.conf.json`, which Tauri reads directly, and the build number is
+# stamped onto the archive below — so no tracked file is mutated mid-release.
+#
+# An earlier version rewrote `tauri.conf.json` to smuggle the build number in
+# through Tauri's prerelease mapping (`0.50.0-build.3` -> `0.50.0.3`). That was
+# only necessary while the build number had to survive Tauri; now that it is
+# written after the archive exists, the detour is gone.
+echo "==> Building ${MARKETING}"
 # The export method here is irrelevant — step 3 re-exports the archive
 # properly. `debugging` simply avoids a guaranteed failure at this stage.
 pnpm tauri ios build --export-method debugging
 
-restore
-trap - EXIT
-
 ARCHIVE=$(ls -dt src-tauri/gen/apple/build/*.xcarchive 2>/dev/null | head -1)
 [ -n "$ARCHIVE" ] || { echo "The build produced no archive."; exit 1; }
+
+# --- 2b. stamp the build number onto the archive -------------------------------
+#
+# Tauri cannot emit a bare integer: it derives CFBundleVersion from the version
+# string, so the best it can do is `0.50.0.3`. The build number is meant to be
+# a plain counter — the version is already carried separately — so it is
+# written here instead, in the seam between archive and export.
+#
+# That seam is safe because `exportArchive` RE-SIGNS. The edit lands before
+# signing, so the signature covers it; verified by exporting an edited archive
+# and running `codesign --verify --deep --strict` on the result.
+#
+# Every bundle must agree — the app, the Share Extension, and the archive's own
+# metadata. Xcode rejects an extension whose version differs from its host.
+echo "==> Stamping build ${FULL}"
+# Match by PATH, not by "any plist that happens to carry the key".
+#
+# An earlier version stamped every Info.plist under Products/Applications with
+# a non-empty CFBundleVersion and required at least two. That worked only
+# because the app currently embeds no frameworks: every bundle type carries
+# that key, so the day an SPM package or pod brings a .framework along, the
+# loop would overwrite ITS version too — and the >= 2 count could be satisfied
+# by "app + framework" while the extension was silently missed.
+APP_PLIST=$(find "$ARCHIVE/Products/Applications" -maxdepth 2 -name Info.plist -path '*.app/Info.plist' | head -1)
+[ -n "$APP_PLIST" ] || { echo "No app Info.plist in the archive."; exit 1; }
+
+EXT_PLISTS=$(find "$ARCHIVE/Products/Applications" -name Info.plist -path '*.appex/Info.plist')
+[ -n "$EXT_PLISTS" ] || { echo "No extension Info.plist in the archive — the Share Extension is missing."; exit 1; }
+
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${FULL}" "$APP_PLIST"
+while IFS= read -r plist; do
+  [ -n "$plist" ] || continue
+  /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${FULL}" "$plist"
+done <<EOF
+$EXT_PLISTS
+EOF
+/usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion ${FULL}" "$ARCHIVE/Info.plist" 2>/dev/null || true
+echo "    app + $(printf '%s\n' "$EXT_PLISTS" | grep -c . ) extension(s)"
 
 # --- 3. export, signed for distribution ---------------------------------------
 echo "==> Exporting for App Store"
@@ -180,7 +295,12 @@ echo "==> Verifying the artifact"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK" "$EXPORT_DIR"' EXIT
 unzip -qo "$IPA" -d "$WORK"
+# -maxdepth 2 reaches the app's plist (Payload/App.app/Info.plist) but NOT the
+# extension's, which sits at depth 4 inside PlugIns/. So this step only ever
+# verified half the pair — and the mismatch it would miss is exactly what
+# Apple rejects on upload.
 PLIST_PATH=$(find "$WORK/Payload" -maxdepth 2 -name Info.plist | head -1)
+EXT_PLIST=$(find "$WORK/Payload" -name Info.plist -path '*.appex/Info.plist' | head -1)
 APP=$(find "$WORK/Payload" -maxdepth 1 -name '*.app' | head -1)
 
 GOT_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST_PATH")
@@ -194,6 +314,20 @@ case "$GOT_AUTH" in
   "Apple Distribution"*) ;;
   *) echo "Signed with '${GOT_AUTH}', not Apple Distribution. Apple would reject this."; exit 1;;
 esac
+
+# The extension must carry the SAME versions as its host; Apple rejects the
+# pair otherwise. Checking only the app left the stamping step's most likely
+# failure invisible until after the upload.
+if [ -n "$EXT_PLIST" ]; then
+  EXT_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$EXT_PLIST")
+  EXT_SHORT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$EXT_PLIST")
+  echo "    extension ${EXT_SHORT} (${EXT_BUILD})"
+  [ "$EXT_BUILD" = "$FULL" ] || { echo "Extension build is ${EXT_BUILD}, app is ${FULL}. Apple would reject this."; exit 1; }
+  [ "$EXT_SHORT" = "$MARKETING" ] || { echo "Extension version is ${EXT_SHORT}, app is ${MARKETING}. Apple would reject this."; exit 1; }
+else
+  echo "No extension found in the .ipa — the Share Extension should be there."
+  exit 1
+fi
 
 # --- 5. upload ----------------------------------------------------------------
 echo
@@ -229,6 +363,31 @@ echo "==> Uploading"
 if ! xcrun altool --upload-app -f "$KEPT" -t ios --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID"; then
   echo "Upload failed. The build is kept at ${KEPT} — retry the upload without rebuilding."
   exit 1
+fi
+
+# --- 5b. record which commit this build came from ------------------------------
+#
+# A git tag, rather than a ledger file: git already has a mechanism for giving
+# a commit a durable name, and 193 tags are already doing it. `ios-build/7`
+# answers "which commit is build 7" via `git rev-parse`, and
+# `git describe --tags --match 'ios-build/*'` answers the reverse.
+#
+# The `ios-build/` namespace keeps these out of the way — `git tag --list 'v*'`
+# still lists releases only.
+#
+# Tagged AFTER the upload succeeds, so a failed release leaves no tag claiming
+# a build that does not exist. Not pushed automatically: pushing is an outward
+# action, and the tag is useful locally either way.
+if command -v git >/dev/null 2>&1 && git rev-parse --git-dir >/dev/null 2>&1; then
+  BUILD_TAG="ios-build/${FULL}"
+  if git rev-parse -q --verify "refs/tags/${BUILD_TAG}" >/dev/null; then
+    echo "    tag ${BUILD_TAG} already exists — leaving it alone"
+  else
+    git tag -a "$BUILD_TAG" -m "iOS ${GOT_SHORT} build ${FULL}" 2>/dev/null \
+      && echo "    tagged ${BUILD_TAG} at $(git rev-parse --short HEAD)" \
+      || echo "    (could not tag — release is unaffected)"
+    echo "    push it with: git push origin ${BUILD_TAG}"
+  fi
 fi
 
 # --- 6. "What to Test" notes ---------------------------------------------------
