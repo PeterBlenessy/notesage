@@ -11,13 +11,14 @@
 # The three steps, and why each is the way it is
 # ---------------------------------------------------------------------------
 #
-# 1. BUILD. Tauri archives the app. The version it is given decides the bundle
-#    versions, and it overwrites anything stamped into the generated Xcode
-#    project afterwards — so the project cannot be edited into submission.
-#    Instead the version is handed to Tauri as `<marketing>-build.<N>`: Tauri
-#    strips the prerelease tag and appends its trailing number, producing
-#    CFBundleVersion `<marketing>.<N>` and CFBundleShortVersionString
-#    `<marketing>`. Using its own mapping rather than fighting it.
+# 1. BUILD. Tauri archives the app. The marketing version comes from
+#    `tauri.ios.conf.json`, which Tauri merges for iOS builds — iOS has its own
+#    version line, separate from the desktop's in package.json.
+#
+#    The build number is NOT handed to Tauri. Tauri derives CFBundleVersion
+#    from the version string, so the best it could produce is `0.50.0.3`; the
+#    number is meant to be a plain counter, since the version is carried
+#    separately. It is stamped onto the archive in step 2b instead.
 #
 # 2. EXPORT. NOT `tauri ios build --export-method app-store-connect`. Tauri has
 #    no way to pass authentication to xcodebuild, and the export needs it: the
@@ -121,7 +122,13 @@ fi
 # (a second build of the same release is meant to reuse them) and sometimes
 # not, so this asks rather than refuses.
 LAST_BUILD_TAG=$(git tag --list 'ios-build/*' --sort=-creatordate 2>/dev/null | head -1)
-if [ -n "$LAST_BUILD_TAG" ]; then
+if [ -z "$LAST_BUILD_TAG" ]; then
+  # Say so rather than passing quietly. The tags are not pushed, so a fresh
+  # clone or a CI runner has none — meaning this check silently does nothing
+  # in exactly the places least likely to notice stale notes.
+  echo "No ios-build/* tags here, so the notes cannot be checked for staleness."
+  echo "Read docs/app-store/testflight-whats-new*.md before continuing."
+else
   if git diff --quiet "$LAST_BUILD_TAG" -- docs/app-store/testflight-whats-new*.md 2>/dev/null; then
     echo
     echo "The tester notes have not changed since ${LAST_BUILD_TAG}."
@@ -187,21 +194,29 @@ ARCHIVE=$(ls -dt src-tauri/gen/apple/build/*.xcarchive 2>/dev/null | head -1)
 # Every bundle must agree — the app, the Share Extension, and the archive's own
 # metadata. Xcode rejects an extension whose version differs from its host.
 echo "==> Stamping build ${FULL}"
-stamped=0
+# Match by PATH, not by "any plist that happens to carry the key".
+#
+# An earlier version stamped every Info.plist under Products/Applications with
+# a non-empty CFBundleVersion and required at least two. That worked only
+# because the app currently embeds no frameworks: every bundle type carries
+# that key, so the day an SPM package or pod brings a .framework along, the
+# loop would overwrite ITS version too — and the >= 2 count could be satisfied
+# by "app + framework" while the extension was silently missed.
+APP_PLIST=$(find "$ARCHIVE/Products/Applications" -maxdepth 2 -name Info.plist -path '*.app/Info.plist' | head -1)
+[ -n "$APP_PLIST" ] || { echo "No app Info.plist in the archive."; exit 1; }
+
+EXT_PLISTS=$(find "$ARCHIVE/Products/Applications" -name Info.plist -path '*.appex/Info.plist')
+[ -n "$EXT_PLISTS" ] || { echo "No extension Info.plist in the archive — the Share Extension is missing."; exit 1; }
+
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${FULL}" "$APP_PLIST"
 while IFS= read -r plist; do
-  current=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$plist" 2>/dev/null) || continue
-  [ -n "$current" ] || continue
+  [ -n "$plist" ] || continue
   /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${FULL}" "$plist"
-  stamped=$((stamped + 1))
 done <<EOF
-$(find "$ARCHIVE/Products/Applications" -name Info.plist)
+$EXT_PLISTS
 EOF
 /usr/libexec/PlistBuddy -c "Set :ApplicationProperties:CFBundleVersion ${FULL}" "$ARCHIVE/Info.plist" 2>/dev/null || true
-if [ "$stamped" -lt 2 ]; then
-  echo "Expected to stamp the app AND the extension; only ${stamped} bundle(s) carried a build number."
-  exit 1
-fi
-echo "    ${stamped} bundles"
+echo "    app + $(printf '%s\n' "$EXT_PLISTS" | grep -c . ) extension(s)"
 
 # --- 3. export, signed for distribution ---------------------------------------
 echo "==> Exporting for App Store"
@@ -241,7 +256,12 @@ echo "==> Verifying the artifact"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK" "$EXPORT_DIR"' EXIT
 unzip -qo "$IPA" -d "$WORK"
+# -maxdepth 2 reaches the app's plist (Payload/App.app/Info.plist) but NOT the
+# extension's, which sits at depth 4 inside PlugIns/. So this step only ever
+# verified half the pair — and the mismatch it would miss is exactly what
+# Apple rejects on upload.
 PLIST_PATH=$(find "$WORK/Payload" -maxdepth 2 -name Info.plist | head -1)
+EXT_PLIST=$(find "$WORK/Payload" -name Info.plist -path '*.appex/Info.plist' | head -1)
 APP=$(find "$WORK/Payload" -maxdepth 1 -name '*.app' | head -1)
 
 GOT_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$PLIST_PATH")
@@ -255,6 +275,20 @@ case "$GOT_AUTH" in
   "Apple Distribution"*) ;;
   *) echo "Signed with '${GOT_AUTH}', not Apple Distribution. Apple would reject this."; exit 1;;
 esac
+
+# The extension must carry the SAME versions as its host; Apple rejects the
+# pair otherwise. Checking only the app left the stamping step's most likely
+# failure invisible until after the upload.
+if [ -n "$EXT_PLIST" ]; then
+  EXT_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "$EXT_PLIST")
+  EXT_SHORT=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$EXT_PLIST")
+  echo "    extension ${EXT_SHORT} (${EXT_BUILD})"
+  [ "$EXT_BUILD" = "$FULL" ] || { echo "Extension build is ${EXT_BUILD}, app is ${FULL}. Apple would reject this."; exit 1; }
+  [ "$EXT_SHORT" = "$MARKETING" ] || { echo "Extension version is ${EXT_SHORT}, app is ${MARKETING}. Apple would reject this."; exit 1; }
+else
+  echo "No extension found in the .ipa — the Share Extension should be there."
+  exit 1
+fi
 
 # --- 5. upload ----------------------------------------------------------------
 echo

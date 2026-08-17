@@ -33,16 +33,10 @@
 
 import { createSign } from "node:crypto";
 
-import { readFileSync } from "node:fs";
-
 const KEY_ID = process.env.ASC_KEY_ID;
 const ISSUER_ID = process.env.ASC_ISSUER_ID;
 const PRIVATE_KEY = process.env.ASC_PRIVATE_KEY;
 const BUNDLE_ID = process.env.ASC_BUNDLE_ID;
-/** The app's marketing version, which the build series is anchored to. */
-const MARKETING_VERSION =
-  process.env.ASC_MARKETING_VERSION ||
-  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 for (const [name, value] of Object.entries({
   ASC_KEY_ID: KEY_ID,
@@ -149,4 +143,20 @@ const highestFirst = versions
   .filter((n) => Number.isFinite(n))
   .reduce((a, b) => Math.max(a, b), 0);
 
-console.log(String(highestFirst + 1));
+const next = String(highestFirst + 1);
+
+// Check the answer against every existing build rather than trusting the
+// algebra. The reasoning above says a bare integer above every first component
+// must compare greater — but this is the one place where being wrong costs a
+// rejected upload after a full build, and the check is nearly free. It also
+// catches the case the reasoning cannot: Apple comparing differently than
+// `compare` assumes.
+const notBeaten = versions.filter((v) => compare(next, v) <= 0);
+if (notBeaten.length > 0) {
+  throw new Error(
+    `Computed build ${next}, which does not exceed existing build(s): ` +
+      `${notBeaten.slice(0, 3).join(", ")}. Refusing to produce a number Apple would reject.`,
+  );
+}
+
+console.log(next);
