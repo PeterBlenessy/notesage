@@ -12,7 +12,9 @@ import {
   iosRenameFile,
   iosCreateFile,
   iosStatFile,
+  iosContextMenu,
 } from "@/lib/ios-api";
+import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
 import { useMobileStore } from "@/stores/mobile-store";
 import { t } from "@/lib/i18n";
@@ -23,6 +25,7 @@ import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome } from "./useNativeChrome";
 import { withFindAgent } from "./html-find-agent";
+import { withLinkAgent } from "./html-link-agent";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 
 // Lazy-loaded — pdf.js is heavy (and pulls in browser-only globals like
@@ -91,6 +94,7 @@ export function Reader() {
   const openDoc = useMobileStore((s) => s.openDoc);
   const goBack = useMobileStore((s) => s.goBack);
   const openDocument = useMobileStore((s) => s.openDocument);
+  const openLinkedDocument = useMobileStore((s) => s.openLinkedDocument);
   const [state, setState] = useState<ReaderState>({ status: "loading" });
   const articleRef = useRef<HTMLElement | null>(null);
   // Raw markdown of the open doc — kept so a theme flip can re-render without
@@ -276,6 +280,77 @@ export function Reader() {
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
   }, [isHtml]);
+
+  // Links reported by the injected link agent. The agent only tells us an
+  // href — every decision about what it means is made here, on the app side.
+  // The href is untrusted (the report's own scripts share that frame), so it
+  // goes through `resolveRelativeLink`, which refuses anything climbing out
+  // of the granted library root.
+  const handleFrameLink = useCallback(
+    async (href: string, viaMenu: boolean) => {
+      const remote = /^(https?:|mailto:)/i.test(href);
+      const target = remote ? null : resolveRelativeLink(relPath, href);
+
+      if (!remote && !target) {
+        toast.error("This link points outside your library");
+        return;
+      }
+
+      const openHere = () => {
+        if (!target) return;
+        openLinkedDocument({ relPath: target, name: target.split("/").pop() ?? target });
+      };
+
+      if (!viaMenu) {
+        // Plain tap keeps the established default: local files open in the
+        // reader, the web opens where the web belongs.
+        if (target) openHere();
+        else void openUrl(href).catch(() => toast.error("Couldn't open the link"));
+        return;
+      }
+
+      // Long-press. A local file has no meaningful "open in browser" — Safari
+      // cannot read through the security-scoped grant — so it is offered as
+      // Share instead, which copies the file out the way sharing already does.
+      const items = target
+        ? [
+            { id: "here", title: "Open here" },
+            { id: "share", title: "Share…" },
+          ]
+        : [
+            { id: "browser", title: "Open in browser" },
+            { id: "copy", title: "Copy link" },
+          ];
+
+      const chosen = await iosContextMenu({ title: href, items }).catch(() => null);
+      if (chosen === "here") openHere();
+      else if (chosen === "share" && target) {
+        void iosShareFile(target).catch(() => toast.error("Couldn't share that file"));
+      } else if (chosen === "browser") {
+        void openUrl(href).catch(() => toast.error("Couldn't open the link"));
+      } else if (chosen === "copy") {
+        void writeText(href)
+          .then(() => toast.success("Link copied"))
+          .catch(() => toast.error("Couldn't copy the link"));
+      }
+    },
+    [relPath, openLinkedDocument],
+  );
+
+  useEffect(() => {
+    if (!isHtml) return;
+    const onMessage = (e: MessageEvent) => {
+      // Same trust posture as the find listener above: shape-checked, no
+      // source identity check (WKWebView does not preserve it for opaque
+      // origins), and nothing here can reach outside the library.
+      const d = e.data as { ns?: string; type?: string; href?: string; menu?: boolean };
+      if (!d || d.ns !== "notesage-link" || d.type !== "open") return;
+      if (typeof d.href !== "string" || !d.href) return;
+      void handleFrameLink(d.href, d.menu === true);
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [isHtml, handleFrameLink]);
 
   // Scroll to the active mark and KEEP it there: content above a match can
   // change height after the scroll (mermaid fences swap to sized iframes,
@@ -569,7 +644,10 @@ export function Reader() {
         const id = crypto.randomUUID();
         // The find agent rides along inside the document — the only place
         // search can run in a sandboxed cross-origin frame.
-        await invoke("html_preview_register", { id, content: withFindAgent(raw) });
+        await invoke("html_preview_register", {
+          id,
+          content: withLinkAgent(withFindAgent(raw)),
+        });
         if (!isCurrent()) {
           // Superseded after registering — release the doc immediately or it
           // is orphaned forever (the preview store has no eviction).
@@ -671,11 +749,13 @@ export function Reader() {
         toast.error("This link points outside your library");
         return;
       }
-      openDocument({ relPath: target, name: target.split("/").pop() ?? target });
+      // A link followed from a note is a step on a trail, same as one followed
+      // from a report — Back should retrace it rather than drop to the folder.
+      openLinkedDocument({ relPath: target, name: target.split("/").pop() ?? target });
     };
     root.addEventListener("click", onClick);
     return () => root.removeEventListener("click", onClick);
-  }, [state, relPath, openDocument]);
+  }, [state, relPath, openLinkedDocument]);
 
   // Revoke the image object URL when the document changes or unmounts.
   useEffect(() => {

@@ -110,6 +110,45 @@ if awk -v l="$LOAD" -v c="$CORES" 'BEGIN { exit !(l / c > 0.7) }'; then
   confirm "Continue anyway?" || exit 1
 fi
 
+# --- 0a. is this actually main? -----------------------------------------------
+#
+# Releases are cut from `main`, and everything in them is merged first. The
+# alternative was tried on 2026-08-17 and does not hold up: four builds went to
+# testers from an integration branch merging five open PRs, and by the end
+# there was no commit on `main` that corresponded to what anyone was running.
+# Shipping `main` would have silently REMOVED features testers already had.
+#
+# The `ios-build/*` tags kept it traceable, but traceable-to-a-throwaway-branch
+# is not the same as reproducible.
+#
+# `RELEASE_OFF_MAIN=1` overrides, for deliberately testing a fix on device
+# before merging it — that is a real need, and it is exactly how the HTML
+# height fix was verified. It prints what is being shipped that `main` lacks,
+# so the exception stays visible rather than becoming the habit.
+BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo unknown)"
+if [ "${RELEASE_OFF_MAIN:-0}" != "1" ]; then
+  if [ "$BRANCH" != "main" ]; then
+    echo "On '${BRANCH}', not main."
+    echo
+    echo "Releases are cut from main, with everything merged first — otherwise"
+    echo "no commit on main matches what testers are running."
+    echo
+    echo "Merge first, or set RELEASE_OFF_MAIN=1 to ship this branch anyway."
+    exit 1
+  fi
+  git fetch -q origin main 2>/dev/null || true
+  BEHIND=$(git rev-list --count HEAD..origin/main 2>/dev/null || echo 0)
+  if [ "${BEHIND:-0}" -gt 0 ]; then
+    echo "main is ${BEHIND} commit(s) behind origin/main — pull before releasing,"
+    echo "or the build omits work that is already merged."
+    exit 1
+  fi
+else
+  AHEAD=$(git rev-list --count origin/main..HEAD 2>/dev/null || echo "?")
+  echo "RELEASE_OFF_MAIN: shipping '${BRANCH}', ${AHEAD} commit(s) that main does not have."
+  echo "Fine for verifying a fix on device; merge it before this becomes a release."
+fi
+
 # --- 0b. are the tester notes actually for THIS release? -----------------------
 #
 # The failure this guards is silent and lands on the tester: notes describing
