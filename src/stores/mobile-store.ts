@@ -51,6 +51,13 @@ export interface OpenDocRef {
 }
 
 const RECENT_CAP = 20;
+/**
+ * How many documents deep the link trail can go before the oldest is dropped.
+ * A generated site can link in circles, and an unbounded trail would grow for
+ * as long as someone keeps tapping. Twenty steps is far past what anyone
+ * retraces by hand; losing the twenty-first costs a return to the folder.
+ */
+const DOC_STACK_CAP = 20;
 
 /** Library listing order (#632): alphabetical (folders first) or modified
  *  (newest first, folders and files interleaved — Files-app behaviour). */
@@ -103,9 +110,21 @@ interface MobileStore {
   jumpToFolder: (ref: FolderRef) => void;
   /** Open a document (records it in recents). */
   openDocument: (ref: OpenDocRef) => void;
+  /**
+   * Open a document reached by following a link from the one already open,
+   * pushing the current one onto the back trail.
+   *
+   * Separate from `openDocument` because the two mean different things to
+   * Back. Opening from the listing starts fresh — Back returns to the folder.
+   * Following a link continues a trail, and Back has to walk it in reverse,
+   * or reading a set of linked pages becomes one-way.
+   */
+  openLinkedDocument: (ref: OpenDocRef) => void;
+  /** Documents behind the open one, oldest first — the link trail. */
+  docStack: OpenDocRef[];
   /** Close the open document. */
   closeDocument: () => void;
-  /** Back: close the doc if open, else pop one folder level. Returns false at root. */
+  /** Back: previous linked doc, else close the doc, else pop one folder level. Returns false at root. */
   goBack: () => boolean;
   /** Jump to a breadcrumb depth (0 = root). */
   goToDepth: (depth: number) => void;
@@ -144,6 +163,7 @@ export const useMobileStore = create<MobileStore>()(
       libraryName: "",
       folderStack: [],
       openDoc: null,
+      docStack: [],
       recentlyRead: [],
       sortMode: "name",
       groupMode: "none",
@@ -193,6 +213,7 @@ export const useMobileStore = create<MobileStore>()(
           libraryName: grant.displayName,
           folderStack: [],
           openDoc: null,
+          docStack: [],
         });
       },
 
@@ -203,6 +224,7 @@ export const useMobileStore = create<MobileStore>()(
           libraryName: "",
           folderStack: [],
           openDoc: null,
+          docStack: [],
         });
       },
 
@@ -214,18 +236,44 @@ export const useMobileStore = create<MobileStore>()(
       openDocument: (ref) =>
         set((s) => ({
           openDoc: ref,
+          // Opening from the listing starts a new trail — whatever chain of
+          // links led somewhere earlier is finished, and Back should return
+          // to the folder rather than replay it.
+          docStack: [],
           recentlyRead: [
             ref.relPath,
             ...s.recentlyRead.filter((p) => p !== ref.relPath),
           ].slice(0, RECENT_CAP),
         })),
 
-      closeDocument: () => set({ openDoc: null }),
+      openLinkedDocument: (ref) =>
+        set((s) => ({
+          openDoc: ref,
+          // A link to the page you are already on is not a step — pushing it
+          // would make Back appear to do nothing.
+          docStack:
+            s.openDoc && s.openDoc.relPath !== ref.relPath
+              ? [...s.docStack, s.openDoc].slice(-DOC_STACK_CAP)
+              : s.docStack,
+          recentlyRead: [
+            ref.relPath,
+            ...s.recentlyRead.filter((p) => p !== ref.relPath),
+          ].slice(0, RECENT_CAP),
+        })),
+
+      closeDocument: () => set({ openDoc: null, docStack: [] }),
 
       goBack: () => {
-        const { openDoc, folderStack } = get();
+        const { openDoc, folderStack, docStack } = get();
+        // Walk the link trail before leaving the document. Following three
+        // links and pressing Back should retrace them, not drop straight out
+        // to the folder listing.
+        if (openDoc && docStack.length > 0) {
+          set({ openDoc: docStack[docStack.length - 1], docStack: docStack.slice(0, -1) });
+          return true;
+        }
         if (openDoc) {
-          set({ openDoc: null });
+          set({ openDoc: null, docStack: [] });
           return true;
         }
         if (folderStack.length > 0) {
@@ -242,6 +290,7 @@ export const useMobileStore = create<MobileStore>()(
         set((s) => ({
           folderStack: s.folderStack.slice(0, Math.max(0, depth)),
           openDoc: null,
+          docStack: [],
         })),
 
       setViewMode: (mode) => set({ viewMode: mode }),
@@ -288,6 +337,7 @@ export const useMobileStore = create<MobileStore>()(
           libraryName: "",
           folderStack: [],
           openDoc: null,
+          docStack: [],
           recentlyRead: [],
           sortMode: "name",
           groupMode: "none",

@@ -113,6 +113,74 @@ describe("mobile-store navigation", () => {
     expect(store().openDoc).toBeNull();
   });
 
+  // Following links between documents (HTML reports, linked notes). Back has
+  // to retrace the trail; without the stack it drops straight to the folder,
+  // which makes a set of linked pages one-way.
+  describe("link trail", () => {
+    it("retraces the trail before leaving the document", () => {
+      store().enterFolder({ relPath: "site", name: "site" });
+      store().openDocument({ relPath: "site/index.html", name: "index.html" });
+      store().openLinkedDocument({ relPath: "site/a.html", name: "a.html" });
+      store().openLinkedDocument({ relPath: "site/b.html", name: "b.html" });
+
+      expect(store().goBack()).toBe(true);
+      expect(store().openDoc?.relPath).toBe("site/a.html");
+      expect(store().goBack()).toBe(true);
+      expect(store().openDoc?.relPath).toBe("site/index.html");
+      // Trail exhausted — now Back leaves the document.
+      expect(store().goBack()).toBe(true);
+      expect(store().openDoc).toBeNull();
+      expect(store().goBack()).toBe(true); // pops the folder
+      expect(store().goBack()).toBe(false); // root
+    });
+
+    it("opening from the listing starts a fresh trail", () => {
+      store().openDocument({ relPath: "a.html", name: "a.html" });
+      store().openLinkedDocument({ relPath: "b.html", name: "b.html" });
+      // A new open from the browser is not a continuation of the old trail.
+      store().openDocument({ relPath: "c.html", name: "c.html" });
+
+      expect(store().docStack).toEqual([]);
+      expect(store().goBack()).toBe(true);
+      expect(store().openDoc).toBeNull();
+    });
+
+    it("a self-link is not a step", () => {
+      // Otherwise Back appears to do nothing: it would return to the page
+      // already on screen.
+      store().openDocument({ relPath: "a.html", name: "a.html" });
+      store().openLinkedDocument({ relPath: "a.html", name: "a.html" });
+      expect(store().docStack).toEqual([]);
+    });
+
+    it("caps the trail so a circular site cannot grow it forever", () => {
+      store().openDocument({ relPath: "start.html", name: "start.html" });
+      for (let i = 0; i < 40; i++) {
+        store().openLinkedDocument({ relPath: `p${i}.html`, name: `p${i}.html` });
+      }
+      expect(store().docStack).toHaveLength(20);
+      // The cap drops the OLDEST steps: the most recent are what a reader
+      // actually retraces.
+      expect(store().docStack[store().docStack.length - 1].relPath).toBe("p38.html");
+    });
+
+    it("leaving the document clears the trail", () => {
+      store().openDocument({ relPath: "a.html", name: "a.html" });
+      store().openLinkedDocument({ relPath: "b.html", name: "b.html" });
+      store().closeDocument();
+      expect(store().docStack).toEqual([]);
+    });
+
+    it("jumping to a breadcrumb depth clears the trail", () => {
+      store().enterFolder({ relPath: "A", name: "A" });
+      store().openDocument({ relPath: "A/a.html", name: "a.html" });
+      store().openLinkedDocument({ relPath: "A/b.html", name: "b.html" });
+      store().goToDepth(0);
+      expect(store().docStack).toEqual([]);
+      expect(store().openDoc).toBeNull();
+    });
+  });
+
   it("openDocument records recents, newest-first, deduped, capped at 20", () => {
     for (let i = 0; i < 25; i++) {
       store().openDocument({ relPath: `f${i}.md`, name: `f${i}.md` });
