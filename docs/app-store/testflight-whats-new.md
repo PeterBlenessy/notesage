@@ -12,8 +12,8 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Tap a link in a note or an HTML report — it now opens in the reader, and Back
-returns to the previous page instead of the folder. Long-press a link for
-"Open here" or "Share".
+The Inbox is called Inbox everywhere now — it used to be translated in the
+list but not in the menu, and the folder on disk was never renamed either.
 
-The Inbox is also called Inbox everywhere now, matching the folder on disk.
+Worth checking: that links between notes and HTML reports still open in the
+reader, and that Back walks you out the way you came.

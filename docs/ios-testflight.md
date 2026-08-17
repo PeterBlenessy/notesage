@@ -162,24 +162,54 @@ screenshots, description, support URL or privacy-policy URL required.
   target and the frontend telemetry module is unreachable from `MobileApp`;
   both regression-locked — see `docs/features/mobile.md` §"Telemetry-free by
   construction").
-- **Versioning**: `CFBundleShortVersionString` / `CFBundleVersion` come from
-  `package.json` via Tauri, with prerelease tags stripped and their trailing
-  number appended: `0.48.0-alpha.29` → `0.48.0` / `0.48.0.29`.
+- **Versioning**: two numbers, two different jobs — and iOS keeps its own set,
+  separate from the desktop's.
 
-  While the alpha channel existed, each cut therefore produced a unique
-  ascending build number **by accident**. Retiring the channel removed that,
-  and a plain `0.50.0` gives every build the same `CFBundleVersion` — the
-  second upload is rejected as a duplicate.
+  **Version** (`CFBundleShortVersionString`) is what a user sees. Semver, with
+  Apple's restriction: exactly three integers, no `-alpha` or `+build`
+  suffixes. It lives in `src-tauri/tauri.ios.conf.json`, which Tauri merges for
+  iOS builds by convention — verified, not assumed: a build with
+  `"version": "9.9.9-build.7"` there resolved to `9.9.9` while `package.json`
+  stayed at `0.50.0`. That also settles an older question — Tauri **re-derives**
+  the version at build time rather than reading the generated Xcode project,
+  which is why stamping `project.yml` achieved nothing.
 
-  `scripts/ios-testflight.sh` uses the same mapping deliberately: it asks App
-  Store Connect for the next number and builds as `<marketing>-build.<N>`,
-  yielding `CFBundleVersion <marketing>.<N>`. Only `tauri.conf.json` is
-  rewritten, for the duration of the build; `package.json` is untouched.
+  It is separate from the desktop's on purpose. A Mac user has no reason to
+  update because the iOS Inbox label changed, and a version that moves with
+  nothing behind it teaches people to ignore versions. Move it when iOS ships
+  something its users would notice — **not per build**: several builds share
+  one version, which is what build numbers are for.
 
-  Note this cannot be done by stamping the generated Xcode project — Tauri
-  overwrites `project.yml` during the build, so an edit there reaches nothing.
-  Asking Apple for the number, rather than counting locally, is also what lets
-  a release cut from a laptop and one cut from CI agree.
+  **Build** (`CFBundleVersion`) is a bare monotonic integer. It never resets,
+  so a build number names exactly one build in the app's whole history, which
+  is what makes the `ios-build/<n>` tags below meaningful. The next value comes
+  from App Store Connect — asking the service that enforces uniqueness is the
+  only answer that cannot drift when a build is uploaded from somewhere else.
+
+  Tauri cannot produce a bare integer (it derives the build from the version
+  string), so the script stamps it onto the archive between archiving and
+  export. That seam is safe because `exportArchive` re-signs afterwards; the
+  app, the Share Extension and the archive metadata are all set together,
+  because Xcode rejects an extension whose version differs from its host.
+
+  History note: builds before this look like `0.48.0.34` and `0.50.0.2`. Tauri
+  used to fold the alpha counter into the build number, so the alpha channel
+  was supplying the increment by accident. Retiring it removed that, which is
+  how every build briefly ended up with the same number.
+
+- **Which commit a build came from**: `ios-build/<n>` git tags, written after a
+  successful upload. `git rev-parse ios-build/7` gives the commit;
+  `git describe --tags --match 'ios-build/*'` gives the build containing a
+  commit. Not a ledger file — git already names commits, and a second
+  bookkeeping format is a second thing to keep in sync. The tags are not pushed
+  automatically.
+
+- **Stale tester notes**: the script compares `testflight-whats-new*.md`
+  against the last `ios-build/*` tag. Unchanged notes are correct for another
+  build of the same release and wrong for a new one, so it asks rather than
+  refuses. This is the failure that lands on a tester rather than on you —
+  nothing about the build looks wrong; the notes simply describe something that
+  already shipped.
 
 ## Upload
 

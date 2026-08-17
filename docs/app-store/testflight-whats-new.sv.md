@@ -10,8 +10,8 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Tryck på en länk i en anteckning eller en HTML-rapport — den öppnas nu i
-läsaren, och Bakåt tar dig till föregående sida i stället för till mappen.
-Långtryck på en länk ger "Öppna här" eller "Dela".
+Inkorgen heter Inbox överallt nu — den var översatt i listan men inte i
+menyn, och mappen på disken hette aldrig något annat.
 
-Inkorgen heter dessutom Inbox överallt nu, som mappen på disken.
+Värt att kolla: att länkar mellan anteckningar och HTML-rapporter fortfarande
+öppnas i läsaren, och att Bakåt tar dig ut samma väg som du kom in.
