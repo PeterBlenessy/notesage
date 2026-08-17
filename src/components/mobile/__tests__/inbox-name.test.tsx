@@ -36,11 +36,18 @@ describe("Inbox is never translated", () => {
   });
 
   it("matches the folder the capture crate writes to", () => {
-    // The contract this whole rule rests on. If the Rust side ever changes
-    // the directory, this fails rather than the app quietly pointing at a
-    // folder that no longer receives anything.
+    // The contract this whole rule rests on. If the Rust side ever changes the
+    // directory, this fails rather than the app quietly pointing at a folder
+    // that no longer receives anything.
+    //
+    // Read the CONSTANT's value, not merely the presence of the string. An
+    // earlier version asserted `toContain('"Inbox')`, which passed on any of
+    // the five unrelated `"Inbox/..."` literals in that file's own tests — so
+    // renaming INBOX_DIR to "Drafts" left it green, which is precisely the
+    // drift it exists to catch.
     const capture = readFileSync("src-tauri/crates/notesage-capture/src/lib.rs", "utf8");
-    expect(capture).toContain(`"${INBOX_FOLDER_NAME}`);
+    const declared = capture.match(/pub const INBOX_DIR: &str = "([^"]+)"/);
+    expect(declared?.[1]).toBe(INBOX_FOLDER_NAME);
   });
 
   it("has no translation key for it", () => {
