@@ -1,5 +1,5 @@
 import { ChevronRight, Inbox } from "lucide-react";
-import { t } from "@/lib/i18n";
+import { INBOX_FOLDER_NAME } from "@/lib/inbox";
 
 /**
  * The Inbox, pinned above the root listing (#683).
@@ -38,7 +38,7 @@ export function InboxCard({ count, onOpen }: { count?: number; onOpen: () => voi
           className="min-w-0 flex-1 truncate text-[length:calc(1.0625rem*var(--ns-a11y-scale,1))] text-foreground"
           style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
         >
-          {t("library.inbox")}
+          {INBOX_FOLDER_NAME}
         </span>
         {count !== undefined && (
           <span className="shrink-0 text-[length:calc(1.0625rem*var(--ns-a11y-scale,1))] tabular-nums text-muted-foreground">
