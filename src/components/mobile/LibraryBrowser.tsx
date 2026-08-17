@@ -13,11 +13,12 @@ import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
 import { t } from "@/lib/i18n";
+import { INBOX_FOLDER_NAME } from "@/lib/inbox";
 import { useLocale } from "@/lib/useLocale";
 
-/** The share extension's landing folder. A literal by contract: the Rust
- *  capture crate writes to `Inbox/` and the desktop reads it there. */
-const INBOX_NAME = "Inbox";
+/** The share extension's landing folder — see `@/lib/inbox` for why this is
+ *  never translated. */
+const INBOX_NAME = INBOX_FOLDER_NAME;
 
 type LoadState =
   | { status: "loading" }
