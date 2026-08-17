@@ -16,4 +16,4 @@ Tap a link in a note or an HTML report — it now opens in the reader, and Back
 returns to the previous page instead of the folder. Long-press a link for
 "Open here" or "Share".
 
-Worth trying: several links deep, then back out again.
+The Inbox is also called Inbox everywhere now, matching the folder on disk.

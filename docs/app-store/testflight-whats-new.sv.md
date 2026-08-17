@@ -14,4 +14,4 @@ Tryck på en länk i en anteckning eller en HTML-rapport — den öppnas nu i
 läsaren, och Bakåt tar dig till föregående sida i stället för till mappen.
 Långtryck på en länk ger "Öppna här" eller "Dela".
 
-Värt att prova: flera länkar in, och sedan hela vägen tillbaka ut.
+Inkorgen heter dessutom Inbox överallt nu, som mappen på disken.
