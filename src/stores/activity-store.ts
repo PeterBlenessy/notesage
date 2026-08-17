@@ -72,6 +72,17 @@ export interface AgentTask {
    * re-run reuses it without re-prompting.
    */
   language?: string;
+
+  /**
+   * The language Whisper reports it actually decoded (`kind === 'transcription'`).
+   *
+   * Distinct from `language` above, which is what the run *asked* for. When
+   * that request was `'auto'`, this is the only record of what the model
+   * decided — and a wrong decision is the difference between a transcript and
+   * a page of nonsense, so it is worth showing rather than leaving the user to
+   * wonder why the text is gibberish.
+   */
+  detectedLanguage?: string;
 }
 
 interface ActivityStore {
@@ -103,7 +114,7 @@ interface ActivityStore {
   /** Update a transcription job's progress (0–100). */
   setTranscriptionProgress(id: string, percent: number): void;
   /** Mark a transcription job done and record the output transcript path. */
-  setTranscriptionDone(id: string, transcriptPath: string): void;
+  setTranscriptionDone(id: string, transcriptPath: string, detectedLanguage?: string): void;
   /** Mark a transcription job as failed (re-runnable from the inbox). */
   setTranscriptionError(id: string): void;
   /**
@@ -239,7 +250,7 @@ export const useActivityStore = create<ActivityStore>()(
         }));
       },
 
-      setTranscriptionDone: (id, transcriptPath) => {
+      setTranscriptionDone: (id, transcriptPath, detectedLanguage) => {
         set((state) => ({
           tasks: state.tasks.map((t) =>
             t.id === id
@@ -248,6 +259,7 @@ export const useActivityStore = create<ActivityStore>()(
                   status: 'done' as const,
                   progress: 100,
                   transcriptPath,
+                  detectedLanguage,
                   completedAt: Date.now(),
                 }
               : t
