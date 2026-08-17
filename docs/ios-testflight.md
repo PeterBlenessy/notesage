@@ -114,15 +114,20 @@ Skip if you would rather upload through Xcode's Organizer GUI the first time.
    remembered at release time. The directory is `altool`'s own search path, so
    the key is found there by both.
 
-### 6. Hand back to me
+### 6. Then releasing is one command
 
-Tell me when 1–4 are done. I then:
+Once 1–5 are done, releases run from the repo:
 
-- build the **release** configuration and smoke-test it on your device (every
-  build so far has been debug: different optimization, no dev server),
-- archive with `npx tauri ios build --export-method app-store-connect`,
-- upload — via Organizer (**Window → Organizer → Archives → Distribute App →
-  App Store Connect → Upload**) or `xcrun altool` with the key from step 5.
+```bash
+scripts/ios-testflight.sh
+```
+
+See §"Upload" below for what it does and why each step is the way it is.
+
+**Do not follow older instructions to archive with
+`npx tauri ios build --export-method app-store-connect`** — that cannot work,
+for reasons the Upload section explains. It is the single most expensive wrong
+turn available here.
 
 ### 7. Turn on TestFlight (after the build finishes processing)
 
@@ -133,8 +138,9 @@ Processing is usually minutes; ASC emails you when it is done.
 2. Export compliance should NOT be asked — `ITSAppUsesNonExemptEncryption` is
    baked into both targets. If it asks anyway, answer *No* (standard
    HTTPS/TLS only).
-3. Paste the **What to Test** text from
-   [`app-store/testflight.md`](app-store/testflight.md).
+3. Nothing to paste — the release script sends the **What to Test** notes for
+   every locale, from `docs/app-store/testflight-whats-new*.md`. Rewrite those
+   files before a release rather than typing into the web form.
 4. **Internal Testing → + →** create a group (e.g. `Internal`) → add testers.
    Testers must already exist under **Users and Access**; your own account is
    there by default.
