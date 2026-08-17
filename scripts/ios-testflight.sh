@@ -103,6 +103,18 @@ N="${FULL##*.}"
 echo "    ${FULL}"
 
 # --- 2. build -----------------------------------------------------------------
+#
+# `src-tauri/gen/apple/` is gitignored, so a fresh clone — or any CI runner —
+# has no Xcode project. Generate it when missing rather than failing, so this
+# script behaves identically wherever it runs. `integrate-share-extension.py`
+# adds the Share Extension target that `tauri ios init` knows nothing about,
+# and is idempotent.
+if [ ! -d src-tauri/gen/apple ]; then
+  echo "==> Generating the Xcode project (first run here)"
+  pnpm tauri ios init --ci
+  python3 src-tauri/ios/integrate-share-extension.py
+fi
+
 CONF=src-tauri/tauri.conf.json
 cp "$CONF" "$CONF.release-backup"
 restore() { mv -f "$CONF.release-backup" "$CONF" 2>/dev/null || true; }
