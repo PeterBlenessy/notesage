@@ -15,6 +15,8 @@ import type { ChatMessage } from '@/lib/ai/types';
 import { getAcpAgent } from '@/lib/ai/acp-agent-state';
 import { hasSessionCapability } from '@/lib/ai/acp-utils';
 import { HistoryRowLeadingIcon } from '@/components/cmd/SessionStatusBadge';
+import { getFormatLocale } from '@/lib/i18n';
+import { useFormatLocale } from '@/lib/useLocale';
 
 /**
  * Fire best-effort `session/close` for every ACP session owned by the conversation
@@ -56,7 +58,7 @@ function formatMessagesAsMarkdown(messages: ChatMessage[]): string[] {
     // Skip system-status messages (reconnection UI) from exports
     if (msg.role === 'system-status') continue;
     const role = msg.role === 'user' ? 'You' : msg.role === 'system' ? 'System' : 'Assistant';
-    const time = msg.timestamp ? new Date(msg.timestamp).toLocaleString() : '';
+    const time = msg.timestamp ? new Date(msg.timestamp).toLocaleString(getFormatLocale()) : '';
     lines.push(`## ${role}${time ? ` — ${time}` : ''}`, '');
 
     if (msg.segments && msg.segments.length > 0) {
@@ -134,6 +136,7 @@ export const ChatHistoryView = memo(function ChatHistoryView({
   const [showAllProjects, setShowAllProjects] = useState(false);
   const scopeActive = hasScope && !showAllProjects;
 
+  const formatLocale = useFormatLocale();
   const visibleConversations = useMemo(() => {
     const filtered = scopeActive
       ? conversations.filter((c) => conversationInScope(c, selectedProjectPaths))
@@ -256,9 +259,9 @@ export const ChatHistoryView = memo(function ChatHistoryView({
                   <div className="flex items-center gap-2 mt-0.5">
                     <span className="text-[10px] text-muted-foreground flex items-center gap-1">
                       <Clock className="h-2.5 w-2.5" strokeWidth={1.5} />
-                      {new Date(conv.updatedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                      {new Date(conv.updatedAt).toLocaleDateString(formatLocale, { month: 'short', day: 'numeric' })}
                       {' '}
-                      {new Date(conv.updatedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                      {new Date(conv.updatedAt).toLocaleTimeString(formatLocale, { hour: '2-digit', minute: '2-digit' })}
                     </span>
                     <span className="text-[10px] text-muted-foreground">
                       {conv.messages.length} message{conv.messages.length !== 1 ? 's' : ''}

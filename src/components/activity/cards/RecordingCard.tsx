@@ -6,6 +6,7 @@ import { useRecordingStore } from '@/stores/recording-store';
 import { useMeetingRecording } from '@/hooks/useMeetingRecording';
 import { formatStopwatchMs } from '@/lib/recording-time';
 import { IconActionButton, formatClock } from './shared';
+import { useFormatLocale } from "@/lib/useLocale";
 
 // Whisper supports 99 languages; "Auto-detect" covers them all. Mirrors the
 // explicit-pick subset in `TranscriptionSettings` — this is the per-recording
@@ -49,6 +50,11 @@ const LANGUAGES = [
  * started the capture) — and then kicks off the background transcription.
  */
 export function RecordingCard({ task }: { task: AgentTask }) {
+  // Subscribe to language changes: the formatting helpers below read the
+  // i18n module directly, so without this the rendered dates/numbers would
+  // keep their old locale until some unrelated state forced a re-render.
+  useFormatLocale();
+
   const { toggleRecording, pauseRecording, resumeRecording, isPaused, elapsedTime } =
     useMeetingRecording();
   const [stopping, setStopping] = useState(false);

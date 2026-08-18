@@ -2,6 +2,7 @@ import type { LucideIcon } from "lucide-react";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useChatStore, selectProjectPaths } from "@/stores/chat-store";
+import { getFormatLocale } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
 // Palette mode type & prefix map
@@ -55,10 +56,10 @@ export function getPlaceholder(mode: PaletteMode, fileCount: number, drilldownNa
   switch (mode) {
     case "default":
       return fileCount > 0
-        ? `Type a command or search ${fileCount.toLocaleString()} files...`
+        ? `Type a command or search ${fileCount.toLocaleString(getFormatLocale())} files...`
         : "Type a command or file name...";
     case "files":
-      return `Search ${fileCount.toLocaleString()} files by name or content...`;
+      return `Search ${fileCount.toLocaleString(getFormatLocale())} files by name or content...`;
     case "tags":
       return drilldownName
         ? `Filter #${drilldownName} occurrences...`

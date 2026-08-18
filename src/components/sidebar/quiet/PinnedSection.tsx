@@ -41,6 +41,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useFormatLocale } from "@/lib/useLocale";
 import { formatSavedShort } from "@/lib/saved-ago";
 import {
   FILE_DRAG_MIME,
@@ -149,6 +150,7 @@ function PinnedRowImpl({
   onDropRow,
   registerRef,
 }: PinnedRowProps) {
+  const formatLocale = useFormatLocale();
   const name = basename(path);
   // mockup-d — Pinned rows show a short relative-time hint to the
   // right of the name (e.g. "2h"). Pinned files don't carry their own
@@ -337,7 +339,7 @@ function PinnedRowImpl({
                 <span
                   aria-hidden="true"
                   className="text-[11px] text-muted-foreground tabular-nums shrink-0 w-[36px] text-right"
-                  title={`Opened ${new Date(lastAccessedAt).toLocaleString()}`}
+                  title={`Opened ${new Date(lastAccessedAt).toLocaleString(formatLocale)}`}
                 >
                   {formatSavedShort(Date.now() - lastAccessedAt)}
                 </span>

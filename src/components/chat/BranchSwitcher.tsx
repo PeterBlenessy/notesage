@@ -7,6 +7,7 @@ import {
 import { useChatStore, selectAllMessages, selectActiveLeafId } from '@/stores/chat-store';
 import { getThread, getChildren } from '@/lib/chat-tree';
 import type { ChatMessage } from '@/lib/ai/types';
+import { useFormatLocale } from '@/lib/useLocale';
 
 interface BranchSwitcherProps {
   /** The message ID at the branch point */
@@ -72,6 +73,7 @@ function truncate(text: string, maxLen: number): string {
 }
 
 export function BranchSwitcher({ messageId, branchCount, children }: BranchSwitcherProps) {
+  const formatLocale = useFormatLocale();
   const allMessages = useChatStore(selectAllMessages);
   const activeLeafId = useChatStore(selectActiveLeafId);
   const switchBranch = useChatStore((s) => s.switchBranch);
@@ -128,7 +130,7 @@ export function BranchSwitcher({ messageId, branchCount, children }: BranchSwitc
                     </span>
                     {branch.createdAt > 0 && (
                       <span className="text-[10px] text-muted-foreground">
-                        {new Date(branch.createdAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                        {new Date(branch.createdAt).toLocaleTimeString(formatLocale, { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     )}
                   </div>

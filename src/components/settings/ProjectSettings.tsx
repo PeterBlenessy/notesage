@@ -40,6 +40,7 @@ import {
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { AgentIcon } from '@/components/AgentIcon';
 import { formatDisplayPath } from '@/lib/utils';
+import { useFormatLocale } from "@/lib/useLocale";
 
 interface ProjectSettingsProps {
   projectPath: string;
@@ -175,9 +176,10 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
 
   const aiLock = metadata?.aiLock;
   const lockedConnection = aiLock ? connections.find((c) => c.id === aiLock.connectionId) : undefined;
+  const formatLocale = useFormatLocale();
   const lockedAtDate = aiLock ? new Date(aiLock.lockedAt) : null;
   const lockedAtLabel = lockedAtDate
-    ? lockedAtDate.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+    ? lockedAtDate.toLocaleDateString(formatLocale, { year: 'numeric', month: 'short', day: 'numeric' })
     : '';
 
   const handleConfirmUnlock = () => {

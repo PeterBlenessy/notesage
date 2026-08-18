@@ -21,6 +21,7 @@ import { Switch } from '@/components/ui/switch';
 import { useSettingsStore } from '@/stores/settings-store';
 import { track, trackSettingToggle } from '@/lib/telemetry';
 import type { AccentName } from '@/lib/accent';
+import type { Locale } from '@/lib/i18n';
 import type { QuietChromeTargets } from '@/lib/quiet-chrome-presets';
 import { cn } from '@/lib/utils';
 
@@ -148,6 +149,8 @@ function Segmented<T extends string>({
 
 export function AppearanceSettings() {
   // ── Settings store ────────────────────────────────────────────────────
+  const locale = useSettingsStore((s) => s.locale);
+  const setLocale = useSettingsStore((s) => s.setLocale);
   const theme = useSettingsStore((s) => s.theme);
   const setTheme = useSettingsStore((s) => s.setTheme);
   const accent = useSettingsStore((s) => s.accent);
@@ -202,6 +205,30 @@ export function AppearanceSettings() {
           shows which panel is active. The tagline lives there as a
           column-header tooltip if we ever need it. Removing the hero
           tightens the panel meaningfully and matches the comp. */}
+
+      {/* ── Language ─────────────────────────────────────────────── */}
+      <SettingsGroup label="Language">
+        <SettingsRow
+          label="Display language"
+          description="Also sets how dates and numbers are formatted."
+          control={
+            <Segmented
+              dataTestId="appearance-language"
+              options={[
+                { value: 'system', label: 'System', ariaLabel: 'Follow the system language' },
+                { value: 'en', label: 'English', ariaLabel: 'English' },
+                { value: 'sv', label: 'Svenska', ariaLabel: 'Svenska' },
+              ]}
+              value={locale ?? 'system'}
+              onChange={(v) => {
+                const next = v === 'system' ? null : (v as Locale);
+                setLocale(next);
+                track('setting_changed', { setting: 'locale', value: v });
+              }}
+            />
+          }
+        />
+      </SettingsGroup>
 
       {/* ── Theme ────────────────────────────────────────────────── */}
       <SettingsGroup label="Theme">

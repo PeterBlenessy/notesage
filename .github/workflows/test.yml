@@ -340,6 +340,13 @@ jobs:
         working-directory: src-tauri
         run: cargo audit
 
+      # Some entries in src-tauri/.cargo/audit.toml are ignored because the
+      # vulnerable crate is an unused optional feature that never compiles.
+      # That claim is prose; this checks it is still true, so a dependency bump
+      # cannot quietly switch the feature on while the advisory stays silenced.
+      - name: Verify "never compiled" audit ignores still hold
+        run: ./scripts/check-audit-ignore-claims.sh
+
   real-e2e-tests:
     name: Real Tauri E2E Tests
     # Pinned to `macos-26` (not `macos-latest`) to escape the Safari 26.5

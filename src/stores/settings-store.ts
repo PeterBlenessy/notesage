@@ -9,6 +9,7 @@ import {
   type QuietChromeTargets,
 } from '@/lib/quiet-chrome-presets';
 import { useFlagStore } from '@/stores/flag-store';
+import { setLocale as applyLocale, SUPPORTED_LOCALES, type Locale } from '@/lib/i18n';
 
 
 type Theme = "light" | "dark" | "system";
@@ -226,6 +227,13 @@ interface SettingsStore {
    */
   showTitleBar: boolean;
   /**
+   * UI language (#705). `null` follows the OS/device language — the default,
+   * and what every install did before this existed. An explicit value also
+   * drives date/number formatting, so the whole UI speaks one language rather
+   * than pairing Swedish labels with US dates.
+   */
+  locale: Locale | null;
+  /**
    * Sidebar composition (ui-refresh #35). Maximum number of rows shown in
    * the quiet-composer sidebar Recent section. Clamped to [3, 15]. Default 5.
    */
@@ -340,6 +348,7 @@ interface SettingsStore {
   /** #132 — toggle the translucent chrome + editor flow-under effect. */
   setQuietChromeTransparent: (enabled: boolean) => void;
   setShowTitleBar: (show: boolean) => void;
+  setLocale: (locale: Locale | null) => void;
   /**
    * Toggle a single per-element override. Automatically flips the preset to
    * "custom" so the override is actually used at read time.
@@ -490,6 +499,7 @@ export const useSettingsStore = create<SettingsStore>()(
       quietChromeOverrides: { ...QUIET_CHROME_PRESETS.default },
       quietChromeTransparent: false,
       showTitleBar: false,
+      locale: null,
       sidebarRecentCap: 5,
       sidebarTagsCap: 5,
       sidebarMentionsCap: 5,
@@ -860,6 +870,14 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setShowTitleBar: (show: boolean) => {
         set({ showTitleBar: show });
+      },
+
+      setLocale: (locale: Locale | null) => {
+        set({ locale });
+        // The i18n module holds the live locale that `t()` and the formatting
+        // helpers read; the store is the persisted copy. Write through so the
+        // UI changes language immediately rather than on next launch.
+        applyLocale(locale);
       },
 
       setSidebarRecentCap: (n: number) => {
@@ -1245,6 +1263,18 @@ export const useSettingsStore = create<SettingsStore>()(
       // consent file (absent) leaves Sentry unbound until the user toggled it.
       onRehydrateStorage: () => (state) => {
         if (state) applyTelemetryConsent(state);
+        // Push the persisted language into the i18n module, which starts at the
+        // platform default — without this the app would launch in the OS
+        // language and only switch once Settings was touched (#705). A value
+        // that is no longer supported falls back to following the platform.
+        if (state) {
+          const persisted = state.locale;
+          applyLocale(
+            persisted && (SUPPORTED_LOCALES as readonly string[]).includes(persisted)
+              ? persisted
+              : null,
+          );
+        }
       },
     }
   )

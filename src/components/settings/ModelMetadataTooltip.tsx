@@ -5,6 +5,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { ModelMetadata } from '@/lib/tauri';
+import { getFormatLocale } from "@/lib/i18n";
+import { useFormatLocale } from "@/lib/useLocale";
 
 interface ModelMetadataTooltipProps {
   metadata?: ModelMetadata | null;
@@ -15,7 +17,7 @@ interface ModelMetadataTooltipProps {
 
 function formatContextLength(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M tokens`;
-  if (n >= 1_000) return `${(n / 1_000).toLocaleString()}K tokens`;
+  if (n >= 1_000) return `${(n / 1_000).toLocaleString(getFormatLocale())}K tokens`;
   return `${n} tokens`;
 }
 
@@ -45,6 +47,10 @@ export function ModelMetadataTooltip({
   side = 'right',
   children,
 }: ModelMetadataTooltipProps) {
+  // Subscribe to language changes — the date/number helpers used below read
+  // the i18n module directly, so without this their output would keep the
+  // previous locale until an unrelated re-render.
+  useFormatLocale();
   if (!metadata) {
     return <>{children}</>;
   }
