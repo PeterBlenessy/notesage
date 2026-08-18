@@ -25,6 +25,7 @@ What it does:
 Usage:  python3 src-tauri/ios/integrate-share-extension.py
 """
 
+import json
 import plistlib
 import subprocess
 import shutil
@@ -120,6 +121,20 @@ SHARE_TARGET = {
 }
 
 
+def ios_marketing_version() -> str:
+    """The iOS marketing version, from the config Tauri actually reads.
+
+    `tauri.ios.conf.json` is the iOS version's own line (issue #721) — it moves
+    when iOS ships something, independently of the desktop. Everything that
+    needs the iOS version must read it from here, or drift back in.
+    """
+    conf = json.loads((REPO / "src-tauri/tauri.ios.conf.json").read_text())
+    version = conf.get("version")
+    if not version:
+        sys.exit("tauri.ios.conf.json has no `version` — cannot version the extension")
+    return str(version)
+
+
 def patch_project_yml() -> None:
     data = yaml.safe_load(PROJECT_YML.read_text())
     targets = data.setdefault("targets", {})
@@ -130,13 +145,29 @@ def patch_project_yml() -> None:
     if not any(d.get("target") == "NotesageShare" for d in deps):
         deps.append({"target": "NotesageShare"})
 
-    # Mirror the app's version keys — Xcode warns when an extension's
-    # CFBundleShortVersionString differs from its containing app's.
+    # Xcode warns when an extension's CFBundleShortVersionString differs from
+    # its containing app's, and App Store Connect rejects the pair outright.
+    #
+    # Take the version from `tauri.ios.conf.json`, NOT from this file's app
+    # target. Tauri reads that config directly and writes the resulting version
+    # into the app's generated Info.plist at BUILD time, without ever writing it
+    # back here — so the app target below stays at whatever it was when the
+    # project was first generated. Mirroring it produced an extension pinned to
+    # a long-dead version (0.48.0 against an app at 0.50.1).
     app_info = app.get("info", {}).get("properties", {})
     share_info = targets["NotesageShare"]["info"]["properties"]
-    for key in ("CFBundleShortVersionString", "CFBundleVersion"):
-        if key in app_info:
-            share_info[key] = app_info[key]
+    # Set BOTH from the config. Tauri overwrites the app's generated plist at
+    # build time anyway, but a plain `xcodegen generate` + Xcode build does not
+    # go through Tauri — leaving the app target stale there would just move the
+    # mismatch, with the extension ahead of the app instead of behind it.
+    marketing = ios_marketing_version()
+    app_info["CFBundleShortVersionString"] = marketing
+    share_info["CFBundleShortVersionString"] = marketing
+    # The build number is stamped onto the archive after it exists
+    # (`scripts/ios-testflight.sh`), so the value here is a placeholder for
+    # local builds only — mirror the app's so the two agree in Xcode.
+    if "CFBundleVersion" in app_info:
+        share_info["CFBundleVersion"] = app_info["CFBundleVersion"]
 
     # Export-compliance answer, baked in (TestFlight/App Store): Notesage
     # uses only standard HTTPS/TLS, which is exempt. Declaring it here stops

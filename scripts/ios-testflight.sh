@@ -203,6 +203,28 @@ if [ ! -d src-tauri/gen/apple ]; then
   python3 src-tauri/ios/integrate-share-extension.py
 fi
 
+# Keep the Share Extension's marketing version on the app's.
+#
+# The integration script above only runs when the project is generated, so the
+# extension's plist keeps the version it was born with. Tauri, meanwhile, writes
+# the CURRENT version into the app's plist on every build, straight from
+# `tauri.ios.conf.json`. Bump the iOS version and the two drift apart — Xcode
+# warns on every build, and App Store Connect rejects the pair.
+#
+# Step 2b stamps both plists inside the archive afterwards, so the artifact was
+# always correct; this is about the project the build actually compiles. Only
+# generated files under the gitignored `gen/` tree are touched — the rule that
+# no TRACKED file is rewritten mid-release still holds.
+EXT_INFO_PLIST="src-tauri/gen/apple/NotesageShare/Info.plist"
+if [ -f "$EXT_INFO_PLIST" ]; then
+  EXT_HAS=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$EXT_INFO_PLIST" 2>/dev/null || echo "")
+  if [ "$EXT_HAS" != "$MARKETING" ]; then
+    echo "==> Extension version ${EXT_HAS:-unset} -> ${MARKETING}"
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${MARKETING}" "$EXT_INFO_PLIST" \
+      || /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string ${MARKETING}" "$EXT_INFO_PLIST"
+  fi
+fi
+
 # Nothing is rewritten before the build any more. The version comes from
 # `tauri.ios.conf.json`, which Tauri reads directly, and the build number is
 # stamped onto the archive below — so no tracked file is mutated mid-release.
