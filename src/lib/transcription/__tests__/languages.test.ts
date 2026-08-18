@@ -15,6 +15,7 @@ import {
   speechLanguageLabel,
   detectSpeechLanguage,
   isLanguageMismatch,
+  pickModelForLanguage,
 } from '@/lib/transcription/languages';
 
 function withNavigatorLanguages(languages: string[]): void {
@@ -135,5 +136,41 @@ describe('recording-store migration', () => {
     withNavigatorLanguages(['en-US']);
     const out = await migrateWith({ speechLanguage: 'auto', defaultModel: 'medium' });
     expect(out.defaultModel).toBe('medium');
+  });
+});
+
+/**
+ * Model choice for a language re-run.
+ *
+ * The failure this prevents: a user whose transcript came out in the wrong
+ * language picks "Re-run in Swedish", and the action hands the job to
+ * `small` — the one model that cannot do Swedish — because that happens to be
+ * their default. The repair would reproduce the fault it was repairing.
+ */
+describe('pickModelForLanguage', () => {
+  const downloaded = ['small', 'large-v3-turbo-q5_0'];
+
+  it('keeps the preferred model when it can handle the language', () => {
+    expect(pickModelForLanguage('large-v3-turbo-q5_0', 'sv', downloaded)).toBe(
+      'large-v3-turbo-q5_0',
+    );
+  });
+
+  it('keeps an English-only model for English', () => {
+    expect(pickModelForLanguage('small', 'en', downloaded)).toBe('small');
+  });
+
+  it('swaps an English-only model for a multilingual one', () => {
+    expect(pickModelForLanguage('small', 'sv', downloaded)).toBe('large-v3-turbo-q5_0');
+  });
+
+  it('swaps for auto-detect too', () => {
+    expect(pickModelForLanguage('small', 'auto', downloaded)).toBe('large-v3-turbo-q5_0');
+  });
+
+  it('falls back rather than refusing when nothing better is downloaded', () => {
+    // A poor transcription the user can see is more useful than an action
+    // that silently does nothing.
+    expect(pickModelForLanguage('small', 'sv', ['small'])).toBe('small');
   });
 });

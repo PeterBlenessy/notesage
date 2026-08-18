@@ -9,10 +9,6 @@ import { formatStopwatchMs } from '@/lib/recording-time';
 import { IconActionButton, formatClock } from './shared';
 import { useFormatLocale } from "@/lib/useLocale";
 
-// Whisper supports 99 languages; "Auto-detect" covers them all. Mirrors the
-// explicit-pick subset in `TranscriptionSettings` — this is the per-recording
-// override, made available right where the decision belongs (at record time,
-// not buried in Settings). Keep "Auto-detect" first.
 
 /**
  * Live-recording card (kind === 'recording'). Recording glyph + a pause-aware

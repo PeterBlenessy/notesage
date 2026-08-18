@@ -241,6 +241,15 @@ export const useRecordingStore = create<RecordingStore>()(
             await invoke('delete_whisper_model', { size });
             toast.success(`Model '${size}' deleted`);
             await get().refreshModels();
+            // Deleting the SELECTED model would otherwise leave `defaultModel`
+            // pointing at a file that no longer exists: the picker renders
+            // blank and the next recording fails with "Model not downloaded".
+            // Newly reachable now that retired models are listed with a delete
+            // control, which invites exactly this.
+            if (get().defaultModel === size) {
+              const next = get().availableModels.find((m) => m.downloaded);
+              if (next) set({ defaultModel: next.name });
+            }
           } catch (err) {
             toast.error(`Failed to delete model: ${err}`);
           }
@@ -251,7 +260,13 @@ export const useRecordingStore = create<RecordingStore>()(
       name: 'notesage-recording',
       version: 1,
       migrate: (persisted: unknown, version: number) => {
-        const state = (persisted ?? {}) as Partial<RecordingStore>;
+        // Not just `?? {}`: a corrupted blob could deserialize to a
+        // primitive, and assigning a property to one THROWS in strict mode
+        // (module code always is), taking the whole store down on rehydrate.
+        const state =
+          persisted && typeof persisted === 'object'
+            ? (persisted as Partial<RecordingStore>)
+            : ({} as Partial<RecordingStore>);
         if (version >= 1) return state;
 
         // Move existing installs off auto-detect.

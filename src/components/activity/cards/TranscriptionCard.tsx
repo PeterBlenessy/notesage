@@ -33,7 +33,11 @@ import { startTranscription } from '@/hooks/useTranscriptionJob';
 import { tauriApi } from '@/lib/tauri';
 import { IconActionButton, basename, formatClock } from './shared';
 import { getFormatLocale } from "@/lib/i18n";
-import { SPEECH_LANGUAGES, speechLanguageLabel } from '@/lib/transcription/languages';
+import {
+  SPEECH_LANGUAGES,
+  speechLanguageLabel,
+  pickModelForLanguage,
+} from '@/lib/transcription/languages';
 import { useFormatLocale } from "@/lib/useLocale";
 
 /** Display name for a project root — the trailing path component. */
@@ -277,6 +281,8 @@ function RerunTranscriptionMenu({ task }: { task: AgentTask }) {
             </DropdownMenuItem>
           ))
         )}
+        {downloadedModels.length > 0 && (
+          <>
         <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger className="text-xs">
@@ -286,13 +292,26 @@ function RerunTranscriptionMenu({ task }: { task: AgentTask }) {
             {SPEECH_LANGUAGES.map((lang) => (
               <DropdownMenuItem
                 key={lang.value}
-                onSelect={() => handleRerun(defaultModel, lang.value)}
+                onSelect={() =>
+                  handleRerun(
+                    // Not simply `defaultModel`: re-running to FIX a wrong
+                    // language must not hand the job to an English-only model.
+                    pickModelForLanguage(
+                      defaultModel,
+                      lang.value,
+                      downloadedModels.map((m) => m.name),
+                    ),
+                    lang.value,
+                  )
+                }
               >
                 {lang.label}
               </DropdownMenuItem>
             ))}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

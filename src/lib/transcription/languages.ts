@@ -103,3 +103,25 @@ export function isLanguageMismatch(model: string, language: string): boolean {
   // place, and they have no headroom to recover from a wrong guess.
   return language !== 'en';
 }
+
+/**
+ * Choose the model to transcribe `language` with, given what is downloaded.
+ *
+ * Exists because "re-run in another language" would otherwise reach for the
+ * global default — and if that default is English-only, the user fixing a
+ * WRONG-LANGUAGE transcript gets handed the one pairing this whole change
+ * exists to prevent, inside the action meant to repair it.
+ *
+ * Prefers the requested model when it can handle the language, then any
+ * downloaded multilingual model, and only then falls back — a poor
+ * transcription the user can see is better than refusing to run at all.
+ */
+export function pickModelForLanguage(
+  preferred: string,
+  language: string,
+  downloaded: readonly string[],
+): string {
+  if (!isLanguageMismatch(preferred, language)) return preferred;
+  const multilingual = downloaded.find((m) => !isEnglishOnlyModel(m));
+  return multilingual ?? preferred;
+}
