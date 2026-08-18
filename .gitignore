@@ -78,3 +78,8 @@ content/screenshots/
 # every build and version-locked to the tauri crate — committing it would let a
 # stale copy drift from the Rust side.
 src-tauri/crates/*/.tauri/
+
+# Whisper benchmark audio (scripts/compare-whisper). Multi-MB WAVs supplied by
+# whoever runs the comparison; ignored so a `git add -A` cannot sweep them into
+# an unrelated commit — which is exactly how they reached main once already.
+tests/fixtures/speech/
