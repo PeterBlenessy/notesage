@@ -26,6 +26,7 @@ import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome } from "./useNativeChrome";
 import { withFindAgent } from "./html-find-agent";
 import { withLinkAgent } from "./html-link-agent";
+import { measureReaderInsets, withReaderInsets } from "./html-insets";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 
 // Lazy-loaded — pdf.js is heavy (and pulls in browser-only globals like
@@ -644,9 +645,12 @@ export function Reader() {
         const id = crypto.randomUUID();
         // The find agent rides along inside the document — the only place
         // search can run in a sandboxed cross-origin frame.
+        // Padding is injected INTO the document: the parent cannot reach into
+        // a sandboxed iframe's scroll area, and `env(safe-area-inset-*)` does
+        // not resolve inside one (#722). Measured here, where it does.
         await invoke("html_preview_register", {
           id,
-          content: withLinkAgent(withFindAgent(raw)),
+          content: withReaderInsets(withLinkAgent(withFindAgent(raw)), measureReaderInsets()),
         });
         if (!isCurrent()) {
           // Superseded after registering — release the doc immediately or it
@@ -978,10 +982,7 @@ export function Reader() {
         // opaque WHITE backing that no styling inside the document can
         // change, so a dark report flashed white on open — the same failure
         // as the launch flash, one layer down (Peter, 2026-08-14).
-        <div
-          className="absolute inset-x-0 bottom-0 bg-background"
-          style={{ top: "calc(3.75rem + env(safe-area-inset-top))" }}
-        >
+        <div className="absolute inset-0 bg-background">
           <iframe
             ref={htmlFrameRef}
             key={state.url}
