@@ -209,3 +209,4 @@ Chronological log of major implementation milestones and changes.
 | 203 | [Release v0.48.0](203-release-v0.48.0.md) | First stable since 0.47: one build for everyone, Labs, the iOS companion app, Local Agent pi engine, Automations. |
 | 204 | [Release v0.49.0](204-release-v0.49.0.md) | Auto-cut release. See merged PRs for details. |
 | 205 | [Release v0.50.0](205-release-v0.50.0.md) | Auto-cut release. See merged PRs for details. |
+| 206 | [Release v0.51.0](206-release-v0.51.0.md) | Transcription models chosen by measurement, and transcripts stop guessing which language you spoke. Swedish display language. |

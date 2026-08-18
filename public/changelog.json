@@ -1,6 +1,30 @@
 {
   "releases": [
     {
+      "version": "0.51.0",
+      "date": "2026-08-18",
+      "previousVersion": "0.50.0",
+      "sections": {
+        "features": [
+          "**Choose a display language.** Notesage can now run in Swedish as well as English, under Settings → Appearance → Language. Dates and numbers follow the same choice, so you no longer get Swedish labels beside American dates.",
+          "**Two transcription models, described by what they are for.** \"Best quality · all languages\" is the new default; \"Fast · English only\" is there when you want a long English recording turned around quickly. Settings → Voice.",
+          "**See what each model is before downloading it.** Every model now has an \"About this model\" note giving its accuracy, size, licence, and the exact address the file is downloaded from.",
+          "**Re-run a transcription in a different language.** If a recording came out in the wrong language, the transcription card can redo it — picking a model that can handle the language you chose."
+        ],
+        "improvements": [
+          "**Transcriptions no longer guess your language.** Notesage now starts from your device's language instead of trying to detect one per recording. Detection was reliable for English and unreliable for everything else: on Swedish it could produce fluent nonsense in an entirely different language. You can still change the language for any recording, and auto-detect is still available if you prefer it.",
+          "**Every transcript says which language it was made in**, so a wrong one is something you can see and fix rather than something you discover halfway through reading.",
+          "**The best model is now also the smallest.** The new default needs about a sixth of the memory of the old \"large\" model and transcribes just as accurately — and slightly less memory than the old \"small\" one while making less than half the errors outside English.",
+          "Models downloaded by earlier versions keep working, stay listed, and can be deleted to reclaim the space."
+        ],
+        "fixes": [
+          "**Sending a message while several chats are working no longer moves you.** A queued message used to drag the view back to its own conversation when it started; you now stay where you were reading.",
+          "**Dates in table columns behave.** Dates written with slashes no longer quietly jump to a different year, and date columns now sort and summarise correctly.",
+          "Fixed a potential content-injection weakness in how pasted web content is cleaned up — no action needed."
+        ]
+      }
+    },
+    {
       "version": "0.50.0",
       "date": "2026-08-16",
       "previousVersion": "0.49.0",
