@@ -53,6 +53,12 @@ fn main() {
     }
     println!();
 
+    // Optional pin — see the note at `set_language` below.
+    let forced_language: Option<String> = std::env::var("WHISPER_LANG").ok().filter(|v| !v.is_empty());
+    if let Some(lang) = &forced_language {
+        println!("Language pinned to {lang} (WHISPER_LANG)");
+    }
+
     let models = downloaded_models();
     if models.is_empty() {
         eprintln!("No models in ~/.notesage/whisper-models — download some in Settings → Voice.");
@@ -85,7 +91,14 @@ fn main() {
         params.set_print_realtime(false);
         params.set_print_timestamps(false);
         // None = let Whisper detect. See the module note.
-        params.set_language(None);
+        //
+        // `WHISPER_LANG=sv` pins it instead, which separates two failures the
+        // default run cannot tell apart: a model that mis-HEARS the speech, and
+        // one that hears it correctly but decides it is another language and
+        // writes it in that language's orthography. The second looks
+        // catastrophic in WER terms and is entirely fixed by the language
+        // setting the app already has.
+        params.set_language(forced_language.as_deref().or(None));
 
         let mut state = match ctx.create_state() {
             Ok(s) => s,

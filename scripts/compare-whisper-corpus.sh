@@ -49,6 +49,16 @@ set -euo pipefail
 DIR="${1:-tests/fixtures/speech}"
 PREFIX="${2:-}"
 CORES="$(sysctl -n hw.ncpu 2>/dev/null || nproc)"
+
+# `pnpm compare:whisper` runs with cwd=src-tauri (see package.json), so every
+# path handed to it has to be absolute.
+abspath() {
+  case "$1" in
+    /*) printf '%s' "$1" ;;
+    *)  printf '%s/%s' "$PWD" "$1" ;;
+  esac
+}
+
 # Per-core load. Above this, timings stop being comparable between models.
 THRESHOLD="${LOAD_THRESHOLD:-0.6}"
 
@@ -92,7 +102,11 @@ for wav in "${clips[@]}"; do
   # silently average an unmeasured clip in as zero.
   [ -f "$ref" ] || { echo "skip $(basename "$wav") — no reference transcript"; continue; }
   echo "→ $(basename "$wav")"
-  pnpm -s compare:whisper "$wav" "$ref" 2>/dev/null >>"$raw" || true
+  # Absolute paths: `pnpm compare:whisper` cds into src-tauri/ before running
+  # cargo, so a repo-relative path resolves against the wrong directory and the
+  # harness exits with "No such file" — for every clip, silently, because
+  # stderr is dropped. The aggregate then reports nothing at all.
+  pnpm -s compare:whisper "$(abspath "$wav")" "$(abspath "$ref")" 2>/dev/null >>"$raw" || true
 done
 
 # --- aggregate -------------------------------------------------------------
