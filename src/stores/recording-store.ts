@@ -250,21 +250,28 @@ export const useRecordingStore = create<RecordingStore>()(
     {
       name: 'notesage-recording',
       version: 1,
-      // v0 → v1: the model catalogue changed (#698). Anyone whose stored
-      // default is a model no longer offered would otherwise be pinned to a
-      // name the picker cannot show, so move them to the current default.
-      // Their downloaded file is untouched and still listed, so nothing they
-      // already have disappears.
       migrate: (persisted: unknown, version: number) => {
         const state = (persisted ?? {}) as Partial<RecordingStore>;
         if (version >= 1) return state;
-        const retired = ['tiny', 'base', 'medium', 'large-v3'];
-        if (state.defaultModel && retired.includes(state.defaultModel)) {
-          state.defaultModel = 'large-v3-turbo-q5_0';
+
+        // Move existing installs off auto-detect.
+        //
+        // 'auto' WAS the default, so a stored 'auto' is almost always "never
+        // touched it" rather than a decision — and there is no way to tell the
+        // two apart. Leaving it alone would mean the fix reaches only new
+        // installs, while every existing user keeps the behaviour that turned
+        // a Swedish clip into Albanian. Overriding it is visible (the card now
+        // shows the language) and one click to undo; not overriding it is
+        // invisible and permanent.
+        if (!state.speechLanguage || state.speechLanguage === 'auto') {
+          state.speechLanguage = detectSpeechLanguage();
         }
-        // Leave `speechLanguage` alone. An explicit 'auto' may be a real
-        // choice, and silently overriding a user's setting to fix a default is
-        // not the same thing as fixing the default.
+
+        // Deliberately NOT touching `defaultModel`. Switching someone from a
+        // model they have on disk to one they do not would point transcription
+        // at a missing file and fail their next recording — a working setup
+        // broken by an upgrade. Their model still works; it is simply no
+        // longer offered, and the mismatch note says when it is a poor fit.
         return state;
       },
       partialize: (state) => ({

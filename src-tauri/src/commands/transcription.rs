@@ -1110,15 +1110,18 @@ pub async fn transcribe_file(
 // Commands — model management (unchanged)
 // ---------------------------------------------------------------------------
 
-/// List available Whisper models (both downloaded and not).
-#[tauri::command]
-pub async fn list_whisper_models(
-    state: State<'_, TranscriptionState>,
-) -> Result<Vec<ModelInfo>, String> {
+/// The model list, as a pure function of what is on disk.
+///
+/// Split out from the command so the retired-model behaviour is testable:
+/// a model the catalogue no longer offers must still be LISTED, or it
+/// becomes invisible in the UI while occupying gigabytes the user cannot
+/// reclaim.
+fn build_model_list(models_dir: &Path) -> Vec<ModelInfo> {
+
     let mut models = Vec::new();
 
     for meta in KNOWN_MODELS {
-        let path = state.models_dir.join(format!("ggml-{}.bin", meta.name));
+        let path = models_dir.join(format!("ggml-{}.bin", meta.name));
         let downloaded = path.exists();
         let actual_size = if downloaded {
             std::fs::metadata(&path)
@@ -1152,7 +1155,7 @@ pub async fn list_whisper_models(
     // Models on disk that the catalog no longer offers. Without this they
     // vanish from the UI while still occupying disk — a `medium` left over
     // from an older release is 1.5 GB the user can neither see nor delete.
-    if let Ok(entries) = std::fs::read_dir(&state.models_dir) {
+    if let Ok(entries) = std::fs::read_dir(&models_dir) {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.extension().and_then(|e| e.to_str()) != Some("bin") {
@@ -1191,7 +1194,15 @@ for their size. Safe to delete."
         }
     }
 
-    Ok(models)
+    models
+}
+
+/// List available Whisper models (both downloaded and not).
+#[tauri::command]
+pub async fn list_whisper_models(
+    state: State<'_, TranscriptionState>,
+) -> Result<Vec<ModelInfo>, String> {
+    Ok(build_model_list(&state.models_dir))
 }
 
 /// Download a Whisper GGML model from Hugging Face.
@@ -1352,6 +1363,52 @@ pub async fn delete_whisper_model(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A model the catalogue no longer offers must stay LISTED and marked
+    /// downloaded (#698).
+    ///
+    /// This is what keeps it deletable. `delete_whisper_model` works by path
+    /// and accepts any name, and the UI renders its delete control for any
+    /// entry with `downloaded: true` — so listing is the only thing standing
+    /// between the user and 1.5 GB of `medium` they can neither see nor
+    /// reclaim after upgrading.
+    #[test]
+    fn retired_models_stay_listed_so_they_can_be_deleted() {
+        let dir = std::env::temp_dir().join(format!(
+            "notesage-models-test-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // A model from an older release, plus one the catalogue still offers.
+        std::fs::write(dir.join("ggml-medium.bin"), b"x").unwrap();
+        std::fs::write(dir.join("ggml-small.bin"), b"x").unwrap();
+
+        let models = build_model_list(&dir);
+
+        let medium = models
+            .iter()
+            .find(|m| m.name == "medium")
+            .expect("a downloaded model missing from the catalogue must still be listed");
+        assert!(medium.downloaded, "must report as downloaded, or no delete control renders");
+        assert!(medium.retired, "must be marked so the UI can say it is no longer offered");
+        assert!(medium.download_url.is_none(), "nothing to re-download it from");
+
+        let small = models.iter().find(|m| m.name == "small").unwrap();
+        assert!(!small.retired, "a current model must not be marked retired");
+        assert!(small.download_url.is_some(), "current models show where they come from");
+
+        // The catalogue's other model is listed even though it is not on disk,
+        // so it can be downloaded.
+        let quality = models
+            .iter()
+            .find(|m| m.name == "large-v3-turbo-q5_0")
+            .expect("catalogue models are listed whether downloaded or not");
+        assert!(!quality.downloaded);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use std::sync::atomic::{AtomicUsize, Ordering as O};
     use std::sync::Arc;
     use std::thread;

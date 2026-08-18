@@ -96,3 +96,44 @@ describe('speechLanguageLabel', () => {
     expect(speechLanguageLabel('xx')).toBe('xx');
   });
 });
+
+/**
+ * The persisted-state migration (v0 → v1).
+ *
+ * Two decisions that pull in opposite directions, both deliberate:
+ * the language IS overridden (the old default was the bug), the model is NOT
+ * (switching someone to a model they have not downloaded breaks their next
+ * recording).
+ */
+describe('recording-store migration', () => {
+  async function migrateWith(persisted: Record<string, unknown>) {
+    vi.resetModules();
+    const mod = await import('@/stores/recording-store');
+    // The migrate fn is not exported; exercise it through the store's own
+    // persist options so the test covers what actually runs.
+    const opts = (mod.useRecordingStore as unknown as {
+      persist: { getOptions: () => { migrate?: (s: unknown, v: number) => unknown } };
+    }).persist.getOptions();
+    return opts.migrate?.(persisted, 0) as Record<string, unknown>;
+  }
+
+  it('moves a stored auto-detect onto the device language', async () => {
+    withNavigatorLanguages(['sv-SE']);
+    const out = await migrateWith({ speechLanguage: 'auto', defaultModel: 'medium' });
+    expect(out.speechLanguage).toBe('sv');
+  });
+
+  it('leaves a deliberately chosen language alone', async () => {
+    withNavigatorLanguages(['sv-SE']);
+    const out = await migrateWith({ speechLanguage: 'de', defaultModel: 'small' });
+    expect(out.speechLanguage).toBe('de');
+  });
+
+  it('does NOT move the model, even a retired one', async () => {
+    // The file is on disk and works. Repointing at a model they have not
+    // downloaded would fail their next recording.
+    withNavigatorLanguages(['en-US']);
+    const out = await migrateWith({ speechLanguage: 'auto', defaultModel: 'medium' });
+    expect(out.defaultModel).toBe('medium');
+  });
+});
