@@ -13,8 +13,18 @@
  * actually asked for a specific language.
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { setLocale, getLocale, getFormatLocale, subscribeLocale } from "@/lib/i18n";
+
+/**
+ * `setLocale` mutates MODULE state, and this suite runs files sequentially in a
+ * shared registry — so leaving the locale on `sv` silently changes formatting
+ * for every file that runs afterwards. Restore it.
+ */
+afterEach(() => {
+  setLocale(null);
+});
+
 
 describe("getFormatLocale", () => {
   beforeEach(() => {

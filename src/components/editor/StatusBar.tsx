@@ -24,6 +24,7 @@ import { StatusTray, type StatusTrayGroup } from "./StatusTray";
 import { localAiDotClass, localAiStatusLabel } from "./local-ai-dot";
 import { useBackgroundActivity } from "./status/use-background-activity";
 import { getFormatLocale } from "@/lib/i18n";
+import { useFormatLocale } from "@/lib/useLocale";
 
 /**
  * Format a number with localized thousand separators.
@@ -288,6 +289,11 @@ export function StatusBar({
   onToggleViewMode,
   onOpenTray,
 }: StatusBarProps) {
+  // Subscribe to language changes — the date/number helpers used below read
+  // the i18n module directly, so without this their output would keep the
+  // previous locale until an unrelated re-render.
+  useFormatLocale();
+
   const reducedMotion = useReducedMotion();
 
   // Re-read word count when the editor transacts so it tracks typing.

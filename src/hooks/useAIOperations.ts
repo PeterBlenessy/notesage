@@ -226,10 +226,17 @@ export function useAIOperations() {
       // jumped out from under them when the slot freed. Passing the id through
       // `opts` routes the messages correctly and leaves the view alone.
       //
-      // Only the message routing needed the activation: everything else this
-      // send derives — project paths, sandbox scope, system prompt — is already
-      // captured in the closure at ENQUEUE time, when the target conversation
-      // was active, so it describes the right conversation either way.
+      // Two different things used to ride on that activation, and only one of
+      // them is closure-captured:
+      //
+      //  - Project paths, sandbox scope and the system prompt ARE captured at
+      //    ENQUEUE time, when the target conversation was still active, so they
+      //    already describe the right conversation.
+      //  - Message routing and the ACP session helpers are NOT: they read the
+      //    store live, at the moment the thunk runs. Those take the id through
+      //    `opts.conversationId` — see `buildAcpHistoryBlock`,
+      //    `resolveActiveSessionId` and `setSegmentSessionId`, each of which
+      //    would otherwise act on whatever chat the user wandered off to.
       //
       // A brand-new chat with no conversation yet (`targetConv` null) can't be
       // keyed, so it proceeds immediately — an acceptable rare over-cap edge.

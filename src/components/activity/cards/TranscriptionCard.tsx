@@ -28,6 +28,7 @@ import { startTranscription } from '@/hooks/useTranscriptionJob';
 import { tauriApi } from '@/lib/tauri';
 import { IconActionButton, basename, formatClock } from './shared';
 import { getFormatLocale } from "@/lib/i18n";
+import { useFormatLocale } from "@/lib/useLocale";
 
 /** Display name for a project root — the trailing path component. */
 function projectDisplayName(projectRoot: string): string {
@@ -41,16 +42,17 @@ function projectDisplayName(projectRoot: string): string {
  * Falls back to the raw code when the runtime lacks the API or the code is
  * unrecognized — a bare `"sv"` still tells the user more than nothing.
  *
- * Pinned to English for now because the surrounding UI is English; once #653
- * lands its locale accessor this should follow the app locale, so a Swedish UI
- * reads "Svenska".
+ * Follows the app language once the user picks one (#705), so a Swedish UI
+ * reads "svenska"; with no choice made it stays English, as it always was.
  */
 function languageDisplayName(code: string): string {
   try {
-    return new Intl.DisplayNames(
-      getFormatLocale() ? [getFormatLocale() as string] : undefined,
-      { type: 'language' },
-    ).of(code) ?? code;
+    // Falls back to English rather than `undefined`: this hardcoded `['en']`
+    // before, so passing `undefined` (which resolves to the RUNTIME's locale)
+    // would silently change "Swedish" to "svenska" on a Swedish machine for a
+    // user who never touched the language picker. The choice is honoured; the
+    // absence of one keeps the previous behaviour.
+    return new Intl.DisplayNames([getFormatLocale() ?? 'en'], { type: 'language' }).of(code) ?? code;
   } catch {
     return code;
   }
@@ -271,6 +273,11 @@ function RerunTranscriptionMenu({ task }: { task: AgentTask }) {
  * clickable and opens the transcript note in the editor.
  */
 export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemove?: (id: string) => void }) {
+  // Subscribe to language changes: the formatting helpers below read the
+  // i18n module directly, so without this the rendered dates/numbers would
+  // keep their old locale until some unrelated state forced a re-render.
+  useFormatLocale();
+
   const { openFile } = useFileOperations();
   const isRunning = task.status === 'running';
   const progress = task.progress ?? 0;

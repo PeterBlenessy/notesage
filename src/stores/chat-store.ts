@@ -210,7 +210,7 @@ interface ChatStore {
   /** Get the active segment for the current conversation */
   getActiveSegment: () => ConversationSegment | undefined;
   /** Update the session ID on the active segment */
-  setSegmentSessionId: (sessionId: string) => void;
+  setSegmentSessionId: (sessionId: string, convId?: string | null) => void;
   /** Persist the user-selected ACP permission mode on the active conversation. */
   setConversationMode: (modeId: string) => void;
 
@@ -866,8 +866,12 @@ export const useChatStore = create<ChatStore>()(
         return conv.segments[conv.activeSegmentIndex];
       },
 
-      setSegmentSessionId: (sessionId) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      // `convId` matters for a cap-deferred send (#468): it writes the new ACP
+      // session id onto the conversation that OWNS the session, not the one
+      // being viewed. Getting this wrong persists the id on the wrong chat and
+      // leaves the right one unable to resume.
+      setSegmentSessionId: (sessionId, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           acpSessionId: sessionId,
           segments: c.segments.map((s, i) =>

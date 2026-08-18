@@ -8,10 +8,24 @@
  * choosing a language in Settings reach the code that renders strings?
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import "@/test/tauri-mock";
 import { useSettingsStore } from "@/stores/settings-store";
 import { getLocale, getFormatLocale, setLocale as setI18nLocale, t } from "@/lib/i18n";
+
+/**
+ * `setLocale` mutates MODULE state, and this suite runs files sequentially in a
+ * shared registry — so leaving the locale on `sv` silently changes formatting
+ * for every file that runs afterwards. Restore it.
+ */
+afterEach(() => {
+  // Reset BOTH copies. The store one matters because it is persisted: a
+  // lingering `locale: "sv"` rehydrates in any later file that imports
+  // settings-store and silently re-applies Swedish formatting there.
+  useSettingsStore.setState({ locale: null });
+  setI18nLocale(null);
+});
+
 
 describe("settings-store locale", () => {
   beforeEach(() => {

@@ -96,10 +96,18 @@ export const ACP_HISTORY_BUDGET_CHARS = 24_000;
 export function buildAcpHistoryBlock(
   excludeTimestamps: number[],
   budgetChars: number = ACP_HISTORY_BUDGET_CHARS,
+  convId?: string | null,
 ): string {
   const store = useChatStore.getState();
-  const conv = store.conversations.find((c) => c.id === store.activeConversationId);
-  const segment = store.getActiveSegment();
+  // `convId` names the conversation this history belongs to. A send deferred by
+  // the concurrency cap runs while the user may be reading a DIFFERENT chat
+  // (#468), and reading the active one here would splice that chat's history
+  // into this session's prompt — a cross-conversation (and potentially
+  // cross-project) leak. Falling back to the active conversation keeps the
+  // ordinary path unchanged.
+  const targetId = convId ?? store.activeConversationId;
+  const conv = store.conversations.find((c) => c.id === targetId);
+  const segment = conv?.segments[conv.activeSegmentIndex];
   const baseThread: ChatMessage[] = conv
     ? getThreadResilient(conv.messages, conv.activeLeafId).thread
     : [];
@@ -147,9 +155,13 @@ export function buildAcpHistoryBlock(
  * by walking the active leaf's ancestor chain; falls back to the conversation-level
  * session and finally to the agent's current chatSessionId.
  */
-function resolveActiveSessionId(fallback: string | null): string | null {
+function resolveActiveSessionId(fallback: string | null, convId?: string | null): string | null {
   const state = useChatStore.getState();
-  const conv = state.conversations.find((c) => c.id === state.activeConversationId);
+  // See `buildAcpHistoryBlock` — a cap-deferred send must resolve ITS OWN
+  // conversation's branch session, not the one being viewed, or the prompt
+  // goes to another conversation's agent session (#468).
+  const targetId = convId ?? state.activeConversationId;
+  const conv = state.conversations.find((c) => c.id === targetId);
   if (!conv) return fallback;
   return getSessionIdForLeaf(conv, conv.activeLeafId) ?? fallback;
 }
@@ -187,6 +199,7 @@ async function startFreshChatSession(
   agent: AcpAgentState,
   connection: Connection | null,
   projectPaths: string[],
+  convId?: string | null,
 ): Promise<AcpSessionResult> {
   const session = await invoke<AcpSessionResult>('acp_session_new', {
     instanceId,
@@ -195,7 +208,7 @@ async function startFreshChatSession(
   });
   agent.chatSessionId = session.session_id;
   // Track session in the segment
-  useChatStore.getState().setSegmentSessionId(session.session_id);
+  useChatStore.getState().setSegmentSessionId(session.session_id, convId);
   // Cache available models from the agent for the config dialog
   cacheAgentModels(connection, session);
   return session;
@@ -566,14 +579,26 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         // Spawn resolved — attach the instance handle to the already-active run.
         runAttachInstance(conversationId, instanceId);
 
-        // Block sending if a project switch is pending user decision
-        const pendingSwitch = selectPendingProjectSwitch(useChatStore.getState());
+        // Block sending if a project switch is pending user decision — on THIS
+        // conversation. `selectPendingProjectSwitch` reads the active one, which
+        // for a cap-deferred send is whatever the user wandered off to read
+        // (#468): that would both block this send on an unrelated prompt and
+        // skip a real pending switch on its own conversation.
+        const pendingSwitch = conversationId
+          ? (useChatStore.getState().conversations.find((c) => c.id === conversationId)
+              ?.pendingProjectSwitch ?? null)
+          : selectPendingProjectSwitch(useChatStore.getState());
         if (pendingSwitch) {
           throw new Error('Please resolve the project context change before sending a message.');
         }
 
-        // Use segment-based session tracking for context isolation
-        const segment = useChatStore.getState().getActiveSegment();
+        // Use segment-based session tracking for context isolation. Scoped to
+        // this conversation for the same reason as the pending-switch check.
+        const segment = (() => {
+          const st = useChatStore.getState();
+          const c = st.conversations.find((x) => x.id === (conversationId ?? st.activeConversationId));
+          return c?.segments[c.activeSegmentIndex];
+        })();
         let isNewSession = false;
 
         // New conversation or new segment -> need a fresh ACP session
@@ -586,7 +611,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         }
 
         if (!agent.chatSessionId) {
-          const session = await startFreshChatSession(instanceId, cwd, agent, effectiveConnection, selectedProjectPaths);
+          const session = await startFreshChatSession(
+            instanceId, cwd, agent, effectiveConnection, selectedProjectPaths, conversationId,
+          );
           isNewSession = true;
 
           // Store session modes and config options for UI rendering
@@ -601,7 +628,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         // Session this turn prompts on — the listeners gate on it so a session
         // swap on the shared agent instance (or an overlapping send) can't
         // bleed another session's chunks into this message (finding #4a).
-        const promptSessionId = resolveActiveSessionId(agent.chatSessionId);
+        const promptSessionId = resolveActiveSessionId(agent.chatSessionId, conversationId);
         await attachTurnListeners({
           cleanupMap: cleanupRefs.current,
           instanceId,
@@ -627,7 +654,11 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             // Respect provider context isolation — when user chose "Start fresh",
             // only include messages from the segment boundary onward. Excludes the
             // pair currently being sent (this user message + its assistant placeholder).
-            const historyBlock = buildAcpHistoryBlock([assistantMessageId, userTimestamp]);
+            const historyBlock = buildAcpHistoryBlock(
+              [assistantMessageId, userTimestamp],
+              undefined,
+              conversationId,
+            );
             promptContent = `${effectiveSystemMessage}${historyBlock}\n\n${content}`;
           } else {
             promptContent = content;
@@ -854,7 +885,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       // Create new session if reconnect with session/load failed
       if (isNewSession) {
         const cwd = selectedProjectPaths[0] || '/tmp';
-        const session = await startFreshChatSession(instanceId, cwd, liveAgent, effectiveConnection, selectedProjectPaths);
+        const session = await startFreshChatSession(
+          instanceId, cwd, liveAgent, effectiveConnection, selectedProjectPaths, conversationId,
+        );
         await applyFreshSessionConfig(instanceId, session, effectiveConnection ?? null);
       }
 

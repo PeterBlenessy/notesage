@@ -5,6 +5,7 @@ import { MarkdownContent } from '@/components/MarkdownContent';
 import type { Comment, DelegationActivity } from '@/stores/comment-store';
 import type { Conversation } from '@/stores/chat-store';
 import { getFormatLocale } from "@/lib/i18n";
+import { useFormatLocale } from "@/lib/useLocale";
 
 /** Collapsible activity log rendered inline within each agent message. */
 function InlineActivityLog({ activities }: { activities: DelegationActivity[] }) {
@@ -105,6 +106,11 @@ export function CommentThread({
   suggestionActive,
   onCancelDelegation,
 }: CommentThreadProps) {
+  // Subscribe to language changes — the date/number helpers used below read
+  // the i18n module directly, so without this their output would keep the
+  // previous locale until an unrelated re-render.
+  useFormatLocale();
+
   const streamingEndRef = useRef<HTMLSpanElement>(null);
 
   // Auto-scroll to follow streaming text
