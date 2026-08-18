@@ -10,8 +10,6 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Tryck på en länk i en anteckning eller en HTML-rapport — den öppnas nu i
-läsaren, och Bakåt tar dig till föregående sida i stället för till mappen.
-Långtryck på en länk ger "Öppna här" eller "Dela".
-
-Inkorgen heter dessutom Inbox överallt nu, som mappen på disken.
+Byt namn på en anteckning, eller långtryck på en fil i biblioteket — knappen
+Avbryt i de rutorna följer nu telefonens språk i stället för att alltid stå
+på engelska.
