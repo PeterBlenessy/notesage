@@ -33,16 +33,10 @@
 
 import { createSign } from "node:crypto";
 
-import { readFileSync } from "node:fs";
-
 const KEY_ID = process.env.ASC_KEY_ID;
 const ISSUER_ID = process.env.ASC_ISSUER_ID;
 const PRIVATE_KEY = process.env.ASC_PRIVATE_KEY;
 const BUNDLE_ID = process.env.ASC_BUNDLE_ID;
-/** The app's marketing version, which the build series is anchored to. */
-const MARKETING_VERSION =
-  process.env.ASC_MARKETING_VERSION ||
-  JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 for (const [name, value] of Object.entries({
   ASC_KEY_ID: KEY_ID,
@@ -129,34 +123,40 @@ if (malformed.length > 0) {
   );
 }
 
-// Build numbers are anchored to the marketing version: `0.50.0.1`, `0.50.0.2`,
-// and so on. Without the anchor they inherit whatever series came before — the
-// history here runs to `0.48.0.34`, from the days when Tauri folded the alpha
-// counter into a fourth component, and continuing it would have shipped 0.50.0
-// builds labelled 0.48. Correct, since Apple only requires the number to grow,
-// but unreadable in App Store Connect.
-const marketing = MARKETING_VERSION.split("-")[0]; // 0.50.0-beta.1 → 0.50.0
-const inSeries = versions.filter((v) => v === marketing || v.startsWith(`${marketing}.`));
+// A bare, monotonic integer — never reset, never version-prefixed.
+//
+// Apple only requires the build to rise within a marketing version, so many
+// projects restart at 1 each release. Not resetting buys something better: a
+// build number then identifies exactly one build in the app's whole history,
+// which is what makes `ios-build/<n>` git tags meaningful as a ledger.
+//
+// The history here is dotted (`0.48.0.34`, `0.50.0.2`) because Tauri used to
+// fold a prerelease counter into the build. Those still have to be cleared,
+// and they are: Apple compares component-wise, so any integer >= 1 beats a
+// build starting with `0.` — the first component decides.
+//
+// Hence: one past the highest FIRST component seen. For a bare `5` that is 6;
+// for a dotted `0.50.0.2` it is 1. Correct across the switch, and correct
+// forever after it.
+const highestFirst = versions
+  .map((v) => Number.parseInt(v.split(".")[0], 10))
+  .filter((n) => Number.isFinite(n))
+  .reduce((a, b) => Math.max(a, b), 0);
 
-if (inSeries.length === 0) {
-  // First build of this marketing version. Check it actually clears the older
-  // series rather than assuming: a lower marketing version than something
-  // already uploaded would be rejected after a full build, and the reason
-  // would not be obvious.
-  const first = `${marketing}.1`;
-  const highestOverall = versions.length
-    ? versions.reduce((a, b) => (compare(a, b) >= 0 ? a : b))
-    : null;
-  if (highestOverall && compare(first, highestOverall) <= 0) {
-    throw new Error(
-      `${first} is not above the highest existing build (${highestOverall}). ` +
-        `App Store Connect would reject it.`,
-    );
-  }
-  console.log(first);
-} else {
-  const highest = inSeries.reduce((a, b) => (compare(a, b) >= 0 ? a : b));
-  const parts = highest.split(".").map((n) => Number.parseInt(n, 10));
-  parts[parts.length - 1] += 1;
-  console.log(parts.join("."));
+const next = String(highestFirst + 1);
+
+// Check the answer against every existing build rather than trusting the
+// algebra. The reasoning above says a bare integer above every first component
+// must compare greater — but this is the one place where being wrong costs a
+// rejected upload after a full build, and the check is nearly free. It also
+// catches the case the reasoning cannot: Apple comparing differently than
+// `compare` assumes.
+const notBeaten = versions.filter((v) => compare(next, v) <= 0);
+if (notBeaten.length > 0) {
+  throw new Error(
+    `Computed build ${next}, which does not exceed existing build(s): ` +
+      `${notBeaten.slice(0, 3).join(", ")}. Refusing to produce a number Apple would reject.`,
+  );
 }
+
+console.log(next);
