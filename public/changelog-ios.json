@@ -18,7 +18,7 @@
       "previousVersion": "0.48.0-alpha.34",
       "sections": {
         "features": [
-          "feat(mobile): long-press menu, capture fixes, Inbox shortcut, row redesign (#684)"
+          "Long-press menu, capture fixes, Inbox shortcut, row redesign"
         ]
       },
       "underTheHood": [
@@ -31,7 +31,7 @@
       "previousVersion": "0.48.0-alpha.33",
       "sections": {
         "features": [
-          "fix(mobile): hold a native cover over the webview until it has painted (#678)"
+          "Hold a native cover over the webview until it has painted"
         ]
       },
       "underTheHood": [
@@ -56,8 +56,8 @@
       "previousVersion": "0.48.0-alpha.31",
       "sections": {
         "features": [
-          "feat(mobile): iOS Pinned group backed by shared pins.json (#660)",
-          "feat(mobile): iOS Pinned group backed by shared pins.json (#661)"
+          "IOS Pinned group backed by shared pins.json",
+          "IOS Pinned group backed by shared pins.json"
         ]
       },
       "underTheHood": [
@@ -99,12 +99,12 @@
       "previousVersion": "0.48.0-alpha.28",
       "sections": {
         "features": [
-          "feat(mobile): respect Dynamic Type text size and Bold Text in folder views (#624)",
-          "feat(mobile): iOS capture — modern readability crate + ad/tracker image filtering (#625)",
-          "feat(mobile): respect Dynamic Type text size and Bold Text in folder views (#626)",
-          "feat(mobile): respect Dynamic Type text size and Bold Text in folder views (#627)",
-          "feat(mobile): gallery view for the library — grid of note preview cards (#639)",
-          "fix(mobile): decline oversized text files instead of hanging on open (#623)"
+          "Respect Dynamic Type text size and Bold Text in folder views",
+          "IOS capture — modern readability crate + ad/tracker image filtering",
+          "Respect Dynamic Type text size and Bold Text in folder views",
+          "Respect Dynamic Type text size and Bold Text in folder views",
+          "Gallery view for the library — grid of note preview cards",
+          "Decline oversized text files instead of hanging on open"
         ]
       },
       "underTheHood": [
@@ -143,7 +143,7 @@
       "previousVersion": "0.48.0-alpha.26",
       "sections": {
         "features": [
-          "feat(mobile): swipe a folder-view row to reveal a Share action (#621)"
+          "Swipe a folder-view row to reveal a Share action"
         ]
       },
       "underTheHood": [
@@ -156,7 +156,7 @@
       "previousVersion": "0.48.0-alpha.25",
       "sections": {
         "features": [
-          "feat(mobile): replace manual refresh button with native pull-to-refresh (#622)"
+          "Replace manual refresh button with native pull-to-refresh"
         ]
       },
       "underTheHood": [
@@ -170,8 +170,8 @@
       "previousVersion": "0.48.0-alpha.24",
       "sections": {
         "features": [
-          "feat(mobile): refresh-spin state on the native chrome button (#607)",
-          "fix(mobile): stop Reader's innerHTML reset from wiping find-in-document marks (#608)"
+          "Refresh-spin state on the native chrome button",
+          "Stop Reader's innerHTML reset from wiping find-in-document marks"
         ]
       },
       "underTheHood": [

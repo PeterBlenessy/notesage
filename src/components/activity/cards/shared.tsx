@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ActivityApprovalMode } from '@/lib/ai/types';
+import { getFormatLocale } from '@/lib/i18n';
 
 /**
  * Small badge next to each activity row signalling *how* the tool call was
@@ -88,7 +89,7 @@ export function basename(filePath: string): string {
 /** Wall-clock 24-hour `HH:MM` for a recording start/stop time. */
 export function formatClock(ms?: number): string | null {
   if (!ms) return null;
-  return new Date(ms).toLocaleTimeString(undefined, {
+  return new Date(ms).toLocaleTimeString(getFormatLocale(), {
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,

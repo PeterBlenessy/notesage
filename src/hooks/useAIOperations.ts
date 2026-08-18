@@ -168,7 +168,7 @@ export function useAIOperations() {
   );
 
   const sendChatMessage = useCallback(
-    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }) => {
+    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[]; conversationId?: string }) => {
       assertLockAllowsSend();
 
       // Message queueing (queue-during-agent-work): a send into a conversation
@@ -203,30 +203,48 @@ export function useAIOperations() {
                 effectiveConnection?.authMethod ?? '',
               ),
       });
-      // Route to the path that owns this connection's streaming.
-      const route = () => {
+      // Route to the path that owns this connection's streaming. `sendOpts`
+      // lets a deferred send name its target conversation (see the cap below).
+      const route = (sendOpts: typeof opts = opts) => {
         if (effectiveConnection?.credentials && 'agentBinary' in effectiveConnection.credentials && effectiveConnection.credentials.agentBinary === 'copilot-language-server') {
-          return copilotSendChatMessage(content, messages, opts);
+          return copilotSendChatMessage(content, messages, sendOpts);
         }
         if (effectiveConnection?.authMethod === 'agent_managed') {
-          return acpSendChatMessage(content, messages, opts);
+          return acpSendChatMessage(content, messages, sendOpts);
         }
-        return directSendChatMessage(content, messages, opts);
+        return directSendChatMessage(content, messages, sendOpts);
       };
 
       // Concurrency cap (task #5). When the live-session count is at the cap,
       // defer this send: mark its conversation `queued` and park a start-thunk
-      // that `useSessionManager` runs FIFO once a slot frees. The thunk sets the
-      // queued conversation active before routing so the deferred send targets
-      // the right conversation (and the view follows the session that starts).
+      // that `useSessionManager` runs FIFO once a slot frees.
+      //
+      // The thunk names its target conversation explicitly rather than
+      // activating it (#468). It used to call `setActiveConversation` so the
+      // send would land in the right chat, which also dragged the user's view
+      // back to it — if they had switched away to read while waiting, the view
+      // jumped out from under them when the slot freed. Passing the id through
+      // `opts` routes the messages correctly and leaves the view alone.
+      //
+      // Two different things used to ride on that activation, and only one of
+      // them is closure-captured:
+      //
+      //  - Project paths, sandbox scope and the system prompt ARE captured at
+      //    ENQUEUE time, when the target conversation was still active, so they
+      //    already describe the right conversation.
+      //  - Message routing and the ACP session helpers are NOT: they read the
+      //    store live, at the moment the thunk runs. Those take the id through
+      //    `opts.conversationId` — see `buildAcpHistoryBlock`,
+      //    `resolveActiveSessionId` and `setSegmentSessionId`, each of which
+      //    would otherwise act on whatever chat the user wandered off to.
+      //
       // A brand-new chat with no conversation yet (`targetConv` null) can't be
       // keyed, so it proceeds immediately — an acceptable rare over-cap edge.
       const targetConv = useChatStore.getState().activeConversationId;
       const cap = useSettingsStore.getState().maxConcurrentSessions;
       if (targetConv && !hasSessionCapacity(cap)) {
         enqueueSend(targetConv, () => {
-          useChatStore.getState().setActiveConversation(targetConv);
-          void route();
+          void route({ ...opts, conversationId: targetConv });
         });
         return;
       }

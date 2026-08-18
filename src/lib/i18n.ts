@@ -38,7 +38,6 @@ const en = {
   "onboarding.opening": "Opening…",
   "onboarding.noFolder": "No folder selected — tap again to choose your Notesage folder.",
   // Library browser
-  "library.inbox": "Inbox",
   "library.searchFolder": "Search this folder",
   "library.items": "{count} items",
   "library.itemsOne": "1 item",
@@ -108,6 +107,9 @@ const en = {
   "reader.editor": "Note editor",
   "reader.save": "Save",
   "reader.edit": "Edit",
+  // Shared chrome. `common.cancel` is handed to the native iOS alerts,
+  // which have no strings bundle of their own (#705).
+  "common.cancel": "Cancel",
   "reader.back": "Back",
   "reader.find": "Find in document",
   "reader.saveFailed": "Couldn't save: {error}",
@@ -133,7 +135,6 @@ const sv: Dict = {
   "onboarding.pickAgain": "Välj din mapp igen",
   "onboarding.opening": "Öppnar…",
   "onboarding.noFolder": "Ingen mapp vald — tryck igen för att välja din Notesage-mapp.",
-  "library.inbox": "Inkorg",
   "library.searchFolder": "Sök i den här mappen",
   "library.items": "{count} objekt",
   "library.itemsOne": "1 objekt",
@@ -199,6 +200,7 @@ const sv: Dict = {
   "reader.editor": "Anteckningsredigerare",
   "reader.save": "Spara",
   "reader.edit": "Redigera",
+  "common.cancel": "Avbryt",
   "reader.back": "Tillbaka",
   "reader.find": "Sök i dokumentet",
   "reader.saveFailed": "Kunde inte spara: {error}",
@@ -237,17 +239,41 @@ export function detectPlatformLocale(): Locale {
 }
 
 let current: Locale = detectPlatformLocale();
+/**
+ * The user's explicit choice, or `null` to follow the platform. Tracked apart
+ * from `current` because the two can differ in a way that matters: on an
+ * English device, choosing "English" leaves `current` at `"en"` while changing
+ * the answer to "is this a deliberate choice?" — which is exactly what
+ * `getFormatLocale` needs to know.
+ */
+let override: Locale | null = null;
 const listeners = new Set<() => void>();
 
 export function getLocale(): Locale {
   return current;
 }
 
+/**
+ * The locale to hand `Intl` / `toLocaleDateString` for dates and numbers.
+ *
+ * `undefined` when the user has expressed no preference, so the platform's
+ * FULL locale applies — a Finnish-Swedish user keeps `sv-FI` conventions
+ * rather than being flattened to `sv`, which narrowing would do. Once they
+ * pick a language, that choice wins and is returned as-is.
+ */
+export function getFormatLocale(): string | undefined {
+  return override ?? undefined;
+}
+
 /** Override the locale (Settings). Pass `null` to follow the platform again. */
 export function setLocale(locale: Locale | null): void {
   const next = locale ?? detectPlatformLocale();
-  if (next === current) return;
+  // Notify on an override change even when the resolved language is identical:
+  // the format locale still flipped between "follow the OS" and an explicit
+  // choice, and subscribers render dates from it.
+  if (next === current && locale === override) return;
   current = next;
+  override = locale;
   for (const listener of listeners) listener();
 }
 

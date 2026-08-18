@@ -12,6 +12,9 @@ ignore = [
     # rkyv 0.7.46 (OOB reads validating archives with Rc/Arc; fix >=0.8.17).
     # In the lockfile only as an UNUSED optional feature of rust_decimal
     # (via typst-library / byte-unit) — no rkyv code is compiled. Issue #589.
+    # Enforced, not just asserted: scripts/check-audit-ignore-claims.sh fails
+    # CI if rkyv ever enters the compiled graph, so this ignore cannot outlive
+    # the reason for it.
     "RUSTSEC-2026-0235",
 
     # quick-xml (fix >=0.41.0): quadratic duplicate-attribute check.

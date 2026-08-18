@@ -35,6 +35,23 @@ export interface StartTranscriptionDetail {
   recordingStoppedAt?: number;
   /** Recorded length in seconds (pause-aware, from the backend). */
   recordingDurationSecs?: number;
+  /**
+   * Per-recording language override (picked on the live `RecordingCard`).
+   * Falls back to `recording-store.speechLanguage` when omitted.
+   */
+  language?: string;
+  /**
+   * Reuse an existing (finished) transcription job's id instead of creating a
+   * new one — the "re-run transcription with a different model" action.
+   * When set, the existing card flips back to `running` in place rather than
+   * a new list entry being added.
+   */
+  jobId?: string;
+  /**
+   * Model override for this run. Falls back to `recording-store.defaultModel`
+   * when omitted.
+   */
+  model?: string;
 }
 
 /** Convenience dispatcher so callers don't hand-build the CustomEvent. */
@@ -77,28 +94,46 @@ export function useTranscriptionJob(): void {
     let disposed = false;
 
     async function runJob(detail: StartTranscriptionDetail): Promise<void> {
-      const { audioPath, documentId, recordingStartedAt, recordingStoppedAt, recordingDurationSecs } =
-        detail;
-      if (!audioPath) return;
-
-      const jobId =
-        typeof crypto !== 'undefined' && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `transcription-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
-      const { defaultModel, speechLanguage } = useRecordingStore.getState();
-      const label = deriveLabel(audioPath);
-
-      const activity = useActivityStore.getState();
-      activity.addTranscriptionJob({
-        id: jobId,
-        label,
+      const {
         audioPath,
         documentId,
         recordingStartedAt,
         recordingStoppedAt,
         recordingDurationSecs,
-      });
+        language,
+        jobId: reuseJobId,
+        model,
+      } = detail;
+      if (!audioPath) return;
+
+      const jobId =
+        reuseJobId ??
+        (typeof crypto !== 'undefined' && crypto.randomUUID
+          ? crypto.randomUUID()
+          : `transcription-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+      const { defaultModel, speechLanguage } = useRecordingStore.getState();
+      const effectiveModel = model ?? defaultModel;
+      const effectiveLanguage = language ?? speechLanguage;
+      const label = deriveLabel(audioPath);
+
+      const activity = useActivityStore.getState();
+      if (reuseJobId) {
+        // Re-run: update the existing card in place instead of prepending a
+        // duplicate list entry.
+        activity.resetTranscriptionForRerun(jobId);
+      } else {
+        activity.addTranscriptionJob({
+          id: jobId,
+          label,
+          audioPath,
+          documentId,
+          recordingStartedAt,
+          recordingStoppedAt,
+          recordingDurationSecs,
+          language: effectiveLanguage,
+        });
+      }
 
       // Stream progress events scoped to this job id.
       let unlistenProgress: UnlistenFn | null = null;
@@ -125,8 +160,8 @@ export function useTranscriptionJob(): void {
         const result = await tauriApi.transcribeFile(
           jobId,
           audioPath,
-          defaultModel,
-          speechLanguage || undefined,
+          effectiveModel,
+          effectiveLanguage || undefined,
         );
 
         const markdown = renderTranscript(result.segments, {
@@ -136,7 +171,9 @@ export function useTranscriptionJob(): void {
         });
         const transcriptPath = await writeTranscriptToBundle(audioPath, markdown);
 
-        useActivityStore.getState().setTranscriptionDone(jobId, transcriptPath);
+        useActivityStore
+          .getState()
+          .setTranscriptionDone(jobId, transcriptPath, result.language);
         // Phase 3: surface a transcription-done workflow event for automations.
         emitWorkflowEvent({ event: 'transcription-done', transcriptPath });
       } catch (err) {

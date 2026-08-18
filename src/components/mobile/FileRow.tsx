@@ -11,6 +11,7 @@ import {
   presentEntryMenu,
   type EntryActionContext,
 } from "@/lib/mobile-entry-actions";
+import { getFormatLocale } from "@/lib/i18n";
 
 /** Classify a file by extension for icon + viewer routing. */
 export function classifyFile(
@@ -76,12 +77,12 @@ export function formatModified(seconds: number, now: Date = new Date()): string 
     a.getMonth() === b.getMonth() &&
     a.getDate() === b.getDate();
   if (sameDay(d, now)) {
-    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString(getFormatLocale(), { hour: "2-digit", minute: "2-digit" });
   }
   const yesterday = new Date(now);
   yesterday.setDate(now.getDate() - 1);
   if (sameDay(d, yesterday)) return t("section.yesterday");
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString(getFormatLocale(), {
     day: "numeric",
     month: "short",
     year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",

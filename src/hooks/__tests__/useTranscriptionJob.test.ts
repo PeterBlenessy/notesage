@@ -168,4 +168,108 @@ describe('useTranscriptionJob', () => {
     expect(useActivityStore.getState().tasks).toHaveLength(0);
     expect(transcribeFile).not.toHaveBeenCalled();
   });
+
+  // -------------------------------------------------------------------------
+  // Recording UX recovery (#698) — per-recording language override + re-run
+  // -------------------------------------------------------------------------
+
+  it('uses a per-recording language override over the store default', async () => {
+    // Store default is 'sv' — the override must win.
+    const d = deferred<TranscriptionResult>();
+    transcribeFile.mockReturnValue(d.promise);
+
+    renderHook(() => useTranscriptionJob());
+    act(() => startTranscription({ audioPath: AUDIO, language: 'en' }));
+    const jobId = jobTask().id;
+
+    await waitFor(() => expect(transcribeFile).toHaveBeenCalled());
+    expect(transcribeFile).toHaveBeenCalledWith(jobId, AUDIO, 'small', 'en');
+
+    await act(async () => {
+      d.resolve(SUCCESS);
+      await d.promise.catch(() => {});
+    });
+  });
+
+  it('falls back to the store default language when no override is given', async () => {
+    const d = deferred<TranscriptionResult>();
+    transcribeFile.mockReturnValue(d.promise);
+
+    renderHook(() => useTranscriptionJob());
+    act(() => startTranscription({ audioPath: AUDIO }));
+    const jobId = jobTask().id;
+
+    await waitFor(() => expect(transcribeFile).toHaveBeenCalled());
+    expect(transcribeFile).toHaveBeenCalledWith(jobId, AUDIO, 'small', 'sv');
+
+    await act(async () => {
+      d.resolve(SUCCESS);
+      await d.promise.catch(() => {});
+    });
+  });
+
+  it('records the effective language on the created job for later re-run defaulting', async () => {
+    const d = deferred<TranscriptionResult>();
+    transcribeFile.mockReturnValue(d.promise);
+
+    renderHook(() => useTranscriptionJob());
+    act(() => startTranscription({ audioPath: AUDIO, language: 'en' }));
+
+    expect(jobTask().language).toBe('en');
+
+    await act(async () => {
+      d.resolve(SUCCESS);
+      await d.promise.catch(() => {});
+    });
+  });
+
+  it('re-run: a jobId + model override reuses the existing task instead of creating a new one', async () => {
+    // Seed a finished transcription, as if the initial run already completed.
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'Meeting A', audioPath: AUDIO });
+    useActivityStore.getState().setTranscriptionDone('tx-1', '/inbox/Meeting A/transcript.md');
+    expect(useActivityStore.getState().tasks).toHaveLength(1);
+
+    const d = deferred<TranscriptionResult>();
+    transcribeFile.mockReturnValue(d.promise);
+    renderHook(() => useTranscriptionJob());
+
+    act(() => startTranscription({ audioPath: AUDIO, jobId: 'tx-1', model: 'large-v3' }));
+
+    // Reused in place — still exactly one task, now running again.
+    expect(useActivityStore.getState().tasks).toHaveLength(1);
+    expect(jobTask().id).toBe('tx-1');
+    expect(jobTask().status).toBe('running');
+    expect(jobTask().progress).toBe(0);
+
+    await waitFor(() => expect(transcribeFile).toHaveBeenCalledWith('tx-1', AUDIO, 'large-v3', 'sv'));
+
+    await act(async () => {
+      d.resolve(SUCCESS);
+      await d.promise.catch(() => {});
+    });
+
+    await waitFor(() => expect(jobTask().status).toBe('done'));
+    expect(useActivityStore.getState().tasks).toHaveLength(1);
+    expect(jobTask().transcriptPath).toBe('/inbox/Meeting A/transcript.md');
+  });
+
+  it('re-run failure marks the reused job errored again without duplicating it', async () => {
+    useActivityStore.getState().addTranscriptionJob({ id: 'tx-1', label: 'Meeting A', audioPath: AUDIO });
+    useActivityStore.getState().setTranscriptionError('tx-1');
+
+    const d = deferred<TranscriptionResult>();
+    transcribeFile.mockReturnValue(d.promise);
+    renderHook(() => useTranscriptionJob());
+
+    act(() => startTranscription({ audioPath: AUDIO, jobId: 'tx-1', model: 'base' }));
+    expect(jobTask().status).toBe('running');
+
+    await act(async () => {
+      d.reject(new Error('whisper boom again'));
+      await d.promise.catch(() => {});
+    });
+
+    await waitFor(() => expect(jobTask().status).toBe('error'));
+    expect(useActivityStore.getState().tasks).toHaveLength(1);
+  });
 });

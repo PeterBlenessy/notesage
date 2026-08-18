@@ -23,10 +23,26 @@ import {
 import { StatusTray, type StatusTrayGroup } from "./StatusTray";
 import { localAiDotClass, localAiStatusLabel } from "./local-ai-dot";
 import { useBackgroundActivity } from "./status/use-background-activity";
+import { getFormatLocale } from "@/lib/i18n";
+import { useFormatLocale } from "@/lib/useLocale";
 
-/** Format number with localized thousand separators (uses host locale). */
-const fmt = new Intl.NumberFormat(navigator.languages as string[], { useGrouping: true });
+/**
+ * Format a number with localized thousand separators.
+ *
+ * Built per call rather than once at module load: the old module-level
+ * formatter captured `navigator.languages` before the user could express a
+ * language preference, so word counts kept the OS grouping forever (#705).
+ * Memoized by locale so the common case is still a single construction.
+ */
+const fmtCache = new Map<string, Intl.NumberFormat>();
 function fmtNum(n: number): string {
+  const locale = getFormatLocale();
+  const key = locale ?? "";
+  let fmt = fmtCache.get(key);
+  if (!fmt) {
+    fmt = new Intl.NumberFormat(locale, { useGrouping: true });
+    fmtCache.set(key, fmt);
+  }
   return fmt.format(n);
 }
 
@@ -273,6 +289,11 @@ export function StatusBar({
   onToggleViewMode,
   onOpenTray,
 }: StatusBarProps) {
+  // Subscribe to language changes — the date/number helpers used below read
+  // the i18n module directly, so without this their output would keep the
+  // previous locale until an unrelated re-render.
+  useFormatLocale();
+
   const reducedMotion = useReducedMotion();
 
   // Re-read word count when the editor transacts so it tracks typing.

@@ -25,6 +25,7 @@ import { NewAddressableAgentDialog } from '@/components/settings/NewAddressableA
 import { EditSkillDialog } from '@/components/settings/EditSkillDialog';
 import { EditAgentDialog } from '@/components/settings/EditAgentDialog';
 import { isManageable, sourceLabel, sourceBadgeClass } from '@/components/settings/skills-settings-utils';
+import { useFormatLocale } from "@/lib/useLocale";
 
 /** Check if a skill is overridden by a higher-priority same-name skill. */
 function isOverridden(skill: SkillEntry, allSkills: SkillEntry[]): SkillEntry | null {
@@ -307,6 +308,7 @@ function AgentGroup({
 }
 
 export function SkillsSettings() {
+  const formatLocale = useFormatLocale();
   const { skills, agents, agentInstructions, isScanning, lastScanTimestamp } = useSkillStore();
   const mergedAgentInstructions = useSkillStore((s) => s.getMergedAgentInstructions());
 
@@ -647,7 +649,7 @@ export function SkillsSettings() {
       {/* Last scan info */}
       {lastScanTimestamp > 0 && (
         <p className="text-xs text-muted-foreground">
-          Last scanned: {new Date(lastScanTimestamp).toLocaleTimeString()}
+          Last scanned: {new Date(lastScanTimestamp).toLocaleTimeString(formatLocale)}
         </p>
       )}
 

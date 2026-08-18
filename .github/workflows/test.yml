@@ -44,7 +44,10 @@ jobs:
 
   frontend-tests:
     name: Frontend Tests & Coverage
-    runs-on: macos-latest
+    # Linux: nothing here touches Apple. Vitest, tsc, the npm audit and the
+    # contrast audit are all pure Node. macOS runners bill at a 10x multiplier
+    # on private repos, and this is the single longest job in the workflow.
+    runs-on: ubuntu-latest
     needs: check-changes
     # Skip for docs-only PRs. On push/workflow_dispatch/workflow_call always run.
     if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
@@ -131,7 +134,11 @@ jobs:
 
   e2e-tests:
     name: Playwright E2E Tests
-    runs-on: macos-latest
+    # Linux: Playwright ships its OWN Chromium and WebKit builds on every
+    # platform, so the webkit project runs identically here. The macOS runner
+    # never provided Apple's WKWebView either — `playwright.config.ts` says so
+    # itself, and points at e2e-real/ as the truth for the embedded webview.
+    runs-on: ubuntu-latest
     needs: check-changes
     if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
 
@@ -158,8 +165,8 @@ jobs:
       - name: Run E2E tests
         env:
           # Honour the same perf-budget multiplier the Vitest perf harness uses
-          # (`pnpm test:perf`). CI macOS runners pace setTimeout callbacks
-          # ~1.5x slower than local AND share the runner with other jobs;
+          # (`pnpm test:perf`). Shared CI runners pace setTimeout callbacks
+          # slower than local AND share the machine with other jobs;
           # without the bump, `preview-fidelity.spec.ts`'s p95 timer-delay
           # assertion flakes in the 500–800 ms range against a 500 ms budget.
           PERF_BUDGET_MULTIPLIER: "3"
@@ -332,6 +339,13 @@ jobs:
       - name: Run cargo audit
         working-directory: src-tauri
         run: cargo audit
+
+      # Some entries in src-tauri/.cargo/audit.toml are ignored because the
+      # vulnerable crate is an unused optional feature that never compiles.
+      # That claim is prose; this checks it is still true, so a dependency bump
+      # cannot quietly switch the feature on while the advisory stays silenced.
+      - name: Verify "never compiled" audit ignores still hold
+        run: ./scripts/check-audit-ignore-claims.sh
 
   real-e2e-tests:
     name: Real Tauri E2E Tests

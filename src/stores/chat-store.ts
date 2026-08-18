@@ -112,7 +112,7 @@ interface ChatStore {
   // Message methods (scoped to active conversation)
   // ---------------------------------------------------------------------------
 
-  addMessage: (message: ChatMessage) => void;
+  addMessage: (message: ChatMessage, convId?: string | null) => void;
   // Streaming-write actions take an optional trailing `convId` so a background
   // session can address the conversation that OWNS the message; omitting it
   // targets the active conversation (today's behavior). See `updateConv` (task #3).
@@ -210,7 +210,7 @@ interface ChatStore {
   /** Get the active segment for the current conversation */
   getActiveSegment: () => ConversationSegment | undefined;
   /** Update the session ID on the active segment */
-  setSegmentSessionId: (sessionId: string) => void;
+  setSegmentSessionId: (sessionId: string, convId?: string | null) => void;
   /** Persist the user-selected ACP permission mode on the active conversation. */
   setConversationMode: (modeId: string) => void;
 
@@ -360,11 +360,16 @@ export const useChatStore = create<ChatStore>()(
 
       // ----- Message methods (scoped to active conversation) -----
 
-      addMessage: (message) => {
+      addMessage: (message, convId) => {
         const state = get();
-        let activeId = state.activeConversationId;
+        // `convId` addresses a SPECIFIC conversation — used by a send that was
+        // deferred by the concurrency cap, which must append to the chat it was
+        // typed in even though the user has since navigated away (#468). Callers
+        // that omit it target the active conversation (the common UI path).
+        let activeId = convId ?? state.activeConversationId;
 
-        // Auto-create conversation if none active
+        // Auto-create conversation if none active. Only meaningful without an
+        // explicit target: a deferred send always names an existing conversation.
         if (!activeId) {
           activeId = get().createConversation();
         }
@@ -861,8 +866,12 @@ export const useChatStore = create<ChatStore>()(
         return conv.segments[conv.activeSegmentIndex];
       },
 
-      setSegmentSessionId: (sessionId) =>
-        set((state) => updateActiveConv(state, (c) => ({
+      // `convId` matters for a cap-deferred send (#468): it writes the new ACP
+      // session id onto the conversation that OWNS the session, not the one
+      // being viewed. Getting this wrong persists the id on the wrong chat and
+      // leaves the right one unable to resume.
+      setSegmentSessionId: (sessionId, convId) =>
+        set((state) => updateConv(state, convId, (c) => ({
           ...c,
           acpSessionId: sessionId,
           segments: c.segments.map((s, i) =>

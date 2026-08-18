@@ -140,6 +140,7 @@ export type SettingKey =
   | "cross_project"
   | "require_all_tool_confirmations"
   | "agent_mode_picker"
+  | "locale"
   | "release_channel"
   | "telemetry_usage"
   | "telemetry_crash"
@@ -168,7 +169,11 @@ export type SettingValue =
   | "error"
   | "warn"
   | "info"
-  | "debug";
+  | "debug"
+  // Display language (#705). Low-cardinality by construction: the picker
+  // offers exactly these, plus "system" above for follow-the-OS.
+  | "en"
+  | "sv";
 
 /**
  * The full telemetry taxonomy: event name → its required, typed props.

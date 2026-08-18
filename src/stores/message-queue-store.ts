@@ -27,6 +27,15 @@ export interface QueuedSendOpts {
   sandboxPaths?: string[];
   parentId?: string | null;
   attachments?: ImageAttachment[];
+  /**
+   * Append to THIS conversation rather than whichever one is active (#468).
+   *
+   * Set when the concurrency cap defers a send: by the time a slot frees the
+   * user may be reading another chat, and the send must land where it was
+   * typed without dragging the view back. Omitted for ordinary sends, which
+   * target the active conversation.
+   */
+  conversationId?: string;
 }
 
 export interface QueuedMessage {

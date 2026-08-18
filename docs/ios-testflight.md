@@ -90,20 +90,44 @@ Skip if you would rather upload through Xcode's Organizer GUI the first time.
 
 1. **App Store Connect → Users and Access → Integrations → App Store Connect
    API** → **+**.
-2. Name it, Access: **App Manager**, Generate.
+2. Name it, Access: **Admin**, Generate.
+
+   **Admin, not App Manager.** This document said App Manager until
+   2026-08-17, and that is exactly what an evening was lost to. The
+   distribution certificate is cloud-managed, so the export has to ask Apple
+   to sign — and only an Admin key may use a cloud-managed certificate.
+   Anything less authenticates perfectly and then fails with
+   `error: exportArchive Cloud signing permission error`, which reads like a
+   bug and is not one. **Roles cannot be changed after creation**; a wrong
+   role means generating a new key.
 3. Download the `.p8` — **once only, it is never shown again** — and note the
    **Key ID** and the **Issuer ID** shown above the list.
-4. Put the file at `~/.appstoreconnect/private_keys/AuthKey_<KEYID>.p8`.
+4. Put the file at `~/.appstoreconnect/private_keys/AuthKey_<KEYID>.p8`, then
+   record which key to use and the issuer beside it:
 
-### 6. Hand back to me
+   ```bash
+   echo <KEYID>     > ~/.appstoreconnect/private_keys/key_id
+   echo <ISSUER_ID> > ~/.appstoreconnect/private_keys/issuer_id
+   ```
 
-Tell me when 1–4 are done. I then:
+   `scripts/ios-testflight.sh` reads all three, so nothing has to be typed or
+   remembered at release time. The directory is `altool`'s own search path, so
+   the key is found there by both.
 
-- build the **release** configuration and smoke-test it on your device (every
-  build so far has been debug: different optimization, no dev server),
-- archive with `npx tauri ios build --export-method app-store-connect`,
-- upload — via Organizer (**Window → Organizer → Archives → Distribute App →
-  App Store Connect → Upload**) or `xcrun altool` with the key from step 5.
+### 6. Then releasing is one command
+
+Once 1–5 are done, releases run from the repo:
+
+```bash
+scripts/ios-testflight.sh
+```
+
+See §"Upload" below for what it does and why each step is the way it is.
+
+**Do not follow older instructions to archive with
+`npx tauri ios build --export-method app-store-connect`** — that cannot work,
+for reasons the Upload section explains. It is the single most expensive wrong
+turn available here.
 
 ### 7. Turn on TestFlight (after the build finishes processing)
 
@@ -114,8 +138,9 @@ Processing is usually minutes; ASC emails you when it is done.
 2. Export compliance should NOT be asked — `ITSAppUsesNonExemptEncryption` is
    baked into both targets. If it asks anyway, answer *No* (standard
    HTTPS/TLS only).
-3. Paste the **What to Test** text from
-   [`app-store/testflight.md`](app-store/testflight.md).
+3. Nothing to paste — the release script sends the **What to Test** notes for
+   every locale, from `docs/app-store/testflight-whats-new*.md`. Rewrite those
+   files before a release rather than typing into the web form.
 4. **Internal Testing → + →** create a group (e.g. `Internal`) → add testers.
    Testers must already exist under **Users and Access**; your own account is
    there by default.
@@ -143,11 +168,54 @@ screenshots, description, support URL or privacy-policy URL required.
   target and the frontend telemetry module is unreachable from `MobileApp`;
   both regression-locked — see `docs/features/mobile.md` §"Telemetry-free by
   construction").
-- **Versioning**: `CFBundleShortVersionString` / `CFBundleVersion` come from
-  `package.json` via Tauri (prerelease tags stripped: `0.48.0-alpha.29` →
-  `0.48.0` / `0.48.0.29`). Each alpha cut therefore yields a unique, ascending
-  build number — but two uploads from the SAME alpha would collide. Cut an
-  alpha (or bump the build) before each upload.
+- **Versioning**: two numbers, two different jobs — and iOS keeps its own set,
+  separate from the desktop's.
+
+  **Version** (`CFBundleShortVersionString`) is what a user sees. Semver, with
+  Apple's restriction: exactly three integers, no `-alpha` or `+build`
+  suffixes. It lives in `src-tauri/tauri.ios.conf.json`, which Tauri merges for
+  iOS builds by convention — verified, not assumed: a build with
+  `"version": "9.9.9-build.7"` there resolved to `9.9.9` while `package.json`
+  stayed at `0.50.0`. That also settles an older question — Tauri **re-derives**
+  the version at build time rather than reading the generated Xcode project,
+  which is why stamping `project.yml` achieved nothing.
+
+  It is separate from the desktop's on purpose. A Mac user has no reason to
+  update because the iOS Inbox label changed, and a version that moves with
+  nothing behind it teaches people to ignore versions. Move it when iOS ships
+  something its users would notice — **not per build**: several builds share
+  one version, which is what build numbers are for.
+
+  **Build** (`CFBundleVersion`) is a bare monotonic integer. It never resets,
+  so a build number names exactly one build in the app's whole history, which
+  is what makes the `ios-build/<n>` tags below meaningful. The next value comes
+  from App Store Connect — asking the service that enforces uniqueness is the
+  only answer that cannot drift when a build is uploaded from somewhere else.
+
+  Tauri cannot produce a bare integer (it derives the build from the version
+  string), so the script stamps it onto the archive between archiving and
+  export. That seam is safe because `exportArchive` re-signs afterwards; the
+  app, the Share Extension and the archive metadata are all set together,
+  because Xcode rejects an extension whose version differs from its host.
+
+  History note: builds before this look like `0.48.0.34` and `0.50.0.2`. Tauri
+  used to fold the alpha counter into the build number, so the alpha channel
+  was supplying the increment by accident. Retiring it removed that, which is
+  how every build briefly ended up with the same number.
+
+- **Which commit a build came from**: `ios-build/<n>` git tags, written after a
+  successful upload. `git rev-parse ios-build/7` gives the commit;
+  `git describe --tags --match 'ios-build/*'` gives the build containing a
+  commit. Not a ledger file — git already names commits, and a second
+  bookkeeping format is a second thing to keep in sync. The tags are not pushed
+  automatically.
+
+- **Stale tester notes**: the script compares `testflight-whats-new*.md`
+  against the last `ios-build/*` tag. Unchanged notes are correct for another
+  build of the same release and wrong for a new one, so it asks rather than
+  refuses. This is the failure that lands on a tester rather than on you —
+  nothing about the build looks wrong; the notes simply describe something that
+  already shipped.
 
 ## Upload
 
@@ -156,18 +224,73 @@ otherwise fail after uploading hundreds of megabytes. Both problems below
 were caught this way on the first attempt.
 
 ```bash
-# 1. Archive with App Store distribution signing (needs the account side done)
-npx tauri ios build --export-method app-store-connect
-
-# 2. Validate — do NOT skip
-xcrun altool --validate-app -f src-tauri/gen/apple/build/arm64/Notesage.ipa \
-  -t ios --apiKey SFHN49Z8HX --apiIssuer "$ASC_ISSUER_ID"
-
-# 3. Upload
-xcrun altool --upload-app -f src-tauri/gen/apple/build/arm64/Notesage.ipa \
-  -t ios --apiKey SFHN49Z8HX --apiIssuer "$ASC_ISSUER_ID"
-# (or drag the archive through Xcode → Organizer → Distribute App)
+scripts/ios-testflight.sh
 ```
+
+**Releases are cut from `main`, and everything in them is merged first.** The
+script refuses otherwise.
+
+That rule exists because the alternative was tried: on 2026-08-17 four builds
+went to testers from an integration branch merging five open PRs, and by the
+end no commit on `main` matched what anyone was running — shipping `main`
+would have silently removed features testers already had. The `ios-build/*`
+tags kept it traceable, but traceable-to-a-throwaway-branch is not
+reproducible.
+
+`RELEASE_OFF_MAIN=1` overrides, for verifying a fix on device before merging
+it. That is a real need — it is how the HTML-height fix was checked — and the
+override prints what is being shipped that `main` lacks, so it stays an
+exception rather than becoming the habit.
+
+No arguments. Proven end to end on 2026-08-17 with build `0.50.0.1`. It asks
+App Store Connect for the next build number, builds, exports a
+distribution-signed `.ipa`, checks it, and uploads.
+
+**`--export-method app-store-connect` does not work, and the reason is not
+obvious.** That runs Xcode's `exportArchive`, which needs a distribution
+identity. There is none locally and there is not meant to be: Xcode 13 and
+later create **cloud-managed** distribution certificates whose private key
+stays on Apple's servers. Signing happens remotely, so whatever exports must
+authenticate — and `tauri ios build` has no way to pass credentials through
+(it offers only `--export-method` and `--no-sign`).
+
+The symptom is `No Accounts` followed by
+`No signing certificate "iOS Distribution" found`, which reads as though
+something is missing from the machine. Nothing is. Hours went into hunting for
+a certificate that does not exist by design.
+
+So the archive is made by Tauri and exported separately:
+
+```bash
+xcodebuild -exportArchive \
+  -archivePath <archive> -exportOptionsPlist <plist> -exportPath <dir> \
+  -allowProvisioningUpdates \
+  -authenticationKeyPath <p8> \
+  -authenticationKeyID <keyid> \
+  -authenticationKeyIssuerID <issuer>
+```
+
+Two traps around the certificates themselves:
+
+- **A distribution certificate added in Xcode may not appear in your
+  keychain.** Xcode lists cloud-managed certificates next to local ones, and
+  cloud-managed ones have no local private key, so `security find-identity`
+  will not show them. This is not something that failed to persist.
+- **Adding one via *Manage Certificates → + → Apple Distribution* creates a
+  second, different certificate.** Both are called
+  `Apple Distribution: ADDABLE AB`; only the serials differ. Existing
+  profiles trust the original, so the new one yields
+  `Provisioning profile … doesn't include signing certificate`. Apple allows
+  two distribution certificates per team — do not keep adding them.
+
+The script reads the version and signing authority back out of the built
+`.ipa` and refuses to upload if either is wrong, then validates before
+uploading. Both checks have earned their place: a build number was once
+stamped that never reached the artifact, and validation once caught a
+development-signed build headed for real testers.
+
+**Read the log, not the exit code.** A backgrounded `cmd | tee log` reports
+`tee`'s status; a failed build once looked like a success because of it.
 
 The API key lives at `~/.appstoreconnect/private_keys/AuthKey_<KEYID>.p8`;
 the issuer id is on the same App Store Connect page that generated it. Prefer

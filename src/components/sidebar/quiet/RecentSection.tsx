@@ -41,6 +41,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useFormatLocale } from "@/lib/useLocale";
 
 /**
  * RecentSection — quiet-composer sidebar recent-documents list (task #33).
@@ -114,6 +115,7 @@ function RecentRow({
   onNavigate,
   registerRef,
 }: RecentRowProps) {
+  const formatLocale = useFormatLocale();
   const parentHint = useMemo(() => getParentFolderHint(entry.path), [entry.path]);
   const [isDragging, setIsDragging] = useState(false);
   const rowRef = useRef<HTMLDivElement | null>(null);
@@ -267,7 +269,7 @@ function RecentRow({
                 <span
                   aria-hidden="true"
                   className="text-[11px] text-muted-foreground tabular-nums shrink-0 ml-auto"
-                  title={`Opened ${new Date(entry.lastAccessedAt).toLocaleString()}`}
+                  title={`Opened ${new Date(entry.lastAccessedAt).toLocaleString(formatLocale)}`}
                 >
                   {formatSavedShort(Date.now() - entry.lastAccessedAt)}
                 </span>

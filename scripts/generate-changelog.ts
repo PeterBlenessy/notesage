@@ -62,11 +62,21 @@ function parseVersion(filename: string): string | null {
  * capitalise — the result is not prose, but it is a note rather than a commit.
  */
 export function humanizeBullet(bullet: string): string {
+  // The scope is optional: plenty of PR titles are a bare `feat: …`. Requiring
+  // it left those with the prefix intact and merely capitalised — "Feat: queue
+  // messages…" reached the changelog, which is worse than not trying.
   const withoutScope = bullet.replace(
-    /^\**(?:feat|fix|perf|refactor|style|docs|chore|build|ci|test)\s*\([^)]*\):\s*/i,
+    /^\**(?:feat|fix|perf|refactor|style|docs|chore|build|ci|test)\s*(?:\([^)]*\))?:\s*/i,
     '',
   );
-  const withoutPr = withoutScope.replace(/\s*\(#\d+\)\s*$/, '').trim();
+  // Repeat the group: a squashed PR that references another ends up with two
+  // trailing refs (`… (#375) (#377)`), and stripping only one leaves the
+  // other in front of the user.
+  const withoutPr = withoutScope.replace(/(?:\s*\(#\d+\))+\s*$/, '').trim();
+  // Don't touch a leading identifier. Sentence-casing turns `mcp_oauth` into
+  // `Mcp_oauth`, which reads as a typo rather than a name.
+  const firstWord = withoutPr.split(/\s/, 1)[0] ?? '';
+  if (/[_/]|\d/.test(firstWord)) return withoutPr;
   return withoutPr.charAt(0).toUpperCase() + withoutPr.slice(1);
 }
 
@@ -159,12 +169,21 @@ export function parseReleaseFile(filepath: string): ReleaseEntry | null {
     // Route by platform. A bullet scoped to the mobile app belongs in the iOS
     // bucket wherever it was written — auto-cut alphas classify by commit type
     // alone and would otherwise file `feat(mobile): …` under desktop Features.
+    // Humanize AFTER routing, never before: `isMobileScoped` reads the very
+    // commit scope that humanizing strips, so the order here decides whether
+    // iOS work reaches the iOS feed at all.
+    //
+    // Auto-cut releases write merged PR titles into these sections verbatim,
+    // and this is the last stop before they become the in-app "What's new".
+    // Without this, users read `fix(recording): … (#702)` — which is what
+    // v0.50.0 actually shipped. Curated prose passes through untouched: it
+    // matches neither the scope nor the trailing-PR pattern.
     if (sectionName === 'ios') {
-      sections.ios = [...(sections.ios ?? []), ...items];
+      sections.ios = [...(sections.ios ?? []), ...items.map(humanizeBullet)];
       continue;
     }
-    const desktop = items.filter((item) => !isMobileScoped(item));
-    const mobile = items.filter((item) => isMobileScoped(item));
+    const desktop = items.filter((item) => !isMobileScoped(item)).map(humanizeBullet);
+    const mobile = items.filter((item) => isMobileScoped(item)).map(humanizeBullet);
     if (desktop.length > 0) sections[sectionName] = desktop;
     if (mobile.length > 0) sections.ios = [...(sections.ios ?? []), ...mobile];
   }

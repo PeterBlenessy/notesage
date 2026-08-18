@@ -70,3 +70,54 @@ describe('buildAcpHistoryBlock', () => {
     expect(block).toContain('Assistant [interrupted]: partial');
   });
 });
+
+/**
+ * Cross-conversation leak guard (#468).
+ *
+ * When the concurrency cap defers a send, it runs later — by which time the
+ * user may be reading a different chat. The old code sidestepped this by
+ * activating the target conversation first; now the target is named
+ * explicitly, and this is the test that the naming is actually honoured.
+ *
+ * Getting it wrong splices another conversation's messages into this one's
+ * prompt, which is a content leak across chats and, when the two belong to
+ * different projects, across projects.
+ */
+describe('buildAcpHistoryBlock — explicit conversation', () => {
+  beforeEach(() => {
+    store.setState({ conversations: [], activeConversationId: null });
+  });
+
+  function seedTwoConversations(): { deferred: string; watched: string } {
+    const deferred = store.getState().createConversation({ projectPaths: [] });
+    store.getState().addMessage({ role: 'user', content: 'about the deferred chat', timestamp: 100 });
+    store.getState().addMessage({ role: 'assistant', content: 'deferred answer', timestamp: 101 });
+
+    const watched = store.getState().createConversation({ projectPaths: [] });
+    store.getState().addMessage({ role: 'user', content: 'about the watched chat', timestamp: 300 });
+    store.getState().addMessage({ role: 'assistant', content: 'watched answer', timestamp: 301 });
+
+    // createConversation activates it, so the user is now "looking at" watched.
+    store.getState().setActiveConversation(watched);
+    return { deferred, watched };
+  }
+
+  it('replays the named conversation, not the one being viewed', () => {
+    const { deferred } = seedTwoConversations();
+
+    const block = buildAcpHistoryBlock([], undefined, deferred);
+
+    expect(block).toContain('about the deferred chat');
+    expect(block).not.toContain('about the watched chat');
+  });
+
+  it('still follows the active conversation when no id is given', () => {
+    seedTwoConversations();
+
+    // The ordinary (non-deferred) path passes no id and must be unchanged.
+    const block = buildAcpHistoryBlock([]);
+
+    expect(block).toContain('about the watched chat');
+    expect(block).not.toContain('about the deferred chat');
+  });
+});
