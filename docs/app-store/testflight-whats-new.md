@@ -12,8 +12,6 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Tap a link in a note or an HTML report — it now opens in the reader, and Back
-returns to the previous page instead of the folder. Long-press a link for
-"Open here" or "Share".
-
-The Inbox is also called Inbox everywhere now, matching the folder on disk.
+Rename a note, or long-press a file in the library — the Cancel button in
+those sheets now follows your phone's language instead of always showing
+English.
