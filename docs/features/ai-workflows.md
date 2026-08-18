@@ -219,6 +219,25 @@ The transcript is stored as an ordered list of `TranscriptSegment` (`start`, `en
 
 **The orb / activity model:** `activity-store` carries a `kind: 'agent' | 'transcription' | 'recording'` discriminator so the `AgentPanel` renders the three distinctly — `agent` is the existing AI-delegation treatment, `recording` shows elapsed time + a stop affordance, `transcription` shows a distinct icon + progress and the "Move to project" action on completion. The orb pulses for any in-flight item, giving one continuous indicator across recording → transcribing → ready.
 
+**Choosing a model — measure, do not guess (#698):**
+
+`pnpm compare:whisper <audio.wav> [reference.txt]` runs one recording through
+EVERY downloaded model and prints load time, transcribe time, peak RAM, the
+language Whisper detected, and the transcripts side by side. With a reference
+transcript it also reports word error rate, which is the only honest way to
+separate the sizes — by ear, `small` and `medium` both sound plausible until
+checked against what was actually said.
+
+Use your OWN audio. The standard fixtures shipped with whisper.cpp and OpenAI's
+Whisper are clean studio English; a meeting captured on a laptop microphone is
+the case that matters here, and Swedish is a first-class case that
+English-only fixtures say nothing about. For labelled multi-language audio,
+Mozilla Common Voice (CC0), FLEURS and VoxPopuli all ship reference
+transcripts and include Swedish.
+
+Like `calibrate_model_fit`, this is a manual harness — it needs real models
+and real hardware, so it never runs in CI.
+
 **Whisper model management:**
 
 - Two models, chosen by measurement rather than by size ladder
