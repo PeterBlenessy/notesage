@@ -22,40 +22,15 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Label } from '@/components/ui/label';
 import { useRecordingStore } from '@/stores/recording-store';
+import {
+  SPEECH_LANGUAGES,
+  speechLanguageLabel,
+  isLanguageMismatch,
+} from '@/lib/transcription/languages';
 import { useModelMetadata } from '@/hooks/useModelMetadata';
 import { ModelMetadataTooltip } from './ModelMetadataTooltip';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
-// Whisper supports 99 languages; "Auto-detect" covers them all (it sets the
-// language to "auto", which makes Whisper detect the language per recording).
-// The explicit entries below are common picks for users who want to pin a
-// language and skip per-file detection. Keep "Auto-detect" first.
-const LANGUAGES = [
-  { value: 'auto', label: 'Auto-detect' },
-  { value: 'ar', label: 'Arabic' },
-  { value: 'zh', label: 'Chinese' },
-  { value: 'cs', label: 'Czech' },
-  { value: 'da', label: 'Danish' },
-  { value: 'nl', label: 'Dutch' },
-  { value: 'en', label: 'English' },
-  { value: 'fi', label: 'Finnish' },
-  { value: 'fr', label: 'French' },
-  { value: 'de', label: 'German' },
-  { value: 'el', label: 'Greek' },
-  { value: 'hi', label: 'Hindi' },
-  { value: 'it', label: 'Italian' },
-  { value: 'ja', label: 'Japanese' },
-  { value: 'ko', label: 'Korean' },
-  { value: 'no', label: 'Norwegian' },
-  { value: 'pl', label: 'Polish' },
-  { value: 'pt', label: 'Portuguese' },
-  { value: 'ru', label: 'Russian' },
-  { value: 'es', label: 'Spanish' },
-  { value: 'sv', label: 'Swedish' },
-  { value: 'tr', label: 'Turkish' },
-  { value: 'uk', label: 'Ukrainian' },
-  { value: 'vi', label: 'Vietnamese' },
-];
 
 function modelDisplayName(name: string): string {
   // Capitalize and format model names: "tiny" -> "Tiny", "large-v3" -> "Large v3"
@@ -140,6 +115,40 @@ export function TranscriptionSettings() {
                     </div>
                     {model.description && (
                       <p className="text-xs text-muted-foreground/70 mt-0.5">{model.description}</p>
+                    )}
+                    {/* Provenance and the longer story, on demand. The row says
+                        what the model is FOR; this says what it actually is and
+                        where the file comes from, so "downloads a model" is a
+                        claim the user can check rather than take on trust. */}
+                    {(model.detail || model.download_url) && (
+                      <details className="mt-1 group/detail">
+                        <summary className="text-xs text-muted-foreground/60 cursor-pointer list-none hover:text-muted-foreground transition-colors duration-150">
+                          <span className="underline decoration-dotted underline-offset-2">
+                            About this model
+                          </span>
+                        </summary>
+                        <div className="mt-1.5 space-y-1 text-xs text-muted-foreground/70">
+                          {model.detail && <p className="max-w-prose">{model.detail}</p>}
+                          <p>
+                            {model.author && <>By {model.author}</>}
+                            {model.license && <> · {model.license} licence</>}
+                            {model.parameters && <> · {model.parameters} parameters</>}
+                          </p>
+                          {model.download_url && (
+                            <p className="break-all">
+                              Downloaded from{' '}
+                              <a
+                                href={model.download_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="underline decoration-dotted underline-offset-2 hover:text-foreground transition-colors duration-150"
+                              >
+                                {model.download_url}
+                              </a>
+                            </p>
+                          )}
+                        </div>
+                      </details>
                     )}
                   </div>
                 </div>
@@ -249,7 +258,8 @@ export function TranscriptionSettings() {
           <div>
             <Label className="text-sm font-medium">Recording language</Label>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Spoken language of your recordings (leave on auto-detect if unsure)
+              Spoken language of your recordings. Defaults to your device language —
+              auto-detect is reliable for English but often wrong for other languages.
             </p>
           </div>
           <Select value={speechLanguage} onValueChange={setSpeechLanguage}>
@@ -257,7 +267,7 @@ export function TranscriptionSettings() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {LANGUAGES.map((lang) => (
+              {SPEECH_LANGUAGES.map((lang) => (
                 <SelectItem key={lang.value} value={lang.value}>
                   {lang.label}
                 </SelectItem>
@@ -265,6 +275,17 @@ export function TranscriptionSettings() {
             </SelectContent>
           </Select>
         </div>
+
+        {/* The one model/language pair that quietly produces bad output. */}
+        {isLanguageMismatch(defaultModel, speechLanguage) && (
+          <p className="text-xs text-muted-foreground px-4 -mt-1">
+            <span className="text-[var(--color-destructive)]">Note:</span>{' '}
+            {modelDisplayName(defaultModel)} is accurate in English but weak in other
+            languages — roughly one word in four on Swedish. For{' '}
+            {speechLanguage === 'auto' ? 'auto-detect' : speechLanguageLabel(speechLanguage)},
+            choose the quality model instead.
+          </p>
+        )}
       </div>
     </div>
   );

@@ -3,6 +3,7 @@ import { Loader2, Square, Mic, Pause, Circle } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useActivityStore, type AgentTask } from '@/stores/activity-store';
 import { useRecordingStore } from '@/stores/recording-store';
+import { SPEECH_LANGUAGES } from '@/lib/transcription/languages';
 import { useMeetingRecording } from '@/hooks/useMeetingRecording';
 import { formatStopwatchMs } from '@/lib/recording-time';
 import { IconActionButton, formatClock } from './shared';
@@ -12,32 +13,6 @@ import { useFormatLocale } from "@/lib/useLocale";
 // explicit-pick subset in `TranscriptionSettings` — this is the per-recording
 // override, made available right where the decision belongs (at record time,
 // not buried in Settings). Keep "Auto-detect" first.
-const LANGUAGES = [
-  { value: 'auto', label: 'Auto-detect' },
-  { value: 'ar', label: 'Arabic' },
-  { value: 'zh', label: 'Chinese' },
-  { value: 'cs', label: 'Czech' },
-  { value: 'da', label: 'Danish' },
-  { value: 'nl', label: 'Dutch' },
-  { value: 'en', label: 'English' },
-  { value: 'fi', label: 'Finnish' },
-  { value: 'fr', label: 'French' },
-  { value: 'de', label: 'German' },
-  { value: 'el', label: 'Greek' },
-  { value: 'hi', label: 'Hindi' },
-  { value: 'it', label: 'Italian' },
-  { value: 'ja', label: 'Japanese' },
-  { value: 'ko', label: 'Korean' },
-  { value: 'no', label: 'Norwegian' },
-  { value: 'pl', label: 'Polish' },
-  { value: 'pt', label: 'Portuguese' },
-  { value: 'ru', label: 'Russian' },
-  { value: 'es', label: 'Spanish' },
-  { value: 'sv', label: 'Swedish' },
-  { value: 'tr', label: 'Turkish' },
-  { value: 'uk', label: 'Ukrainian' },
-  { value: 'vi', label: 'Vietnamese' },
-];
 
 /**
  * Live-recording card (kind === 'recording'). Recording glyph + a pause-aware
@@ -147,7 +122,7 @@ export function RecordingCard({ task }: { task: AgentTask }) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent onClick={(e) => e.stopPropagation()}>
-            {LANGUAGES.map((lang) => (
+            {SPEECH_LANGUAGES.map((lang) => (
               <SelectItem key={lang.value} value={lang.value}>
                 {lang.label}
               </SelectItem>

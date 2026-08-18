@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { detectSpeechLanguage } from '@/lib/transcription/languages';
 import { persist } from 'zustand/middleware';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
@@ -17,6 +18,12 @@ export interface ModelInfo {
   description?: string;
   languages_count?: number;
   hf_repo_id?: string;
+  /** Longer explanation, shown on demand rather than in the row. */
+  detail?: string;
+  /** Exactly where the file is fetched from, so the claim is checkable. */
+  download_url?: string;
+  /** On disk but no longer offered — still listed so it can be deleted. */
+  retired?: boolean;
 }
 
 export interface DownloadState {
@@ -107,10 +114,19 @@ export const useRecordingStore = create<RecordingStore>()(
         activeDownloads: {},
 
         // Persisted state
-        defaultModel: 'base',
-        // 'auto' lets Whisper detect the spoken language (all 99 it supports)
-        // instead of forcing English and mistranscribing other languages.
-        speechLanguage: 'auto',
+        //
+        // The quality model is the default rather than a small one: measured,
+        // it needs LESS memory than `small` (0.6 GB vs 0.7 GB) while making
+        // less than half the errors outside English.
+        // See `docs/transcription-model-comparison.md`.
+        defaultModel: 'large-v3-turbo-q5_0',
+        // The device's language, not 'auto'. Auto-detect reads reliably for
+        // English and poorly for everything else — on a Swedish corpus it cost
+        // every model up to 10 points of word error, and once produced a fluent
+        // Albanian transliteration of Swedish speech. A recording can still be
+        // in any language: this is the starting point, changeable per
+        // transcription.
+        speechLanguage: detectSpeechLanguage(),
         lastUsedSource: 'microphone',
 
         // Actions
@@ -233,6 +249,24 @@ export const useRecordingStore = create<RecordingStore>()(
     },
     {
       name: 'notesage-recording',
+      version: 1,
+      // v0 → v1: the model catalogue changed (#698). Anyone whose stored
+      // default is a model no longer offered would otherwise be pinned to a
+      // name the picker cannot show, so move them to the current default.
+      // Their downloaded file is untouched and still listed, so nothing they
+      // already have disappears.
+      migrate: (persisted: unknown, version: number) => {
+        const state = (persisted ?? {}) as Partial<RecordingStore>;
+        if (version >= 1) return state;
+        const retired = ['tiny', 'base', 'medium', 'large-v3'];
+        if (state.defaultModel && retired.includes(state.defaultModel)) {
+          state.defaultModel = 'large-v3-turbo-q5_0';
+        }
+        // Leave `speechLanguage` alone. An explicit 'auto' may be a real
+        // choice, and silently overriding a user's setting to fix a default is
+        // not the same thing as fixing the default.
+        return state;
+      },
       partialize: (state) => ({
         defaultModel: state.defaultModel,
         speechLanguage: state.speechLanguage,

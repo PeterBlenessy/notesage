@@ -50,6 +50,17 @@ pub struct ModelInfo {
     pub languages_count: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hf_repo_id: Option<String>,
+    /// Longer explanation, shown on demand rather than in the row.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detail: Option<String>,
+    /// Exactly where the file comes from. Shown so "downloads a model" is a
+    /// checkable claim rather than something the user has to take on trust.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub download_url: Option<String>,
+    /// On disk but no longer offered — listed so it stays visible and
+    /// deletable instead of silently occupying gigabytes.
+    #[serde(default)]
+    pub retired: bool,
 }
 
 /// Returned by `stop_recording`. Carries the finalized WAV path plus enough
@@ -696,17 +707,36 @@ struct WhisperModelMeta {
     name: &'static str,
     size_bytes: u64,
     parameters: &'static str,
+    /// The one line shown next to the model — what it is FOR, not what it is.
     description: &'static str,
+    /// The longer explanation, available on demand: what the model actually is
+    /// and how it measured. Users deciding between two options deserve more
+    /// than a tagline, but not in their face.
+    detail: &'static str,
 }
 
 // Pre-download size estimates from huggingface.co/ggerganov/whisper.cpp (2026-03).
 // For downloaded models, list_whisper_models() uses the actual file size from disk.
 const KNOWN_MODELS: &[WhisperModelMeta] = &[
-    WhisperModelMeta { name: "tiny", size_bytes: 77_691_713, parameters: "39M", description: "Fastest, least accurate" },
-    WhisperModelMeta { name: "base", size_bytes: 147_951_465, parameters: "74M", description: "Good balance for short recordings" },
-    WhisperModelMeta { name: "small", size_bytes: 487_601_967, parameters: "244M", description: "Accurate for most languages" },
-    WhisperModelMeta { name: "medium", size_bytes: 1_533_763_059, parameters: "769M", description: "High accuracy, slower" },
-    WhisperModelMeta { name: "large-v3", size_bytes: 3_095_033_483, parameters: "1550M", description: "Best accuracy, slowest" },
+    WhisperModelMeta {
+        name: "large-v3-turbo-q5_0",
+        size_bytes: 574_041_195,
+        parameters: "809M",
+        description: "Best quality · all languages",
+        detail: "Whisper large-v3-turbo, 5-bit quantized. The accuracy of the \
+full large-v3 at a sixth of the memory, and the only tier that reliably \
+identifies Swedish rather than guessing at it. Measured 11.0% word error on \
+Swedish and 0.6% on English; roughly 15 minutes per hour of audio.",
+    },
+    WhisperModelMeta {
+        name: "small",
+        size_bytes: 487_601_967,
+        parameters: "244M",
+        description: "Fast · English only",
+        detail: "Whisper small. Five times faster than the quality model and \
+excellent on English (1.0% word error), but weak on other languages — 25.6% \
+on Swedish, roughly one word in four. Around 3 minutes per hour of audio.",
+    },
 ];
 
 fn model_download_url(size: &str) -> String {
@@ -1113,7 +1143,52 @@ pub async fn list_whisper_models(
             description: Some(meta.description.to_string()),
             languages_count: Some(99),
             hf_repo_id: Some("ggerganov/whisper.cpp".to_string()),
+            detail: Some(meta.detail.to_string()),
+            download_url: Some(model_download_url(meta.name)),
+            retired: false,
         });
+    }
+
+    // Models on disk that the catalog no longer offers. Without this they
+    // vanish from the UI while still occupying disk — a `medium` left over
+    // from an older release is 1.5 GB the user can neither see nor delete.
+    if let Ok(entries) = std::fs::read_dir(&state.models_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("bin") {
+                continue;
+            }
+            let Some(name) = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .and_then(|s| s.strip_prefix("ggml-"))
+            else {
+                continue;
+            };
+            if models.iter().any(|m| m.name == name) {
+                continue;
+            }
+            models.push(ModelInfo {
+                name: name.to_string(),
+                size_bytes: entry.metadata().map(|m| m.len()).unwrap_or(0),
+                downloaded: true,
+                path: path.to_str().map(|s| s.to_string()),
+                author: Some("OpenAI".to_string()),
+                license: Some("MIT".to_string()),
+                parameters: None,
+                description: Some("No longer offered".to_string()),
+                languages_count: Some(99),
+                hf_repo_id: Some("ggerganov/whisper.cpp".to_string()),
+                detail: Some(
+                    "Downloaded by an earlier version of Notesage. It still works if \
+selected, but is no longer recommended — the models offered above measured better \
+for their size. Safe to delete."
+                        .to_string(),
+                ),
+                download_url: None,
+                retired: true,
+            });
+        }
     }
 
     Ok(models)
