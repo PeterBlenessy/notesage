@@ -34,6 +34,9 @@ struct TextPromptArgs: Decodable {
   /// Select only the filename stem, so typing replaces the name but keeps
   /// the extension — what Files and Finder do.
   let selectStem: Bool?
+  /// Supplied by the frontend, which owns the translation table (#705).
+  /// Optional so an older frontend keeps working — English is the fallback.
+  let cancelLabel: String?
 }
 
 struct ContextMenuItemSpec: Decodable {
@@ -52,6 +55,9 @@ struct ContextMenuArgs: Decodable {
   /// the bottom edge regardless.
   let x: Double?
   let y: Double?
+  /// Supplied by the frontend, which owns the translation table (#705).
+  /// Optional so an older frontend keeps working — English is the fallback.
+  let cancelLabel: String?
 }
 
 // MARK: - Keyboard accessory removal
@@ -609,7 +615,7 @@ class NotesageIosPlugin: Plugin {
               .trimmingCharacters(in: .whitespaces).isEmpty
           }
         }
-        alert.addAction(UIAlertAction(title: "Cancel", style: .cancel) { _ in
+        alert.addAction(UIAlertAction(title: args.cancelLabel ?? "Cancel", style: .cancel) { _ in
           removeObserver()
           invoke.resolve([:] as [String: String])
         })
@@ -705,7 +711,7 @@ class NotesageIosPlugin: Plugin {
             })
         }
         sheet.addAction(
-          UIAlertAction(title: "Cancel", style: .cancel) { _ in
+          UIAlertAction(title: args.cancelLabel ?? "Cancel", style: .cancel) { _ in
             invoke.resolve([:] as [String: String])
           })
         // iPad presents an action sheet as a popover and CRASHES without an

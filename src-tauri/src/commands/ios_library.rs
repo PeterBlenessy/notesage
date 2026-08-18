@@ -425,14 +425,15 @@ pub async fn ios_context_menu(
     items: Vec<ContextMenuItemInput>,
     x: Option<f64>,
     y: Option<f64>,
+    cancel_label: Option<String>,
 ) -> Result<Option<String>, String> {
     #[cfg(target_os = "ios")]
     {
-        ios_impl::context_menu(&app, title, items, x, y).await
+        ios_impl::context_menu(&app, title, items, x, y, cancel_label).await
     }
     #[cfg(not(target_os = "ios"))]
     {
-        let _ = (&app, title, items, x, y);
+        let _ = (&app, title, items, x, y, cancel_label);
         Err("ios_context_menu is only available on iOS".into())
     }
 }
@@ -461,6 +462,7 @@ pub async fn ios_text_prompt(
     title: String,
     placeholder: String,
     confirm_label: String,
+    cancel_label: Option<String>,
     value: Option<String>,
     select_stem: Option<bool>,
 ) -> Result<Option<String>, String> {
@@ -471,6 +473,7 @@ pub async fn ios_text_prompt(
             &title,
             &placeholder,
             &confirm_label,
+            cancel_label.as_deref(),
             value.as_deref(),
             select_stem.unwrap_or(false),
         )
@@ -478,7 +481,7 @@ pub async fn ios_text_prompt(
     }
     #[cfg(not(target_os = "ios"))]
     {
-        let _ = (&app, title, placeholder, confirm_label, value, select_stem);
+        let _ = (&app, title, placeholder, confirm_label, cancel_label, value, select_stem);
         Err("ios_text_prompt is only available on iOS".into())
     }
 }
@@ -658,6 +661,7 @@ mod ios_impl {
         items: Vec<super::ContextMenuItemInput>,
         x: Option<f64>,
         y: Option<f64>,
+        cancel_label: Option<String>,
     ) -> Result<Option<String>, String> {
         let items = items
             .into_iter()
@@ -668,7 +672,13 @@ mod ios_impl {
             })
             .collect();
         app.notesage_ios()
-            .context_menu(tauri_plugin_notesage_ios::ContextMenuArgs { title, items, x, y })
+            .context_menu(tauri_plugin_notesage_ios::ContextMenuArgs {
+                title,
+                items,
+                x,
+                y,
+                cancel_label,
+            })
             .map_err(|e| e.to_string())
     }
 
@@ -681,11 +691,12 @@ mod ios_impl {
         title: &str,
         placeholder: &str,
         confirm_label: &str,
+        cancel_label: Option<&str>,
         value: Option<&str>,
         select_stem: bool,
     ) -> Result<Option<String>, String> {
         app.notesage_ios()
-            .text_prompt(title, placeholder, confirm_label, value, select_stem)
+            .text_prompt(title, placeholder, confirm_label, cancel_label, value, select_stem)
             .map_err(|e| e.to_string())
     }
 

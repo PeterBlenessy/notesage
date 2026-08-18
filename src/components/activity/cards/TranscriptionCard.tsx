@@ -27,6 +27,7 @@ import { useFileOperations } from '@/hooks/useFileOperations';
 import { startTranscription } from '@/hooks/useTranscriptionJob';
 import { tauriApi } from '@/lib/tauri';
 import { IconActionButton, basename, formatClock } from './shared';
+import { getFormatLocale } from "@/lib/i18n";
 
 /** Display name for a project root — the trailing path component. */
 function projectDisplayName(projectRoot: string): string {
@@ -46,7 +47,10 @@ function projectDisplayName(projectRoot: string): string {
  */
 function languageDisplayName(code: string): string {
   try {
-    return new Intl.DisplayNames(['en'], { type: 'language' }).of(code) ?? code;
+    return new Intl.DisplayNames(
+      getFormatLocale() ? [getFormatLocale() as string] : undefined,
+      { type: 'language' },
+    ).of(code) ?? code;
   } catch {
     return code;
   }

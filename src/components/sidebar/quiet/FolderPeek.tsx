@@ -38,6 +38,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useFormatLocale } from "@/lib/useLocale";
 
 /**
  * Hover-triggered popover that previews one level of a project's contents.
@@ -183,6 +184,7 @@ export function FolderPeek({
   // app restarts. Files that have never been opened simply have no
   // entry here — the row renders an em-dash placeholder.
   const recentFiles = useEditorStore((s) => s.recentFiles);
+  const formatLocale = useFormatLocale();
   const lastAccessByPath = useMemo(() => {
     const map = new Map<string, number>();
     for (const recent of recentFiles) {
@@ -600,7 +602,7 @@ export function FolderPeek({
                               return lastAt ? (
                                 <span
                                   className="text-[11px] text-muted-foreground shrink-0 tabular-nums"
-                                  title={new Date(lastAt).toLocaleString()}
+                                  title={new Date(lastAt).toLocaleString(formatLocale)}
                                 >
                                   {formatSavedShort(Date.now() - lastAt)}
                                 </span>

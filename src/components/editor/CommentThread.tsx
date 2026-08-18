@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { MarkdownContent } from '@/components/MarkdownContent';
 import type { Comment, DelegationActivity } from '@/stores/comment-store';
 import type { Conversation } from '@/stores/chat-store';
+import { getFormatLocale } from "@/lib/i18n";
 
 /** Collapsible activity log rendered inline within each agent message. */
 function InlineActivityLog({ activities }: { activities: DelegationActivity[] }) {
@@ -89,7 +90,7 @@ function formatRelativeTime(timestamp: number): string {
   if (minutes < 60) return `${minutes}m ago`;
   if (hours < 24) return `${hours}h ago`;
   if (days < 30) return `${days}d ago`;
-  return new Date(timestamp).toLocaleDateString();
+  return new Date(timestamp).toLocaleDateString(getFormatLocale());
 }
 
 export { formatRelativeTime };

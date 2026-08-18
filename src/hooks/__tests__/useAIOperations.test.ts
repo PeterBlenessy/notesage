@@ -15,13 +15,16 @@ import { useSessionRunStore } from '@/stores/session-run-store';
 import { useMessageQueueStore, selectQueuedMessages } from '@/stores/message-queue-store';
 import { processSendQueue, __resetSendQueue, isSendQueued } from '@/lib/ai/session-run';
 import type { Connection } from '@/lib/ai/connections';
+import type { ChatMessage } from '@/lib/ai/types';
 
 // ---------------------------------------------------------------------------
 // Mock sub-hooks that useAIOperations delegates to
 // ---------------------------------------------------------------------------
 
 const mockDirectGenerateText = vi.fn(async (prompt: string) => `direct-response: ${prompt}`);
-const mockDirectSendChatMessage = vi.fn(async () => {});
+const mockDirectSendChatMessage = vi.fn(
+  async (_content: string, _messages: ChatMessage[], _opts?: { conversationId?: string }) => {},
+);
 const mockCancelDirectChat = vi.fn();
 
 vi.mock('@/hooks/useDirectApiChat', () => ({

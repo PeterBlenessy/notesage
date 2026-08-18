@@ -12,7 +12,7 @@ import { InboxCard } from "./InboxCard";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
-import { t } from "@/lib/i18n";
+import { t, getFormatLocale } from "@/lib/i18n";
 import { INBOX_FOLDER_NAME } from "@/lib/inbox";
 import { useLocale } from "@/lib/useLocale";
 
@@ -279,7 +279,7 @@ export function LibraryBrowser() {
         bucket = {
           // The year is dropped within the current year, as everywhere else
           // in the app — "August" reads better than "August 2026" in 2026.
-          title: d.toLocaleDateString(undefined, {
+          title: d.toLocaleDateString(getFormatLocale(), {
             month: "long",
             year: d.getFullYear() === now.getFullYear() ? undefined : "numeric",
           }),

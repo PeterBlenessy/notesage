@@ -131,6 +131,9 @@ struct TextPromptArgs<'a> {
     title: &'a str,
     placeholder: &'a str,
     confirm_label: &'a str,
+    /// Localized by the frontend, which owns the translation table (#705) —
+    /// this static plugin library carries no strings bundle of its own.
+    cancel_label: Option<&'a str>,
     value: Option<&'a str>,
     select_stem: bool,
 }
@@ -156,6 +159,9 @@ pub struct ContextMenuArgs {
     pub x: Option<f64>,
     #[serde(default)]
     pub y: Option<f64>,
+    /// Localized by the frontend (#705); `None` falls back to English.
+    #[serde(default)]
+    pub cancel_label: Option<String>,
 }
 
 /// `id` is absent when the user cancelled the sheet.
@@ -309,12 +315,13 @@ impl<R: Runtime> NotesageIos<R> {
         title: &str,
         placeholder: &str,
         confirm_label: &str,
+        cancel_label: Option<&str>,
         value: Option<&str>,
         select_stem: bool,
     ) -> Result<Option<String>> {
         self.call::<_, TextPromptResponse>(
             "textPrompt",
-            TextPromptArgs { title, placeholder, confirm_label, value, select_stem },
+            TextPromptArgs { title, placeholder, confirm_label, cancel_label, value, select_stem },
         )
         .map(|r| r.text)
     }

@@ -23,10 +23,25 @@ import {
 import { StatusTray, type StatusTrayGroup } from "./StatusTray";
 import { localAiDotClass, localAiStatusLabel } from "./local-ai-dot";
 import { useBackgroundActivity } from "./status/use-background-activity";
+import { getFormatLocale } from "@/lib/i18n";
 
-/** Format number with localized thousand separators (uses host locale). */
-const fmt = new Intl.NumberFormat(navigator.languages as string[], { useGrouping: true });
+/**
+ * Format a number with localized thousand separators.
+ *
+ * Built per call rather than once at module load: the old module-level
+ * formatter captured `navigator.languages` before the user could express a
+ * language preference, so word counts kept the OS grouping forever (#705).
+ * Memoized by locale so the common case is still a single construction.
+ */
+const fmtCache = new Map<string, Intl.NumberFormat>();
 function fmtNum(n: number): string {
+  const locale = getFormatLocale();
+  const key = locale ?? "";
+  let fmt = fmtCache.get(key);
+  if (!fmt) {
+    fmt = new Intl.NumberFormat(locale, { useGrouping: true });
+    fmtCache.set(key, fmt);
+  }
   return fmt.format(n);
 }
 

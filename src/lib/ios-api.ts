@@ -9,6 +9,7 @@
  */
 import { invoke } from "@tauri-apps/api/core";
 import type { FileEntry } from "./tauri";
+import { t } from "@/lib/i18n";
 
 export interface IosLibraryGrant {
   /** User-facing folder name (e.g. "Notesage"); empty when not granted. */
@@ -216,6 +217,7 @@ export async function iosContextMenu(options: {
     items: options.items,
     x: options.at?.x ?? null,
     y: options.at?.y ?? null,
+    cancelLabel: t("common.cancel"),
   });
   return chosen ?? null;
 }
@@ -250,6 +252,7 @@ export async function iosTextPrompt(
     title,
     placeholder,
     confirmLabel,
+    cancelLabel: t("common.cancel"),
     value: options.value ?? null,
     selectStem: options.selectStem ?? false,
   });

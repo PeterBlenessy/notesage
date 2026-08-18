@@ -3,6 +3,7 @@ import { Check, X, Loader2, Minus, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAutomationStore } from '@/stores/automation-store';
 import type { AutomationRun, RunStatus } from '@/lib/automations/types';
+import { useFormatLocale } from '@/lib/useLocale';
 
 function StatusIcon({ status }: { status: RunStatus }) {
   switch (status) {
@@ -19,6 +20,7 @@ function StatusIcon({ status }: { status: RunStatus }) {
 }
 
 function RunRow({ run }: { run: AutomationRun }) {
+  const formatLocale = useFormatLocale();
   const [open, setOpen] = useState(false);
   const duration = run.completedAt
     ? `${((run.completedAt - run.startedAt) / 1000).toFixed(1)}s`
@@ -32,7 +34,7 @@ function RunRow({ run }: { run: AutomationRun }) {
         className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm outline-none transition-colors duration-150 hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
       >
         <StatusIcon status={run.status} />
-        <span className="text-muted-foreground">{new Date(run.startedAt).toLocaleString()}</span>
+        <span className="text-muted-foreground">{new Date(run.startedAt).toLocaleString(formatLocale)}</span>
         <span className="text-xs text-muted-foreground">· {duration}</span>
         <ChevronDown
           className={cn(
