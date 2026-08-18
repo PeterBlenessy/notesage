@@ -558,6 +558,12 @@ export interface WhisperModelInfo {
   description?: string;
   languages_count?: number;
   hf_repo_id?: string;
+  /** Longer explanation, shown on demand rather than in the row. */
+  detail?: string;
+  /** Exactly where the file is fetched from, so the claim is checkable. */
+  download_url?: string;
+  /** On disk but no longer offered — still listed so it can be deleted. */
+  retired?: boolean;
 }
 
 // ---------------------------------------------------------------------------

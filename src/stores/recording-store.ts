@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { detectSpeechLanguage } from '@/lib/transcription/languages';
 import { persist } from 'zustand/middleware';
 import { listen } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
@@ -17,6 +18,12 @@ export interface ModelInfo {
   description?: string;
   languages_count?: number;
   hf_repo_id?: string;
+  /** Longer explanation, shown on demand rather than in the row. */
+  detail?: string;
+  /** Exactly where the file is fetched from, so the claim is checkable. */
+  download_url?: string;
+  /** On disk but no longer offered — still listed so it can be deleted. */
+  retired?: boolean;
 }
 
 export interface DownloadState {
@@ -107,10 +114,19 @@ export const useRecordingStore = create<RecordingStore>()(
         activeDownloads: {},
 
         // Persisted state
-        defaultModel: 'base',
-        // 'auto' lets Whisper detect the spoken language (all 99 it supports)
-        // instead of forcing English and mistranscribing other languages.
-        speechLanguage: 'auto',
+        //
+        // The quality model is the default rather than a small one: measured,
+        // it needs LESS memory than `small` (0.6 GB vs 0.7 GB) while making
+        // less than half the errors outside English.
+        // See `docs/transcription-model-comparison.md`.
+        defaultModel: 'large-v3-turbo-q5_0',
+        // The device's language, not 'auto'. Auto-detect reads reliably for
+        // English and poorly for everything else — on a Swedish corpus it cost
+        // every model up to 10 points of word error, and once produced a fluent
+        // Albanian transliteration of Swedish speech. A recording can still be
+        // in any language: this is the starting point, changeable per
+        // transcription.
+        speechLanguage: detectSpeechLanguage(),
         lastUsedSource: 'microphone',
 
         // Actions
@@ -225,6 +241,15 @@ export const useRecordingStore = create<RecordingStore>()(
             await invoke('delete_whisper_model', { size });
             toast.success(`Model '${size}' deleted`);
             await get().refreshModels();
+            // Deleting the SELECTED model would otherwise leave `defaultModel`
+            // pointing at a file that no longer exists: the picker renders
+            // blank and the next recording fails with "Model not downloaded".
+            // Newly reachable now that retired models are listed with a delete
+            // control, which invites exactly this.
+            if (get().defaultModel === size) {
+              const next = get().availableModels.find((m) => m.downloaded);
+              if (next) set({ defaultModel: next.name });
+            }
           } catch (err) {
             toast.error(`Failed to delete model: ${err}`);
           }
@@ -233,6 +258,37 @@ export const useRecordingStore = create<RecordingStore>()(
     },
     {
       name: 'notesage-recording',
+      version: 1,
+      migrate: (persisted: unknown, version: number) => {
+        // Not just `?? {}`: a corrupted blob could deserialize to a
+        // primitive, and assigning a property to one THROWS in strict mode
+        // (module code always is), taking the whole store down on rehydrate.
+        const state =
+          persisted && typeof persisted === 'object'
+            ? (persisted as Partial<RecordingStore>)
+            : ({} as Partial<RecordingStore>);
+        if (version >= 1) return state;
+
+        // Move existing installs off auto-detect.
+        //
+        // 'auto' WAS the default, so a stored 'auto' is almost always "never
+        // touched it" rather than a decision — and there is no way to tell the
+        // two apart. Leaving it alone would mean the fix reaches only new
+        // installs, while every existing user keeps the behaviour that turned
+        // a Swedish clip into Albanian. Overriding it is visible (the card now
+        // shows the language) and one click to undo; not overriding it is
+        // invisible and permanent.
+        if (!state.speechLanguage || state.speechLanguage === 'auto') {
+          state.speechLanguage = detectSpeechLanguage();
+        }
+
+        // Deliberately NOT touching `defaultModel`. Switching someone from a
+        // model they have on disk to one they do not would point transcription
+        // at a missing file and fail their next recording — a working setup
+        // broken by an upgrade. Their model still works; it is simply no
+        // longer offered, and the mismatch note says when it is a poor fit.
+        return state;
+      },
       partialize: (state) => ({
         defaultModel: state.defaultModel,
         speechLanguage: state.speechLanguage,

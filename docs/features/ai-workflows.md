@@ -240,7 +240,14 @@ and real hardware, so it never runs in CI.
 
 **Whisper model management:**
 
-- 5 model sizes: Tiny (39M), Base (74M), Small (244M), Medium (769M), Large v3 (1550M)
+- Two models, chosen by measurement rather than by size ladder
+  (`docs/transcription-model-comparison.md`):
+  **large-v3-turbo-q5_0** (809M, 0.6 GB) — "Best quality · all languages", the
+  default; and **small** (244M, 0.7 GB) — "Fast · English only", five times
+  faster but 25.6% word error outside English. The full `large-v3` was dropped:
+  it measured no better than the quantized turbo while needing 3.5 GB. Models
+  downloaded by older versions stay listed and deletable, marked as no longer
+  offered
 - Models downloaded from Hugging Face in GGML format
 - Concurrent downloads with per-model progress bars and cancel buttons
 - Model management in Settings > Voice (the legacy `TranscriptionSettings` panel)

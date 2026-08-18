@@ -1242,7 +1242,7 @@ pub async fn transcribe_file(
 
 - `job_id`: Caller-generated id echoed back in progress events (`jobId` over IPC)
 - `path`: Absolute path to the finalized WAV (from `stop_recording`)
-- `model`: Whisper model size — `"tiny"`, `"base"`, `"small"`, `"medium"`, or `"large-v3"`
+- `model`: Whisper model — `"large-v3-turbo-q5_0"` (default) or `"small"`. Older names still work if the file is on disk
 - `language`: Optional language code (e.g., `"en"`, `"sv"`, `"fr"`). `None` for auto-detection.
 
 **Returns:**
@@ -1291,7 +1291,7 @@ pub async fn list_whisper_models(
 
 ```rust
 pub struct ModelInfo {
-    pub name: String,        // e.g., "tiny", "base", "large-v3"
+    pub name: String,        // e.g., "large-v3-turbo-q5_0", "small"
     pub size_bytes: u64,     // File size on disk (0 if not downloaded)
     pub downloaded: bool,    // Whether the model file exists
     pub path: Option<String>, // Absolute path if downloaded
@@ -1313,7 +1313,7 @@ pub async fn download_whisper_model(
 
 **Parameters:**
 
-- `size`: Model size — `"tiny"`, `"base"`, `"small"`, `"medium"`, or `"large-v3"`
+- `size`: Model name — `"large-v3-turbo-q5_0"` or `"small"`
 
 **Events emitted:**
 

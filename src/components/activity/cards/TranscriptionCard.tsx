@@ -15,6 +15,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -28,6 +33,11 @@ import { startTranscription } from '@/hooks/useTranscriptionJob';
 import { tauriApi } from '@/lib/tauri';
 import { IconActionButton, basename, formatClock } from './shared';
 import { getFormatLocale } from "@/lib/i18n";
+import {
+  SPEECH_LANGUAGES,
+  speechLanguageLabel,
+  pickModelForLanguage,
+} from '@/lib/transcription/languages';
 import { useFormatLocale } from "@/lib/useLocale";
 
 /** Display name for a project root — the trailing path component. */
@@ -198,20 +208,28 @@ function MoveToProjectMenu({ task }: { task: AgentTask }) {
  * "Re-run transcription" action shown on a finished (done or errored)
  * transcription job — an icon-only, hover-revealed control listing every
  * downloaded Whisper model. Picking one re-transcribes the retained
- * `audio.wav` with that model (same language as the original run) and
- * replaces the displayed transcript — the fix for "wrong model, bad result."
+ * `audio.wav` and replaces the displayed transcript — the fix for "wrong
+ * model, bad result."
+ *
+ * The language can be changed here too. A wrong language is the more common
+ * failure and the more destructive one: the model hears the words correctly
+ * and writes them in another language's spelling, so the output looks like
+ * confident nonsense rather than a bad transcript. Re-running with the right
+ * language fixes it outright, so it belongs beside the model choice rather
+ * than buried in Settings.
  * Reuses the job's own id (`jobId`) so `useTranscriptionJob` updates this
  * same card in place instead of adding a new list entry.
  */
 function RerunTranscriptionMenu({ task }: { task: AgentTask }) {
   const models = useRecordingStore((s) => s.availableModels);
+  const defaultModel = useRecordingStore((s) => s.defaultModel);
   const refreshModels = useRecordingStore((s) => s.refreshModels);
   const downloadedModels = models.filter((m) => m.downloaded);
   const audioPath = task.audioPath;
 
   if (!audioPath) return null;
 
-  const handleRerun = (model: string) => {
+  const handleRerun = (model: string, language?: string) => {
     startTranscription({
       audioPath,
       documentId: task.documentId,
@@ -220,7 +238,7 @@ function RerunTranscriptionMenu({ task }: { task: AgentTask }) {
       recordingDurationSecs: task.recordingDurationSecs,
       jobId: task.id,
       model,
-      language: task.language,
+      language: language ?? task.language,
     });
   };
 
@@ -251,6 +269,9 @@ function RerunTranscriptionMenu({ task }: { task: AgentTask }) {
         </Tooltip>
       </TooltipProvider>
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+          Re-run with model
+        </DropdownMenuLabel>
         {downloadedModels.length === 0 ? (
           <DropdownMenuItem disabled>No models downloaded</DropdownMenuItem>
         ) : (
@@ -259,6 +280,37 @@ function RerunTranscriptionMenu({ task }: { task: AgentTask }) {
               {modelDisplayName(m.name)}
             </DropdownMenuItem>
           ))
+        )}
+        {downloadedModels.length > 0 && (
+          <>
+        <DropdownMenuSeparator />
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger className="text-xs">
+            Re-run in another language
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
+            {SPEECH_LANGUAGES.map((lang) => (
+              <DropdownMenuItem
+                key={lang.value}
+                onSelect={() =>
+                  handleRerun(
+                    // Not simply `defaultModel`: re-running to FIX a wrong
+                    // language must not hand the job to an English-only model.
+                    pickModelForLanguage(
+                      defaultModel,
+                      lang.value,
+                      downloadedModels.map((m) => m.name),
+                    ),
+                    lang.value,
+                  )
+                }
+              >
+                {lang.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>
@@ -290,12 +342,21 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
   const revealTarget = transcriptPath ?? task.audioPath;
   const canReveal = task.status !== 'running' && !!revealTarget;
   const summary = recordingSummary(task);
-  // Show the detected language only when the run actually auto-detected. If the
-  // user pinned a language, Whisper reports back the one they picked, and
-  // echoing their own choice at them is noise rather than information.
+  // Always say which language the transcript was made in.
+  //
+  // This used to be shown only for auto-detected runs, on the reasoning that
+  // echoing the user's own choice back is noise. That no longer holds: the
+  // language now defaults to the DEVICE language, so it is not a choice the
+  // user made and may well be wrong for this particular recording. Seeing
+  // "Language: Swedish" above a page of nonsense is what turns a dead end into
+  // "re-run in English" — the menu beside it offers exactly that.
   const autoDetected = !task.language || task.language === 'auto';
-  const detectedLanguage =
-    task.status === 'done' && autoDetected ? task.detectedLanguage : undefined;
+  const languageUsed =
+    task.status === 'done'
+      ? autoDetected
+        ? task.detectedLanguage
+        : task.language
+      : undefined;
   // The bundle folder holding audio.wav + transcript.md — "where did my
   // recording go" should never be a question (#698).
   const bundlePath = revealTarget ? dirname(revealTarget) : undefined;
@@ -351,9 +412,12 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
           {summary && (
             <p className="text-[11px] text-muted-foreground/80 tabular-nums">{summary}</p>
           )}
-          {detectedLanguage && (
+          {languageUsed && (
             <p className="text-[11px] text-muted-foreground/80">
-              Detected language: {languageDisplayName(detectedLanguage)}
+              {autoDetected ? 'Detected language' : 'Language'}:{' '}
+              {autoDetected
+                ? languageDisplayName(languageUsed)
+                : speechLanguageLabel(languageUsed)}
             </p>
           )}
         </div>

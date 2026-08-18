@@ -482,7 +482,8 @@ pub async fn get_model_metadata(
                 "base" => Some("74M"),
                 "small" => Some("244M"),
                 "medium" => Some("769M"),
-                "large-v3" => Some("1550M"),
+                "large-v3-turbo-q5_0" => Some("809M"),
+        "large-v3" => Some("1550M"),
                 _ => None,
             };
             if let Some(p) = params {
