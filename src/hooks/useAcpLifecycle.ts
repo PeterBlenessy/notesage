@@ -441,7 +441,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
    * Send a chat message via ACP agent (multi-turn with permission handling).
    */
   const acpSendChatMessage = useCallback(
-    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[] }) => {
+    async (content: string, messages: ChatMessage[], opts?: { displayContent?: string; skillName?: string; attachedFilePaths?: string[]; sandboxPaths?: string[]; parentId?: string | null; attachments?: ImageAttachment[]; conversationId?: string }) => {
       if (!effectiveConnection) throw new Error('No ACP connection');
 
       setLoading(true);
@@ -462,16 +462,21 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}),
         connectionId: effectiveConnection.id,
       };
-      addMessage(userMessage);
+      addMessage(userMessage, opts?.conversationId);
 
       // The conversation this send belongs to — the registry key for its ACP
       // agent, the routing key for its listeners + run-state, and the owner of
-      // every store write below. Captured AFTER `addMessage`, which CREATES (and
-      // activates) the conversation for a brand-new chat — capturing it before
-      // would be `undefined` and strand the run as a phantom `running` (the
-      // listener/cleanup `runIdle` would no-op on the null id). Mirrors the
-      // direct-API + Copilot paths.
-      const conversationId = useChatStore.getState().activeConversationId ?? undefined;
+      // every store write below.
+      //
+      // `opts.conversationId` is set when the concurrency cap deferred this send
+      // (#468): it names the chat the message was typed in, which may no longer
+      // be the active one. Otherwise fall back to the active conversation, read
+      // AFTER `addMessage` because that call CREATES (and activates) the
+      // conversation for a brand-new chat — reading before would be `undefined`
+      // and strand the run as a phantom `running` (the listener/cleanup
+      // `runIdle` would no-op on the null id). Mirrors direct-API + Copilot.
+      const conversationId =
+        opts?.conversationId ?? useChatStore.getState().activeConversationId ?? undefined;
 
       // Clean up any stale listeners from a previous streaming call IN THIS
       // conversation only (review #3) — a concurrent stream in another
@@ -494,7 +499,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         connectionId: effectiveConnection.id,
         connectionLabel: effectiveConnection.label,
         connectionProvider: effectiveConnection.provider,
-      });
+      }, conversationId);
 
       // Mark the run active NOW (before the agent-spawn await below) so the
       // command bar shows "working" during a cold spawn; the instance id is

@@ -54,6 +54,12 @@ interface SendChatOpts {
   sandboxPaths?: string[];
   parentId?: string | null;
   attachments?: ImageAttachment[];
+  /**
+   * Append to THIS conversation rather than the active one (#468). Set when the
+   * concurrency cap deferred the send, so it lands where it was typed even if
+   * the user has navigated away in the meantime.
+   */
+  conversationId?: string;
 }
 
 interface PendingToolCall {
@@ -151,14 +157,18 @@ export function useDirectApiChat({
         ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}),
         ...(effectiveConnection ? { connectionId: effectiveConnection.id } : {}),
       };
-      addMessage(userMessage);
+      addMessage(userMessage, opts?.conversationId);
 
       // The conversation this send belongs to — read AFTER `addMessage`, which
       // CREATES (and activates) a conversation when there was none. Captured once
       // so every message/segment/activity write targets the OWNING conversation
       // even after the user switches away mid-stream (task #3). Also the
       // stream-registry key.
-      const conversationId = useChatStore.getState().activeConversationId ?? null;
+      // A cap-deferred send names its own conversation (#468); everything else
+      // targets the active one, read after `addMessage` so a brand-new chat has
+      // been created by then.
+      const conversationId =
+        opts?.conversationId ?? useChatStore.getState().activeConversationId ?? null;
       const convKey = conversationId ?? NO_CONVERSATION_KEY;
 
       // Tear down only THIS conversation's stale stream (a re-send in the same
@@ -185,7 +195,7 @@ export function useDirectApiChat({
         } : resolved ? {
           connectionProvider: resolved.provider,
         } : {}),
-      });
+      }, conversationId);
 
       let flushInterval: ReturnType<typeof setInterval> | undefined;
 

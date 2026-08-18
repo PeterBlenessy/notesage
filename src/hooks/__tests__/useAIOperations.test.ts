@@ -262,6 +262,88 @@ describe('useAIOperations', () => {
       expect(mockDirectSendChatMessage).toHaveBeenCalledTimes(1);
     });
 
+    // #468 — a send parked by the cap used to activate its conversation when a
+    // slot freed, so a user who navigated away to read while waiting got yanked
+    // back. The send must still land in the conversation it was typed in, so
+    // these two assertions belong together: routing correct, view untouched.
+
+    it('does not move the view when a parked send drains', async () => {
+      const conn = makeConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      routeInteractive(conn.id);
+      const conv = (id: string) => ({ id, title: '', messages: [], createdAt: 0, updatedAt: 0, projectPaths: [], segments: [], activeSegmentIndex: 0, activeLeafId: null });
+      useChatStore.setState({
+        conversations: [conv('conv-E'), conv('conv-C')] as never,
+        activeConversationId: 'conv-E',
+      });
+      useSessionRunStore.getState().setRun('conv-A', { status: 'running' });
+      useSessionRunStore.getState().setRun('conv-B', { status: 'running' });
+
+      const { result } = renderHook(() => useAIOperations());
+      // Typed in conv-E while at the cap → parked.
+      await act(async () => { await result.current.sendChatMessage('hi', []); });
+      expect(mockDirectSendChatMessage).not.toHaveBeenCalled();
+
+      // User wanders off to read another conversation while waiting.
+      act(() => { useChatStore.getState().setActiveConversation('conv-C'); });
+
+      // A slot frees and the parked send starts.
+      act(() => {
+        useSessionRunStore.getState().clearRun('conv-A');
+        processSendQueue(2);
+      });
+
+      expect(mockDirectSendChatMessage).toHaveBeenCalledTimes(1);
+      // The view stays where the user left it.
+      expect(useChatStore.getState().activeConversationId).toBe('conv-C');
+    });
+
+    it('routes a drained send to the conversation it was typed in', async () => {
+      const conn = makeConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      routeInteractive(conn.id);
+      const conv = (id: string) => ({ id, title: '', messages: [], createdAt: 0, updatedAt: 0, projectPaths: [], segments: [], activeSegmentIndex: 0, activeLeafId: null });
+      useChatStore.setState({
+        conversations: [conv('conv-E'), conv('conv-C')] as never,
+        activeConversationId: 'conv-E',
+      });
+      useSessionRunStore.getState().setRun('conv-A', { status: 'running' });
+      useSessionRunStore.getState().setRun('conv-B', { status: 'running' });
+
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => { await result.current.sendChatMessage('hi', []); });
+
+      act(() => { useChatStore.getState().setActiveConversation('conv-C'); });
+      act(() => {
+        useSessionRunStore.getState().clearRun('conv-A');
+        processSendQueue(2);
+      });
+
+      // Without the explicit id the send would append to conv-C — the chat the
+      // user happens to be looking at — which is the data-correctness half of
+      // the same bug.
+      const opts = mockDirectSendChatMessage.mock.calls[0]?.[2];
+      expect(opts?.conversationId).toBe('conv-E');
+    });
+
+    it('leaves conversationId unset for an immediate (non-parked) send', async () => {
+      const conn = makeConnection();
+      useConnectionsStore.setState({ connections: [conn] });
+      routeInteractive(conn.id);
+      useChatStore.setState({
+        conversations: [{ id: 'conv-E', title: '', messages: [], createdAt: 0, updatedAt: 0, projectPaths: [], segments: [], activeSegmentIndex: 0, activeLeafId: null }] as never,
+        activeConversationId: 'conv-E',
+      });
+
+      const { result } = renderHook(() => useAIOperations());
+      await act(async () => { await result.current.sendChatMessage('hi', []); });
+
+      // The ordinary path keeps targeting the active conversation, so nothing
+      // about single-session sends changes.
+      expect(mockDirectSendChatMessage).toHaveBeenCalledTimes(1);
+      expect(mockDirectSendChatMessage.mock.calls[0]?.[2]?.conversationId).toBeUndefined();
+    });
+
     it('sends immediately when under the cap', async () => {
       const conn = makeConnection();
       useConnectionsStore.setState({ connections: [conn] });

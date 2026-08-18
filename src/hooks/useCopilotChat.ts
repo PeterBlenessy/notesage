@@ -42,6 +42,12 @@ interface SendChatOpts {
   sandboxPaths?: string[];
   parentId?: string | null;
   attachments?: ImageAttachment[];
+  /**
+   * Append to THIS conversation rather than the active one (#468). Set when the
+   * concurrency cap deferred the send, so it lands where it was typed even if
+   * the user has navigated away in the meantime.
+   */
+  conversationId?: string;
 }
 
 /** Maximum tool calls allowed per user turn to prevent runaway loops. */
@@ -341,7 +347,13 @@ export function useCopilotChat({
         attachments: opts?.attachments,
         ...(opts?.parentId !== undefined ? { parentId: opts.parentId } : {}),
       };
-      addMessage(userMessage);
+      addMessage(userMessage, opts?.conversationId);
+
+      // The conversation this send owns: named explicitly when the cap deferred
+      // it (#468), else the active one — read after `addMessage`, which creates
+      // and activates the conversation for a fresh chat.
+      const runConvId =
+        opts?.conversationId ?? useChatStore.getState().activeConversationId ?? null;
 
       const assistantMessageId = userTimestamp + 1;
       addMessage({
@@ -355,12 +367,10 @@ export function useCopilotChat({
               connectionProvider: effectiveConnection.provider,
             }
           : {}),
-      });
+      }, runConvId);
 
       // Record this conversation's run so per-conversation foreground loading
-      // works for Copilot LSP chats too (task #4). Captured AFTER addMessage,
-      // which activates a conversation for a fresh chat.
-      const runConvId = useChatStore.getState().activeConversationId ?? null;
+      // works for Copilot LSP chats too (task #4).
       runStarted(runConvId, 'copilot_lsp');
 
       let flushInterval: ReturnType<typeof setInterval> | undefined;
