@@ -35,6 +35,7 @@ import type { Editor } from '@tiptap/react';
 import { toast } from 'sonner';
 import { compressImage } from '@/lib/image-compress';
 import { log } from '@/lib/logger';
+import { t } from '@/lib/i18n';
 
 const SUPPORTED_IMAGE_MIME_TYPES = new Set([
   'image/png',
@@ -174,7 +175,7 @@ export function useEditorImageDrop(
             }
           } catch (err) {
             log.error('editor', `Failed to insert dropped image: ${file.name}`, err);
-            toast.error(`Failed to insert image: ${file.name}`);
+            toast.error(t("toast.imageInsertFailed", { name: file.name }));
           }
         }
       })();

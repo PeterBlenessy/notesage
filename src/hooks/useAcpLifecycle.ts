@@ -184,6 +184,7 @@ export {
   registerConvCleanup,
   type CleanupMap,
 } from '@/hooks/acp/conv-cleanup';
+import { t } from '@/lib/i18n';
 
 // ---------------------------------------------------------------------------
 // Turn helpers shared by the prompt-send and retry paths
@@ -760,7 +761,7 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           useConnectionsStore.getState().updateConnection(effectiveConnection.id, { status: 'expired' });
           const creds = effectiveConnection.credentials as { agentBinary: string };
           if (canReauthenticate(creds.agentBinary)) {
-            toast.error(`Authentication failed for ${agentLabel}`, {
+            toast.error(t("toast.authFailed", { agent: agentLabel }), {
               id: `reauth-${effectiveConnection.id}`,
               duration: 12000,
               action: {

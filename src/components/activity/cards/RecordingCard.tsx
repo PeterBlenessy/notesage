@@ -8,6 +8,7 @@ import { useMeetingRecording } from '@/hooks/useMeetingRecording';
 import { formatStopwatchMs } from '@/lib/recording-time';
 import { IconActionButton, formatClock } from './shared';
 import { useFormatLocale } from "@/lib/useLocale";
+import { t } from "@/lib/i18n";
 
 
 /**
@@ -58,7 +59,7 @@ export function RecordingCard({ task }: { task: AgentTask }) {
             {task.label}
           </p>
           <p className="text-xs text-muted-foreground">
-            {isPaused ? 'Paused' : 'Recording…'}
+            {isPaused ? t("activity.paused") : t("activity.recording")}
             {task.recordingStartedAt && (
               <span className="text-muted-foreground/70"> · started {formatClock(task.recordingStartedAt)}</span>
             )}
@@ -85,7 +86,7 @@ export function RecordingCard({ task }: { task: AgentTask }) {
           )}
         </IconActionButton>
         <IconActionButton
-          label="Stop recording"
+          label={t("activity.stopRecording")}
           onClick={(e) => {
             e.stopPropagation();
             void handleStop();
@@ -104,14 +105,14 @@ export function RecordingCard({ task }: { task: AgentTask }) {
       {/* Per-recording language override (#698) — defaults to the Settings
           value, made overridable right here at record time. */}
       <div className="pl-5 mt-1.5 flex items-center gap-1.5">
-        <span className="text-[11px] text-muted-foreground/80">Language</span>
+        <span className="text-[11px] text-muted-foreground/80">{t("activity.language")}</span>
         <Select
           value={effectiveLanguage}
           onValueChange={(value) => setRecordingLanguage(task.id, value)}
         >
           <SelectTrigger
             size="sm"
-            aria-label="Recording language"
+            aria-label={t("activity.recordingLanguage")}
             className="h-6 w-28 px-2 text-xs"
             onClick={(e) => e.stopPropagation()}
           >

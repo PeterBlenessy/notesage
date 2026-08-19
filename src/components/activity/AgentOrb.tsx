@@ -24,6 +24,8 @@ import { subscribeToAgentOrbEvents } from '@/lib/agent-orb-events';
 import type { AgentTask } from '@/stores/activity-store';
 import { AgentPanel } from './AgentPanel';
 import { RecordingRays } from './RecordingRays';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 export interface AgentOrbProps {
   /**
@@ -72,6 +74,8 @@ export interface AgentOrbProps {
  * transform utilities — the keyframe wins on that element.
  */
 export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const tasks = useActivityStore((s) => s.tasks);
   const cmdBarPinned = useSettingsStore((s) => s.cmdBarPinned);
   const reducedMotion = useReducedMotion();
@@ -306,7 +310,7 @@ export function AgentOrb({ onCancelTask, onClickTask }: AgentOrbProps = {}) {
         side="top"
         align="end"
         sideOffset={8}
-        aria-label="Agent activity"
+        aria-label={t("activity.agentActivity")}
         // Override the popover default (w-72 + p-4) — AgentPanel manages its
         // own width and padding so the list fills the popover cleanly.
         className="w-auto p-0"

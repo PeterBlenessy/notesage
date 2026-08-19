@@ -14,6 +14,7 @@ import { emitWorkflowEvent } from "@/lib/automations/event-bus";
 import { wasAutomationWrite } from "@/lib/automations/loop-guard";
 import { toast } from "sonner";
 import { trackSelfRename } from "@/lib/self-rename-filter";
+import { t } from '@/lib/i18n';
 
 /** Recursively count files in a FileEntry tree. */
 function countFiles(entries: FileEntry[]): number {
@@ -206,7 +207,7 @@ export function useFileOperations() {
         } else {
           const projectName = project.path.split('/').pop() || project.path;
           ws.removeProject(project.path);
-          toast.warning(`Project "${projectName}" was removed — directory no longer exists`);
+          toast.warning(t("toast.projectRemoved", { project: projectName }));
         }
       }
     }

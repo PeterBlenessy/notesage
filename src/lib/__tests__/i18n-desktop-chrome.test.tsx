@@ -63,7 +63,7 @@ describe('desktop chrome translation coverage', () => {
     { surface: 'chat', key: 'chat.deleteConversation', english: 'Delete conversation' },
     { surface: 'activity', key: 'activity.agentActivity', english: 'Agent activity' },
     { surface: 'git', key: 'git.repository', english: 'Git repository' },
-    { surface: 'toasts', key: 'toast.fileSaved', english: 'File saved' },
+    { surface: 'toasts', key: 'toast.openFileFailed', english: 'Failed to open file' },
   ];
 
   it.each(SURFACES)('$surface has a Swedish string, not the English one', ({ key, english }) => {

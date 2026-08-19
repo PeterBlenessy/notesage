@@ -32,7 +32,7 @@ import { useFileOperations } from '@/hooks/useFileOperations';
 import { startTranscription } from '@/hooks/useTranscriptionJob';
 import { tauriApi } from '@/lib/tauri';
 import { IconActionButton, basename, formatClock } from './shared';
-import { getFormatLocale } from "@/lib/i18n";
+import { getFormatLocale, t } from "@/lib/i18n";
 import {
   SPEECH_LANGUAGES,
   speechLanguageLabel,
@@ -120,7 +120,7 @@ function recordingSummary(task: AgentTask): string | null {
 }
 
 /**
- * "Move to project" action shown on a completed transcription job — an
+ * t("activity.moveToProject") action shown on a completed transcription job — an
  * icon-only, hover-revealed control in the card's top-right cluster. Lists the
  * open projects from `workspace-store`; picking one relocates the whole bundle
  * (audio + transcript) into that project via `moveBundleToProject`, toasts
@@ -170,7 +170,7 @@ function MoveToProjectMenu({ task }: { task: AgentTask }) {
                 size="icon-xs"
                 disabled={moving || projects.length === 0}
                 onClick={(e) => e.stopPropagation()}
-                aria-label="Move to project"
+                aria-label={t("activity.moveToProject")}
                 className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 data-[state=open]:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
               >
                 {moving ? (
@@ -182,13 +182,13 @@ function MoveToProjectMenu({ task }: { task: AgentTask }) {
             </DropdownMenuTrigger>
           </TooltipTrigger>
           <TooltipContent side="top" sideOffset={4}>
-            <p className="text-xs">Move to project</p>
+            <p className="text-xs">{t("activity.moveToProject")}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
         {projects.length === 0 ? (
-          <DropdownMenuItem disabled>No open projects</DropdownMenuItem>
+          <DropdownMenuItem disabled>{t("activity.noOpenProjects")}</DropdownMenuItem>
         ) : (
           projects.map((p) => (
             <DropdownMenuItem
@@ -205,7 +205,7 @@ function MoveToProjectMenu({ task }: { task: AgentTask }) {
 }
 
 /**
- * "Re-run transcription" action shown on a finished (done or errored)
+ * t("activity.rerunTranscription") action shown on a finished (done or errored)
  * transcription job — an icon-only, hover-revealed control listing every
  * downloaded Whisper model. Picking one re-transcribes the retained
  * `audio.wav` and replaces the displayed transcript — the fix for "wrong
@@ -256,7 +256,7 @@ function RerunTranscriptionMenu({ task }: { task: AgentTask }) {
                 variant="ghost"
                 size="icon-xs"
                 onClick={(e) => e.stopPropagation()}
-                aria-label="Re-run transcription"
+                aria-label={t("activity.rerunTranscription")}
                 className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 data-[state=open]:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
               >
                 <RotateCcw className="h-3 w-3" strokeWidth={1.5} />
@@ -264,16 +264,16 @@ function RerunTranscriptionMenu({ task }: { task: AgentTask }) {
             </DropdownMenuTrigger>
           </TooltipTrigger>
           <TooltipContent side="top" sideOffset={4}>
-            <p className="text-xs">Re-run transcription</p>
+            <p className="text-xs">{t("activity.rerunTranscription")}</p>
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
-          Re-run with model
+          {t("activity.rerunWithModel")}
         </DropdownMenuLabel>
         {downloadedModels.length === 0 ? (
-          <DropdownMenuItem disabled>No models downloaded</DropdownMenuItem>
+          <DropdownMenuItem disabled>{t("activity.noModelsDownloaded")}</DropdownMenuItem>
         ) : (
           downloadedModels.map((m) => (
             <DropdownMenuItem key={m.name} onSelect={() => handleRerun(m.name)}>
@@ -286,7 +286,7 @@ function RerunTranscriptionMenu({ task }: { task: AgentTask }) {
         <DropdownMenuSeparator />
         <DropdownMenuSub>
           <DropdownMenuSubTrigger className="text-xs">
-            Re-run in another language
+            {t("activity.rerunInLanguage")}
           </DropdownMenuSubTrigger>
           <DropdownMenuSubContent className="max-h-72 overflow-y-auto">
             {SPEECH_LANGUAGES.map((lang) => (
@@ -320,7 +320,7 @@ function RerunTranscriptionMenu({ task }: { task: AgentTask }) {
 /**
  * Transcription-job card (kind === 'transcription'). Distinct ScrollText icon
  * + label; a shadcn `Progress` bar while running (a spinner stands in when
- * progress is 0/unknown); a "Move to project" action on completion; the shared
+ * progress is 0/unknown); a t("activity.moveToProject") action on completion; the shared
  * error treatment on failure. Once the transcript is ready the card itself is
  * clickable and opens the transcript note in the editor.
  */
@@ -402,12 +402,12 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
           </p>
           <p className="text-xs text-muted-foreground">
             {task.status === 'error'
-              ? 'Transcription failed — re-runnable from the inbox'
+              ? t("activity.transcriptionFailed")
               : task.status === 'done'
                 ? canOpen
-                  ? 'Transcript ready — click to open'
-                  : 'Transcript ready'
-                : 'Transcribing…'}
+                  ? t("activity.transcriptReadyOpen")
+                  : t("activity.transcriptReady")
+                : t("activity.transcribing")}
           </p>
           {summary && (
             <p className="text-[11px] text-muted-foreground/80 tabular-nums">{summary}</p>
@@ -429,7 +429,7 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
             {task.status === 'done' && !task.moved && <MoveToProjectMenu task={task} />}
             {canReveal && (
               <IconActionButton
-                label="Reveal in Finder"
+                label={t("activity.revealInFinder")}
                 onClick={(e) => { e.stopPropagation(); void handleReveal(); }}
                 className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
               >
@@ -462,7 +462,7 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
           {showSpinner ? (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
-              <span>Starting…</span>
+              <span>{t("activity.starting")}</span>
             </div>
           ) : (
             <div className="flex items-center gap-2">

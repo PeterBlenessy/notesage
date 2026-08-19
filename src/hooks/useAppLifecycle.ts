@@ -28,6 +28,7 @@ import { setFlagReporter, useFlagStore } from "@/stores/flag-store";
 setFlagReporter(trackLabsFlag);
 import { toastTelemetryNotice } from "@/lib/notifications";
 import { toast } from "sonner";
+import { t } from '@/lib/i18n';
 
 /**
  * Consolidates all App-level startup side effects and event listeners:
@@ -193,7 +194,7 @@ export function useAppLifecycle() {
         const deadMcp = health.mcp_servers.some((s) => !s.alive);
         if (deadAcp || deadCopilot || deadMcp) {
           log.info("lifecycle", "Some AI processes died — they will be lazily respawned on next use");
-          toast.info("Reconnected to AI services");
+          toast.info(t("toast.reconnectedAi"));
         }
       } catch (err) {
         log.info("lifecycle", `Health check failed: ${err}`);
@@ -380,7 +381,7 @@ export async function reloadTrees() {
         // Expected: project directory may have been deleted or moved
         const projectName = project.path.split('/').pop() || project.path;
         ws.removeProject(project.path);
-        toast.warning(`Project "${projectName}" was removed — directory no longer exists`);
+        toast.warning(t("toast.projectRemoved", { project: projectName }));
       }
     })),
   ]);
@@ -647,7 +648,7 @@ async function initIndexWithRecovery(projectPath?: string): Promise<void> {
     log.warn("lifecycle", `Index init failed for ${scope}, attempting recovery`, firstError);
 
     // Delete corrupted DB and retry
-    toast.info("Rebuilding search index — tags and mentions will be available shortly", {
+    toast.info(t("toast.rebuildingIndex"), {
       id: `index-recovery-${scope}`,
     });
     try {

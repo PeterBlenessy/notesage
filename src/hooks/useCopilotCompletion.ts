@@ -18,6 +18,7 @@ import {
 } from '@/components/editor/extensions';
 import { requestCopilotCompletion, notifyCompletionAccepted } from '@/lib/copilot-shared';
 import { isUriInScope, type UriScope } from '@/lib/ai/uri-scope';
+import { t } from '@/lib/i18n';
 
 /**
  * Manages the Copilot Language Server lifecycle and ghost text completions.
@@ -441,7 +442,7 @@ export function useCopilotCompletion(editor: Editor | null) {
       // and self-heals stale state via `child.try_wait()`.
       setLspReady(false);
       sentWorkingDir.current = null;
-      toast.warning(`Copilot LSP exited (${message}) — restarting`, {
+      toast.warning(t("toast.copilotRestarting", { message }), {
         id: 'copilot-lsp-restart',
         duration: 3000,
       });

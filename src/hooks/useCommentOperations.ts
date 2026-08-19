@@ -16,6 +16,7 @@ import {
   clearCommentDecorations,
   CommentMarkPluginKey,
 } from '@/components/editor/extensions';
+import { t } from '@/lib/i18n';
 
 /**
  * Orchestrates the full comment lifecycle: load, create, edit, delete, save.
@@ -200,7 +201,7 @@ export function useCommentOperations(editor: Editor | null) {
 
       // Delegated comment clicked — show toast instead of opening popover
       if (meta.delegatedClick) {
-        toast.info('An agent is working on this comment. Check the activity panel for progress.', {
+        toast.info(t("toast.agentWorkingComment"), {
           id: 'delegated-comment',
           duration: 3000,
         });
