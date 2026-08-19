@@ -26,6 +26,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { t } from "@/lib/i18n";
 
 /**
  * Default maximum number of tag rows shown before "Show more" expands the
@@ -174,7 +175,7 @@ export function TagsSection({
 
   return (
     <section
-      aria-label="Tags"
+      aria-label={t("section.tags")}
       className="group/section flex flex-col gap-1"
     >
       <header className="flex items-center gap-2 px-2 h-6">

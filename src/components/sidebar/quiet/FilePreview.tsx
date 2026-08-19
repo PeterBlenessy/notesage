@@ -24,6 +24,7 @@ import { tauriApi } from "@/lib/tauri";
 import { tryOpenFile } from "@/lib/link-utils";
 import { cn } from "@/lib/utils";
 import { MarkdownContent } from "@/components/MarkdownContent";
+import { t } from "@/lib/i18n";
 
 /**
  * FilePreview — hover popover that shows the first N lines of a file.
@@ -401,7 +402,7 @@ function PreviewRelations({
           icon={
             <CornerUpLeft className="h-2.5 w-2.5" strokeWidth={1.5} aria-hidden="true" />
           }
-          label="Linked from"
+          label={t("sidebar.linkedFrom")}
           entries={linkedFrom}
           onNavigate={navigate}
         />
@@ -411,7 +412,7 @@ function PreviewRelations({
           icon={
             <CornerDownRight className="h-2.5 w-2.5" strokeWidth={1.5} aria-hidden="true" />
           }
-          label="Links to"
+          label={t("sidebar.linksTo")}
           entries={linksTo}
           onNavigate={navigate}
         />
@@ -853,7 +854,7 @@ export function FilePreview({
                 </pre>
               )
             ) : (
-              <p className="text-xs italic text-muted-foreground">Empty file</p>
+              <p className="text-xs italic text-muted-foreground">{t("sidebar.emptyFile")}</p>
             )
           )}
         </div>

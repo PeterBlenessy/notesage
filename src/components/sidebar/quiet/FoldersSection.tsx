@@ -48,6 +48,7 @@ import {
 import { tauriApi } from "@/lib/tauri";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 import { toast } from "sonner";
+import { t } from "@/lib/i18n";
 
 /**
  * FoldersSection — the QuietSidebar's section for arbitrary folders the
@@ -496,14 +497,14 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
 
   return (
     <section
-      aria-label="External folders"
+      aria-label={t("sidebar.externalFolders")}
       className="group/section flex flex-col gap-1"
     >
       {/* Folder-merge fix — header dropped. The merged "Folders" header is
           rendered by ProjectsSection above; explorer folders flow into the
           same visual section. The structural FolderSymlink icon (set by
           resolveFolderIcon) signals that these rows are external. */}
-      <ul role="tree" aria-label="External folders" className="flex flex-col m-0 p-0 list-none">
+      <ul role="tree" aria-label={t("sidebar.externalFolders")} className="flex flex-col m-0 p-0 list-none">
         {filteredFolders.map((folder) => {
           const isExpanded = expandedPaths.has(folder.path);
           return (

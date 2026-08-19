@@ -131,11 +131,11 @@ export function SidebarRowIndicators({
             <TooltipTrigger asChild>
               <span
                 role="status"
-                aria-label="External change pending review"
+                aria-label={t("sidebar.externalChangePending")}
                 className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/60"
               />
             </TooltipTrigger>
-            <TooltipContent side="top">Changed externally</TooltipContent>
+            <TooltipContent side="top">{t("sidebar.changedExternally")}</TooltipContent>
           </Tooltip>
         ) : null}
 

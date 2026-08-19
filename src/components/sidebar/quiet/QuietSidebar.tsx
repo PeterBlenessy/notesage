@@ -32,6 +32,7 @@ import { FoldersSection } from "./FoldersSection";
 import { RecentSection } from "./RecentSection";
 import { TagsSection } from "./TagsSection";
 import { MentionsSection } from "./MentionsSection";
+import { t } from "@/lib/i18n";
 
 /**
  * QuietSidebar — flat-list sidebar shell for the quiet-composer UI refresh
@@ -201,7 +202,7 @@ export function QuietSidebar({
 
   return (
     <nav
-      aria-label="Workspace sidebar"
+      aria-label={t("sidebar.workspace")}
       data-tauri-drag-region
       onKeyDown={handleKeyDown}
       // Live-test 2026-04-25 #154 — `border-r border-border-strong` so
@@ -337,7 +338,7 @@ function SidebarResizeHandle() {
     <div
       role="slider"
       tabIndex={0}
-      aria-label="Resize sidebar"
+      aria-label={t("sidebar.resize")}
       aria-orientation="vertical"
       aria-valuemin={SIDEBAR_MIN_WIDTH}
       aria-valuemax={SIDEBAR_MAX_WIDTH}
@@ -386,7 +387,7 @@ function SidebarFooter({ onOpenSettings }: { onOpenSettings?: () => void }) {
               type="button"
               variant="ghost"
               size="icon"
-              aria-label="Settings"
+              aria-label={t("sidebar.settings")}
               onClick={onOpenSettings}
               className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
             >
@@ -394,7 +395,7 @@ function SidebarFooter({ onOpenSettings }: { onOpenSettings?: () => void }) {
             </Button>
           </TooltipTrigger>
           <TooltipContent side="top" className="flex items-center gap-2">
-            <span>Settings</span>
+            <span>{t("sidebar.settings")}</span>
             <kbd className="font-sans text-[10px] text-muted-foreground">⌘,</kbd>
           </TooltipContent>
         </Tooltip>
@@ -434,7 +435,7 @@ function FilterBadge({ filter, onClear }: FilterBadgeProps) {
       <span className="truncate min-w-0 flex-1">{filter}</span>
       <button
         type="button"
-        aria-label="Clear filter"
+        aria-label={t("sidebar.clearFilter")}
         onClick={onClear}
         className={cn(
           "shrink-0 rounded-sm p-0.5 -m-0.5",
