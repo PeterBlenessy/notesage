@@ -24,14 +24,16 @@ import { tauriApi } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { GitStatus } from "@/lib/tauri";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 const STATUS_CONFIG: Record<GitStatus, { label: string; color: string; tooltip: string }> = {
-  modified: { label: "M", color: "text-muted-foreground/50", tooltip: "Modified" },
-  added: { label: "A", color: "text-muted-foreground/50", tooltip: "Added — new file staged for commit" },
-  untracked: { label: "U", color: "text-muted-foreground/50", tooltip: "Untracked — not yet tracked by git" },
-  deleted: { label: "D", color: "text-muted-foreground/50", tooltip: "Deleted" },
-  renamed: { label: "R", color: "text-muted-foreground/50", tooltip: "Renamed" },
-  conflicted: { label: "C", color: "text-muted-foreground/50", tooltip: "Conflicted — merge conflict" },
+  modified: { label: "M", color: "text-muted-foreground/50", tooltip: t("git.modified") },
+  added: { label: "A", color: "text-muted-foreground/50", tooltip: t("git.added") },
+  untracked: { label: "U", color: "text-muted-foreground/50", tooltip: t("git.untracked") },
+  deleted: { label: "D", color: "text-muted-foreground/50", tooltip: t("git.deleted") },
+  renamed: { label: "R", color: "text-muted-foreground/50", tooltip: t("git.renamed") },
+  conflicted: { label: "C", color: "text-muted-foreground/50", tooltip: t("git.conflicted") },
 };
 
 interface CommitDialogProps {
@@ -42,6 +44,8 @@ interface CommitDialogProps {
 }
 
 export function CommitDialog({ open, onOpenChange, repoPath, preSelectedFiles }: CommitDialogProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const repo = useGitStore((s) => s.repos[repoPath]);
   const fileStatuses = repo?.fileStatuses ?? [];
   const { stage, unstage, commit, refreshStatus } = useGitOperations(repoPath);
@@ -179,7 +183,7 @@ export function CommitDialog({ open, onOpenChange, repoPath, preSelectedFiles }:
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-[520px]">
         <DialogHeader>
-          <DialogTitle>Commit Changes</DialogTitle>
+          <DialogTitle>{t("git.commitChanges")}</DialogTitle>
           <DialogDescription>
             Select files to include and write a commit message.
           </DialogDescription>
@@ -187,7 +191,7 @@ export function CommitDialog({ open, onOpenChange, repoPath, preSelectedFiles }:
 
         {files.length === 0 ? (
           <div className="py-8 text-center">
-            <p className="text-sm text-muted-foreground">No changes to commit</p>
+            <p className="text-sm text-muted-foreground">{t("git.noChanges")}</p>
           </div>
         ) : (
           <div className="space-y-4">
@@ -201,7 +205,7 @@ export function CommitDialog({ open, onOpenChange, repoPath, preSelectedFiles }:
                   onClick={toggleAll}
                   className="text-xs text-muted-foreground hover:text-foreground transition-colors duration-150"
                 >
-                  {allSelected ? "Deselect all" : "Select all"}
+                  {allSelected ? t("git.deselectAll") : t("git.selectAll")}
                 </button>
               </div>
 
@@ -252,7 +256,7 @@ export function CommitDialog({ open, onOpenChange, repoPath, preSelectedFiles }:
             {/* Commit message */}
             <div className="space-y-2">
               <Input
-                placeholder="Commit message (required)"
+                placeholder={t("git.commitMessage")}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={(e) => {
@@ -264,7 +268,7 @@ export function CommitDialog({ open, onOpenChange, repoPath, preSelectedFiles }:
                 autoFocus
               />
               <Textarea
-                placeholder="Extended description (optional)"
+                placeholder={t("git.extendedDescription")}
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 rows={3}
@@ -278,13 +282,13 @@ export function CommitDialog({ open, onOpenChange, repoPath, preSelectedFiles }:
                   <div className="flex gap-2.5">
                     <Info className="h-4 w-4 shrink-0 text-muted-foreground mt-0.5" />
                     <div className="space-y-1 text-xs text-muted-foreground">
-                      <p className="font-medium text-foreground">Git identity not configured</p>
+                      <p className="font-medium text-foreground">{t("git.identityMissing")}</p>
                       <p>Git needs your name and email to create commits.</p>
                     </div>
                   </div>
                   <div className="space-y-2 pl-6.5">
                     <Input
-                      placeholder="Your Name"
+                      placeholder={t("git.yourName")}
                       value={configName}
                       onChange={(e) => setConfigName(e.target.value)}
                       className="h-8 text-xs"
@@ -323,7 +327,7 @@ export function CommitDialog({ open, onOpenChange, repoPath, preSelectedFiles }:
                           Saving...
                         </>
                       ) : (
-                        "Save & Retry"
+                        t("git.saveAndRetry")
                       )}
                     </Button>
                   </div>
