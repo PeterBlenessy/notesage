@@ -73,6 +73,13 @@ function installClipboardMock() {
 installClipboardMock();
 
 function resetStores() {
+  // `notesRootPath` is a MOVE DESTINATION (any value not starting with `~`),
+  // so "always disables Move to…" depends on it — and it lives in
+  // settings-store, which this file does not otherwise touch. Six other test
+  // files set an absolute path there; whichever runs first leaves it set, the
+  // submenu renders enabled, and this file fails for a reason that has nothing
+  // to do with it. Restore the app default rather than inherit a neighbour's.
+  useSettingsStore.setState({ notesRootPath: "~/Notesage" });
   useWorkspaceStore.setState({
     explorerFolders: [],
     projects: [],
