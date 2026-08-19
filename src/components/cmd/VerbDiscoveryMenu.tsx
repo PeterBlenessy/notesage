@@ -1,5 +1,7 @@
 import { cn } from "@/lib/utils";
 import { VERBS } from "@/components/cmd/verb-modes";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 // ---------------------------------------------------------------------------
 // VerbDiscoveryMenu — bare `:` (or `:partial-name`) discovery list
@@ -17,6 +19,8 @@ interface VerbDiscoveryMenuProps {
 }
 
 export function VerbDiscoveryMenu({ typedName, onPick }: VerbDiscoveryMenuProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const verbs = Object.values(VERBS);
   const filtered = typedName
     ? verbs.filter((v) => v.name.startsWith(typedName))
@@ -31,7 +35,7 @@ export function VerbDiscoveryMenu({ typedName, onPick }: VerbDiscoveryMenuProps)
   }
 
   return (
-    <ul role="listbox" aria-label="Command bar verbs" className="m-0 p-0 list-none">
+    <ul role="listbox" aria-label={t("cmd.verbs")} className="m-0 p-0 list-none">
       {filtered.map((verb) => (
         <li key={verb.id}>
           <button

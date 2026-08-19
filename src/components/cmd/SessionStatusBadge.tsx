@@ -1,6 +1,8 @@
 import { Pause, Hourglass, AlertTriangle, MessageSquare } from 'lucide-react';
 import { useSessionRunStore, type SessionRunStatus } from '@/stores/session-run-store';
 import { useReducedMotion } from '@/hooks/useReducedMotion';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 interface SessionStatusBadgeProps {
   conversationId: string;
@@ -12,12 +14,14 @@ interface SessionStatusBadgeProps {
  * row) don't pay a second per-row subscription for the same `runs[id].status`.
  */
 function StatusGlyph({ status, reducedMotion }: { status: SessionRunStatus | undefined; reducedMotion: boolean }) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   switch (status) {
     case 'running':
       return (
         <span
           role="img"
-          aria-label="Running"
+          aria-label={t("cmd.running")}
           data-testid="session-status-running"
           className={`mt-0.5 h-2 w-2 shrink-0 rounded-full bg-muted-foreground ${reducedMotion ? '' : 'session-status-pulse'}`}
         />
@@ -26,7 +30,7 @@ function StatusGlyph({ status, reducedMotion }: { status: SessionRunStatus | und
       return (
         <Pause
           role="img"
-          aria-label="Awaiting permission"
+          aria-label={t("cmd.awaitingPermission")}
           data-testid="session-status-awaiting"
           className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--color-accent-primary)]"
           strokeWidth={2}
@@ -36,7 +40,7 @@ function StatusGlyph({ status, reducedMotion }: { status: SessionRunStatus | und
       return (
         <Hourglass
           role="img"
-          aria-label="Queued"
+          aria-label={t("cmd.queued")}
           data-testid="session-status-queued"
           className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground"
           strokeWidth={1.5}
@@ -46,7 +50,7 @@ function StatusGlyph({ status, reducedMotion }: { status: SessionRunStatus | und
       return (
         <AlertTriangle
           role="img"
-          aria-label="Error"
+          aria-label={t("cmd.error")}
           data-testid="session-status-error"
           className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive"
           strokeWidth={1.5}

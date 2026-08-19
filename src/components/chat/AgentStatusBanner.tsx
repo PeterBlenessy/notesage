@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { Clock, AlertTriangle, RefreshCw, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAgentStatusStore } from '@/stores/agent-status-store';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 interface AgentStatusBannerProps {
   onKeepWaiting: () => void;
@@ -10,6 +12,8 @@ interface AgentStatusBannerProps {
 }
 
 export function AgentStatusBanner({ onKeepWaiting, onRetry, onCancel }: AgentStatusBannerProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const status = useAgentStatusStore((s) => s.status);
   const since = useAgentStatusStore((s) => s.since);
   const exitCode = useAgentStatusStore((s) => s.exitCode);
@@ -37,7 +41,7 @@ export function AgentStatusBanner({ onKeepWaiting, onRetry, onCancel }: AgentSta
         <div className="flex items-start gap-2">
           <AlertTriangle size={16} strokeWidth={1.5} className="text-muted-foreground mt-0.5 shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-foreground">Agent process exited unexpectedly</p>
+            <p className="text-sm font-medium text-foreground">{t("chat.agentExited")}</p>
             {exitCode !== null && (
               <p className="text-xs text-muted-foreground mt-0.5">Exit code: {exitCode}</p>
             )}

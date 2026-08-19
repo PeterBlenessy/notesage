@@ -31,6 +31,8 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { AttachmentChip } from "@/components/cmd/AttachmentChips";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 /**
  * TaskMode — picker for the `!` prefix in the FloatingCommandBar
@@ -168,6 +170,8 @@ function TaskMode({
   listboxId = "cmd-task-listbox",
   onActiveOptionChange,
 }: TaskModeProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   void _isComposing; // retained on the prop interface for parity
 
   // ---- Store reads ------------------------------------------------------
@@ -411,7 +415,7 @@ function TaskMode({
       tabIndex={-1}
       className={cn("flex w-full flex-col py-1 outline-none")}
       role="listbox"
-      aria-label="Open actions"
+      aria-label={t("cmd.openActions")}
     >
       {/* ---- Filter row ---- */}
       {/*
@@ -426,7 +430,7 @@ function TaskMode({
         <Select value={sourceValue} onValueChange={handleSourceType}>
           <SelectTrigger
             data-testid="taskmode-type-trigger"
-            aria-label="Filter by type"
+            aria-label={t("cmd.filterByType")}
             className="h-6 w-auto min-w-[100px] gap-1 px-2 text-xs"
           >
             <SelectValue />
@@ -438,7 +442,7 @@ function TaskMode({
                   className="h-3 w-3 shrink-0 text-muted-foreground"
                   strokeWidth={1.5}
                 />
-                <span>All types</span>
+                <span>{t("cmd.allTypes")}</span>
                 <span className="text-muted-foreground/60">
                   {typeCounts.all}
                 </span>
@@ -450,7 +454,7 @@ function TaskMode({
                   className="h-3 w-3 shrink-0 text-muted-foreground"
                   strokeWidth={1.5}
                 />
-                <span>Tasks</span>
+                <span>{t("cmd.tasks")}</span>
                 <span className="text-muted-foreground/60">
                   {typeCounts.task}
                 </span>
@@ -462,7 +466,7 @@ function TaskMode({
                   className="h-3 w-3 shrink-0 text-muted-foreground"
                   strokeWidth={1.5}
                 />
-                <span>Comments</span>
+                <span>{t("cmd.comments")}</span>
                 <span className="text-muted-foreground/60">
                   {typeCounts.comment}
                 </span>
@@ -474,7 +478,7 @@ function TaskMode({
                   className="h-3 w-3 shrink-0 text-muted-foreground"
                   strokeWidth={1.5}
                 />
-                <span>Agent tasks</span>
+                <span>{t("cmd.agentTasks")}</span>
                 <span className="text-muted-foreground/60">
                   {typeCounts.agent}
                 </span>
@@ -486,7 +490,7 @@ function TaskMode({
                   className="h-3 w-3 shrink-0 text-muted-foreground"
                   strokeWidth={1.5}
                 />
-                <span>Goals</span>
+                <span>{t("cmd.goals")}</span>
                 <span className="text-muted-foreground/60">
                   {typeCounts.goal}
                 </span>
@@ -498,7 +502,7 @@ function TaskMode({
         <Select value={statusValue} onValueChange={handleStatus}>
           <SelectTrigger
             data-testid="taskmode-status-trigger"
-            aria-label="Filter by status"
+            aria-label={t("cmd.filterByStatus")}
             className="h-6 w-auto min-w-[80px] gap-1 px-2 text-xs"
           >
             <SelectValue />

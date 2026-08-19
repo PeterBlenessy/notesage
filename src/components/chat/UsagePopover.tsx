@@ -21,6 +21,8 @@ import {
 } from '@/components/ui/popover';
 import { formatSavedShort } from '@/lib/saved-ago';
 import type { ProviderRateLimitInfo, TurnUsage } from '@/lib/ai/usage';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 // ---------------------------------------------------------------------------
 // Shared formatting + ring (used by the pill trigger and the popover rows)
@@ -150,6 +152,8 @@ function Row({ label, value, valueClassName }: { label: string; value: string; v
  * → provenance footer.
  */
 export const UsagePopover = memo(function UsagePopover({ data }: { data: UsagePopoverData }) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const { contextUsed, contextSize, isEstimated, cost, rateLimit, lastTurnUsage, updatedAt } = data;
   const ratio = contextSize > 0 ? Math.min(contextUsed / contextSize, 1) : 0;
   const approx = isEstimated ? '≈' : '';
@@ -181,7 +185,7 @@ export const UsagePopover = memo(function UsagePopover({ data }: { data: UsagePo
           <TooltipContent side="top" className="text-xs">
             <p>{summary}</p>
             {cost && <p className="text-muted-foreground">{formatCost(cost)}</p>}
-            {isEstimated && <p className="text-muted-foreground">Estimated locally</p>}
+            {isEstimated && <p className="text-muted-foreground">{t("chat.estimatedLocally")}</p>}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -202,7 +206,7 @@ export const UsagePopover = memo(function UsagePopover({ data }: { data: UsagePo
         {/* Per-turn token breakdown */}
         {lastTurnUsage && (
           <div className="space-y-1 border-t border-border pt-2">
-            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Last turn</p>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t("chat.lastTurn")}</p>
             <Row label="Input" value={formatTokenCount(lastTurnUsage.inputTokens)} />
             <Row label="Output" value={formatTokenCount(lastTurnUsage.outputTokens)} />
             {lastTurnUsage.thoughtTokens !== undefined && (
@@ -227,7 +231,7 @@ export const UsagePopover = memo(function UsagePopover({ data }: { data: UsagePo
         {/* Rate-limit rows */}
         {rateLimit && (rateLimit.status || rateLimit.rateLimitType || rateLimit.resetsAt !== undefined || rateLimit.utilization !== undefined) && (
           <div className="space-y-1 border-t border-border pt-2">
-            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Rate limit</p>
+            <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">{t("chat.rateLimit")}</p>
             {rateLimit.rateLimitType && (
               <Row label="Window" value={formatRateLimitType(rateLimit.rateLimitType)} />
             )}

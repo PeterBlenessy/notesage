@@ -9,6 +9,8 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useFileOperations } from "@/hooks/useFileOperations";
 import { FileIcon } from "@/components/sidebar/FileIcon";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 /**
  * FileMode — picker for the `:file <query>` verb mode (PRD
@@ -81,6 +83,8 @@ function FileMode({
   listboxId = "cmd-file-listbox",
   onActiveOptionChange,
 }: FileModeProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const [results, setResults] = useState<IndexFilenameSearchResult[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -249,7 +253,7 @@ function FileMode({
         <div
           id={listboxId}
           role="listbox"
-          aria-label="Recent files"
+          aria-label={t("cmd.recentFiles")}
           className="px-3 py-2 text-xs text-muted-foreground"
         >
           No recent files in the active scope.
@@ -260,7 +264,7 @@ function FileMode({
       <div
         id={listboxId}
         role="listbox"
-        aria-label="File search results"
+        aria-label={t("cmd.fileSearchResults")}
         className="px-3 py-2 text-xs text-muted-foreground"
       >
         No files matching "{trimmedFilter}".

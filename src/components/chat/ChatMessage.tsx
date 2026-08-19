@@ -19,6 +19,8 @@ import { ToolCallLog } from './message/ToolCallLog';
 import { UserContent } from './message/UserContent';
 import { UserActionButtons } from './message/UserActionButtons';
 import { SegmentRenderer } from './message/SegmentRenderer';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 function hasSegments(message: ChatMessageType): boolean {
   return !!(message.segments && message.segments.length > 0);
@@ -48,6 +50,8 @@ interface ChatMessageProps {
 }
 
 export const ChatMessage = memo(function ChatMessage({ message, isActivelyStreaming = false, branchCount, onBranch, onResend, onEdit, onRetry }: ChatMessageProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const [copied, setCopied] = useState(false);
   const deleteMessage = useChatStore((s) => s.deleteMessage);
 
@@ -166,7 +170,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isActivelyStream
                 className="mt-2 flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 rounded-sm"
               >
                 <RotateCcw className="h-3 w-3" strokeWidth={1.5} />
-                <span>Retry</span>
+                <span>{t("chat.retry")}</span>
               </button>
             )}
           </div>
@@ -191,7 +195,7 @@ export const ChatMessage = memo(function ChatMessage({ message, isActivelyStream
         {!isUser && message.interrupted && (
           <div className="flex items-center gap-1 mt-1.5 text-[10px] text-muted-foreground/60">
             <CircleStop size={10} strokeWidth={1.5} className="shrink-0" />
-            <span className="italic">Interrupted</span>
+            <span className="italic">{t("chat.interrupted")}</span>
           </div>
         )}
 

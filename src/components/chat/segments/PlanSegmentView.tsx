@@ -1,6 +1,8 @@
 import { memo, useState } from 'react';
 import { ChevronDown, ChevronRight, Circle, Loader2, CheckCircle2 } from 'lucide-react';
 import type { PlanSegment, PlanEntry } from '@/lib/ai/types';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 interface PlanSegmentViewProps {
   segment: PlanSegment;
@@ -24,6 +26,8 @@ function PriorityDot({ priority }: { priority: PlanEntry['priority'] }) {
 }
 
 export const PlanSegmentView = memo(function PlanSegmentView({ segment, isStreaming }: PlanSegmentViewProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const [collapsed, setCollapsed] = useState(false);
 
   // Auto-expand during streaming, respect user toggle otherwise
@@ -39,7 +43,7 @@ export const PlanSegmentView = memo(function PlanSegmentView({ segment, isStream
           ? <ChevronDown className="h-3 w-3" strokeWidth={1.5} />
           : <ChevronRight className="h-3 w-3" strokeWidth={1.5} />
         }
-        <span className="font-medium">Plan</span>
+        <span className="font-medium">{t("chat.plan")}</span>
         <span className="text-[10px] text-muted-foreground/60 tabular-nums">
           {segment.entries.length} {segment.entries.length === 1 ? 'step' : 'steps'}
         </span>

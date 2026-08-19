@@ -6,6 +6,8 @@ import { tauriApi } from '@/lib/tauri';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Cpu, Shield } from 'lucide-react';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 function recommendModel(totalMemBytes: number): { id: string; name: string; size: string } {
   if (totalMemBytes >= 16_000_000_000) {
@@ -18,6 +20,8 @@ function recommendModel(totalMemBytes: number): { id: string; name: string; size
 }
 
 export function LocalAISetupCard() {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const dismissedFirstRun = useLocalAIStore((s) => s.dismissedFirstRun);
   const serverStatus = useLocalAIStore((s) => s.serverStatus);
   const systemMemory = useLocalAIStore((s) => s.systemMemory);
@@ -105,7 +109,7 @@ export function LocalAISetupCard() {
 
   return (
     <div className="mx-auto max-w-sm mt-8 p-5 rounded-lg border border-border">
-      <h3 className="text-sm font-medium mb-1">Get started with AI</h3>
+      <h3 className="text-sm font-medium mb-1">{t("chat.getStarted")}</h3>
       <p className="text-xs text-muted-foreground mb-4">
         Notesage can run AI locally on your Mac — no account or API key needed.
       </p>

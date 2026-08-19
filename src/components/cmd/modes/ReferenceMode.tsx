@@ -17,6 +17,8 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useCommentStore } from "@/stores/comment-store";
 import { selectProjectPaths, useChatStore } from "@/stores/chat-store";
 import type { AttachmentChip } from "@/components/cmd/AttachmentChips";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 /**
  * ReferenceMode — picker for the `@` prefix of the FloatingCommandBar.
@@ -272,6 +274,8 @@ function ReferenceMode({
   listboxId = 'cmd-reference-listbox',
   onActiveOptionChange,
 }: ReferenceModeProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   // Workspace file tree slices.
   const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
   const projects = useWorkspaceStore((s) => s.projects);
@@ -502,7 +506,7 @@ function ReferenceMode({
           <button
             type="button"
             onClick={() => setSelectedPerson(null)}
-            aria-label="Back to references"
+            aria-label={t("cmd.backToReferences")}
             className={cn(
               "inline-flex items-center gap-1 rounded px-1.5 py-0.5",
               "text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60",
@@ -510,7 +514,7 @@ function ReferenceMode({
             )}
           >
             <ChevronLeft className="h-3 w-3" strokeWidth={1.5} />
-            <span>Back</span>
+            <span>{t("cmd.back")}</span>
           </button>
           <span className="text-[13px] font-medium">@{selectedPerson}</span>
           <span className="ml-auto text-xs text-muted-foreground">
@@ -588,7 +592,7 @@ function ReferenceMode({
       id={listboxId}
       data-reference-list
       role="listbox"
-      aria-label="References"
+      aria-label={t("cmd.references")}
       tabIndex={-1}
       className={cn(
         "py-1",

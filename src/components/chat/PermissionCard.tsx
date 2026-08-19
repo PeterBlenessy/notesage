@@ -10,6 +10,8 @@ import {
 import { type PermissionRequest } from '@/stores/permission-store';
 import { resolveAcpPermission } from '@/lib/ai/permission-resolve';
 import { formatAcpToolName } from '@/hooks/useAIOperations';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 function getToolIcon(kind: string) {
   switch (kind) {
@@ -97,6 +99,8 @@ interface PermissionCardProps {
 }
 
 export function PermissionCard({ request }: PermissionCardProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const Icon = getToolIcon(request.toolKind);
   const label = formatAcpToolName(request.toolKind, request.toolTitle);
   const labelId = useId();
@@ -187,7 +191,7 @@ export function PermissionCard({ request }: PermissionCardProps) {
                 variant="default"
                 size="xs"
                 className="rounded-l-none border-l border-l-primary-foreground/20 px-1"
-                aria-label="More approval options"
+                aria-label={t("chat.moreApprovalOptions")}
               >
                 <ChevronDown className="h-3 w-3" />
               </Button>

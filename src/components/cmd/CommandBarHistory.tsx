@@ -5,6 +5,8 @@ import { getLeaves } from '@/lib/chat-tree';
 import { formatRelativeTime } from '@/components/editor/CommentThread';
 import { HistoryRowLeadingIcon } from './SessionStatusBadge';
 import { InlineHistoryPermission } from './InlineHistoryPermission';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 export interface CommandBarHistoryProps {
   /**
@@ -57,6 +59,8 @@ export const CommandBarHistory = memo(function CommandBarHistory({
   onDismiss,
   selectedProjectPaths,
 }: CommandBarHistoryProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const conversations = useChatStore((s) => s.conversations);
 
   const visible = useMemo(() => {
@@ -132,7 +136,7 @@ export const CommandBarHistory = memo(function CommandBarHistory({
       ref={listRef}
       data-testid="cmd-history-list"
       role="listbox"
-      aria-label="Conversation history"
+      aria-label={t("cmd.history")}
       tabIndex={0}
       onKeyDown={handleKeyDown}
       className="flex flex-col max-h-[50vh] overflow-y-auto outline-none"
