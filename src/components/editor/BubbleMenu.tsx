@@ -26,12 +26,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@/components/ui/dropdown-menu";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 interface BubbleMenuProps {
   editor: Editor;
 }
 
 export function BubbleMenu({ editor }: BubbleMenuProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const [loadingAction, setLoadingAction] = useState<'improve' | 'summarize' | 'expand' | 'custom' | null>(null);
   const [hasSuggestion, setHasSuggestion] = useState(false);
   const { provider: legacyProvider, customPrompts } = useAIStore();
@@ -158,7 +162,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
                 size="xs"
                 onClick={() => handleAIAction('improve')}
                 disabled={loadingAction !== null}
-                title="Improve with AI"
+                title={t("editor.improveWithAi")}
               >
                 {loadingAction === 'improve' ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -175,7 +179,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
                 size="xs"
                 onClick={() => handleAIAction('summarize')}
                 disabled={loadingAction !== null}
-                title="Summarize with AI"
+                title={t("editor.summarizeWithAi")}
               >
                 {loadingAction === 'summarize' ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -192,7 +196,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
                 size="xs"
                 onClick={() => handleAIAction('expand')}
                 disabled={loadingAction !== null}
-                title="Expand with AI"
+                title={t("editor.expandWithAi")}
               >
                 {loadingAction === 'expand' ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
@@ -211,7 +215,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
                         variant="ghost"
                         size="xs"
                         disabled={loadingAction !== null}
-                        title="Custom prompts"
+                        title={t("editor.customPrompts")}
                         className="text-muted-foreground"
                       >
                         {loadingAction === 'custom' ? (
@@ -261,7 +265,7 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
               );
             }}
             disabled={loadingAction !== null}
-            title="Add comment (⌘⌥C)"
+            title={t("editor.addComment") + " (⌘⌥C)"}
           >
             <MessageSquare className="h-3 w-3" strokeWidth={1.5} />
             Comment

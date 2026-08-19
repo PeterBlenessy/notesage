@@ -7,6 +7,8 @@ import {
   Replace,
   ReplaceAll,
 } from "lucide-react";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 interface FindBarProps {
   open: boolean;
@@ -39,6 +41,8 @@ export function FindBar({
   onReplaceAll,
   initialQuery = "",
 }: FindBarProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const [query, setQuery] = useState(initialQuery);
   const [replacement, setReplacement] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
@@ -144,7 +148,7 @@ export function FindBar({
             onClick={() => onReplaceExpandedChange(!replaceExpanded)}
             className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground"
             title={replaceExpanded ? "Hide replace" : "Show replace"}
-            aria-label="Toggle replace options"
+            aria-label={t("editor.toggleReplace")}
             aria-expanded={replaceExpanded}
           >
             <ChevronRight
@@ -160,8 +164,8 @@ export function FindBar({
           value={query}
           onChange={(e) => handleQueryChange(e.target.value)}
           onKeyDown={handleSearchKeyDown}
-          placeholder="Find..."
-          aria-label="Find in document"
+          placeholder={t("editor.find")}
+          aria-label={t("editor.findInDocument")}
           className={`h-6 w-48 px-2 text-xs bg-muted border rounded transition-colors duration-150 focus:outline-none focus:ring-1 focus:ring-muted-foreground/50 ${matchCount === 0 && query.length > 0 ? "border-destructive/50" : "border-border"}`}
         />
         <span className={`text-[10px] w-16 text-center select-none tabular-nums transition-colors duration-150 ${matchCount === 0 && query.length > 0 ? "text-destructive" : "text-muted-foreground"}`}>
@@ -171,8 +175,8 @@ export function FindBar({
           onClick={onPrevious}
           disabled={matchCount === 0}
           className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-70"
-          title="Previous match (Shift+Enter)"
-          aria-label="Previous match"
+          title={t("editor.previousMatch") + " (Shift+Enter)"}
+          aria-label={t("editor.previousMatch")}
         >
           <ChevronUp size={14} strokeWidth={1.5} />
         </button>
@@ -180,16 +184,16 @@ export function FindBar({
           onClick={onNext}
           disabled={matchCount === 0}
           className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-70"
-          title="Next match (Enter)"
-          aria-label="Next match"
+          title={t("editor.nextMatch") + " (Enter)"}
+          aria-label={t("editor.nextMatch")}
         >
           <ChevronDown size={14} strokeWidth={1.5} />
         </button>
         <button
           onClick={onClose}
           className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground"
-          title="Close (Escape)"
-          aria-label="Close find bar"
+          title={t("editor.close") + " (Escape)"}
+          aria-label={t("editor.closeFindBar")}
         >
           <X size={14} strokeWidth={1.5} />
         </button>
@@ -206,15 +210,15 @@ export function FindBar({
             value={replacement}
             onChange={(e) => setReplacement(e.target.value)}
             onKeyDown={handleReplaceKeyDown}
-            placeholder="Replace..."
-            aria-label="Replace"
+            placeholder={t("editor.replacePlaceholder")}
+            aria-label={t("editor.replace")}
             className="h-6 w-48 px-2 text-xs bg-muted border border-border rounded focus:outline-none focus:ring-1 focus:ring-muted-foreground/50"
           />
           <button
             onClick={() => onReplace?.(replacement)}
             disabled={matchCount === 0}
             className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-70"
-            title="Replace (Enter in replace field)"
+            title={t("editor.replace") + " (Enter in replace field)"}
           >
             <Replace size={14} strokeWidth={1.5} />
           </button>
@@ -222,7 +226,7 @@ export function FindBar({
             onClick={() => onReplaceAll?.(replacement)}
             disabled={matchCount === 0}
             className="p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-70"
-            title="Replace All (Cmd+Shift+Enter)"
+            title={t("editor.replaceAll") + " (Cmd+Shift+Enter)"}
           >
             <ReplaceAll size={14} strokeWidth={1.5} />
           </button>
