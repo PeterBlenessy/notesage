@@ -447,8 +447,11 @@ describe('useAIContext — ReAct guidance in localSystemMessage', () => {
   });
 
   it('includes the tool-use protocol when tool calling is enabled (default)', () => {
-    // Default state: toolCallingEnabled === true; localSystemMessage should
-    // carry the ReAct addendum so small local models reason step-by-step.
+    // Set explicitly rather than relying on the default. `toolCallingEnabled`
+    // is shared module state and `useDirectApiChat.test.ts` sets it false — so
+    // "the default" is whatever the previous FILE left behind, and this test
+    // failed or passed depending on suite order.
+    useSettingsStore.setState({ toolCallingEnabled: true });
     seedActiveConversation(['/projects/A']);
 
     const { result } = renderHook(() => useAIContext());
