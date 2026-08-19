@@ -28,6 +28,8 @@ import { VoiceSettings } from './VoiceSettings';
 import { AutomationsSettings } from './AutomationsSettings';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 export interface SettingsDialogV2Props {
   open: boolean;
@@ -82,23 +84,34 @@ function writeLastPanel(id: string): void {
  * (Approvals → AI; Diagnostics + Show Hidden Files → System; version /
  * Changelog / Updates → System).
  */
-const NAV: SettingsShellNavGroup[] = [
+/**
+ * Built per call, NOT a module-level constant.
+ *
+ * `t()` reads module state. Evaluated once at import, these labels would keep
+ * whichever language was active when the module first loaded — switching
+ * language would appear to do nothing, and Settings search (which matches
+ * against `item.label`) would go on matching English while the UI showed
+ * Swedish. Exported so a test can prove it re-reads.
+ */
+export function buildSettingsNav(): SettingsShellNavGroup[] {
+  return [
   {
     id: 'notesage',
-    label: 'Notesage',
+    label: t("settings.groupNotesage"),
     items: [
-      { id: 'appearance', label: 'Appearance', icon: Sun },
-      { id: 'editor', label: 'Writing', icon: Pencil },
-      { id: 'ai', label: 'AI Providers', icon: Sparkles },
-      { id: 'skills', label: 'Skills & Agents', icon: Blocks },
-      { id: 'voice', label: 'Voice', icon: Mic },
-      { id: 'projects', label: 'Projects', icon: FolderOpen },
-      { id: 'automations', label: 'Automations', icon: Zap },
-      { id: 'system', label: 'System', icon: Cog },
-      { id: 'labs', label: 'Labs', icon: FlaskConical },
+      { id: 'appearance', label: t("settings.appearance"), icon: Sun },
+      { id: 'editor', label: t("settings.writing"), icon: Pencil },
+      { id: 'ai', label: t("settings.aiProviders"), icon: Sparkles },
+      { id: 'skills', label: t("settings.skillsAgents"), icon: Blocks },
+      { id: 'voice', label: t("settings.voice"), icon: Mic },
+      { id: 'projects', label: t("settings.projects"), icon: FolderOpen },
+      { id: 'automations', label: t("settings.automations"), icon: Zap },
+      { id: 'system', label: t("settings.system"), icon: Cog },
+      { id: 'labs', label: t("settings.labs"), icon: FlaskConical },
     ],
   },
-];
+  ];
+}
 
 function filterNav(
   nav: SettingsShellNavGroup[],
@@ -133,18 +146,19 @@ type PanelEntry = {
   }) => React.ReactNode;
 };
 
-const PANELS: PanelEntry[] = [
-  { id: 'appearance', label: 'Appearance', render: () => <AppearanceSettings /> },
-  { id: 'editor', label: 'Writing', render: () => <EditorSettings /> },
-  { id: 'ai', label: 'AI Providers', render: () => <AISettings /> },
-  { id: 'skills', label: 'Skills & Agents', render: () => <SkillsSettings /> },
-  { id: 'voice', label: 'Voice', render: () => <VoiceSettings /> },
-  { id: 'labs', label: 'Labs', render: () => <LabsSettings /> },
-  { id: 'projects', label: 'Projects', render: () => <ProjectsSettings /> },
-  { id: 'automations', label: 'Automations', render: () => <AutomationsSettings /> },
+function buildPanels(): PanelEntry[] {
+  return [
+  { id: 'appearance', label: t("settings.appearance"), render: () => <AppearanceSettings /> },
+  { id: 'editor', label: t("settings.writing"), render: () => <EditorSettings /> },
+  { id: 'ai', label: t("settings.aiProviders"), render: () => <AISettings /> },
+  { id: 'skills', label: t("settings.skillsAgents"), render: () => <SkillsSettings /> },
+  { id: 'voice', label: t("settings.voice"), render: () => <VoiceSettings /> },
+  { id: 'labs', label: t("settings.labs"), render: () => <LabsSettings /> },
+  { id: 'projects', label: t("settings.projects"), render: () => <ProjectsSettings /> },
+  { id: 'automations', label: t("settings.automations"), render: () => <AutomationsSettings /> },
   {
     id: 'system',
-    label: 'System',
+    label: t("settings.system"),
     render: ({ updateState, onCheckForUpdate, onOpenUpdateDialog, onDismissSettings }) => (
       <SystemSettings
         updateState={updateState}
@@ -154,7 +168,8 @@ const PANELS: PanelEntry[] = [
       />
     ),
   },
-];
+  ];
+}
 
 /**
  * Settings dialog mounted in App.tsx. Wraps the per-area panel
@@ -215,18 +230,24 @@ export function SettingsDialogV2({
 
   useSettingsSearchShortcut(searchInputRef, open);
 
+  // Rebuilt per render so the labels follow the chosen language; `useLocale`
+  // is what makes that render happen when the language changes.
+  useLocale();
+  const nav = buildSettingsNav();
+  const panels = buildPanels();
+
   // Hide the Projects panel from the nav when there are no projects in
   // the workspace — there's nothing to configure (live-test 2026-04-26).
   const hasProjects = useWorkspaceStore((s) => s.projects.length > 0);
   const visibleNav = React.useMemo(
     () =>
       hasProjects
-        ? NAV
-        : NAV.map((g) => ({
+        ? nav
+        : nav.map((g) => ({
             ...g,
             items: g.items.filter((i) => i.id !== 'projects'),
           })).filter((g) => g.items.length > 0),
-    [hasProjects],
+    [hasProjects, nav],
   );
 
   const filteredNav = React.useMemo(
@@ -286,9 +307,9 @@ export function SettingsDialogV2({
         navHeader={navHeader}
       >
         {isSearching ? (
-          <SearchAllPanels panels={PANELS} helpers={helpers} />
+          <SearchAllPanels panels={panels} helpers={helpers} />
         ) : (
-          PANELS.find((p) => p.id === active)?.render(helpers)
+          panels.find((p) => p.id === active)?.render(helpers)
         )}
       </SettingsShell>
     </SettingsSearchContext.Provider>
