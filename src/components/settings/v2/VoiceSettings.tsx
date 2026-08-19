@@ -1,5 +1,7 @@
 import { TranscriptionSettings as LegacyTranscriptionSettings } from '../TranscriptionSettings';
 import { SettingsGroup } from './SettingsGroup';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 /**
  * Voice settings panel (v2).
@@ -15,9 +17,11 @@ import { SettingsGroup } from './SettingsGroup';
  * inference) and has its own model management story.
  */
 export function VoiceSettings() {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   return (
     <SettingsGroup
-      label="Transcription"
+      label={t("settings.transcription")}
       description="Whisper models for transcribing meeting recordings. Models run on-device — audio never leaves your machine."
       bare
     >

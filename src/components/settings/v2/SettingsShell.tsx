@@ -3,6 +3,8 @@ import { Dialog as DialogPrimitive } from 'radix-ui';
 import { XIcon } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 /**
  * A single selectable item in the settings nav column.
@@ -74,6 +76,8 @@ export function SettingsShell({
   navHeader,
   children,
 }: SettingsShellProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const navRef = React.useRef<HTMLDivElement | null>(null);
   const orderedIds = React.useMemo(() => flattenItems(nav), [nav]);
 
@@ -172,7 +176,7 @@ export function SettingsShell({
             <ScrollArea className="flex-1" viewportTabIndex={-1}>
               <nav
                 ref={navRef}
-                aria-label="Settings sections"
+                aria-label={t("settings.sections")}
                 onKeyDown={handleNavKeyDown}
                 className="p-3"
               >
@@ -269,7 +273,7 @@ export function SettingsShell({
                 'transition-opacity duration-150 hover:opacity-100',
                 'outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
               )}
-              aria-label="Close settings"
+              aria-label={t("settings.close")}
             >
               <XIcon className="h-4 w-4" strokeWidth={1.5} />
             </DialogPrimitive.Close>
