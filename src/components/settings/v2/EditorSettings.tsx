@@ -22,6 +22,8 @@ import {
 import { cn } from '@/lib/utils';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 const FONT_SIZE_MIN = 12;
 const FONT_SIZE_MAX = 22;
@@ -69,6 +71,8 @@ function formatDimension(cm: number, unit: MeasurementUnit): string {
  * chrome, sidebar composition).
  */
 export function EditorSettings() {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const toolbarVisible = useSettingsStore((s) => s.toolbarVisible);
   const setToolbarVisible = useSettingsStore((s) => s.setToolbarVisible);
   const showFloatingToolbar = useSettingsStore((s) => s.showFloatingToolbar);
@@ -136,20 +140,20 @@ export function EditorSettings() {
   return (
     <>
       <SettingsGroup
-        label="Typography"
+        label={t("settings.typography")}
         description="Default font, size, and line-height for the paragraph block. Per-heading overrides live in the editor typography popover."
       >
         <SettingsRow
-          label="Font family"
-          description="Preset reading fonts bundled with Notesage."
+          label={t("settings.fontFamily")}
+          description={t("settings.fontFamilyDesc")}
           control={
             <Select value={fontFamily} onValueChange={setFontFamily}>
-              <SelectTrigger className="w-[200px]" aria-label="Font family">
+              <SelectTrigger className="w-[200px]" aria-label={t("settings.fontFamily")}>
                 <SelectValue placeholder="Pick a font" />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectLabel>Sans-serif</SelectLabel>
+                  <SelectLabel>{t("settings.sansSerif")}</SelectLabel>
                   {FONT_PRESETS.filter((p) => p.category === 'sans').map((p) => (
                     <SelectItem key={p.value} value={p.value}>
                       <span style={{ fontFamily: p.css }}>{p.label}</span>
@@ -157,7 +161,7 @@ export function EditorSettings() {
                   ))}
                 </SelectGroup>
                 <SelectGroup>
-                  <SelectLabel>Serif</SelectLabel>
+                  <SelectLabel>{t("settings.serif")}</SelectLabel>
                   {FONT_PRESETS.filter((p) => p.category === 'serif').map((p) => (
                     <SelectItem key={p.value} value={p.value}>
                       <span style={{ fontFamily: p.css }}>{p.label}</span>
@@ -165,7 +169,7 @@ export function EditorSettings() {
                   ))}
                 </SelectGroup>
                 <SelectGroup>
-                  <SelectLabel>Monospace</SelectLabel>
+                  <SelectLabel>{t("settings.monospace")}</SelectLabel>
                   {FONT_PRESETS.filter((p) => p.category === 'mono').map((p) => (
                     <SelectItem key={p.value} value={p.value}>
                       <span style={{ fontFamily: p.css }}>{p.label}</span>
@@ -178,8 +182,8 @@ export function EditorSettings() {
         />
 
         <SettingsRow
-          label="Font size"
-          description="Base paragraph font size, in pixels."
+          label={t("settings.fontSize")}
+          description={t("settings.fontSizeDesc")}
           control={
             <div className="w-[180px]">
               <Slider
@@ -188,7 +192,7 @@ export function EditorSettings() {
                 min={FONT_SIZE_MIN}
                 max={FONT_SIZE_MAX}
                 step={1}
-                aria-label="Font size"
+                aria-label={t("settings.fontSize")}
               />
             </div>
           }
@@ -196,8 +200,8 @@ export function EditorSettings() {
         />
 
         <SettingsRow
-          label="Line height"
-          description="How much vertical room each line gets."
+          label={t("settings.lineHeight")}
+          description={t("settings.lineHeightDesc")}
           control={
             <div className="w-[180px]">
               <Slider
@@ -206,7 +210,7 @@ export function EditorSettings() {
                 min={LINE_HEIGHT_MIN}
                 max={LINE_HEIGHT_MAX}
                 step={LINE_HEIGHT_STEP}
-                aria-label="Line height"
+                aria-label={t("settings.lineHeight")}
               />
             </div>
           }
@@ -214,7 +218,7 @@ export function EditorSettings() {
         />
       </SettingsGroup>
 
-      <SettingsGroup label="Preview">
+      <SettingsGroup label={t("settings.preview")}>
         <div
           data-testid="appearance-preview"
           aria-hidden="true"
@@ -249,8 +253,8 @@ export function EditorSettings() {
       </SettingsGroup>
 
       <SettingsGroup
-        label="Editor Options"
-        description="Configure your editing experience."
+        label={t("settings.editorOptions")}
+        description={t("settings.editorOptionsDesc")}
       >
         <SettingsRow
           label="Top toolbar"
@@ -265,8 +269,8 @@ export function EditorSettings() {
           }
         />
         <SettingsRow
-          label="Floating toolbar"
-          description="Show AI actions and comment button when text is selected."
+          label={t("settings.floatingToolbar")}
+          description={t("settings.floatingToolbarDesc")}
           htmlFor="floating-toolbar"
           control={
             <Switch
@@ -277,8 +281,8 @@ export function EditorSettings() {
           }
         />
         <SettingsRow
-          label="Typewriter scrolling"
-          description="Keep the caret vertically centered while typing."
+          label={t("settings.typewriterScrolling")}
+          description={t("settings.typewriterScrollingDesc")}
           htmlFor="typewriter-scrolling"
           control={
             <Switch
@@ -289,7 +293,7 @@ export function EditorSettings() {
           }
         />
         <SettingsRow
-          label="Review external diff"
+          label={t("settings.reviewExternalDiff")}
           description={
             <>
               When on, files modified on disk show inline diff decorations
@@ -318,7 +322,7 @@ export function EditorSettings() {
             the scope safety. The toggle now mirrors the inverted
             sense: ON = restricted (default), OFF = allow everywhere. */}
         <SettingsRow
-          label="Restrict completions to project scope"
+          label={t("settings.restrictCompletions")}
           description="When on (default), inline completions are suppressed for files outside the project selected in the command bar — your completion provider never sees unrelated files. Turn off to receive completions everywhere."
           htmlFor="restrict-completions-scope"
           control={
@@ -334,12 +338,12 @@ export function EditorSettings() {
       </SettingsGroup>
 
       <SettingsGroup
-        label="Page Layout"
-        description="Configure page size, units, and margins."
+        label={t("settings.pageLayout")}
+        description={t("settings.pageLayoutDesc")}
       >
         <SettingsRow
-          label="Units"
-          description="Used for page size and margins below."
+          label={t("settings.units")}
+          description={t("settings.unitsDesc")}
           control={
             <div className="inline-flex h-7 rounded-md overflow-hidden border border-border">
               {(['cm', 'inch'] as const).map((unit) => (
@@ -362,8 +366,8 @@ export function EditorSettings() {
         />
 
         <SettingsRow
-          label="Page size"
-          description="Standard formats or full-width content."
+          label={t("settings.pageSize")}
+          description={t("settings.pageSizeDesc")}
           control={
             <Select value={contentWidth} onValueChange={setContentWidth}>
               <SelectTrigger className="w-[200px] text-left">
@@ -384,8 +388,8 @@ export function EditorSettings() {
           contentWidth === 'a5' ||
           contentWidth === 'letter') && (
           <SettingsRow
-            label="Print layout"
-            description="Show page boundaries with headers and footers."
+            label={t("settings.printLayout")}
+            description={t("settings.printLayoutDesc")}
             control={
               <Switch
                 checked={printLayout}

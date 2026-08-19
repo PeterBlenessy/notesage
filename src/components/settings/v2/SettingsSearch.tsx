@@ -1,6 +1,8 @@
 import * as React from 'react';
 import { Search, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 /**
  * Search primitive for the Mockup E settings shell. Renders a small search
@@ -122,6 +124,8 @@ export const SettingsSearch = React.forwardRef<
   },
   ref,
 ) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const showCount =
     value.length > 0 &&
     matchCount !== undefined &&
@@ -153,7 +157,7 @@ export const SettingsSearch = React.forwardRef<
       {value.length > 0 ? (
         <button
           type="button"
-          aria-label="Clear search"
+          aria-label={t("settings.clearSearch")}
           onClick={() => onChange('')}
           className={cn(
             'absolute right-1.5 top-1/2 -translate-y-1/2 inline-flex h-5 w-5',

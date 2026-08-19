@@ -39,6 +39,8 @@ import { SettingsRow } from './SettingsRow';
 import { AutomationForm } from './automations/AutomationForm';
 import { ArmDialog } from './automations/ArmDialog';
 import { RunsHistory } from './automations/RunsHistory';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 const TRIGGER_ICON: Record<TriggerType, typeof Clock> = {
   schedule: Clock,
@@ -220,6 +222,8 @@ function AutomationItem({
 }
 
 export function AutomationsSettings() {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const automationsEnabled = useSettingsStore((s) => s.automationsEnabled);
   const setAutomationsEnabled = useSettingsStore((s) => s.setAutomationsEnabled);
   const startAtLogin = useSettingsStore((s) => s.startAtLogin);
@@ -257,12 +261,12 @@ export function AutomationsSettings() {
   return (
     <TooltipProvider delayDuration={300}>
       <SettingsGroup
-        label="Automations"
+        label={t("settings.automationsGroup")}
         description="Run agents, scripts, and notes on a schedule or in response to events. Automations run while Notesage is open or in the menu bar."
       >
         <SettingsRow
-          label="Enable automations"
-          description="Master switch — turn this off to pause every automation."
+          label={t("settings.enableAutomations")}
+          description={t("settings.enableAutomationsDesc")}
           htmlFor="automations-enabled"
           control={
             <Switch
@@ -274,7 +278,7 @@ export function AutomationsSettings() {
         />
       </SettingsGroup>
 
-      <SettingsGroup label="Your automations" bare>
+      <SettingsGroup label={t("settings.yourAutomations")} bare>
         <div className="py-1">
           <div className="mb-1 flex justify-end">
             <Button size="sm" className="h-8 gap-1 text-xs" onClick={() => setFormTarget('new')}>

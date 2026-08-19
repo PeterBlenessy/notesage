@@ -22,8 +22,10 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { track, trackSettingToggle } from '@/lib/telemetry';
 import type { AccentName } from '@/lib/accent';
 import type { Locale } from '@/lib/i18n';
+import { t } from '@/lib/i18n';
 import type { QuietChromeTargets } from '@/lib/quiet-chrome-presets';
 import { cn } from '@/lib/utils';
+import { useLocale } from '@/lib/useLocale';
 
 // ---------------------------------------------------------------------------
 // Constants (duplicated from SettingsDialog — small, lifting is a follow-up)
@@ -148,6 +150,8 @@ function Segmented<T extends string>({
 // ---------------------------------------------------------------------------
 
 export function AppearanceSettings() {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   // ── Settings store ────────────────────────────────────────────────────
   const locale = useSettingsStore((s) => s.locale);
   const setLocale = useSettingsStore((s) => s.setLocale);
@@ -207,10 +211,10 @@ export function AppearanceSettings() {
           tightens the panel meaningfully and matches the comp. */}
 
       {/* ── Language ─────────────────────────────────────────────── */}
-      <SettingsGroup label="Language">
+      <SettingsGroup label={t("settings.language")}>
         <SettingsRow
-          label="Display language"
-          description="Also sets how dates and numbers are formatted."
+          label={t("settings.displayLanguage")}
+          description={t("settings.displayLanguageDesc")}
           control={
             <Segmented
               dataTestId="appearance-language"
@@ -231,10 +235,10 @@ export function AppearanceSettings() {
       </SettingsGroup>
 
       {/* ── Theme ────────────────────────────────────────────────── */}
-      <SettingsGroup label="Theme">
+      <SettingsGroup label={t("settings.theme")}>
         <SettingsRow
-          label="Color mode"
-          description="Light, dark, or match the operating system."
+          label={t("settings.colorMode")}
+          description={t("settings.colorModeDesc")}
           control={
             <Segmented
               dataTestId="appearance-color-mode"
@@ -255,8 +259,8 @@ export function AppearanceSettings() {
         />
 
         <SettingsRow
-          label="Accent color"
-          description="Used for primary affordances like buttons, toggles, and focus rings."
+          label={t("settings.accentColor")}
+          description={t("settings.accentColorDesc")}
           control={
             <Segmented
               dataTestId="appearance-accent"
@@ -282,8 +286,8 @@ export function AppearanceSettings() {
         />
 
         <SettingsRow
-          label="Contrast"
-          description="Fine-tune contrast for eye comfort."
+          label={t("settings.contrast")}
+          description={t("settings.contrastDesc")}
           control={
             <div className="w-[180px]">
               <Slider
@@ -292,7 +296,7 @@ export function AppearanceSettings() {
                 min={0}
                 max={100}
                 step={1}
-                aria-label="Contrast"
+                aria-label={t("settings.contrast")}
               />
             </div>
           }
@@ -361,8 +365,8 @@ export function AppearanceSettings() {
         {tintChroma > 0 ? (
           <>
             <SettingsRow
-              label="Intensity"
-              description="How strongly the tint bleeds into the UI chrome."
+              label={t("settings.intensity")}
+              description={t("settings.intensityDesc")}
               control={
                 <div className="flex items-center gap-2">
                   <div className="w-[180px]">
@@ -372,14 +376,14 @@ export function AppearanceSettings() {
                       min={1}
                       max={30}
                       step={1}
-                      aria-label="Tint intensity"
+                      aria-label={t("settings.tintIntensity")}
                     />
                   </div>
                   <button
                     type="button"
                     onClick={() => setTintChroma(0)}
                     className="inline-flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors duration-150"
-                    aria-label="Reset tint"
+                    aria-label={t("settings.resetTint")}
                   >
                     <RotateCcw className="h-3 w-3" strokeWidth={1.5} />
                     Reset
@@ -390,7 +394,7 @@ export function AppearanceSettings() {
             />
 
             <SettingsRow
-              label="Hue"
+              label={t("settings.hue")}
               description="Shifts the tint hue."
               control={
                 <div className="w-[180px]">
@@ -412,12 +416,12 @@ export function AppearanceSettings() {
 
       {/* ── Quiet chrome ─────────────────────────────────────────── */}
       <SettingsGroup
-        label="Quiet Chrome"
+        label={t("settings.quietChrome")}
         description="Fade chrome elements (toolbar, status bar, document header, sidebar, agent orb) while you type. The composer is never faded."
       >
         <SettingsRow
-          label="Preset"
-          description="Relaxed keeps most chrome visible. Aggressive dims everything under typing."
+          label={t("settings.preset")}
+          description={t("settings.presetDesc")}
           control={
             <Segmented
               dataTestId="appearance-quiet-chrome"
@@ -460,7 +464,7 @@ export function AppearanceSettings() {
            *  status bar, and window dragging is handled by the sidebar, so
            *  hiding it reclaims vertical space for the document. */}
         <SettingsRow
-          label="Show title bar"
+          label={t("settings.showTitleBar")}
           description="Show the document name, unsaved-changes dot, and close button at the top of the editor. Off reclaims the vertical space (the filename still shows in the sidebar and status bar)."
           htmlFor="appearance-show-title-bar"
           control={
@@ -478,7 +482,7 @@ export function AppearanceSettings() {
            *  backdrop-blur and the document area scrolls beneath them
            *  (Bear / Craft chrome aesthetic). */}
         <SettingsRow
-          label="Translucent chrome"
+          label={t("settings.translucentChrome")}
           description="Title bar and status bar use a frosted-glass background; the document scrolls beneath them. Off by default."
           htmlFor="appearance-quiet-chrome-transparent"
           control={
@@ -493,12 +497,12 @@ export function AppearanceSettings() {
 
       {/* ── Sidebar composition ──────────────────────────────────── */}
       <SettingsGroup
-        label="Sidebar Composition"
-        description="How many items each sidebar section shows, and which sections are visible."
+        label={t("settings.sidebarComposition")}
+        description={t("settings.sidebarCompositionDesc")}
       >
         <SettingsRow
-          label="Recent items"
-          description="Maximum recent files shown in the sidebar."
+          label={t("settings.recentItems")}
+          description={t("settings.recentItemsDesc")}
           control={
             <div className="w-[180px]">
               <Slider
@@ -507,7 +511,7 @@ export function AppearanceSettings() {
                 min={3}
                 max={15}
                 step={1}
-                aria-label="Recent items cap"
+                aria-label={t("settings.recentItemsCap")}
               />
             </div>
           }
@@ -515,7 +519,7 @@ export function AppearanceSettings() {
         />
 
         <SettingsRow
-          label="Top tags"
+          label={t("settings.topTags")}
           description={
             sidebarTagsCap === 0
               ? 'Hidden — drag the slider above 0 to show the Tags section.'
@@ -529,7 +533,7 @@ export function AppearanceSettings() {
                 min={0}
                 max={15}
                 step={1}
-                aria-label="Top tags cap"
+                aria-label={t("settings.topTagsCap")}
               />
             </div>
           }
@@ -537,7 +541,7 @@ export function AppearanceSettings() {
         />
 
         <SettingsRow
-          label="Top mentions"
+          label={t("settings.topMentions")}
           description={
             sidebarMentionsCap === 0
               ? 'Hidden — drag the slider above 0 to show the Mentions section.'
@@ -551,7 +555,7 @@ export function AppearanceSettings() {
                 min={0}
                 max={15}
                 step={1}
-                aria-label="Top mentions cap"
+                aria-label={t("settings.topMentionsCap")}
               />
             </div>
           }

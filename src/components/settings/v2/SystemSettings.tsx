@@ -55,6 +55,8 @@ import type { UpdateState } from '@/hooks/useAutoUpdate';
 import { ChangelogDialog } from '../ChangelogDialog';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 export interface SystemSettingsProps {
   updateState?: UpdateState;
@@ -122,6 +124,8 @@ export function SystemSettings({
   onOpenUpdateDialog,
   onDismissSettings,
 }: SystemSettingsProps = {}) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   // Tray
   const showInTray = useSettingsStore((s) => s.showInTray);
   const setShowInTray = useSettingsStore((s) => s.setShowInTray);
@@ -215,9 +219,9 @@ export function SystemSettings({
 
   return (
     <>
-      <SettingsGroup label="About">
+      <SettingsGroup label={t("settings.about")}>
         <SettingsRow
-          label="Notesage version"
+          label={t("settings.version")}
           control={
             <span className="text-[13px] text-muted-foreground tabular-nums">
               {appVersion}
@@ -225,8 +229,8 @@ export function SystemSettings({
           }
         />
         <SettingsRow
-          label="Changelog"
-          description="Release notes for recent versions."
+          label={t("settings.changelog")}
+          description={t("settings.changelogDesc")}
           control={
             <Button
               variant="outline"
@@ -240,7 +244,7 @@ export function SystemSettings({
         />
         <ChangelogDialog open={changelogOpen} onOpenChange={setChangelogOpen} />
         <SettingsRow
-          label="Check for updates"
+          label={t("settings.checkUpdates")}
           description={
             updateState?.updateInfo
               ? `Update available: v${updateState.updateInfo.version}`
@@ -260,7 +264,7 @@ export function SystemSettings({
                   onDismissSettings?.();
                 }}
                 title={`View update v${updateState.updateInfo.version}`}
-                aria-label="View update"
+                aria-label={t("settings.viewUpdate")}
               >
                 <ArrowUpCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
               </Button>
@@ -271,7 +275,7 @@ export function SystemSettings({
                 onClick={onCheckForUpdate}
                 disabled={updateState?.status === 'checking'}
                 title="Check for updates"
-                aria-label="Check for updates"
+                aria-label={t("settings.checkUpdates")}
               >
                 {updateState?.status === 'checking' ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
@@ -283,8 +287,8 @@ export function SystemSettings({
           }
         />
         <SettingsRow
-          label="Automatically check for updates"
-          description="Look for new versions when the app starts."
+          label={t("settings.autoCheckUpdates")}
+          description={t("settings.autoCheckUpdatesDesc")}
           htmlFor="auto-check-updates"
           control={
             <Switch
@@ -297,12 +301,12 @@ export function SystemSettings({
       </SettingsGroup>
 
       <SettingsGroup
-        label="Telemetry"
+        label={t("settings.telemetry")}
         description="Anonymous usage analytics and crash reports. No document content, file contents, or AI prompts are ever sent. Alpha builds default these on; stable builds default them off — your choice here overrides the default."
         searchKeywords={['telemetry', 'analytics', 'crash', 'sentry', 'privacy', 'aptabase']}
       >
         <SettingsRow
-          label="Usage analytics"
+          label={t("settings.usageAnalytics")}
           description="Share anonymous feature-usage events so the maintainer can see which features are used and prune what isn't."
           htmlFor="telemetry-usage"
           control={
@@ -310,12 +314,12 @@ export function SystemSettings({
               id="telemetry-usage"
               checked={telemetryUsageEffective}
               onCheckedChange={(v) => { setTelemetryUsageEnabled(v); trackSettingToggle("telemetry_usage", v); }}
-              aria-label="Usage analytics"
+              aria-label={t("settings.usageAnalytics")}
             />
           }
         />
         <SettingsRow
-          label="Crash reports"
+          label={t("settings.crashReports")}
           description="Share anonymous crash and error reports grouped by version so regressions can be fixed without a manual report."
           htmlFor="telemetry-crash"
           control={
@@ -323,19 +327,19 @@ export function SystemSettings({
               id="telemetry-crash"
               checked={telemetryCrashEffective}
               onCheckedChange={(v) => { setTelemetryCrashEnabled(v); trackSettingToggle("telemetry_crash", v); }}
-              aria-label="Crash reports"
+              aria-label={t("settings.crashReports")}
             />
           }
         />
         <SettingsRow
-          label="What we collect"
+          label={t("settings.whatWeCollect")}
           description="Read exactly what is and isn't sent."
           control={
             <Button
               variant="outline"
               size="sm"
               className="h-8 text-xs"
-              aria-label="View what we collect"
+              aria-label={t("settings.viewWhatWeCollect")}
               onClick={() => {
                 openUrl(TELEMETRY_DOC_URL).catch(() => {});
               }}
@@ -347,12 +351,12 @@ export function SystemSettings({
       </SettingsGroup>
 
       <SettingsGroup
-        label="System Tray"
-        description="Menu bar icon and background behavior."
+        label={t("settings.systemTray")}
+        description={t("settings.systemTrayDesc")}
       >
         <SettingsRow
-          label="Show in menu bar"
-          description="Keep Notesage accessible from the menu bar."
+          label={t("settings.showInMenuBar")}
+          description={t("settings.showInMenuBarDesc")}
           htmlFor="show-in-tray"
           control={
             <Switch
@@ -366,8 +370,8 @@ export function SystemSettings({
           }
         />
         <SettingsRow
-          label="Close window to tray"
-          description="Closing the window hides it instead of quitting the app."
+          label={t("settings.closeToTray")}
+          description={t("settings.closeToTrayDesc")}
           htmlFor="close-to-tray"
           control={
             <Switch
@@ -381,8 +385,8 @@ export function SystemSettings({
           }
         />
         <SettingsRow
-          label="Start at login"
-          description="Launch Notesage automatically when you log in."
+          label={t("settings.startAtLogin")}
+          description={t("settings.startAtLoginDesc")}
           htmlFor="start-at-login"
           control={
             <Switch
@@ -410,12 +414,12 @@ export function SystemSettings({
       </SettingsGroup>
 
       <SettingsGroup
-        label="Notifications"
-        description="Choose which desktop notifications to receive."
+        label={t("settings.notifications")}
+        description={t("settings.notificationsDesc")}
       >
         <SettingsRow
-          label="Agent task completion"
-          description="Notify when an agent finishes or encounters an error."
+          label={t("settings.agentCompletion")}
+          description={t("settings.agentCompletionDesc")}
           htmlFor="notify-agent"
           control={
             <Switch
@@ -426,8 +430,8 @@ export function SystemSettings({
           }
         />
         <SettingsRow
-          label="External file changes"
-          description="Notify when files are modified externally."
+          label={t("settings.externalChanges")}
+          description={t("settings.externalChangesDesc")}
           htmlFor="notify-external"
           control={
             <Switch
@@ -440,11 +444,11 @@ export function SystemSettings({
       </SettingsGroup>
 
       <SettingsGroup
-        label="HTML viewer"
-        description="Configure sandboxing behaviour when rendering .html and .htm files."
+        label={t("settings.htmlViewer")}
+        description={t("settings.htmlViewerDesc")}
       >
         <SettingsRow
-          label="Allow scripts (unsafe)"
+          label={t("settings.allowScripts")}
           description="When on, inline and same-directory scripts execute in an isolated iframe. Forms and event handlers are included when scripts are enabled. Scripts cannot access Tauri IPC or host storage. Off by default — only enable for local HTML files you trust."
           htmlFor="html-viewer-allow-scripts"
           control={
@@ -456,7 +460,7 @@ export function SystemSettings({
           }
         />
         <SettingsRow
-          label="Block external resources"
+          label={t("settings.blockExternal")}
           description="When on, remote images, stylesheets, and fonts (URLs starting with http:// or https://) are stripped before rendering across all render paths. Inline styles, data: URIs, and relative-path resources are unaffected."
           htmlFor="html-viewer-block-external"
           control={
@@ -470,11 +474,11 @@ export function SystemSettings({
       </SettingsGroup>
 
       <SettingsGroup
-        label="Link previews"
-        description="Control what link-preview cards load from the linked page."
+        label={t("settings.linkPreviews")}
+        description={t("settings.linkPreviewsDesc")}
       >
         <SettingsRow
-          label="Load remote preview images"
+          label={t("settings.loadRemoteImages")}
           description="When on, link-preview cards load the preview image and favicon from the linked page. These come from the page itself, so loading them reveals your IP and that the document was opened to that site. Off by default — the card still shows the title, description, and site name."
           htmlFor="link-preview-remote-images"
           control={
@@ -487,9 +491,9 @@ export function SystemSettings({
         />
       </SettingsGroup>
 
-      <SettingsGroup label="Files" description="File visibility and hover behaviour in the sidebar.">
+      <SettingsGroup label={t("settings.files")} description={t("settings.filesDesc")}>
         <SettingsRow
-          label="Show hidden files"
+          label={t("settings.showHiddenFiles")}
           description='Show dotfiles and dot-directories (starting with ".") in the sidebar file tree.'
           htmlFor="show-hidden-files"
           control={
@@ -501,7 +505,7 @@ export function SystemSettings({
           }
         />
         <SettingsRow
-          label="File hover preview"
+          label={t("settings.fileHoverPreview")}
           description="Show a small popover with the first lines of a file when hovering its row in the sidebar. Folder hover previews are unaffected."
           htmlFor="sidebar-file-preview"
           control={
@@ -515,11 +519,11 @@ export function SystemSettings({
       </SettingsGroup>
 
       <SettingsGroup
-        label="Performance"
-        description="Document loading behaviour."
+        label={t("settings.performance")}
+        description={t("settings.performanceDesc")}
       >
         <SettingsRow
-          label="Instant-load preview"
+          label={t("settings.instantLoadPreview")}
           description="Show a quick HTML preview of the document while the editor hydrates in the background. Disable to mount the editor directly — slightly slower first paint on large docs but no preview/editor swap."
           htmlFor="instant-load-preview"
           control={
@@ -531,7 +535,7 @@ export function SystemSettings({
           }
         />
         <SettingsRow
-          label="Viewport cache"
+          label={t("settings.viewportCache")}
           description="Previously viewed large documents are cached to IndexedDB for instant first paint on cold start. Clear this cache to free disk space or force a fresh load."
           control={
             <AlertDialog>
@@ -568,12 +572,12 @@ export function SystemSettings({
       </SettingsGroup>
 
       <SettingsGroup
-        label="Diagnostics"
-        description="Logging and diagnostics export."
+        label={t("settings.diagnostics")}
+        description={t("settings.diagnosticsDesc")}
       >
         <SettingsRow
-          label="Log level"
-          description="Controls which messages are written to log files. Default is Warn."
+          label={t("settings.logLevel")}
+          description={t("settings.logLevelDesc")}
           control={
             <Select
               value={logLevel}
@@ -676,8 +680,8 @@ export function SystemSettings({
         )}
 
         <SettingsRow
-          label="Export diagnostics"
-          description="Save backend and frontend state to a JSON file for bug reports. No API keys are included."
+          label={t("settings.exportDiagnostics")}
+          description={t("settings.exportDiagnosticsDesc")}
           control={
             <Button
               variant="outline"

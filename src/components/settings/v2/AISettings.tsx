@@ -9,6 +9,8 @@ import { trackSettingToggle } from '@/lib/telemetry';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsHint } from './SettingsHint';
 import { SettingsRow } from './SettingsRow';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 /**
  * AI & Agents settings panel (v2).
@@ -20,6 +22,8 @@ import { SettingsRow } from './SettingsRow';
  * Web Search live here only — duplicates were dropped from Advanced.
  */
 export function AISettings() {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const toolCallingEnabled = useSettingsStore((s) => s.toolCallingEnabled);
   const setToolCallingEnabled = useSettingsStore((s) => s.setToolCallingEnabled);
   const requireAllToolConfirmations = useSettingsStore(
@@ -43,7 +47,7 @@ export function AISettings() {
           ConnectionsSettings don't double up with the tinted-island
           surface that non-bare groups paint. */}
       <SettingsGroup
-        label="Connections"
+        label={t("settings.connections")}
         description="Connect to AI providers Notesage can talk to. Add subscription-based agents (Claude Code, Codex, Copilot, Gemini), API-key providers (Anthropic, OpenAI, OpenAI-compatible), or an Ollama server, and check for managed-agent updates from here."
         bare
       >
@@ -56,7 +60,7 @@ export function AISettings() {
           UseCaseRoutingSettings sit on the standard tinted island,
           matching Tool Calling / Project Scope below. */}
       <SettingsGroup
-        label="Use Case Mapping"
+        label={t("settings.useCaseMapping")}
         description="Pick which provider handles each use case — interactive chat, agent tasks, inline completions. New connections are auto-assigned to any slot they're compatible with."
       >
         <UseCaseRoutingSettings />
@@ -83,12 +87,12 @@ export function AISettings() {
       </div>
 
       <SettingsGroup
-        label="Tool Calling"
-        description="How Notesage invokes tools on your behalf during AI chat."
+        label={t("settings.toolCalling")}
+        description={t("settings.toolCallingDesc")}
         searchKeywords={['privacy']}
       >
         <SettingsRow
-          label="Enable tool calling"
+          label={t("settings.enableToolCalling")}
           description="Allow models to autonomously call built-in tools — read/write files, execute skill scripts, and web search. Web search uses each provider's native backend where available (Anthropic, OpenAI); for local AI and Ollama, queries are sent to DuckDuckGo."
           htmlFor="ai-tool-calling-enabled"
           control={
@@ -96,27 +100,27 @@ export function AISettings() {
               id="ai-tool-calling-enabled"
               checked={toolCallingEnabled}
               onCheckedChange={(v) => { setToolCallingEnabled(v); trackSettingToggle("tool_calling", v); }}
-              aria-label="Enable tool calling"
+              aria-label={t("settings.enableToolCalling")}
             />
           }
         />
         <SettingsRow
-          label="Require confirmation for every tool call"
-          description="Prompt for approval on every tool call, even read-only ones."
+          label={t("settings.requireConfirmation")}
+          description={t("settings.requireConfirmationDesc")}
           htmlFor="ai-require-all-confirmations"
           control={
             <Switch
               id="ai-require-all-confirmations"
               checked={requireAllToolConfirmations}
               onCheckedChange={(v) => { setRequireAllToolConfirmations(v); trackSettingToggle("require_all_tool_confirmations", v); }}
-              aria-label="Require confirmation for every tool call"
+              aria-label={t("settings.requireConfirmation")}
             />
           }
         />
       </SettingsGroup>
 
       <SettingsGroup
-        label="Project Scope"
+        label={t("settings.projectScope")}
         description="How AI features see your projects."
         searchKeywords={['privacy']}
       >
@@ -144,7 +148,7 @@ export function AISettings() {
           }
         />
         <SettingsRow
-          label="Show agent mode picker"
+          label={t("settings.showAgentModePicker")}
           description="Show a permission-mode picker in the command bar for agents that support modes. When off, the agent's default mode is used."
           htmlFor="show-agent-mode-picker"
           control={
@@ -158,12 +162,12 @@ export function AISettings() {
       </SettingsGroup>
 
       <SettingsGroup
-        label="Sessions"
-        description="Running multiple AI conversations at once."
+        label={t("settings.sessions")}
+        description={t("settings.sessionsDesc")}
         searchKeywords={['concurrent', 'queue', 'multitask', 'parallel']}
       >
         <SettingsRow
-          label="Max concurrent sessions"
+          label={t("settings.maxConcurrentSessions")}
           description="How many AI conversations can run at the same time. Further sends wait in a queue and start automatically as sessions finish. Lower this if your machine struggles with several agents at once."
           control={
             <div className="w-[180px]">
@@ -173,14 +177,14 @@ export function AISettings() {
                 min={3}
                 max={5}
                 step={1}
-                aria-label="Max concurrent sessions"
+                aria-label={t("settings.maxConcurrentSessions")}
               />
             </div>
           }
           controlSublabel={String(maxConcurrentSessions)}
         />
         <SettingsRow
-          label="Notify on background permission requests"
+          label={t("settings.notifyBackgroundPermission")}
           description="Show a desktop notification when a session you're not currently watching needs your approval to continue."
           htmlFor="notify-permission-request"
           control={
@@ -188,13 +192,13 @@ export function AISettings() {
               id="notify-permission-request"
               checked={notifyPermissionRequest}
               onCheckedChange={setNotifyPermissionRequest}
-              aria-label="Notify on background permission requests"
+              aria-label={t("settings.notifyBackgroundPermission")}
             />
           }
         />
       </SettingsGroup>
 
-      <SettingsGroup label="Network Sandbox" bare>
+      <SettingsGroup label={t("settings.networkSandbox")} bare>
         <SettingsHint title="Sandbox is configured per connection">
           <p>
             Open a connection above to set its filesystem sandbox, network
@@ -205,7 +209,7 @@ export function AISettings() {
       </SettingsGroup>
 
       <SettingsGroup
-        label="Sandbox Activity"
+        label={t("settings.sandboxActivity")}
         description="Read-only view of each running agent's network proxy — port, session-approved domains, and the effective domain allowlist."
         searchKeywords={['privacy', 'proxy', 'observability']}
         bare
@@ -214,7 +218,7 @@ export function AISettings() {
       </SettingsGroup>
 
       <SettingsGroup
-        label="Persisted Approvals"
+        label={t("settings.persistedApprovals")}
         description="Tool-call and domain approvals you've remembered via 'Allow always'. Revoke individually or in bulk."
         bare
       >

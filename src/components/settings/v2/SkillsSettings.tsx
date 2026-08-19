@@ -4,6 +4,8 @@ import { PromptsSettings as LegacyPromptsSettings } from '../PromptsSettings';
 import { SkillsSettings as LegacySkillsSettings } from '../SkillsSettings';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 /**
  * Skills settings panel (v2).
@@ -20,15 +22,17 @@ import { SettingsRow } from './SettingsRow';
  * (tracked separately).
  */
 export function SkillsSettings() {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const skillManagement = useSettingsStore((s) => s.skillManagement);
   const setSkillManagement = useSettingsStore((s) => s.setSkillManagement);
 
   return (
     <>
-      <SettingsGroup label="Management">
+      <SettingsGroup label={t("settings.management")}>
         <SettingsRow
-          label="Skill & agent management"
-          description="Enable delete and move actions for custom skills and agents in the list below."
+          label={t("settings.skillAgentManagement")}
+          description={t("settings.skillAgentManagementDesc")}
           htmlFor="skill-management"
           control={
             <Switch
@@ -50,7 +54,7 @@ export function SkillsSettings() {
         </div>
       </SettingsGroup>
 
-      <SettingsGroup label="Custom Prompts" bare>
+      <SettingsGroup label={t("settings.customPrompts")} bare>
         <div className="py-2">
           <LegacyPromptsSettings />
         </div>
