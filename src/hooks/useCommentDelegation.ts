@@ -6,6 +6,7 @@ import { useChatStore } from '@/stores/chat-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { emitCmdBarEvent } from '@/lib/cmd-bar-events';
 import { useWorkspaceStore } from '@/stores/workspace-store';
+import { t } from '@/lib/i18n';
 
 /** Resolve the sandbox scope for a file — its containing project or explorer folder. */
 function resolveSandboxRoot(filePath: string | undefined): string | undefined {
@@ -37,7 +38,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
   const delegateComment = useCallback(
     async (comment: Comment, documentId: string, projectRoot: string, mode: DelegationMode = 'delegate') => {
       if (!taskConnection) {
-        toast.error('No agent configured for tasks. Set up agent routing in Settings.');
+        toast.error(t("toast.noAgentForTasks"));
         return;
       }
 
@@ -107,7 +108,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
                 // same corner as the AgentOrb (`fixed bottom-6 right-6`) — so
                 // the default 5s auto-dismiss otherwise blocks the orb's hit
                 // target until it expires (audit 2026-04-27 finding #16).
-                toast.success('Agent finished working on your comment. Click it to review.', {
+                toast.success(t("toast.agentFinishedComment"), {
                   id: `delegation-done-${commentId}`,
                   duration: 5000,
                   closeButton: true,
@@ -165,7 +166,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
               s.setCommentStatus(documentId, commentId, 'open');
               s.clearDelegationMode(commentId);
               s.saveComments(documentId, projectRoot);
-              toast.error(`Agent failed: ${errorMsg}`);
+              toast.error(t("toast.agentFailed", { error: errorMsg }));
             },
             onChunk: (chunk) => {
               appendPartialReply(documentId, commentId, chunk);
@@ -206,7 +207,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
         store.setCommentStatus(documentId, commentId, 'open');
         store.clearDelegationMode(commentId);
         await store.saveComments(documentId, projectRoot);
-        toast.error(`Agent delegation failed: ${errMsg}`);
+        toast.error(t("toast.delegationFailed", { error: errMsg }));
       }
     },
     [startTask, taskConnection]
@@ -215,7 +216,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
   const delegateReply = useCallback(
     async (comment: Comment, replyText: string, documentId: string, projectRoot: string, mode: DelegationMode = 'chat') => {
       if (!taskConnection) {
-        toast.error('No agent configured for tasks. Set up agent routing in Settings.');
+        toast.error(t("toast.noAgentForTasks"));
         return;
       }
 
@@ -296,7 +297,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
                 // same corner as the AgentOrb (`fixed bottom-6 right-6`) — so
                 // the default 5s auto-dismiss otherwise blocks the orb's hit
                 // target until it expires (audit 2026-04-27 finding #16).
-                toast.success('Agent finished working on your comment. Click it to review.', {
+                toast.success(t("toast.agentFinishedComment"), {
                   id: `delegation-done-${commentId}`,
                   duration: 5000,
                   closeButton: true,
@@ -355,7 +356,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
               s.setCommentStatus(documentId, commentId, 'done');
               s.clearDelegationMode(commentId);
               s.saveComments(documentId, projectRoot);
-              toast.error(`Agent failed: ${errorMsg}`);
+              toast.error(t("toast.agentFailed", { error: errorMsg }));
             },
             onChunk: (chunk) => {
               appendPartialReply(documentId, commentId, chunk);
@@ -391,7 +392,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
         store.setCommentStatus(documentId, commentId, 'done');
         store.clearDelegationMode(commentId);
         await store.saveComments(documentId, projectRoot);
-        toast.error(`Agent delegation failed: ${errMsg}`);
+        toast.error(t("toast.delegationFailed", { error: errMsg }));
       }
     },
     [startTask, taskConnection]
@@ -445,7 +446,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
   const delegateAll = useCallback(
     async (documentId: string, projectRoot: string) => {
       if (!taskConnection) {
-        toast.error('No agent configured for tasks. Set up agent routing in Settings.');
+        toast.error(t("toast.noAgentForTasks"));
         return;
       }
 

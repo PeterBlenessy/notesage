@@ -16,6 +16,8 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 /**
  * PaletteMode — picker rendered when the FloatingCommandBar is in `>` mode
@@ -202,6 +204,8 @@ function PaletteMode({
   listboxId = 'cmd-palette-listbox',
   onActiveOptionChange,
 }: PaletteModeProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const filtered = useMemo(() => {
     const q = filter.trim().toLowerCase();
     if (!q) return PALETTE_COMMANDS;
@@ -280,7 +284,7 @@ function PaletteMode({
       id={listboxId}
       role="listbox"
       tabIndex={-1}
-      aria-label="Command palette results"
+      aria-label={t("cmd.results")}
       data-palette-list="true"
       className={cn(
         'flex flex-col py-1',

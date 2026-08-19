@@ -16,6 +16,8 @@ import {
 import { tauriApi } from "@/lib/tauri";
 import { useGitStore } from "@/stores/git-store";
 import { useDiffReviewStore } from "@/stores/diff-review-store";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 /**
  * BranchComparePopover — branch picker for git branch diff review.
@@ -48,6 +50,8 @@ export function BranchComparePopover({
   onOpenChange,
   children,
 }: BranchComparePopoverProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const [branches, setBranches] = useState<string[]>([]);
   const [currentBranch, setCurrentBranch] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -119,20 +123,20 @@ export function BranchComparePopover({
         onMouseOver={(e) => e.stopPropagation()}
       >
         <Command>
-          <CommandInput placeholder="Compare against branch…" />
+          <CommandInput placeholder={t("git.compareBranch")} />
           <CommandList className="max-h-[240px]">
             {loading ? (
               <div
                 className="flex items-center justify-center gap-2 py-6 text-xs text-muted-foreground"
                 role="status"
-                aria-label="Loading branches"
+                aria-label={t("git.loadingBranches")}
               >
                 <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
                 Loading branches…
               </div>
             ) : (
               <>
-                <CommandEmpty>No other branches</CommandEmpty>
+                <CommandEmpty>{t("git.noOtherBranches")}</CommandEmpty>
                 {candidates.map((branch) => (
                   <CommandItem
                     key={branch}

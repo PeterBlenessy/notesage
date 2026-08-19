@@ -28,6 +28,7 @@ import type { TaskCallbacks, TaskMeta } from '@/hooks/agent-task/run-task';
 import { startAcpTask, taskCapabilities } from '@/hooks/agent-task/acp';
 import { startCopilotLspTask } from '@/hooks/agent-task/copilot-lsp';
 import { startDirectApiTask } from '@/hooks/agent-task/direct-api';
+import { t } from '@/lib/i18n';
 
 // Public API re-exports (call sites and tests import these from this module).
 export { stopTaskAgent, ensureTaskAgent } from '@/hooks/agent-task/acp';
@@ -77,7 +78,7 @@ export function useAgentTaskOperations(): UseAgentTaskOperationsReturn {
         const lockedConn = allConnections.find((c) => c.id === sourceLock.connectionId) ?? null;
         if (!lockedConn) {
           const label = describeLockTarget(sourceLock.connectionId);
-          toast.error(`Project is locked to ${label}, but that connection is not available.`, {
+          toast.error(t("toast.projectLockedUnavailable", { label }), {
             id: `project-lock-violation:${sourceProjectRoot}`,
           });
           throw new ProjectLockViolation(sourceProjectRoot!, sourceLock.connectionId, taskConnection?.id ?? null);

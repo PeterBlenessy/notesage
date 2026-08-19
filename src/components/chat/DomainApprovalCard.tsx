@@ -11,6 +11,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { usePermissionStore } from '@/stores/permission-store';
 import { useChatStore } from '@/stores/chat-store';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 export interface DomainApprovalRequest {
   instanceId: string;
@@ -27,6 +29,8 @@ interface DomainApprovalCardProps {
 }
 
 export function DomainApprovalCard({ request, onResolved }: DomainApprovalCardProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const [resolved, setResolved] = useState<string | null>(null);
   const resolvedRef = useRef(false);
   const onResolvedRef = useRef(onResolved);
@@ -101,7 +105,7 @@ export function DomainApprovalCard({ request, onResolved }: DomainApprovalCardPr
     <div className="rounded-lg border border-border bg-card px-3 py-2.5 flex items-start gap-2.5">
       <Globe className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" strokeWidth={1.5} />
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-medium text-foreground">Network request</p>
+        <p className="text-xs font-medium text-foreground">{t("chat.networkRequest")}</p>
         <p className="text-[11px] text-muted-foreground mt-0.5">
           {request.agentId} wants to connect to <span className="font-mono">{request.domain}:{request.port}</span>
         </p>

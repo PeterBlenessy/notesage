@@ -41,6 +41,7 @@ import {
 import { ProjectRow } from "./ProjectRow";
 import { ChildRow } from "./ChildRow";
 import { useProjectInlineEdit } from "./useProjectInlineEdit";
+import { t } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
 // Re-exports for backward compatibility with existing tests / callers
@@ -576,7 +577,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
 
   return (
     <section
-      aria-label="Folders"
+      aria-label={t("section.folders")}
       className="group/section flex flex-col gap-1"
     >
       <header className="flex items-center justify-between gap-2 px-2 h-6">
@@ -587,7 +588,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
           type="button"
           variant="ghost"
           size="icon-xs"
-          aria-label="Add folder"
+          aria-label={t("sidebar.addFolder")}
           tabIndex={-1}
           onClick={onAdd}
           className="opacity-0 group-hover/section:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
@@ -596,7 +597,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
         </Button>
       </header>
       {(projects.length > 0 || pendingCreateProject) && (
-        <ul role="tree" aria-label="Projects" className="flex flex-col m-0 p-0 list-none">
+        <ul role="tree" aria-label={t("section.projects")} className="flex flex-col m-0 p-0 list-none">
           {pendingCreateProject && (
             <li
               className="m-0 p-0"
@@ -610,7 +611,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                 />
                 <SidebarInlineEdit
                   mode="create"
-                  placeholder="New project"
+                  placeholder={t("sidebar.newProject")}
                   validate={validateProjectName}
                   onCommit={(value) =>
                     void handleCreateProjectCommit(value)

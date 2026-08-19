@@ -13,6 +13,8 @@ import { ProviderLogo } from '@/components/ProviderLogo';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
 import { describeLockTarget, getProjectLock } from '@/lib/ai/project-lock';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 interface ExplainLockDialogProps {
   open: boolean;
@@ -27,6 +29,8 @@ interface ExplainLockDialogProps {
  * informative so we don't silently disable controls without a rationale.
  */
 export function ExplainLockDialog({ open, onOpenChange, lockedProjectPaths }: ExplainLockDialogProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
   const connections = useConnectionsStore((s) => s.connections);
 
@@ -109,7 +113,7 @@ export function ExplainLockDialog({ open, onOpenChange, lockedProjectPaths }: Ex
         </div>
 
         <DialogFooter>
-          <Button onClick={() => onOpenChange(false)}>Got it</Button>
+          <Button onClick={() => onOpenChange(false)}>{t("chat.gotIt")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

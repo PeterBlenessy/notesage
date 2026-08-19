@@ -40,6 +40,8 @@ import ModePickerDispatch, {
 } from "@/components/cmd/ModePickerDispatch";
 import PrefixModeBadge from "@/components/cmd/PrefixModeBadge";
 import VerbDiscoveryMenu from "@/components/cmd/VerbDiscoveryMenu";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 // Inline chip icon map (live-test 2026-04-26 round 6) — replaces the
 // `<AttachmentChips>` component for the cmd-bar input strip so chips
@@ -209,6 +211,8 @@ export function ExpandedContent({
   explicitAttachOffer,
   onAttachExplicit,
 }: ExpandedContentProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   return (
     <div className="flex h-full flex-col">
       {/*
@@ -284,7 +288,7 @@ export function ExpandedContent({
                     <button
                       type="button"
                       onClick={() => onRemoveQueued?.(message.id)}
-                      aria-label="Remove queued message"
+                      aria-label={t("cmd.removeQueued")}
                       className={cn(
                         "shrink-0 rounded-sm p-0.5",
                         "text-muted-foreground hover:text-foreground hover:bg-muted",
@@ -311,7 +315,7 @@ export function ExpandedContent({
        */}
       {editing ? (
         <div className="flex items-center justify-between px-3 pt-2 pb-1">
-          <span className="text-xs text-muted-foreground">Editing message</span>
+          <span className="text-xs text-muted-foreground">{t("cmd.editingMessage")}</span>
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -319,7 +323,7 @@ export function ExpandedContent({
                   type="button"
                   onClick={onCancelEdit}
                   className="h-4 w-4 rounded flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
-                  aria-label="Cancel editing"
+                  aria-label={t("cmd.cancelEditing")}
                 >
                   <X className="h-3 w-3" strokeWidth={1.5} />
                 </button>
@@ -615,7 +619,7 @@ export function ExpandedContent({
                 <button
                   type="button"
                   onClick={onPickImage}
-                  aria-label="Attach image"
+                  aria-label={t("cmd.attachImage")}
                   className={cn(
                     "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
                     "text-muted-foreground hover:text-foreground hover:bg-muted",
@@ -635,7 +639,7 @@ export function ExpandedContent({
             ref={inputRef}
             rows={1}
             role="combobox"
-            aria-label="Chat and command input"
+            aria-label={t("cmd.input")}
             aria-haspopup="listbox"
             aria-expanded={Boolean(activePrefix)}
             aria-autocomplete="list"
@@ -649,12 +653,12 @@ export function ExpandedContent({
             disabled={switchPending}
             placeholder={
               pendingProjectSwitch
-                ? "Resolve project context change first…"
+                ? t("cmd.placeholderProjectSwitch")
                 : pendingAgentSwitch
-                  ? "Resolve provider change first…"
+                  ? t("cmd.placeholderAgentSwitch")
                   : isLoading
-                    ? "Working — messages queue until it finishes…"
-                    : "Ask, search, or type / for skills…"
+                    ? t("cmd.placeholderWorking")
+                    : t("cmd.placeholder")
             }
             className={cn(
               "flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground",
@@ -670,7 +674,7 @@ export function ExpandedContent({
                   <button
                     type="button"
                     onClick={onStop}
-                    aria-label="Stop generation"
+                    aria-label={t("cmd.stopGeneration")}
                     className={cn(
                       "flex h-6 w-6 shrink-0 items-center justify-center rounded-md",
                       // Neutral, not destructive: `text-foreground` is near-black in
@@ -697,7 +701,7 @@ export function ExpandedContent({
                   <button
                     type="button"
                     onClick={onSend}
-                    aria-label="Send message"
+                    aria-label={t("cmd.sendMessage")}
                     disabled={
                       switchPending ||
                       (inputValue.trim().length === 0 &&

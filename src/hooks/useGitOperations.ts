@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { tauriApi } from "@/lib/tauri";
 import { useGitStore } from "@/stores/git-store";
 import { toast } from "sonner";
+import { t } from '@/lib/i18n';
 
 export function useGitOperations(repoPath: string) {
   const setIsGitRepo = useGitStore((s) => s.setIsGitRepo);
@@ -50,7 +51,7 @@ export function useGitOperations(repoPath: string) {
         await fetchStatus();
       }
     } catch (error) {
-      toast.error(`Git initialization failed: ${error}`);
+      toast.error(t("toast.gitInitFailed", { error: String(error) }));
       setIsGitRepo(repoPath, false);
     } finally {
       setIsLoading(repoPath, false);

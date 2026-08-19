@@ -7,6 +7,8 @@ import {
 } from "@/lib/command-palette";
 import type { AttachmentChip } from "@/components/cmd/AttachmentChips";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 /**
  * ResearchMode — picker for the `?research` prefix mode (PRD
@@ -61,6 +63,8 @@ function ResearchMode({
   listboxId = 'cmd-research-listbox',
   onActiveOptionChange,
 }: ResearchModeProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const [results, setResults] = useState<IndexResearchResult[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -192,7 +196,7 @@ function ResearchMode({
       <div
         id={listboxId}
         role="listbox"
-        aria-label="Research results"
+        aria-label={t("cmd.researchResults")}
         className="px-3 py-2 text-xs text-muted-foreground"
       >
         No research matches
@@ -204,7 +208,7 @@ function ResearchMode({
     <div
       id={listboxId}
       role="listbox"
-      aria-label="Research results"
+      aria-label={t("cmd.researchResults")}
       className="flex flex-col py-1"
     >
       {rows.map(({ result, displaySource }, index) => {

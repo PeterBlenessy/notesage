@@ -8,6 +8,8 @@ import { useChatStore, selectAllMessages, selectActiveLeafId } from '@/stores/ch
 import { getThread, getChildren } from '@/lib/chat-tree';
 import type { ChatMessage } from '@/lib/ai/types';
 import { useFormatLocale } from '@/lib/useLocale';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 interface BranchSwitcherProps {
   /** The message ID at the branch point */
@@ -73,6 +75,8 @@ function truncate(text: string, maxLen: number): string {
 }
 
 export function BranchSwitcher({ messageId, branchCount, children }: BranchSwitcherProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const formatLocale = useFormatLocale();
   const allMessages = useChatStore(selectAllMessages);
   const activeLeafId = useChatStore(selectActiveLeafId);
@@ -142,7 +146,7 @@ export function BranchSwitcher({ messageId, branchCount, children }: BranchSwitc
                       deleteBranch(branch.leafId);
                     }}
                     className="shrink-0 mt-1 p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                    title="Delete branch"
+                    title={t("chat.deleteBranch")}
                   >
                     <Trash2 className="h-3 w-3" strokeWidth={1.5} />
                   </button>

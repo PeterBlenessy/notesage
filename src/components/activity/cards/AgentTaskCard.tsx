@@ -24,6 +24,8 @@ import { useRoutingStore } from '@/stores/routing-store';
 import { useCommentStore } from '@/stores/comment-store';
 import type { AgentTask } from '@/stores/activity-store';
 import { ApprovalBadge, IconActionButton, basename } from './shared';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 export interface ActivityTaskCardProps {
   task: AgentTask;
@@ -43,6 +45,8 @@ function formatElapsed(startedAt: number, completedAt?: number): string {
 
 export function AgentTaskCardInner({ task, onCancel, onRemove, onClick }: ActivityTaskCardProps) {
   // Provider logo: stored on task, or fall back to current agent_tasks routing
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const routedAgentConnection = useRoutingStore((s) => s.getConnectionForUseCase('agent_tasks'));
   const providerForLogo = task.connectionProvider ?? routedAgentConnection?.provider;
 
@@ -137,7 +141,7 @@ export function AgentTaskCardInner({ task, onCancel, onRemove, onClick }: Activi
         </span>
         {task.status !== 'running' && onRemove && (
           <IconActionButton
-            label="Remove from this list"
+            label={t("activity.removeFromList")}
             onClick={(e) => { e.stopPropagation(); onRemove(task.id); }}
             className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
           >
@@ -274,7 +278,7 @@ export function AgentTaskCardInner({ task, onCancel, onRemove, onClick }: Activi
               ) : (
                 <ChevronRight className="h-2.5 w-2.5" />
               )}
-              <span>Agent response</span>
+              <span>{t("activity.agentResponse")}</span>
             </Button>
             {outputExpanded && (
               <div className="mt-1 max-h-80 overflow-y-auto overflow-x-hidden thin-scrollbar rounded-md bg-muted/40 px-2 py-1.5">

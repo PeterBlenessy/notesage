@@ -8,6 +8,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import type { ApprovalTier } from '@/lib/ai/permission-resolve';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 interface TieredApprovalButtonsProps {
   /** Resolve the request at the chosen tier. */
@@ -24,6 +26,8 @@ interface TieredApprovalButtonsProps {
  */
 export const TieredApprovalButtons = forwardRef<HTMLButtonElement, TieredApprovalButtonsProps>(
   function TieredApprovalButtons({ onDecide, denySuffix = '' }, allowRef) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
     return (
       <div className="flex items-center gap-1.5">
         <Button variant="ghost" size="xs" onClick={() => onDecide('deny')}>
@@ -45,7 +49,7 @@ export const TieredApprovalButtons = forwardRef<HTMLButtonElement, TieredApprova
                 variant="default"
                 size="xs"
                 className="rounded-l-none border-l border-l-primary-foreground/20 px-1"
-                aria-label="More allow options"
+                aria-label={t("chat.moreAllowOptions")}
               >
                 <ChevronDown className="h-3 w-3" />
               </Button>

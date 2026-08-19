@@ -4,6 +4,7 @@ import { useFileOperations } from '@/hooks/useFileOperations';
 import { useEditorStore } from '@/stores/editor-store';
 import { useCommentStore } from '@/stores/comment-store';
 import type { AgentTask } from '@/stores/activity-store';
+import { t } from '@/lib/i18n';
 
 /**
  * Provides a click handler for ActivityTaskCard that navigates to the
@@ -31,7 +32,7 @@ export function useActivityNavigation() {
           await openFile(task.sourceFile, fileName);
         } catch {
           // Expected: file may have been deleted or moved since task was created
-          toast.error('Failed to open file');
+          toast.error(t("toast.openFileFailed"));
           return;
         }
       }

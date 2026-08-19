@@ -50,6 +50,7 @@ import {
   hasFileDrag,
   isBelowMidpoint,
 } from "./file-drag";
+import { t } from "@/lib/i18n";
 
 /**
  * PinnedSection — the pinned-files list for the quiet-composer sidebar.
@@ -201,7 +202,7 @@ function PinnedRowImpl({
   );
 
   // #80 — announce the rename transition to screen readers on the tick the
-  // row flips into rename mode. The SidebarInlineEdit's `aria-label="Rename"`
+  // row flips into rename mode. The SidebarInlineEdit's `aria-label={t("menu.rename")}`
   // is not enough context — we want "Renaming <filename>" spoken explicitly.
   const prevRenamingRef = useRef(false);
   useEffect(() => {
@@ -637,7 +638,7 @@ export function PinnedSection({ filter }: PinnedSectionProps) {
 
   return (
     <section
-      aria-label="Pinned"
+      aria-label={t("section.pinned")}
       className="group/section flex flex-col gap-1"
     >
       <header className="flex items-center gap-2 px-2 h-6">

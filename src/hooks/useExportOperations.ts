@@ -15,6 +15,7 @@ import type { ExportOptions } from "@/components/ExportDialog";
 import type { ChartData, ColorScheme } from "@/lib/chart-types";
 import { COLOR_PALETTES } from "@/lib/chart-types";
 import { track, type ExportTemplate } from "@/lib/telemetry";
+import { t } from '@/lib/i18n';
 
 /**
  * Collect SVG strings for all inline chart and drawing nodes in document order.
@@ -320,7 +321,7 @@ export function useExportOperations(editor: Editor | null) {
           settings.setLastExportIncludeToC(options.includeToc);
           settings.setLastExportIncludePageNumbers(options.includePageNumbers);
 
-          toast.success("Word document exported", {
+          toast.success(t("toast.docxExported"), {
             action: {
               label: "Reveal in Finder",
               onClick: () => tauriApi.revealInFinder(savePath),
@@ -358,7 +359,7 @@ export function useExportOperations(editor: Editor | null) {
           settings.setLastExportFormat("pptx");
           settings.setLastPptxTemplate(options.pptxTemplate);
 
-          toast.success("PowerPoint exported", {
+          toast.success(t("toast.pptxExported"), {
             action: {
               label: "Reveal in Finder",
               onClick: () => tauriApi.revealInFinder(savePath),
@@ -404,7 +405,7 @@ export function useExportOperations(editor: Editor | null) {
           settings.setLastExportIncludeToC(options.includeToc);
           settings.setLastExportIncludePageNumbers(options.includePageNumbers);
 
-          toast.success("PDF exported", {
+          toast.success(t("toast.pdfExported"), {
             action: {
               label: "Reveal in Finder",
               onClick: () => tauriApi.revealInFinder(savePath),
@@ -420,7 +421,7 @@ export function useExportOperations(editor: Editor | null) {
         });
       } catch (error) {
         console.error("Export failed:", error);
-        toast.error(`Export failed: ${error}`);
+        toast.error(t("toast.exportFailed", { error: String(error) }));
       } finally {
         setIsExporting(false);
       }

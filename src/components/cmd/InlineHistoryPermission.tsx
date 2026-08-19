@@ -9,6 +9,8 @@ import {
 } from '@/lib/ai/permission-resolve';
 import { TieredApprovalButtons } from '@/components/chat/TieredApprovalButtons';
 import { formatToolArgsPreview } from '@/lib/ai/tool-args';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 /**
  * Inline permission approval for an awaiting-permission history row (PRD
@@ -56,10 +58,12 @@ function Shell({
   preview: string | null;
   onDecide: (tier: ApprovalTier) => void;
 }) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   return (
     <div
       role="group"
-      aria-label="Permission request"
+      aria-label={t("cmd.permissionRequest")}
       data-testid="inline-history-permission"
       className="mx-2 mb-2 rounded-lg border border-[var(--color-accent-primary)]/40 bg-card px-3 py-2.5"
     >

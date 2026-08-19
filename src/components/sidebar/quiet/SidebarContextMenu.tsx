@@ -47,6 +47,8 @@ import type { FileEntry } from "@/lib/tauri";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 import { FolderAppearancePicker } from "@/components/FolderAppearancePicker";
 import { isSystemFolderName } from "@/components/sidebar/quiet/ProjectsSection";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 /**
  * SidebarContextMenu — shared right-click menu for sidebar file rows (task #45).
@@ -155,6 +157,8 @@ export function SidebarContextMenu({
   const pinnedFiles = useWorkspaceStore((s) => s.pinnedFiles);
   const pinFile = useWorkspaceStore((s) => s.pinFile);
   const unpinFile = useWorkspaceStore((s) => s.unpinFile);
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const projects = useWorkspaceStore((s) => s.projects);
   const removeProject = useWorkspaceStore((s) => s.removeProject);
   const explorerFolders = useWorkspaceStore((s) => s.explorerFolders);
@@ -218,7 +222,7 @@ export function SidebarContextMenu({
     if (notesRootPath && !notesRootPath.startsWith("~")) {
       destinations.push({
         path: notesRootPath,
-        label: "Quick Notes",
+        label: t("sidebar.quickNotes"),
         category: "notes",
         tree: notesTree,
       });
@@ -515,12 +519,12 @@ export function SidebarContextMenu({
               wasn't actually doing anything project-specific. */}
           {!isProject && (
             <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleOpen()}>
-              Open
+              {t("menu.open")}
             </ContextMenuItem>
           )}
           {!isSystemFolder && (
             <ContextMenuItem className={ITEM_DENSITY} onSelect={handleRename}>
-              Rename
+              {t("menu.rename")}
               <ContextMenuShortcut>F2</ContextMenuShortcut>
             </ContextMenuItem>
           )}
@@ -534,11 +538,11 @@ export function SidebarContextMenu({
             <>
               <ContextMenuSeparator />
               <ContextMenuItem className={ITEM_DENSITY} onSelect={handleNewFile}>
-                New File
+                {t("menu.newFile")}
               </ContextMenuItem>
               {isContainer && (
                 <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleNewFolder()}>
-                  New Folder
+                  {t("menu.newFolderItem")}
                 </ContextMenuItem>
               )}
             </>
@@ -587,7 +591,7 @@ export function SidebarContextMenu({
           {isFile && (
             <>
               <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleDuplicate()}>
-                Duplicate
+                {t("menu.duplicate")}
                 <ContextMenuShortcut>⌘D</ContextMenuShortcut>
               </ContextMenuItem>
               <ContextMenuItem className={ITEM_DENSITY} onSelect={handleTogglePin}>
@@ -600,7 +604,7 @@ export function SidebarContextMenu({
              *  event bus so the command bar attaches the image. */}
           {isImage && (
             <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleAddToChat()}>
-              Add to chat
+              {t("menu.addToChat")}
             </ContextMenuItem>
           )}
 
@@ -613,7 +617,7 @@ export function SidebarContextMenu({
           {isFile && <ContextMenuSeparator />}
 
           <ContextMenuItem className={ITEM_DENSITY} onSelect={() => void handleRevealInFinder()}>
-            Reveal in Finder
+            {t("menu.revealInFinder")}
             {/* Shortcut hint only on file rows. The global `⌘⌥R` chord
                 (registered in `useGlobalShortcuts`) acts on the active
                 document — file rows get the hint as a confirmation that
@@ -622,11 +626,11 @@ export function SidebarContextMenu({
             {isFile && <ContextMenuShortcut>⌘⌥R</ContextMenuShortcut>}
           </ContextMenuItem>
           <ContextMenuItem className={ITEM_DENSITY} onSelect={handleCopyPath}>
-            Copy path
+            {t("menu.copyPath")}
             {isFile && <ContextMenuShortcut>⌘⌥P</ContextMenuShortcut>}
           </ContextMenuItem>
           <ContextMenuItem className={ITEM_DENSITY} onSelect={handleCopyFilename}>
-            Copy filename
+            {t("menu.copyFilename")}
           </ContextMenuItem>
 
           {/* #128 — Export as… Markdown files only. Submenu fans out
@@ -635,16 +639,16 @@ export function SidebarContextMenu({
             <>
               <ContextMenuSeparator />
               <ContextMenuSub>
-                <ContextMenuSubTrigger className={ITEM_DENSITY}>Export as…</ContextMenuSubTrigger>
+                <ContextMenuSubTrigger className={ITEM_DENSITY}>{t("menu.exportAs")}</ContextMenuSubTrigger>
                 <ContextMenuSubContent>
                   <ContextMenuItem className={ITEM_DENSITY} onSelect={() => handleExport("pdf")}>
                     PDF
                   </ContextMenuItem>
                   <ContextMenuItem className={ITEM_DENSITY} onSelect={() => handleExport("docx")}>
-                    Word (.docx)
+                    {t("menu.exportWord")}
                   </ContextMenuItem>
                   <ContextMenuItem className={ITEM_DENSITY} onSelect={() => handleExport("pptx")}>
-                    PowerPoint
+                    {t("menu.exportPowerPoint")}
                   </ContextMenuItem>
                   <ContextMenuItem className={ITEM_DENSITY} onSelect={() => handleExport("html")}>
                     HTML
@@ -661,7 +665,7 @@ export function SidebarContextMenu({
             <>
               <ContextMenuSeparator />
               <ContextMenuItem className={ITEM_DENSITY} onSelect={handleCommitFile}>
-                Commit…
+                {t("menu.commit")}
               </ContextMenuItem>
             </>
           )}
@@ -713,7 +717,7 @@ export function SidebarContextMenu({
              *  this menu; hide the submenu for `kind === "project"`. */}
           {!isProject && !isSystemFolder && hasMoveDestinations ? (
             <ContextMenuSub>
-              <ContextMenuSubTrigger className={ITEM_DENSITY}>Move to…</ContextMenuSubTrigger>
+              <ContextMenuSubTrigger className={ITEM_DENSITY}>{t("menu.moveTo")}</ContextMenuSubTrigger>
               <ContextMenuSubContent>
                 {hasMixedCategories ? (
                   <>
@@ -810,7 +814,7 @@ export function SidebarContextMenu({
               </ContextMenuSubContent>
             </ContextMenuSub>
           ) : !isSystemFolder ? (
-            <ContextMenuItem className={ITEM_DENSITY} disabled>Move to…</ContextMenuItem>
+            <ContextMenuItem className={ITEM_DENSITY} disabled>{t("menu.moveTo")}</ContextMenuItem>
           ) : null}
           {!isSystemFolder && !isProject && (
             <ContextMenuItem
@@ -930,14 +934,14 @@ export function SidebarContextMenu({
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Move to trash?</AlertDialogTitle>
+            <AlertDialogTitle>{t("menu.moveToTrash")}</AlertDialogTitle>
             <AlertDialogDescription>
               &quot;{name}&quot; will be moved to the trash. You can restore it
               from the system trash until it is emptied.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               variant="destructive"
               onClick={() => void handleDeleteConfirm()}

@@ -15,8 +15,9 @@ import type { ChatMessage } from '@/lib/ai/types';
 import { getAcpAgent } from '@/lib/ai/acp-agent-state';
 import { hasSessionCapability } from '@/lib/ai/acp-utils';
 import { HistoryRowLeadingIcon } from '@/components/cmd/SessionStatusBadge';
-import { getFormatLocale } from '@/lib/i18n';
+import { getFormatLocale, t} from '@/lib/i18n';
 import { useFormatLocale } from '@/lib/useLocale';
+import { useLocale } from "@/lib/useLocale";
 
 /**
  * Fire best-effort `session/close` for every ACP session owned by the conversation
@@ -128,6 +129,8 @@ export const ChatHistoryView = memo(function ChatHistoryView({
   onSelectConversation,
   selectedProjectPaths,
 }: ChatHistoryViewProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const conversations = useChatStore((s) => s.conversations);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const deleteConversation = useChatStore((s) => s.deleteConversation);
@@ -281,7 +284,7 @@ export const ChatHistoryView = memo(function ChatHistoryView({
                         type="button"
                         onClick={(e) => e.stopPropagation()}
                         className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors active:opacity-75"
-                        title="Export conversation"
+                        title={t("chat.exportConversation")}
                       >
                         <Download className="h-3.5 w-3.5" strokeWidth={1.5} />
                       </button>
@@ -305,7 +308,7 @@ export const ChatHistoryView = memo(function ChatHistoryView({
                     type="button"
                     onClick={(e) => { e.stopPropagation(); closeAgentSessionsAndDelete(conv); deleteConversation(conv.id); }}
                     className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors active:opacity-75"
-                    title="Delete conversation"
+                    title={t("chat.deleteConversation")}
                   >
                     <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                   </button>

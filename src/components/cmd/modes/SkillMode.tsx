@@ -3,6 +3,8 @@ import { Sparkles, Terminal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useSkillStore, type SkillEntry } from '@/stores/skill-store';
 import { getSessionInfo, subscribeSessionInfo } from '@/lib/ai/acp-agent-state';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 /**
  * SkillMode — picker dropdown for the `/skill-name` prefix mode in the
@@ -113,6 +115,8 @@ function SkillMode({
   listboxId = 'cmd-skill-listbox',
   onActiveOptionChange,
 }: SkillModeProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   // Subscribe to the RAW state fields (`skills`, `enabledOverrides`) so
   // Zustand's snapshot comparison sees stable references. Calling
   // `state.getActiveSkills()` inside the selector would compute a new array
@@ -206,7 +210,7 @@ function SkillMode({
       <div
         id={listboxId}
         role="listbox"
-        aria-label="Skill and agent command picker"
+        aria-label={t("cmd.skillPicker")}
         className="rounded-md border border-border bg-popover p-3 text-sm text-muted-foreground shadow-md outline-none"
       >
         {/* Only mention agent commands when an agent is actually offering
@@ -221,7 +225,7 @@ function SkillMode({
     <div
       id={listboxId}
       role="listbox"
-      aria-label="Skill and agent command picker"
+      aria-label={t("cmd.skillPicker")}
       className="overflow-hidden rounded-md border border-border bg-popover shadow-md outline-none"
     >
       {results.map((row, i) => {

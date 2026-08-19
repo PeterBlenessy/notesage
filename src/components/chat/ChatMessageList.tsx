@@ -24,6 +24,8 @@ import { ProjectSwitchCard } from './ProjectSwitchCard';
 import { AgentSwitchCard } from './AgentSwitchCard';
 import { ContextDivider } from './ContextDivider';
 import { QuickReplies, parseQuickReplies } from './QuickReplies';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 const ONBOARDING_PROMPTS = [
   'Summarize my current note',
@@ -50,6 +52,8 @@ interface ChatMessageListProps {
 }
 
 export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedProjectPaths, onResend, onEdit, onPrefill }: ChatMessageListProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   // Foreground-conversation loading (task #4) — the list renders the watched
   // conversation, so it reflects that conversation's run, not the global flag.
   const isLoading = useForegroundLoading();
@@ -277,7 +281,7 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
         <div className="flex items-center justify-center h-full text-muted-foreground text-sm text-center">
           <div className="max-w-[260px]">
             <LocalAISetupCard />
-            <p className="mt-4 text-sm font-medium text-foreground">Start a conversation</p>
+            <p className="mt-4 text-sm font-medium text-foreground">{t("chat.startConversation")}</p>
             <div className="flex flex-wrap justify-center gap-1.5 mt-3">
               {ONBOARDING_PROMPTS.map((prompt) => (
                 <Button
@@ -370,7 +374,7 @@ export const ChatMessageList = memo(function ChatMessageList({ onSend, selectedP
           {isLoading && !activeTool && (
             <div className="flex items-center gap-2 text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" />
-              <span className="text-sm">AI is thinking...</span>
+              <span className="text-sm">{t("chat.aiThinking")}</span>
             </div>
           )}
           {activeTool && (

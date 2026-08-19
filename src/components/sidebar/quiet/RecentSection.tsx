@@ -42,6 +42,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useFormatLocale } from "@/lib/useLocale";
+import { t } from "@/lib/i18n";
 
 /**
  * RecentSection — quiet-composer sidebar recent-documents list (task #33).
@@ -386,7 +387,7 @@ export function RecentSection({
 
   return (
     <section
-      aria-label="Recent"
+      aria-label={t("section.recent")}
       className="group/section flex flex-col gap-1"
     >
       <header className="flex items-center gap-2 px-2 h-6">

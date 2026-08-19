@@ -1,6 +1,8 @@
 import { useChatStore, selectProjectPaths } from "@/stores/chat-store";
 import { ChatMessageList } from "@/components/chat/ChatMessageList";
 import type { ChatMessage as ChatMessageType } from "@/lib/ai/types";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 /**
  * CommandBarStream — thin wrapper around `<ChatMessageList />` for the
@@ -45,6 +47,8 @@ interface CommandBarStreamProps {
 }
 
 function CommandBarStream({ onSend, onResend, onEdit, onPrefill }: CommandBarStreamProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   // Scope the list to the active conversation's selected projects —
   // drives sandbox-scope / domain auto-approval decisions inside the
   // list.
@@ -55,7 +59,7 @@ function CommandBarStream({ onSend, onResend, onEdit, onPrefill }: CommandBarStr
       data-cmd-stream
       role="log"
       aria-live="polite"
-      aria-label="Chat stream"
+      aria-label={t("cmd.stream")}
       className="flex flex-1 flex-col min-h-0"
     >
       <ChatMessageList

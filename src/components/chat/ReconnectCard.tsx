@@ -7,6 +7,8 @@ import { useRoutingStore } from '@/stores/routing-store';
 import type { SystemStatusType } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
 import { getCapabilities } from '@/lib/ai/connections';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 interface ReconnectCardProps {
   statusType: SystemStatusType;
@@ -34,6 +36,8 @@ export function ReconnectCard({
   onDismiss,
   failedProvider,
 }: ReconnectCardProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const [fading, setFading] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
 
@@ -69,7 +73,7 @@ export function ReconnectCard({
       <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted/50 border border-border/50 text-sm text-muted-foreground">
         <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" strokeWidth={1.5} />
         <span>
-          <span className="font-medium text-foreground">Connection interrupted</span>
+          <span className="font-medium text-foreground">{t("chat.connectionInterrupted")}</span>
           {` — reconnecting to ${agentName}`}
           {attempt != null && maxAttempts != null && (
             <span> (attempt {attempt} of {maxAttempts})</span>
@@ -88,7 +92,7 @@ export function ReconnectCard({
         }`}
       >
         <Check className="h-3.5 w-3.5 text-foreground shrink-0" strokeWidth={1.5} />
-        <span className="text-foreground font-medium">Reconnected</span>
+        <span className="text-foreground font-medium">{t("chat.reconnected")}</span>
       </div>
     );
   }

@@ -11,6 +11,7 @@ import {
 } from "@/components/editor/extensions";
 import { getMarkdownFromEditor } from "@/lib/markdown";
 import { toast } from "sonner";
+import { t } from '@/lib/i18n';
 
 interface Tab {
   id: string;
@@ -75,7 +76,7 @@ export function useEditorKeyBindings({
           try {
             await saveFile(activeTab.filePath, activeTab.content, activeTab.id);
           } catch (error) {
-            toast.error(`Failed to save file: ${error}`);
+            toast.error(t("toast.saveFileFailed", { error: String(error) }));
           }
         }
       }

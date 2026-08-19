@@ -44,6 +44,8 @@ import { useEstimatedContextUsage, type EstimatedContextUsage } from '@/hooks/us
 import { UsagePopover } from '@/components/chat/UsagePopover';
 import type { AcpSessionConfigOption } from '@/lib/ai/acp-utils';
 import type { Connection } from '@/lib/ai/connections';
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 // ---------------------------------------------------------------------------
 // Mode-sandbox conflict detection
@@ -71,6 +73,8 @@ function hasActiveRestrictions(connectionId: string): boolean {
 // ---------------------------------------------------------------------------
 
 export const AcpModePicker = memo(function AcpModePicker({ connection }: { connection: Connection }) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   // Available modes come from the connection's capability probe (persisted at
   // registration, refreshed ≥24h later). The live session's `modes` field is
   // used only to determine the currently-selected value for highlighting.
@@ -225,7 +229,7 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
       <AlertDialog open={!!conflictMode} onOpenChange={(o) => { if (!o) setConflictMode(null); }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Mode conflicts with security settings</AlertDialogTitle>
+            <AlertDialogTitle>{t("chat.modeConflict")}</AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2">
                 <span className="font-medium">{conflictMode?.name}</span> allows the agent to operate without permission checks, but this connection has security restrictions enabled that will block some operations.
@@ -242,7 +246,7 @@ export const AcpModePicker = memo(function AcpModePicker({ connection }: { conne
             >
               Remove restrictions permanently
             </AlertDialogAction>
-            <AlertDialogCancel className="w-full mt-0">Cancel</AlertDialogCancel>
+            <AlertDialogCancel className="w-full mt-0">{t("common.cancel")}</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

@@ -7,6 +7,8 @@ import {
   type IndexTagOccurrence,
 } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 /**
  * TagMode — picker for the `#tag` prefix mode in the FloatingCommandBar.
@@ -76,6 +78,8 @@ function TagMode({
   onActiveOptionChange,
   initialDrilldown,
 }: TagModeProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const projects = useWorkspaceStore((s) => s.projects);
   const projectPaths = useMemo(() => projects.map((p) => p.path), [projects]);
 
@@ -340,7 +344,7 @@ function TagMode({
         data-cmd-mode-level="tags"
         id={listboxId}
         role="listbox"
-        aria-label="Tags"
+        aria-label={t("section.tags")}
         className={cn("px-3 py-3", "text-xs text-muted-foreground")}
       >
         No tags match
@@ -354,7 +358,7 @@ function TagMode({
       data-cmd-mode-level="tags"
       id={listboxId}
       role="listbox"
-      aria-label="Tags"
+      aria-label={t("section.tags")}
       className={cn("py-1")}
     >
       {results.map((row, idx) => {
@@ -406,7 +410,7 @@ function DrilldownHeader({ label, count, onBack }: DrilldownHeaderProps) {
       <button
         type="button"
         onClick={onBack}
-        aria-label="Back to tags"
+        aria-label={t("cmd.backToTags")}
         className={cn(
           "inline-flex items-center gap-1 rounded px-1.5 py-0.5",
           "text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/60",
@@ -414,7 +418,7 @@ function DrilldownHeader({ label, count, onBack }: DrilldownHeaderProps) {
         )}
       >
         <ChevronLeft className="h-3 w-3" strokeWidth={1.5} />
-        <span>Back</span>
+        <span>{t("cmd.back")}</span>
       </button>
       <span className="text-[13px] font-medium">{label}</span>
       <span className="ml-auto text-xs text-muted-foreground">

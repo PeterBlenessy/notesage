@@ -14,6 +14,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 /**
  * Shared visual-state indicators for every sidebar row (task #129).
@@ -78,14 +80,15 @@ export function SidebarRowIndicators({
   // Repo badge — only for container rows that are themselves a detected
   // git repo root (populated by `useGitRepoDetection`), and only while
   // git integration is on. File rows never carry the badge.
+  useLocale();
   const gitEnabled = useSettingsStore((s) => s.gitEnabled);
   const rowRepo = useGitStore((s) =>
     kind === "file" ? undefined : s.repos[path],
   );
   const isRepoRoot = Boolean(gitEnabled && rowRepo?.isGitRepo);
   const repoTooltip = rowRepo?.currentBranch
-    ? `Git repository — on ${rowRepo.currentBranch}`
-    : "Git repository";
+    ? t("git.repositoryOn", { branch: rowRepo.currentBranch })
+    : t("git.repository");
 
   // AI-lock only matters on project rows. The selector returns
   // undefined for non-project paths, which short-circuits the padlock.
@@ -128,11 +131,11 @@ export function SidebarRowIndicators({
             <TooltipTrigger asChild>
               <span
                 role="status"
-                aria-label="External change pending review"
+                aria-label={t("sidebar.externalChangePending")}
                 className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/60"
               />
             </TooltipTrigger>
-            <TooltipContent side="top">Changed externally</TooltipContent>
+            <TooltipContent side="top">{t("sidebar.changedExternally")}</TooltipContent>
           </Tooltip>
         ) : null}
 
