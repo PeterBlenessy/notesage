@@ -15,9 +15,14 @@
 // Capture shapes:
 //  - DOCUMENTS (Safari-viewed PDFs, Files shares, EPUBs): saved on Save,
 //    format dropdown hidden, filenames listed.
-//  - URLS/pages: Article (Markdown, readable extraction in Rust) /
-//    Link note / Page (HTML). Article extraction falls back to the link
-//    note — a capture never fails outright.
+//  - URLS/pages: Article (Markdown) / Article (HTML) / Link note. Both
+//    article formats run ONE readable extraction in Rust and differ only in
+//    output shape. There is deliberately no full-page capture — the point of
+//    capturing an article is to get the article, not the ads.
+//
+//    Fallback chain, shared by both: raw fetched HTML -> rendered DOM
+//    (PageRenderer, for JS-rendered pages) -> link note. A capture never
+//    fails outright.
 //
 // Reuses the shared grant (App Group bookmark) and the Rust
 // `notesage-capture` C ABI. Wired by integrate-share-extension.py.
@@ -40,7 +45,6 @@ final class ShareViewController: UIViewController {
     private enum CaptureFormat: String, CaseIterable {
         case video
         case article
-        case articleHtml
         case link
         case html
 
@@ -49,7 +53,6 @@ final class ShareViewController: UIViewController {
             case .video: return L("share.formatVideo")
             case .article: return L("share.formatArticle")
             case .link: return L("share.formatLink")
-            case .articleHtml: return L("share.formatArticleHtml")
             case .html: return L("share.formatHtml")
             }
         }
@@ -347,16 +350,11 @@ final class ShareViewController: UIViewController {
                     self.saveLink(url: url)
                 }
             }
-        case .article, .articleHtml, .html:
+        case .article, .html:
             fetch(url: url) { [weak self] html in
                 guard let self else { return }
                 guard let html else {
                     self.saveLink(url: url)
-                    return
-                }
-                if self.format == .html {
-                    _ = try? LibraryAccess.writeRawHtml(url: url, title: self.sharedTitle, html: html)
-                    self.finish()
                     return
                 }
                 // Both article formats share one fallback chain (#611):
@@ -388,7 +386,7 @@ final class ShareViewController: UIViewController {
     /// format-specific: if the article is not in the fetched HTML, neither the
     /// markdown nor the HTML rendering can find it.
     private func writeArticle(url: String, html: String) -> Bool {
-        if format == .articleHtml {
+        if format == .html {
             return (try? LibraryAccess.writeArticleHtml(
                 url: url, title: sharedTitle, html: html)) != nil
         }
