@@ -12,6 +12,7 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Rename a note, or long-press a file in the library — the Cancel button in
-those sheets now follows your phone's language instead of always showing
-English.
+Share a web page and pick Article (HTML) or Article (Markdown) — you now get
+just the article, with its images and formatting, instead of the whole page
+with its ads and menus. Pages built with JavaScript work too. Try it on a news
+site.

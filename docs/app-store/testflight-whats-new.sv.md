@@ -10,6 +10,7 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Byt namn på en anteckning, eller långtryck på en fil i biblioteket — knappen
-Avbryt i de rutorna följer nu telefonens språk i stället för att alltid stå
-på engelska.
+Dela en webbsida och välj Artikel (HTML) eller Artikel (Markdown) — du får nu
+bara artikeln, med bilder och formatering, i stället för hela sidan med
+annonser och menyer. Sidor som byggs med JavaScript fungerar också. Testa på
+en nyhetssajt.
