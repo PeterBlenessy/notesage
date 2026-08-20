@@ -8,7 +8,7 @@
 "share.formatVideo" = "Video (link + details)";
 "share.formatArticle" = "Article (Markdown)";
 "share.formatLink" = "Link note";
-"share.formatHtml" = "Page (HTML)";
+"share.formatHtml" = "Article (HTML)";
 "share.savesToInbox" = "Saves to Inbox in your Notesage library.";
 "share.savesToInboxAs" = "Saves to Inbox in your Notesage library as\n%@";
 "share.setUpFirst" = "Open Notesage to set up before sharing.";

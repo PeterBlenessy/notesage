@@ -63,6 +63,7 @@ SHARE_TARGET = {
         # Paths are relative to gen/apple (SRCROOT).
         {"path": "../../ios/ShareViewController.swift"},
         {"path": "../../ios/LibraryCapture.swift"},
+        {"path": "../../ios/PageRenderer.swift"},
         {"path": "../../crates/tauri-plugin-notesage-ios/ios/Sources/LibraryAccess.swift"},
         # Localizations (#653). The .lproj folders must land as RESOURCES of
         # the extension bundle — `buildPhase: resources` — or NSLocalizedString

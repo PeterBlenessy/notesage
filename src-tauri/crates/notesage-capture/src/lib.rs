@@ -459,6 +459,13 @@ fn yaml_quote(value: &str) -> String {
 pub struct Article {
     pub title: Option<String>,
     pub markdown: String,
+    /// The readable article as HTML, ad/tracker images already filtered.
+    ///
+    /// This is the intermediate the markdown conversion consumes, kept rather
+    /// than discarded so the "Article only" HTML capture (#612) renders from
+    /// the SAME extraction. A second extraction would drift from this one and
+    /// would have to re-apply #610's image filtering independently.
+    pub html: String,
 }
 
 /// Readable extraction + HTML→Markdown for rich web capture (#584), with
@@ -475,6 +482,10 @@ pub fn extract_article(html: &str, url: &str) -> Option<Article> {
     let mut readability = dom_smoothie::Readability::new(html, Some(url), None).ok()?;
     let product = readability.parse().ok()?;
     let filtered_content = strip_ad_and_tracker_images(&product.content);
+    // dom_smoothie returns the article wrapped in its own `<html>` element.
+    // Fine as an intermediate for markdown conversion, but nesting an `<html>`
+    // inside our template's `<body>` is invalid markup — unwrap it.
+    let filtered_content = unwrap_readability_shell(&filtered_content);
     let markdown = htmd::convert(&filtered_content).ok()?;
     let markdown = markdown.trim();
     if markdown.chars().count() < MIN_ARTICLE_CHARS {
@@ -484,7 +495,7 @@ pub fn extract_article(html: &str, url: &str) -> Option<Article> {
     // shells and video pages — fall back to the page's own metadata.
     let title = meaningful_title(Some(product.title.as_str()))
         .or_else(|| extract_meta_title(html));
-    Some(Article { title, markdown: markdown.to_string() })
+    Some(Article { title, markdown: markdown.to_string(), html: filtered_content })
 }
 
 /// Ad/tracker domains observed in real captures. Matched as a substring of
@@ -550,6 +561,88 @@ fn is_ad_or_tracker_image(node: &dom_query::Selection) -> bool {
     let height = node.attr("height").and_then(|h| h.parse::<u32>().ok());
     width.is_some_and(|w| w <= TRACKING_PIXEL_MAX_DIMENSION)
         || height.is_some_and(|h| h <= TRACKING_PIXEL_MAX_DIMENSION)
+}
+
+
+
+/// Strip dom_smoothie's `<html>` wrapper from extracted content.
+///
+/// The extractor returns `<html><div id="readability-page-1">…</div></html>`.
+/// That is harmless on the way to markdown, but the "Article only" template
+/// embeds this HTML inside its own `<body>`, and a nested `<html>` element is
+/// invalid — browsers recover from it, but the document stops being one we can
+/// claim is well-formed.
+fn unwrap_readability_shell(html: &str) -> String {
+    let trimmed = html.trim();
+    let inner = trimmed
+        .strip_prefix("<html>")
+        .and_then(|rest| rest.strip_suffix("</html>"))
+        .unwrap_or(trimmed);
+    inner.trim().to_string()
+}
+
+/// Reader-view styling for the "Article only" capture (#612).
+///
+/// Embedded, not linked: a capture note is opened later, possibly offline, and
+/// must not reach back out to the site it was clipped from. Deliberately not
+/// the desktop's `render_html` export templates — those style Notesage's own
+/// documents; this styles someone else's article.
+const ARTICLE_HTML_STYLE: &str = "\
+<style>\
+:root{color-scheme:light dark}\
+body{margin:0 auto;padding:2.5rem 1.25rem;max-width:38rem;\
+font:1.0625rem/1.7 -apple-system,BlinkMacSystemFont,'SF Pro Text',system-ui,sans-serif;\
+color:#1a1a1a;background:#fff;overflow-wrap:break-word}\
+h1,h2,h3{line-height:1.25;margin:2rem 0 .75rem}\
+h1{font-size:1.75rem;margin-top:0}\
+p,li{margin:0 0 1rem}\
+img{max-width:100%;height:auto;border-radius:6px;display:block;margin:1.5rem auto}\
+figure{margin:1.5rem 0}figcaption{font-size:.875rem;color:#666;text-align:center}\
+blockquote{margin:1.5rem 0;padding-left:1rem;border-left:3px solid #ddd;color:#444}\
+pre{overflow-x:auto;padding:1rem;background:#f5f5f5;border-radius:6px}\
+code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9375em}\
+a{color:#0a58ca}hr{border:0;border-top:1px solid #e5e5e5;margin:2rem 0}\
+@media(prefers-color-scheme:dark){\
+body{color:#e8e8e8;background:#1a1a1a}\
+blockquote{border-left-color:#444;color:#bbb}\
+pre{background:#252525}figcaption{color:#999}a{color:#6ea8fe}}\
+</style>";
+
+/// "Article only" capture (#612): the extracted article as a standalone,
+/// self-contained HTML document — no site nav, ads or chrome.
+///
+/// Returns a complete `.html` DOCUMENT rather than a frontmatter capture note,
+/// matching the sibling "Page (HTML)" format which also writes `.html`. A
+/// YAML-frontmatter `.md` file whose body is a `<style>` block and raw markup
+/// renders as neither one thing nor the other; the point of this format is
+/// that it opens as a readable page.
+///
+/// The link-only note remains the universal fallback, so a share never fails.
+pub fn build_article_html_document(article: &Article, title: Option<&str>, source_url: &str) -> String {
+    let heading = title
+        .or(article.title.as_deref())
+        .map(|t| format!("<h1>{}</h1>", escape_html_text(t)))
+        .unwrap_or_default();
+    let doc_title = title
+        .or(article.title.as_deref())
+        .map(escape_html_text)
+        .unwrap_or_else(|| "Article".to_string());
+    format!(
+        "<!doctype html>\n<html><head><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+<title>{doc_title}</title>{ARTICLE_HTML_STYLE}</head><body>\
+{heading}{body}\
+<hr><p class=\"source\">Clipped from <a href=\"{src}\">{src}</a></p>\
+</body></html>\n",
+        body = article.html,
+        src = escape_html_text(source_url),
+    )
+}
+
+/// Minimal text escaping for the title we inject into the template. The
+/// article body is already HTML from the extractor and is not re-escaped.
+fn escape_html_text(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
 /// Body-bearing capture note (format v2): identical frontmatter to the
@@ -621,6 +714,187 @@ fn civil_from_unix(unix_secs: i64) -> (i64, u32, u32, u32, u32, u32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+
+    // ---- JS-rendered pages: the rendered-DOM tier (#611) ------------------
+    //
+    // The Swift side runs the chain (raw HTML -> rendered DOM -> link note);
+    // these cover the premise it rests on — that extraction DECLINES on an SPA
+    // shell and SUCCEEDS on the same page's settled DOM. Without both halves
+    // holding, the render tier is either useless or never reached.
+
+    /// What a network fetch returns for a JS-rendered page: an empty shell.
+    fn spa_shell_html() -> &'static str {
+        "<html><head><title>News</title></head><body>\
+         <div id=\"root\"></div>\
+         <script src=\"/bundle.js\"></script></body></html>"
+    }
+
+    /// The same page after the DOM has settled — the article now exists.
+    fn spa_settled_html() -> String {
+        let body = "<p>The article body that only appears once the bundle has \
+run and painted, which is the entire reason a raw-HTML fetch cannot capture \
+this page and a rendered DOM can. It carries on for long enough to clear the \
+extractor's minimum length, as a real article would.</p>";
+        format!(
+            "<html><head><title>News</title></head><body><div id=\"root\">\
+             <article><h1>Real Headline</h1>{body}{body}</article></div></body></html>"
+        )
+    }
+
+    #[test]
+    fn spa_shell_yields_no_article_so_the_render_tier_is_reached() {
+        // If this ever returned Some, the rendered-DOM attempt would never run
+        // and JS pages would silently keep capturing as empty shells.
+        assert!(
+            extract_article(spa_shell_html(), "https://news.example.com/story").is_none(),
+            "an empty SPA shell must not pass as an article"
+        );
+    }
+
+    #[test]
+    fn settled_dom_yields_the_article_the_raw_fetch_missed() {
+        let article = extract_article(&spa_settled_html(), "https://news.example.com/story")
+            .expect("the settled DOM must yield an article");
+        assert!(article.markdown.contains("only appears once the bundle has run"));
+        // Both formats are fed from this same extraction.
+        assert!(!article.html.is_empty());
+    }
+
+    #[test]
+    fn a_render_that_returns_nothing_leaves_the_link_note_as_the_floor() {
+        // The timeout path hands back whatever the DOM held — possibly still
+        // the shell. Extraction declines again, and the caller falls through
+        // to the link note rather than failing the share.
+        assert!(extract_article("", "https://news.example.com/story").is_none());
+        assert!(extract_article(spa_shell_html(), "https://news.example.com/story").is_none());
+    }
+
+    #[test]
+    fn a_server_rendered_page_never_needs_the_render_tier() {
+        // No regression for the ordinary case: extraction succeeds on the
+        // fetched HTML, so no webview is ever constructed.
+        let html = article_page_with_image();
+        assert!(
+            extract_article(&html, "https://example.com/post").is_some(),
+            "server-rendered pages must still extract from raw HTML"
+        );
+    }
+
+    // ---- Article-only HTML capture (#612) --------------------------------
+    //
+    // The extracted article wrapped in a self-contained readable template,
+    // rather than the full page with its nav, ads and chrome. Reuses the SAME
+    // extraction as the markdown format (#584/#610) — the readable HTML is
+    // what `extract_article` already produces on its way to markdown, and was
+    // simply being discarded.
+
+    /// A page whose article carries a genuine content image.
+    fn article_page_with_image() -> String {
+        let body = "<p>Ett stycke som är långt nog att räknas som en artikel. \
+Readability needs a real body before it will call this an article, so this \
+paragraph is padded out with enough prose to clear the minimum character \
+bar that filters navigation-only pages out of the capture pipeline. It keeps \
+going for a while so the extractor has something substantial to work with, \
+which is exactly what a real article would provide.</p>";
+        format!(
+            "<html><head><title>Real Article</title></head><body>\
+             <nav>Home About Subscribe</nav>\
+             <article><h1>Real Article</h1>{body}\
+             <img src=\"https://example.com/photo.jpg\" alt=\"A photo\">\
+             {body}</article>\
+             <footer>Cookie notice</footer></body></html>"
+        )
+    }
+
+    #[test]
+    fn article_html_note_wraps_the_article_in_a_self_contained_document() {
+        let html = article_page_with_image();
+        let article = extract_article(&html, "https://example.com/post").expect("article");
+        let doc = build_article_html_document(&article, Some("Real Article"), "https://example.com/post");
+
+        // A real document, openable on its own.
+        assert!(doc.starts_with("<!doctype html>"), "must be a standalone document");
+        // Self-contained: styling travels with it, no external fetch.
+        assert!(doc.contains("<style"), "template must embed its CSS");
+        assert!(!doc.contains("<link"), "must not fetch a remote stylesheet when opened");
+        // Provenance is preserved even without frontmatter.
+        assert!(doc.contains("https://example.com/post"), "source link missing");
+        assert!(doc.contains("Real Article"));
+    }
+
+    #[test]
+    fn article_html_note_drops_site_chrome() {
+        let html = article_page_with_image();
+        let article = extract_article(&html, "https://example.com/post").expect("article");
+        let doc = build_article_html_document(&article, None, "https://example.com/post");
+        // The whole point of "article only": nav and footer are gone.
+        assert!(!doc.contains("Subscribe"), "nav survived the clip");
+        assert!(!doc.contains("Cookie notice"), "footer survived the clip");
+    }
+
+    #[test]
+    fn article_html_note_keeps_genuine_images_and_drops_ad_images() {
+        let body = "<p>A body long enough to clear the article bar, repeated so \
+the extractor treats this as real prose rather than boilerplate, because the \
+minimum character count exists precisely to reject nav-only pages.</p>";
+        let html = format!(
+            "<html><body><article><h1>T</h1>{body}\
+             <img src=\"https://cdn.example.com/real-photo.jpg\">\
+             <img src=\"https://doubleclick.net/pixel.gif\">\
+             {body}</article></body></html>"
+        );
+        let article = extract_article(&html, "https://example.com/p").expect("article");
+        let doc = build_article_html_document(&article, None, "https://example.com/p");
+        assert!(doc.contains("real-photo.jpg"), "genuine image was dropped");
+        assert!(
+            !doc.contains("doubleclick"),
+            "tracker image survived into the clipped article (#610)"
+        );
+    }
+
+    #[test]
+    fn article_html_note_handles_an_image_free_article() {
+        let body = "<p>Plain prose with no images at all, long enough to be \
+treated as a genuine article by the extractor rather than discarded as \
+boilerplate, which is what the minimum length check is there to do. It runs \
+on for several sentences so the extracted markdown comfortably clears the \
+four-hundred-character bar that separates a real post from a navigation \
+stub, since falling under it would make this a test of the threshold rather \
+than of the template.</p>";
+        let html = format!(
+            "<html><body><article><h1>T</h1>{body}{body}{body}</article></body></html>"
+        );
+        let article = extract_article(&html, "https://example.com/p").expect("article");
+        let doc = build_article_html_document(&article, None, "https://example.com/p");
+        assert!(!doc.contains("<img"), "invented an image");
+        assert!(doc.contains("<style"), "still a styled document");
+    }
+
+
+    #[test]
+    fn article_html_document_is_not_nested_inside_a_second_html_element() {
+        // The extractor wraps its output in `<html>`; embedding that inside
+        // our template's `<body>` would nest one `<html>` in another. Browsers
+        // recover, but the document stops being well-formed — and this format
+        // exists to be opened directly.
+        let html = article_page_with_image();
+        let article = extract_article(&html, "https://example.com/post").expect("article");
+        let doc = build_article_html_document(&article, Some("T"), "https://example.com/post");
+        assert_eq!(doc.matches("<html").count(), 1, "more than one <html> element");
+    }
+
+    #[test]
+    fn extraction_exposes_the_readable_html_alongside_the_markdown() {
+        // The markdown format and the HTML format must come from ONE
+        // extraction — two would drift, and the ad-filtering in #610 would
+        // then have to be applied twice.
+        let html = article_page_with_image();
+        let article = extract_article(&html, "https://example.com/post").expect("article");
+        assert!(!article.markdown.is_empty());
+        assert!(!article.html.is_empty(), "readable HTML must be retained");
+        assert!(!article.html.contains("Subscribe"), "nav leaked into the readable HTML");
+    }
 
     #[test]
     fn civil_from_unix_known_values() {

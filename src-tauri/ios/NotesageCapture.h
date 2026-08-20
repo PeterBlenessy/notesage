@@ -82,6 +82,16 @@ char *notesage_capture_article_contents(const char *url,
                                         const char *tags,
                                         const char *html);
 
+/// Article-ONLY HTML capture note contents (#612): the same readable
+/// extraction as above, rendered into a self-contained styled document
+/// instead of markdown. NULL when the page yields no genuine article.
+/// Caller frees with notesage_capture_string_free().
+char *notesage_capture_article_html_contents(const char *url,
+                                             const char *title,
+                                             const char *selection_text,
+                                             const char *tags,
+                                             const char *html);
+
 void notesage_capture_string_free(char *ptr);
 
 #ifdef __cplusplus

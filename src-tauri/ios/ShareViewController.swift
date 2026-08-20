@@ -15,9 +15,14 @@
 // Capture shapes:
 //  - DOCUMENTS (Safari-viewed PDFs, Files shares, EPUBs): saved on Save,
 //    format dropdown hidden, filenames listed.
-//  - URLS/pages: Article (Markdown, readable extraction in Rust) /
-//    Link note / Page (HTML). Article extraction falls back to the link
-//    note — a capture never fails outright.
+//  - URLS/pages: Article (Markdown) / Article (HTML) / Link note. Both
+//    article formats run ONE readable extraction in Rust and differ only in
+//    output shape. There is deliberately no full-page capture — the point of
+//    capturing an article is to get the article, not the ads.
+//
+//    Fallback chain, shared by both: raw fetched HTML -> rendered DOM
+//    (PageRenderer, for JS-rendered pages) -> link note. A capture never
+//    fails outright.
 //
 // Reuses the shared grant (App Group bookmark) and the Rust
 // `notesage-capture` C ABI. Wired by integrate-share-extension.py.
@@ -352,21 +357,41 @@ final class ShareViewController: UIViewController {
                     self.saveLink(url: url)
                     return
                 }
-                if self.format == .html {
-                    _ = try? LibraryAccess.writeRawHtml(url: url, title: self.sharedTitle, html: html)
+                // Both article formats share one fallback chain (#611):
+                //   raw HTML -> rendered DOM -> link note.
+                // The render is a SECOND attempt only. A page whose article is
+                // already in the fetched HTML never pays for a webview.
+                if self.writeArticle(url: url, html: html) {
                     self.finish()
                     return
                 }
-                if let rel = try? LibraryAccess.writeArticleCapture(
-                    url: url, title: self.sharedTitle, selectionText: nil, tags: [], html: html),
-                   rel != nil {
-                    self.finish()
-                } else {
-                    // No readable article — the link note never fails.
-                    self.saveLink(url: url)
+                PageRenderer.renderedHTML(url: url) { [weak self] rendered in
+                    guard let self else { return }
+                    if let rendered, self.writeArticle(url: url, html: rendered) {
+                        self.finish()
+                    } else {
+                        // Neither source yielded an article — the link note
+                        // never fails.
+                        self.saveLink(url: url)
+                    }
                 }
             }
         }
+    }
+
+    /// Write the active article format from `html`. Returns false when
+    /// extraction declines, so the caller can try the next source in the chain.
+    ///
+    /// Shared by both article formats because the SPA problem is not
+    /// format-specific: if the article is not in the fetched HTML, neither the
+    /// markdown nor the HTML rendering can find it.
+    private func writeArticle(url: String, html: String) -> Bool {
+        if format == .html {
+            return (try? LibraryAccess.writeArticleHtml(
+                url: url, title: sharedTitle, html: html)) != nil
+        }
+        return (try? LibraryAccess.writeArticleCapture(
+            url: url, title: sharedTitle, selectionText: nil, tags: [], html: html)) != nil
     }
 
     /// Fetch the page (10 s budget, 5 MB cap, Safari UA — unknown agents get
