@@ -1462,6 +1462,65 @@ describe("native pull-to-refresh (issue #620)", () => {
   });
 });
 
+/**
+ * The web pull gesture's own spinner.
+ *
+ * Distinct from the bridge-driven refresh above: that one is fired by the
+ * native UIRefreshControl, which draws its own spinner, so the web layer
+ * deliberately shows nothing. This is the gesture the web layer handles
+ * itself, where the spinner IS ours to draw.
+ *
+ * jsdom has no layout, so neither of these can assert "the user can see it".
+ * What they can assert is the structural property that made it invisible —
+ * and that is the whole bug, so it is the right thing to pin.
+ */
+describe("web pull-to-refresh indicator (2026-08-20)", () => {
+  function scrollerAndIndicator(container: HTMLElement) {
+    return {
+      scrollers: Array.from(container.querySelectorAll(".overflow-y-auto")),
+      indicator: container.querySelector<HTMLElement>(".border-t-foreground"),
+    };
+  }
+
+  it("lives outside every scrolling container, which is what made it invisible", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    const { container } = renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Nothing here yet");
+
+    const { scrollers, indicator } = scrollerAndIndicator(container);
+    expect(indicator).not.toBeNull();
+    expect(scrollers.length).toBeGreaterThan(0);
+
+    // It used to sit at `-top-12` INSIDE the scroller: 48px above the
+    // scrollport of an `overflow-y-auto` box, the one direction a scroll
+    // container clips outright. The pull translates that container, and a
+    // container's clip region travels with it, so the spinner was hidden at
+    // every pull distance rather than only at rest — it had never been drawn.
+    for (const scroller of scrollers) {
+      expect(scroller.contains(indicator!)).toBe(false);
+    }
+  });
+
+  it("is hidden at rest and fades in as the pull approaches the trigger", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    const { container } = renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Nothing here yet");
+
+    const { scrollers, indicator } = scrollerAndIndicator(container);
+    expect(indicator!.style.opacity).toBe("0");
+
+    // Pull 100px from the top. The gesture damps by 0.45, so this lands at
+    // 45px — past halfway to the 64px trigger but short of firing it.
+    const scroller = scrollers[0];
+    fireEvent.touchStart(scroller, { touches: [{ clientY: 0 }] });
+    fireEvent.touchMove(scroller, { touches: [{ clientY: 100 }] });
+
+    const opacity = Number(indicator!.style.opacity);
+    expect(opacity).toBeGreaterThan(0.5);
+    expect(opacity).toBeLessThan(1);
+  });
+});
+
 describe("accessibility — Dynamic Type + Bold Text (issue #617)", () => {
   const dispatchA11y = (detail: { scale: number; bold: boolean }) => {
     fireEvent(window, new CustomEvent("notesage:a11y", { detail }));

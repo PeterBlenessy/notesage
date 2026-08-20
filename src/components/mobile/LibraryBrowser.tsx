@@ -589,25 +589,6 @@ export function LibraryBrowser() {
           transition: pullPx > 0 ? "none" : "transform 260ms cubic-bezier(0.25, 0.8, 0.35, 1)",
         }}
       >
-        {/* Pull-to-refresh indicator: rides above the content, revealed by
-            the pull translate; spins while the reload runs. */}
-        <div
-          aria-hidden={!pullBusy && pullPx === 0}
-          className="pointer-events-none absolute -top-12 left-0 right-0 flex h-12 items-center justify-center"
-        >
-          <div
-            className={
-              pullBusy
-                ? "h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground"
-                : "h-5 w-5 rounded-full border-2 border-muted border-t-foreground"
-            }
-            style={
-              pullBusy
-                ? undefined
-                : { opacity: Math.min(1, pullPx / 64), transform: `rotate(${pullPx * 3.2}deg)` }
-            }
-          />
-        </div>
         {/* The large in-content title + breadcrumb row exist ONLY on the web
             fallback: with native chrome the breadcrumb ISLAND carries both
             the folder name and the path (Peter's #615 design — the island
@@ -726,6 +707,49 @@ export function LibraryBrowser() {
               </>
             );
           })()}
+      </div>
+
+      {/* Pull-to-refresh indicator.
+
+          A SIBLING of the scroller, not a child. It used to live inside it at
+          `-top-12`, which put it 48px above the scrollport of an
+          `overflow-y-auto` box — the one place a scroll container clips
+          outright, since there is no scrolling up into negative space. The
+          pull translates the container, and a container's clip region travels
+          with it, so the spinner was hidden at every pull distance rather than
+          merely at rest. Refresh worked; the spinner had never once been
+          drawn (Peter, 2026-08-20).
+
+          Out here the parent is the positioning context and nothing clips it.
+          It sits just below the top chrome, in the band the content's own
+          `CONTENT_INSETS` padding already keeps empty, so it occupies the gap
+          the pull opens instead of overlapping the first row. Painted after
+          the scroller (above the list) but before the islands (under the
+          chrome), and inert to touch so the gesture still reaches the
+          scroller beneath it. */}
+      <div
+        aria-hidden={!pullBusy && pullPx === 0}
+        className="pointer-events-none absolute left-0 right-0 flex h-12 items-center justify-center"
+        style={{ top: "calc(3.75rem + env(safe-area-inset-top))" }}
+      >
+        <div
+          className={
+            pullBusy
+              ? "h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground"
+              : "h-5 w-5 rounded-full border-2 border-muted border-t-foreground"
+          }
+          style={
+            pullBusy
+              ? undefined
+              : {
+                  // Fades in over the pull and reaches full opacity exactly at
+                  // PULL_TRIGGER, so the gesture's threshold is legible rather
+                  // than guessed at.
+                  opacity: Math.min(1, pullPx / PULL_TRIGGER),
+                  transform: `rotate(${pullPx * 3.2}deg)`,
+                }
+          }
+        />
       </div>
 
       {/* Button islands (iOS 26 / Notes layout): nav top-left, actions
