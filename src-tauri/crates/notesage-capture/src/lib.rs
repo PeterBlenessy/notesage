@@ -482,6 +482,10 @@ pub fn extract_article(html: &str, url: &str) -> Option<Article> {
     let mut readability = dom_smoothie::Readability::new(html, Some(url), None).ok()?;
     let product = readability.parse().ok()?;
     let filtered_content = strip_ad_and_tracker_images(&product.content);
+    // dom_smoothie returns the article wrapped in its own `<html>` element.
+    // Fine as an intermediate for markdown conversion, but nesting an `<html>`
+    // inside our template's `<body>` is invalid markup — unwrap it.
+    let filtered_content = unwrap_readability_shell(&filtered_content);
     let markdown = htmd::convert(&filtered_content).ok()?;
     let markdown = markdown.trim();
     if markdown.chars().count() < MIN_ARTICLE_CHARS {
@@ -559,6 +563,23 @@ fn is_ad_or_tracker_image(node: &dom_query::Selection) -> bool {
         || height.is_some_and(|h| h <= TRACKING_PIXEL_MAX_DIMENSION)
 }
 
+
+
+/// Strip dom_smoothie's `<html>` wrapper from extracted content.
+///
+/// The extractor returns `<html><div id="readability-page-1">…</div></html>`.
+/// That is harmless on the way to markdown, but the "Article only" template
+/// embeds this HTML inside its own `<body>`, and a nested `<html>` element is
+/// invalid — browsers recover from it, but the document stops being one we can
+/// claim is well-formed.
+fn unwrap_readability_shell(html: &str) -> String {
+    let trimmed = html.trim();
+    let inner = trimmed
+        .strip_prefix("<html>")
+        .and_then(|rest| rest.strip_suffix("</html>"))
+        .unwrap_or(trimmed);
+    inner.trim().to_string()
+}
 
 /// Reader-view styling for the "Article only" capture (#612).
 ///
@@ -782,6 +803,19 @@ than of the template.</p>";
         let doc = build_article_html_document(&article, None, "https://example.com/p");
         assert!(!doc.contains("<img"), "invented an image");
         assert!(doc.contains("<style"), "still a styled document");
+    }
+
+
+    #[test]
+    fn article_html_document_is_not_nested_inside_a_second_html_element() {
+        // The extractor wraps its output in `<html>`; embedding that inside
+        // our template's `<body>` would nest one `<html>` in another. Browsers
+        // recover, but the document stops being well-formed — and this format
+        // exists to be opened directly.
+        let html = article_page_with_image();
+        let article = extract_article(&html, "https://example.com/post").expect("article");
+        let doc = build_article_html_document(&article, Some("T"), "https://example.com/post");
+        assert_eq!(doc.matches("<html").count(), 1, "more than one <html> element");
     }
 
     #[test]
