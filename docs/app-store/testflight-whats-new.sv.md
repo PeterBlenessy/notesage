@@ -10,7 +10,7 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Dela en webbsida och välj Artikel (HTML) eller Artikel (Markdown) — du får nu
-bara artikeln, med bilder och formatering, i stället för hela sidan med
-annonser och menyer. Sidor som byggs med JavaScript fungerar också. Testa på
-en nyhetssajt.
+Sparade webbsidor visas nu med en bild av sidan i gallerivyn i stället för en
+vanlig filikon. Dra neråt i biblioteket för att uppdatera — nu syns en snurra
+medan det laddas om, vilket saknades tidigare. Artikelsparandet från
+delningsmenyn är oförändrat; fortsätt gärna testa det på nyhetssajter.
