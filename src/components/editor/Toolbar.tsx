@@ -65,6 +65,8 @@ import {
   TableToolsPopover,
   CalloutPicker,
 } from "./toolbar/index";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 interface ToolbarProps {
   editor: Editor | null;
@@ -134,6 +136,8 @@ function ToolbarSeparator() {
 // --- Main Toolbar ---
 
 export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleViewMode, sourceWordWrap, onToggleWordWrap, variant = "inline" }: ToolbarProps) {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const isSource = viewMode === "source";
   const isPill = variant === "pill";
   // The pill toolbar is floating chrome — its background recipe mirrors
@@ -202,7 +206,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
               <ToolbarButton
                 onClick={() => editor.chain().focus().toggleBlockquote().run()}
                 active={editor.isActive("blockquote")}
-                title="Blockquote"
+                title={t("editor.blockquote")}
               >
                 <Quote className="size-4" strokeWidth={1.5} />
               </ToolbarButton>
@@ -211,7 +215,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
               <ToolbarButton
                 onClick={() => editor.chain().focus().toggleTaskList().run()}
                 active={editor.isActive("taskList")}
-                title="Task List"
+                title={t("editor.taskList")}
               >
                 <ListChecks className="size-4" strokeWidth={1.5} />
               </ToolbarButton>
@@ -246,7 +250,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                         variant="ghost"
                         size="icon-xs"
                         className="text-muted-foreground"
-                        title="More"
+                        title={t("editor.more")}
                       >
                         <MoreHorizontal className="size-4" strokeWidth={1.5} />
                       </Button>
@@ -594,7 +598,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().undo().run()}
             disabled={!editor.can().undo()}
-            title="Undo (Cmd+Z)"
+            title={t("editor.undo") + " (Cmd+Z)"}
           >
             <Undo className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -602,7 +606,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().redo().run()}
             disabled={!editor.can().redo()}
-            title="Redo (Cmd+Shift+Z)"
+            title={t("editor.redo") + " (Cmd+Shift+Z)"}
           >
             <Redo className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -612,7 +616,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBold().run()}
             active={editor.isActive("bold")}
-            title="Bold (Cmd+B)"
+            title={t("editor.bold") + " (Cmd+B)"}
           >
             <Bold className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -620,7 +624,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleItalic().run()}
             active={editor.isActive("italic")}
-            title="Italic (Cmd+I)"
+            title={t("editor.italic") + " (Cmd+I)"}
           >
             <Italic className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -628,7 +632,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleUnderline().run()}
             active={editor.isActive("underline")}
-            title="Underline (Cmd+U)"
+            title={t("editor.underline") + " (Cmd+U)"}
           >
             <Underline className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -636,7 +640,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleStrike().run()}
             active={editor.isActive("strike")}
-            title="Strikethrough (Cmd+Shift+X)"
+            title={t("editor.strikethrough") + " (Cmd+Shift+X)"}
           >
             <Strikethrough className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -644,7 +648,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleCode().run()}
             active={editor.isActive("code")}
-            title="Code (Cmd+E)"
+            title={t("editor.code") + " (Cmd+E)"}
           >
             <Code className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -652,7 +656,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleSubscript().run()}
             active={editor.isActive("subscript")}
-            title="Subscript"
+            title={t("editor.subscript")}
           >
             <Subscript className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -660,7 +664,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleSuperscript().run()}
             active={editor.isActive("superscript")}
-            title="Superscript"
+            title={t("editor.superscript")}
           >
             <Superscript className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -676,7 +680,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBulletList().run()}
             active={editor.isActive("bulletList")}
-            title="Bullet List"
+            title={t("editor.bulletList")}
           >
             <List className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -684,7 +688,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleOrderedList().run()}
             active={editor.isActive("orderedList")}
-            title="Numbered List"
+            title={t("editor.numberedList")}
           >
             <ListOrdered className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -692,7 +696,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleTaskList().run()}
             active={editor.isActive("taskList")}
-            title="Task List"
+            title={t("editor.taskList")}
           >
             <ListChecks className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -707,7 +711,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
               }
             }}
             disabled={!isInList}
-            title="Indent (Tab)"
+            title={t("editor.indent") + " (Tab)"}
           >
             <IndentIncrease className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -721,7 +725,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
               }
             }}
             disabled={!isInList}
-            title="Outdent (Shift+Tab)"
+            title={t("editor.outdent") + " (Shift+Tab)"}
           >
             <IndentDecrease className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -731,7 +735,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleBlockquote().run()}
             active={editor.isActive("blockquote")}
-            title="Blockquote"
+            title={t("editor.blockquote")}
           >
             <Quote className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -744,14 +748,14 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
               track("block_inserted", { kind: "code_block" });
             }}
             active={editor.isActive("codeBlock")}
-            title="Code Block"
+            title={t("editor.codeBlock")}
           >
             <CodeSquare className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarButton
             onClick={() => editor.chain().focus().setHorizontalRule().run()}
-            title="Horizontal Rule"
+            title={t("editor.horizontalRule")}
           >
             <Minus className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -762,7 +766,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().setTextAlign("left").run()}
             active={editor.isActive({ textAlign: "left" })}
-            title="Align left"
+            title={t("editor.alignLeft")}
           >
             <AlignLeft className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -770,7 +774,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().setTextAlign("center").run()}
             active={editor.isActive({ textAlign: "center" })}
-            title="Align center"
+            title={t("editor.alignCenter")}
           >
             <AlignCenter className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -778,7 +782,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().setTextAlign("right").run()}
             active={editor.isActive({ textAlign: "right" })}
-            title="Align right"
+            title={t("editor.alignRight")}
           >
             <AlignRight className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
@@ -798,21 +802,21 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
 
           <ToolbarButton
             onClick={() => onImageInsert?.()}
-            title="Insert Image"
+            title={t("editor.insertImage")}
           >
             <ImageIcon className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarButton
             onClick={() => editor.chain().focus().insertDrawing().run()}
-            title="Insert Drawing"
+            title={t("editor.insertDrawing")}
           >
             <Pencil className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
 
           <ToolbarButton
             onClick={() => editor.chain().focus().insertChart().run()}
-            title="Insert Chart"
+            title={t("editor.insertChart")}
           >
             <BarChart3 className="size-4" strokeWidth={1.5} />
           </ToolbarButton>
