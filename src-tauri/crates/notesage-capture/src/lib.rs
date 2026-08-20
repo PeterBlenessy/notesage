@@ -715,6 +715,72 @@ fn civil_from_unix(unix_secs: i64) -> (i64, u32, u32, u32, u32, u32) {
 mod tests {
     use super::*;
 
+
+    // ---- JS-rendered pages: the rendered-DOM tier (#611) ------------------
+    //
+    // The Swift side runs the chain (raw HTML -> rendered DOM -> link note);
+    // these cover the premise it rests on — that extraction DECLINES on an SPA
+    // shell and SUCCEEDS on the same page's settled DOM. Without both halves
+    // holding, the render tier is either useless or never reached.
+
+    /// What a network fetch returns for a JS-rendered page: an empty shell.
+    fn spa_shell_html() -> &'static str {
+        "<html><head><title>News</title></head><body>\
+         <div id=\"root\"></div>\
+         <script src=\"/bundle.js\"></script></body></html>"
+    }
+
+    /// The same page after the DOM has settled — the article now exists.
+    fn spa_settled_html() -> String {
+        let body = "<p>The article body that only appears once the bundle has \
+run and painted, which is the entire reason a raw-HTML fetch cannot capture \
+this page and a rendered DOM can. It carries on for long enough to clear the \
+extractor's minimum length, as a real article would.</p>";
+        format!(
+            "<html><head><title>News</title></head><body><div id=\"root\">\
+             <article><h1>Real Headline</h1>{body}{body}</article></div></body></html>"
+        )
+    }
+
+    #[test]
+    fn spa_shell_yields_no_article_so_the_render_tier_is_reached() {
+        // If this ever returned Some, the rendered-DOM attempt would never run
+        // and JS pages would silently keep capturing as empty shells.
+        assert!(
+            extract_article(spa_shell_html(), "https://news.example.com/story").is_none(),
+            "an empty SPA shell must not pass as an article"
+        );
+    }
+
+    #[test]
+    fn settled_dom_yields_the_article_the_raw_fetch_missed() {
+        let article = extract_article(&spa_settled_html(), "https://news.example.com/story")
+            .expect("the settled DOM must yield an article");
+        assert!(article.markdown.contains("only appears once the bundle has run"));
+        // Both formats are fed from this same extraction.
+        assert!(!article.html.is_empty());
+    }
+
+    #[test]
+    fn a_render_that_returns_nothing_leaves_the_link_note_as_the_floor() {
+        // The timeout path hands back whatever the DOM held — possibly still
+        // the shell. Extraction declines again, and the caller falls through
+        // to the link note rather than failing the share.
+        assert!(extract_article("", "https://news.example.com/story").is_none());
+        assert!(extract_article(spa_shell_html(), "https://news.example.com/story").is_none());
+    }
+
+    #[test]
+    fn a_server_rendered_page_never_needs_the_render_tier() {
+        // No regression for the ordinary case: extraction succeeds on the
+        // fetched HTML, so no webview is ever constructed.
+        let html = article_page_with_image();
+        assert!(
+            extract_article(&html, "https://example.com/post").is_some(),
+            "server-rendered pages must still extract from raw HTML"
+        );
+    }
+
     // ---- Article-only HTML capture (#612) --------------------------------
     //
     // The extracted article wrapped in a self-contained readable template,

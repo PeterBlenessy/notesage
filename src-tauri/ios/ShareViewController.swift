@@ -359,26 +359,41 @@ final class ShareViewController: UIViewController {
                     self.finish()
                     return
                 }
-                if self.format == .articleHtml {
-                    // Article-only (#612). Declines the same way markdown
-                    // extraction does, and falls back to the link note.
-                    if (try? LibraryAccess.writeArticleHtml(
-                        url: url, title: self.sharedTitle, html: html)) != nil {
-                        self.finish()
-                    } else {
-                        self.saveLink(url: url)
-                    }
+                // Both article formats share one fallback chain (#611):
+                //   raw HTML -> rendered DOM -> link note.
+                // The render is a SECOND attempt only. A page whose article is
+                // already in the fetched HTML never pays for a webview.
+                if self.writeArticle(url: url, html: html) {
+                    self.finish()
                     return
                 }
-                if (try? LibraryAccess.writeArticleCapture(
-                    url: url, title: self.sharedTitle, selectionText: nil, tags: [], html: html)) != nil {
-                    self.finish()
-                } else {
-                    // No readable article — the link note never fails.
-                    self.saveLink(url: url)
+                PageRenderer.renderedHTML(url: url) { [weak self] rendered in
+                    guard let self else { return }
+                    if let rendered, self.writeArticle(url: url, html: rendered) {
+                        self.finish()
+                    } else {
+                        // Neither source yielded an article — the link note
+                        // never fails.
+                        self.saveLink(url: url)
+                    }
                 }
             }
         }
+    }
+
+    /// Write the active article format from `html`. Returns false when
+    /// extraction declines, so the caller can try the next source in the chain.
+    ///
+    /// Shared by both article formats because the SPA problem is not
+    /// format-specific: if the article is not in the fetched HTML, neither the
+    /// markdown nor the HTML rendering can find it.
+    private func writeArticle(url: String, html: String) -> Bool {
+        if format == .articleHtml {
+            return (try? LibraryAccess.writeArticleHtml(
+                url: url, title: sharedTitle, html: html)) != nil
+        }
+        return (try? LibraryAccess.writeArticleCapture(
+            url: url, title: sharedTitle, selectionText: nil, tags: [], html: html)) != nil
     }
 
     /// Fetch the page (10 s budget, 5 MB cap, Safari UA — unknown agents get

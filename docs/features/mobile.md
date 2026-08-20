@@ -98,15 +98,33 @@ links and documents. PRD:
   **Article (Markdown)** — page fetched (10 s / 5 MB, Safari UA) and run
   through readable extraction + HTML→Markdown in the Rust `notesage-capture`
   crate (`extract_article`, `capture_format: markdown` note v2), falling back
-  to the link note when a page yields nothing readable; **Link note** — the
-  classic instant capture; **Page (HTML)** — the fetched page stored as a
-  real `.html` Inbox file (opens in the app's HTML viewer). The last choice
-  is remembered (App Group defaults) and listed first; success flashes
-  "✓ Saved…" and auto-dismisses. Documents (PDF/EPUB/file shares — the
+  to the link note when a page yields nothing readable; **Article only
+  (HTML)** — the SAME extraction rendered into a clean, self-contained
+  `.html` document with reader typography, images and formatting preserved
+  and site chrome/ads stripped (#612); **Link note** — the classic instant
+  capture; **Page (HTML)** — the fetched page stored verbatim as a real
+  `.html` Inbox file, ads and all (opens in the app's HTML viewer). The last
+  choice is remembered (App Group defaults) and listed first; success flashes
+  "✓ Saved…" and auto-dismisses.
+
+  Both article formats share one fallback chain (#611): **raw fetched HTML →
+  rendered DOM → link note**. When extraction declines on the fetched HTML —
+  which is what happens on a JavaScript-rendered page, whose article does not
+  exist until a bundle runs — `PageRenderer` loads the URL in a hidden
+  `WKWebView`, waits for the DOM to go quiet (MutationObserver, 500 ms quiet
+  period, hard 5 s ceiling), and re-runs extraction on the settled DOM. It is
+  a SECOND attempt only: a server-rendered page never constructs a webview.
+  The webview is ephemeral (no cookie access), blocks media playback, and is
+  torn down as soon as it yields — the extension's ~120 MB ceiling is not a
+  budget you can exceed and recover from, it kills the extension.
+
+  **The settle constants are starting points, not measurements.** 500 ms /
+  5 s want verifying against real sites: a page that mutates continuously
+  never goes quiet (the ceiling catches it), and one that lazy-loads past 5 s
+  yields a partial DOM (still better than a link note). Documents (PDF/EPUB/file shares — the
   extension also declares `NSExtensionActivationSupportsFileWithMaxCount`)
   skip the picker and store immediately in `Inbox/` with their original
-  names, streamed via `loadFileRepresentation`. PDF-format capture via an
-  in-extension WKWebView render: #609; extraction quality: #610.
+  names, streamed via `loadFileRepresentation`. Extraction quality: #610.
 - **Capture links via the share sheet.** "Share → Notesage" from Safari, the
   X/Twitter app, or anything that shares a URL writes a link-only
   `type: capture` note into `Inbox/`, which syncs back to the desktop where the
