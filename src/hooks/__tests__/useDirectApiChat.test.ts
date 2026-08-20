@@ -240,6 +240,10 @@ describe('useDirectApiChat — error handling (#17)', () => {
   beforeEach(() => {
     useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
+    // `clearMessages()` deletes only the ACTIVE conversation, so a sibling
+    // test's conversation can survive as `conversations[0]` — which is exactly
+    // what the assertion below reads. Clear the list outright.
+    useChatStore.setState({ conversations: [], activeConversationId: null });
     useChatStore.getState().clearMessages();
     vi.mocked(invoke).mockClear();
   });

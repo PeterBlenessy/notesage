@@ -192,7 +192,15 @@ const SETTINGS_DEFAULTS: Record<string, unknown> = {
 
 beforeEach(() => {
   storageBacking.clear();
-  useSettingsStore.setState(SETTINGS_DEFAULTS);
+  // Reset from the store's OWN initial state, not a hand-written copy.
+  //
+  // `SETTINGS_DEFAULTS` below lists 58 fields; the store has 97. The other 39
+  // — `relationsPanelHeight`, `locale`, `maxConcurrentSessions` and the rest —
+  // were never reset, because the list has to be updated by hand every time a
+  // setting is added and nothing enforces that. Tests asserting on those
+  // fields' defaults were really asserting on whatever the previous test file
+  // left behind.
+  useSettingsStore.setState(useSettingsStore.getInitialState(), true);
 });
 
 afterEach(() => {
@@ -204,6 +212,9 @@ afterEach(() => {
 // ===========================================================================
 
 describe('initial state defaults', () => {
+  // This one deliberately keeps the hand-written list: asserting the store's
+  // defaults against a literal is the point of the test. It is the RESET path
+  // above that must not duplicate them.
   it('has correct default values for all fields', () => {
     useSettingsStore.setState(SETTINGS_DEFAULTS);
     const s = useSettingsStore.getState();
