@@ -12,7 +12,7 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Share a web page and pick Article (HTML) or Article (Markdown) — you now get
-just the article, with its images and formatting, instead of the whole page
-with its ads and menus. Pages built with JavaScript work too. Try it on a news
-site.
+Saved web pages now show a picture of the page in gallery view instead of a
+plain file icon. Pull down on the library to refresh and you should see a
+spinner while it reloads — it was missing before. Article capture from the
+share sheet is unchanged; keep trying it on news sites.
