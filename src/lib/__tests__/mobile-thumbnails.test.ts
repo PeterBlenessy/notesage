@@ -285,4 +285,34 @@ describe("native-first thumbnails (QLThumbnailGenerator)", () => {
     expect(pdf.kind).toBe("pdf");
     expect(renderPdfThumbnailDataUrlMock).toHaveBeenCalled();
   });
+
+  /**
+   * HTML previews.
+   *
+   * `classifyFile` has returned "html" for a while, but `buildThumbnail`
+   * matched no branch on it, so every web page fell through to the generic
+   * icon. Invisible while HTML files were rare; a wall of identical icons once
+   * article capture (#612) started producing folders of them.
+   */
+  it("renders an html file through the native generator", async () => {
+    iosThumbnailMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+
+    const page = await getThumbnail(entry({ name: "article.html" }), { theme: "light" });
+
+    expect(page.kind).toBe("image");
+    expect(iosThumbnailMock).toHaveBeenCalledWith("article.html", 480);
+  });
+
+  it("degrades an html file to an icon rather than an empty preview", async () => {
+    // The native layer is absent here (the suite default). The wrong repair
+    // would be routing html at the markdown pipeline: comrak runs without
+    // `unsafe_` and strips raw HTML, so a page would render as a BLANK card —
+    // worse than an icon, because it reads as a broken thumbnail rather than
+    // an unpreviewable file.
+    const page = await getThumbnail(entry({ name: "article.htm" }), { theme: "light" });
+
+    expect(page.kind).toBe("icon");
+    expect(renderMarkdownFragmentMock).not.toHaveBeenCalled();
+    expect(iosReadFileMock).not.toHaveBeenCalled();
+  });
 });

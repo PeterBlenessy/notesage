@@ -4,12 +4,13 @@
  * A card's thumbnail comes from one of three sources, dispatched by
  * `classifyFile`: markdown/text notes render the first ~10 lines of source
  * through the same trusted comrak pipeline the Reader uses (safe to inject —
- * see `renderMarkdownFragment`'s doc comment); images decode to a blob URL
- * from the already-read bytes; PDFs delegate to a lazily-imported first-page
- * canvas rasterizer (`mobile-pdf-thumbnail.ts`) so pdfjs-dist — a heavy
- * dependency — never loads for a folder with no PDFs. Everything else
- * (directories, unsupported types) resolves to a generic icon with no read
- * at all.
+ * see `renderMarkdownFragment`'s doc comment); anything the system can
+ * preview — images, PDFs, video, office docs, HTML — goes to
+ * QLThumbnailGenerator off-thread; and the web pipeline (blob decode for
+ * images, a lazily-imported first-page canvas rasterizer for PDFs, so
+ * pdfjs-dist never loads for a folder with no PDFs) remains as the fallback
+ * for builds without the native layer. Everything else (directories,
+ * unsupported types) resolves to a generic icon with no read at all.
  *
  * Two safeguards keep a folder with hundreds of notes from bursting reads:
  * `getThumbnail` is the only entry point cards call, and it (a) runs the
@@ -125,11 +126,27 @@ async function buildThumbnail(
       const html = await renderMarkdownFragment(preview, opts.theme);
       return { kind: "markdown", html };
     }
-    if (kind === "image" || kind === "pdf" || kind === "media" || kind === "doc") {
-      // Native first: QLThumbnailGenerator renders PDFs, images, videos and
-      // office docs OFF the webview thread — no multi-MB reads over IPC, no
-      // pdf.js raster on the main thread. The web pipeline below survives
-      // only as the fallback for builds without the native layer.
+    if (
+      kind === "image" ||
+      kind === "pdf" ||
+      kind === "media" ||
+      kind === "doc" ||
+      kind === "html"
+    ) {
+      // Native first: QLThumbnailGenerator renders PDFs, images, videos,
+      // office docs and web pages OFF the webview thread — no multi-MB reads
+      // over IPC, no pdf.js raster on the main thread. The web pipeline below
+      // survives only as the fallback for builds without the native layer.
+      //
+      // `html` is here rather than on the markdown path on purpose. Feeding an
+      // HTML file to `renderMarkdownFragment` yields an EMPTY thumbnail, not a
+      // wrong one: that pipeline runs comrak without `unsafe_`, which strips
+      // raw HTML by design — the property the Reader's safety rests on. So a
+      // web page can only be previewed by something that actually renders it,
+      // and QuickLook already does, off-thread. Before this, `html` matched no
+      // branch at all and fell through to the generic icon — invisible while
+      // HTML files were rare, obvious once article capture (#612) started
+      // producing folders of them.
       try {
         const png = await iosThumbnail(entry.path, 480);
         if (isStale()) throw new ThumbnailCancelled();
