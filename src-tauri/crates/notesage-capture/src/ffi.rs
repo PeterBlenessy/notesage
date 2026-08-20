@@ -24,7 +24,7 @@ use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use crate::{
-    build_article_note, build_capture_note, build_video_note, extract_article, extract_meta_title,
+    build_article_html_document, build_article_note, build_capture_note, build_video_note, extract_article, extract_meta_title,
     meaningful_title, oembed_url, parse_oembed, timestamps, CaptureInput,
 };
 
@@ -208,6 +208,40 @@ pub unsafe extern "C" fn notesage_capture_article_contents(
         };
         let (now, _stamp) = timestamps();
         into_c_string(build_article_note(&input, &article, &now).contents)
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Build an ARTICLE-ONLY HTML capture note's **file contents** (#612): the
+/// same readable extraction as [`notesage_capture_article_contents`], rendered
+/// into a self-contained styled document instead of markdown.
+///
+/// Returns NULL when the page yields no genuine article — the caller falls
+/// back, and a share never fails outright. Free with
+/// [`notesage_capture_string_free`].
+///
+/// # Safety
+/// All pointers must be NUL-terminated C strings or NULL, valid for the call.
+#[no_mangle]
+pub unsafe extern "C" fn notesage_capture_article_html_contents(
+    url: *const c_char,
+    title: *const c_char,
+    selection_text: *const c_char,
+    tags: *const c_char,
+    html: *const c_char,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        let input = input_from(url, title, selection_text, tags);
+        let html = match opt_str(html) {
+            Some(h) => h,
+            None => return std::ptr::null_mut(),
+        };
+        let article = match extract_article(&html, &input.url) {
+            Some(a) => a,
+            None => return std::ptr::null_mut(),
+        };
+        let title = meaningful_title(input.title.as_deref()).or_else(|| article.title.clone());
+        into_c_string(build_article_html_document(&article, title.as_deref(), &input.url))
     }))
     .unwrap_or(std::ptr::null_mut())
 }

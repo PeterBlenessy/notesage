@@ -184,6 +184,57 @@ extension LibraryAccess {
     /// Save the fetched page's RAW HTML as a real `.html` file in Inbox/
     /// (user-chosen "Page (HTML)" capture format). Named by the same
     /// timestamp-slug scheme as capture notes.
+    /// Article-ONLY HTML capture (#612): the readable article as a clean,
+    /// self-contained document.
+    ///
+    /// Writes `.html` like its sibling `writeRawHtml` rather than a
+    /// frontmatter `.md` note — the format exists to open as a readable page,
+    /// and the naming/dedupe logic is deliberately identical so the two HTML
+    /// captures land side by side in the Inbox.
+    ///
+    /// Returns nil when the page yields no genuine article, so the caller can
+    /// fall back — a share never fails outright.
+    static func writeArticleHtml(url: String, title: String?, html: String) throws -> String? {
+        let document: String? = html.withCString { htmlPtr in
+            callCapture({ u, t, sel, tg in
+                notesage_capture_article_html_contents(u, t, sel, tg, htmlPtr)
+            }, url, title, nil, "")
+        }
+        guard let document else { return nil }
+
+        let relPath = html.withCString { htmlPtr -> String? in
+            callCapture({ u, t, _, _ in
+                notesage_capture_rel_path_from_html(u, t, htmlPtr)
+            }, url, title, nil, "")
+        }
+        guard let relPath else { return nil }
+
+        let root = try resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+
+        let stem = ((relPath as NSString).lastPathComponent as NSString).deletingPathExtension
+        var name = "\(stem).html"
+        var target = inbox.appendingPathComponent(name)
+        var n = 1
+        while FileManager.default.fileExists(atPath: target.path) {
+            name = "\(stem)-\(n).html"
+            target = inbox.appendingPathComponent(name)
+            n += 1
+        }
+
+        var coordError: NSError?
+        var writeError: Error?
+        NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &coordError) { url in
+            do { try document.data(using: .utf8)?.write(to: url) } catch { writeError = error }
+        }
+        if let coordError { throw coordError }
+        if let writeError { throw writeError }
+        return "Inbox/\(name)"
+    }
+
     static func writeRawHtml(url: String, title: String?, html: String) throws -> String {
         // Inject <base> so the page's RELATIVE stylesheet/script/image URLs
         // resolve against the ORIGINAL site — served from the app's custom

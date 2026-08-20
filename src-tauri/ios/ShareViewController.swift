@@ -40,6 +40,7 @@ final class ShareViewController: UIViewController {
     private enum CaptureFormat: String, CaseIterable {
         case video
         case article
+        case articleHtml
         case link
         case html
 
@@ -48,6 +49,7 @@ final class ShareViewController: UIViewController {
             case .video: return L("share.formatVideo")
             case .article: return L("share.formatArticle")
             case .link: return L("share.formatLink")
+            case .articleHtml: return L("share.formatArticleHtml")
             case .html: return L("share.formatHtml")
             }
         }
@@ -345,7 +347,7 @@ final class ShareViewController: UIViewController {
                     self.saveLink(url: url)
                 }
             }
-        case .article, .html:
+        case .article, .articleHtml, .html:
             fetch(url: url) { [weak self] html in
                 guard let self else { return }
                 guard let html else {
@@ -357,9 +359,19 @@ final class ShareViewController: UIViewController {
                     self.finish()
                     return
                 }
-                if let rel = try? LibraryAccess.writeArticleCapture(
-                    url: url, title: self.sharedTitle, selectionText: nil, tags: [], html: html),
-                   rel != nil {
+                if self.format == .articleHtml {
+                    // Article-only (#612). Declines the same way markdown
+                    // extraction does, and falls back to the link note.
+                    if (try? LibraryAccess.writeArticleHtml(
+                        url: url, title: self.sharedTitle, html: html)) != nil {
+                        self.finish()
+                    } else {
+                        self.saveLink(url: url)
+                    }
+                    return
+                }
+                if (try? LibraryAccess.writeArticleCapture(
+                    url: url, title: self.sharedTitle, selectionText: nil, tags: [], html: html)) != nil {
                     self.finish()
                 } else {
                     // No readable article — the link note never fails.
