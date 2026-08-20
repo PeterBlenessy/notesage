@@ -839,6 +839,12 @@ describe('comment-store', () => {
     });
 
     it('partial replies are scoped per document+comment', () => {
+      // `appendPartialReply` APPENDS. The assertions below are exact equality,
+      // so anything a sibling test left under these keys is prepended to the
+      // expected value. Clear the keys this test owns rather than assume they
+      // start empty.
+      clearPartialReply('doc-1', 'c1');
+      clearPartialReply('doc-1', 'c2');
       appendPartialReply('doc-1', 'c1', 'AAA');
       appendPartialReply('doc-1', 'c2', 'BBB');
 
