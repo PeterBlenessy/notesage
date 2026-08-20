@@ -7,6 +7,8 @@ import { ProjectCard } from '../ProjectCard';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsHint } from './SettingsHint';
 import { SettingsRow } from './SettingsRow';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 function basename(path: string): string {
   return path.split('/').filter(Boolean).pop() || path;
@@ -29,6 +31,8 @@ function basename(path: string): string {
  * inside each ProjectCard now.
  */
 export function ProjectsSettings() {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const projects = useWorkspaceStore((s) => s.projects);
   const sortedProjects = useMemo(
     () =>
@@ -68,7 +72,7 @@ export function ProjectsSettings() {
   return (
     <>
       {sortedProjects.length > 0 ? (
-        <SettingsGroup label="Projects" bare>
+        <SettingsGroup label={t("settings.projectsGroup")} bare>
           <div className="py-2 space-y-2">
             {sortedProjects.map((p) => (
               <ProjectCard key={p.path} projectPath={p.path} />
@@ -77,10 +81,10 @@ export function ProjectsSettings() {
         </SettingsGroup>
       ) : null}
 
-      <SettingsGroup label="Version Control">
+      <SettingsGroup label={t("settings.versionControl")}>
         <SettingsRow
-          label="Enable git"
-          description="Track file changes, view status indicators, switch branches, and commit from within the app."
+          label={t("settings.enableGit")}
+          description={t("settings.enableGitDesc")}
           htmlFor="git-integration"
           control={
             <Switch

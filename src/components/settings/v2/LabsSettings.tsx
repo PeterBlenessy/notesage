@@ -5,6 +5,8 @@ import { useFlagStore } from '@/stores/flag-store';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsHint } from './SettingsHint';
 import { SettingsRow } from './SettingsRow';
+import { t } from '@/lib/i18n';
+import { useLocale } from '@/lib/useLocale';
 
 /** Stage badge — how finished a flagged feature is. Neutral greys only; the
  *  strict palette has no room for a chromatic "beta" pill, and the word does
@@ -27,6 +29,8 @@ function StageBadge({ stage }: { stage: FlagSpec['stage'] }) {
  * decides when a flag graduates.
  */
 export function LabsSettings() {
+  // `t()` reads module state — subscribe so a language change repaints this.
+  useLocale();
   const entries = flagEntries();
   const enabled = useFlagStore((s) => s.enabled);
   const setEnabled = useFlagStore((s) => s.setEnabled);
@@ -34,7 +38,7 @@ export function LabsSettings() {
 
   if (entries.length === 0) {
     return (
-      <SettingsGroup label="Labs">
+      <SettingsGroup label={t("settings.labs")}>
         <SettingsHint>
           Nothing experimental is in flight right now. Features appear here
           while they are being tried out, and disappear once they are finished
@@ -46,7 +50,7 @@ export function LabsSettings() {
 
   return (
     <>
-      <SettingsGroup label="Labs">
+      <SettingsGroup label={t("settings.labs")}>
         <SettingsHint>
           Features still being worked on. They may change, misbehave, or
           disappear. Turning any of them on also switches on usage and crash
@@ -77,10 +81,10 @@ export function LabsSettings() {
       </SettingsGroup>
 
       {enabled.length > 0 && (
-        <SettingsGroup label="Reset">
+        <SettingsGroup label={t("settings.reset")}>
           <SettingsRow
-            label="Turn off all Labs features"
-            description="One way back if something you enabled is misbehaving."
+            label={t("settings.turnOffLabs")}
+            description={t("settings.turnOffLabsDesc")}
             control={
               <Button variant="outline" size="sm" onClick={() => resetAll()}>
                 Reset
