@@ -88,6 +88,30 @@ jobs:
       - name: Unit tests with coverage
         run: pnpm test:coverage
 
+      - name: Test isolation (shuffled file order)
+        # ADVISORY. Files run sequentially in one worker (`fileParallelism:
+        # false`), so they share a module registry: a store one file mutates is
+        # the SAME object in the next. Any test asserting on a "default" it did
+        # not set is really asserting on what the previous file left behind, and
+        # passes only because the fixed file order happens to be favourable.
+        #
+        # That is not hypothetical — two such tests failed intermittently and
+        # blocked a PR (#735), and the cause looked like the innocent PR's fault
+        # because the failing tests were unrelated to it.
+        #
+        # Shuffling FILES catches it at the commit that introduces it. Tests
+        # within a file are deliberately NOT shuffled: their order is stable in
+        # practice, and some files couple their tests on purpose (see
+        # `useSkillOperations.test.ts`, where a module-level flag makes the first
+        # test's run a precondition for the second).
+        #
+        # Advisory rather than blocking so a genuine cross-file bug shows up as
+        # a signal to act on, not a red build on an unrelated PR — the same
+        # reasoning as the perf step below. Promote to blocking once it has been
+        # green for a while.
+        continue-on-error: true
+        run: pnpm vitest run --sequence.shuffle.files=true
+
       - name: Performance benchmarks
         # ADVISORY (does not block merge/release). Wall-clock benchmarks on a
         # shared macos-latest runner have irreducible variance — even after
