@@ -11,8 +11,7 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-
-Saved web pages now show a picture of the page in gallery view instead of a
-plain file icon. Pull down on the library to refresh and you should see a
-spinner while it reloads — it was missing before. Article capture from the
-share sheet is unchanged; keep trying it on news sites.
+Saved web pages now keep their images. Share an article, give it a moment,
+then turn on airplane mode and open it — the pictures should still be there,
+and it should show a picture of the page in gallery view instead of a plain
+icon. Pull down to refresh; you should see a spinner now.
