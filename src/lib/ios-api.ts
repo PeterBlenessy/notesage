@@ -149,6 +149,25 @@ export async function iosInlineArticleImages(
   });
 }
 
+/** What a retroactive image sweep would do, without doing any of it. */
+export interface IosUpgradableArticles {
+  documents: number;
+  images: number;
+  paths: string[];
+}
+
+/**
+ * Scan the whole library for articles that still reference remote images.
+ *
+ * Reports rather than acts, deliberately: a retroactive sweep rewrites
+ * documents the user already owns, can multiply their library size, and makes
+ * their device contact every site they ever saved from. The cost is shown
+ * before anything happens.
+ */
+export function iosFindUpgradableArticles(): Promise<IosUpgradableArticles> {
+  return invoke<IosUpgradableArticles>("ios_find_upgradable_articles");
+}
+
 /**
  * Present the system QuickLook preview for a library file — native
  * video/audio playback and document rendering. Rejects off-iOS.

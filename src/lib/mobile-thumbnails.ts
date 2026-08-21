@@ -182,7 +182,23 @@ async function buildThumbnail(
   return { kind: "icon" };
 }
 
+/**
+ * Cached by THEME AND PATH, not path alone.
+ *
+ * Two things went wrong with a path-only key. React runs effects child-first,
+ * so a gallery card's first thumbnail request can fire before ThemeProvider's
+ * effect has put `dark` on the documentElement — the card reads "light",
+ * generates a light thumbnail, and caches it for the session. And a theme flip
+ * mid-session left every already-generated thumbnail in the old theme.
+ *
+ * Keying on the pair makes both self-correcting: a request under a different
+ * theme is simply a miss.
+ */
 const cache = new Map<string, Promise<ThumbnailResult>>();
+
+function cacheKey(theme: "light" | "dark", path: string): string {
+  return `${theme}:${path}`;
+}
 
 /** Bumped by `cancelPendingThumbnails`; queued jobs from an older epoch
  *  resolve to a plain icon without doing any work. */
@@ -214,7 +230,8 @@ export function getThumbnail(
   entry: FileEntry,
   opts: { theme: "light" | "dark" },
 ): Promise<ThumbnailResult> {
-  const cached = cache.get(entry.path);
+  const key = cacheKey(opts.theme, entry.path);
+  const cached = cache.get(key);
   if (cached) return cached;
   const myEpoch = epoch;
   const isStale = () => myEpoch !== epoch;
@@ -225,12 +242,12 @@ export function getThumbnail(
     return buildThumbnail(entry, opts, isStale);
   }).catch((err) => {
     if (err instanceof ThumbnailCancelled) {
-      cache.delete(entry.path);
+      cache.delete(key);
       return { kind: "icon" } as ThumbnailResult;
     }
     throw err;
   });
-  cache.set(entry.path, promise);
+  cache.set(key, promise);
   return promise;
 }
 
@@ -244,7 +261,10 @@ export function getThumbnail(
  * and the fix would look like it had not worked.
  */
 export function evictThumbnail(path: string): void {
-  cache.delete(path);
+  // Both themes: the file's CONTENT changed, which invalidates every rendering
+  // of it, not just the one currently on screen.
+  cache.delete(cacheKey("light", path));
+  cache.delete(cacheKey("dark", path));
 }
 
 /** Test-only reset — the cache is module-level and otherwise leaks across tests. */
