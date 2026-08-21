@@ -7,6 +7,7 @@ import { useMobileStore } from "@/stores/mobile-store";
 import { Onboarding } from "@/components/mobile/Onboarding";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 import { Reader } from "@/components/mobile/Reader";
+import { useInlineSweep } from "@/components/mobile/useInlineSweep";
 
 /**
  * Root of the iOS mobile shell — a read-only reader over the iCloud-synced
@@ -21,6 +22,12 @@ export function MobileApp() {
   const grantState = useMobileStore((s) => s.grantState);
   const openDoc = useMobileStore((s) => s.openDoc);
   const refreshGrant = useMobileStore((s) => s.refreshGrant);
+
+  // Mounted HERE, at the root, deliberately: it must keep working while the
+  // user reads. Hosting it in LibraryBrowser would stop the sweep the moment a
+  // document opened, because that component unmounts — the same class of bug
+  // as scoping a global listener to a collapsible surface.
+  useInlineSweep();
 
   // Resolve the native grant once on mount — never trust a persisted flag.
   useEffect(() => {

@@ -128,6 +128,21 @@ export async function iosThumbnail(relPath: string, maxPixel: number): Promise<U
 }
 
 /**
+ * Rewrite a captured article so its images are embedded rather than linked,
+ * making it readable offline (PRD `2026-08-21-self-contained-articles.md`).
+ *
+ * Returns how many images were embedded. `0` means there was nothing to do —
+ * the common case for an already-swept document — so a caller can run this
+ * over a folder without tracking what it has already done.
+ *
+ * The image bytes never come back through this call. Everything happens
+ * natively and lands on disk; only the count crosses IPC.
+ */
+export async function iosInlineArticleImages(relPath: string): Promise<number> {
+  return invoke<number>("ios_inline_article_images", { relPath });
+}
+
+/**
  * Present the system QuickLook preview for a library file — native
  * video/audio playback and document rendering. Rejects off-iOS.
  */

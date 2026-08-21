@@ -81,7 +81,7 @@ the algorithm — so if that moves, revisit this.
 `ios_inline_article_images(relPath)` returning immediately, plus a progress
 event. **Image bytes never cross IPC.**
 
-### #1.5 Foreground sweep
+### #1.5 Foreground sweep ✅
 
 Hang off the existing `visibilitychange` hook (#650). Find Inbox documents
 with remote images, queue them, rewrite one at a time.
