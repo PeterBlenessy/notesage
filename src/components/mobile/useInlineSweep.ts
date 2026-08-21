@@ -77,6 +77,23 @@ export function useInlineSweep() {
 
   const sweep = useCallback(async () => {
     if (running.current) return;
+    // Read the settings ONCE, here, rather than per document. A change made
+    // mid-sweep would otherwise produce one article with 2048px images and the
+    // next with 1200px — the kind of inconsistency that is invisible until
+    // someone compares two files and cannot explain the difference.
+    const {
+      inlineImagesEnabled,
+      imageMaxPixel,
+      imageQuality,
+    } = useMobileStore.getState();
+    if (!inlineImagesEnabled) return;
+    // "original" is sent as an explicit 0, NOT as undefined. Undefined means
+    // "caller expressed no preference" and the command applies its 1600
+    // default — so omitting the field would silently ignore the user's choice
+    // and downsample anyway. 0 means "no cap" and the native side skips
+    // downsampling entirely rather than "resizing" to a number larger than
+    // the source.
+    const maxPixel = imageMaxPixel === "original" ? 0 : imageMaxPixel;
     // Offline, every fetch would fail and every document would be marked
     // attempted — burning the one cheap retry this session had. Skipping
     // leaves them for the next foreground, when there may be a network.
@@ -108,7 +125,10 @@ export function useInlineSweep() {
       for (const [index, entry] of todo.entries()) {
         attempted.current.add(entry.path);
         try {
-          const inlined = await iosInlineArticleImages(entry.path);
+          const inlined = await iosInlineArticleImages(entry.path, {
+            maxPixel,
+            jpegQuality: imageQuality,
+          });
           if (inlined > 0) {
             // The thumbnail cache is keyed by path and never expires, so
             // without this the article keeps the text-only thumbnail taken

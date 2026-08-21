@@ -98,12 +98,12 @@ usable while a sweep runs.
 
 ## Phase 2 — Settings
 
-### #2.1 Scale + quality settings
+### #2.1 Scale + quality settings ✅ (store + wiring; UI panel pending)
 
 Max dimension (Original / 2048 / 1600 / 1200), JPEG quality, master toggle.
 Default **1600px / q0.8 / on**.
 
-### #2.2 Wire settings through to the native job
+### #2.2 Wire settings through to the native job ✅
 
 Read at job start, not per image, so a mid-sweep change cannot produce a
 document with inconsistent image sizes.

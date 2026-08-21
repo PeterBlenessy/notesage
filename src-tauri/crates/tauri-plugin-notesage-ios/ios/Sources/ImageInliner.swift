@@ -174,6 +174,16 @@ final class ImageInliner: NSObject {
     /// reason this is not a Rust image crate.
     private func downsample(_ data: Data) -> Data? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+
+        // maxPixel 0 means the user asked for originals — no cap. Decode at
+        // full size instead of asking for a thumbnail, which would otherwise
+        // "resize" to 0 and produce nothing. This is the memory-hungry path,
+        // which is exactly why it is opt-in rather than the default.
+        if limits.maxPixel <= 0 {
+            guard let full = CGImageSourceCreateImageAtIndex(source, 0, nil) else { return nil }
+            return encodeJpeg(full)
+        }
+
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
@@ -183,6 +193,10 @@ final class ImageInliner: NSObject {
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             return nil
         }
+        return encodeJpeg(image)
+    }
+
+    private func encodeJpeg(_ image: CGImage) -> Data? {
         let out = NSMutableData()
         // The literal UTI rather than `UTType.jpeg`: identical value, no
         // UniformTypeIdentifiers import, and no iOS 14 availability floor

@@ -12,10 +12,12 @@ import { renderHook, waitFor, act } from "@testing-library/react";
 import "@/test/tauri-mock";
 
 const listDirectoryMock = vi.fn<(rel: string) => Promise<unknown[]>>();
-const inlineMock = vi.fn<(rel: string) => Promise<number>>();
+const inlineMock =
+  vi.fn<(rel: string, opts?: { maxPixel?: number; jpegQuality?: number }) => Promise<number>>();
 vi.mock("@/lib/ios-api", () => ({
   iosListDirectory: (rel: string) => listDirectoryMock(rel),
-  iosInlineArticleImages: (rel: string) => inlineMock(rel),
+  iosInlineArticleImages: (rel: string, opts?: { maxPixel?: number; jpegQuality?: number }) =>
+    inlineMock(rel, opts),
 }));
 
 const evictMock = vi.fn<(path: string) => void>();
@@ -188,5 +190,64 @@ describe("the passive indicator", () => {
     render(<SweepIndicator progress={{ active: true, done: 0, total: 2 }} />);
 
     expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+  });
+});
+
+describe("settings (#2.2)", () => {
+  it("does nothing at all when the sweep is turned off", async () => {
+    useMobileStore.setState({ inlineImagesEnabled: false });
+    listDirectoryMock.mockResolvedValue([entry("article.html")]);
+
+    renderHook(() => useInlineSweep());
+
+    await new Promise((r) => setTimeout(r, 10));
+    // Not even the listing is read — off means off, not "do it quietly".
+    expect(listDirectoryMock).not.toHaveBeenCalled();
+    useMobileStore.setState({ inlineImagesEnabled: true });
+  });
+
+  it("passes the configured size and quality to the native job", async () => {
+    useMobileStore.setState({ imageMaxPixel: 1200, imageQuality: 0.6 });
+    listDirectoryMock.mockResolvedValue([entry("article.html")]);
+
+    renderHook(() => useInlineSweep());
+
+    await waitFor(() => expect(inlineMock).toHaveBeenCalled());
+    expect(inlineMock).toHaveBeenCalledWith("Inbox/article.html", {
+      maxPixel: 1200,
+      jpegQuality: 0.6,
+    });
+  });
+
+  it("sends an explicit 0 for 'original', never undefined", async () => {
+    // Undefined would mean "no preference" and the command would apply its
+    // 1600 default — silently downsampling the images of a user who asked for
+    // originals. 0 means "no cap".
+    useMobileStore.setState({ imageMaxPixel: "original" });
+    listDirectoryMock.mockResolvedValue([entry("article.html")]);
+
+    renderHook(() => useInlineSweep());
+
+    await waitFor(() => expect(inlineMock).toHaveBeenCalled());
+    expect(inlineMock.mock.calls[0][1]).toMatchObject({ maxPixel: 0 });
+    useMobileStore.setState({ imageMaxPixel: 1600 });
+  });
+
+  it("reads the settings once per sweep, not once per document", async () => {
+    // A change mid-sweep must not produce one article at 2048 and the next at
+    // 1200 — an inconsistency invisible until someone compares two files.
+    useMobileStore.setState({ imageMaxPixel: 2048 });
+    listDirectoryMock.mockResolvedValue([entry("a.html"), entry("b.html")]);
+    inlineMock.mockImplementation(async () => {
+      useMobileStore.setState({ imageMaxPixel: 1200 });
+      return 1;
+    });
+
+    renderHook(() => useInlineSweep());
+
+    await waitFor(() => expect(inlineMock).toHaveBeenCalledTimes(2));
+    const sizes = inlineMock.mock.calls.map((c) => (c[1] as { maxPixel: number }).maxPixel);
+    expect(sizes).toEqual([2048, 2048]);
+    useMobileStore.setState({ imageMaxPixel: 1600 });
   });
 });

@@ -138,8 +138,15 @@ export async function iosThumbnail(relPath: string, maxPixel: number): Promise<U
  * The image bytes never come back through this call. Everything happens
  * natively and lands on disk; only the count crosses IPC.
  */
-export async function iosInlineArticleImages(relPath: string): Promise<number> {
-  return invoke<number>("ios_inline_article_images", { relPath });
+export async function iosInlineArticleImages(
+  relPath: string,
+  opts?: { maxPixel?: number; jpegQuality?: number },
+): Promise<number> {
+  return invoke<number>("ios_inline_article_images", {
+    relPath,
+    maxPixel: opts?.maxPixel,
+    jpegQuality: opts?.jpegQuality,
+  });
 }
 
 /**
