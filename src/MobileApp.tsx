@@ -115,10 +115,23 @@ export function MobileApp() {
 function Splash() {
   return (
     <div className="flex h-full w-full items-center justify-center">
-      <div
-        className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-foreground"
-        aria-label="Loading"
-      />
+      {/* An SVG ring rather than a bordered div — see the matching comment in
+          LibraryBrowser. A `border-t-*` tint on a 2px circle was reported as
+          "just a circle" with no discernible motion; an explicit stroked arc
+          has nothing to override and reads at any size. */}
+      <svg viewBox="0 0 24 24" className="h-6 w-6 animate-spin" aria-label="Loading" role="img">
+        <circle cx="12" cy="12" r="10" fill="none" stroke="var(--color-muted)" strokeWidth="2.5" />
+        <circle
+          cx="12"
+          cy="12"
+          r="10"
+          fill="none"
+          stroke="var(--color-foreground)"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeDasharray="15.7 47.1"
+        />
+      </svg>
     </div>
   );
 }
