@@ -11,7 +11,8 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Saved articles in gallery view now show their own photo — the same picture you
-saw in the share sheet — instead of a shrunken page. Share a few articles and
-check whether you can tell them apart at a glance. They should also stop
-looking washed out in dark mode.
+A round of fixes from a code review. Two are worth testing directly: share a
+link from Messages or Mail (not just Safari), and share an article from a site
+that uses responsive images — the Guardian is a good one. Both should save with
+their pictures intact. Everything else should simply feel the same, only
+steadier.

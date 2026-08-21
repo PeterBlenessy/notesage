@@ -63,7 +63,35 @@ final class ImageInliner: NSObject {
     private let limits: Limits
     private var session: URLSession!
     /// Per-task cap so the delegate can cancel an oversized response.
+    ///
+    /// Reached from two threads — written on the `.utility` queue that drives
+    /// the fetches, read on the URLSession delegate queue — so every access
+    /// goes through `budgetLock`. For a fetch that completes normally the
+    /// accesses happen to be sequential, which is what made this look safe.
+    /// The TIMEOUT path is where it is not: a timed-out task is cancelled but
+    /// cancellation is not instant, so its delegate can still fire while the
+    /// NEXT fetch is writing. Swift dictionaries are not thread-safe, and a
+    /// concurrent read during a rehash is a crash, not a stale value.
     private var budgetForTask: [Int: Int] = [:]
+    private let budgetLock = NSLock()
+
+    private func setBudget(_ bytes: Int, for taskId: Int) {
+        budgetLock.lock()
+        budgetForTask[taskId] = bytes
+        budgetLock.unlock()
+    }
+
+    private func takeBudget(for taskId: Int) -> Int? {
+        budgetLock.lock()
+        defer { budgetLock.unlock() }
+        return budgetForTask[taskId]
+    }
+
+    private func clearBudget(for taskId: Int) {
+        budgetLock.lock()
+        budgetForTask.removeValue(forKey: taskId)
+        budgetLock.unlock()
+    }
 
     init(limits: Limits) {
         self.limits = limits
@@ -153,17 +181,21 @@ final class ImageInliner: NSObject {
             }
             result = data
         }
-        budgetForTask[task.taskIdentifier] = limits.perImageBytes
+        setBudget(limits.perImageBytes, for: task.taskIdentifier)
         task.resume()
 
         // Bounded wait: a stalled connection must not hold the queue past the
         // wall clock this whole job is running under.
         let waited = semaphore.wait(timeout: .now() + max(1, min(15, deadline.timeIntervalSinceNow)))
+        // Cleared on BOTH paths. The timeout used to return early without
+        // clearing, so a stalled fetch leaked its entry for the process
+        // lifetime — and left the delegate reading a key the next fetch was
+        // writing beside.
+        defer { clearBudget(for: task.taskIdentifier) }
         if waited == .timedOut {
             task.cancel()
             return nil
         }
-        budgetForTask.removeValue(forKey: task.taskIdentifier)
         return result
     }
 
@@ -227,7 +259,7 @@ extension ImageInliner: URLSessionDataDelegate {
         didReceive response: URLResponse,
         completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
     ) {
-        let cap = budgetForTask[dataTask.taskIdentifier] ?? Int.max
+        let cap = takeBudget(for: dataTask.taskIdentifier) ?? Int.max
         let declared = response.expectedContentLength
         if declared > 0 && declared > Int64(cap) {
             completionHandler(.cancel)

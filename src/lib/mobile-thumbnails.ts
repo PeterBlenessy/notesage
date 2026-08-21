@@ -45,6 +45,53 @@ export function extractPreviewSource(raw: string, maxLines: number = PREVIEW_LIN
   return stripFrontmatter(raw).split("\n").slice(0, maxLines).join("\n");
 }
 
+/**
+ * Longest edge for a gallery thumbnail, in device pixels.
+ *
+ * The lead image is stored at the user's capture setting (1600 by default) —
+ * right for reading, absurd for a card roughly 120pt wide. Holding fifty
+ * full-size images and letting the browser scale each one down at paint time
+ * is memory spent to look identical.
+ */
+const THUMBNAIL_MAX_EDGE = 480;
+
+/**
+ * Shrink an image to card size, when the platform can do it off the main
+ * thread. `createImageBitmap` with `resizeWidth` decodes AT the target size
+ * rather than decoding fully and then scaling.
+ *
+ * Returns the original bytes unchanged wherever this is not available (jsdom,
+ * older WebKit) — a correct big image beats a failed small one.
+ */
+async function shrinkForCard(bytes: Uint8Array, mime: string): Promise<Blob> {
+  const original = new Blob([bytes.slice().buffer], { type: mime });
+  if (typeof createImageBitmap !== "function" || typeof OffscreenCanvas !== "function") {
+    return original;
+  }
+  try {
+    const probe = await createImageBitmap(original);
+    const longest = Math.max(probe.width, probe.height);
+    if (longest <= THUMBNAIL_MAX_EDGE) {
+      probe.close();
+      return original;
+    }
+    const scale = THUMBNAIL_MAX_EDGE / longest;
+    const w = Math.max(1, Math.round(probe.width * scale));
+    const h = Math.max(1, Math.round(probe.height * scale));
+    const canvas = new OffscreenCanvas(w, h);
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      probe.close();
+      return original;
+    }
+    ctx.drawImage(probe, 0, 0, w, h);
+    probe.close();
+    return await canvas.convertToBlob({ type: "image/jpeg", quality: 0.8 });
+  } catch {
+    return original;
+  }
+}
+
 export type Limiter = <T>(fn: () => Promise<T>) => Promise<T>;
 
 /**
@@ -143,9 +190,10 @@ async function buildThumbnail(
     // in the library themselves.
     if (kind === "html") {
       try {
-        const png = await iosArticleThumbnail(entry.path);
+        const bytes = await iosArticleThumbnail(entry.path);
         if (isStale()) throw new ThumbnailCancelled();
-        const blob = new Blob([png.slice().buffer], { type: "image/jpeg" });
+        const blob = await shrinkForCard(bytes, "image/jpeg");
+        if (isStale()) throw new ThumbnailCancelled();
         return { kind: "image", url: URL.createObjectURL(blob) };
       } catch (err) {
         if (err instanceof ThumbnailCancelled) throw err;
@@ -175,6 +223,7 @@ async function buildThumbnail(
       try {
         const png = await iosThumbnail(entry.path, 480);
         if (isStale()) throw new ThumbnailCancelled();
+        // Already generated at 480 by the OS, so no shrink needed.
         const blob = new Blob([png.slice().buffer], { type: "image/png" });
         return { kind: "image", url: URL.createObjectURL(blob) };
       } catch (err) {
@@ -185,8 +234,9 @@ async function buildThumbnail(
     if (kind === "image") {
       const bytes = await iosReadBinary(entry.path);
       if (isStale()) throw new ThumbnailCancelled();
-      const buffer = bytes.slice().buffer;
-      const blob = new Blob([buffer], { type: imageMimeFor(entry.name) });
+      // A library photo can be many megapixels; a card is 120pt.
+      const blob = await shrinkForCard(bytes, imageMimeFor(entry.name));
+      if (isStale()) throw new ThumbnailCancelled();
       return { kind: "image", url: URL.createObjectURL(blob) };
     }
     if (kind === "pdf") {
@@ -223,6 +273,28 @@ const cache = new Map<string, Promise<ThumbnailResult>>();
 
 function cacheKey(theme: "light" | "dark", path: string): string {
   return `${theme}:${path}`;
+}
+
+/**
+ * Release a cached entry's blob URL when it leaves the cache.
+ *
+ * `URL.createObjectURL` pins the blob until it is revoked. Dropping a cache
+ * entry without revoking leaks the whole image for the session — invisible,
+ * and worst exactly where it matters most: the sweep rewrites documents and
+ * evicts their thumbnails, so the more articles it processes the more images
+ * are stranded.
+ */
+async function releaseEntry(promise: Promise<ThumbnailResult> | undefined): Promise<void> {
+  if (!promise) return;
+  try {
+    const result = await promise;
+    if (result.kind === "image" || result.kind === "pdf") {
+      // Data URIs (the pdf.js fallback) are plain strings with nothing to free.
+      if (result.url.startsWith("blob:")) URL.revokeObjectURL(result.url);
+    }
+  } catch {
+    // A rejected entry never produced a URL.
+  }
 }
 
 /** Bumped by `cancelPendingThumbnails`; queued jobs from an older epoch
@@ -267,6 +339,7 @@ export function getThumbnail(
     return buildThumbnail(entry, opts, isStale);
   }).catch((err) => {
     if (err instanceof ThumbnailCancelled) {
+      void releaseEntry(cache.get(key));
       cache.delete(key);
       return { kind: "icon" } as ThumbnailResult;
     }
@@ -288,11 +361,15 @@ export function getThumbnail(
 export function evictThumbnail(path: string): void {
   // Both themes: the file's CONTENT changed, which invalidates every rendering
   // of it, not just the one currently on screen.
-  cache.delete(cacheKey("light", path));
-  cache.delete(cacheKey("dark", path));
+  for (const theme of ["light", "dark"] as const) {
+    const key = cacheKey(theme, path);
+    void releaseEntry(cache.get(key));
+    cache.delete(key);
+  }
 }
 
 /** Test-only reset — the cache is module-level and otherwise leaks across tests. */
 export function resetThumbnailCache(): void {
+  for (const entry of cache.values()) void releaseEntry(entry);
   cache.clear();
 }

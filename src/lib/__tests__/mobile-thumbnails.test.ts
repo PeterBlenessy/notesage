@@ -419,3 +419,44 @@ describe("html thumbnails prefer the article's own lead image", () => {
     expect(iosArticleThumbnailMock).not.toHaveBeenCalled();
   });
 });
+
+describe("blob URLs are released", () => {
+  it("revokes a thumbnail's URL when the file is evicted", async () => {
+    // createObjectURL pins the blob until revoked. The sweep rewrites
+    // documents and evicts their thumbnails, so without this the leak grows
+    // with exactly the work the feature does most of.
+    iosArticleThumbnailMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    const revoke = vi.fn();
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:thumb-1"),
+      revokeObjectURL: revoke,
+    });
+
+    await getThumbnail(entry({ name: "a.html" }), { theme: "light" });
+    evictThumbnail("a.html");
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(revoke).toHaveBeenCalledWith("blob:thumb-1");
+  });
+
+  it("does not try to revoke a data: URL", async () => {
+    // The pdf.js fallback yields a data URI — a plain string with nothing to
+    // free. Revoking it is harmless but signals a misunderstanding.
+    iosReadBinaryMock.mockResolvedValue(new Uint8Array([9, 9]));
+    renderPdfThumbnailDataUrlMock.mockResolvedValue("data:image/png;base64,x");
+    const revoke = vi.fn();
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL: vi.fn(() => "blob:unused"),
+      revokeObjectURL: revoke,
+    });
+
+    const out = await getThumbnail(entry({ name: "doc.pdf" }), { theme: "light" });
+    expect(out.kind).toBe("pdf");
+    evictThumbnail("doc.pdf");
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(revoke).not.toHaveBeenCalled();
+  });
+});

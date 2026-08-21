@@ -9,7 +9,7 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Sparade artiklar visas nu med sin egen bild i gallerivyn — samma bild som du
-såg i delningsvyn — i stället för en hopkrympt sida. Dela några artiklar och se
-om du känner igen dem direkt. De ska heller inte längre se ljusa ut i mörkt
-läge.
+En omgång rättningar efter en kodgranskning. Två är värda att testa direkt:
+dela en länk från Meddelanden eller Mail (inte bara Safari), och dela en
+artikel från en sajt med responsiva bilder — the Guardian fungerar bra. Båda
+ska sparas med bilderna intakta. Resten ska kännas som förut, fast stabilare.

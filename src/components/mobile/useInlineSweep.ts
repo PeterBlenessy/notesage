@@ -30,6 +30,39 @@ import { useMobileStore } from "@/stores/mobile-store";
  */
 
 /** Only these are article captures; everything else in the Inbox is ignored. */
+/**
+ * Announce that documents changed, at most once a second.
+ *
+ * Each announcement makes the library reload its whole listing. One per
+ * document is fine for a handful of Inbox items and ruinous for the
+ * retroactive pass, which is hundreds — that would be hundreds of full
+ * listings rebuilt to show thumbnails that are still arriving. Throttling
+ * keeps the visible progress (the user sees cards fill in) without the storm.
+ */
+function makeAnnouncer() {
+  let last = 0;
+  let pending = false;
+  const fire = () => {
+    last = performance.now();
+    pending = false;
+    window.dispatchEvent(new CustomEvent(INLINE_SWEEP_EVENT));
+  };
+  return {
+    announce() {
+      if (performance.now() - last >= ANNOUNCE_THROTTLE_MS) {
+        fire();
+      } else if (!pending) {
+        pending = true;
+        setTimeout(fire, ANNOUNCE_THROTTLE_MS);
+      }
+    },
+    /** Always fire at the end, so the final state is never left unshown. */
+    flush() {
+      if (pending || performance.now() - last > 0) fire();
+    },
+  };
+}
+
 function isArticleHtml(entry: FileEntry): boolean {
   if (entry.is_directory) return false;
   const lower = entry.name.toLowerCase();
@@ -51,6 +84,9 @@ export const INLINE_SWEEP_EVENT = "notesage:inline-sweep-updated";
  *  as INLINE_SWEEP_EVENT, opposite way round. */
 export const INLINE_SWEEP_REQUEST = "notesage:inline-sweep-request";
 
+/** Minimum gap between listing-refresh announcements. */
+const ANNOUNCE_THROTTLE_MS = 1000;
+
 /** What the passive indicator needs to know. `total` is the number of
  *  documents this sweep will attempt, `done` how many it has finished. */
 export interface SweepProgress {
@@ -61,8 +97,14 @@ export interface SweepProgress {
 
 export function useInlineSweep() {
   // Read from the store rather than a prop: this hook has no parent that knows
-  // what is open, and the value must stay live across a sweep.
+  // what is open. Held in a REF, not a dependency: `sweep` only needs the
+  // value at the moment it runs, and making it a dep meant `sweep` changed
+  // identity on every document open and close — which re-fired the mount
+  // effect and started a fresh sweep each time. Cheap, since the guards catch
+  // it, but it is not what the effect claims to do.
   const openDocPath = useMobileStore((s) => s.openDoc?.relPath ?? null);
+  const openDocRef = useRef(openDocPath);
+  openDocRef.current = openDocPath;
   /**
    * Paths attempted this session.
    *
@@ -72,6 +114,7 @@ export function useInlineSweep() {
    * which on a large Inbox is real IPC and real disk for a guaranteed no-op.
    */
   const attempted = useRef<Set<string>>(new Set());
+  const announcer = useRef(makeAnnouncer());
   /** One sweep at a time; a second foreground mid-sweep must not double it. */
   const running = useRef(false);
   const [progress, setProgress] = useState<SweepProgress>({
@@ -122,33 +165,41 @@ export function useInlineSweep() {
           !attempted.current.has(e.path) &&
           // Rewriting a file the user is reading would swap the document under
           // them mid-scroll. It keeps its remote images until next time.
-          !(openDocPath && e.path === openDocPath),
+          !(openDocRef.current && e.path === openDocRef.current),
       );
       if (todo.length === 0) return;
       setProgress({ active: true, done: 0, total: todo.length });
 
       for (const [index, entry] of todo.entries()) {
-        attempted.current.add(entry.path);
         try {
           const inlined = await iosInlineArticleImages(entry.path, {
             maxPixel,
             jpegQuality: imageQuality,
           });
+          // Marked only on SUCCESS. Marking before the call meant a document
+          // that failed on a flaky network was skipped for the rest of the
+          // session, even once the signal came back — the sweep had silently
+          // spent its one attempt.
+          attempted.current.add(entry.path);
           if (inlined > 0) {
             // The thumbnail cache is keyed by path and never expires, so
             // without this the article keeps the text-only thumbnail taken
             // before the sweep and the fix looks like it did nothing.
             evictThumbnail(entry.path);
-            window.dispatchEvent(new CustomEvent(INLINE_SWEEP_EVENT, { detail: entry.path }));
+            announcer.current.announce();
           }
         } catch {
-          // One bad document must not stop the rest. It stays linked and gets
-          // another chance next session.
+          // Deliberately NOT marked attempted: one bad document must not stop
+          // the rest, and it should get another try on the next foreground
+          // rather than waiting for an app restart.
         }
         setProgress({ active: true, done: index + 1, total: todo.length });
       }
     } finally {
       running.current = false;
+      // Always announce the final state, even if the throttle swallowed
+      // the last document's update.
+      announcer.current.flush();
       setProgress((p) => ({ ...p, active: false }));
     }
   }, [openDocPath]);
@@ -190,7 +241,7 @@ export function useInlineSweep() {
           });
           if (inlined > 0) {
             evictThumbnail(path);
-            window.dispatchEvent(new CustomEvent(INLINE_SWEEP_EVENT, { detail: path }));
+            announcer.current.announce();
           }
         } catch {
           // Interrupting the whole run for one bad document would strand the
@@ -200,6 +251,9 @@ export function useInlineSweep() {
       }
     } finally {
       running.current = false;
+      // Always announce the final state, even if the throttle swallowed
+      // the last document's update.
+      announcer.current.flush();
       setProgress((p) => ({ ...p, active: false }));
     }
   }, []);

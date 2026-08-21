@@ -100,16 +100,63 @@ describe("after a document is rewritten", () => {
     // The thumbnail cache is keyed by path and never expires. Without the
     // eviction the article keeps the text-only thumbnail taken BEFORE the
     // sweep, and the whole fix looks like it did nothing.
+    //
+    // The announcement carries no payload: it is throttled and coalesced now,
+    // so one event can stand for several documents. Listeners reload the
+    // listing rather than acting on a specific path.
     listDirectoryMock.mockResolvedValue([entry("article.html")]);
-    const announced: string[] = [];
-    window.addEventListener(INLINE_SWEEP_EVENT, (e) => {
-      announced.push((e as CustomEvent).detail as string);
+    let announced = 0;
+    window.addEventListener(INLINE_SWEEP_EVENT, () => {
+      announced += 1;
     });
 
     renderHook(() => useInlineSweep());
 
     await waitFor(() => expect(evictMock).toHaveBeenCalledWith("Inbox/article.html"));
-    expect(announced).toContain("Inbox/article.html");
+    await waitFor(() => expect(announced).toBeGreaterThan(0));
+  });
+
+  it("coalesces announcements instead of one per document", async () => {
+    // Each announcement rebuilds the whole listing. One per document is fine
+    // for a few Inbox items and ruinous for the retroactive pass, which is
+    // hundreds.
+    listDirectoryMock.mockResolvedValue(
+      Array.from({ length: 8 }, (_, i) => entry(`a${i}.html`)),
+    );
+    let announced = 0;
+    window.addEventListener(INLINE_SWEEP_EVENT, () => {
+      announced += 1;
+    });
+
+    const { result } = renderHook(() => useInlineSweep());
+    await act(async () => {
+      await result.current.sweep();
+    });
+
+    expect(inlineMock).toHaveBeenCalledTimes(8);
+    // Far fewer events than documents; the exact count depends on timing, so
+    // assert the property that matters rather than a number.
+    expect(announced).toBeLessThan(8);
+    expect(announced).toBeGreaterThan(0);
+  });
+
+  it("retries a document that failed, rather than burning the session on it", async () => {
+    // A flaky network used to cost a document its only attempt: it was marked
+    // attempted BEFORE the call, so it was skipped for the rest of the session
+    // even once signal returned.
+    listDirectoryMock.mockResolvedValue([entry("flaky.html")]);
+    inlineMock.mockRejectedValueOnce(new Error("network died"));
+
+    const { result } = renderHook(() => useInlineSweep());
+    await waitFor(() => expect(inlineMock).toHaveBeenCalledTimes(1));
+
+    inlineMock.mockResolvedValue(1);
+    await act(async () => {
+      await result.current.sweep();
+    });
+
+    expect(inlineMock).toHaveBeenCalledTimes(2);
+    expect(evictMock).toHaveBeenCalledWith("Inbox/flaky.html");
   });
 
   it("stays quiet when nothing was embedded", async () => {
