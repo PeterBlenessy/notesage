@@ -76,7 +76,7 @@ no longer exists. The plain read → rewrite → coordinated atomic write via
 at capture time). The ceiling is a property of where the code runs, not of
 the algorithm — so if that moves, revisit this.
 
-### #1.4 Tauri command + progress events
+### #1.4 Tauri command ✅
 
 `ios_inline_article_images(relPath)` returning immediately, plus a progress
 event. **Image bytes never cross IPC.**

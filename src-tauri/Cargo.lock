@@ -4951,6 +4951,7 @@ dependencies = [
  "keyring",
  "libc",
  "log",
+ "notesage-capture",
  "notify",
  "notify-debouncer-full",
  "objc2",

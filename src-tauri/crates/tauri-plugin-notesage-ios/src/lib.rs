@@ -125,6 +125,33 @@ struct ThumbnailArgs<'a> {
     max_pixel: f64,
 }
 
+/// Images to fetch for `inline_images`, plus the budgets that bound the job.
+///
+/// The URLs come from `notesage_capture::article_image_urls`, so they arrive
+/// in document order — which the native side preserves, because a partial
+/// result should keep the lead image rather than an arbitrary subset.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct InlineImagesArgs<'a> {
+    urls: &'a [String],
+    max_pixel: u32,
+    jpeg_quality: f64,
+}
+
+/// url -> `data:` URI for the images that fit inside every budget. Images
+/// that did not are simply absent, and keep their remote URL in the document.
+#[derive(Deserialize)]
+struct InlineImagesResponse {
+    images: Vec<InlinedImage>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct InlinedImage {
+    url: String,
+    data_uri: String,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct TextPromptArgs<'a> {
@@ -267,6 +294,28 @@ impl<R: Runtime> NotesageIos<R> {
             .map(|r| r.base64)
     }
 
+    /// Fetch, downsample and base64-encode article images natively.
+    ///
+    /// Returns only the images that fit inside the native side's budgets;
+    /// anything skipped keeps its remote URL when the document is rewritten,
+    /// so a partial result is still a working article.
+    ///
+    /// The bytes stop here — they go straight into the rewritten HTML on the
+    /// Rust side and never reach the WebView, which is the property that keeps
+    /// a sweep from janking the UI.
+    pub fn inline_images(
+        &self,
+        urls: &[String],
+        max_pixel: u32,
+        jpeg_quality: f64,
+    ) -> Result<Vec<(String, String)>> {
+        self.call::<_, InlineImagesResponse>(
+            "inlineImages",
+            InlineImagesArgs { urls, max_pixel, jpeg_quality },
+        )
+        .map(|r| r.images.into_iter().map(|i| (i.url, i.data_uri)).collect())
+    }
+
     /// Present the system QuickLook preview over a temp copy of a library
     /// file (native video/audio playback, DOCX/PPTX/EPUB rendering, …).
     pub fn quick_look(&self, rel: &str) -> Result<()> {
@@ -384,6 +433,14 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn thumbnail_file(&self, _rel: &str, _max_pixel: f64) -> Result<String> {
+        Err(Error::Unavailable)
+    }
+    pub fn inline_images(
+        &self,
+        _urls: &[String],
+        _max_pixel: u32,
+        _jpeg_quality: f64,
+    ) -> Result<Vec<(String, String)>> {
         Err(Error::Unavailable)
     }
     pub fn quick_look(&self, _rel: &str) -> Result<()> {

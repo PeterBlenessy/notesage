@@ -38,7 +38,6 @@
 
 import Foundation
 import ImageIO
-import UniformTypeIdentifiers
 
 final class ImageInliner: NSObject {
     struct Limits {
@@ -185,8 +184,11 @@ final class ImageInliner: NSObject {
             return nil
         }
         let out = NSMutableData()
+        // The literal UTI rather than `UTType.jpeg`: identical value, no
+        // UniformTypeIdentifiers import, and no iOS 14 availability floor
+        // on a file that has no other reason to carry one.
         guard let dest = CGImageDestinationCreateWithData(
-            out, UTType.jpeg.identifier as CFString, 1, nil)
+            out, "public.jpeg" as CFString, 1, nil)
         else { return nil }
         CGImageDestinationAddImage(dest, image, [
             kCGImageDestinationLossyCompressionQuality: limits.jpegQuality,
