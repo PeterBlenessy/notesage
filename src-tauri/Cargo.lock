@@ -5008,6 +5008,7 @@ dependencies = [
 name = "notesage-capture"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "dom_query 0.28.0",
  "dom_smoothie",
  "htmd",

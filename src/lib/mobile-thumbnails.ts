@@ -19,7 +19,7 @@
  * never re-fetches. Callers (GalleryCard) are additionally expected to only
  * call `getThumbnail` once a card is actually visible.
  */
-import { iosReadFile, iosReadBinary, iosThumbnail } from "@/lib/ios-api";
+import { iosReadFile, iosReadBinary, iosThumbnail, iosArticleThumbnail } from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
 import { classifyFile } from "@/components/mobile/FileRow";
 import type { FileEntry } from "@/lib/tauri";
@@ -125,6 +125,31 @@ async function buildThumbnail(
       const preview = extractPreviewSource(raw);
       const html = await renderMarkdownFragment(preview, opts.theme);
       return { kind: "markdown", html };
+    }
+    // A saved article is recognised by its PHOTO, not by its layout.
+    //
+    // QuickLook renders the page into a square, which is accurate and useless:
+    // nobody remembers a layout, and a wall of miniature pages is unreadable.
+    // What sticks is the image from the share sheet — and the sweep has
+    // already embedded it in the document, so it costs one read to find.
+    //
+    // It also sidesteps the theme problem for free. QuickLook renders in its
+    // own light trait context with no appearance parameter available, so an
+    // HTML thumbnail was always light in a dark app; a photograph has no
+    // theme.
+    //
+    // Falls through to QuickLook when the article has no inline image — an
+    // unswept capture, an image-less piece, or a plain HTML file the user put
+    // in the library themselves.
+    if (kind === "html") {
+      try {
+        const png = await iosArticleThumbnail(entry.path);
+        if (isStale()) throw new ThumbnailCancelled();
+        const blob = new Blob([png.slice().buffer], { type: "image/jpeg" });
+        return { kind: "image", url: URL.createObjectURL(blob) };
+      } catch (err) {
+        if (err instanceof ThumbnailCancelled) throw err;
+      }
     }
     if (
       kind === "image" ||

@@ -9,7 +9,7 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Bilder i sparade artiklar ska nu vara skarpa. Dela en artikel från Safari —
-bilderna hämtas från sidan så som du såg den, i stället för att laddas ner på
-nytt, och kommer därför med full kvalitet. Jämför med bygge 6, där toppbilden
-blev suddig. Att dela länkar från Meddelanden eller Mail fungerar som förut.
+Sparade artiklar visas nu med sin egen bild i gallerivyn — samma bild som du
+såg i delningsvyn — i stället för en hopkrympt sida. Dela några artiklar och se
+om du känner igen dem direkt. De ska heller inte längre se ljusa ut i mörkt
+läge.

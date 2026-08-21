@@ -6,10 +6,12 @@ import type { FileEntry } from "@/lib/tauri";
 const iosReadFileMock = vi.fn<(relPath: string) => Promise<string>>();
 const iosReadBinaryMock = vi.fn<(relPath: string) => Promise<Uint8Array>>();
 const iosThumbnailMock = vi.fn<(relPath: string, maxPixel: number) => Promise<Uint8Array>>();
+const iosArticleThumbnailMock = vi.fn<(relPath: string) => Promise<Uint8Array>>();
 vi.mock("@/lib/ios-api", () => ({
   iosReadFile: (relPath: string) => iosReadFileMock(relPath),
   iosReadBinary: (relPath: string) => iosReadBinaryMock(relPath),
   iosThumbnail: (relPath: string, maxPixel: number) => iosThumbnailMock(relPath, maxPixel),
+  iosArticleThumbnail: (relPath: string) => iosArticleThumbnailMock(relPath),
 }));
 
 const renderMarkdownFragmentMock = vi.fn<(markdown: string, theme: "light" | "dark") => Promise<string>>();
@@ -46,6 +48,9 @@ beforeEach(() => {
   iosReadFileMock.mockReset();
   iosReadBinaryMock.mockReset();
   iosThumbnailMock.mockReset();
+  iosArticleThumbnailMock.mockReset();
+  // Default: no inline image, so tests opt IN to the lead-image path.
+  iosArticleThumbnailMock.mockRejectedValue(new Error("no inline image in this article"));
   // Default: native layer absent (web-pipeline fallback), like desktop/tests.
   iosThumbnailMock.mockRejectedValue(new Error("only available on iOS"));
   renderMarkdownFragmentMock.mockReset();
@@ -363,5 +368,54 @@ describe("thumbnails are cached per theme", () => {
     await getThumbnail(entry({ name: "c.md" }), { theme: "light" });
     await getThumbnail(entry({ name: "c.md" }), { theme: "dark" });
     expect(iosReadFileMock).toHaveBeenCalledTimes(4);
+  });
+});
+
+/**
+ * Article thumbnails are the article's own photo.
+ *
+ * Peter, on build 6: "I am really not recognizing the docs in the inbox
+ * compared to the share preview. That is what stuck in my mind and what I'm
+ * looking for in the gallery, but see the small version of the full page."
+ *
+ * A page rendered into a square is accurate and useless — nobody remembers a
+ * layout. The sweep already embedded the photo that does stick.
+ */
+describe("html thumbnails prefer the article's own lead image", () => {
+  it("uses the embedded photo instead of a page render", async () => {
+    iosArticleThumbnailMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    iosThumbnailMock.mockResolvedValue(new Uint8Array([9, 9, 9]));
+
+    const out = await getThumbnail(entry({ name: "article.html" }), { theme: "dark" });
+
+    expect(out.kind).toBe("image");
+    expect(iosArticleThumbnailMock).toHaveBeenCalledWith("article.html");
+    // The page render is never even attempted when a photo exists.
+    expect(iosThumbnailMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the system render when the article has no inline image", async () => {
+    // An unswept capture, an image-less piece, or a plain HTML file the user
+    // dropped in the library themselves.
+    iosThumbnailMock.mockResolvedValue(new Uint8Array([9, 9, 9]));
+
+    const out = await getThumbnail(entry({ name: "plain.html" }), { theme: "light" });
+
+    expect(out.kind).toBe("image");
+    expect(iosThumbnailMock).toHaveBeenCalled();
+  });
+
+  it("degrades to an icon when neither path yields anything", async () => {
+    const out = await getThumbnail(entry({ name: "bare.html" }), { theme: "light" });
+    expect(out.kind).toBe("icon");
+  });
+
+  it("does not touch the lead-image path for non-html files", async () => {
+    iosReadFileMock.mockResolvedValue("# note");
+    renderMarkdownFragmentMock.mockResolvedValue("<h1>note</h1>");
+
+    await getThumbnail(entry({ name: "note.md" }), { theme: "light" });
+
+    expect(iosArticleThumbnailMock).not.toHaveBeenCalled();
   });
 });

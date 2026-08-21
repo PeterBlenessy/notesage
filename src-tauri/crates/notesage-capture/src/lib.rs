@@ -1395,7 +1395,7 @@ pub fn inline_article_images(html: &str, map: &[(String, String)]) -> String {
         map.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
 
     let doc = dom_query::Document::fragment(html);
-    for mut node in doc.select("img").iter() {
+    for node in doc.select("img").iter() {
         let src = node.attr("src").unwrap_or_default().to_string();
         if let Some(data_uri) = lookup.get(src.as_str()) {
             node.set_attr("src", data_uri);
@@ -1490,5 +1490,106 @@ mod inline_image_tests {
 
         let out = inline_article_images(html, &map);
         assert!(article_image_urls(&out).is_empty(), "still remote: {out}");
+    }
+}
+
+/// The image a saved article should be RECOGNISED by (its lead image).
+///
+/// Peter, on build 6's gallery: "I am really not recognizing the docs in the
+/// inbox compared to the share preview. That is what stuck in my mind and what
+/// I'm looking for in the gallery, but see the small version of the full page."
+///
+/// That is the whole specification. A page rendered into a square is a
+/// miniature of a layout — accurate and useless, because nobody remembers a
+/// layout. What sticks is the photo from the share sheet. Since the sweep
+/// embeds that photo into the document, the recognisable thumbnail is already
+/// sitting inside the file; it just has to be found.
+///
+/// Returns the first inline image's decoded bytes. Only `data:` URIs qualify:
+/// a remote `src` would mean a network fetch to draw a thumbnail, which is
+/// what the offline work exists to avoid — those fall back to the system
+/// generator instead.
+pub fn article_lead_image(html: &str) -> Option<Vec<u8>> {
+    use base64::Engine as _;
+    let doc = dom_query::Document::fragment(html);
+    for node in doc.select("img").iter() {
+        let src = node.attr("src").unwrap_or_default().to_string();
+        let Some(rest) = src.strip_prefix("data:") else {
+            continue;
+        };
+        // `data:[<mime>][;base64],<payload>` — we only handle base64, since
+        // that is the only form the inliner produces.
+        let Some((meta, payload)) = rest.split_once(',') else {
+            continue;
+        };
+        if !meta.contains("base64") {
+            continue;
+        }
+        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) {
+            if !bytes.is_empty() {
+                return Some(bytes);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod lead_image_tests {
+    use super::*;
+    use base64::Engine as _;
+
+    fn data_uri(bytes: &[u8]) -> String {
+        format!(
+            "data:image/jpeg;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        )
+    }
+
+    #[test]
+    fn returns_the_first_inline_image() {
+        let html = format!(
+            r#"<p>text</p><img src="{}"><img src="{}">"#,
+            data_uri(b"FIRST"),
+            data_uri(b"SECOND")
+        );
+        assert_eq!(article_lead_image(&html).as_deref(), Some(&b"FIRST"[..]));
+    }
+
+    #[test]
+    fn skips_remote_images_entirely() {
+        // Fetching to draw a thumbnail would defeat the offline work this
+        // whole feature exists for.
+        let html = r#"<img src="https://cdn.example/photo.jpg">"#;
+        assert!(article_lead_image(html).is_none());
+    }
+
+    #[test]
+    fn skips_a_remote_image_to_reach_an_inline_one() {
+        // A capture can be partially swept — some images embedded, some still
+        // linked. The recognisable one is whichever actually made it inside.
+        let html = format!(
+            r#"<img src="https://cdn.example/a.jpg"><img src="{}">"#,
+            data_uri(b"INLINE")
+        );
+        assert_eq!(article_lead_image(&html).as_deref(), Some(&b"INLINE"[..]));
+    }
+
+    #[test]
+    fn ignores_a_non_base64_data_uri() {
+        let html = r#"<img src="data:image/svg+xml,%3Csvg%3E%3C/svg%3E">"#;
+        assert!(article_lead_image(html).is_none());
+    }
+
+    #[test]
+    fn an_article_with_no_images_has_no_lead() {
+        assert!(article_lead_image("<p>just words</p>").is_none());
+    }
+
+    #[test]
+    fn an_empty_payload_does_not_count_as_an_image() {
+        // Decodes fine, draws nothing — a blank card reads as broken.
+        let html = r#"<img src="data:image/jpeg;base64,">"#;
+        assert!(article_lead_image(html).is_none());
     }
 }
