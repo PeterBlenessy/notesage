@@ -29,7 +29,7 @@ first.
 
 ## Phase 1 — Sweep new captures
 
-### #1.1 Rust: image URL extraction + HTML rewrite
+### #1.1 Rust: image URL extraction + HTML rewrite ✅
 
 In `notesage-capture`, pure and unit-tested — no network, no device:
 
