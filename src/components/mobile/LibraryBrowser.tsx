@@ -49,6 +49,10 @@ export function LibraryBrowser() {
   const loadPinnedPaths = useMobileStore((s) => s.loadPinnedPaths);
   const viewMode = useMobileStore((s) => s.viewMode);
   const setViewMode = useMobileStore((s) => s.setViewMode);
+  const inlineImagesEnabled = useMobileStore((s) => s.inlineImagesEnabled);
+  const setInlineImagesEnabled = useMobileStore((s) => s.setInlineImagesEnabled);
+  const imageMaxPixel = useMobileStore((s) => s.imageMaxPixel);
+  const setImageMaxPixel = useMobileStore((s) => s.setImageMaxPixel);
   const a11y = useA11yPrefs();
   // Re-render on a language change so every t() below re-evaluates.
   useLocale();
@@ -496,6 +500,30 @@ export function LibraryBrowser() {
             icon: "doc.on.doc",
             selected: groupMode === "type",
           },
+          // Offline images (#2.1). Native menu rather than a settings screen:
+          // this app has no settings screen at all — every preference (view,
+          // sort, group) is a UIMenu row, and inventing a screen for three
+          // options would be a foreign idiom.
+          //
+          // JPEG quality is deliberately NOT exposed. It stays configurable in
+          // the store, but 0.8 is a value nobody can evaluate by eye and
+          // fiddling with it has no outcome the user can predict — the size
+          // cap is the control that actually changes what they get.
+          {
+            id: "offline-images",
+            title: t("menu.offlineImages"),
+            icon: "arrow.down.circle",
+            selected: inlineImagesEnabled,
+            sectionBreak: true,
+          },
+          ...(inlineImagesEnabled
+            ? ([
+                { id: "img-1200", title: t("menu.imageSizeSmall"), icon: "photo", selected: imageMaxPixel === 1200 },
+                { id: "img-1600", title: t("menu.imageSizeStandard"), icon: "photo", selected: imageMaxPixel === 1600 },
+                { id: "img-2048", title: t("menu.imageSizeLarge"), icon: "photo", selected: imageMaxPixel === 2048 },
+                { id: "img-original", title: t("menu.imageSizeOriginal"), icon: "photo.badge.arrow.down", selected: imageMaxPixel === "original" },
+              ] as const)
+            : []),
         ],
       },
       bottomRight: atRoot
@@ -527,6 +555,11 @@ export function LibraryBrowser() {
       "group-recent": () => setGroupMode("recent"),
       "group-date": () => setGroupMode("date"),
       "group-type": () => setGroupMode("type"),
+      "offline-images": () => setInlineImagesEnabled(!inlineImagesEnabled),
+      "img-1200": () => setImageMaxPixel(1200),
+      "img-1600": () => setImageMaxPixel(1600),
+      "img-2048": () => setImageMaxPixel(2048),
+      "img-original": () => setImageMaxPixel("original"),
       "goto-inbox": () => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME }),
       "create-note": () => createNote(),
       "create-folder": () => void createFolder(),

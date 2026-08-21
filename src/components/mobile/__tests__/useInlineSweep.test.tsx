@@ -251,3 +251,4 @@ describe("settings (#2.2)", () => {
     useMobileStore.setState({ imageMaxPixel: 1600 });
   });
 });
+

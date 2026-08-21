@@ -45,6 +45,11 @@ const en = {
   // The background image sweep. Deliberately says what it is FOR ("saving
   // for offline") rather than what it does mechanically ("embedding
   // images") — the user cares that the article will work on a plane.
+  "menu.offlineImages": "Save images for offline",
+  "menu.imageSizeSmall": "Smaller images",
+  "menu.imageSizeStandard": "Standard images",
+  "menu.imageSizeLarge": "Larger images",
+  "menu.imageSizeOriginal": "Original images",
   "sweep.saving": "Saving for offline…",
   "sweep.savingCount": "Saving for offline… {done} of {total}",
   "library.emptyHint": "This folder is empty.",
@@ -505,6 +510,11 @@ const sv: Dict = {
   "library.items": "{count} objekt",
   "library.itemsOne": "1 objekt",
   "library.empty": "Inget här ännu",
+  "menu.offlineImages": "Spara bilder för offline",
+  "menu.imageSizeSmall": "Mindre bilder",
+  "menu.imageSizeStandard": "Standardbilder",
+  "menu.imageSizeLarge": "Större bilder",
+  "menu.imageSizeOriginal": "Originalbilder",
   "sweep.saving": "Sparar för offline…",
   "sweep.savingCount": "Sparar för offline… {done} av {total}",
   "library.emptyHint": "Mappen är tom.",

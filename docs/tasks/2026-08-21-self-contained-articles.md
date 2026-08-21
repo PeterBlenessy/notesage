@@ -98,7 +98,7 @@ usable while a sweep runs.
 
 ## Phase 2 — Settings
 
-### #2.1 Scale + quality settings ✅ (store + wiring; UI panel pending)
+### #2.1 Scale + quality settings ✅
 
 Max dimension (Original / 2048 / 1600 / 1200), JPEG quality, master toggle.
 Default **1600px / q0.8 / on**.
