@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { iosInlineArticleImages, iosListDirectory } from "@/lib/ios-api";
 import { evictThumbnail } from "@/lib/mobile-thumbnails";
 import { INBOX_FOLDER_NAME } from "@/lib/inbox";
@@ -46,6 +46,14 @@ function isArticleHtml(entry: FileEntry): boolean {
  */
 export const INLINE_SWEEP_EVENT = "notesage:inline-sweep-updated";
 
+/** What the passive indicator needs to know. `total` is the number of
+ *  documents this sweep will attempt, `done` how many it has finished. */
+export interface SweepProgress {
+  active: boolean;
+  done: number;
+  total: number;
+}
+
 export function useInlineSweep() {
   // Read from the store rather than a prop: this hook has no parent that knows
   // what is open, and the value must stay live across a sweep.
@@ -61,6 +69,11 @@ export function useInlineSweep() {
   const attempted = useRef<Set<string>>(new Set());
   /** One sweep at a time; a second foreground mid-sweep must not double it. */
   const running = useRef(false);
+  const [progress, setProgress] = useState<SweepProgress>({
+    active: false,
+    done: 0,
+    total: 0,
+  });
 
   const sweep = useCallback(async () => {
     if (running.current) return;
@@ -79,13 +92,20 @@ export function useInlineSweep() {
         return;
       }
 
-      for (const entry of entries) {
-        if (!isArticleHtml(entry)) continue;
-        if (attempted.current.has(entry.path)) continue;
-        // Rewriting a file the user is reading would swap the document under
-        // them mid-scroll. It keeps its remote images until next time.
-        if (openDocPath && entry.path === openDocPath) continue;
+      // Decide the work set BEFORE starting, so the indicator can show a
+      // stable "n of m" rather than a total that grows as it goes.
+      const todo = entries.filter(
+        (e) =>
+          isArticleHtml(e) &&
+          !attempted.current.has(e.path) &&
+          // Rewriting a file the user is reading would swap the document under
+          // them mid-scroll. It keeps its remote images until next time.
+          !(openDocPath && e.path === openDocPath),
+      );
+      if (todo.length === 0) return;
+      setProgress({ active: true, done: 0, total: todo.length });
 
+      for (const [index, entry] of todo.entries()) {
         attempted.current.add(entry.path);
         try {
           const inlined = await iosInlineArticleImages(entry.path);
@@ -100,9 +120,11 @@ export function useInlineSweep() {
           // One bad document must not stop the rest. It stays linked and gets
           // another chance next session.
         }
+        setProgress({ active: true, done: index + 1, total: todo.length });
       }
     } finally {
       running.current = false;
+      setProgress((p) => ({ ...p, active: false }));
     }
   }, [openDocPath]);
 
@@ -119,5 +141,5 @@ export function useInlineSweep() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [sweep]);
 
-  return { sweep };
+  return { sweep, progress };
 }

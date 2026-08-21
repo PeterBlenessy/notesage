@@ -89,7 +89,7 @@ with remote images, queue them, rewrite one at a time.
 Guard against: sweeping the same document twice, sweeping while offline,
 sweeping a document the user has open.
 
-### #1.6 Passive progress indicator
+### #1.6 Passive progress indicator ✅
 
 No modal, no blocking, no spinner over the content. The library stays fully
 usable while a sweep runs.

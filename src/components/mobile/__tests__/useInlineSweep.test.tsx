@@ -150,3 +150,43 @@ describe("resilience", () => {
     expect(inlineMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("the passive indicator", () => {
+  it("shows nothing when no sweep is running", async () => {
+    const { SweepIndicator } = await import("../SweepIndicator");
+    const { render } = await import("@testing-library/react");
+    const { container } = render(
+      <SweepIndicator progress={{ active: false, done: 0, total: 3 }} />,
+    );
+    // Not "hidden" — absent. A dormant indicator is chrome the user has to
+    // learn to ignore.
+    expect(container.textContent).toBe("");
+  });
+
+  it("omits the count for a single document", async () => {
+    const { SweepIndicator } = await import("../SweepIndicator");
+    const { render, screen } = await import("@testing-library/react");
+    render(<SweepIndicator progress={{ active: true, done: 0, total: 1 }} />);
+
+    // "1 of 1" reads as a progress bar for something already finished.
+    expect(screen.getByRole("status").textContent).not.toMatch(/1/);
+  });
+
+  it("counts from one, not zero, when there are several", async () => {
+    const { SweepIndicator } = await import("../SweepIndicator");
+    const { render, screen } = await import("@testing-library/react");
+    render(<SweepIndicator progress={{ active: true, done: 1, total: 4 }} />);
+
+    // `done` is how many are FINISHED; the user wants to know which one is in
+    // flight, so the second document reads as "2 of 4", never "1 of 4".
+    expect(screen.getByRole("status").textContent).toMatch(/2 of 4/);
+  });
+
+  it("announces politely rather than stealing focus", async () => {
+    const { SweepIndicator } = await import("../SweepIndicator");
+    const { render, screen } = await import("@testing-library/react");
+    render(<SweepIndicator progress={{ active: true, done: 0, total: 2 }} />);
+
+    expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+  });
+});

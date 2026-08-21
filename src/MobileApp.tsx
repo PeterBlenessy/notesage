@@ -8,6 +8,7 @@ import { Onboarding } from "@/components/mobile/Onboarding";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 import { Reader } from "@/components/mobile/Reader";
 import { useInlineSweep } from "@/components/mobile/useInlineSweep";
+import { SweepIndicator } from "@/components/mobile/SweepIndicator";
 
 /**
  * Root of the iOS mobile shell — a read-only reader over the iCloud-synced
@@ -27,7 +28,7 @@ export function MobileApp() {
   // user reads. Hosting it in LibraryBrowser would stop the sweep the moment a
   // document opened, because that component unmounts — the same class of bug
   // as scoping a global listener to a collapsible surface.
-  useInlineSweep();
+  const { progress: sweepProgress } = useInlineSweep();
 
   // Resolve the native grant once on mount — never trust a persisted flag.
   useEffect(() => {
@@ -113,6 +114,9 @@ export function MobileApp() {
           <Onboarding />
         )}
       </div>
+      {/* Passive, non-blocking: appears only while a sweep runs.
+          Outside the shell div so it is never clipped by its overflow. */}
+      <SweepIndicator progress={sweepProgress} />
       <Toaster position="top-center" />
     </ThemeProvider>
   );

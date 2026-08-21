@@ -42,6 +42,11 @@ const en = {
   "library.items": "{count} items",
   "library.itemsOne": "1 item",
   "library.empty": "Nothing here yet",
+  // The background image sweep. Deliberately says what it is FOR ("saving
+  // for offline") rather than what it does mechanically ("embedding
+  // images") — the user cares that the article will work on a plane.
+  "sweep.saving": "Saving for offline…",
+  "sweep.savingCount": "Saving for offline… {done} of {total}",
   "library.emptyHint": "This folder is empty.",
   "library.noMatches": 'Nothing matches "{query}"',
   "library.openFailed": "Couldn't open this folder",
@@ -500,6 +505,8 @@ const sv: Dict = {
   "library.items": "{count} objekt",
   "library.itemsOne": "1 objekt",
   "library.empty": "Inget här ännu",
+  "sweep.saving": "Sparar för offline…",
+  "sweep.savingCount": "Sparar för offline… {done} av {total}",
   "library.emptyHint": "Mappen är tom.",
   "library.noMatches": 'Inget matchar "{query}"',
   "library.openFailed": "Kunde inte öppna mappen",
