@@ -112,7 +112,7 @@ document with inconsistent image sizes.
 
 ## Phase 3 — Retroactive sweep
 
-### #3.1 Find upgradable documents
+### #3.1 Find upgradable documents ✅
 
 Scan the library (not just Inbox) for HTML with remote images. Report count
 and an estimated size delta **before** doing anything.

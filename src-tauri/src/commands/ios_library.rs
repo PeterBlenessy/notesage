@@ -270,6 +270,80 @@ pub async fn ios_create_directory(
     }
 }
 
+/// What a retroactive sweep would do, without doing any of it (task #3.1).
+///
+/// Answers BEFORE acting, deliberately. A retroactive sweep rewrites documents
+/// the user already owns, can multiply the size of their library, and makes
+/// their device contact every site they ever saved from — long after they
+/// saved it. Any one of those is a reason to show the cost first; together
+/// they make an unprompted sweep indefensible.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpgradableArticles {
+    /// Documents that still reference at least one remote image.
+    pub documents: usize,
+    /// Total remote images across them — the real driver of both time and size.
+    pub images: usize,
+    /// Their rel paths, so the caller can sweep exactly these rather than
+    /// re-walking the library.
+    pub paths: Vec<String>,
+}
+
+#[tauri::command]
+pub async fn ios_find_upgradable_articles(
+    app: tauri::AppHandle,
+) -> Result<UpgradableArticles, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let mut out = UpgradableArticles { documents: 0, images: 0, paths: Vec::new() };
+        // Iterative rather than recursive: a symlink loop or a pathologically
+        // deep tree should degrade into slowness, not a blown stack.
+        let mut queue = vec![String::new()];
+        // A library is user data and can be any shape. Bound the walk so a
+        // surprising one cannot hang the scan indefinitely.
+        const MAX_DIRS: usize = 2000;
+        let mut visited = 0usize;
+
+        while let Some(dir) = queue.pop() {
+            visited += 1;
+            if visited > MAX_DIRS {
+                break;
+            }
+            let Ok(entries) = ios_impl::list_directory(&app, &dir).await else {
+                continue; // Unreadable subtree: skip it, do not fail the scan.
+            };
+            for entry in entries {
+                if entry.hidden || entry.name.starts_with('.') {
+                    continue;
+                }
+                if entry.is_directory {
+                    queue.push(entry.path);
+                    continue;
+                }
+                let lower = entry.name.to_ascii_lowercase();
+                if !(lower.ends_with(".html") || lower.ends_with(".htm")) {
+                    continue;
+                }
+                let Ok(html) = ios_impl::read_file(&app, &entry.path).await else {
+                    continue;
+                };
+                let count = notesage_capture::article_image_urls(&html).len();
+                if count > 0 {
+                    out.documents += 1;
+                    out.images += count;
+                    out.paths.push(entry.path);
+                }
+            }
+        }
+        Ok(out)
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = &app;
+        Err("ios_find_upgradable_articles is only available on iOS".into())
+    }
+}
+
 /// Rewrite a captured article so its images are embedded rather than linked
 /// (task #1.4 of `docs/prds/2026-08-21-self-contained-articles.md`).
 ///

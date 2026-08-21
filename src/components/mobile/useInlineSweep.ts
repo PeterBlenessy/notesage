@@ -46,6 +46,11 @@ function isArticleHtml(entry: FileEntry): boolean {
  */
 export const INLINE_SWEEP_EVENT = "notesage:inline-sweep-updated";
 
+/** Asks the root-mounted sweep to process an explicit list of paths — the
+ *  retroactive pass, triggered from the library menu. Same direction problem
+ *  as INLINE_SWEEP_EVENT, opposite way round. */
+export const INLINE_SWEEP_REQUEST = "notesage:inline-sweep-request";
+
 /** What the passive indicator needs to know. `total` is the number of
  *  documents this sweep will attempt, `done` how many it has finished. */
 export interface SweepProgress {
@@ -161,5 +166,52 @@ export function useInlineSweep() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [sweep]);
 
-  return { sweep, progress };
+  /**
+   * Sweep an explicit list of documents (the retroactive pass, #3.2).
+   *
+   * Shares the queue guard and the progress state with the automatic sweep, so
+   * the two can never run at once and the indicator says the same thing
+   * whichever started the work.
+   */
+  const sweepPaths = useCallback(async (paths: string[]) => {
+    if (running.current || paths.length === 0) return;
+    const { imageMaxPixel, imageQuality } = useMobileStore.getState();
+    const maxPixel = imageMaxPixel === "original" ? 0 : imageMaxPixel;
+
+    running.current = true;
+    setProgress({ active: true, done: 0, total: paths.length });
+    try {
+      for (const [index, path] of paths.entries()) {
+        attempted.current.add(path);
+        try {
+          const inlined = await iosInlineArticleImages(path, {
+            maxPixel,
+            jpegQuality: imageQuality,
+          });
+          if (inlined > 0) {
+            evictThumbnail(path);
+            window.dispatchEvent(new CustomEvent(INLINE_SWEEP_EVENT, { detail: path }));
+          }
+        } catch {
+          // Interrupting the whole run for one bad document would strand the
+          // rest; this pass may be hundreds of files.
+        }
+        setProgress({ active: true, done: index + 1, total: paths.length });
+      }
+    } finally {
+      running.current = false;
+      setProgress((p) => ({ ...p, active: false }));
+    }
+  }, []);
+
+  useEffect(() => {
+    const onRequest = (e: Event) => {
+      const paths = (e as CustomEvent).detail as string[];
+      void sweepPaths(paths);
+    };
+    window.addEventListener(INLINE_SWEEP_REQUEST, onRequest);
+    return () => window.removeEventListener(INLINE_SWEEP_REQUEST, onRequest);
+  }, [sweepPaths]);
+
+  return { sweep, sweepPaths, progress };
 }
