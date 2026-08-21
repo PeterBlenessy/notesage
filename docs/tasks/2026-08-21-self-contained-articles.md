@@ -54,10 +54,27 @@ remote fetch.
 - Any failure → skip that image, keep its remote URL. A partial article is a
   working article.
 
-### #1.3 Stream the document to disk
+### #1.3 Stream the document to disk ✅ — not needed; dropped deliberately
 
-Write head → append each encoded image → append tail → coordinated atomic
-replace via the existing `ios_write_file` path. Peak memory is one image.
+**Resolved by design rather than implemented, and the scope reduction is
+deliberate — not an omission.**
+
+This existed to survive the Share Extension's ~120 MB ceiling, which is
+unrecoverable: exceed it and iOS kills the process with the sheet open. But
+phase 1 moved the work into the APP, and the app has no such ceiling.
+
+The realistic peak there: a 12-image article at default settings is ~250 KB
+per JPEG → ~333 KB base64 → ~4 MB of map, plus one copy of the rewritten
+document. Under 10 MB, for a process that routinely renders PDFs.
+
+Streaming would buy nothing measurable and cost a chunked-write path that
+must not corrupt a file if interrupted — real complexity guarding a risk that
+no longer exists. The plain read → rewrite → coordinated atomic write via
+`ios_write_file` is both simpler and safer.
+
+**This reverses if the work ever moves back into the extension** (e.g. inlining
+at capture time). The ceiling is a property of where the code runs, not of
+the algorithm — so if that moves, revisit this.
 
 ### #1.4 Tauri command + progress events
 
