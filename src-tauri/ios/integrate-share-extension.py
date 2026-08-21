@@ -69,6 +69,12 @@ SHARE_TARGET = {
         # the extension bundle — `buildPhase: resources` — or NSLocalizedString
         # falls back to the key at runtime. Also drives the "Languages" list
         # App Store Connect derives from the bundle.
+        # Safari reads this at share time; it must be IN the bundle, so it is a
+        # resource rather than a source. If it is missing, preprocessing simply
+        # never runs and the extension silently falls back to fetching the URL
+        # — the failure is invisible, which is why it is listed here rather
+        # than left to be added by hand.
+        {"path": "../../ios/share-preprocess.js", "buildPhase": "resources"},
         {"path": "../../ios/ShareResources/en.lproj", "buildPhase": "resources", "type": "folder"},
         {"path": "../../ios/ShareResources/sv.lproj", "buildPhase": "resources", "type": "folder"},
     ],
@@ -82,7 +88,19 @@ SHARE_TARGET = {
                 "NSExtensionPointIdentifier": "com.apple.share-services",
                 "NSExtensionPrincipalClass": "$(PRODUCT_MODULE_NAME).ShareViewController",
                 "NSExtensionAttributes": {
+                    # Basename without ".js". Safari runs it in the PAGE's
+                    # context before the sheet appears and hands us the result,
+                    # so we receive the DOM as RENDERED rather than as a server
+                    # serves it to a fetch — which is the difference between a
+                    # real photo and a 40px lazy-load placeholder. See
+                    # share-preprocess.js.
+                    "NSExtensionJavaScriptPreprocessingFile": "share-preprocess",
                     "NSExtensionActivationRule": {
+                        # WebPage delivers the preprocessing payload. WebURL
+                        # stays alongside it: Messages, Mail and in-app browsers
+                        # hand over a bare URL with no page behind it, and those
+                        # must still activate the extension.
+                        "NSExtensionActivationSupportsWebPageWithMaxCount": 1,
                         "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
                         "NSExtensionActivationSupportsText": True,
                         # Documents (Safari-viewed PDFs, Files shares, EPUBs…)

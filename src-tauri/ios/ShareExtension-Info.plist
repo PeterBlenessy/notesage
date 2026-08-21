@@ -18,8 +18,25 @@
         <string>$(PRODUCT_MODULE_NAME).ShareViewController</string>
         <key>NSExtensionAttributes</key>
         <dict>
+            <!--
+              Value is the JS file's basename WITHOUT the .js extension. Safari
+              runs it in the PAGE's context before the sheet appears and hands
+              the result to the extension, so we receive the DOM as rendered
+              rather than as a server would serve it to a fetch. See
+              share-preprocess.js for why that difference matters.
+            -->
+            <key>NSExtensionJavaScriptPreprocessingFile</key>
+            <string>share-preprocess</string>
             <key>NSExtensionActivationRule</key>
             <dict>
+                <!--
+                  WebPage is what delivers the preprocessing payload; WebURL
+                  stays because sharing from Messages, Mail or an in-app
+                  browser hands over a bare URL with no page behind it, and
+                  those must still activate the extension.
+                -->
+                <key>NSExtensionActivationSupportsWebPageWithMaxCount</key>
+                <integer>1</integer>
                 <key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
                 <integer>1</integer>
                 <key>NSExtensionActivationSupportsText</key>

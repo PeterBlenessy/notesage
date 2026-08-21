@@ -80,6 +80,12 @@ final class ShareViewController: UIViewController {
 
     private var sharedUrl: String?
     private var sharedTitle: String?
+    /// The page's RENDERED html, when Safari's preprocessing supplied it.
+    ///
+    /// Present only for shares that came from a real page. `nil` for a bare
+    /// URL (Messages, Mail, in-app browsers), which is what keeps the fetch
+    /// path alive rather than vestigial.
+    private var renderedHtml: String?
     private var documentProviders: [NSItemProvider] = []
 
     private let previewLabel = UILabel()
@@ -259,7 +265,42 @@ final class ShareViewController: UIViewController {
             return
         }
 
-        if let provider = attachments.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.url.identifier) }) {
+        // Safari's preprocessing payload FIRST, when there is one.
+        //
+        // This is the page as the browser rendered it, which is a different
+        // artefact from the page a fetch receives. On any site with lazy-loaded
+        // images the fetched markup carries a placeholder — Aftonbladet's lead
+        // photo is a literal 40px image inside an `<img width="8256">` — and
+        // the real URL exists nowhere in it, because JavaScript builds it at
+        // runtime. Asking the browser is not an optimisation over fetching; it
+        // is the only way to get the real thing.
+        //
+        // Falls through to the URL path when absent, which is every non-Safari
+        // source: Messages, Mail, in-app browsers.
+        if let provider = attachments.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.propertyList.identifier)
+        }) {
+            provider.loadItem(forTypeIdentifier: UTType.propertyList.identifier, options: nil) {
+                [weak self] data, _ in
+                let results = (data as? NSDictionary)?[NSExtensionJavaScriptPreprocessingResultsKey]
+                let payload = results as? NSDictionary
+                let url = payload?["url"] as? String
+                let html = payload?["html"] as? String
+                let title = payload?["title"] as? String
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    if let title, !title.isEmpty, self.sharedTitle == nil {
+                        self.sharedTitle = title
+                    }
+                    // Empty html means the script hit an error on the page. The
+                    // URL alone still works — it just costs a fetch.
+                    if let html, !html.isEmpty {
+                        self.renderedHtml = html
+                    }
+                    self.showUrl(url)
+                }
+            }
+        } else if let provider = attachments.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.url.identifier) }) {
             provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { [weak self] data, _ in
                 let url = (data as? URL)?.absoluteString ?? (data as? String)
                 DispatchQueue.main.async { self?.showUrl(url) }
@@ -351,6 +392,22 @@ final class ShareViewController: UIViewController {
                 }
             }
         case .article, .html:
+            // Safari already gave us the RENDERED page — use it and skip the
+            // network entirely.
+            //
+            // This is not a shortcut for the same data. A fetch runs no
+            // JavaScript, so on any lazy-loading site it returns placeholder
+            // image URLs and the real ones exist nowhere in the markup. The
+            // rendered DOM carries `currentSrc` for every image: the exact URL
+            // the browser chose after srcset, sizes and DPR. No parsing of ours
+            // can reconstruct that, because it is the outcome of decisions only
+            // the browser made.
+            if let rendered = renderedHtml, writeArticle(url: url, html: rendered) {
+                finish()
+                return
+            }
+            // No payload (a bare URL from Messages/Mail), or the rendered DOM
+            // held no extractable article. Fall back to fetching.
             fetch(url: url) { [weak self] html in
                 guard let self else { return }
                 guard let html else {
