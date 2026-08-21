@@ -1326,3 +1326,169 @@ mod video_tests {
         assert_eq!(note.rel_path, "Inbox/My own title.md");
     }
 }
+
+// ============================================================================
+// Inlining images so a saved article is actually saved
+// ============================================================================
+//
+// A captured article keeps its images as remote `https://` URLs, which means
+// the file is not the article — it is a recipe for fetching it, good only
+// while the network is up and the CDN still serves those exact paths. See
+// `docs/prds/2026-08-21-self-contained-articles.md`.
+//
+// The two functions below are the pure half of the fix, deliberately split
+// from the fetching. Swift owns the network and the downsampling (ImageIO can
+// shrink a 4000px photo without ever fully decoding it, which no Rust image
+// crate matches on iOS); this crate owns *which* images and *what the
+// rewritten document looks like* — the parts worth testing without a network
+// or a device.
+
+/// Remote image URLs in an article, in document order, deduplicated.
+///
+/// Document order is not incidental: readability puts the lead image first,
+/// so a partial inline — the network died, a budget ran out — keeps the
+/// images that matter most, including the one a thumbnail will show.
+///
+/// Skips `data:` URIs (already inline, fetching them would be absurd) and
+/// relative paths (nothing to fetch them *from* — a captured article's URLs
+/// were absolutised by the extractor, so a relative src here is malformed
+/// rather than resolvable).
+pub fn article_image_urls(html: &str) -> Vec<String> {
+    let doc = dom_query::Document::fragment(html);
+    let mut seen = std::collections::HashSet::new();
+    let mut urls = Vec::new();
+    for node in doc.select("img").iter() {
+        let src = node.attr("src").unwrap_or_default().to_string();
+        if !is_remote_http_url(&src) {
+            continue;
+        }
+        // Dedup so a logo repeated in header and footer is fetched once and
+        // stored once, rather than paying for it per occurrence.
+        if seen.insert(src.clone()) {
+            urls.push(src);
+        }
+    }
+    urls
+}
+
+fn is_remote_http_url(src: &str) -> bool {
+    let lower = src.trim().to_ascii_lowercase();
+    lower.starts_with("http://") || lower.starts_with("https://")
+}
+
+/// Rewrite `<img src>` from a url→data-URI map.
+///
+/// Unmapped images keep their remote URL rather than being dropped. That is
+/// the whole degradation story: an image that was too large, timed out, or
+/// 404'd leaves the document exactly as it is today, so every partial result
+/// is still a working article and a later sweep can finish the job.
+///
+/// `srcset` is REMOVED on any image we inlined. Leaving it would let the
+/// browser prefer a remote candidate over the inlined `src` and quietly
+/// reintroduce the network dependency this exists to remove — the document
+/// would look self-contained and not be.
+pub fn inline_article_images(html: &str, map: &[(String, String)]) -> String {
+    if map.is_empty() {
+        return html.to_string();
+    }
+    let lookup: std::collections::HashMap<&str, &str> =
+        map.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+
+    let doc = dom_query::Document::fragment(html);
+    for mut node in doc.select("img").iter() {
+        let src = node.attr("src").unwrap_or_default().to_string();
+        if let Some(data_uri) = lookup.get(src.as_str()) {
+            node.set_attr("src", data_uri);
+            node.remove_attr("srcset");
+        }
+    }
+    doc.html().to_string()
+}
+
+#[cfg(test)]
+mod inline_image_tests {
+    use super::*;
+
+    #[test]
+    fn collects_remote_images_in_document_order() {
+        let html = r#"<p><img src="https://a.example/1.jpg"></p>
+                      <p><img src="https://b.example/2.jpg"></p>"#;
+        assert_eq!(
+            article_image_urls(html),
+            vec!["https://a.example/1.jpg", "https://b.example/2.jpg"],
+        );
+    }
+
+    #[test]
+    fn deduplicates_a_repeated_image() {
+        // A masthead logo appearing twice should cost one fetch, not two.
+        let html = r#"<img src="https://a.example/logo.png">
+                      <img src="https://a.example/logo.png">"#;
+        assert_eq!(article_image_urls(html).len(), 1);
+    }
+
+    #[test]
+    fn skips_images_that_are_already_inline() {
+        let html = r#"<img src="data:image/png;base64,iVBORw0KGgo=">"#;
+        assert!(article_image_urls(html).is_empty());
+    }
+
+    #[test]
+    fn skips_relative_paths() {
+        // The extractor absolutises real URLs, so a relative src is malformed
+        // rather than resolvable — there is no base to resolve it against here.
+        let html = r#"<img src="/local/photo.jpg"><img src="photo.jpg">"#;
+        assert!(article_image_urls(html).is_empty());
+    }
+
+    #[test]
+    fn rewrites_only_mapped_images() {
+        let html = r#"<img src="https://a.example/1.jpg"><img src="https://b.example/2.jpg">"#;
+        let map = vec![(
+            "https://a.example/1.jpg".to_string(),
+            "data:image/jpeg;base64,AAAA".to_string(),
+        )];
+        let out = inline_article_images(html, &map);
+
+        assert!(out.contains("data:image/jpeg;base64,AAAA"));
+        // The unmapped one survives untouched — a partial article is a
+        // working article, and a later sweep can finish it.
+        assert!(out.contains("https://b.example/2.jpg"));
+    }
+
+    #[test]
+    fn drops_srcset_on_an_inlined_image() {
+        // Otherwise the browser may prefer a remote srcset candidate over the
+        // inlined src, and the document would LOOK self-contained while still
+        // hitting the network.
+        let html = r#"<img src="https://a.example/1.jpg" srcset="https://a.example/1-2x.jpg 2x">"#;
+        let map = vec![(
+            "https://a.example/1.jpg".to_string(),
+            "data:image/jpeg;base64,AAAA".to_string(),
+        )];
+        let out = inline_article_images(html, &map);
+
+        assert!(!out.contains("srcset"), "srcset survived: {out}");
+        assert!(!out.contains("1-2x.jpg"), "remote candidate survived: {out}");
+    }
+
+    #[test]
+    fn an_empty_map_is_a_no_op() {
+        let html = r#"<p>text</p><img src="https://a.example/1.jpg">"#;
+        assert_eq!(inline_article_images(html, &[]), html);
+    }
+
+    #[test]
+    fn a_fully_inlined_document_has_nothing_left_to_fetch() {
+        // The round trip that matters: extract, inline everything, and the
+        // document should report no remaining remote images.
+        let html = r#"<img src="https://a.example/1.jpg"><img src="https://b.example/2.jpg">"#;
+        let map: Vec<(String, String)> = article_image_urls(html)
+            .into_iter()
+            .map(|u| (u, "data:image/jpeg;base64,AAAA".to_string()))
+            .collect();
+
+        let out = inline_article_images(html, &map);
+        assert!(article_image_urls(&out).is_empty(), "still remote: {out}");
+    }
+}

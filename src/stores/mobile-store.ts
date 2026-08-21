@@ -70,6 +70,13 @@ export type GroupMode = "none" | "pinned" | "recent" | "date" | "type";
 /** List (single-column) vs. gallery (grid of preview cards) library layout (#633). */
 export type ViewMode = "list" | "gallery";
 
+/**
+ * Longest-edge cap for embedded images. `"original"` is offered but not the
+ * default: it is the honest option for someone who wants archival fidelity and
+ * accepts the iCloud cost, not something to hand people by accident.
+ */
+export type ImageMaxPixel = 1200 | 1600 | 2048 | "original";
+
 interface MobileStore {
   grantState: GrantState;
   libraryName: string;
@@ -86,6 +93,21 @@ interface MobileStore {
   /** List vs. gallery layout for the library listing; global (not per-folder),
    *  persists across app relaunches. */
   viewMode: ViewMode;
+  /**
+   * Longest edge, in pixels, for images embedded by the background sweep —
+   * or `"original"` to embed them untouched.
+   *
+   * This setting is what makes embedding affordable at all. A full-resolution
+   * press photo is 2-4 MB; base64 inflates it by a further third; and every
+   * one of those bytes syncs through iCloud, forever, for every saved article.
+   * At 1600 the same photo is ~250 KB and nothing visible is lost — 1600 is
+   * already 2x retina on a 390pt-wide phone.
+   */
+  imageMaxPixel: ImageMaxPixel;
+  /** JPEG quality for embedded images, 0-1. */
+  imageQuality: number;
+  /** Master switch for the background sweep. */
+  inlineImagesEnabled: boolean;
   /** Root-relative pinned paths read from the shared library-root
    *  `.notesage/pins.json` (#652) — read-only on iOS in this slice, desktop
    *  is the only writer. Not persisted: always freshly re-read from disk
@@ -130,6 +152,9 @@ interface MobileStore {
   goToDepth: (depth: number) => void;
   /** Switch between list and gallery layouts. */
   setViewMode: (mode: ViewMode) => void;
+  setImageMaxPixel: (v: ImageMaxPixel) => void;
+  setImageQuality: (v: number) => void;
+  setInlineImagesEnabled: (v: boolean) => void;
 
   setSortMode: (mode: SortMode) => void;
   setGroupMode: (mode: GroupMode) => void;
@@ -168,6 +193,9 @@ export const useMobileStore = create<MobileStore>()(
       sortMode: "name",
       groupMode: "none",
       viewMode: "list",
+      imageMaxPixel: 1600,
+      imageQuality: 0.8,
+      inlineImagesEnabled: true,
       pinnedPaths: [],
       scrollOffsets: {},
 
@@ -294,6 +322,11 @@ export const useMobileStore = create<MobileStore>()(
         })),
 
       setViewMode: (mode) => set({ viewMode: mode }),
+      setImageMaxPixel: (v) => set({ imageMaxPixel: v }),
+      // Clamped rather than trusted: a value outside 0-1 is not a preference,
+      // it is a bug, and it would reach CGImageDestination as one.
+      setImageQuality: (v) => set({ imageQuality: Math.min(1, Math.max(0.1, v)) }),
+      setInlineImagesEnabled: (v) => set({ inlineImagesEnabled: v }),
 
       loadPinnedPaths: async () => {
         try {
@@ -356,6 +389,9 @@ export const useMobileStore = create<MobileStore>()(
         sortMode: s.sortMode,
         groupMode: s.groupMode,
         viewMode: s.viewMode,
+        imageMaxPixel: s.imageMaxPixel,
+        imageQuality: s.imageQuality,
+        inlineImagesEnabled: s.inlineImagesEnabled,
       }),
 
     },

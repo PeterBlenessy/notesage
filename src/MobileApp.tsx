@@ -7,6 +7,8 @@ import { useMobileStore } from "@/stores/mobile-store";
 import { Onboarding } from "@/components/mobile/Onboarding";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 import { Reader } from "@/components/mobile/Reader";
+import { useInlineSweep } from "@/components/mobile/useInlineSweep";
+import { SweepIndicator } from "@/components/mobile/SweepIndicator";
 
 /**
  * Root of the iOS mobile shell — a read-only reader over the iCloud-synced
@@ -21,6 +23,12 @@ export function MobileApp() {
   const grantState = useMobileStore((s) => s.grantState);
   const openDoc = useMobileStore((s) => s.openDoc);
   const refreshGrant = useMobileStore((s) => s.refreshGrant);
+
+  // Mounted HERE, at the root, deliberately: it must keep working while the
+  // user reads. Hosting it in LibraryBrowser would stop the sweep the moment a
+  // document opened, because that component unmounts — the same class of bug
+  // as scoping a global listener to a collapsible surface.
+  const { progress: sweepProgress } = useInlineSweep();
 
   // Resolve the native grant once on mount — never trust a persisted flag.
   useEffect(() => {
@@ -106,6 +114,9 @@ export function MobileApp() {
           <Onboarding />
         )}
       </div>
+      {/* Passive, non-blocking: appears only while a sweep runs.
+          Outside the shell div so it is never clipped by its overflow. */}
+      <SweepIndicator progress={sweepProgress} />
       <Toaster position="top-center" />
     </ThemeProvider>
   );
@@ -115,10 +126,23 @@ export function MobileApp() {
 function Splash() {
   return (
     <div className="flex h-full w-full items-center justify-center">
-      <div
-        className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-foreground"
-        aria-label="Loading"
-      />
+      {/* An SVG ring rather than a bordered div — see the matching comment in
+          LibraryBrowser. A `border-t-*` tint on a 2px circle was reported as
+          "just a circle" with no discernible motion; an explicit stroked arc
+          has nothing to override and reads at any size. */}
+      <svg viewBox="0 0 24 24" className="h-6 w-6 animate-spin" aria-label="Loading" role="img">
+        <circle cx="12" cy="12" r="10" fill="none" stroke="var(--color-muted)" strokeWidth="2.5" />
+        <circle
+          cx="12"
+          cy="12"
+          r="10"
+          fill="none"
+          stroke="var(--color-foreground)"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          strokeDasharray="15.7 47.1"
+        />
+      </svg>
     </div>
   );
 }

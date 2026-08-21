@@ -1478,7 +1478,7 @@ describe("web pull-to-refresh indicator (2026-08-20)", () => {
   function scrollerAndIndicator(container: HTMLElement) {
     return {
       scrollers: Array.from(container.querySelectorAll(".overflow-y-auto")),
-      indicator: container.querySelector<HTMLElement>(".border-t-foreground"),
+      indicator: container.querySelector<HTMLElement>("svg.h-5.w-5"),
     };
   }
 

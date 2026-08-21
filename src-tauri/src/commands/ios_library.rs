@@ -270,6 +270,66 @@ pub async fn ios_create_directory(
     }
 }
 
+/// Rewrite a captured article so its images are embedded rather than linked
+/// (task #1.4 of `docs/prds/2026-08-21-self-contained-articles.md`).
+///
+/// A captured article keeps remote `https://` image URLs, which makes the file
+/// a recipe for fetching the article rather than the article itself — it works
+/// only while the network is up and the CDN still serves those paths.
+///
+/// Returns the number of images embedded. `Ok(0)` is the common, cheap case:
+/// a document with nothing remote left is a no-op, so a sweep can call this
+/// over a whole folder without special-casing already-done files.
+///
+/// **The image bytes never reach the WebView.** They are fetched natively,
+/// spliced into the HTML here, and written straight back to disk. Passing
+/// multi-MB base64 through IPC into JavaScript would jank the UI regardless of
+/// how the work was scheduled — the same reasoning that put thumbnails on
+/// `QLThumbnailGenerator` instead of reads over IPC.
+#[tauri::command]
+pub async fn ios_inline_article_images(
+    app: tauri::AppHandle,
+    rel_path: String,
+    max_pixel: Option<u32>,
+    jpeg_quality: Option<f64>,
+) -> Result<usize, String> {
+    let rel = sanitize_rel_path(&rel_path)?;
+    if rel.is_empty() {
+        return Err("Cannot inline images into the library root".into());
+    }
+    #[cfg(target_os = "ios")]
+    {
+        // 1600px is already 2x retina on a 390pt-wide phone, so the default
+        // loses nothing visible while keeping a saved article's size — and the
+        // iCloud bytes it syncs — proportionate.
+        let max_pixel = max_pixel.unwrap_or(1600);
+        let jpeg_quality = jpeg_quality.unwrap_or(0.8);
+
+        let html = ios_impl::read_file(&app, &rel).await?;
+        let urls = notesage_capture::article_image_urls(&html);
+        if urls.is_empty() {
+            return Ok(0);
+        }
+
+        let map = ios_impl::inline_images(&app, &urls, max_pixel, jpeg_quality).await?;
+        if map.is_empty() {
+            // Every fetch failed (offline, all oversized). Leave the file
+            // untouched rather than rewriting it to itself — an unchanged
+            // mtime keeps iCloud from syncing a no-op edit.
+            return Ok(0);
+        }
+
+        let rewritten = notesage_capture::inline_article_images(&html, &map);
+        ios_impl::write_file(&app, &rel, &rewritten).await?;
+        Ok(map.len())
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, rel, max_pixel, jpeg_quality);
+        Err("ios_inline_article_images is only available on iOS".into())
+    }
+}
+
 /// System-generated thumbnail (QLThumbnailGenerator) for gallery cards —
 /// PDFs, images, videos and office docs rendered by the OS, off the
 /// webview thread. Returns RAW PNG bytes (same rationale as
@@ -630,6 +690,17 @@ mod ios_impl {
 
     pub async fn thumbnail(app: &AppHandle, rel: &str, max_pixel: f64) -> Result<String, String> {
         app.notesage_ios().thumbnail_file(rel, max_pixel).map_err(|e| e.to_string())
+    }
+
+    pub async fn inline_images(
+        app: &AppHandle,
+        urls: &[String],
+        max_pixel: u32,
+        jpeg_quality: f64,
+    ) -> Result<Vec<(String, String)>, String> {
+        app.notesage_ios()
+            .inline_images(urls, max_pixel, jpeg_quality)
+            .map_err(|e| e.to_string())
     }
 
     pub async fn quick_look(app: &AppHandle, rel: &str) -> Result<(), String> {

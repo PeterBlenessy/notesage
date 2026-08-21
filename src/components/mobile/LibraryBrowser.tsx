@@ -12,6 +12,7 @@ import { InboxCard } from "./InboxCard";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
+import { INLINE_SWEEP_EVENT } from "./useInlineSweep";
 import { t, getFormatLocale } from "@/lib/i18n";
 import { INBOX_FOLDER_NAME } from "@/lib/inbox";
 import { useLocale } from "@/lib/useLocale";
@@ -105,10 +106,21 @@ export function LibraryBrowser() {
     return () => document.removeEventListener("visibilitychange", onVisible);
   }, [load]);
 
-  // Web pull-to-refresh (#650). The native UIRefreshControl hung off the
-  // WEBVIEW's scroll view — but the listing scrolls in this inner div, so
-  // that gesture could never fire (removed). This tracks the pull on the
-  // real scroller: drag down from the top past the threshold to reload.
+  // The image sweep (#1.5) runs at the app root, not here — this component
+  // unmounts the moment a document opens, and a sweep that stops when the user
+  // starts reading is the surface-scoped-listener bug all over again. It
+  // announces a rewritten document instead, and the listing reloads so the
+  // regenerated thumbnail is picked up.
+  useEffect(() => {
+    const onSwept = () => void load(true);
+    window.addEventListener(INLINE_SWEEP_EVENT, onSwept);
+    return () => window.removeEventListener(INLINE_SWEEP_EVENT, onSwept);
+  }, [load]);
+
+  // Web pull-to-refresh (#650). The native pull gesture hung off the WEBVIEW's
+  // scroll view — but the listing scrolls in this inner div, so that gesture
+  // could never fire (removed). This tracks the pull on the real scroller:
+  // drag down from the top past the threshold to reload.
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   // Restore the folder's scroll position once its rows exist (#680 follow-up:
   // opening a document unmounts this browser, so the DOM offset is gone by
@@ -156,8 +168,11 @@ export function LibraryBrowser() {
     if (pullPx >= PULL_TRIGGER && !pullBusy) {
       setPullBusy(true);
       // A floor keeps the spinner visible long enough to read as an action
-      // even when the listing returns instantly.
-      const floor = new Promise((r) => setTimeout(r, 500));
+      // even when the listing returns instantly. One second, not the previous
+      // 500ms: `animate-spin` has a 1s period, so half a floor showed half a
+      // rotation — enough to look like a circle that twitched rather than one
+      // that spun, which is exactly how it was reported.
+      const floor = new Promise((r) => setTimeout(r, 1000));
       void Promise.all([load(true), floor]).finally(() => setPullBusy(false));
     }
     setPullPx(0);
@@ -732,12 +747,21 @@ export function LibraryBrowser() {
         className="pointer-events-none absolute left-0 right-0 flex h-12 items-center justify-center"
         style={{ top: "calc(3.75rem + env(safe-area-inset-top))" }}
       >
-        <div
-          className={
-            pullBusy
-              ? "h-5 w-5 animate-spin rounded-full border-2 border-muted border-t-foreground"
-              : "h-5 w-5 rounded-full border-2 border-muted border-t-foreground"
-          }
+        {/* An SVG ring, not a bordered div.
+
+            The previous spinner was a `rounded-full border-2 border-muted
+            border-t-foreground` circle: the moving part was ONE border side
+            tinted differently, which depends on `border-t-*` still winning
+            the cascade over `border-*` and on a 2px arc being legible at
+            20px. Peter saw "just a circle" — no discernible motion. Every
+            piece of that chain checked out in the built CSS, so rather than
+            keep guessing which link was weak, the arc is now drawn
+            explicitly: a track circle plus a quarter-length stroke, with
+            `stroke` set directly. Nothing to override, and the arc reads at
+            any size. */}
+        <svg
+          viewBox="0 0 20 20"
+          className={pullBusy ? "h-5 w-5 animate-spin" : "h-5 w-5"}
           style={
             pullBusy
               ? undefined
@@ -749,7 +773,28 @@ export function LibraryBrowser() {
                   transform: `rotate(${pullPx * 3.2}deg)`,
                 }
           }
-        />
+        >
+          <circle
+            cx="10"
+            cy="10"
+            r="8"
+            fill="none"
+            stroke="var(--color-muted)"
+            strokeWidth="2.5"
+          />
+          {/* A quarter of the circumference (2πr ≈ 50), so the moving arc is
+              a clear segment rather than a hairline tint. */}
+          <circle
+            cx="10"
+            cy="10"
+            r="8"
+            fill="none"
+            stroke="var(--color-foreground)"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeDasharray="12.5 37.7"
+          />
+        </svg>
       </div>
 
       {/* Button islands (iOS 26 / Notes layout): nav top-left, actions

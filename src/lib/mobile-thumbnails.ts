@@ -234,6 +234,19 @@ export function getThumbnail(
   return promise;
 }
 
+/**
+ * Forget one path's cached thumbnail so the next view regenerates it.
+ *
+ * The cache is keyed by path and never expires, which is right while a file's
+ * content is fixed — but the image sweep REWRITES documents in place. Without
+ * this, an article that just gained embedded images would keep showing the
+ * text-only thumbnail generated before the sweep, for the rest of the session,
+ * and the fix would look like it had not worked.
+ */
+export function evictThumbnail(path: string): void {
+  cache.delete(path);
+}
+
 /** Test-only reset — the cache is module-level and otherwise leaks across tests. */
 export function resetThumbnailCache(): void {
   cache.clear();

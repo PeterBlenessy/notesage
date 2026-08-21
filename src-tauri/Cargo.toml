@@ -7,11 +7,19 @@ license = "MIT"
 edition = "2021"
 
 
-# `notesage-capture` is a member rather than a plain path dependency: the app
-# binary does NOT link it (captures are written by the iOS Share Extension, a
-# separate process that links its staticlib directly). Making it a workspace
-# member is what puts it in `cargo test`, so the one implementation of the
-# capture-note format stays covered by the same gate as everything else.
+# `notesage-capture` is a workspace member so it lands in `cargo test` — the
+# one implementation of the capture-note format stays covered by the same gate
+# as everything else.
+#
+# It is ALSO an iOS-only dependency of the app binary (below). It was
+# deliberately not linked at all when captures were written solely by the
+# Share Extension, which links the staticlib directly. Self-contained articles
+# changed that: the image sweep runs in the APP, and it needs the same pure
+# `article_image_urls` / `inline_article_images` the extension's format uses.
+# Sharing the crate rather than reimplementing is the point — two parsers for
+# one document format is how they drift.
+#
+# Still iOS-only, so desktop builds link nothing new.
 [workspace]
 members = ["crates/notesage-capture", "crates/tauri-plugin-notesage-ios"]
 
@@ -155,6 +163,7 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 # `2026-06-28-ios-mobile-app.md` § Non-Goals) — there is nothing to lose.
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri-plugin-notesage-ios = { path = "crates/tauri-plugin-notesage-ios" }
+notesage-capture = { path = "crates/notesage-capture" }
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 tauri-plugin-aptabase = "1.0.0"

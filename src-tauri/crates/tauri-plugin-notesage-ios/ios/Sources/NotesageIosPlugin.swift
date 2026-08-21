@@ -25,6 +25,12 @@ struct ThumbnailArgs: Decodable {
   let maxPixel: Double
 }
 
+struct InlineImagesArgs: Decodable {
+  let urls: [String]
+  let maxPixel: UInt32
+  let jpegQuality: Double
+}
+
 struct TextPromptArgs: Decodable {
   let title: String
   let placeholder: String
@@ -525,6 +531,29 @@ class NotesageIosPlugin: Plugin {
         case .failure(let error):
           invoke.reject(String(describing: error))
         }
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Fetch, downsample and encode article images so a captured article becomes
+  /// self-contained. Asynchronous by design — `ImageInliner` runs on a
+  /// `.utility` queue, so the main thread is never blocked and the OS
+  /// deprioritises the work while the user is interacting.
+  ///
+  /// Never rejects on a failed image. One that was too large, too slow, or
+  /// 404'd is simply absent from the result and keeps its remote URL in the
+  /// rewritten document — a partial article is a working article.
+  @objc public func inlineImages(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(InlineImagesArgs.self)
+      var limits = ImageInliner.Limits()
+      limits.maxPixel = Int(args.maxPixel)
+      limits.jpegQuality = CGFloat(args.jpegQuality)
+
+      ImageInliner.inline(urls: args.urls, limits: limits) { pairs in
+        invoke.resolve([
+          "images": pairs.map { ["url": $0.0, "dataUri": $0.1] }
+        ])
       }
     } catch { invoke.reject(String(describing: error)) }
   }
