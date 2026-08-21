@@ -28,6 +28,7 @@ import {
   createLimiter,
   getThumbnail,
   resetThumbnailCache,
+  evictThumbnail,
   cancelPendingThumbnails,
 } from "@/lib/mobile-thumbnails";
 
@@ -314,5 +315,53 @@ describe("native-first thumbnails (QLThumbnailGenerator)", () => {
     expect(page.kind).toBe("icon");
     expect(renderMarkdownFragmentMock).not.toHaveBeenCalled();
     expect(iosReadFileMock).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Theme correctness.
+ *
+ * Two failures with a path-only cache key, both reported as "thumbnails are
+ * light in a dark app": React runs effects child-first, so a card's first
+ * request can beat ThemeProvider's effect and cache a LIGHT thumbnail for the
+ * session; and a theme flip left every generated thumbnail in the old theme.
+ */
+describe("thumbnails are cached per theme", () => {
+  it("regenerates for the other theme rather than reusing", async () => {
+    iosReadFileMock.mockResolvedValue("# hi");
+    renderMarkdownFragmentMock.mockImplementation(async (_md, theme) => `<p>${theme}</p>`);
+
+    const light = await getThumbnail(entry({ name: "a.md" }), { theme: "light" });
+    const dark = await getThumbnail(entry({ name: "a.md" }), { theme: "dark" });
+
+    expect(light).toEqual({ kind: "markdown", html: "<p>light</p>" });
+    expect(dark).toEqual({ kind: "markdown", html: "<p>dark</p>" });
+  });
+
+  it("still caches within a theme", async () => {
+    // The per-theme key must not cost the caching that keeps scrolling cheap.
+    iosReadFileMock.mockResolvedValue("# hi");
+    renderMarkdownFragmentMock.mockResolvedValue("<p>x</p>");
+
+    await getThumbnail(entry({ name: "b.md" }), { theme: "dark" });
+    await getThumbnail(entry({ name: "b.md" }), { theme: "dark" });
+
+    expect(iosReadFileMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("evicting a rewritten file drops BOTH themes", async () => {
+    // Eviction follows a CONTENT change, which invalidates every rendering of
+    // the file — not only the one currently on screen.
+    iosReadFileMock.mockResolvedValue("# hi");
+    renderMarkdownFragmentMock.mockResolvedValue("<p>x</p>");
+    await getThumbnail(entry({ name: "c.md" }), { theme: "light" });
+    await getThumbnail(entry({ name: "c.md" }), { theme: "dark" });
+    expect(iosReadFileMock).toHaveBeenCalledTimes(2);
+
+    evictThumbnail("c.md");
+
+    await getThumbnail(entry({ name: "c.md" }), { theme: "light" });
+    await getThumbnail(entry({ name: "c.md" }), { theme: "dark" });
+    expect(iosReadFileMock).toHaveBeenCalledTimes(4);
   });
 });

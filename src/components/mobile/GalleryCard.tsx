@@ -73,10 +73,19 @@ export function GalleryCard({
       cancelled = true;
       observer.disconnect();
     };
-    // `theme` intentionally excluded: a theme flip mid-session should not
-    // re-trigger every already-cached/in-flight card's observer.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entry.path, entry.is_directory]);
+    // `theme` IS a dependency, despite the cost of re-observing.
+    //
+    // It used to be excluded to avoid re-triggering every card's observer on a
+    // theme flip. But the thumbnail is RENDERED in a theme, so excluding it
+    // meant a flip left every card in the old one — and worse, a card whose
+    // first request beat ThemeProvider's effect (React runs effects
+    // child-first) cached a light thumbnail in a dark app for the whole
+    // session, which is what Peter saw.
+    //
+    // Re-observing is bounded: only cards actually in view regenerate, the
+    // shared limiter still caps concurrency at two, and `getThumbnail` is now
+    // keyed by theme so the other theme's work is not thrown away.
+  }, [entry.path, entry.is_directory, theme]);
 
   const Icon = iconFor(entry);
 
