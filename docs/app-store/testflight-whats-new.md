@@ -11,8 +11,7 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Images in saved articles should now be sharp. Share an article from Safari —
-the photos are taken from the page as you were seeing it, rather than
-re-downloaded, so they arrive at full quality. Compare against build 6, where
-the lead photo came out blurry. Sharing links from Messages or Mail still
-works the old way.
+Saved articles in gallery view now show their own photo — the same picture you
+saw in the share sheet — instead of a shrunken page. Share a few articles and
+check whether you can tell them apart at a glance. They should also stop
+looking washed out in dark mode.

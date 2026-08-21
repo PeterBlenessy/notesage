@@ -22,6 +22,9 @@ crate-type = ["staticlib", "rlib"]
 # conversion remain dependency-free. `url` was dropped: dom_smoothie's
 # `Readability::new` already validates the document URL is absolute.
 [dependencies]
+# Decoding the inline images the sweep embeds, so a saved article's own lead
+# photo can serve as its thumbnail without a network round trip.
+base64 = "0.22"
 dom_smoothie = "0.18"
 dom_query = "0.28"
 htmd = "0.2"

@@ -149,6 +149,18 @@ export async function iosInlineArticleImages(
   });
 }
 
+/**
+ * The image a saved article should be recognised BY — its embedded lead photo.
+ *
+ * Rejects when the article has no inline image, which is the caller's cue to
+ * fall back to the system thumbnail generator. Raw bytes, same transport as
+ * `iosReadBinary`.
+ */
+export async function iosArticleThumbnail(relPath: string): Promise<Uint8Array> {
+  const buf = await invoke<ArrayBuffer>("ios_article_thumbnail", { relPath });
+  return new Uint8Array(buf);
+}
+
 /** What a retroactive image sweep would do, without doing any of it. */
 export interface IosUpgradableArticles {
   documents: number;

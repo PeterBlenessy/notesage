@@ -270,6 +270,43 @@ pub async fn ios_create_directory(
     }
 }
 
+/// The image a saved article should be recognised by, as raw bytes.
+///
+/// The gallery used to show captured articles as a page rendered into a
+/// square: accurate, and useless. Nobody remembers a layout — what sticks is
+/// the photo from the share sheet ("I am really not recognizing the docs in
+/// the inbox compared to the share preview", Peter, build 6). Since the sweep
+/// embeds that photo into the document, the recognisable thumbnail is already
+/// in the file.
+///
+/// Errors when the article has no inline image, which is the caller's cue to
+/// fall back to the system generator. RAW bytes, not JSON — same reasoning as
+/// `ios_read_binary`: no payload-sized JSON parse on the WebView's main
+/// thread.
+#[tauri::command]
+pub async fn ios_article_thumbnail(
+    app: tauri::AppHandle,
+    rel_path: String,
+) -> Result<tauri::ipc::Response, String> {
+    let rel = sanitize_rel_path(&rel_path)?;
+    if rel.is_empty() {
+        return Err("Cannot read the library root as an article".into());
+    }
+    #[cfg(target_os = "ios")]
+    {
+        let html = ios_impl::read_file(&app, &rel).await?;
+        match notesage_capture::article_lead_image(&html) {
+            Some(bytes) => Ok(tauri::ipc::Response::new(bytes)),
+            None => Err("no inline image in this article".into()),
+        }
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, rel);
+        Err("ios_article_thumbnail is only available on iOS".into())
+    }
+}
+
 /// What a retroactive sweep would do, without doing any of it (task #3.1).
 ///
 /// Answers BEFORE acting, deliberately. A retroactive sweep rewrites documents
