@@ -43,7 +43,7 @@ Tests: order preserved, duplicates collapse to one fetch, already-inlined
 documents are no-ops, unmapped images survive, `srcset` does not resurrect a
 remote fetch.
 
-### #1.2 Swift: fetch + downsample + encode
+### #1.2 Swift: fetch + downsample + encode ✅
 
 `.utility` QoS serial queue, one image at a time.
 
