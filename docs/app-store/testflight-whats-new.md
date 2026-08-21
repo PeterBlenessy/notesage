@@ -11,7 +11,8 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Saved web pages now keep their images. Share an article, give it a moment,
-then turn on airplane mode and open it — the pictures should still be there,
-and it should show a picture of the page in gallery view instead of a plain
-icon. Pull down to refresh; you should see a spinner now.
+Images in saved articles should now be sharp. Share an article from Safari —
+the photos are taken from the page as you were seeing it, rather than
+re-downloaded, so they arrive at full quality. Compare against build 6, where
+the lead photo came out blurry. Sharing links from Messages or Mail still
+works the old way.
