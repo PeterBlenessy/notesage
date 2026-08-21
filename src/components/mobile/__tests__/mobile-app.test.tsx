@@ -239,7 +239,28 @@ describe("sort toggle (#632)", () => {
       ["Group by recent", false],
       ["Group by date", false],
       ["Group by type", false],
+      // Offline images (#2.1). Enabled by default, so the size picks are
+      // present; the toggle row carries the on/off checkmark itself.
+      ["Save images for offline", true],
+      ["Smaller images", false],
+      ["Standard images", true],
+      ["Larger images", false],
+      ["Original images", false],
     ]);
+    // The size picks are conditional: four rows offering to choose a
+    // resolution for work that is switched OFF is the kind of dead control
+    // that makes a whole menu untrustworthy.
+    useMobileStore.getState().setInlineImagesEnabled(false);
+    await waitFor(() =>
+      expect(captured.topRight?.menu?.some((m) => m.id.startsWith("img-"))).toBe(false),
+    );
+    // The toggle itself stays — that is how you turn it back on.
+    expect(captured.topRight?.menu?.some((m) => m.id === "offline-images")).toBe(true);
+    useMobileStore.getState().setInlineImagesEnabled(true);
+    await waitFor(() =>
+      expect(captured.topRight?.menu?.some((m) => m.id === "img-1600")).toBe(true),
+    );
+
     // Sort and group each open their own section.
     expect(captured.topRight?.menu?.[2]?.sectionBreak).toBe(true);
     expect(captured.topRight?.menu?.[4]?.sectionBreak).toBe(true);
@@ -247,7 +268,9 @@ describe("sort toggle (#632)", () => {
     useMobileStore.getState().setSortMode("modified");
     await waitFor(() =>
       expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([
+        // view(2) · sort(2) · group(5) · offline toggle + 4 size picks
         true, false, false, true, true, false, false, false, false,
+        true, false, true, false, false,
       ]),
     );
   });
