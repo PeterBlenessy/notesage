@@ -113,6 +113,7 @@ jobs:
         run: pnpm vitest run --sequence.shuffle.files=true
 
       - name: Performance benchmarks
+        id: perf
         # ADVISORY on TIMING (does not block merge/release). Wall-clock
         # benchmarks on a shared macos-latest runner have irreducible variance —
         # even after bumping the budget multiplier 3 → 4 → 5, the markdown-parse
@@ -139,7 +140,16 @@ jobs:
         # 2026-08-22: three cmdbar benchmarks had been dying on mount with
         # `TypeError: useChatStore.subscribe is not a function` while CI stayed
         # green — the failure mode this exists to make impossible.
-        if: always()
+        #
+        # `always()` so a failing earlier step cannot skip the guard and take
+        # the signal with it — but NOT when the benchmarks were never given the
+        # chance to run. A blocking step before them (typecheck, unit tests)
+        # skips the perf step, leaving no report; reporting that as "benchmarks
+        # did not run" is technically true and practically a red herring
+        # stacked on the real failure. `outcome` is 'failure' rather than
+        # 'skipped' when the perf step ran and exceeded budget, so the
+        # continue-on-error case still reaches the guard.
+        if: always() && steps.perf.outcome != 'skipped'
         run: node scripts/perf-ci-guard.mjs perf-report.json
 
       - name: Upload benchmark results

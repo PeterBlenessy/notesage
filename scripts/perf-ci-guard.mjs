@@ -40,6 +40,18 @@
  * that silently reclassifies the unknown as harmless is the bug it exists to
  * prevent.
  *
+ * KNOWN FRAGILITY, and why it is acceptable. This matches on generic Vitest
+ * boilerplate, not on *which* assertion failed. A `.toBe(true)` on anything
+ * other than `result.passed` would fail with the identical message, and a real
+ * functional regression would then be waved through as a tolerated timing
+ * flake — this guard going blind in exactly the way the benchmarks it watches
+ * once did. Rather than leave that to vigilance,
+ * `src/lib/__tests__/perf-guard-classifier.test.ts` fails the moment any perf
+ * test asserts `.toBe(true)` on a different subject, and points here. If that
+ * test ever becomes an obstacle, the honest fix is to make the classification
+ * structural — have the harness throw a distinctively-worded error on budget
+ * failure — not to loosen the regex.
+ *
  * Usage:
  *   vitest run --config vitest.perf.config.ts --reporter=json --outputFile=<f>
  *   node scripts/perf-ci-guard.mjs <f>
