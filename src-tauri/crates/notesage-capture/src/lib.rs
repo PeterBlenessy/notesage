@@ -1771,11 +1771,25 @@ mod picture_tests {
 // (their long-form format) a title, a ~200-character preview and a cover
 // image.
 //
-// **It does not return an article's body.** That is login-gated, and no fetch
-// path reaches it. So this is deliberately an enrichment, not a capture: the
-// note carries what is publicly available and links to the rest. Pretending
-// otherwise — saving a preview under a title that implies the whole piece —
-// would be worse than a link, because it looks complete.
+// **It does not return an article's body — but we do not need it to.**
+//
+// I first concluded the body was unreachable, from a fetch that 404'd. That
+// fetch was of a DELETED post, and I generalised from it. Retested against a
+// live one: `x.com/<user>/status/<id>` server-renders the COMPLETE article
+// into its HTML, logged out, for any ordinary user-agent — and our existing
+// extractor already reads it. Peter's example yields 7,481 characters over 42
+// paragraphs, ending on the article's real conclusion.
+//
+// (The `/article/<id>` URL forms do 404. Only the status URL carries it.)
+//
+// So this endpoint is not the capture path. It is the METADATA path, and it
+// earns its place by fixing the one thing extraction gets wrong: readability
+// titles these "rvaniaaa (@rvaniaaaa) on X", because that is the page's
+// `<title>`. The real title, author and cover live here.
+//
+// The note builder below is the FALLBACK, for posts with no article to
+// extract. It must never displace a successful extraction — trading 7,481
+// characters for a 197-character preview would be a straight regression.
 
 /// The embed-data endpoint for an X status URL, or `None` when the URL is not
 /// one. Mirrors `oembed_url`'s shape for video providers.
