@@ -1757,3 +1757,277 @@ mod picture_tests {
         assert!(flat.contains("real-1600.jpg"));
     }
 }
+
+// ============================================================================
+// X (Twitter) posts
+// ============================================================================
+//
+// A shared x.com link saves as a bare link note today, and nothing better is
+// reachable: a plain fetch of a status page returns no usable content, and
+// `PageRenderer` meets a login wall.
+//
+// One unauthenticated endpoint does answer — the one X's own embed widget
+// uses. It returns the post text, the author, the date, and for X ARTICLES
+// (their long-form format) a title, a ~200-character preview and a cover
+// image.
+//
+// **It does not return an article's body.** That is login-gated, and no fetch
+// path reaches it. So this is deliberately an enrichment, not a capture: the
+// note carries what is publicly available and links to the rest. Pretending
+// otherwise — saving a preview under a title that implies the whole piece —
+// would be worse than a link, because it looks complete.
+
+/// The embed-data endpoint for an X status URL, or `None` when the URL is not
+/// one. Mirrors `oembed_url`'s shape for video providers.
+pub fn x_syndication_url(url: &str) -> Option<String> {
+    let after_scheme = url.split("://").nth(1)?;
+    let host = after_scheme.split('/').next()?.trim_start_matches("www.").to_lowercase();
+    if !matches!(host.as_str(), "x.com" | "twitter.com" | "mobile.x.com" | "mobile.twitter.com") {
+        return None;
+    }
+    // `/<handle>/status/<id>` — also `/i/web/status/<id>`. The id is the only
+    // part that matters, and it is the segment after "status".
+    let path = after_scheme.split_once('/').map(|(_, rest)| rest)?;
+    let mut segments = path.split(['/', '?', '#']).filter(|s| !s.is_empty());
+    let id = loop {
+        match segments.next() {
+            Some("status" | "statuses") => break segments.next()?,
+            Some(_) => continue,
+            None => return None,
+        }
+    };
+    if id.is_empty() || !id.chars().all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    Some(format!(
+        "https://cdn.syndication.twimg.com/tweet-result?id={id}&lang=en&token=a"
+    ))
+}
+
+/// What the embed endpoint tells us about a post.
+#[derive(Debug, Default, Clone, PartialEq)]
+pub struct XPost {
+    pub text: String,
+    pub author_name: Option<String>,
+    pub author_handle: Option<String>,
+    pub created_at: Option<String>,
+    /// Present only for X Articles (long-form).
+    pub article_title: Option<String>,
+    /// A ~200-character teaser. NOT the body — the body is login-gated.
+    pub article_preview: Option<String>,
+    pub cover_image_url: Option<String>,
+}
+
+pub fn parse_x_post(json: &str) -> XPost {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return XPost::default();
+    };
+    let s = |val: Option<&serde_json::Value>| {
+        val.and_then(|v| v.as_str()).map(str::to_string).filter(|t| !t.trim().is_empty())
+    };
+
+    let article = v.get("article");
+    XPost {
+        // A long-form post's `text` is just the t.co link to itself, which is
+        // noise in a note that already carries the source link.
+        text: s(v.get("text")).unwrap_or_default(),
+        author_name: s(v.pointer("/user/name")),
+        author_handle: s(v.pointer("/user/screen_name")),
+        created_at: s(v.get("created_at")),
+        article_title: article.and_then(|a| s(a.get("title"))),
+        article_preview: article.and_then(|a| s(a.get("preview_text"))),
+        cover_image_url: article
+            .and_then(|a| s(a.pointer("/cover_media/media_info/original_img_url"))),
+    }
+}
+
+/// Is this post's text nothing but a link to itself?
+fn is_self_link_only(text: &str) -> bool {
+    let t = text.trim();
+    !t.is_empty() && t.split_whitespace().count() == 1 && t.starts_with("https://t.co/")
+}
+
+/// A note for an X post.
+///
+/// For an Article the body is a title, the cover image, the preview, and an
+/// explicit line saying the rest is on X — because it is, and a note that
+/// quietly ends mid-sentence reads as data loss rather than a summary.
+pub fn build_x_note(input: &CaptureInput, post: &XPost, now_rfc3339: &str) -> CaptureNote {
+    let title = meaningful_title(input.title.as_deref())
+        .or_else(|| post.article_title.clone())
+        .or_else(|| {
+            // A plain post has no title, so make one from its opening words —
+            // enough to recognise in a listing, not a whole sentence.
+            let words: Vec<&str> = post.text.split_whitespace().take(8).collect();
+            (!words.is_empty()).then(|| words.join(" "))
+        });
+
+    let base = build_capture_note(
+        &CaptureInput { title: title.clone(), ..input.clone() },
+        now_rfc3339,
+    );
+
+    let mut fm = String::from("capture_format: x-post");
+    if let Some(name) = post.author_name.as_deref() {
+        fm.push_str(&format!("\nauthor: {}", yaml_quote(name)));
+    }
+    if let Some(handle) = post.author_handle.as_deref() {
+        fm.push_str(&format!("\nauthor_handle: {}", yaml_quote(&format!("@{handle}"))));
+    }
+    if let Some(date) = post.created_at.as_deref() {
+        fm.push_str(&format!("\nposted_at: {}", yaml_quote(date)));
+    }
+    if post.article_title.is_some() {
+        // Marks a note whose body is deliberately partial, so a future sweep
+        // can find these again if a fuller route ever exists.
+        fm.push_str("\nx_article: true");
+    }
+
+    let mut body = String::new();
+    if let Some(cover) = post.cover_image_url.as_deref() {
+        body.push_str(&format!("![]({cover})\n\n"));
+    }
+    if let Some(preview) = post.article_preview.as_deref() {
+        body.push_str(preview.trim());
+        body.push_str("\n\n*This is the opening of an X Article. The full text is on X.*\n");
+    } else if !is_self_link_only(&post.text) {
+        body.push_str(post.text.trim());
+        body.push('\n');
+    }
+
+    let mut contents = base.contents;
+    if let Some(close) = contents[3..].find("\n---") {
+        contents.insert_str(3 + close, &format!("\n{fm}"));
+    }
+    // Replace the link-only body (everything after the frontmatter fence),
+    // keeping the source link the base note already wrote above it.
+    let split = contents.find("---\n\n").map(|i| i + 5).unwrap_or(0);
+    CaptureNote {
+        rel_path: base.rel_path,
+        contents: format!("{}{body}", &contents[..split]),
+    }
+}
+
+#[cfg(test)]
+mod x_post_tests {
+    use super::*;
+
+    fn input(url: &str) -> CaptureInput {
+        CaptureInput {
+            url: url.to_string(),
+            title: None,
+            selection_text: None,
+            tags: vec![],
+        }
+    }
+
+    #[test]
+    fn recognises_status_urls_on_both_hosts() {
+        for url in [
+            "https://x.com/jack/status/20",
+            "https://twitter.com/jack/status/20",
+            "https://mobile.twitter.com/jack/status/20",
+            "https://x.com/i/web/status/20",
+        ] {
+            let out = x_syndication_url(url);
+            assert!(out.is_some(), "not recognised: {url}");
+            assert!(out.unwrap().contains("id=20"), "wrong id for {url}");
+        }
+    }
+
+    #[test]
+    fn strips_the_tracking_query_x_appends_to_shared_links() {
+        // The share sheet always appends ?s=46&t=... — if that leaked into the
+        // id the endpoint would 404 on every single shared post.
+        let url = "https://x.com/rvaniaaaa/status/2090512486738845784?s=46&t=CeSJ900";
+        let out = x_syndication_url(url).expect("recognised");
+        assert!(out.contains("id=2090512486738845784"), "{out}");
+        assert!(!out.contains("s=46"), "query leaked: {out}");
+    }
+
+    #[test]
+    fn ignores_non_status_x_urls_and_other_hosts() {
+        for url in [
+            "https://x.com/jack",
+            "https://x.com/i/article/123",
+            "https://example.com/status/20",
+            "https://x.com/jack/status/notanumber",
+        ] {
+            assert!(x_syndication_url(url).is_none(), "wrongly matched: {url}");
+        }
+    }
+
+    #[test]
+    fn parses_a_plain_post() {
+        let json = r#"{"text":"just setting up my twttr",
+                       "created_at":"2006-03-21T20:50:14.000Z",
+                       "user":{"name":"jack","screen_name":"jack"}}"#;
+        let p = parse_x_post(json);
+        assert_eq!(p.text, "just setting up my twttr");
+        assert_eq!(p.author_handle.as_deref(), Some("jack"));
+        assert!(p.article_title.is_none());
+    }
+
+    #[test]
+    fn parses_an_article_including_its_cover() {
+        let json = r#"{"text":"https://t.co/abc","user":{"name":"R","screen_name":"rv"},
+          "article":{"title":"The Second Brain Is Not a Storage System.",
+                     "preview_text":"Most people who build a second brain",
+                     "cover_media":{"media_info":{"original_img_url":"https://pbs.twimg.com/media/x.jpg"}}}}"#;
+        let p = parse_x_post(json);
+        assert_eq!(p.article_title.as_deref(), Some("The Second Brain Is Not a Storage System."));
+        assert_eq!(p.cover_image_url.as_deref(), Some("https://pbs.twimg.com/media/x.jpg"));
+    }
+
+    #[test]
+    fn malformed_json_yields_an_empty_post_rather_than_panicking() {
+        // The endpoint is unofficial; it can return anything at any time, and
+        // a share must never fail because of it.
+        assert_eq!(parse_x_post("<html>404</html>"), XPost::default());
+        assert_eq!(parse_x_post(""), XPost::default());
+    }
+
+    #[test]
+    fn an_article_note_says_the_body_is_elsewhere() {
+        // The preview ends mid-sentence. Without this line the note reads as
+        // truncated data rather than a deliberate teaser.
+        let p = XPost {
+            article_title: Some("A Title".into()),
+            article_preview: Some("Most people who build a second brain".into()),
+            ..Default::default()
+        };
+        let note = build_x_note(&input("https://x.com/a/status/1"), &p, "2026-08-22T10:00:00Z");
+        assert!(note.contents.contains("full text is on X"), "{}", note.contents);
+        assert!(note.contents.contains("x_article: true"));
+    }
+
+    #[test]
+    fn an_article_note_drops_the_self_link_body() {
+        // A long-form post's `text` is just a t.co link to itself, which the
+        // note's own source line already carries.
+        let p = XPost {
+            text: "https://t.co/wBLzP25PUm".into(),
+            article_title: Some("A Title".into()),
+            article_preview: Some("Opening words".into()),
+            ..Default::default()
+        };
+        let note = build_x_note(&input("https://x.com/a/status/1"), &p, "2026-08-22T10:00:00Z");
+        assert!(!note.contents.contains("t.co/wBLzP25PUm"), "{}", note.contents);
+    }
+
+    #[test]
+    fn a_plain_post_is_titled_from_its_opening_words() {
+        let p = XPost { text: "one two three four five six seven eight nine ten".into(), ..Default::default() };
+        let note = build_x_note(&input("https://x.com/a/status/1"), &p, "2026-08-22T10:00:00Z");
+        // The TITLE is capped; the body still carries the whole post, so the
+        // cap has to be asserted on the title line rather than the document.
+        let title_line = note
+            .contents
+            .lines()
+            .find(|l| l.starts_with("title:"))
+            .expect("a title");
+        assert!(title_line.contains("one two three four five six seven eight"));
+        assert!(!title_line.contains("nine"), "title not capped: {title_line}");
+        assert!(note.contents.contains("nine ten"), "body lost the full text");
+    }
+}
