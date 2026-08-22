@@ -39,7 +39,7 @@ over: let Tauri build unsigned, embed the extension, sign the whole bundle
 ourselves, then notarise. Well-trodden, but it moves a step out of Tauri's
 hands and into `release.yml`, where it must stay correct across Tauri upgrades.
 
-### #0.3 App Groups may not be worth their cost — DECIDE FIRST
+### #0.3 App Groups may not be worth their cost — DECIDED: own bookmark ✅
 
 The iOS design shares the library grant between app and extension through an
 App Group. On macOS with Developer ID that is **not** the cheap path: App Group
@@ -62,14 +62,14 @@ genuinely confusing in use.
 
 ## Phase 1 — Library access
 
-### #1.1 Grant + bookmark
+### #1.1 Grant + bookmark ✅
 
 `NSOpenPanel` pointed at the library, security-scoped bookmark persisted in the
 extension's own defaults. Resolve on every use, as iOS does — macOS bookmark
 semantics (`withSecurityScope`) differ enough that this needs verifying rather
 than assuming.
 
-### #1.2 Coordinated write
+### #1.2 Coordinated write ✅
 
 `NSFileCoordinator` write into `Inbox/`, with the same native dedupe iOS uses.
 Two devices writing the same library through iCloud is the normal case, not an
