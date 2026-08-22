@@ -33,11 +33,18 @@
 #
 # Failure mode
 # ------------
-# If any step here fails, the release keeps the artifacts tauri-action already
-# uploaded: correctly signed, correctly notarised, and simply lacking the Share
-# Extension — i.e. exactly the behaviour of every release before this one. The
-# bad outcome (a release whose updater signature does not match its tarball) is
-# unreachable, because assets are replaced only after all verification passes.
+# If any step in THIS script fails, the release keeps the artifacts
+# tauri-action already uploaded: correctly signed, correctly notarised, and
+# simply lacking the Share Extension — i.e. the behaviour of every release
+# before this one. Nothing here mutates the release; it only rebuilds local
+# files and reports where they are.
+#
+# The replacement itself happens in the `Replace release assets` step in
+# `release.yml`, and that step is NOT atomic — GitHub offers no atomic asset
+# swap, so it is necessarily delete-then-upload. It mitigates rather than
+# eliminates: it prepares everything before mutating anything, retries, and
+# verifies afterwards. Do not describe the mismatch outcome as "unreachable";
+# an earlier version of this comment did, and it was wrong.
 #
 # Env:
 #   APPLE_SIGNING_IDENTITY  required — Developer ID Application: ...
@@ -106,7 +113,15 @@ rm -f "$TARBALL" "$TARBALL.sig"
 tar -C "$BUNDLE/macos" -czf "$TARBALL" "Notesage.app"
 
 tar tzf "$TARBALL" | sort > "$WORK/new-listing.txt"
-MISSING="$(comm -23 "$WORK/reference-listing.txt" "$WORK/new-listing.txt" || true)"
+# `comm` failing and `comm` finding nothing both produce empty output, so a
+# blanket `|| true` here would turn "something went wrong" into "all good" —
+# in the one check whose whole job is to catch a malformed tarball. Capture
+# the status separately and treat a failure as a failure.
+set +e
+MISSING="$(comm -23 "$WORK/reference-listing.txt" "$WORK/new-listing.txt")"
+COMM_STATUS=$?
+set -e
+[ "$COMM_STATUS" -eq 0 ] || die "could not compare tarball listings (comm exited $COMM_STATUS)"
 if [ -n "$MISSING" ]; then
   echo "$MISSING" | head -20 >&2
   die "rebuilt tarball is missing entries the original had (see above)"
@@ -133,6 +148,10 @@ SIGNATURE="$(cat "$TARBALL.sig")"
 # identically; it just looks plainer on first open. Worth knowing, not worth a
 # create-dmg dependency.
 step "Rebuilding dmg"
+# Under `pipefail` a non-matching glob makes `ls` — the only failing command in
+# the pipeline — set the status, which `|| true` then absorbs, leaving DMG
+# empty for the guard below to catch. It reads like a swallowed error and is
+# not one; the emptiness IS the signal.
 DMG="$(ls "$BUNDLE/dmg/"*.dmg 2>/dev/null | head -1)" || true
 [ -n "${DMG:-}" ] || die "no dmg found under $BUNDLE/dmg"
 STAGE="$WORK/dmg-stage"
@@ -170,6 +189,14 @@ if [ -n "${GITHUB_OUTPUT:-}" ]; then
     echo "dmg=$DMG"
     echo "tarball=$TARBALL"
     echo "sig=$TARBALL.sig"
-    echo "signature=$SIGNATURE"
+    # Heredoc rather than `signature=$SIGNATURE`. The .sig is single-line
+    # base64 today — verified against a real key, `wc -l` is 0 — so the bare
+    # form works. But a bare `key=value` silently truncates at the first
+    # newline, and the value it would truncate is the one the updater checks
+    # before installing. Free insurance against `tauri signer`'s output shape
+    # ever changing.
+    echo "signature<<NOTESAGE_SIG_EOF"
+    echo "$SIGNATURE"
+    echo "NOTESAGE_SIG_EOF"
   } >> "$GITHUB_OUTPUT"
 fi

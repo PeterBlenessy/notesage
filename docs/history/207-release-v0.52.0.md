@@ -53,10 +53,14 @@ not the Mac app, and are listed here so the two stay in step.
   finished bundle and regenerates everything downstream of it: signature,
   notarisation ticket, `.dmg`, updater tarball, updater `.sig`, and
   `latest.json`'s inline signature. It runs *after* tauri-action has uploaded,
-  so a failure leaves the previously-published, correctly-signed
-  (extension-less) artifacts in place rather than a release whose updater
-  signature disagrees with its tarball. **This path has not yet run on a real
-  tag** — the Developer ID certificate exists only in CI.
+  so a failure in the embed leaves the previously-published, correctly-signed
+  (extension-less) artifacts in place. The asset swap itself cannot be atomic
+  (GitHub has no atomic replace), so it prepares everything before mutating
+  anything, retries, verifies by re-listing, and logs an explicit
+  DO-NOT-PUBLISH warning if it still ends up half-applied — the release stays a
+  draft in that case, since `publish-release` is skipped when the job fails.
+  **This path has not yet run on a real tag** — the Developer ID certificate
+  exists only in CI.
 - The regenerated `.dmg` is a plain UDZO image with an `/Applications` symlink
   rather than Tauri's default window layout. It installs identically; it looks
   plainer on first open.

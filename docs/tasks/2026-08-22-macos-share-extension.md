@@ -129,12 +129,32 @@ tarball, updater `.sig`, and `latest.json`'s inline signature. Missing any one
 of those ships an inconsistent release; missing the last two breaks auto-update
 for every desktop user, which is why the script verifies rather than assumes.
 
-**It runs after tauri-action has uploaded, on purpose.** A failure then leaves
-the already-published, correctly-signed, extension-less artifacts in place —
-the behaviour of every prior release. The dangerous outcome (an updater
-signature that disagrees with its tarball) is unreachable, because assets are
-swapped in only after all verification passes, and the release stays a draft
-until a later job publishes it.
+**It runs after tauri-action has uploaded, on purpose.** A failure in the embed
+script leaves the already-uploaded, correctly-signed, extension-less artifacts
+in place — the behaviour of every prior release.
+
+**The replacement step is mitigated, NOT atomic.** An earlier version of this
+document claimed the mismatch outcome was "unreachable". That was wrong, and a
+code review caught it. GitHub offers no atomic asset swap — no rename, names
+must be unique — so replacing an asset is necessarily delete-then-upload, and a
+transient API error between the two leaves the release inconsistent. The
+original code made it worse by validating `latest.json` *after* already
+replacing the tarball, so a missing-manifest failure guaranteed the mismatch it
+was checking for.
+
+What the step does now, in order: prepares everything (reads all three
+artifacts, fetches and patches the manifest in memory) before mutating
+anything, so every legitimate give-up happens while the release is untouched;
+retries uploads, since a transient error is the realistic failure; re-lists the
+assets afterwards to confirm the swap landed; and if it still ends up
+half-applied, logs `DO NOT PUBLISH THIS DRAFT` with the reason.
+
+That last part matters because the structural protection is only partial. The
+release is created as a draft and `publish-release` is skipped when this job
+fails, so nothing reaches users automatically — but a human debugging a red
+release job, seeing the assets already replaced, could reasonably publish by
+hand. The log has to stop them, which a comment claiming the state was
+impossible would not have done.
 
 Verified locally where possible: `tauri signer sign <file>` writes
 `<file>.sig` as a single-line base64 blob with no trailing newline — the exact
