@@ -40,6 +40,10 @@ playwright-report/
 # (CI uploads as artifact; local runs leave a fresh copy).
 perf-results.json
 
+# Vitest JSON report for the perf suite — written by the CI "Performance
+# benchmarks" step and consumed by scripts/perf-ci-guard.mjs.
+perf-report.json
+
 # Build outputs
 *.dmg
 *.app

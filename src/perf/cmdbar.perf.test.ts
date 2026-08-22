@@ -135,14 +135,34 @@ const __chatStoreState = {
 };
 
 vi.mock("@/stores/chat-store", () => {
-  function useChatStore<T>(selector: (state: typeof __chatStoreState) => T): T {
-    return selector(__chatStoreState);
-  }
+  // Zustand's store object is callable AND carries `getState` / `subscribe`.
+  // Mocking only the callable half works right up until a mounted hook reaches
+  // for one of the others — see the 2026-08-22 note below.
+  const useChatStore = Object.assign(
+    function useChatStore<T>(selector: (state: typeof __chatStoreState) => T): T {
+      return selector(__chatStoreState);
+    },
+    {
+      getState: () => __chatStoreState,
+      // No-op subscription: nothing in these benchmarks mutates the store, so
+      // a listener could never fire. Returns the unsubscriber the real store
+      // returns, because the caller's effect cleanup calls it.
+      subscribe: () => () => {},
+    },
+  );
   // Live-test 2026-04-26 — `CommandBarContext` and the slice-2 cmd-bar
   // pickers added selector imports (`selectProjectPaths`,
   // `selectPendingProjectSwitch`, `selectPendingAgentSwitch`) that this
   // perf mock didn't export. Re-export them as bare no-op selectors —
   // the perf benchmarks don't exercise the switch-prompt flows.
+  //
+  // 2026-08-22 — the same drift again, one layer deeper: `FloatingCommandBar`
+  // mounts `useMessageQueueDrain`, which calls `useChatStore.subscribe` and
+  // `.getState()` (message-queue drain, PR #469). The bare-function mock had
+  // neither, so three benchmarks died in a passive effect with
+  // `TypeError: useChatStore.subscribe is not a function` — a crash, not a
+  // budget overrun. CI's `continue-on-error: true` on the perf step meant this
+  // surfaced as a green build for however long it had been broken.
   return {
     useChatStore,
     selectMessages: () => [],

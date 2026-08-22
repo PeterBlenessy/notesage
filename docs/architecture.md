@@ -177,6 +177,9 @@ note-sage/
 │   ├── coverage-check.sh   # Coverage regression detection vs baseline
 │   ├── update-coverage-baseline.js # Generate coverage-baseline.json from Istanbul output
 │   ├── contrast-audit.ts   # WCAG contrast audit for design-system palette (`pnpm audit:contrast`)
+│   ├── perf-ci-guard.mjs   # Classifies perf-suite failures — fails CI on a benchmark that crashed, tolerates one that merely overran
+│   ├── build-macos-share-extension.sh # Compiles the macOS Share Extension + embeds it in a .app (signs inside-out)
+│   ├── macos-release-embed.sh # Release-time embed + rebuild of every derived artifact (dmg, updater tarball, .sig) with verification
 │   ├── spikes/             # De-risking spike harnesses (e.g. pi-seatbelt-spike.sh)
 │   └── run-real-e2e.sh     # Full real E2E orchestrator (app + driver lifecycle)
 ├── docs/                   # Documentation
@@ -308,7 +311,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 **CI pipeline** (`.github/workflows/test.yml`) runs on push to `main` and PRs with three parallel jobs:
 
-1. **Frontend tests:** typecheck → unit tests with coverage → performance benchmarks (`PERF_BUDGET_MULTIPLIER=1.5`) → coverage regression check (PR only) → post coverage summary to PR via `vitest-coverage-report-action`. **`typecheck` runs `tsc --noEmit` over the test files too and is the first gate — a type error in a `*.test.ts` (or an untyped mock) fails the whole job before any test executes. `vitest` does not typecheck, so always run `pnpm typecheck` after touching test files, not just `pnpm test`.**
+1. **Frontend tests:** typecheck → unit tests with coverage → performance benchmarks (`PERF_BUDGET_MULTIPLIER=5`, timing-advisory) → perf guard (fails if a benchmark crashed rather than overran) → coverage regression check (PR only) → post coverage summary to PR via `vitest-coverage-report-action`. **`typecheck` runs `tsc --noEmit` over the test files too and is the first gate — a type error in a `*.test.ts` (or an untyped mock) fails the whole job before any test executes. `vitest` does not typecheck, so always run `pnpm typecheck` after touching test files, not just `pnpm test`.**
 2. **Playwright E2E:** install Chromium → run E2E specs → upload report on failure
 3. **Rust backend:** install stable toolchain → `cargo test` in `src-tauri/`
 
@@ -333,7 +336,9 @@ Performance benchmark infrastructure in `src/perf/` measures critical editor ope
 | `decorations.perf.test.ts` | Search highlight and tag decoration rebuilds at 4 sizes | All under 2ms |
 | `stores.perf.test.ts` | `updateTabContent` (10–100 tabs), `listDirectory` (100–1000 entries), command palette filter (500 entries) | 1–20ms |
 
-**Budget multipliers:** Dev 1x (strict), CI 1.5x (runner variability). Baseline doc records dev 2x and CI 3x as recommended maximums.
+**Budget multipliers:** Dev 1x (strict — this is the real regression signal). CI 5x, set in `.github/workflows/test.yml`; it was raised 3 → 4 → 5 because shared `macos-latest` runners still spiked the markdown-parse case into a release-blocking flake at 4x.
+
+**How to read a green perf step in CI.** The step is `continue-on-error: true` **on timing only**. Wall-clock on a shared runner is too noisy to gate merges, so a budget overrun there is advisory and you should confirm regressions locally at 1x. It is *not* advisory on whether the benchmarks ran: `scripts/perf-ci-guard.mjs` classifies each failure from the vitest JSON report and fails the job when a benchmark threw instead of measuring. That guard exists because three `cmdbar.perf.test.ts` benchmarks were crashing on mount (a perf mock that had not followed `FloatingCommandBar` into `useMessageQueueDrain`) while CI stayed green — absent coverage looks exactly like passing coverage without it.
 
 ### Performance Instrumentation
 
