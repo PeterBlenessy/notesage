@@ -481,7 +481,12 @@ pub fn extract_article(html: &str, url: &str) -> Option<Article> {
 
     let mut readability = dom_smoothie::Readability::new(html, Some(url), None).ok()?;
     let product = readability.parse().ok()?;
-    let filtered_content = strip_ad_and_tracker_images(&product.content);
+    // Flatten BEFORE the ad filter: the filter judges an `<img>` by its src
+    // and dimensions, and a picture's img is often a placeholder until the
+    // best source has been promoted onto it. Judging it first would mean
+    // judging the wrong URL.
+    let flattened = flatten_picture_sources(&product.content);
+    let filtered_content = strip_ad_and_tracker_images(&flattened);
     // dom_smoothie returns the article wrapped in its own `<html>` element.
     // Fine as an intermediate for markdown conversion, but nesting an `<html>`
     // inside our template's `<body>` is invalid markup — unwrap it.
@@ -1511,17 +1516,28 @@ mod inline_image_tests {
 /// generator instead.
 pub fn article_lead_image(html: &str) -> Option<Vec<u8>> {
     use base64::Engine as _;
-    let doc = dom_query::Document::fragment(html);
-    for node in doc.select("img").iter() {
-        let src = node.attr("src").unwrap_or_default().to_string();
-        let Some(rest) = src.strip_prefix("data:") else {
-            continue;
-        };
-        // `data:[<mime>][;base64],<payload>` — we only handle base64, since
-        // that is the only form the inliner produces.
-        let Some((meta, payload)) = rest.split_once(',') else {
-            continue;
-        };
+    // A STRING SCAN, not a DOM parse.
+    //
+    // Once images are inlined the document is mostly base64 — an article with
+    // five photos is well over a megabyte — and this runs per gallery card.
+    // Parsing that into a DOM to read one attribute costs a full parse and a
+    // second copy of the document in memory, per card, for an answer the first
+    // few hundred bytes usually contain.
+    //
+    // The pattern is unambiguous enough to scan for: the inliner is the only
+    // thing that writes these, and it always emits
+    // `src="data:<mime>;base64,<payload>"`.
+    const NEEDLE: &str = "src=\"data:";
+    let mut from = 0usize;
+    while let Some(rel) = html[from..].find(NEEDLE) {
+        let start = from + rel + NEEDLE.len();
+        let Some(end_rel) = html[start..].find('"') else { break };
+        let uri = &html[start..start + end_rel];
+        from = start + end_rel;
+
+        // `<mime>;base64,<payload>` — base64 is the only form the inliner
+        // produces, so anything else is someone else's markup.
+        let Some((meta, payload)) = uri.split_once(',') else { continue };
         if !meta.contains("base64") {
             continue;
         }
@@ -1591,5 +1607,153 @@ mod lead_image_tests {
         // Decodes fine, draws nothing — a blank card reads as broken.
         let html = r#"<img src="data:image/jpeg;base64,">"#;
         assert!(article_lead_image(html).is_none());
+    }
+}
+
+/// Pick the highest-resolution candidate from a `srcset` attribute.
+///
+/// Candidates are `url descriptor` pairs: `photo-800.jpg 800w` (width) or
+/// `photo@2x.jpg 2x` (density). We want the largest, because the saved article
+/// is read on whatever screen the user has later, not the one that rendered
+/// the page — and we are storing ONE image, not a set.
+fn best_srcset_candidate(srcset: &str) -> Option<String> {
+    let mut best: Option<(f64, String)> = None;
+    for raw in srcset.split(',') {
+        let mut parts = raw.split_whitespace();
+        let Some(url) = parts.next() else { continue };
+        if url.is_empty() {
+            continue;
+        }
+        // A bare candidate with no descriptor is "1x" by definition.
+        let score = match parts.next() {
+            Some(d) if d.ends_with('w') => d.trim_end_matches('w').parse::<f64>().unwrap_or(0.0),
+            Some(d) if d.ends_with('x') => {
+                // Density and width are not comparable, but they never appear
+                // in the same srcset. Scale so a 2x sorts above a 1x without
+                // ever outranking a real pixel width.
+                d.trim_end_matches('x').parse::<f64>().unwrap_or(1.0)
+            }
+            _ => 1.0,
+        };
+        if best.as_ref().is_none_or(|(s, _)| score > *s) {
+            best = Some((score, url.to_string()));
+        }
+    }
+    best.map(|(_, url)| url)
+}
+
+/// Collapse `<picture>` down to its `<img>`, keeping the best available URL.
+///
+/// Browsers prefer `<source srcset>` over `<img src>`, and nothing else in
+/// this pipeline looks at `<source>` — not the extractor, not
+/// `article_image_urls`, not `inline_article_images`. Left alone, a
+/// `<picture>`-based image on any of the many sites that use one would be
+/// rendered from a REMOTE source we never inlined: the article looks perfect
+/// online and loses its images offline, which is the exact failure this whole
+/// feature exists to remove, hidden behind markup we did not inspect.
+///
+/// Flattening also UPGRADES the fetch path. There, `img src` is often a
+/// placeholder while the real resolutions live in the sources — so promoting
+/// the best candidate onto `src` is not merely tidying, it is the difference
+/// between a 40px thumbnail and the actual photo.
+pub fn flatten_picture_sources(html: &str) -> String {
+    let doc = dom_query::Document::fragment(html);
+
+    for picture in doc.select("picture").iter() {
+        // Best candidate across every source in this picture.
+        let mut best: Option<String> = None;
+        for source in picture.select("source").iter() {
+            let srcset = source.attr("srcset").unwrap_or_default().to_string();
+            if let Some(url) = best_srcset_candidate(&srcset) {
+                best = Some(url);
+            }
+        }
+
+        for img in picture.select("img").iter() {
+            let current = img.attr("src").unwrap_or_default().to_string();
+            // Never overwrite an already-inlined image: the sweep may have run
+            // and a data: URI is strictly better than any remote candidate.
+            if current.starts_with("data:") {
+                continue;
+            }
+            if let Some(url) = best.as_deref() {
+                img.set_attr("src", url);
+            }
+        }
+
+        // Gone, not merely emptied — a `<source>` with no srcset is still a
+        // `<source>`, and leaving them invites the same bug back.
+        for source in picture.select("source").iter() {
+            source.remove();
+        }
+    }
+
+    doc.html().to_string()
+}
+
+#[cfg(test)]
+mod picture_tests {
+    use super::*;
+
+    #[test]
+    fn picks_the_widest_candidate() {
+        let set = "a-400.jpg 400w, a-1200.jpg 1200w, a-800.jpg 800w";
+        assert_eq!(best_srcset_candidate(set).as_deref(), Some("a-1200.jpg"));
+    }
+
+    #[test]
+    fn picks_the_densest_when_descriptors_are_x() {
+        assert_eq!(
+            best_srcset_candidate("a.jpg 1x, a@3x.jpg 3x, a@2x.jpg 2x").as_deref(),
+            Some("a@3x.jpg")
+        );
+    }
+
+    #[test]
+    fn a_bare_candidate_counts_as_1x() {
+        assert_eq!(best_srcset_candidate("only.jpg").as_deref(), Some("only.jpg"));
+    }
+
+    #[test]
+    fn promotes_the_best_source_onto_the_img_and_removes_sources() {
+        let html = r#"<picture><source srcset="big-1600.jpg 1600w, small-320.jpg 320w">
+                      <img src="placeholder-40.jpg"></picture>"#;
+        let out = flatten_picture_sources(html);
+
+        assert!(out.contains("big-1600.jpg"), "did not promote: {out}");
+        assert!(!out.contains("<source"), "source survived: {out}");
+        // The placeholder is exactly what made the saved article look wrong.
+        assert!(!out.contains("placeholder-40.jpg"), "placeholder kept: {out}");
+    }
+
+    #[test]
+    fn never_downgrades_an_already_inlined_image() {
+        // The sweep may have run first. A data: URI beats any remote candidate,
+        // and replacing it would silently un-do the offline work.
+        let html = r#"<picture><source srcset="remote.jpg 2000w">
+                      <img src="data:image/jpeg;base64,AAAA"></picture>"#;
+        let out = flatten_picture_sources(html);
+
+        assert!(out.contains("data:image/jpeg;base64,AAAA"), "clobbered: {out}");
+        assert!(!out.contains("remote.jpg"), "source survived: {out}");
+    }
+
+    #[test]
+    fn a_plain_img_is_untouched() {
+        let html = r#"<p>x</p><img src="photo.jpg">"#;
+        assert!(flatten_picture_sources(html).contains("photo.jpg"));
+    }
+
+    #[test]
+    fn flattened_pictures_become_visible_to_the_inliner() {
+        // The point of the whole function: before flattening, the image is
+        // invisible to `article_image_urls` and so never gets embedded.
+        let html = r#"<picture><source srcset="real-1600.jpg 1600w"><img src="ph.jpg"></picture>"#;
+        assert_eq!(article_image_urls(html), Vec::<String>::new());
+
+        let flat = flatten_picture_sources(html);
+        // Relative URLs are not fetchable, but the promotion is what matters:
+        // the img now carries the real candidate rather than the placeholder.
+        assert!(flat.contains("real-1600.jpg"));
     }
 }

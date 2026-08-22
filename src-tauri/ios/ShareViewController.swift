@@ -297,15 +297,39 @@ final class ShareViewController: UIViewController {
                     if let html, !html.isEmpty {
                         self.renderedHtml = html
                     }
-                    self.showUrl(url)
+                    // A payload with no usable url is NOT a dead end. Safari
+                    // supplies `public.url` alongside the plist, so fall back
+                    // to it rather than telling the user there is nothing to
+                    // save — which is what a script error on the page used to
+                    // produce: a share that worked in build 6 failing outright.
+                    if let url, !url.isEmpty {
+                        self.showUrl(url)
+                    } else {
+                        self.loadUrlOrText(from: attachments)
+                    }
                 }
             }
-        } else if let provider = attachments.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.url.identifier) }) {
+        } else {
+            loadUrlOrText(from: attachments)
+        }
+    }
+
+    /// The pre-payload path: a bare URL, or text containing one.
+    ///
+    /// Extracted so the preprocessing branch can fall back INTO it. Every
+    /// non-Safari source lands here (Messages, Mail, in-app browsers), as does
+    /// a Safari share whose preprocessing produced nothing usable.
+    private func loadUrlOrText(from attachments: [NSItemProvider]) {
+        if let provider = attachments.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+        }) {
             provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { [weak self] data, _ in
                 let url = (data as? URL)?.absoluteString ?? (data as? String)
                 DispatchQueue.main.async { self?.showUrl(url) }
             }
-        } else if let provider = attachments.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) }) {
+        } else if let provider = attachments.first(where: {
+            $0.hasItemConformingToTypeIdentifier(UTType.plainText.identifier)
+        }) {
             provider.loadItem(forTypeIdentifier: UTType.plainText.identifier, options: nil) { [weak self] data, _ in
                 let text = data as? String
                 let url = text.flatMap { Self.firstURL(in: $0) }

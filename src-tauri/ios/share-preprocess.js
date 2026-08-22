@@ -66,6 +66,22 @@ var ExtensionPreprocessingJS = (function () {
         copies[i].removeAttribute("srcset");
         copies[i].removeAttribute("data-src");
         copies[i].removeAttribute("data-srcset");
+
+        // Drop the <source> siblings of a <picture>.
+        //
+        // Browsers prefer <source srcset> over <img src>, so leaving them
+        // would have the saved article render from a REMOTE candidate we never
+        // inlined — looking perfect online and losing its images offline,
+        // which is the failure this whole feature exists to remove. `src` now
+        // holds currentSrc, the URL the browser actually chose among exactly
+        // those candidates, so nothing is lost by removing them.
+        var parent = copies[i].parentNode;
+        if (parent && parent.tagName && parent.tagName.toLowerCase() === "picture") {
+          var sources = parent.querySelectorAll("source");
+          for (var j = 0; j < sources.length; j++) {
+            sources[j].parentNode.removeChild(sources[j]);
+          }
+        }
       }
 
       payload.html = clone.outerHTML || "";
