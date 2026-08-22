@@ -276,6 +276,138 @@ jobs:
           releaseBody: ${{ needs.create-release.outputs.release_notes }}
           args: --target aarch64-apple-darwin
 
+      # ---------------------------------------------------------------------
+      # macOS Share Extension — embedded AFTER the bundle exists.
+      #
+      # `tauri-bundler` assembles and signs the .app in one pass, then derives
+      # the .dmg and updater tarball from it. `beforeBundleCommand` runs before
+      # the bundling phase, when no .app exists (checked against the Tauri 2.11
+      # config schema), so there is no seam to embed into. We therefore embed
+      # into the finished bundle and regenerate everything downstream.
+      #
+      # Deliberately ordered AFTER tauri-action's upload: if any step below
+      # fails, the release keeps the artifacts tauri-action already published —
+      # properly signed and notarised, just without the extension, i.e. exactly
+      # how every release before this one behaved. The unreachable-by-design
+      # outcome is a release whose updater signature disagrees with its tarball.
+      # ---------------------------------------------------------------------
+      - name: Import Developer ID certificate
+        # Own keychain rather than reusing whatever tauri-action left behind —
+        # codesign needs an unlocked keychain with the partition list set, and
+        # depending on another action's internal state for that is how signing
+        # breaks silently on an upgrade.
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/notesage-signing.keychain-db"
+          KEYCHAIN_PWD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PWD" "$KEYCHAIN" >/dev/null
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Embed Share Extension and rebuild derived artifacts
+        id: embed
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TARGET: aarch64-apple-darwin
+        run: scripts/macos-release-embed.sh
+
+      - name: Replace release assets with the embedded build
+        # Swaps the three derived artifacts and patches latest.json's signature
+        # to match the NEW tarball. The signature and the tarball must move
+        # together — a mismatch is what breaks auto-update for every user — so
+        # they are replaced in a single step that fails as a unit.
+        uses: actions/github-script@v7
+        env:
+          DMG_PATH: ${{ steps.embed.outputs.dmg }}
+          TARBALL_PATH: ${{ steps.embed.outputs.tarball }}
+          SIG_PATH: ${{ steps.embed.outputs.sig }}
+          NEW_SIGNATURE: ${{ steps.embed.outputs.signature }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const releaseId = ${{ needs.create-release.outputs.release_id }};
+            const { owner, repo } = context.repo;
+
+            const { data: assets } = await github.rest.repos.listReleaseAssets({
+              owner, repo, release_id: releaseId, per_page: 100,
+            });
+
+            const replace = async (filePath) => {
+              const name = path.basename(filePath);
+              const existing = assets.find(a => a.name === name);
+              if (existing) {
+                await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: existing.id });
+              }
+              await github.rest.repos.uploadReleaseAsset({
+                owner, repo, release_id: releaseId, name,
+                data: fs.readFileSync(filePath),
+                headers: {
+                  'content-type': 'application/octet-stream',
+                  'content-length': fs.statSync(filePath).size,
+                },
+              });
+              core.info(`Replaced ${name}`);
+            };
+
+            await replace(process.env.DMG_PATH);
+            await replace(process.env.TARBALL_PATH);
+            await replace(process.env.SIG_PATH);
+
+            // latest.json embeds the signature inline; a stale one points the
+            // updater at a tarball it will then refuse to install.
+            const manifestAsset = assets.find(a => a.name === 'latest.json');
+            if (!manifestAsset) {
+              core.setFailed('latest.json not found — cannot reconcile updater signature');
+              return;
+            }
+            const { data: raw } = await github.rest.repos.getReleaseAsset({
+              owner, repo, asset_id: manifestAsset.id,
+              headers: { accept: 'application/octet-stream' },
+            });
+            const manifest = JSON.parse(
+              Buffer.isBuffer(raw) ? raw.toString('utf8') : new TextDecoder().decode(raw),
+            );
+
+            const newSig = process.env.NEW_SIGNATURE;
+            if (!newSig) {
+              core.setFailed('embed step produced no signature');
+              return;
+            }
+            let patched = 0;
+            for (const key of Object.keys(manifest.platforms || {})) {
+              if (key.startsWith('darwin')) {
+                manifest.platforms[key].signature = newSig;
+                patched++;
+              }
+            }
+            if (patched === 0) {
+              core.setFailed('no darwin platform entry in latest.json to patch');
+              return;
+            }
+
+            await github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: manifestAsset.id });
+            await github.rest.repos.uploadReleaseAsset({
+              owner, repo, release_id: releaseId, name: 'latest.json',
+              data: JSON.stringify(manifest, null, 2),
+              headers: { 'content-type': 'application/json' },
+            });
+            core.info(`Patched updater signature on ${patched} darwin platform entry/entries.`);
+
       # tauri-action@v0, when invoked with releaseId (and thus without tagName),
       # generates `latest.json` URLs of the form
       #   https://github.com/<repo>/releases/latest/download/<file>

@@ -112,17 +112,54 @@ a Safari extension is built.
 
 ## Phase 4 — Ship it
 
-### #4.1 Build + embed + sign ✅ (script written; unproven — needs a Developer ID cert, i.e. CI)
+### #4.1 Build + embed + sign ✅ (wired into `release.yml`; not yet exercised on a real tag)
 
 Compile the extension, place it in `Contents/PlugIns/`, sign the whole bundle,
-notarise. Ordering is the fragile part (#0.2 B).
+notarise. Ordering is the fragile part (#0.2 B), and it resolved as follows.
 
-### #4.2 Verify the shipped artefact
+**There is no seam inside the Tauri build.** `beforeBundleCommand` runs *before*
+the bundling phase — confirmed against the Tauri 2.11 config schema, which
+describes it as "a shell command to run before the bundling phase" — so no
+`.app` exists at that point. Open question 1 of the PRD is therefore answered:
+we take over.
 
-`codesign --verify --deep --strict` and a Gatekeeper check on the notarised
-bundle, in CI — not by hand. An extension that fails to load produces no error
-anyone sees; it simply never appears in the Share menu, which is
-indistinguishable from not having built it.
+`scripts/macos-release-embed.sh` embeds into the finished bundle and rebuilds
+every artifact derived from it — signature, notarisation ticket, `.dmg`, updater
+tarball, updater `.sig`, and `latest.json`'s inline signature. Missing any one
+of those ships an inconsistent release; missing the last two breaks auto-update
+for every desktop user, which is why the script verifies rather than assumes.
+
+**It runs after tauri-action has uploaded, on purpose.** A failure then leaves
+the already-published, correctly-signed, extension-less artifacts in place —
+the behaviour of every prior release. The dangerous outcome (an updater
+signature that disagrees with its tarball) is unreachable, because assets are
+swapped in only after all verification passes, and the release stays a draft
+until a later job publishes it.
+
+Verified locally where possible: `tauri signer sign <file>` writes
+`<file>.sig` as a single-line base64 blob with no trailing newline — the exact
+form `latest.json`'s `signature` field takes. **The signing and notarisation
+path itself remains unproven**; the Developer ID certificate lives only in CI.
+
+Cosmetic regression accepted: the regenerated `.dmg` is a plain UDZO image with
+an `/Applications` symlink, not Tauri's default window layout.
+
+### #4.2 Verify the shipped artefact ✅
+
+Implemented as the final stage of `scripts/macos-release-embed.sh`, so it gates
+the release rather than being a manual afterthought:
+
+- `codesign --verify --deep --strict` on the app
+- `spctl -a -t exec` Gatekeeper acceptance
+- `stapler validate` on both app and dmg
+- the extension is present, and signed by a `Developer ID Application` authority
+- the rebuilt updater tarball is a strict superset of the one Tauri produced
+  (compared entry-by-entry against a listing captured before the embed) and
+  contains the extension
+
+An extension that fails to load produces no error anyone sees; it simply never
+appears in the Share menu, which is indistinguishable from not having built it.
+Hence assertions, not inspection.
 
 ---
 
