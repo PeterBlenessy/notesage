@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  macOS Share Extension Info.plist.
+
+  Unlike iOS, this file IS the source of truth — there is no xcodegen step
+  generating one from a script, because Tauri produces the .app directly and
+  `scripts/build-macos-share-extension.sh` copies this in verbatim. (On iOS the
+  equivalent plist is a reference only; editing it there changes nothing.)
+
+  No NSExtensionJavaScriptPreprocessingFile: macOS share extensions have no
+  such hook. That is why desktop capture fetches rather than receiving the
+  rendered DOM — see the PRD.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>Notesage</string>
+    <key>CFBundleDisplayName</key>
+    <string>Notesage</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.notesage.app.ShareExtension</string>
+    <key>CFBundlePackageType</key>
+    <string>XPC!</string>
+    <key>CFBundleExecutable</key>
+    <string>NotesageShare</string>
+    <key>NSExtension</key>
+    <dict>
+        <key>NSExtensionPointIdentifier</key>
+        <string>com.apple.share-services</string>
+        <key>NSExtensionPrincipalClass</key>
+        <string>NotesageShare.ShareViewController</string>
+        <key>NSExtensionAttributes</key>
+        <dict>
+            <key>NSExtensionActivationRule</key>
+            <dict>
+                <key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
+                <integer>1</integer>
+                <key>NSExtensionActivationSupportsWebPageWithMaxCount</key>
+                <integer>1</integer>
+            </dict>
+        </dict>
+    </dict>
+</dict>
+</plist>

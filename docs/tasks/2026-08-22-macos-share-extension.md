@@ -79,12 +79,12 @@ edge one.
 
 ## Phase 2 — The share UI (AppKit)
 
-### #2.1 View controller
+### #2.1 View controller ✅
 
 Preview, format picker, save, cancel. Mirrors the iOS layout; the iOS code is
 UIKit and cannot be ported directly.
 
-### #2.2 States that are not the happy path
+### #2.2 States that are not the happy path ✅
 
 No grant yet · fetch failed · no article found · save failed. Each should say
 what happened. A share that closes silently having done nothing is the worst
@@ -94,11 +94,11 @@ outcome available.
 
 ## Phase 3 — Wire the capture
 
-### #3.1 Link the staticlib
+### #3.1 Link the staticlib ✅
 
 `notesage-capture` for the right target triple, via the same C ABI iOS uses.
 
-### #3.2 Formats
+### #3.2 Formats ✅
 
 Article (HTML) · Article (Markdown) · Link, matching iOS for the same URL.
 
@@ -112,7 +112,7 @@ a Safari extension is built.
 
 ## Phase 4 — Ship it
 
-### #4.1 Build + embed + sign
+### #4.1 Build + embed + sign ✅ (script written; unproven — needs a Developer ID cert, i.e. CI)
 
 Compile the extension, place it in `Contents/PlugIns/`, sign the whole bundle,
 notarise. Ordering is the fragile part (#0.2 B).
