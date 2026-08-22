@@ -9,7 +9,6 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-En omgång rättningar efter en kodgranskning. Två är värda att testa direkt:
-dela en länk från Meddelanden eller Mail (inte bara Safari), och dela en
-artikel från en sajt med responsiva bilder — the Guardian fungerar bra. Båda
-ska sparas med bilderna intakta. Resten ska kännas som förut, fast stabilare.
+Att dela från X sparar nu själva inlägget — texten och bilden — i stället för
+bara en länk. Testa gärna både ett vanligt inlägg med bild och en av X:s längre
+artiklar. Resten ska fungera som i förra bygget.

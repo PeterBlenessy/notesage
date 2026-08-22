@@ -165,9 +165,14 @@ fi
 # not, so this asks rather than refuses.
 LAST_BUILD_TAG=$(git tag --list 'ios-build/*' --sort=-creatordate 2>/dev/null | head -1)
 if [ -z "$LAST_BUILD_TAG" ]; then
-  # Say so rather than passing quietly. The tags are not pushed, so a fresh
-  # clone or a CI runner has none — meaning this check silently does nothing
-  # in exactly the places least likely to notice stale notes.
+  # Say so rather than passing quietly — this check silently does nothing in
+  # exactly the place least likely to notice stale notes.
+  #
+  # 2026-08-22: this used to read "the tags are not pushed". They are —
+  # `ios-build/3` through `ios-build/10` are all on origin; only the ancient 1
+  # and 2 are local-only. The real cause was a shallow, tagless checkout in
+  # `.github/workflows/ios-testflight.yml`, now fixed with `fetch-depth: 0`.
+  # Left as a guard for a clone that genuinely has no tags.
   echo "No ios-build/* tags here, so the notes cannot be checked for staleness."
   echo "Read docs/app-store/testflight-whats-new*.md before continuing."
 else
