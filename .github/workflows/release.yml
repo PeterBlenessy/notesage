@@ -460,6 +460,13 @@ jobs:
             }
             pending.push({
               name: 'latest.json',
+              // Carrying the id matters: the commit loop deletes by `assetId`,
+              // and an entry without one is uploaded over a name that still
+              // exists — which GitHub rejects with `already_exists`. That is
+              // exactly how v0.52.1's first attempt half-applied: the three
+              // artifacts swapped, then the manifest could not, leaving a new
+              // tarball beside a signature for the old one.
+              assetId: manifestAsset.id,
               data: JSON.stringify(manifest, null, 2),
               contentType: 'application/json',
             });
@@ -482,9 +489,15 @@ jobs:
             let mutated = false;
             try {
               for (const item of pending) {
-                if (item.assetId) {
+                // Fall back to a name lookup rather than trusting `assetId` to
+                // have been set. Uploading over a name that still exists fails
+                // with `already_exists`, and by then earlier artifacts have
+                // already been swapped — a missing id turns into a half-applied
+                // release rather than a clean failure.
+                const assetId = item.assetId ?? assets.find(a => a.name === item.name)?.id;
+                if (assetId) {
                   await withRetry(`delete ${item.name}`, () =>
-                    github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: item.assetId }));
+                    github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: assetId }));
                   mutated = true;
                 }
                 await withRetry(`upload ${item.name}`, () =>
