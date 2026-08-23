@@ -1410,6 +1410,280 @@ pub fn inline_article_images(html: &str, map: &[(String, String)]) -> String {
     doc.html().to_string()
 }
 
+/// Label prefix for the reference definitions this module writes. Namespaced
+/// so it cannot collide with a label the user (or the source article) already
+/// uses — `[img1]` is plausible in someone's own notes; `[ns-img-1]` is not.
+const MD_IMAGE_LABEL_PREFIX: &str = "ns-img-";
+
+/// Remote `http(s)` image URLs in a markdown document, in document order,
+/// deduplicated.
+///
+/// The markdown counterpart of `article_image_urls`. Deliberately NOT a
+/// markdown parse: `notesage-capture` links into the Share Extension, where
+/// every dependency costs memory against a hard cap, and pulling a full
+/// CommonMark parser in to find `![](…)` would be the most expensive way to
+/// answer the question. The scan understands exactly three things — image
+/// syntax, fenced code, and inline code — which is the whole surface where an
+/// image URL can hide in our own captures.
+pub fn markdown_image_urls(md: &str) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut urls = Vec::new();
+    for (_, url) in scan_markdown_images(md) {
+        if is_remote_http_url(&url) && seen.insert(url.clone()) {
+            urls.push(url);
+        }
+    }
+    urls
+}
+
+/// Rewrite inline image URLs to reference-style links whose definitions carry
+/// the data URIs, collected at the end of the document.
+///
+/// Why reference-style rather than inlining the data URI where the image sits
+/// (which is what the HTML path does): a 300 KB base64 blob dropped in the
+/// middle of a paragraph destroys the thing markdown is for. Someone who chose
+/// "Article (Markdown)" over "Article (HTML)" chose a file they can open in any
+/// editor and read. So the body keeps `![alt][ns-img-1]` and the payload is
+/// quarantined in a block at the bottom, past everything worth reading.
+///
+/// The file stays a single portable artifact — no sidecar folder that move,
+/// rename and delete would each have to carry, on two platforms, forever
+/// (issue #755).
+///
+/// Images absent from `map` keep their remote URL: a partially-swept article
+/// is a working article, and the next sweep picks up the rest.
+pub fn inline_markdown_images(md: &str, map: &[(String, String)]) -> String {
+    if map.is_empty() {
+        return md.to_string();
+    }
+    let lookup: std::collections::HashMap<&str, &str> =
+        map.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+
+    // Assign labels in document order, so the definition block reads in the
+    // same order as the article — and so a diff between two sweeps of the same
+    // document is stable rather than reshuffled.
+    let mut labels: Vec<(String, String)> = Vec::new(); // (url, label)
+    let mut assigned = std::collections::HashMap::new();
+    for (_, url) in scan_markdown_images(md) {
+        if !lookup.contains_key(url.as_str()) || assigned.contains_key(&url) {
+            continue;
+        }
+        let label = format!("{}{}", MD_IMAGE_LABEL_PREFIX, labels.len() + 1);
+        assigned.insert(url.clone(), label.clone());
+        labels.push((url, label));
+    }
+    if labels.is_empty() {
+        return md.to_string();
+    }
+
+    // Rewrite by exact span rather than by pattern. `scan_markdown_images`
+    // hands back the byte range of the `(url)` destination it found, so we
+    // replace only spans the scanner itself identified as an image
+    // destination — never an incidental occurrence of the same URL in prose.
+    let mut out = String::with_capacity(md.len());
+    let mut cursor = 0usize;
+    for (span, url) in scan_markdown_images(md) {
+        let Some(label) = assigned.get(&url) else { continue };
+        out.push_str(&md[cursor..span.start]);
+        out.push_str(&format!("[{label}]"));
+        cursor = span.end;
+    }
+    out.push_str(&md[cursor..]);
+
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push('\n');
+    for (url, label) in &labels {
+        let data_uri = lookup[url.as_str()];
+        out.push_str(&format!("[{label}]: {data_uri}\n"));
+    }
+    out
+}
+
+/// Byte range of each image destination — the `(…)` including its
+/// parentheses — paired with the URL inside it.
+///
+/// Skips fenced code blocks and inline code, where `![x](http://y)` is text
+/// about markdown rather than markdown. Reference-style images (`![x][label]`)
+/// are skipped too: the only ones that exist in our captures are the ones this
+/// module wrote, and theirs are already data URIs.
+fn scan_markdown_images(md: &str) -> Vec<(std::ops::Range<usize>, String)> {
+    let bytes = md.as_bytes();
+    let mut found = Vec::new();
+    let mut i = 0usize;
+    let mut in_fence = false;
+
+    while i < bytes.len() {
+        // Fenced code: toggle on a line starting with ``` or ~~~.
+        if i == 0 || bytes[i - 1] == b'\n' {
+            let rest = &md[i..];
+            if rest.starts_with("```") || rest.starts_with("~~~") {
+                in_fence = !in_fence;
+                i += match md[i..].find('\n') {
+                    Some(nl) => nl + 1,
+                    None => break,
+                };
+                continue;
+            }
+        }
+        if in_fence {
+            i += 1;
+            continue;
+        }
+        // Inline code: skip to the closing backtick run of equal length.
+        if bytes[i] == b'`' {
+            let tick_len = bytes[i..].iter().take_while(|&&b| b == b'`').count();
+            let close = md[i + tick_len..].find(&"`".repeat(tick_len));
+            i = match close {
+                Some(rel) => i + tick_len + rel + tick_len,
+                None => i + tick_len,
+            };
+            continue;
+        }
+        // Image: `![` … `](` … `)`. An escaped `\![` is not an image.
+        if bytes[i] == b'!' && i + 1 < bytes.len() && bytes[i + 1] == b'[' && (i == 0 || bytes[i - 1] != b'\\') {
+            if let Some(close_rel) = md[i + 2..].find("](") {
+                let dest_start = i + 2 + close_rel + 1; // at '('
+                if let Some(end_rel) = md[dest_start..].find(')') {
+                    let dest_end = dest_start + end_rel + 1; // past ')'
+                    let inner = md[dest_start + 1..dest_end - 1].trim();
+                    // `![alt](url "title")` — the destination is up to the
+                    // first whitespace; a title would otherwise be swallowed
+                    // into the URL and never match the fetch map.
+                    let url = inner.split_whitespace().next().unwrap_or("").to_string();
+                    if !url.is_empty() {
+                        found.push((dest_start..dest_end, url));
+                    }
+                    i = dest_end;
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+    found
+}
+
+#[cfg(test)]
+mod markdown_inline_image_tests {
+    use super::*;
+
+    fn map(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+        pairs.iter().map(|(a, b)| (a.to_string(), b.to_string())).collect()
+    }
+
+    #[test]
+    fn collects_remote_images_in_document_order() {
+        let md = "![one](https://a.example/1.jpg)\n\ntext\n\n![two](https://b.example/2.jpg)";
+        assert_eq!(
+            markdown_image_urls(md),
+            vec!["https://a.example/1.jpg", "https://b.example/2.jpg"],
+        );
+    }
+
+    #[test]
+    fn deduplicates_a_repeated_image() {
+        let md = "![l](https://a.example/logo.png)\n![l](https://a.example/logo.png)";
+        assert_eq!(markdown_image_urls(md).len(), 1);
+    }
+
+    #[test]
+    fn skips_relative_and_already_inlined_images() {
+        let md = "![a](./local.png)\n![b](data:image/png;base64,iVBORw0KGgo=)";
+        assert!(markdown_image_urls(md).is_empty());
+    }
+
+    #[test]
+    fn ignores_images_inside_fenced_code() {
+        // A tutorial about markdown must not have its example fetched.
+        let md = "```\n![x](https://a.example/1.jpg)\n```\n\n![real](https://b.example/2.jpg)";
+        assert_eq!(markdown_image_urls(md), vec!["https://b.example/2.jpg"]);
+    }
+
+    #[test]
+    fn ignores_images_inside_inline_code() {
+        let md = "Use `![x](https://a.example/1.jpg)` like so.";
+        assert!(markdown_image_urls(md).is_empty());
+    }
+
+    #[test]
+    fn strips_a_title_from_the_destination() {
+        let md = r#"![a](https://a.example/1.jpg "A title")"#;
+        assert_eq!(markdown_image_urls(md), vec!["https://a.example/1.jpg"]);
+    }
+
+    #[test]
+    fn rewrites_to_reference_style_and_appends_definitions() {
+        let md = "# T\n\nProse.\n\n![Bread](https://a.example/1.jpg)\n\nMore.\n";
+        let out = inline_markdown_images(&md, &map(&[("https://a.example/1.jpg", "data:image/jpeg;base64,AAAA")]));
+
+        // The body stays readable — that is the entire point of the format.
+        assert!(out.contains("![Bread][ns-img-1]"), "body not reference-style: {out}");
+        assert!(!out.contains("data:image/jpeg;base64,AAAA\n\nMore."), "payload landed mid-body");
+        // …and the payload sits at the end.
+        assert!(out.trim_end().ends_with("[ns-img-1]: data:image/jpeg;base64,AAAA"), "definition missing: {out}");
+        // Prose is untouched.
+        assert!(out.contains("Prose.") && out.contains("More."));
+    }
+
+    #[test]
+    fn leaves_unmapped_images_remote() {
+        // A partially-swept article is a working article; the next sweep
+        // finishes the job.
+        let md = "![a](https://a.example/1.jpg)\n![b](https://b.example/2.jpg)";
+        let out = inline_markdown_images(md, &map(&[("https://a.example/1.jpg", "data:image/jpeg;base64,AAAA")]));
+        assert!(out.contains("![a][ns-img-1]"));
+        assert!(out.contains("![b](https://b.example/2.jpg)"), "unmapped image was disturbed: {out}");
+    }
+
+    #[test]
+    fn is_idempotent() {
+        // The sweep can revisit a document; a second pass must not re-wrap an
+        // already-converted image or duplicate its definition.
+        let md = "![a](https://a.example/1.jpg)\n";
+        let m = map(&[("https://a.example/1.jpg", "data:image/jpeg;base64,AAAA")]);
+        let once = inline_markdown_images(md, &m);
+        let twice = inline_markdown_images(&once, &m);
+        assert_eq!(once, twice);
+        assert_eq!(once.matches("ns-img-1]:").count(), 1);
+        // And the converted document offers nothing further to fetch.
+        assert!(markdown_image_urls(&once).is_empty());
+    }
+
+    #[test]
+    fn numbers_labels_in_document_order() {
+        let md = "![a](https://a.example/1.jpg)\n![b](https://b.example/2.jpg)";
+        let out = inline_markdown_images(
+            md,
+            &map(&[
+                // Deliberately reversed: order must come from the DOCUMENT,
+                // not from the fetch map, or a sweep would reshuffle labels.
+                ("https://b.example/2.jpg", "data:image/jpeg;base64,BBBB"),
+                ("https://a.example/1.jpg", "data:image/jpeg;base64,AAAA"),
+            ]),
+        );
+        assert!(out.contains("![a][ns-img-1]"), "{out}");
+        assert!(out.contains("![b][ns-img-2]"), "{out}");
+    }
+
+    #[test]
+    fn does_not_touch_a_url_that_also_appears_as_prose() {
+        // The same URL as a plain link must survive: only spans the scanner
+        // identified as an image destination are rewritten.
+        let md = "See <https://a.example/1.jpg> and ![a](https://a.example/1.jpg)";
+        let out = inline_markdown_images(md, &map(&[("https://a.example/1.jpg", "data:image/jpeg;base64,AAAA")]));
+        assert!(out.contains("<https://a.example/1.jpg>"), "prose link was rewritten: {out}");
+        assert!(out.contains("![a][ns-img-1]"), "{out}");
+    }
+
+    #[test]
+    fn empty_map_is_a_no_op() {
+        let md = "![a](https://a.example/1.jpg)\n";
+        assert_eq!(inline_markdown_images(md, &[]), md);
+    }
+}
+
 #[cfg(test)]
 mod inline_image_tests {
     use super::*;
