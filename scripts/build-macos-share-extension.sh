@@ -113,14 +113,25 @@ nm -u "$BIN" 2>/dev/null | grep -q "_NSExtensionMain" \
 
 cp "$SRC/ShareExtension-Info.plist" "$APPEX/Contents/Info.plist"
 
-# The principal class named in Info.plist is what NSExtensionMain instantiates.
-# If it does not exist in the binary, the extension loads and then does nothing.
-PRINCIPAL="$(plutil -extract NSExtension.NSExtensionPrincipalClass raw "$APPEX/Contents/Info.plist" 2>/dev/null || true)"
-if [ -n "$PRINCIPAL" ]; then
-  CLASS_NAME="${PRINCIPAL##*.}"
-  nm "$BIN" 2>/dev/null | grep -q "$CLASS_NAME" \
-    || { echo "Info.plist names principal class '$PRINCIPAL' but '$CLASS_NAME' is not in the binary"; exit 1; }
-fi
+# NO principal-class check here, deliberately. One was added and removed the
+# same day, having blocked a release on a false positive.
+#
+# It asserted that the class named by `NSExtensionPrincipalClass` appeared in
+# `nm` output. That passed locally and failed in CI, because the class symbol
+# (`_OBJC_CLASS_$__TtC13NotesageShare19ShareViewController`) is NON-EXTERNAL —
+# a local symbol, which `strip` removes. Measured:
+#
+#     before strip:  6 matches      after strip -x:  0 matches
+#     _NSExtensionMain (undefined):  survives, as it must for dynamic linking
+#
+# So the check measured whether the binary had been stripped, not whether the
+# class was present. The ObjC runtime resolves the principal class through
+# `__objc_classlist` metadata, which stripping does not touch — a stripped
+# extension works perfectly.
+#
+# The entry-point check above is sound for the opposite reason: an undefined
+# symbol has to survive, or nothing could link it. If you want to verify the
+# principal class, do it by loading the extension, not by reading symbols.
 
 # --- 3. sign, inside out -----------------------------------------------------
 #
