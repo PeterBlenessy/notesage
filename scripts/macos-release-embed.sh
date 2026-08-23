@@ -76,8 +76,16 @@ rm -rf "$WORK"; mkdir -p "$WORK"
 # to receive. Ours must be a strict superset (same entries, plus the extension).
 # Comparing against it catches a malformed tarball — the failure that would
 # otherwise surface as a broken auto-update for every user.
+#
+# Listings are normalised by stripping trailing slashes, because the two
+# tarballs are written by different implementations: Tauri's (Rust `tar` crate)
+# emits directory entries as `Notesage.app/Contents`, while the `bsdtar` that
+# rebuilds it below emits `Notesage.app/Contents/`. Compared raw, EVERY
+# directory reads as missing and the check fails on a build that is perfectly
+# fine — which is exactly how it failed on the third v0.52.0 attempt, after the
+# embed, signing, notarisation and stapling had all succeeded.
 if [ -f "$TARBALL" ]; then
-  tar tzf "$TARBALL" | sort > "$WORK/reference-listing.txt"
+  tar tzf "$TARBALL" | sed 's#/$##' | sort > "$WORK/reference-listing.txt"
   step "Reference tarball: $(wc -l < "$WORK/reference-listing.txt" | tr -d ' ') entries"
 else
   die "no updater tarball at $TARBALL — expected tauri-action to have produced one"
@@ -112,7 +120,7 @@ step "Rebuilding updater tarball"
 rm -f "$TARBALL" "$TARBALL.sig"
 tar -C "$BUNDLE/macos" -czf "$TARBALL" "Notesage.app"
 
-tar tzf "$TARBALL" | sort > "$WORK/new-listing.txt"
+tar tzf "$TARBALL" | sed 's#/$##' | sort > "$WORK/new-listing.txt"
 # `comm` failing and `comm` finding nothing both produce empty output, so a
 # blanket `|| true` here would turn "something went wrong" into "all good" —
 # in the one check whose whole job is to catch a malformed tarball. Capture
