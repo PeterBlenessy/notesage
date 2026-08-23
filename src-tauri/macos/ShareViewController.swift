@@ -132,30 +132,88 @@ final class ShareViewController: NSViewController {
 
     // MARK: - Input
 
+    /// Type identifiers a shared link can arrive as, in preference order.
+    ///
+    /// `public.url` is the normal one. The others are fallbacks: Safari and
+    /// several apps hand a link over as plain text, and some deliver it inside
+    /// the property-list attachment that the web-page activation rule
+    /// produces. Accepting only `public.url` made every one of those look like
+    /// an empty share.
+    private static let urlTypeIdentifiers = [
+        "public.url",
+        "public.file-url",
+        "public.plain-text",
+        "com.apple.property-list",
+    ]
+
     private func loadSharedItem() {
-        guard let item = extensionContext?.inputItems.first as? NSExtensionItem,
-              let attachments = item.attachments
-        else {
-            fail("Nothing to save.")
+        guard let item = extensionContext?.inputItems.first as? NSExtensionItem else {
+            // Distinct message per failure, deliberately. All three paths used
+            // to say "Nothing to save.", so a screenshot could not tell them
+            // apart and diagnosing meant guessing — which is how this shipped.
+            fail("No share item was received.")
+            return
+        }
+        guard let attachments = item.attachments, !attachments.isEmpty else {
+            fail("The share carried no attachments.")
             return
         }
         sharedTitle = item.attributedContentText?.string
 
-        guard let provider = attachments.first(where: {
-            $0.hasItemConformingToTypeIdentifier("public.url")
-        }) else {
-            fail("Notesage saves links. This share had none.")
+        // What actually arrived, named. Read with:
+        //   log stream --predicate 'subsystem == "com.notesage.app.ShareExtension"'
+        let offered = attachments.flatMap { $0.registeredTypeIdentifiers }
+        NSLog("[notesage-share] attachments=%d types=%@",
+              attachments.count, offered.joined(separator: ", "))
+
+        guard let (provider, identifier) = Self.urlTypeIdentifiers.lazy.compactMap({ type -> (NSItemProvider, String)? in
+            attachments.first { $0.hasItemConformingToTypeIdentifier(type) }.map { ($0, type) }
+        }).first else {
+            fail("This share had no link. It offered: \(offered.joined(separator: ", "))")
             return
         }
-        provider.loadItem(forTypeIdentifier: "public.url", options: nil) { [weak self] data, _ in
-            let url = (data as? URL)?.absoluteString ?? (data as? String)
-            DispatchQueue.main.async { self?.show(url: url) }
+
+        provider.loadItem(forTypeIdentifier: identifier, options: nil) { [weak self] data, error in
+            if let error {
+                NSLog("[notesage-share] loadItem(%@) failed: %@", identifier, error.localizedDescription)
+            }
+            let url = Self.urlString(from: data)
+            NSLog("[notesage-share] loaded %@ -> %@", identifier, url ?? "<nil>")
+            DispatchQueue.main.async { self?.show(url: url, from: identifier, raw: data) }
         }
     }
 
-    private func show(url: String?) {
+    /// Coax a URL string out of whatever the provider handed back.
+    ///
+    /// `loadItem` is typed `NSSecureCoding` and the concrete type depends on
+    /// the sender: `NSURL` normally, `NSString` when the link came as text,
+    /// `Data` when it arrives as UTF-8 bytes, and a dictionary for the
+    /// property-list shape. Casting only to `URL`/`String` dropped the last two
+    /// on the floor and reported an empty share.
+    private static func urlString(from data: Any?) -> String? {
+        switch data {
+        case let url as URL: return url.absoluteString
+        case let string as String: return string.trimmingCharacters(in: .whitespacesAndNewlines)
+        case let bytes as Data: return String(data: bytes, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        case let dict as [String: Any]:
+            // The web-page rule's payload; `NSExtensionJavaScriptPreprocessingResultsKey`
+            // nests the script's return value one level down.
+            let results = dict["NSExtensionJavaScriptPreprocessingResultsKey"] as? [String: Any]
+            return (results?["URL"] as? String) ?? (dict["URL"] as? String)
+        default: return nil
+        }
+    }
+
+    private func show(url: String?, from identifier: String, raw: Any?) {
         guard let url, !url.isEmpty else {
-            fail("Nothing to save.")
+            let describedType = raw.map { String(describing: type(of: $0)) } ?? "nil"
+            fail("Could not read a link from this share (\(identifier), \(describedType)).")
+            return
+        }
+        guard url.lowercased().hasPrefix("http://") || url.lowercased().hasPrefix("https://") else {
+            // A file:// URL or similar is a real share, just not one we capture.
+            fail("Notesage captures web links. This was: \(url)")
             return
         }
         sharedUrl = url
@@ -226,10 +284,16 @@ final class ShareViewController: NSViewController {
     }
 
     private func fail(_ message: String) {
-        titleLabel.stringValue = "Nothing to save"
+        // "Nothing to save" for every failure told the user nothing and told
+        // whoever had to debug it less. The message carries the specific
+        // cause; the title just says something went wrong.
+        titleLabel.stringValue = "Can't save this"
         statusLabel.stringValue = message
+        statusLabel.lineBreakMode = .byWordWrapping
+        statusLabel.maximumNumberOfLines = 4
         saveButton.isEnabled = false
         formatPopup.isEnabled = false
+        NSLog("[notesage-share] %@", message)
     }
 }
 

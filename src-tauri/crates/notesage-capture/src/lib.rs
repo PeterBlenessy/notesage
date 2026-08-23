@@ -1798,30 +1798,62 @@ pub fn article_lead_image(html: &str) -> Option<Vec<u8>> {
     // second copy of the document in memory, per card, for an answer the first
     // few hundred bytes usually contain.
     //
-    // The pattern is unambiguous enough to scan for: the inliner is the only
-    // thing that writes these, and it always emits
-    // `src="data:<mime>;base64,<payload>"`.
-    const NEEDLE: &str = "src=\"data:";
-    let mut from = 0usize;
-    while let Some(rel) = html[from..].find(NEEDLE) {
-        let start = from + rel + NEEDLE.len();
-        let Some(end_rel) = html[start..].find('"') else { break };
-        let uri = &html[start..start + end_rel];
-        from = start + end_rel;
+    // The patterns are unambiguous enough to scan for: the inliners are the
+    // only things that write these.
+    //
+    // THREE forms, because captures are saved in two languages and the
+    // markdown inliner uses reference style:
+    //
+    //   src="data:…"                 HTML  (inline_article_images)
+    //   ](data:…)                    markdown, inline
+    //   [label]: data:…              markdown, reference definition
+    //                                      (inline_markdown_images)
+    //
+    // Only the first existed until 2026-08-23, which is why a markdown capture
+    // — every X post, every video note — showed a thumbnail of its own rendered
+    // text: the image was embedded in the file and simply not looked for.
+    //
+    // Scanned in ONE pass taking the earliest match, so "lead image" stays the
+    // first image in DOCUMENT order. That is well-defined for reference style
+    // too: `inline_markdown_images` numbers labels in document order, so the
+    // first definition belongs to the first image.
+    const NEEDLES: &[(&str, &[char])] = &[
+        ("src=\"data:", &['"']),
+        ("](data:", &[')']),
+        ("]: data:", &['\n', '\r']),
+    ];
 
-        // `<mime>;base64,<payload>` — base64 is the only form the inliner
-        // produces, so anything else is someone else's markup.
-        let Some((meta, payload)) = uri.split_once(',') else { continue };
-        if !meta.contains("base64") {
-            continue;
-        }
-        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload) {
-            if !bytes.is_empty() {
-                return Some(bytes);
+    let mut best: Option<(usize, Vec<u8>)> = None;
+    for (needle, terminators) in NEEDLES {
+        let mut from = 0usize;
+        while let Some(rel) = html[from..].find(needle) {
+            let start = from + rel + needle.len();
+            let end_rel = html[start..]
+                .find(|c: char| terminators.contains(&c))
+                .unwrap_or(html.len() - start);
+            let uri = html[start..start + end_rel].trim();
+            from = start + end_rel.max(1);
+
+            // `<mime>;base64,<payload>` — base64 is the only form the inliners
+            // produce, so anything else is someone else's markup.
+            let Some((meta, payload)) = uri.split_once(',') else { continue };
+            if !meta.contains("base64") {
+                continue;
+            }
+            if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(payload.trim()) {
+                if !bytes.is_empty() {
+                    let at = start;
+                    if best.as_ref().is_none_or(|(prev, _)| at < *prev) {
+                        best = Some((at, bytes));
+                    }
+                    // Later matches for THIS needle can only be further along,
+                    // so stop and let the other needles compete.
+                    break;
+                }
             }
         }
     }
-    None
+    best.map(|(_, bytes)| bytes)
 }
 
 #[cfg(test)]

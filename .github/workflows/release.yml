@@ -381,20 +381,48 @@ jobs:
             // Nothing below this section mutates the release. Every way this
             // step can legitimately give up belongs here, while giving up is
             // free.
+            // Match by SUFFIX, and upload under the EXISTING asset's name.
+            //
+            // v0.52.0 shipped broken because this used `path.basename()`. The
+            // local tarball is `Notesage.app.tar.gz`; tauri-action publishes it
+            // as `Notesage_aarch64.app.tar.gz`. No existing asset matched, so
+            // nothing was deleted and a SECOND tarball was added alongside the
+            // original — while latest.json kept pointing at the original and
+            // carried the new one's signature. Every updater then downloaded
+            // one file and verified it against another's signature.
+            //
+            // Reusing the published name keeps latest.json's URL valid, so only
+            // the signature needs patching. Renaming the asset would silently
+            // invalidate every URL in a manifest we do not fully control.
+            const suffixes = [
+              { env: 'DMG_PATH', suffix: '.dmg' },
+              { env: 'TARBALL_PATH', suffix: '.app.tar.gz' },
+              { env: 'SIG_PATH', suffix: '.app.tar.gz.sig' },
+            ];
             const pending = [];
-            for (const filePath of [
-              process.env.DMG_PATH, process.env.TARBALL_PATH, process.env.SIG_PATH,
-            ]) {
+            for (const { env, suffix } of suffixes) {
+              const filePath = process.env[env];
               if (!filePath) {
-                core.setFailed('embed step did not report all three artifact paths');
+                core.setFailed(`embed step did not report ${env}`);
                 return;
               }
               if (!fs.existsSync(filePath) || fs.statSync(filePath).size === 0) {
                 core.setFailed(`Artifact missing or empty: ${filePath}`);
                 return;
               }
+              // `.app.tar.gz` would also match `.app.tar.gz.sig`, so exclude it.
+              const existing = assets.filter(a =>
+                a.name.endsWith(suffix) &&
+                (suffix !== '.app.tar.gz' || !a.name.endsWith('.sig')));
+              if (existing.length !== 1) {
+                core.setFailed(
+                  `Expected exactly one published asset ending "${suffix}", found ${existing.length}` +
+                  ` (${existing.map(a => a.name).join(', ') || 'none'}). Refusing to guess which to replace.`);
+                return;
+              }
               pending.push({
-                name: path.basename(filePath),
+                name: existing[0].name,
+                assetId: existing[0].id,
                 data: fs.readFileSync(filePath),
                 contentType: 'application/octet-stream',
               });
@@ -454,10 +482,9 @@ jobs:
             let mutated = false;
             try {
               for (const item of pending) {
-                const existing = assets.find(a => a.name === item.name);
-                if (existing) {
+                if (item.assetId) {
                   await withRetry(`delete ${item.name}`, () =>
-                    github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: existing.id }));
+                    github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: item.assetId }));
                   mutated = true;
                 }
                 await withRetry(`upload ${item.name}`, () =>
@@ -501,7 +528,40 @@ jobs:
               core.setFailed('Release assets are inconsistent after replacement');
               return;
             }
-            core.info(`Patched updater signature on ${patched} darwin platform entry/entries.`);
+
+            // The property that actually governs auto-update: the file
+            // latest.json POINTS AT must be the file whose signature it
+            // CARRIES. v0.52.0 satisfied every check above and still shipped
+            // broken, because "the assets I uploaded are present" is
+            // bookkeeping, not correctness — the manifest pointed at a
+            // different tarball than the one it was signing for.
+            const tarballAsset = pending.find(p => p.name.endsWith('.app.tar.gz'));
+            const problems = [];
+            for (const [key, platform] of Object.entries(manifest.platforms || {})) {
+              if (!key.startsWith('darwin')) continue;
+              const referenced = (platform.url || '').split('/').pop();
+              if (!after.some(a => a.name === referenced)) {
+                problems.push(`${key}: url points at "${referenced}", which is not a published asset`);
+              } else if (referenced !== tarballAsset.name) {
+                problems.push(
+                  `${key}: url points at "${referenced}" but the signature signs "${tarballAsset.name}"`);
+              }
+              if ((platform.signature || '').trim() !== newSig.trim()) {
+                problems.push(`${key}: signature is not the one produced for the rebuilt tarball`);
+              }
+            }
+            if (problems.length > 0) {
+              core.error(
+                'DO NOT PUBLISH THIS DRAFT. The updater manifest does not agree with the ' +
+                'published assets, which breaks auto-update for every desktop user:\n  ' +
+                problems.join('\n  '));
+              core.setFailed('latest.json disagrees with the published assets');
+              return;
+            }
+
+            core.info(
+              `Patched updater signature on ${patched} darwin entry/entries; ` +
+              `manifest points at ${tarballAsset.name} and its signature matches.`);
 
       # tauri-action@v0, when invoked with releaseId (and thus without tagName),
       # generates `latest.json` URLs of the form
