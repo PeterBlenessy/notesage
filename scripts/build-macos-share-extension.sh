@@ -69,19 +69,58 @@ echo "==> Compiling NotesageShare"
 SDK="$(xcrun --sdk macosx --show-sdk-path)"
 mkdir -p "$APPEX/Contents/MacOS"
 
+# `-e _NSExtensionMain` is load-bearing and easy to miss.
+#
+# An app extension has no `main`. Its entry point is `NSExtensionMain`, which
+# instantiates the `NSExtensionPrincipalClass` named in Info.plist
+# (NotesageShare.ShareViewController). Xcode passes this for extension targets
+# automatically; a hand-rolled `swiftc` does not, and defaults to linking an
+# executable — which fails with:
+#
+#     Undefined symbols for architecture arm64:
+#       "_main", referenced from:
+#
+# That is exactly how the first real run of this script failed, in the v0.52.0
+# release. `-application-extension` alone does NOT supply it: that flag governs
+# API availability checking, not the entry point.
+#
+# The deployment target matches the app's `minimumSystemVersion` (14.0) rather
+# than an arbitrary 11.0. The Rust staticlib is built at 14.0 too, so a lower
+# value here produced ~50 "object file was built for newer macOS version"
+# warnings that buried the real error in the log.
 xcrun swiftc \
   -sdk "$SDK" \
-  -target arm64-apple-macos11.0 \
+  -target arm64-apple-macos14.0 \
   -swift-version 5 \
   -module-name NotesageShare \
   -application-extension \
+  -Xlinker -e -Xlinker _NSExtensionMain \
   -import-objc-header "$REPO/src-tauri/ios/NotesageCapture.h" \
   -O \
   "$SRC"/*.swift \
   "$LIB" \
   -o "$APPEX/Contents/MacOS/NotesageShare"
 
+# Assert the entry point, rather than assume the flags above did their job.
+#
+# The failure this catches is silent in the worst way: a Share Extension that
+# builds but has the wrong entry point does not crash, it simply never appears
+# in the Share menu — indistinguishable from not having been built. Checking
+# the produced binary costs milliseconds and turns that into a build error.
+BIN="$APPEX/Contents/MacOS/NotesageShare"
+nm -u "$BIN" 2>/dev/null | grep -q "_NSExtensionMain" \
+  || { echo "Linked binary does not reference _NSExtensionMain — an extension needs it as its entry point (-Xlinker -e -Xlinker _NSExtensionMain)"; exit 1; }
+
 cp "$SRC/ShareExtension-Info.plist" "$APPEX/Contents/Info.plist"
+
+# The principal class named in Info.plist is what NSExtensionMain instantiates.
+# If it does not exist in the binary, the extension loads and then does nothing.
+PRINCIPAL="$(plutil -extract NSExtension.NSExtensionPrincipalClass raw "$APPEX/Contents/Info.plist" 2>/dev/null || true)"
+if [ -n "$PRINCIPAL" ]; then
+  CLASS_NAME="${PRINCIPAL##*.}"
+  nm "$BIN" 2>/dev/null | grep -q "$CLASS_NAME" \
+    || { echo "Info.plist names principal class '$PRINCIPAL' but '$CLASS_NAME' is not in the binary"; exit 1; }
+fi
 
 # --- 3. sign, inside out -----------------------------------------------------
 #
