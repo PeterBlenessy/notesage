@@ -11,8 +11,6 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-A round of fixes from a code review. Two are worth testing directly: share a
-link from Messages or Mail (not just Safari), and share an article from a site
-that uses responsive images — the Guardian is a good one. Both should save with
-their pictures intact. Everything else should simply feel the same, only
-steadier.
+Sharing from X now saves the post itself — its text and its picture — instead
+of a bare link. Worth trying both an ordinary post with an image and one of X's
+longer Articles. Everything else should behave as it did last build.

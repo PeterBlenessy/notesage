@@ -112,17 +112,74 @@ a Safari extension is built.
 
 ## Phase 4 — Ship it
 
-### #4.1 Build + embed + sign ✅ (script written; unproven — needs a Developer ID cert, i.e. CI)
+### #4.1 Build + embed + sign ✅ (wired into `release.yml`; not yet exercised on a real tag)
 
 Compile the extension, place it in `Contents/PlugIns/`, sign the whole bundle,
-notarise. Ordering is the fragile part (#0.2 B).
+notarise. Ordering is the fragile part (#0.2 B), and it resolved as follows.
 
-### #4.2 Verify the shipped artefact
+**There is no seam inside the Tauri build.** `beforeBundleCommand` runs *before*
+the bundling phase — confirmed against the Tauri 2.11 config schema, which
+describes it as "a shell command to run before the bundling phase" — so no
+`.app` exists at that point. Open question 1 of the PRD is therefore answered:
+we take over.
 
-`codesign --verify --deep --strict` and a Gatekeeper check on the notarised
-bundle, in CI — not by hand. An extension that fails to load produces no error
-anyone sees; it simply never appears in the Share menu, which is
-indistinguishable from not having built it.
+`scripts/macos-release-embed.sh` embeds into the finished bundle and rebuilds
+every artifact derived from it — signature, notarisation ticket, `.dmg`, updater
+tarball, updater `.sig`, and `latest.json`'s inline signature. Missing any one
+of those ships an inconsistent release; missing the last two breaks auto-update
+for every desktop user, which is why the script verifies rather than assumes.
+
+**It runs after tauri-action has uploaded, on purpose.** A failure in the embed
+script leaves the already-uploaded, correctly-signed, extension-less artifacts
+in place — the behaviour of every prior release.
+
+**The replacement step is mitigated, NOT atomic.** An earlier version of this
+document claimed the mismatch outcome was "unreachable". That was wrong, and a
+code review caught it. GitHub offers no atomic asset swap — no rename, names
+must be unique — so replacing an asset is necessarily delete-then-upload, and a
+transient API error between the two leaves the release inconsistent. The
+original code made it worse by validating `latest.json` *after* already
+replacing the tarball, so a missing-manifest failure guaranteed the mismatch it
+was checking for.
+
+What the step does now, in order: prepares everything (reads all three
+artifacts, fetches and patches the manifest in memory) before mutating
+anything, so every legitimate give-up happens while the release is untouched;
+retries uploads, since a transient error is the realistic failure; re-lists the
+assets afterwards to confirm the swap landed; and if it still ends up
+half-applied, logs `DO NOT PUBLISH THIS DRAFT` with the reason.
+
+That last part matters because the structural protection is only partial. The
+release is created as a draft and `publish-release` is skipped when this job
+fails, so nothing reaches users automatically — but a human debugging a red
+release job, seeing the assets already replaced, could reasonably publish by
+hand. The log has to stop them, which a comment claiming the state was
+impossible would not have done.
+
+Verified locally where possible: `tauri signer sign <file>` writes
+`<file>.sig` as a single-line base64 blob with no trailing newline — the exact
+form `latest.json`'s `signature` field takes. **The signing and notarisation
+path itself remains unproven**; the Developer ID certificate lives only in CI.
+
+Cosmetic regression accepted: the regenerated `.dmg` is a plain UDZO image with
+an `/Applications` symlink, not Tauri's default window layout.
+
+### #4.2 Verify the shipped artefact ✅
+
+Implemented as the final stage of `scripts/macos-release-embed.sh`, so it gates
+the release rather than being a manual afterthought:
+
+- `codesign --verify --deep --strict` on the app
+- `spctl -a -t exec` Gatekeeper acceptance
+- `stapler validate` on both app and dmg
+- the extension is present, and signed by a `Developer ID Application` authority
+- the rebuilt updater tarball is a strict superset of the one Tauri produced
+  (compared entry-by-entry against a listing captured before the embed) and
+  contains the extension
+
+An extension that fails to load produces no error anyone sees; it simply never
+appears in the Share menu, which is indistinguishable from not having built it.
+Hence assertions, not inspection.
 
 ---
 

@@ -276,6 +276,233 @@ jobs:
           releaseBody: ${{ needs.create-release.outputs.release_notes }}
           args: --target aarch64-apple-darwin
 
+      # ---------------------------------------------------------------------
+      # macOS Share Extension — embedded AFTER the bundle exists.
+      #
+      # `tauri-bundler` assembles and signs the .app in one pass, then derives
+      # the .dmg and updater tarball from it. `beforeBundleCommand` runs before
+      # the bundling phase, when no .app exists (checked against the Tauri 2.11
+      # config schema), so there is no seam to embed into. We therefore embed
+      # into the finished bundle and regenerate everything downstream.
+      #
+      # Deliberately ordered AFTER tauri-action's upload: if the embed or
+      # notarisation fails, the release keeps the artifacts tauri-action already
+      # published — properly signed and notarised, just without the extension,
+      # i.e. exactly how every release before this one behaved.
+      #
+      # The one state to fear is a release whose updater signature disagrees
+      # with its tarball. That is MITIGATED, not impossible — see the
+      # `Replace release assets` step, which cannot be atomic because GitHub
+      # has no atomic asset swap. Two things keep it off users: the job fails,
+      # which skips `publish-release` and leaves the release a draft; and the
+      # step logs an explicit DO-NOT-PUBLISH warning naming the inconsistency,
+      # because the realistic way this bites is a human publishing the draft by
+      # hand while debugging.
+      # ---------------------------------------------------------------------
+      - name: Import Developer ID certificate
+        # Own keychain rather than reusing whatever tauri-action left behind —
+        # codesign needs an unlocked keychain with the partition list set, and
+        # depending on another action's internal state for that is how signing
+        # breaks silently on an upgrade.
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/notesage-signing.keychain-db"
+          KEYCHAIN_PWD="$(uuidgen)"
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN"
+          echo "$APPLE_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PWD" "$KEYCHAIN" >/dev/null
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$RUNNER_TEMP/cert.p12"
+
+      - name: Embed Share Extension and rebuild derived artifacts
+        id: embed
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          TARGET: aarch64-apple-darwin
+        run: scripts/macos-release-embed.sh
+
+      - name: Replace release assets with the embedded build
+        # Swaps the three derived artifacts and patches latest.json's signature
+        # to match the NEW tarball. The signature and the tarball must move
+        # together: a `latest.json` whose signature does not match the tarball
+        # beside it breaks auto-update for every desktop user.
+        #
+        # GitHub has no atomic asset replace — no rename, and names must be
+        # unique, so a swap is necessarily delete-then-upload. This step
+        # therefore does NOT claim to be atomic (an earlier version of this
+        # comment did, wrongly). What it does instead:
+        #
+        #   1. PREPARE everything first — read all three files, fetch and patch
+        #      the manifest in memory — before touching the release. Every
+        #      "missing file", "no signature", "no darwin entry" failure now
+        #      happens while the release is still untouched, which is where the
+        #      earlier version got it wrong: it validated the manifest AFTER
+        #      already replacing the tarball.
+        #   2. Retry uploads, since a transient API error is the realistic
+        #      failure and re-trying costs nothing.
+        #   3. VERIFY by re-listing afterwards, so a half-applied swap is
+        #      detected rather than assumed away.
+        #   4. If it still ends up half-applied, say so unmistakably. The
+        #      release is a draft and `publish-release` is skipped when this
+        #      job fails, so nothing reaches users automatically — but a human
+        #      debugging a red release job could reasonably flip the draft by
+        #      hand, and the log has to stop them.
+        # TODO: bump to actions/github-script@v8 when available on Node 24 — https://github.com/actions/github-script/releases
+        uses: actions/github-script@v7
+        env:
+          DMG_PATH: ${{ steps.embed.outputs.dmg }}
+          TARBALL_PATH: ${{ steps.embed.outputs.tarball }}
+          SIG_PATH: ${{ steps.embed.outputs.sig }}
+          NEW_SIGNATURE: ${{ steps.embed.outputs.signature }}
+        with:
+          script: |
+            const fs = require('fs');
+            const path = require('path');
+            const releaseId = ${{ needs.create-release.outputs.release_id }};
+            const { owner, repo } = context.repo;
+
+            const { data: assets } = await github.rest.repos.listReleaseAssets({
+              owner, repo, release_id: releaseId, per_page: 100,
+            });
+
+            // ---- 1. PREPARE ---------------------------------------------------
+            // Nothing below this section mutates the release. Every way this
+            // step can legitimately give up belongs here, while giving up is
+            // free.
+            const pending = [];
+            for (const filePath of [
+              process.env.DMG_PATH, process.env.TARBALL_PATH, process.env.SIG_PATH,
+            ]) {
+              if (!filePath) {
+                core.setFailed('embed step did not report all three artifact paths');
+                return;
+              }
+              if (!fs.existsSync(filePath) || fs.statSync(filePath).size === 0) {
+                core.setFailed(`Artifact missing or empty: ${filePath}`);
+                return;
+              }
+              pending.push({
+                name: path.basename(filePath),
+                data: fs.readFileSync(filePath),
+                contentType: 'application/octet-stream',
+              });
+            }
+
+            // latest.json embeds the signature inline; a stale one points the
+            // updater at a tarball it will then refuse to install.
+            const manifestAsset = assets.find(a => a.name === 'latest.json');
+            if (!manifestAsset) {
+              core.setFailed('latest.json not found — cannot reconcile updater signature');
+              return;
+            }
+            const newSig = process.env.NEW_SIGNATURE;
+            if (!newSig) {
+              core.setFailed('embed step produced no signature');
+              return;
+            }
+            const { data: raw } = await github.rest.repos.getReleaseAsset({
+              owner, repo, asset_id: manifestAsset.id,
+              headers: { accept: 'application/octet-stream' },
+            });
+            const manifest = JSON.parse(
+              Buffer.isBuffer(raw) ? raw.toString('utf8') : new TextDecoder().decode(raw),
+            );
+            let patched = 0;
+            for (const key of Object.keys(manifest.platforms || {})) {
+              if (key.startsWith('darwin')) {
+                manifest.platforms[key].signature = newSig;
+                patched++;
+              }
+            }
+            if (patched === 0) {
+              core.setFailed('no darwin platform entry in latest.json to patch');
+              return;
+            }
+            pending.push({
+              name: 'latest.json',
+              data: JSON.stringify(manifest, null, 2),
+              contentType: 'application/json',
+            });
+
+            // ---- 2. COMMIT ----------------------------------------------------
+            // From the first delete onward the release is inconsistent until
+            // the last upload lands.
+            const withRetry = async (label, fn) => {
+              for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                  return await fn();
+                } catch (err) {
+                  if (attempt === 3) throw err;
+                  core.warning(`${label} failed (attempt ${attempt}/3): ${err.message} — retrying`);
+                  await new Promise(r => setTimeout(r, 2000 * attempt));
+                }
+              }
+            };
+
+            let mutated = false;
+            try {
+              for (const item of pending) {
+                const existing = assets.find(a => a.name === item.name);
+                if (existing) {
+                  await withRetry(`delete ${item.name}`, () =>
+                    github.rest.repos.deleteReleaseAsset({ owner, repo, asset_id: existing.id }));
+                  mutated = true;
+                }
+                await withRetry(`upload ${item.name}`, () =>
+                  github.rest.repos.uploadReleaseAsset({
+                    owner, repo, release_id: releaseId, name: item.name,
+                    data: item.data,
+                    headers: {
+                      'content-type': item.contentType,
+                      'content-length': Buffer.byteLength(item.data),
+                    },
+                  }));
+                mutated = true;
+                core.info(`Replaced ${item.name}`);
+              }
+            } catch (err) {
+              if (mutated) {
+                core.error(
+                  'DO NOT PUBLISH THIS DRAFT. Asset replacement failed part-way, so the ' +
+                  'release may now carry an updater signature that does not match its ' +
+                  'tarball — installing it would break auto-update. Delete the draft ' +
+                  'release and re-run the tag.',
+                );
+              }
+              core.setFailed(`Asset replacement failed: ${err.message}`);
+              return;
+            }
+
+            // ---- 3. VERIFY ----------------------------------------------------
+            // Re-list rather than trust the writes: the whole point of this step
+            // is that a half-applied swap must not pass silently.
+            const { data: after } = await github.rest.repos.listReleaseAssets({
+              owner, repo, release_id: releaseId, per_page: 100,
+            });
+            const missing = pending
+              .filter(item => !after.some(a => a.name === item.name && a.size > 0))
+              .map(item => item.name);
+            if (missing.length > 0) {
+              core.error(
+                `DO NOT PUBLISH THIS DRAFT. Missing or empty after replacement: ${missing.join(', ')}.`,
+              );
+              core.setFailed('Release assets are inconsistent after replacement');
+              return;
+            }
+            core.info(`Patched updater signature on ${patched} darwin platform entry/entries.`);
+
       # tauri-action@v0, when invoked with releaseId (and thus without tagName),
       # generates `latest.json` URLs of the form
       #   https://github.com/<repo>/releases/latest/download/<file>

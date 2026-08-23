@@ -64,6 +64,22 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
+        with:
+          # Full history + tags, so the guards in `scripts/ios-testflight.sh`
+          # still work if this workflow is ever used. On a shallow, tagless
+          # checkout two of them silently do nothing, and both fail toward
+          # shipping:
+          #   - stale tester notes, compared against the newest `ios-build/*`
+          #     tag (those are on the remote — builds 3-10; only the ancient 1
+          #     and 2 are local-only, so the check CAN work here)
+          #   - `HEAD..origin/main`, which needs history to count
+          #
+          # Not currently load-bearing: iOS releases are cut locally, because
+          # the App Store Connect keys are not in CI. This is pre-positioning
+          # for the day they are — at which point the gap would be live and
+          # invisible, since the notes check degrades to a printed line rather
+          # than a prompt when it finds no tags.
+          fetch-depth: 0
 
       - name: Check the secrets are present
         env:

@@ -650,8 +650,8 @@ Cache miss path (first load or after external edit): identical to Phase 3b — c
 - Parse benchmarks include Tiptap editor creation overhead (\~15ms fixed cost)
 - Decoration operations are sub-millisecond even at 100KB — well within real-time editing budgets
 - Store operations are sub-millisecond — no concern for performance
-- CI budgets use 3x multiplier to account for shared runner variability
-- Dev budgets use 2x multiplier for local machine variance
+- CI budgets use a **5x** multiplier (`.github/workflows/test.yml`) to account for shared runner variability — raised 3 → 4 → 5 after the markdown-parse case blocked a release on a pure timing flake at 4x. CI timing is advisory; the strict signal is a local run.
+- Dev runs use the **1x** default (`pnpm test:perf`). **Run it on an idle machine.** A loaded box reports overruns that are contention, not regressions, and the tell is non-determinism: on 2026-08-22, four consecutive full runs on a machine at load ~300–975 gave failures of `{parse 1KB, parse 10KB, orb pulse}`, then `{parse 1KB, parse 50KB, parse 100KB}`, then **none at all (45/45 clean)**, then `{parse 1KB, orb pulse}`. A real regression fails the same benchmark every time. If the set changes between runs, measure again on a quiet machine before believing it.
 ### 2026-06-14 — v0.46.0 release (`c6c34f7c`, code-identical to alpha.28 `9f3277f0`)
 
 **Machine:** Apple M3 / 24 GB RAM / macOS. Steady-state page refresh (not cold first launch).

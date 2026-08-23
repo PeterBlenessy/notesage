@@ -1,6 +1,29 @@
 {
   "releases": [
     {
+      "version": "0.52.0",
+      "date": "2026-08-22",
+      "previousVersion": "0.51.0",
+      "sections": {
+        "features": [
+          "**Notesage in the Mac Share menu.** Save a page from Safari on your Mac the way you already can on your phone. This is experimental — turn it on in System Settings → General → Login Items & Extensions → Sharing.",
+          "**Saved articles keep their images.** Share an article and the pictures are downloaded into it, so it still reads properly on a plane or years later when the original site has reorganised. Choose how large they are saved in the library's \"...\" menu, or switch it off there.",
+          "**Saved pages look like themselves.** In gallery view an article now shows its own photograph instead of a shrunken page.",
+          "**X posts save with their title and picture** rather than as a bare link, including X's long-form Articles."
+        ],
+        "improvements": [
+          "Pictures come from the page as you were viewing it, so they arrive at full quality instead of the blurry placeholder some sites load first.",
+          "Pull down to refresh in the library and the spinner actually spins.",
+          "Thumbnails follow your light or dark theme."
+        ],
+        "fixes": [
+          "Sharing a link from Messages or Mail could fail with \"nothing to save\".",
+          "Saved articles from some sites lost their images when offline.",
+          "Browsing a large library gradually used more memory than it needed to."
+        ]
+      }
+    },
+    {
       "version": "0.51.0",
       "date": "2026-08-18",
       "previousVersion": "0.50.0",

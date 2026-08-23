@@ -78,10 +78,33 @@ type ReaderState =
  * #616): `ios_read_file` ships the whole file across IPC as one JSON string,
  * and for a multi-hundred-MB file that parse blocks the WebView's main
  * thread — the loading spinner freezes and the back button stops responding.
- * "A few MB" per the issue's own assumption; the exact value is an
- * implementation detail, not a contract.
+ *
+ * This was 5 MB, taken from the issue's own "a few MB" assumption, which was
+ * a guess and never measured. It was wrong by more than an order of
+ * magnitude, and once captures started inlining their images it began
+ * refusing the app's OWN documents: a 48-image article filled the inliner's
+ * 12 MB budget and then could not be opened at all. Saving something you
+ * cannot read is a worse failure than a slow read.
+ *
+ * Measured cost of the parse this guards (M3, node; a phone WebView is some
+ * multiple slower):
+ *
+ *     1-25 MB   under 0.25 s, allocation-dominated and hard to even measure
+ *        50 MB   0.7 s
+ *       100 MB   1.2 s
+ *       250 MB   3.5 s
+ *       500 MB   6.5 s
+ *
+ * So the hang is a hundreds-of-MB phenomenon — which is precisely the Health
+ * export that prompted the guard, and nothing a captured article approaches.
+ * 100 MB refuses what would genuinely wedge the app while leaving an order of
+ * magnitude of headroom over anything the capture pipeline can produce.
+ *
+ * That headroom is not a coincidence to be re-derived later: it is locked by
+ * `reader-limit-vs-inliner-budget.test.ts`, which reads the inliner's ceiling
+ * out of the Swift source and fails if these two ever cross again.
  */
-const MAX_INLINE_TEXT_BYTES = 5 * 1024 * 1024;
+const MAX_INLINE_TEXT_BYTES = 100 * 1024 * 1024;
 
 /**
  * Mobile reader (PRD task #14). Renders markdown (via the shared Rust comrak

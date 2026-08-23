@@ -5012,6 +5012,7 @@ dependencies = [
  "dom_query 0.28.0",
  "dom_smoothie",
  "htmd",
+ "serde_json",
 ]
 
 [[package]]

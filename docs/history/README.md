@@ -210,3 +210,4 @@ Chronological log of major implementation milestones and changes.
 | 204 | [Release v0.49.0](204-release-v0.49.0.md) | Auto-cut release. See merged PRs for details. |
 | 205 | [Release v0.50.0](205-release-v0.50.0.md) | Auto-cut release. See merged PRs for details. |
 | 206 | [Release v0.51.0](206-release-v0.51.0.md) | Transcription models chosen by measurement, and transcripts stop guessing which language you spoke. Swedish display language. |
+| 207 | [Release v0.52.0](207-release-v0.52.0.md) | Saved articles keep their pictures and work offline; Notesage can join the Mac's Share menu. |
