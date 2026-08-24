@@ -11,6 +11,7 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-The launch screen now really does match the new icon — build 13 still showed
-the old plain letter for a moment. Close Notesage completely and open it again
-to see it. Everything else is unchanged from the last build.
+Share an X post to Notesage. The saved note should now be named after the
+post — not "Someone (@handle) on X" — and its card in the library should show
+the post's own photo instead of a picture of the text. Author and date are in
+the note too. Long-form X Articles are the case to try.
