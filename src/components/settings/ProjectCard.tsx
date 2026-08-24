@@ -31,6 +31,7 @@ import { useGitStore } from '@/stores/git-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { LockProjectDialog } from './LockProjectDialog';
+import { t } from '@/lib/i18n';
 
 interface ProjectCardProps {
   projectPath: string;
@@ -177,7 +178,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
     try {
       const exists = await tauriApi.pathExists(newPath);
       if (exists) {
-        toast.error(`A folder named "${trimmed}" already exists`);
+        toast.error(t("project.folderExists", { name: trimmed }));
         return false;
       }
     } catch {
@@ -189,10 +190,10 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
       await tauriApi.renamePath(projectPath, newPath);
       await migrateProjectPath(projectPath, newPath);
       onPathChanged?.(newPath);
-      toast.success(`Project renamed to "${trimmed}"`);
+      toast.success(t("project.renamedTo", { name: trimmed }));
       return true;
     } catch (err) {
-      toast.error(`Failed to rename folder: ${err}`);
+      toast.error(t("project.renameFailed", { error: String(err) }));
       return false;
     } finally {
       setRenaming(false);
@@ -226,7 +227,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
 
   const handleIcloudPillClick = () => {
     if (!icloudAvailable) {
-      toast.error('iCloud Drive is not available on this device');
+      toast.error(t("project.icloudUnavailable"));
       return;
     }
     setIcloudConfirmOpen(isSynced ? 'disable' : 'enable');
@@ -248,7 +249,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
         );
         await migrateProjectPath(projectPath, newPath);
         onPathChanged?.(newPath);
-        toast.success('Project moved to iCloud Drive');
+        toast.success(t("project.movedToIcloud"));
       } else if (!enable && notesRootPath) {
         const newPath = await tauriApi.migrateFromICloud(
           projectPath,
@@ -256,10 +257,10 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
         );
         await migrateProjectPath(projectPath, newPath);
         onPathChanged?.(newPath);
-        toast.success('Project moved to local library');
+        toast.success(t("project.movedToLocal"));
       }
     } catch (err) {
-      toast.error(`Failed to ${enable ? 'move to iCloud' : 'move to local'}: ${err}`);
+      toast.error(t(enable ? "project.moveToIcloudFailed" : "project.moveToLocalFailed", { error: String(err) }));
     } finally {
       setBusy(false);
     }
@@ -269,7 +270,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
     if (isGitRepo) {
       // Settings card doesn't expose a destructive "remove repo" action;
       // it would delete `.git/`. Users can do that from the terminal.
-      toast.info('Git is initialized. Manage commits from the sidebar.');
+      toast.info(t("project.gitReady"));
       return;
     }
     setGitConfirmOpen(true);
@@ -281,9 +282,9 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
     try {
       await tauriApi.gitInit(projectPath);
       setIsGitRepo(projectPath, true);
-      toast.success('Git repository initialized');
+      toast.success(t("project.gitInitialized"));
     } catch (err) {
-      toast.error(`Failed to initialize git: ${err}`);
+      toast.error(t("project.gitInitFailed", { error: String(err) }));
     } finally {
       setBusy(false);
     }
@@ -300,7 +301,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
   const handleUnlockConfirm = () => {
     clearAiLock(projectPath);
     setUnlockConfirmOpen(false);
-    toast.success('Project unlocked');
+    toast.success(t("project.unlocked"));
   };
 
   if (!metadata) {
@@ -355,7 +356,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                     }
                   }}
                   disabled={renaming || busy}
-                  placeholder="Project name"
+                  placeholder={t("project.namePlaceholder")}
                   className={cn(
                     'h-7 py-0 px-2 text-[14px] font-medium',
                     'bg-transparent border border-border',
@@ -367,7 +368,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                   type="button"
                   onClick={handleNameSave}
                   disabled={renaming}
-                  title="Save"
+                  title={t("project.save")}
                   className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150 disabled:opacity-50"
                 >
                   <Check className="h-3.5 w-3.5" strokeWidth={1.6} />
@@ -378,7 +379,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                     cancellingRef.current = true;
                   }}
                   onClick={handleNameCancel}
-                  title="Cancel"
+                  title={t("project.cancel")}
                   className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150"
                 >
                   <X className="h-3.5 w-3.5" strokeWidth={1.6} />
@@ -389,14 +390,14 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                 <span
                   className="text-[14px] font-medium text-foreground truncate cursor-text leading-tight"
                   onDoubleClick={() => setNameEditing(true)}
-                  title="Double-click to rename"
+                  title={t("project.doubleClickRename")}
                 >
                   {metadata.name || basename(projectPath)}
                 </span>
                 <button
                   type="button"
                   onClick={() => setNameEditing(true)}
-                  title="Rename project"
+                  title={t("project.renameProject")}
                   className={cn(
                     'h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md',
                     'text-muted-foreground hover:text-foreground hover:bg-muted',
@@ -441,7 +442,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                     }
                   }}
                   disabled={busy}
-                  placeholder="No description"
+                  placeholder={t("project.noDescription")}
                   rows={2}
                   className={cn(
                     'min-h-[3rem] py-1 px-2 text-[12px] text-muted-foreground',
@@ -480,14 +481,14 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                       : 'text-muted-foreground/60 italic',
                   )}
                   onDoubleClick={() => setDescEditing(true)}
-                  title="Double-click to edit description"
+                  title={t("project.doubleClickEditDescription")}
                 >
                   {metadata.description || 'No description'}
                 </span>
                 <button
                   type="button"
                   onClick={() => setDescEditing(true)}
-                  title="Edit description"
+                  title={t("project.editDescription")}
                   className={cn(
                     'h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md',
                     'text-muted-foreground hover:text-foreground hover:bg-muted',
@@ -571,7 +572,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("project.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={handleIcloudConfirm}>
               {icloudConfirmOpen === 'enable' ? 'Move to iCloud' : 'Move to local'}
             </AlertDialogAction>
@@ -583,14 +584,14 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
       <AlertDialog open={gitConfirmOpen} onOpenChange={setGitConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Initialize git repository?</AlertDialogTitle>
+            <AlertDialogTitle>{t("project.initGitQuestion")}</AlertDialogTitle>
             <AlertDialogDescription>
               Runs <code className="font-mono">git init</code> in the project
               folder. You can then commit, branch, and push from the sidebar.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("project.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={handleGitConfirm}>
               Initialize
             </AlertDialogAction>
@@ -605,13 +606,13 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Unlock AI provider?</AlertDialogTitle>
+            <AlertDialogTitle>{t("project.unlockProviderQuestion")}</AlertDialogTitle>
             <AlertDialogDescription>
               Chat in this project will be free to use any provider again.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("project.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={handleUnlockConfirm}>
               Unlock
             </AlertDialogAction>
