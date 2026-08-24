@@ -9,6 +9,7 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Att dela från X sparar nu själva inlägget — texten och bilden — i stället för
-bara en länk. Testa gärna både ett vanligt inlägg med bild och en av X:s längre
-artiklar. Resten ska fungera som i förra bygget.
+Ny appikon — värd en titt på hemskärmen. Sparade anteckningar i Markdown
+behåller nu sina bilder, så de fungerar offline och visar sitt eget foto i
+gallerivyn, precis som HTML-varianten redan gjorde. Testa gärna att spara en
+artikel på båda sätten och jämför korten.

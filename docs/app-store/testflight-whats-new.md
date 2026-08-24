@@ -11,6 +11,7 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Sharing from X now saves the post itself — its text and its picture — instead
-of a bare link. Worth trying both an ordinary post with an image and one of X's
-longer Articles. Everything else should behave as it did last build.
+New app icon — worth a look on your home screen. Saved notes in Markdown now
+keep their pictures too, so they work offline and show their own photo in
+gallery view, the way HTML ones already did. Try saving an article both ways
+and compare the two cards.
