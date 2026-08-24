@@ -29,7 +29,6 @@ import { useMobileStore } from "@/stores/mobile-store";
  * crossing IPC is a number. See `ios_inline_article_images`.
  */
 
-/** Only these are article captures; everything else in the Inbox is ignored. */
 /**
  * Announce that documents changed, at most once a second.
  *
@@ -63,10 +62,22 @@ function makeAnnouncer() {
   };
 }
 
-function isArticleHtml(entry: FileEntry): boolean {
+/**
+ * Captures the sweep can make self-contained — both formats, not just HTML.
+ *
+ * Markdown was excluded until #755, which meant every X post, video note and
+ * `Article (Markdown)` kept remote image URLs: not offline-safe, and with no
+ * inline image for the gallery to use, so those cards showed a thumbnail of
+ * their own rendered text instead of the article's photograph.
+ *
+ * The backend picks the rewrite shape from the same extension — reference-style
+ * definitions for markdown, `src="data:"` for HTML — so this only has to decide
+ * whether a file is a candidate.
+ */
+function isSweepableCapture(entry: FileEntry): boolean {
   if (entry.is_directory) return false;
   const lower = entry.name.toLowerCase();
-  return lower.endsWith(".html") || lower.endsWith(".htm");
+  return lower.endsWith(".html") || lower.endsWith(".htm") || lower.endsWith(".md");
 }
 
 /**
@@ -161,7 +172,7 @@ export function useInlineSweep() {
       // stable "n of m" rather than a total that grows as it goes.
       const todo = entries.filter(
         (e) =>
-          isArticleHtml(e) &&
+          isSweepableCapture(e) &&
           !attempted.current.has(e.path) &&
           // Rewriting a file the user is reading would swap the document under
           // them mid-scroll. It keeps its remote images until next time.

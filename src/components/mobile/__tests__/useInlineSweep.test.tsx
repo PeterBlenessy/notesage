@@ -45,7 +45,12 @@ afterEach(() => {
 });
 
 describe("what gets swept", () => {
-  it("inlines html captures and ignores everything else", async () => {
+  it("inlines both capture formats and ignores everything else", async () => {
+    // Markdown was excluded until #755, which left every X post, video note and
+    // `Article (Markdown)` holding remote image URLs — not offline-safe, and
+    // with no inline image the gallery could use, so those cards showed a
+    // thumbnail of their own rendered text. Both formats are captures; both
+    // get swept. The backend picks the rewrite shape from the extension.
     listDirectoryMock.mockResolvedValue([
       entry("article.html"),
       entry("note.md"),
@@ -56,7 +61,27 @@ describe("what gets swept", () => {
     renderHook(() => useInlineSweep());
 
     await waitFor(() => expect(inlineMock).toHaveBeenCalled());
-    expect(inlineMock.mock.calls.map((c) => c[0])).toEqual(["Inbox/article.html"]);
+    await waitFor(() => expect(inlineMock).toHaveBeenCalledTimes(2));
+    expect(inlineMock.mock.calls.map((c) => c[0]).sort()).toEqual([
+      "Inbox/article.html",
+      "Inbox/note.md",
+    ]);
+  });
+
+  it("leaves non-capture files alone", async () => {
+    // The sweep fetches remote images and rewrites files in place. Anything
+    // that is not a capture must never enter that path — a stray `.jpg` or a
+    // folder is not something to rewrite.
+    listDirectoryMock.mockResolvedValue([
+      entry("photo.jpg"),
+      entry("data.json"),
+      entry("Sub", { is_directory: true }),
+    ]);
+
+    renderHook(() => useInlineSweep());
+
+    await new Promise((r) => setTimeout(r, 20));
+    expect(inlineMock).not.toHaveBeenCalled();
   });
 
   it("does not rewrite the document the user is reading", async () => {

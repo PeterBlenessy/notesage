@@ -357,14 +357,24 @@ pub async fn ios_find_upgradable_articles(
                     queue.push(entry.path);
                     continue;
                 }
+                // Markdown counts too (#755) — the estimate has to describe the
+                // sweep that will actually run, and that sweep now covers both.
+                // Reporting only HTML would understate the work and the size
+                // delta, which is the one thing this command exists to get
+                // right before the user agrees to it.
                 let lower = entry.name.to_ascii_lowercase();
-                if !(lower.ends_with(".html") || lower.ends_with(".htm")) {
+                let is_markdown = lower.ends_with(".md");
+                if !(lower.ends_with(".html") || lower.ends_with(".htm") || is_markdown) {
                     continue;
                 }
-                let Ok(html) = ios_impl::read_file(&app, &entry.path).await else {
+                let Ok(source) = ios_impl::read_file(&app, &entry.path).await else {
                     continue;
                 };
-                let count = notesage_capture::article_image_urls(&html).len();
+                let count = if is_markdown {
+                    notesage_capture::markdown_image_urls(&source).len()
+                } else {
+                    notesage_capture::article_image_urls(&source).len()
+                };
                 if count > 0 {
                     out.documents += 1;
                     out.images += count;
@@ -416,8 +426,26 @@ pub async fn ios_inline_article_images(
         let max_pixel = max_pixel.unwrap_or(1600);
         let jpeg_quality = jpeg_quality.unwrap_or(0.8);
 
-        let html = ios_impl::read_file(&app, &rel).await?;
-        let urls = notesage_capture::article_image_urls(&html);
+        // Markdown captures need inlining too, and in a DIFFERENT shape.
+        //
+        // Until now this handled `.html` only, so every markdown capture — X
+        // posts, video notes, `Article (Markdown)` — kept remote image URLs.
+        // They were not offline-safe, and the gallery could find no inline
+        // image to use, so those cards fell back to a thumbnail of their own
+        // rendered text (#755).
+        //
+        // The markdown rewrite is reference-style: the body keeps
+        // `![alt][ns-img-1]` and the base64 collects at the end of the file,
+        // because a 300 KB blob dropped mid-paragraph destroys the thing
+        // markdown is for.
+        let is_markdown = rel.to_ascii_lowercase().ends_with(".md");
+
+        let source = ios_impl::read_file(&app, &rel).await?;
+        let urls = if is_markdown {
+            notesage_capture::markdown_image_urls(&source)
+        } else {
+            notesage_capture::article_image_urls(&source)
+        };
         if urls.is_empty() {
             return Ok(0);
         }
@@ -430,7 +458,11 @@ pub async fn ios_inline_article_images(
             return Ok(0);
         }
 
-        let rewritten = notesage_capture::inline_article_images(&html, &map);
+        let rewritten = if is_markdown {
+            notesage_capture::inline_markdown_images(&source, &map)
+        } else {
+            notesage_capture::inline_article_images(&source, &map)
+        };
         ios_impl::write_file(&app, &rel, &rewritten).await?;
         Ok(map.len())
     }
