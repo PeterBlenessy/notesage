@@ -19,6 +19,7 @@ import { useSkillStore } from '@/stores/skill-store';
 import { tauriApi } from '@/lib/tauri';
 import { serializeFrontmatter } from '@/lib/frontmatter';
 import { cn } from '@/lib/utils';
+import { t } from '@/lib/i18n';
 
 export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const [name, setName] = useState('');
@@ -53,11 +54,11 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
 
   const handleSave = async () => {
     if (!name.trim() || !description.trim()) {
-      toast.error('Name and description are required');
+      toast.error(t("agent.nameAndDescRequired"));
       return;
     }
     if (!slug) {
-      toast.error('Name must contain at least one letter or number');
+      toast.error(t("agent.nameNeedsAlnum"));
       return;
     }
 
@@ -107,13 +108,13 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>New Agent</DialogTitle>
-          <DialogDescription>Create an addressable agent with custom instructions.</DialogDescription>
+          <DialogTitle>{t("agent.newTitle")}</DialogTitle>
+          <DialogDescription>{t("agent.newSubtitle")}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2 overflow-y-auto max-h-[60vh]">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Name</Label>
+            <Label className="text-xs text-muted-foreground">{t("agent.name")}</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -129,21 +130,21 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Description</Label>
+            <Label className="text-xs text-muted-foreground">{t("agent.description")}</Label>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="When to use this agent and what it does"
+              placeholder={t("agent.descPlaceholder")}
               className="text-sm"
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Instructions</Label>
+            <Label className="text-xs text-muted-foreground">{t("agent.instructions")}</Label>
             <Textarea
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
-              placeholder="System prompt — tell the agent how to behave (optional, edit later)"
+              placeholder={t("agent.instructionsPlaceholder")}
               className="text-sm min-h-[100px] resize-y"
             />
           </div>
@@ -160,7 +161,7 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
             <CollapsibleContent>
               <div className="space-y-4 pt-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Allowed tools</Label>
+                  <Label className="text-xs text-muted-foreground">{t("agent.allowedTools")}</Label>
                   <Input
                     value={allowedTools}
                     onChange={(e) => setAllowedTools(e.target.value)}
@@ -173,7 +174,7 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Model preference</Label>
+                  <Label className="text-xs text-muted-foreground">{t("agent.modelPreference")}</Label>
                   <Input
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
@@ -186,11 +187,11 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Icon</Label>
+                  <Label className="text-xs text-muted-foreground">{t("agent.icon")}</Label>
                   <Input
                     value={icon}
                     onChange={(e) => setIcon(e.target.value)}
-                    placeholder="Lucide icon name or emoji (e.g., sparkles, 🔍)"
+                    placeholder={t("agent.iconPlaceholderLong")}
                     className="text-sm"
                   />
                 </div>
@@ -198,15 +199,15 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">User-invocable</Label>
-                    <p className="text-xs text-muted-foreground">Show in the agent picker and @ menu</p>
+                    <p className="text-xs text-muted-foreground">{t("agent.showInPicker")}</p>
                   </div>
                   <Switch checked={userInvocable} onCheckedChange={setUserInvocable} />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">Disable model invocation</Label>
-                    <p className="text-xs text-muted-foreground">Prevent AI from auto-selecting this agent</p>
+                    <Label className="text-sm">{t("agent.disableModelInvocation")}</Label>
+                    <p className="text-xs text-muted-foreground">{t("agent.disableModelInvocationDesc")}</p>
                   </div>
                   <Switch checked={disableModelInvocation} onCheckedChange={setDisableModelInvocation} />
                 </div>

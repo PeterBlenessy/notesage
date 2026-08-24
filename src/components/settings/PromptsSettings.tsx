@@ -24,6 +24,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Plus, Pencil, Trash2, Sparkles } from 'lucide-react';
+import { t } from '@/lib/i18n';
 
 export function PromptsSettings() {
   const { customPrompts, addCustomPrompt, updateCustomPrompt, deleteCustomPrompt } =
@@ -95,7 +96,7 @@ export function PromptsSettings() {
       {/* Header */}
       <div className="space-y-3">
         <div>
-          <Label className="text-sm font-semibold">Custom Prompts</Label>
+          <Label className="text-sm font-semibold">{t("prompts.title")}</Label>
           <p className="text-xs text-muted-foreground mt-1">
             Create reusable prompt templates for common AI tasks
           </p>
@@ -120,7 +121,7 @@ export function PromptsSettings() {
       <div className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <Label className="text-sm font-semibold">Your Prompts</Label>
+            <Label className="text-sm font-semibold">{t("prompts.yourPrompts")}</Label>
             <p className="text-xs text-muted-foreground mt-1">
               Reusable templates that appear in the AI actions menu
             </p>
@@ -134,7 +135,7 @@ export function PromptsSettings() {
             </DialogTrigger>
             <DialogContent className="max-w-lg">
               <DialogHeader>
-                <DialogTitle>Create Custom Prompt</DialogTitle>
+                <DialogTitle>{t("prompts.create")}</DialogTitle>
                 <DialogDescription>
                   Define a reusable prompt template for AI actions
                 </DialogDescription>
@@ -152,7 +153,7 @@ export function PromptsSettings() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="prompt-name">Prompt Name</Label>
+                  <Label htmlFor="prompt-name">{t("prompts.name")}</Label>
                   <Input
                     id="prompt-name"
                     value={formData.name}
@@ -161,7 +162,7 @@ export function PromptsSettings() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="prompt-template">Prompt Template</Label>
+                  <Label htmlFor="prompt-template">{t("prompts.template")}</Label>
                   <Textarea
                     id="prompt-template"
                     value={formData.template}
@@ -219,8 +220,8 @@ export function PromptsSettings() {
                     </DialogTrigger>
                     <DialogContent className="max-w-lg">
                       <DialogHeader>
-                        <DialogTitle>Edit Prompt</DialogTitle>
-                        <DialogDescription>Modify the prompt template</DialogDescription>
+                        <DialogTitle>{t("prompts.edit")}</DialogTitle>
+                        <DialogDescription>{t("prompts.editSubtitle")}</DialogDescription>
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
@@ -237,7 +238,7 @@ export function PromptsSettings() {
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="edit-prompt-name">Prompt Name</Label>
+                          <Label htmlFor="edit-prompt-name">{t("prompts.name")}</Label>
                           <Input
                             id="edit-prompt-name"
                             value={formData.name}
@@ -248,7 +249,7 @@ export function PromptsSettings() {
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label htmlFor="edit-prompt-template">Prompt Template</Label>
+                          <Label htmlFor="edit-prompt-template">{t("prompts.template")}</Label>
                           <Textarea
                             id="edit-prompt-template"
                             value={formData.template}
@@ -264,7 +265,7 @@ export function PromptsSettings() {
                         <Button variant="outline" onClick={closeDialog}>
                           Cancel
                         </Button>
-                        <Button onClick={handleUpdatePrompt}>Save Changes</Button>
+                        <Button onClick={handleUpdatePrompt}>{t("prompts.saveChanges")}</Button>
                       </DialogFooter>
                     </DialogContent>
                   </Dialog>
@@ -298,13 +299,13 @@ export function PromptsSettings() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete prompt?</AlertDialogTitle>
+            <AlertDialogTitle>{t("prompts.deleteQuestion")}</AlertDialogTitle>
             <AlertDialogDescription>
               Delete &ldquo;{pendingPrompt?.name}&rdquo;? This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("prompts.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleConfirmDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"

@@ -35,6 +35,7 @@ import {
 import { useMcpOperations, type McpValidationResult, type McpValidateInput } from '@/hooks/useMcpOperations';
 import { cn } from '@/lib/utils';
 import type { EnvRow, CatalogPrefill } from './types';
+import { t } from '@/lib/i18n';
 
 /** Convert a stored env map into editable rows (secrets start masked + stored). */
 function envToRows(env: Record<string, McpEnvValue>): EnvRow[] {
@@ -174,7 +175,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
 
   const handleAuthorize = async () => {
     if (!url.trim()) {
-      toast.error('Server URL is required');
+      toast.error(t("mcp.urlRequired"));
       return;
     }
     setAuthorizing(true);
@@ -182,7 +183,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
       const status = await oauthAuthorize(buildInput().id ?? `global:server`, url.trim());
       setOauthOk(status.authorized);
       if (status.authorized) {
-        toast.success('Authorized — you can now test and add the server');
+        toast.success(t("mcp.authorized"));
       }
     } catch (err) {
       toast.error(`Authorization failed: ${err}`);
@@ -221,7 +222,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
 
   const handleTest = async () => {
     if (gateBlocked) {
-      toast.error('Confirm you trust this server before testing it');
+      toast.error(t("mcp.confirmTrustBeforeTest"));
       return;
     }
     if (!hasRequiredFields) {
@@ -242,7 +243,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
 
   const handleSave = async () => {
     if (gateBlocked) {
-      toast.error('Confirm you trust this server before adding it');
+      toast.error(t("mcp.confirmTrustBeforeAdd"));
       return;
     }
     if (!hasRequiredFields) {
@@ -331,14 +332,14 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{editServer ? 'Edit MCP Server' : 'Add MCP Server'}</DialogTitle>
-          <DialogDescription>Configure how Notesage connects to the MCP server.</DialogDescription>
+          <DialogDescription>{t("mcp.configureSubtitle")}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           {untrusted && (
             <Alert variant="destructive">
               <ShieldAlert className="h-4 w-4" strokeWidth={1.5} />
-              <AlertTitle>Requested by an external link</AlertTitle>
+              <AlertTitle>{t("mcp.requestedByExternalLink")}</AlertTitle>
               <AlertDescription className="space-y-2">
                 <p>
                   This MCP server was requested by an external link. MCP servers
@@ -359,7 +360,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
             </Alert>
           )}
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Transport</Label>
+            <Label className="text-xs text-muted-foreground">{t("mcp.transport")}</Label>
             <div className="inline-flex rounded-lg border border-border p-0.5">
               {(['stdio', 'http'] as const).map((t) => {
                 const active = transport === t;
@@ -382,7 +383,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
 
           {isRemote ? (
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Server URL</Label>
+              <Label className="text-xs text-muted-foreground">{t("mcp.serverUrl")}</Label>
               <Input
                 value={url ?? ''}
                 onChange={(e) => setUrl(e.target.value)}
@@ -414,7 +415,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
           ) : (
             <>
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Command</Label>
+                <Label className="text-xs text-muted-foreground">{t("mcp.command")}</Label>
                 <Input
                   value={command}
                   onChange={(e) => setCommand(e.target.value)}
@@ -424,20 +425,20 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Arguments</Label>
+                <Label className="text-xs text-muted-foreground">{t("mcp.arguments")}</Label>
                 <Input
                   value={args}
                   onChange={(e) => setArgs(e.target.value)}
                   placeholder="/path/to/directory"
                   className="font-mono text-sm"
                 />
-                <p className="text-xs text-muted-foreground">Space-separated arguments</p>
+                <p className="text-xs text-muted-foreground">{t("mcp.argumentsHint")}</p>
               </div>
             </>
           )}
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Display Name</Label>
+            <Label className="text-xs text-muted-foreground">{t("mcp.displayName")}</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -450,7 +451,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
           {!isRemote && (
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <Label className="text-xs text-muted-foreground">Environment Variables</Label>
+              <Label className="text-xs text-muted-foreground">{t("mcp.envVars")}</Label>
               <Button
                 variant="ghost"
                 size="sm"

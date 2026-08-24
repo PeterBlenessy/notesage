@@ -20,6 +20,7 @@ import { tauriApi } from '@/lib/tauri';
 import { parseFrontmatter, serializeFrontmatter } from '@/lib/frontmatter';
 import { cn } from '@/lib/utils';
 import { sourceLabel } from '@/components/settings/skills-settings-utils';
+import { t } from '@/lib/i18n';
 
 export function EditAgentDialog({ agent, open, onOpenChange }: {
   agent: AgentEntry;
@@ -66,7 +67,7 @@ export function EditAgentDialog({ agent, open, onOpenChange }: {
 
   const handleSave = async () => {
     if (!description.trim()) {
-      toast.error('Description is required');
+      toast.error(t("agent.descRequired"));
       return;
     }
     setSaving(true);
@@ -102,7 +103,7 @@ export function EditAgentDialog({ agent, open, onOpenChange }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit Agent</DialogTitle>
+          <DialogTitle>{t("agent.editTitle")}</DialogTitle>
           <DialogDescription>
             <code className="text-xs">{agent.name}</code> — {sourceLabel(agent.source)}
           </DialogDescription>
@@ -110,7 +111,7 @@ export function EditAgentDialog({ agent, open, onOpenChange }: {
 
         <div className="space-y-4 py-2 overflow-y-auto max-h-[60vh]">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Description</Label>
+            <Label className="text-xs text-muted-foreground">{t("agent.description")}</Label>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -120,7 +121,7 @@ export function EditAgentDialog({ agent, open, onOpenChange }: {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Instructions</Label>
+            <Label className="text-xs text-muted-foreground">{t("agent.instructions")}</Label>
             <Textarea
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
@@ -140,7 +141,7 @@ export function EditAgentDialog({ agent, open, onOpenChange }: {
             <CollapsibleContent>
               <div className="space-y-4 pt-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Allowed tools</Label>
+                  <Label className="text-xs text-muted-foreground">{t("agent.allowedTools")}</Label>
                   <Input
                     value={allowedTools}
                     onChange={(e) => setAllowedTools(e.target.value)}
@@ -150,7 +151,7 @@ export function EditAgentDialog({ agent, open, onOpenChange }: {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Model preference</Label>
+                  <Label className="text-xs text-muted-foreground">{t("agent.modelPreference")}</Label>
                   <Input
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
@@ -160,11 +161,11 @@ export function EditAgentDialog({ agent, open, onOpenChange }: {
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Icon</Label>
+                  <Label className="text-xs text-muted-foreground">{t("agent.icon")}</Label>
                   <Input
                     value={icon}
                     onChange={(e) => setIcon(e.target.value)}
-                    placeholder="Lucide icon name or emoji"
+                    placeholder={t("agent.iconPlaceholder")}
                     className="text-sm"
                   />
                 </div>
@@ -172,15 +173,15 @@ export function EditAgentDialog({ agent, open, onOpenChange }: {
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">User-invocable</Label>
-                    <p className="text-xs text-muted-foreground">Show in the agent picker and @ menu</p>
+                    <p className="text-xs text-muted-foreground">{t("agent.showInPicker")}</p>
                   </div>
                   <Switch checked={userInvocable} onCheckedChange={setUserInvocable} />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">Disable model invocation</Label>
-                    <p className="text-xs text-muted-foreground">Prevent AI from auto-selecting this agent</p>
+                    <Label className="text-sm">{t("agent.disableModelInvocation")}</Label>
+                    <p className="text-xs text-muted-foreground">{t("agent.disableModelInvocationDesc")}</p>
                   </div>
                   <Switch checked={disableModelInvocation} onCheckedChange={setDisableModelInvocation} />
                 </div>
@@ -190,7 +191,7 @@ export function EditAgentDialog({ agent, open, onOpenChange }: {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("agent.cancel")}</Button>
           <Button onClick={handleSave} disabled={saving || !description.trim()}>
             {saving ? 'Saving...' : 'Save'}
           </Button>

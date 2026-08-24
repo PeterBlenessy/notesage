@@ -35,6 +35,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Download, X, Plus, Link, Loader2, Search } from 'lucide-react';
 import { toast } from 'sonner';
+import { t } from '@/lib/i18n';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`;
@@ -116,7 +117,7 @@ function VerdictLine({
         </div>
       </TooltipTrigger>
       <TooltipContent side="bottom" className="max-w-[260px]">
-        <p className="text-xs">Estimated before download — sharpens once the model runs.</p>
+        <p className="text-xs">{t("model.estimatedBeforeDownload")}</p>
         {blocked && fit && fit.reasons.length > 0 && (
           <ul className="mt-1 text-[11px] text-muted-foreground list-disc pl-3.5 space-y-0.5">
             {fit.reasons.map((r, i) => (
@@ -387,7 +388,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
 
   const handleSubmitUrl = async () => {
     if (!name.trim() || !url.trim()) {
-      toast.error('Name and URL are required');
+      toast.error(t("model.nameAndUrlRequired"));
       return;
     }
     setLoading(true);
@@ -427,7 +428,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
       <DialogContent className="max-w-lg overflow-hidden">
         <TooltipProvider delayDuration={300}>
         <DialogHeader>
-          <DialogTitle className="text-sm">Add Model</DialogTitle>
+          <DialogTitle className="text-sm">{t("model.addModel")}</DialogTitle>
           <DialogDescription className="text-xs">
             Search Hugging Face for GGUF models or paste a direct download URL.
           </DialogDescription>
@@ -458,7 +459,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
               <Input
                 value={query}
                 onChange={(e) => handleQueryChange(e.target.value)}
-                placeholder="Search models... e.g. gemma-4, llama, qwen"
+                placeholder={t("model.searchPlaceholder")}
                 className="h-8 text-sm pl-8"
                 autoFocus
               />
@@ -516,9 +517,9 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                     {selectedRepo.total_size && <> &middot; ~{formatBytes(selectedRepo.total_size)}</>}
                   </div>
                   <div className="flex flex-wrap gap-1 pt-0.5">
-                    {selectedRepo.supports_vision && <span className="px-1.5 py-px rounded text-[9px] bg-muted text-muted-foreground">Vision</span>}
-                    {selectedRepo.supports_tool_calling && <span className="px-1.5 py-px rounded text-[9px] bg-muted text-muted-foreground">Tools</span>}
-                    {selectedRepo.supports_thinking && <span className="px-1.5 py-px rounded text-[9px] bg-muted text-muted-foreground">Thinking</span>}
+                    {selectedRepo.supports_vision && <span className="px-1.5 py-px rounded text-[9px] bg-muted text-muted-foreground">{t("model.vision")}</span>}
+                    {selectedRepo.supports_tool_calling && <span className="px-1.5 py-px rounded text-[9px] bg-muted text-muted-foreground">{t("model.tools")}</span>}
+                    {selectedRepo.supports_thinking && <span className="px-1.5 py-px rounded text-[9px] bg-muted text-muted-foreground">{t("model.thinking")}</span>}
                     {loadingDetails && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                   </div>
                 </div>
@@ -614,13 +615,13 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                         {(result.supports_tool_calling || result.supports_thinking || result.supports_vision) && (
                           <div className="flex flex-wrap gap-1 mt-1">
                             {result.supports_vision && (
-                              <button onClick={(e) => { e.stopPropagation(); toggleCapFilter('Vision'); }} className={`px-1 py-px rounded text-[9px] transition-colors ${filterCaps.has('Vision') ? 'bg-foreground/20 text-foreground' : 'bg-muted text-muted-foreground hover:bg-foreground/10'}`}>Vision</button>
+                              <button onClick={(e) => { e.stopPropagation(); toggleCapFilter('Vision'); }} className={`px-1 py-px rounded text-[9px] transition-colors ${filterCaps.has('Vision') ? 'bg-foreground/20 text-foreground' : 'bg-muted text-muted-foreground hover:bg-foreground/10'}`}>{t("model.vision")}</button>
                             )}
                             {result.supports_tool_calling && (
-                              <button onClick={(e) => { e.stopPropagation(); toggleCapFilter('Tools'); }} className={`px-1 py-px rounded text-[9px] transition-colors ${filterCaps.has('Tools') ? 'bg-foreground/20 text-foreground' : 'bg-muted text-muted-foreground hover:bg-foreground/10'}`}>Tools</button>
+                              <button onClick={(e) => { e.stopPropagation(); toggleCapFilter('Tools'); }} className={`px-1 py-px rounded text-[9px] transition-colors ${filterCaps.has('Tools') ? 'bg-foreground/20 text-foreground' : 'bg-muted text-muted-foreground hover:bg-foreground/10'}`}>{t("model.tools")}</button>
                             )}
                             {result.supports_thinking && (
-                              <button onClick={(e) => { e.stopPropagation(); toggleCapFilter('Thinking'); }} className={`px-1 py-px rounded text-[9px] transition-colors ${filterCaps.has('Thinking') ? 'bg-foreground/20 text-foreground' : 'bg-muted text-muted-foreground hover:bg-foreground/10'}`}>Thinking</button>
+                              <button onClick={(e) => { e.stopPropagation(); toggleCapFilter('Thinking'); }} className={`px-1 py-px rounded text-[9px] transition-colors ${filterCaps.has('Thinking') ? 'bg-foreground/20 text-foreground' : 'bg-muted text-muted-foreground hover:bg-foreground/10'}`}>{t("model.thinking")}</button>
                             )}
                           </div>
                         )}
@@ -649,7 +650,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
           /* URL tab — same as original */
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">Model name</label>
+              <label className="text-xs text-muted-foreground">{t("model.name")}</label>
               <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -658,7 +659,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs text-muted-foreground">GGUF download URL</label>
+              <label className="text-xs text-muted-foreground">{t("model.ggufUrl")}</label>
               <div className="relative">
                 <Link className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
                 <Input
