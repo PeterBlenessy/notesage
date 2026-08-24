@@ -30,6 +30,7 @@ import {
 import { useModelMetadata } from '@/hooks/useModelMetadata';
 import { ModelMetadataTooltip } from './ModelMetadataTooltip';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { t } from '@/lib/i18n';
 
 
 function modelDisplayName(name: string): string {
@@ -72,7 +73,7 @@ export function TranscriptionSettings() {
     <div className="space-y-6">
       {/* Model Management */}
       <div className="space-y-3">
-        <h3 className="text-sm font-medium">Whisper Models</h3>
+        <h3 className="text-sm font-medium">{t("voice.whisperModels")}</h3>
         <p className="text-xs text-muted-foreground">
           OpenAI Whisper models used to transcribe meeting recordings on-device — your audio never leaves your machine. Models are downloaded from{' '}
           <a
@@ -167,7 +168,7 @@ export function TranscriptionSettings() {
                         size="icon-xs"
                         className="text-muted-foreground hover:text-destructive"
                         onClick={() => cancelDownload(model.name)}
-                        title="Cancel download"
+                        title={t("voice.cancelDownload")}
                       >
                         <X className="h-3.5 w-3.5" strokeWidth={1.5} />
                       </Button>
@@ -186,14 +187,14 @@ export function TranscriptionSettings() {
                         </AlertDialogTrigger>
                         <AlertDialogContent>
                           <AlertDialogHeader>
-                            <AlertDialogTitle>Delete model?</AlertDialogTitle>
+                            <AlertDialogTitle>{t("voice.deleteModelQuestion")}</AlertDialogTitle>
                             <AlertDialogDescription>
                               This will delete the '{model.name}' model ({formatSize(model.size_bytes)}).
                               You can download it again later.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogCancel>{t("voice.cancel")}</AlertDialogCancel>
                             <AlertDialogAction onClick={() => deleteModel(model.name)}>
                               Delete
                             </AlertDialogAction>
@@ -224,13 +225,13 @@ export function TranscriptionSettings() {
       {/* Preferences */}
       <div className="space-y-2">
         <div>
-          <Label className="text-sm font-semibold">Preferences</Label>
+          <Label className="text-sm font-semibold">{t("voice.preferences")}</Label>
         </div>
 
         {/* Default model */}
         <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
           <div>
-            <Label className="text-sm font-medium">Transcription model</Label>
+            <Label className="text-sm font-medium">{t("voice.transcriptionModel")}</Label>
             <p className="text-xs text-muted-foreground mt-0.5">
               Whisper model used to transcribe meeting recordings in the background
             </p>
@@ -241,7 +242,7 @@ export function TranscriptionSettings() {
             disabled={downloadedModels.length === 0}
           >
             <SelectTrigger className="w-32">
-              <SelectValue placeholder="Select model" />
+              <SelectValue placeholder={t("voice.selectModel")} />
             </SelectTrigger>
             <SelectContent>
               {downloadedModels.map((m) => (
@@ -256,7 +257,7 @@ export function TranscriptionSettings() {
         {/* Speech language */}
         <div className="flex items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150">
           <div>
-            <Label className="text-sm font-medium">Recording language</Label>
+            <Label className="text-sm font-medium">{t("voice.recordingLanguage")}</Label>
             <p className="text-xs text-muted-foreground mt-0.5">
               Spoken language of your recordings. Defaults to your device language —
               auto-detect is reliable for English but often wrong for other languages.

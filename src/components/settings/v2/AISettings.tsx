@@ -121,11 +121,11 @@ export function AISettings() {
 
       <SettingsGroup
         label={t("settings.projectScope")}
-        description="How AI features see your projects."
+        description={t("settings.projectScopeDesc")}
         searchKeywords={['privacy']}
       >
         <SettingsRow
-          label="Cross-project mode"
+          label={t("settings.crossProjectMode")}
           description={
             <>
               Exposes{' '}
@@ -149,7 +149,7 @@ export function AISettings() {
         />
         <SettingsRow
           label={t("settings.showAgentModePicker")}
-          description="Show a permission-mode picker in the command bar for agents that support modes. When off, the agent's default mode is used."
+          description={t("settings.showAgentModePickerDesc")}
           htmlFor="show-agent-mode-picker"
           control={
             <Switch
@@ -185,7 +185,7 @@ export function AISettings() {
         />
         <SettingsRow
           label={t("settings.notifyBackgroundPermission")}
-          description="Show a desktop notification when a session you're not currently watching needs your approval to continue."
+          description={t("settings.notifyBackgroundPermissionDesc")}
           htmlFor="notify-permission-request"
           control={
             <Switch
@@ -199,7 +199,7 @@ export function AISettings() {
       </SettingsGroup>
 
       <SettingsGroup label={t("settings.networkSandbox")} bare>
-        <SettingsHint title="Sandbox is configured per connection">
+        <SettingsHint title={t("settings.sandboxPerConnection")}>
           <p>
             Open a connection above to set its filesystem sandbox, network
             restriction, kernel enforcement, and domain allowlist. New agent
@@ -210,7 +210,7 @@ export function AISettings() {
 
       <SettingsGroup
         label={t("settings.sandboxActivity")}
-        description="Read-only view of each running agent's network proxy — port, session-approved domains, and the effective domain allowlist."
+        description={t("settings.sandboxActivityDesc")}
         searchKeywords={['privacy', 'proxy', 'observability']}
         bare
       >
@@ -219,7 +219,7 @@ export function AISettings() {
 
       <SettingsGroup
         label={t("settings.persistedApprovals")}
-        description="Tool-call and domain approvals you've remembered via 'Allow always'. Revoke individually or in bulk."
+        description={t("settings.persistedApprovalsDesc")}
         bare
       >
         {/* `bare` opts out of the tinted-island styling so the legacy

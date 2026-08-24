@@ -156,7 +156,7 @@ function AutomationItem({
             <Play className="size-4" strokeWidth={1.5} />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="top">Run now</TooltipContent>
+        <TooltipContent side="top">{t("automation.runNow")}</TooltipContent>
       </Tooltip>
 
       <Tooltip>
@@ -171,7 +171,7 @@ function AutomationItem({
             <Pencil className="size-4" strokeWidth={1.5} />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="top">Edit</TooltipContent>
+        <TooltipContent side="top">{t("automation.edit")}</TooltipContent>
       </Tooltip>
 
       <Tooltip>
@@ -186,7 +186,7 @@ function AutomationItem({
             <Trash2 className="size-4" strokeWidth={1.5} />
           </Button>
         </TooltipTrigger>
-        <TooltipContent side="top">Delete</TooltipContent>
+        <TooltipContent side="top">{t("automation.delete")}</TooltipContent>
       </Tooltip>
 
       <Switch
@@ -206,7 +206,7 @@ function AutomationItem({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogCancel>{t("automation.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
                 void remove(automation.sourcePath);
@@ -288,7 +288,7 @@ export function AutomationsSettings() {
           </div>
           {automations.length === 0 ? (
             <p className="px-1 py-6 text-sm text-muted-foreground">
-              No automations yet. Click <span className="font-medium">New automation</span> — or add
+              No automations yet. Click <span className="font-medium">{t("automation.new")}</span> — or add
               a <code className="rounded bg-muted px-1 py-0.5 text-xs">.yaml</code> file under{' '}
               <code className="rounded bg-muted px-1 py-0.5 text-xs">.notesage/automations/</code>.
             </p>
@@ -330,15 +330,15 @@ export function AutomationsSettings() {
       <AlertDialog open={reliabilityPrompt} onOpenChange={setReliabilityPrompt}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Run automations reliably?</AlertDialogTitle>
+            <AlertDialogTitle>{t("automation.reliablyQuestion")}</AlertDialogTitle>
             <AlertDialogDescription>
               Automations only fire while Notesage is running. Enabling{' '}
-              <strong>Start at login</strong> and <strong>Close window to tray</strong> keeps it
+              <strong>{t("automation.startAtLogin")}</strong> and <strong>{t("automation.closeToTray")}</strong> keeps it
               quietly available so scheduled runs aren’t missed.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Not now</AlertDialogCancel>
+            <AlertDialogCancel>{t("automation.notNow")}</AlertDialogCancel>
             <AlertDialogAction onClick={() => void enableReliability()}>
               Enable both
             </AlertDialogAction>

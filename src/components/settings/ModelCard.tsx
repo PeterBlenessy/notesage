@@ -11,6 +11,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Download, Trash2, X, Star } from 'lucide-react';
+import { t } from '@/lib/i18n';
 
 function formatBytes(bytes: number): string {
   if (bytes < 1_000_000_000) return `${(bytes / 1_000_000).toFixed(0)} MB`;
@@ -124,7 +125,7 @@ export function ModelCard({
                     <X className="h-3 w-3" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="top">Cancel download</TooltipContent>
+                <TooltipContent side="top">{t("model.cancelDownload")}</TooltipContent>
               </Tooltip>
             </div>
           ) : model.downloaded ? (
@@ -141,7 +142,7 @@ export function ModelCard({
                       Use
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Set as active model</TooltipContent>
+                  <TooltipContent side="top">{t("model.setActive")}</TooltipContent>
                 </Tooltip>
               )}
               <Tooltip>
@@ -172,7 +173,7 @@ export function ModelCard({
                       <X className="h-3 w-3" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Remove custom model</TooltipContent>
+                  <TooltipContent side="top">{t("model.removeCustom")}</TooltipContent>
                 </Tooltip>
               )}
               {!model.is_custom && !isActive && (
@@ -187,7 +188,7 @@ export function ModelCard({
                       <X className="h-3 w-3" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent side="top">Hide from list</TooltipContent>
+                  <TooltipContent side="top">{t("model.hideFromList")}</TooltipContent>
                 </Tooltip>
               )}
             </>
@@ -224,7 +225,7 @@ export function ModelCard({
                     <X className="h-3 w-3" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="top">Hide from list</TooltipContent>
+                <TooltipContent side="top">{t("model.hideFromList")}</TooltipContent>
               </Tooltip>
             </div>
           )}
@@ -248,7 +249,7 @@ export function ModelCard({
               </span>
             )}
             {model.is_custom && (
-              <CapabilityBadge label="Custom" />
+              <CapabilityBadge label={t("model.badgeCustom")} />
             )}
           </div>
           {/* Hardware-fit verdict line — sits just under the size line. */}
@@ -290,11 +291,11 @@ export function ModelCard({
             {model.description}
           </p>
           <div className="flex items-center gap-1 mt-1 flex-wrap">
-            {toolsCap && <CapabilityBadge label="Tools" verified={capsVerified} />}
-            {thinkCap && <CapabilityBadge label="Think" verified={capsVerified} />}
+            {toolsCap && <CapabilityBadge label={t("model.badgeTools")} verified={capsVerified} />}
+            {thinkCap && <CapabilityBadge label={t("model.badgeThink")} verified={capsVerified} />}
             {fimCap && <CapabilityBadge label="FIM" verified={capsVerified} />}
-            {model.supports_vision && <CapabilityBadge label="Vision" />}
-            {model.multilingual && <CapabilityBadge label="Multi" />}
+            {model.supports_vision && <CapabilityBadge label={t("model.badgeVision")} />}
+            {model.multilingual && <CapabilityBadge label={t("model.badgeMulti")} />}
           </div>
         </div>
       </div>
