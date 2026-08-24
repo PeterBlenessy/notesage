@@ -103,7 +103,7 @@ for (const name of ["icon", "icon-active", "icon-ios"]) {
 // ── 2. the iOS asset catalogue ─────────────────────────────────────────────
 const iosSvg = join(ICONS, "icon-ios.svg");
 const appIconSet = join(APPLE, "AppIcon.appiconset");
-const launchSet = join(APPLE, "LaunchLogo.imageset");
+const LAUNCH_SRC = resolve(ROOT, "src-tauri/ios/LaunchAssets/LaunchLogo.imageset");
 
 if (existsSync(appIconSet)) {
   const manifest = JSON.parse(readFileSync(join(appIconSet, "Contents.json"), "utf8"));
@@ -124,12 +124,28 @@ if (existsSync(appIconSet)) {
   console.log("  (no AppIcon.appiconset — run `tauri ios init` first)");
 }
 
-if (existsSync(launchSet)) {
-  // The splash logo. Base 60pt at 1x/2x/3x, matching the imageset it replaces.
+// The launch logo's canonical home is `src-tauri/ios/LaunchAssets/`, NOT the
+// generated catalogue.
+//
+// `integrate-share-extension.py`'s `sync_launch_assets()` runs on every build
+// and does `rmtree` + `copytree` from LaunchAssets over the generated imageset
+// — it has to, because `tauri ios init` would otherwise drop the launch logo
+// (#675). So anything written to `gen/` is deleted before the build reads it.
+//
+// That is exactly how build 13 shipped a new app icon with the OLD splash: the
+// render wrote the generated copy, the sync restored the tracked original, and
+// because `copytree` preserves mtimes the file still looked untouched
+// afterwards. Writing the source is the only thing that survives.
+if (existsSync(LAUNCH_SRC)) {
+  // Base 60pt at 1x/2x/3x. Size and position must not change: the storyboard's
+  // icon and the plugin's launch cover are one continuous image across the
+  // launch-screen → webview handoff, so only the artwork may differ.
   for (const [suffix, px] of [["1x", 60], ["2x", 120], ["3x", 180]]) {
-    await render(iosSvg, px, join(launchSet, `logo@${suffix}.png`));
+    await render(iosSvg, px, join(LAUNCH_SRC, `logo@${suffix}.png`));
   }
-  console.log("  icon-ios.svg → LaunchLogo.imageset (3 files)");
+  console.log("  icon-ios.svg → ios/LaunchAssets/LaunchLogo.imageset (3 files, tracked source)");
+} else {
+  console.log(`  (no ${LAUNCH_SRC} — launch logo not updated)`);
 }
 
 await browser.close();
