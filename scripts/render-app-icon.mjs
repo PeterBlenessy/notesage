@@ -1,40 +1,48 @@
 #!/usr/bin/env node
 /**
- * Rasterise the app icon from its SVG source.
+ * Rasterise the app icons from their SVG sources.
  *
- *   node scripts/render-app-icon.mjs
+ *   node scripts/render-app-icon.mjs            # every variant + the iOS assets
  *   npx tauri icon src-tauri/icons/icon-1024.png
  *
- * Why a script rather than pointing `tauri icon` at the SVG directly
- * ------------------------------------------------------------------
- * The icon's letterform is a `<text>` element, so the render depends on Source
- * Serif 4 resolving. Left to chance that means the shipped icon looks like
- * whatever serif happened to be installed on the machine that built it — and
- * differs between a developer's Mac and CI.
+ * Variants
+ * --------
+ *   icon.svg         desktop, idle orb
+ *   icon-active.svg  desktop, lit orb — for a runtime Dock swap, unwired
+ *   icon-ios.svg     iOS, no orb (nothing agentic runs on the phone)
  *
- * This inlines the bundled face (src-tauri/fonts/source-serif) as a data URI
- * before rasterising, so the output is byte-identical wherever it runs. The
- * SVG in the repo stays clean and editable; the font only rides along at
- * render time.
+ * Why a script rather than pointing `tauri icon` at the SVG
+ * ---------------------------------------------------------
+ * The letterform is a `<text>` element, so the render depends on Source Serif 4
+ * resolving. Left to chance the shipped icon is whatever serif happened to be
+ * installed on the machine that built it, and differs between a laptop and CI.
+ * This inlines the bundled face as a data URI first, so output is identical
+ * wherever it runs.
  *
- * Chromium comes from Playwright, already a dev dependency for the e2e suite,
- * so this adds no new tooling.
+ * And the iOS assets
+ * ------------------
+ * `tauri icon` writes one artwork to every platform, but iOS needs the no-orb
+ * variant. So after it runs, this rewrites `AppIcon.appiconset` from
+ * `icon-ios.svg`, reading the required sizes out of the set's own
+ * `Contents.json` rather than hardcoding a list that would drift.
+ *
+ * It also rewrites `LaunchLogo.imageset`. That one had been left behind
+ * entirely: the splash screen still showed a bare N on flat grey from the old
+ * icon, so the app opened onto one identity and settled into another.
+ *
+ * Note `src-tauri/gen` is gitignored, so the iOS assets are build output, not
+ * committed source. Re-run this after `tauri ios init` or the splash reverts.
+ *
+ * Chromium comes from Playwright, already a dev dependency for the e2e suite.
  */
-// From `@playwright/test`, which is what the repo actually depends on — the
-// bare `playwright` package is not installed.
 import { chromium } from "@playwright/test";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { fileURLToPath } from "url";
-import { dirname, resolve } from "path";
+import { dirname, resolve, join } from "path";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-// `--active` renders the lit-orb variant instead. That one is not part of the
-// generated platform set — it exists for a possible runtime Dock swap, so it
-// is rendered on demand rather than on every run.
-const ACTIVE = process.argv.includes("--active");
-const SVG = resolve(ROOT, `src-tauri/icons/icon${ACTIVE ? "-active" : ""}.svg`);
-const OUT = resolve(ROOT, `src-tauri/icons/icon${ACTIVE ? "-active" : ""}-1024.png`);
-const SIZE = 1024;
+const ICONS = resolve(ROOT, "src-tauri/icons");
+const APPLE = resolve(ROOT, "src-tauri/gen/apple/Assets.xcassets");
 
 const FACES = [
   { file: "SourceSerif4-It.ttf", weight: 400, style: "italic" },
@@ -45,41 +53,85 @@ const FACES = [
 function fontFaceCss() {
   return FACES.map(({ file, weight, style }) => {
     const path = resolve(ROOT, "src-tauri/fonts/source-serif", file);
-    if (!existsSync(path)) {
-      throw new Error(`Missing bundled font: ${path}`);
-    }
+    if (!existsSync(path)) throw new Error(`Missing bundled font: ${path}`);
     const b64 = readFileSync(path).toString("base64");
     return `@font-face{font-family:'Source Serif 4';font-style:${style};font-weight:${weight};src:url(data:font/ttf;base64,${b64}) format('truetype');}`;
   }).join("\n");
 }
 
-const svg = readFileSync(SVG, "utf8");
-if (!svg.includes("Source Serif 4")) {
-  // A rename would silently fall back to Georgia and nobody would notice until
-  // the icon shipped looking subtly wrong.
-  throw new Error("icon.svg no longer references 'Source Serif 4' — update this script's font list.");
-}
+const FONT_CSS = fontFaceCss();
 
-const html = `<!doctype html><meta charset="utf-8">
+function pageHtml(svg, size) {
+  return `<!doctype html><meta charset="utf-8">
 <style>
-  ${fontFaceCss()}
+  ${FONT_CSS}
   html,body{margin:0;padding:0;background:transparent}
-  svg{display:block;width:${SIZE}px;height:${SIZE}px}
+  svg{display:block;width:${size}px;height:${size}px}
 </style>
 ${svg}`;
+}
 
 const browser = await chromium.launch();
-const page = await browser.newPage({
-  viewport: { width: SIZE, height: SIZE },
-  deviceScaleFactor: 1,
-});
-await page.setContent(html, { waitUntil: "load" });
-// Fonts load from data URIs, but `load` can still fire a tick early.
-await page.evaluate(() => document.fonts.ready);
 
-const png = await page.locator("svg").screenshot({ omitBackground: true });
-writeFileSync(OUT, png);
+async function render(svgPath, size, outPath) {
+  const svg = readFileSync(svgPath, "utf8");
+  if (!svg.includes("Source Serif 4")) {
+    // A rename would silently fall back to Georgia, and nobody would notice
+    // until the icon had shipped looking subtly wrong.
+    throw new Error(`${svgPath} no longer references 'Source Serif 4'.`);
+  }
+  const page = await browser.newPage({
+    viewport: { width: size, height: size },
+    deviceScaleFactor: 1,
+  });
+  await page.setContent(pageHtml(svg, size), { waitUntil: "load" });
+  await page.evaluate(() => document.fonts.ready);
+  const png = await page.locator("svg").screenshot({ omitBackground: true });
+  writeFileSync(outPath, png);
+  await page.close();
+}
+
+// ── 1. the 1024 masters ────────────────────────────────────────────────────
+for (const name of ["icon", "icon-active", "icon-ios"]) {
+  const src = join(ICONS, `${name}.svg`);
+  if (!existsSync(src)) continue;
+  const out = join(ICONS, `${name}-1024.png`);
+  await render(src, 1024, out);
+  console.log(`  ${name}.svg → ${name}-1024.png`);
+}
+
+// ── 2. the iOS asset catalogue ─────────────────────────────────────────────
+const iosSvg = join(ICONS, "icon-ios.svg");
+const appIconSet = join(APPLE, "AppIcon.appiconset");
+const launchSet = join(APPLE, "LaunchLogo.imageset");
+
+if (existsSync(appIconSet)) {
+  const manifest = JSON.parse(readFileSync(join(appIconSet, "Contents.json"), "utf8"));
+  // Sizes come from the catalogue itself. A hardcoded list would drift the
+  // first time Xcode or Tauri changed the required set, and the failure would
+  // be a missing icon slot nobody looks at.
+  const seen = new Set();
+  for (const image of manifest.images) {
+    if (!image.filename || seen.has(image.filename)) continue;
+    seen.add(image.filename);
+    const pt = parseFloat(image.size.split("x")[0]);
+    const scale = parseInt(image.scale, 10) || 1;
+    const px = Math.round(pt * scale);
+    await render(iosSvg, px, join(appIconSet, image.filename));
+  }
+  console.log(`  icon-ios.svg → AppIcon.appiconset (${seen.size} files)`);
+} else {
+  console.log("  (no AppIcon.appiconset — run `tauri ios init` first)");
+}
+
+if (existsSync(launchSet)) {
+  // The splash logo. Base 60pt at 1x/2x/3x, matching the imageset it replaces.
+  for (const [suffix, px] of [["1x", 60], ["2x", 120], ["3x", 180]]) {
+    await render(iosSvg, px, join(launchSet, `logo@${suffix}.png`));
+  }
+  console.log("  icon-ios.svg → LaunchLogo.imageset (3 files)");
+}
+
 await browser.close();
-
-console.log(`Rendered ${SIZE}×${SIZE} → ${OUT.replace(ROOT + "/", "")}`);
-console.log("Next: npx tauri icon src-tauri/icons/icon-1024.png");
+console.log("\nNext: npx tauri icon src-tauri/icons/icon-1024.png");
+console.log("      (then re-run this script — tauri icon overwrites the iOS set)");

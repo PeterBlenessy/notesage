@@ -1,10 +1,8 @@
 <!--
-  Notesage app icon — source of truth.
+  Notesage app icon — source of truth (desktop).
 
-  The raster sets (icon.icns, icon.ico, *.png, android/, ios/) are GENERATED
-  from this file. Edit here, then run:
-
-      node scripts/render-app-icon.mjs
+  Generated from this file:
+      node scripts/render-app-icon.mjs           # all variants -> PNG
       npx tauri icon src-tauri/icons/icon-1024.png
 
   Composition
@@ -12,67 +10,68 @@
   Three elements, nothing else: the letterform, the sentence, the orb.
 
   The sentence is the Settings > Editor preview text, set as prose rather than
-  markdown source — this is a rich text editor, so showing raw `##` would
-  describe the wrong product. It is split into two bands, above and below the
-  N, so that no word sits behind the letterform. Reading order is the ordinary
-  one: top band left-to-right, then bottom band.
+  markdown source — this is a rich text editor, so raw `##` would describe the
+  wrong product. Split into two bands, above and below the N, so no word sits
+  behind the letterform. Reading order is the ordinary one.
 
   Everything shares the centre axis at x=256 — text, letterform, orb — so the
   eye travels straight down.
 
-  Held at 0.30 opacity, the sentence reads as texture before it reads as words.
-  That split is the point: at 512 you can read it, at 32 it is gone and only
-  the N and a point of light remain. Two icons from one drawing.
+  Held at 0.34 opacity, the sentence reads as texture before it reads as words:
+  at 1024 you can read it, at 128 it is two faint bands, at 32 only the N and a
+  point of light survive. One drawing, two icons.
 
-  The orb is borrowed from AgentOrb.tsx so the icon and the running window
-  share a mark.
+  Ground
+  ------
+  A near-black vertical gradient, lighter at the top, plus a very diffuse
+  highlight behind the letterform. Sampled from the tonal range Peter pointed
+  at (the Claude app icon): about #2E2B2C down to #171717 — roughly twenty
+  levels across the whole tile, which is why it reads as depth rather than as a
+  gradient.
 
-  Orb state
-  ---------
-  This file is the IDLE orb — an outline and a dim core. `icon-active.svg` is
-  the same drawing with the orb lit, for a future runtime Dock swap via
-  `NSApplication.applicationIconImage`.
+  Warm, not cool. The previous ground was #4A4A4E -> #2E2E31, where blue sits
+  above red; this leans the other way by a hair. At this darkness the bias is
+  invisible as colour and only felt as temperature.
 
-  The two share IDENTICAL geometry: same radii, same centre. Only colour and
-  the glow differ. An icon that changes shape in the Dock reads as a glitch; one
-  that changes temperature reads as status. Do not "improve" one without the
-  other.
+  No vignette overlay any more — the gradient does that work. Stacking both
+  crushed the lower third and swallowed the bottom text band.
 
   FONT: the N and the sentence are `<text>`, so rendering depends on Source
-  Serif 4 resolving. `scripts/render-app-icon.mjs` injects the bundled face
-  from src-tauri/fonts/source-serif as a data URI before rasterising, so the
-  output never depends on what is installed on the machine.
+  Serif 4 resolving. `scripts/render-app-icon.mjs` inlines the bundled face as
+  a data URI before rasterising, so output never depends on the build machine.
 
-  KNOWN: the artwork is full-bleed to the rounded rect, matching the previous
-  icon. Apple's macOS template insets the art inside the canvas; adopting that
-  would make it sit slightly smaller next to its neighbours in the Dock.
+  VARIANTS — keep the ground and type identical across all three:
+      icon.svg         desktop, idle orb          (this file)
+      icon-active.svg  desktop, lit orb           (runtime Dock swap, unwired)
+      icon-ios.svg     iOS, no orb                (nothing agentic runs there)
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="slate" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#4A4A4E"/>
-      <stop offset="1" stop-color="#2E2E31"/>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2E2B2C"/>
+      <stop offset="0.55" stop-color="#212020"/>
+      <stop offset="1" stop-color="#171717"/>
     </linearGradient>
-    <linearGradient id="vig" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#000000" stop-opacity="0"/>
-      <stop offset="1" stop-color="#000000" stop-opacity="0.34"/>
-    </linearGradient>
+    <radialGradient id="lift" cx="0.5" cy="0.34" r="0.62">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.055"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
     <clipPath id="tile">
       <rect width="512" height="512" rx="114"/>
     </clipPath>
   </defs>
 
-  <rect width="512" height="512" rx="114" fill="url(#slate)"/>
+  <rect width="512" height="512" rx="114" fill="url(#ground)"/>
+  <rect width="512" height="512" rx="114" fill="url(#lift)"/>
 
   <g clip-path="url(#tile)">
-    <g fill="#FFFFFF" fill-opacity="0.30" text-anchor="middle"
+    <g fill="#FFFFFF" fill-opacity="0.34" text-anchor="middle"
        font-family="Source Serif 4, Georgia, serif" font-size="27">
       <text x="256" y="70">The hardest part of thinking</text>
       <text x="256" y="104">is not the thinking itself</text>
       <text x="256" y="384">but holding still long enough</text>
       <text x="256" y="418">for a thought to arrive.</text>
     </g>
-    <rect width="512" height="512" fill="url(#vig)"/>
   </g>
 
   <text x="256" y="322" text-anchor="middle"
@@ -81,7 +80,7 @@
 
   <!-- Orb — IDLE. Geometry must match icon-active.svg exactly. -->
   <g transform="translate(256,464)">
-    <circle cx="0" cy="0" r="26" fill="none" stroke="#FFFFFF" stroke-opacity="0.30" stroke-width="3"/>
-    <circle cx="0" cy="0" r="13" fill="#FFFFFF" fill-opacity="0.34"/>
+    <circle cx="0" cy="0" r="26" fill="none" stroke="#FFFFFF" stroke-opacity="0.34" stroke-width="3"/>
+    <circle cx="0" cy="0" r="13" fill="#FFFFFF" fill-opacity="0.38"/>
   </g>
 </svg>
