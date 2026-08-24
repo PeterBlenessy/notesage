@@ -9,6 +9,6 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Ikonen är mörkare och varmare nu — se hur den ser ut bland dina andra appar.
-Startskärmen stämmer äntligen överens med den i stället för att visa den gamla
-bokstaven, så det är värt att starta appen från helt stängt läge.
+Startskärmen stämmer nu verkligen överens med den nya ikonen — bygge 13 visade
+fortfarande den gamla bokstaven ett ögonblick. Stäng Notesage helt och öppna
+appen igen för att se det. I övrigt är allt sig likt sedan förra bygget.
