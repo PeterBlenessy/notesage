@@ -11,6 +11,7 @@ import {
 import { toast } from 'sonner';
 import { armAutomation, writeScope } from '@/lib/automations/arm';
 import type { Automation } from '@/lib/automations/types';
+import { t } from '@/lib/i18n';
 
 /**
  * Approve-to-arm review. Shows what the automation can write before pinning its
@@ -37,7 +38,7 @@ export function ArmDialog({
 
         {automation && (
           <div className="space-y-1 rounded-md border border-border bg-muted/40 p-3 text-xs">
-            <div className="font-medium text-muted-foreground">Can write to</div>
+            <div className="font-medium text-muted-foreground">{t("automation.canWriteTo")}</div>
             {writeScope(automation).map((s) => (
               <div key={s} className="font-mono break-all">
                 {s}

@@ -45,6 +45,7 @@ import { RECIPES } from '@/lib/automations/recipes';
 import { TriggerEditor } from './TriggerEditor';
 import { StepEditor } from './StepEditor';
 import type { TokenOption } from './VariablePicker';
+import { t } from '@/lib/i18n';
 
 
 /** A labelled form section with an optional description + right-aligned action. */
@@ -278,11 +279,11 @@ export function AutomationForm({
             id="auto-name"
             value={draft.name}
             onChange={(e) => update({ name: e.target.value })}
-            placeholder="Morning Digest"
+            placeholder={t("automation.namePlaceholder")}
           />
         </div>
         <div className="space-y-1.5">
-          <Label className="text-xs font-medium">Scope</Label>
+          <Label className="text-xs font-medium">{t("automation.scope")}</Label>
           <Select
             value={draft.scope ?? 'global'}
             disabled={!isNew}
@@ -292,7 +293,7 @@ export function AutomationForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="global">Global (Notesage library)</SelectItem>
+              <SelectItem value="global">{t("automation.scopeGlobal")}</SelectItem>
               {projects.map((p) => (
                 <SelectItem key={p.path} value={p.path}>
                   {p.path.split('/').filter(Boolean).pop()}
@@ -307,7 +308,7 @@ export function AutomationForm({
 
       {/* Trigger */}
       <Section
-        title="When"
+        title={t("automation.when")}
         description={triggerHint}
         action={
           <Select
@@ -327,9 +328,9 @@ export function AutomationForm({
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="end">
-              <SelectItem value="schedule">On a schedule</SelectItem>
-              <SelectItem value="file">On a file change</SelectItem>
-              <SelectItem value="workflow">On an app event</SelectItem>
+              <SelectItem value="schedule">{t("automation.onSchedule")}</SelectItem>
+              <SelectItem value="file">{t("automation.onFileChange")}</SelectItem>
+              <SelectItem value="workflow">{t("automation.onAppEvent")}</SelectItem>
             </SelectContent>
           </Select>
         }
@@ -375,7 +376,7 @@ export function AutomationForm({
           {draft.trigger.type === 'file' && (
             <>
               <div className="flex items-center gap-2">
-                <Label className="w-20 shrink-0 text-xs text-muted-foreground">Event</Label>
+                <Label className="w-20 shrink-0 text-xs text-muted-foreground">{t("automation.event")}</Label>
                 <Select
                   value={triggerEvent(draft.trigger) ?? 'file-created'}
                   onValueChange={(v) =>
@@ -392,10 +393,10 @@ export function AutomationForm({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="file-created">File added</SelectItem>
-                    <SelectItem value="file-modified">File modified</SelectItem>
-                    <SelectItem value="file-deleted">File deleted</SelectItem>
-                    <SelectItem value="file-renamed">File renamed</SelectItem>
+                    <SelectItem value="file-created">{t("automation.fileAdded")}</SelectItem>
+                    <SelectItem value="file-modified">{t("automation.fileModified")}</SelectItem>
+                    <SelectItem value="file-deleted">{t("automation.fileDeleted")}</SelectItem>
+                    <SelectItem value="file-renamed">{t("automation.fileRenamed")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -423,7 +424,7 @@ export function AutomationForm({
                   variant="outline"
                   size="icon"
                   className="h-8 w-8 shrink-0"
-                  aria-label="Choose folder"
+                  aria-label={t("automation.chooseFolder")}
                   onClick={() => void pickFolder()}
                 >
                   <FolderOpen className="size-4" strokeWidth={1.5} />
@@ -449,7 +450,7 @@ export function AutomationForm({
           {draft.trigger.type === 'workflow' && (
             <>
               <div className="flex items-center gap-2">
-                <Label className="w-20 shrink-0 text-xs text-muted-foreground">Event</Label>
+                <Label className="w-20 shrink-0 text-xs text-muted-foreground">{t("automation.event")}</Label>
                 <Select
                   value={triggerEvent(draft.trigger) ?? 'document-saved'}
                   onValueChange={(v) =>
@@ -460,9 +461,9 @@ export function AutomationForm({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="document-saved">A document is saved</SelectItem>
-                    <SelectItem value="agent-task-complete">An agent task finishes</SelectItem>
-                    <SelectItem value="transcription-done">A transcription finishes</SelectItem>
+                    <SelectItem value="document-saved">{t("automation.documentSaved")}</SelectItem>
+                    <SelectItem value="agent-task-complete">{t("automation.agentTaskFinished")}</SelectItem>
+                    <SelectItem value="transcription-done">{t("automation.transcriptionFinished")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -491,8 +492,8 @@ export function AutomationForm({
 
       {/* Steps */}
       <Section
-        title="Do this"
-        description="Steps run top to bottom. Reference an earlier step with its {{tokens}}."
+        title={t("automation.doThis")}
+        description={t("automation.doThisDesc")}
         action={
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -505,14 +506,14 @@ export function AutomationForm({
               <DropdownMenuItem onSelect={() => addStep('agent')} className="items-start gap-2">
                 <Bot className="mt-0.5 size-4 shrink-0" strokeWidth={1.5} />
                 <div className="flex flex-col">
-                  <span>Agent task</span>
-                  <span className="text-xs text-muted-foreground">Ask an AI agent to do the work</span>
+                  <span>{t("automation.stepAgentTask")}</span>
+                  <span className="text-xs text-muted-foreground">{t("automation.stepAgentTaskDesc")}</span>
                 </div>
               </DropdownMenuItem>
               <DropdownMenuItem onSelect={() => addStep('document')} className="items-start gap-2">
                 <FileText className="mt-0.5 size-4 shrink-0" strokeWidth={1.5} />
                 <div className="flex flex-col">
-                  <span>Create / append note</span>
+                  <span>{t("automation.stepWriteNote")}</span>
                   <span className="text-xs text-muted-foreground">
                     Write or append to a markdown file
                   </span>
@@ -521,8 +522,8 @@ export function AutomationForm({
               <DropdownMenuItem onSelect={() => addStep('notify')} className="items-start gap-2">
                 <Bell className="mt-0.5 size-4 shrink-0" strokeWidth={1.5} />
                 <div className="flex flex-col">
-                  <span>Notify</span>
-                  <span className="text-xs text-muted-foreground">Send a desktop notification</span>
+                  <span>{t("automation.stepNotify")}</span>
+                  <span className="text-xs text-muted-foreground">{t("automation.stepNotifyDesc")}</span>
                 </div>
               </DropdownMenuItem>
             </DropdownMenuContent>
@@ -531,7 +532,7 @@ export function AutomationForm({
       >
         {draft.steps.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
-            <p className="text-sm text-muted-foreground">No steps yet</p>
+            <p className="text-sm text-muted-foreground">{t("automation.noSteps")}</p>
             <p className="mt-1 text-xs text-muted-foreground">
               Add a step to define what this automation does.
             </p>
@@ -567,7 +568,7 @@ export function AutomationForm({
       {/* Advanced — overlap policy + guardrails (collapsed by default) */}
       <Collapsible>
         <CollapsibleTrigger className="group -mx-2 flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-sm font-medium outline-none transition-colors duration-150 hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
-          <span>Advanced</span>
+          <span>{t("automation.advanced")}</span>
           <ChevronDown
             className="size-4 text-muted-foreground group-data-[state=open]:rotate-180 motion-safe:transition-transform motion-safe:duration-150"
             strokeWidth={1.5}
@@ -576,15 +577,15 @@ export function AutomationForm({
         <CollapsibleContent className="pt-3">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">If already running</Label>
+              <Label className="text-xs text-muted-foreground">{t("automation.ifAlreadyRunning")}</Label>
               <Select value={draft.mode} onValueChange={(v) => update({ mode: v as RunMode })}>
                 <SelectTrigger className="text-sm">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="single">Skip the new run</SelectItem>
-                  <SelectItem value="queued">Queue it</SelectItem>
-                  <SelectItem value="restart">Restart</SelectItem>
+                  <SelectItem value="single">{t("automation.skipNewRun")}</SelectItem>
+                  <SelectItem value="queued">{t("automation.queueIt")}</SelectItem>
+                  <SelectItem value="restart">{t("automation.restart")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

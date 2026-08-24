@@ -11,6 +11,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { t } from '@/lib/i18n';
 
 type Freq = 'daily' | 'weekly' | 'hourly' | 'custom';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -91,10 +92,10 @@ export function TriggerEditor({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="daily">Daily</SelectItem>
-            <SelectItem value="weekly">Weekly</SelectItem>
-            <SelectItem value="hourly">Hourly</SelectItem>
-            <SelectItem value="custom">Custom cron</SelectItem>
+            <SelectItem value="daily">{t("automation.daily")}</SelectItem>
+            <SelectItem value="weekly">{t("automation.weekly")}</SelectItem>
+            <SelectItem value="hourly">{t("automation.hourly")}</SelectItem>
+            <SelectItem value="custom">{t("automation.customCron")}</SelectItem>
           </SelectContent>
         </Select>
 
@@ -103,7 +104,7 @@ export function TriggerEditor({
             <Label className="text-xs text-muted-foreground">at</Label>
             <Input
               type="time"
-              aria-label="Time"
+              aria-label={t("automation.time")}
               value={`${pad(hour)}:${pad(minute)}`}
               onChange={(e) => {
                 const [h, m] = e.target.value.split(':').map(Number);
@@ -154,7 +155,7 @@ export function TriggerEditor({
 
       {freq === 'custom' && (
         <Input
-          aria-label="Cron expression"
+          aria-label={t("automation.cronExpression")}
           value={custom}
           placeholder="0 8 * * *"
           onChange={(e) => setCustom(e.target.value)}

@@ -331,6 +331,11 @@ const en = {
   "automation.restart": "Restart",
   "automation.daily": "Daily",
   "automation.weekly": "Weekly",
+  "automation.hourly": "Hourly",
+  "automation.customCron": "Custom cron",
+  "automation.time": "Time",
+  "automation.cronExpression": "Cron expression",
+  "automation.canWriteTo": "Can write to",
   // Automations — step editor
   "automation.stepId": "Step id",
   "automation.moveStepUp": "Move step up",
@@ -817,6 +822,11 @@ const sv: Dict = {
   "automation.restart": "Starta om",
   "automation.daily": "Dagligen",
   "automation.weekly": "Veckovis",
+  "automation.hourly": "Varje timme",
+  "automation.customCron": "Egen cron",
+  "automation.time": "Tid",
+  "automation.cronExpression": "Cron-uttryck",
+  "automation.canWriteTo": "Kan skriva till",
   // Automations — step editor
   "automation.stepId": "Steg-id",
   "automation.moveStepUp": "Flytta steget uppåt",
