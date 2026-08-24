@@ -11,6 +11,6 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-The icon is darker and warmer now — see how it sits among your other apps. The
-launch screen matches it at last, instead of showing the old plain letter, so
-it's worth watching the app open from a cold start.
+The launch screen now really does match the new icon — build 13 still showed
+the old plain letter for a moment. Close Notesage completely and open it again
+to see it. Everything else is unchanged from the last build.
