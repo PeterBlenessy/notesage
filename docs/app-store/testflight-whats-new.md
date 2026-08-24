@@ -11,7 +11,6 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-New app icon — worth a look on your home screen. Saved notes in Markdown now
-keep their pictures too, so they work offline and show their own photo in
-gallery view, the way HTML ones already did. Try saving an article both ways
-and compare the two cards.
+The icon is darker and warmer now — see how it sits among your other apps. The
+launch screen matches it at last, instead of showing the old plain letter, so
+it's worth watching the app open from a cold start.

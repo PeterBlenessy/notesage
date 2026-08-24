@@ -1,0 +1,59 @@
+<!--
+  Notesage app icon — iOS.
+
+  Identical to icon.svg WITHOUT the orb.
+
+  The orb means "something agentic is happening" — agent work, recording,
+  transcription. None of that runs on iOS: the phone app is a reader, a note
+  editor and a share target. Carrying the mark there would promise a capability
+  the app does not have, and would be the kind of detail that is never revisited
+  once it ships.
+
+  If iOS ever gains agentic work, this file gets the orb back rather than
+  becoming a second design.
+
+  The ground, the type and the letterform are deliberately identical to
+  icon.svg. The two icons should look like the same app on two devices, not
+  like two apps.
+
+  Also the source for the launch screen logo — see
+  `scripts/render-app-icon.mjs`, which writes both AppIcon.appiconset and
+  LaunchLogo.imageset from this file. The splash previously showed a bare N on
+  flat grey, left over from the old icon, so the app opened onto one identity
+  and settled into another.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="ground" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2E2B2C"/>
+      <stop offset="0.55" stop-color="#212020"/>
+      <stop offset="1" stop-color="#171717"/>
+    </linearGradient>
+    <radialGradient id="lift" cx="0.5" cy="0.34" r="0.62">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.055"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="tile">
+      <rect width="512" height="512" rx="114"/>
+    </clipPath>
+  </defs>
+
+  <rect width="512" height="512" rx="114" fill="url(#ground)"/>
+  <rect width="512" height="512" rx="114" fill="url(#lift)"/>
+
+  <g clip-path="url(#tile)">
+    <g fill="#FFFFFF" fill-opacity="0.34" text-anchor="middle"
+       font-family="Source Serif 4, Georgia, serif" font-size="27">
+      <text x="256" y="70">The hardest part of thinking</text>
+      <text x="256" y="104">is not the thinking itself</text>
+      <text x="256" y="400">but holding still long enough</text>
+      <text x="256" y="434">for a thought to arrive.</text>
+    </g>
+  </g>
+
+  <!-- Nudged down from icon.svg's y=322: with no orb below, the letterform
+       centres on the tile rather than on the space above the orb. -->
+  <text x="256" y="332" text-anchor="middle"
+        font-family="Source Serif 4, Times New Roman, Georgia, serif"
+        font-style="italic" font-size="268" fill="#FFFFFF">N</text>
+</svg>
