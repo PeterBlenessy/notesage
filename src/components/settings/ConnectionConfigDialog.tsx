@@ -28,6 +28,7 @@ import { GooseAttribution } from './GooseAttribution';
 import { ModelSelectionForm, MAX_TOKEN_PRESETS, nearestPresetIndex } from './connection/ModelSelectionForm';
 import { ApiKeyForm } from './connection/ApiKeyForm';
 import { AdvancedSettingsForm } from './connection/AdvancedSettingsForm';
+import { t } from '@/lib/i18n';
 
 interface ConnectionConfigDialogProps {
   connection: Connection | null;
@@ -332,12 +333,12 @@ export function ConnectionConfigDialog({
           {/* ── ACP Agent Defaults (mode & thinking effort) ── */}
           {isAgentManaged && connection.acpCapabilities && (
             <div className="space-y-3">
-              <Label className="text-sm font-semibold">Agent Defaults</Label>
+              <Label className="text-sm font-semibold">{t("conn.agentDefaults")}</Label>
 
               {/* Default Mode */}
               {connection.acpCapabilities.availableModes && connection.acpCapabilities.availableModes.length > 1 && (
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Default Mode</Label>
+                  <Label className="text-xs text-muted-foreground">{t("conn.defaultMode")}</Label>
                   <Select
                     value={acpDefaultMode ?? connection.acpCapabilities.availableModes[0]?.id ?? ''}
                     onValueChange={setAcpDefaultMode}
@@ -477,7 +478,7 @@ export function ConnectionConfigDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSave}>Save</Button>
+          <Button onClick={handleSave}>{t("conn.save")}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

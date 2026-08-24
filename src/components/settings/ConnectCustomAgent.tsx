@@ -24,6 +24,7 @@ import {
   registerCustomAcpConnection,
 } from '@/lib/ai/acp-agent-state';
 import type { AcpDiscoveredCapabilities } from '@/lib/ai/connections';
+import { t } from '@/lib/i18n';
 
 type Phase = 'form' | 'probing' | 'success';
 
@@ -142,7 +143,7 @@ export function ConnectCustomAgent({
           </div>
           {modes.length > 0 && (
             <div className="space-y-1">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Modes</p>
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground">{t("customAgent.modes")}</p>
               <div className="flex flex-wrap gap-1">
                 {modes.map((m) => (
                   <Badge key={m.id} variant="secondary" className="h-4 px-1.5 text-xs font-normal">
@@ -159,7 +160,7 @@ export function ConnectCustomAgent({
                 ? `${configOptions.length} config option${configOptions.length !== 1 ? 's' : ''}`
                 : 'No config options'}
             </span>
-            {caps.supportsLoadSession && <span>Session restore</span>}
+            {caps.supportsLoadSession && <span>{t("customAgent.sessionRestore")}</span>}
           </div>
         </div>
         <Button size="sm" className="w-full" onClick={() => onConnected(result.connectionId)}>
@@ -235,7 +236,7 @@ export function ConnectCustomAgent({
             className="h-8 shrink-0"
             onClick={handleBrowse}
             disabled={probing}
-            aria-label="Browse for agent binary"
+            aria-label={t("customAgent.browseBinary")}
           >
             <FolderOpen className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
             Browse
@@ -260,7 +261,7 @@ export function ConnectCustomAgent({
 
       <div className="space-y-1.5">
         <div className="flex items-center justify-between">
-          <Label className="text-xs text-muted-foreground">Environment variables</Label>
+          <Label className="text-xs text-muted-foreground">{t("customAgent.envVars")}</Label>
           <Button
             type="button"
             variant="ghost"
@@ -280,7 +281,7 @@ export function ConnectCustomAgent({
                 <Input
                   type="text"
                   placeholder="NAME"
-                  aria-label="Variable name"
+                  aria-label={t("customAgent.varName")}
                   value={row.name}
                   onChange={(e) => updateEnvRow(row.id, { name: e.target.value })}
                   disabled={probing}
@@ -290,7 +291,7 @@ export function ConnectCustomAgent({
                   <Input
                     type={row.show ? 'text' : 'password'}
                     placeholder="value"
-                    aria-label="Variable value"
+                    aria-label={t("customAgent.varValue")}
                     value={row.value}
                     onChange={(e) => updateEnvRow(row.id, { value: e.target.value })}
                     disabled={probing}
@@ -319,7 +320,7 @@ export function ConnectCustomAgent({
                   className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground transition-colors duration-150"
                   onClick={() => removeEnvRow(row.id)}
                   disabled={probing}
-                  aria-label="Remove variable"
+                  aria-label={t("customAgent.removeVar")}
                 >
                   <X className="h-3.5 w-3.5" strokeWidth={1.5} />
                 </Button>
@@ -335,7 +336,7 @@ export function ConnectCustomAgent({
       {probing && (
         <div className="flex items-center gap-2.5 py-1">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
-          <span className="text-sm text-muted-foreground">Probing agent…</span>
+          <span className="text-sm text-muted-foreground">{t("customAgent.probing")}</span>
         </div>
       )}
 
@@ -355,7 +356,7 @@ function Header() {
   return (
     <div className="flex items-center gap-2">
       <ProviderLogo provider="custom_acp" className="w-5 h-5 shrink-0" />
-      <span className="text-sm font-medium">Custom Agent</span>
+      <span className="text-sm font-medium">{t("customAgent.title")}</span>
     </div>
   );
 }

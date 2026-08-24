@@ -27,6 +27,7 @@ import { isLocalAgentPreset, resolveAgentLaunch, resolveLocalAgentEndpoint } fro
 import { LocalAgentAttribution } from './LocalAgentAttribution';
 import { ReauthDialog } from './ReauthDialog';
 import { ConnectionUsageDetail } from './ConnectionUsageDetail';
+import { t } from '@/lib/i18n';
 
 const AUTH_BADGES: Record<string, string> = {
   api_key: 'API Key',
@@ -139,7 +140,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
       // the key icon (re-authenticate) surfaces, mirroring the reauth flow's
       // status transitions.
       updateConnection(connection.id, { status: 'expired' });
-      toast.success('Signed out of GitHub Copilot');
+      toast.success(t("conn.signedOutCopilot"));
     } catch (err) {
       toast.error(`Sign out failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
@@ -406,19 +407,19 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               </span>
             ))}
             {connection.authMethod === 'agent_managed' && connection.sandboxEnabled !== false && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0 flex items-center gap-0.5" title="Filesystem sandbox enabled">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0 flex items-center gap-0.5" title={t("conn.sandboxEnabled")}>
                 <Shield className="h-2.5 w-2.5" strokeWidth={2} />
                 Sandbox
               </span>
             )}
             {connection.networkSandboxEnabled && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0 flex items-center gap-0.5" title="Network restriction enabled">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0 flex items-center gap-0.5" title={t("conn.networkRestrictionEnabled")}>
                 <Globe className="h-2.5 w-2.5" strokeWidth={2} />
                 Network
               </span>
             )}
             {connection.binarySource === 'managed' && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0" title="Installed by Notesage">
+              <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0" title={t("conn.installedByNotesage")}>
                 Managed
               </span>
             )}
@@ -457,7 +458,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
             className="h-7 w-7 text-muted-foreground hover:text-foreground"
             onClick={testConnection}
             disabled={health === 'testing'}
-            title="Test connection"
+            title={t("conn.testConnection")}
           >
             {health === 'testing' && <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />}
             {health === 'ok' && <Check className="h-3.5 w-3.5 text-green-500" strokeWidth={1.5} />}
@@ -491,8 +492,8 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               className="h-7 w-7 text-muted-foreground hover:text-foreground"
               onClick={handleCopilotSignOut}
               disabled={signingOut}
-              title="Sign out of GitHub Copilot"
-              aria-label="Sign out of GitHub Copilot"
+              title={t("conn.signOutCopilot")}
+              aria-label={t("conn.signOutCopilot")}
             >
               {signingOut ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
@@ -507,8 +508,8 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               size="icon"
               className="h-7 w-7 text-muted-foreground hover:text-destructive"
               onClick={() => setUninstallOpen(true)}
-              title="Uninstall agent binary"
-              aria-label="Uninstall agent binary"
+              title={t("conn.uninstallAgentBinary")}
+              aria-label={t("conn.uninstallAgentBinary")}
             >
               <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
             </Button>
@@ -519,8 +520,8 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               size="icon"
               className="h-7 w-7 text-muted-foreground hover:text-foreground"
               onClick={() => setModelsDialogOpen(true)}
-              title="Manage models"
-              aria-label="Manage Local AI models"
+              title={t("conn.manageModels")}
+              aria-label={t("conn.manageLocalModels")}
             >
               <BrainCog className="h-3.5 w-3.5" strokeWidth={1.5} />
             </Button>
@@ -531,7 +532,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               size="icon"
               className="h-7 w-7 text-muted-foreground hover:text-foreground"
               onClick={() => onConfigure(connection)}
-              title="Configure"
+              title={t("conn.configure")}
             >
               <Settings2 className="h-3.5 w-3.5" strokeWidth={1.5} />
             </Button>
@@ -542,7 +543,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               size="icon"
               className="h-7 w-7 text-muted-foreground hover:text-destructive"
               onClick={() => onDisconnect(connection)}
-              title="Disconnect"
+              title={t("conn.disconnect")}
             >
               <Unplug className="h-3.5 w-3.5" strokeWidth={1.5} />
             </Button>
@@ -583,7 +584,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel disabled={uninstalling}>Cancel</AlertDialogCancel>
+              <AlertDialogCancel disabled={uninstalling}>{t("conn.cancel")}</AlertDialogCancel>
               <AlertDialogAction
                 onClick={(e) => {
                   // Keep the dialog open while the IPC call runs; it closes

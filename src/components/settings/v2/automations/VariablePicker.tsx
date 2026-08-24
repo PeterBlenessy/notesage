@@ -1,5 +1,6 @@
 import { ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { t } from '@/lib/i18n';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,7 +40,7 @@ export function VariablePicker({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="max-h-64 w-60 overflow-auto">
-        <div className="px-2 py-1 text-[0.7rem] text-muted-foreground">Click to insert</div>
+        <div className="px-2 py-1 text-[0.7rem] text-muted-foreground">{t("automation.clickToInsert")}</div>
         {tokens.map((t) => (
           <DropdownMenuItem key={t.token} onSelect={() => onInsert(t.token)} className="gap-2 text-xs">
             <span className="inline-flex items-center rounded bg-[var(--color-accent-primary)]/15 px-1.5 py-0.5 font-medium text-[var(--color-accent-primary)]">

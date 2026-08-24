@@ -21,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { ProviderLogo } from '@/components/ProviderLogo';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
+import { t } from '@/lib/i18n';
 
 interface LockProjectDialogProps {
   open: boolean;
@@ -93,7 +94,7 @@ export function LockProjectDialog({ open, onOpenChange, projectPath, projectName
                         <span>{selectedConnection.label}</span>
                       </div>
                     ) : (
-                      <span className="text-muted-foreground">Select a provider</span>
+                      <span className="text-muted-foreground">{t("lock.selectProvider")}</span>
                     )}
                   </SelectValue>
                 </SelectTrigger>
@@ -129,7 +130,7 @@ export function LockProjectDialog({ open, onOpenChange, projectPath, projectName
           </div>
 
           <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
-            <p className="font-medium text-foreground">This lock is hard enforcement.</p>
+            <p className="font-medium text-foreground">{t("lock.hardEnforcement")}</p>
             <p className="mt-1">
               Every send path (chat, resend, comment delegation, inline action) will be refused
               unless it targets the selected provider. The lock cannot be bypassed without unlocking

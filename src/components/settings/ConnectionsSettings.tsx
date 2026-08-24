@@ -36,6 +36,7 @@ import type { Connection, ProviderOption } from '@/lib/ai/connections';
 import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import type { AgentUpdateInfo } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
+import { t } from '@/lib/i18n';
 
 type AddFlowState =
   | { step: 'pick' }
@@ -96,11 +97,11 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
         if (force) {
           toastMsg = updates.length > 0
             ? () => toast.info(`${updates.length} update${updates.length > 1 ? 's' : ''} available`)
-            : () => toast.success('All agents are up to date');
+            : () => toast.success(t("conn.allAgentsUpToDate"));
         }
       })
       .catch(() => {
-        if (force) toastMsg = () => toast.error('Failed to check for updates');
+        if (force) toastMsg = () => toast.error(t("conn.updateCheckFailed"));
       });
     Promise.all([check, minDelay]).then(() => {
       setCheckingUpdates(false);
@@ -485,7 +486,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                 >
                   <ProviderLogo provider="custom_acp" className="w-5 h-5 mt-0.5 shrink-0" />
                   <div className="flex-1 min-w-0">
-                    <span className="text-sm font-medium block truncate">Custom Agent</span>
+                    <span className="text-sm font-medium block truncate">{t("conn.customAgent")}</span>
                     <span className="text-xs text-muted-foreground block truncate">
                       Bring your own ACP-compatible agent binary
                     </span>
@@ -544,8 +545,8 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
           size="sm"
           onClick={() => checkForUpdates(true)}
           disabled={checkingUpdates}
-          title="Check for agent updates"
-          aria-label="Check for agent updates"
+          title={t("conn.checkAgentUpdates")}
+          aria-label={t("conn.checkAgentUpdates")}
         >
           <RefreshCw
             className={cn(
@@ -592,7 +593,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
           <div className="h-12 w-12 mx-auto mb-3 rounded-full bg-muted flex items-center justify-center">
             <Plus className="h-6 w-6 text-muted-foreground/50" strokeWidth={1.5} />
           </div>
-          <p className="text-sm font-medium">No connections yet</p>
+          <p className="text-sm font-medium">{t("conn.noConnections")}</p>
           <p className="text-xs text-muted-foreground mt-1.5 max-w-[240px] mx-auto">
             Connect an AI provider to enable chat, inline actions, and agent tasks. Use your existing subscription or an API key.
           </p>
@@ -681,7 +682,7 @@ function ConfigureForm({
       {/* Custom name — OpenAI-Compatible only */}
       {isOaiCompat && onCustomLabelChange && (
         <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Name</Label>
+          <Label className="text-xs text-muted-foreground">{t("conn.name")}</Label>
           <Input
             type="text"
             placeholder="e.g. Groq, Together AI, My vLLM"
@@ -696,7 +697,7 @@ function ConfigureForm({
       {/* Base URL — OpenAI-Compatible only */}
       {isOaiCompat && onBaseUrlChange && (
         <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Base URL</Label>
+          <Label className="text-xs text-muted-foreground">{t("conn.baseUrl")}</Label>
           <Input
             type="url"
             placeholder="https://api.example.com"
@@ -710,10 +711,10 @@ function ConfigureForm({
       {/* Model — OpenAI-Compatible only */}
       {isOaiCompat && onModelChange && (
         <div className="space-y-1">
-          <Label className="text-xs text-muted-foreground">Model</Label>
+          <Label className="text-xs text-muted-foreground">{t("conn.model")}</Label>
           <Input
             type="text"
-            placeholder="gpt-4o, llama-3.1-70b, etc."
+            placeholder={t("conn.modelIdPlaceholder")}
             value={model ?? ''}
             onChange={(e) => onModelChange(e.target.value)}
             className="text-sm"

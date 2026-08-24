@@ -48,7 +48,7 @@ export function ArmDialog({
         )}
 
         <AlertDialogFooter>
-          <AlertDialogCancel>Cancel</AlertDialogCancel>
+          <AlertDialogCancel>{t("automation.cancel")}</AlertDialogCancel>
           <AlertDialogAction
             onClick={async () => {
               if (automation) {

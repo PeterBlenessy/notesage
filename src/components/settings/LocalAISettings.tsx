@@ -28,6 +28,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Shield, HeartPulse, Loader2, FolderOpen, ArrowUpDown, Check } from 'lucide-react';
 import { toast } from 'sonner';
+import { t } from '@/lib/i18n';
 
 type ModelSort = 'name' | 'size' | 'ram';
 
@@ -152,9 +153,9 @@ export function LocalAISettings() {
     try {
       const status = await tauriApi.getLocalServerStatus();
       if (status.running) {
-        toast.success('Local AI server is healthy');
+        toast.success(t("localAi.serverHealthy"));
       } else {
-        toast.error('Local AI server is not responding');
+        toast.error(t("localAi.serverNotResponding"));
       }
     } catch (err) {
       toast.error(`Health check failed: ${err}`);
@@ -231,7 +232,7 @@ export function LocalAISettings() {
       {/* Header + description */}
       <div>
         <div>
-          <h3 className="text-sm font-semibold">Local AI</h3>
+          <h3 className="text-sm font-semibold">{t("localAi.title")}</h3>
           <p className="text-xs text-muted-foreground mt-1">
             On-device inference — your data stays private
           </p>
@@ -346,7 +347,7 @@ export function LocalAISettings() {
       {/* Binary not found banner */}
       {binaryStatus === 'not_found' && (
         <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3">
-          <p className="text-sm font-medium">AI engine not found</p>
+          <p className="text-sm font-medium">{t("localAi.engineNotFound")}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
             The llama.cpp inference engine should be bundled with Notesage. Try reinstalling the app.
           </p>
@@ -415,7 +416,7 @@ export function LocalAISettings() {
         {/* Opt-in community calibration share (Phase 2) */}
         <div className="flex items-start justify-between gap-3 pt-1">
           <div className="min-w-0">
-            <p className="text-xs font-medium">Offer to share calibration data</p>
+            <p className="text-xs font-medium">{t("localAi.offerShareCalibration")}</p>
             <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
               After you've run a few local models, Notesage can offer to share their
               measured speed on your Mac to help improve recommendations. Nothing is
@@ -425,7 +426,7 @@ export function LocalAISettings() {
           <Switch
             checked={offerCalibrationShare}
             onCheckedChange={setOfferCalibrationShare}
-            aria-label="Offer to share calibration data"
+            aria-label={t("localAi.offerShareCalibration")}
           />
         </div>
 
@@ -450,7 +451,7 @@ export function LocalAISettings() {
                 const home = await tauriApi.getHomeDir();
                 await tauriApi.revealInFinder(`${home}/.notesage/models/llm`);
               } catch {
-                toast.error('Could not open models folder');
+                toast.error(t("localAi.couldNotOpenModelsFolder"));
               }
             }}
           >

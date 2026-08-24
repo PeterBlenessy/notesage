@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import type { McpCatalogItem } from '@/stores/mcp-store';
+import { t } from '@/lib/i18n';
 
 interface McpCatalogProps {
   open: boolean;
@@ -74,7 +75,7 @@ export function McpCatalog({ open, onOpenChange, onSelectItem }: McpCatalogProps
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Browse MCP catalog</DialogTitle>
+          <DialogTitle>{t("mcp.browseCatalog")}</DialogTitle>
           <DialogDescription>
             Pick a server to add — its command and required settings are filled in for you.
           </DialogDescription>
@@ -89,7 +90,7 @@ export function McpCatalog({ open, onOpenChange, onSelectItem }: McpCatalogProps
           <Input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search servers…"
+            placeholder={t("mcp.searchServersPlaceholder")}
             className="pl-8 text-sm"
             disabled={items.length === 0}
           />
@@ -97,10 +98,10 @@ export function McpCatalog({ open, onOpenChange, onSelectItem }: McpCatalogProps
 
         <div className="max-h-96 overflow-y-auto -mx-1 px-1">
           {loading ? (
-            <p className="px-4 py-8 text-center text-sm text-muted-foreground">Loading catalog…</p>
+            <p className="px-4 py-8 text-center text-sm text-muted-foreground">{t("mcp.loadingCatalog")}</p>
           ) : error ? (
             <div className="px-4 py-8 text-center">
-              <p className="text-sm text-destructive">Couldn’t load the catalog</p>
+              <p className="text-sm text-destructive">{t("mcp.catalogLoadFailed")}</p>
               <p className="text-xs text-muted-foreground mt-1 font-mono break-all">{error}</p>
             </div>
           ) : items.length === 0 ? (
@@ -109,7 +110,7 @@ export function McpCatalog({ open, onOpenChange, onSelectItem }: McpCatalogProps
                 className="mx-auto h-6 w-6 text-muted-foreground"
                 strokeWidth={1.5}
               />
-              <p className="text-sm text-muted-foreground mt-2">The catalog is empty</p>
+              <p className="text-sm text-muted-foreground mt-2">{t("mcp.catalogEmpty")}</p>
               <p className="text-xs text-muted-foreground mt-1">
                 Curated servers will appear here. For now, use “Add” to enter a server manually,
                 or “Import” to bring one in from another app.

@@ -395,7 +395,7 @@ export function AppearanceSettings() {
 
             <SettingsRow
               label={t("settings.hue")}
-              description="Shifts the tint hue."
+              description={t("appearance.tintHueDesc")}
               control={
                 <div className="w-[180px]">
                   <Slider
@@ -404,7 +404,7 @@ export function AppearanceSettings() {
                     min={0}
                     max={359}
                     step={1}
-                    aria-label="Tint hue"
+                    aria-label={t("appearance.tintHue")}
                   />
                 </div>
               }

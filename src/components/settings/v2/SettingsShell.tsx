@@ -154,7 +154,7 @@ export function SettingsShell({
           )}
         >
           {/* Required for Radix a11y — visually hidden title/description. */}
-          <DialogPrimitive.Title className="sr-only">Settings</DialogPrimitive.Title>
+          <DialogPrimitive.Title className="sr-only">{t("common.settings")}</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
             Configure Notesage preferences.
           </DialogPrimitive.Description>

@@ -26,6 +26,7 @@ import { EditSkillDialog } from '@/components/settings/EditSkillDialog';
 import { EditAgentDialog } from '@/components/settings/EditAgentDialog';
 import { isManageable, sourceLabel, sourceBadgeClass } from '@/components/settings/skills-settings-utils';
 import { useFormatLocale } from "@/lib/useLocale";
+import { t } from '@/lib/i18n';
 
 /** Check if a skill is overridden by a higher-priority same-name skill. */
 function isOverridden(skill: SkillEntry, allSkills: SkillEntry[]): SkillEntry | null {
@@ -394,7 +395,7 @@ export function SkillsSettings() {
       }
     } else {
       if (!firstProjectPath) {
-        toast.error('No project open — open a project first');
+        toast.error(t("skill.noProjectOpen"));
         return;
       }
       const destDir = `${firstProjectPath}/.notesage/skills`;
@@ -442,7 +443,7 @@ export function SkillsSettings() {
       }
     } else {
       if (!firstProjectPath) {
-        toast.error('No project open — open a project first');
+        toast.error(t("skill.noProjectOpen"));
         return;
       }
       const destDir = `${firstProjectPath}/.notesage/agents`;
@@ -466,7 +467,7 @@ export function SkillsSettings() {
       <div className="space-y-4">
         <div>
           <div className="flex items-center justify-between">
-            <Label className="text-sm font-semibold">Skills</Label>
+            <Label className="text-sm font-semibold">{t("skill.skills")}</Label>
             <div className="flex items-center gap-1.5">
               <Button
                 variant="ghost"
@@ -493,7 +494,7 @@ export function SkillsSettings() {
 
         {skills.length === 0 ? (
           <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
-            <p className="text-sm text-muted-foreground">No skills discovered</p>
+            <p className="text-sm text-muted-foreground">{t("skill.noSkills")}</p>
             <p className="text-xs text-muted-foreground mt-1">
               Add skills to <code className="text-xs">.notesage/skills/</code> in your project
               or <code className="text-xs">~/.notesage/skills/</code> globally
@@ -517,7 +518,7 @@ export function SkillsSettings() {
       <div className="space-y-4">
         <div>
           <div className="flex items-center justify-between">
-            <Label className="text-sm font-semibold">Agents</Label>
+            <Label className="text-sm font-semibold">{t("skill.agents")}</Label>
             <div className="flex items-center gap-1.5">
               <Button
                 variant="ghost"
@@ -544,7 +545,7 @@ export function SkillsSettings() {
 
         {agents.length === 0 ? (
           <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
-            <p className="text-sm text-muted-foreground">No agents discovered</p>
+            <p className="text-sm text-muted-foreground">{t("skill.noAgents")}</p>
             <p className="text-xs text-muted-foreground mt-1">
               Add agent files to <code className="text-xs">.notesage/agents/</code> in your project
               or <code className="text-xs">~/.notesage/agents/</code> globally
@@ -568,7 +569,7 @@ export function SkillsSettings() {
       <div className="space-y-4">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <Label className="text-sm font-semibold">Agent Instructions</Label>
+            <Label className="text-sm font-semibold">{t("skill.agentInstructions")}</Label>
             <p className="text-xs text-muted-foreground mt-1">
               Instruction files injected into AI context. Higher priority files take precedence.
             </p>
@@ -586,7 +587,7 @@ export function SkillsSettings() {
 
         {agentInstructions.length === 0 ? (
           <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
-            <p className="text-sm text-muted-foreground">No agent instruction files found</p>
+            <p className="text-sm text-muted-foreground">{t("skill.noAgentInstructions")}</p>
             <p className="text-xs text-muted-foreground mt-1">
               Create <code className="text-xs">.notesage/agents.md</code> in your project
               or <code className="text-xs">~/.notesage/agents.md</code> globally

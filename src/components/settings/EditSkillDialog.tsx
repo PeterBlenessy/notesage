@@ -20,6 +20,7 @@ import { tauriApi } from '@/lib/tauri';
 import { parseFrontmatter, serializeFrontmatter } from '@/lib/frontmatter';
 import { cn } from '@/lib/utils';
 import { sourceLabel } from '@/components/settings/skills-settings-utils';
+import { t } from '@/lib/i18n';
 
 export function EditSkillDialog({ skill, open, onOpenChange }: {
   skill: SkillEntry;
@@ -62,7 +63,7 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
 
   const handleSave = async () => {
     if (!description.trim()) {
-      toast.error('Description is required');
+      toast.error(t("skill.descRequired"));
       return;
     }
     setSaving(true);
@@ -96,7 +97,7 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Edit Skill</DialogTitle>
+          <DialogTitle>{t("skill.editTitle")}</DialogTitle>
           <DialogDescription>
             <code className="text-xs">{skill.name}</code> — {sourceLabel(skill.source)}
           </DialogDescription>
@@ -104,7 +105,7 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
 
         <div className="space-y-4 py-2 overflow-y-auto max-h-[60vh]">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Description</Label>
+            <Label className="text-xs text-muted-foreground">{t("skill.description")}</Label>
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
@@ -115,7 +116,7 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Instructions</Label>
+            <Label className="text-xs text-muted-foreground">{t("skill.instructions")}</Label>
             <Textarea
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
@@ -135,7 +136,7 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
             <CollapsibleContent>
               <div className="space-y-4 pt-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Allowed tools</Label>
+                  <Label className="text-xs text-muted-foreground">{t("skill.allowedTools")}</Label>
                   <Input
                     value={allowedTools}
                     onChange={(e) => setAllowedTools(e.target.value)}
@@ -147,15 +148,15 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
                 <div className="flex items-center justify-between">
                   <div>
                     <Label className="text-sm">User-invocable</Label>
-                    <p className="text-xs text-muted-foreground">Show in the / command menu</p>
+                    <p className="text-xs text-muted-foreground">{t("skill.showInSlashMenu")}</p>
                   </div>
                   <Switch checked={userInvocable} onCheckedChange={setUserInvocable} />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">Disable model invocation</Label>
-                    <p className="text-xs text-muted-foreground">Prevent AI from auto-discovering this skill</p>
+                    <Label className="text-sm">{t("skill.disableModelInvocation")}</Label>
+                    <p className="text-xs text-muted-foreground">{t("skill.disableModelInvocationDesc")}</p>
                   </div>
                   <Switch checked={disableModelInvocation} onCheckedChange={setDisableModelInvocation} />
                 </div>
@@ -165,7 +166,7 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>{t("skill.cancel")}</Button>
           <Button onClick={handleSave} disabled={saving || !description.trim()}>
             {saving ? 'Saving...' : 'Save'}
           </Button>

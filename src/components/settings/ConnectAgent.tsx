@@ -11,6 +11,7 @@ import type { ProviderOption } from '@/lib/ai/connections';
 import type { AcpSpawnResult, AuthEnvVar, AuthMethodInfo } from '@/lib/ai/acp-utils';
 import type { AgentAvailability, BinaryResolution } from '@/lib/tauri';
 import { CONNECTION_TIMEOUT_MS, withTimeout, getInstallGuide, getAuthGuide, SetupGuideView } from './connection-utils';
+import { t } from '@/lib/i18n';
 
 type AgentPhase = 'checking' | 'not_installed' | 'installing' | 'not_authenticated' | 'env_var_auth' | 'connecting' | 'authenticating' | 'connected' | 'error';
 
@@ -415,7 +416,7 @@ export function ConnectAgent({
         <div className="space-y-2 py-2">
           <div className="flex items-center gap-2.5">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
-            <span className="text-sm text-muted-foreground">Starting agent...</span>
+            <span className="text-sm text-muted-foreground">{t("connectAgent.starting")}</span>
           </div>
         </div>
       )}
@@ -424,7 +425,7 @@ export function ConnectAgent({
         <div className="space-y-2 py-2">
           <div className="flex items-center gap-2.5">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
-            <span className="text-sm text-muted-foreground">Waiting for sign-in...</span>
+            <span className="text-sm text-muted-foreground">{t("connectAgent.waitingForSignIn")}</span>
           </div>
           <p className="text-xs text-muted-foreground pl-6.5">
             A browser window should open. Complete sign-in there, then return here.

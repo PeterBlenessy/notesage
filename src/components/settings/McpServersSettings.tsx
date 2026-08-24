@@ -14,6 +14,7 @@ import { McpServerCard } from './mcp/McpServerCard';
 import { AddEditServerDialog } from './mcp/AddEditServerDialog';
 import { ImportDialog } from './mcp/ImportDialog';
 import type { CatalogPrefill } from './mcp/types';
+import { t } from '@/lib/i18n';
 
 // Re-exported so existing consumers/tests keep importing from this module path.
 export { AddEditServerDialog } from './mcp/AddEditServerDialog';
@@ -76,7 +77,7 @@ export function McpServersSettings() {
     <div className="space-y-4">
       <div>
         <div className="flex items-center justify-between">
-          <Label className="text-sm font-semibold">MCP Servers</Label>
+          <Label className="text-sm font-semibold">{t("mcp.serversTitle")}</Label>
           <div className="flex items-center gap-1.5">
             <Button variant="ghost" size="sm" onClick={() => setCatalogOpen(true)}>
               <Boxes className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
@@ -96,8 +97,8 @@ export function McpServersSettings() {
               onClick={handleRefreshStatus}
               disabled={statusRefreshing}
               aria-busy={statusRefreshing}
-              aria-label="Refresh status"
-              title="Refresh server status from the backend"
+              aria-label={t("mcp.refreshStatus")}
+              title={t("mcp.refreshStatusHint")}
             >
               <RefreshCw className={cn('h-3.5 w-3.5', statusRefreshing && 'animate-spin')} strokeWidth={1.5} />
             </Button>
@@ -106,8 +107,8 @@ export function McpServersSettings() {
               size="sm"
               onClick={handleRescan}
               disabled={rescanSpinning}
-              aria-label="Refresh servers"
-              title="Rescan server configs from disk"
+              aria-label={t("mcp.refreshServers")}
+              title={t("mcp.refreshServersHint")}
             >
               <FolderSync className={cn('h-3.5 w-3.5', rescanSpinning && 'animate-spin')} strokeWidth={1.5} />
             </Button>
@@ -120,7 +121,7 @@ export function McpServersSettings() {
 
       {servers.length === 0 ? (
         <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
-          <p className="text-sm text-muted-foreground">No MCP servers configured</p>
+          <p className="text-sm text-muted-foreground">{t("mcp.noServers")}</p>
           <p className="text-xs text-muted-foreground mt-1">
             Browse the catalog, add a server manually, or import from Claude Desktop, Cursor, or VS Code
           </p>

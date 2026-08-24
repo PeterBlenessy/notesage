@@ -18,6 +18,7 @@ import { buildCalibrationShare } from '@/lib/ai/calibration-share';
 import { useModelFitMeasurementStore } from '@/stores/model-fit-measurement-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { t } from '@/lib/i18n';
 
 interface CalibrationShareDialogProps {
   open: boolean;
@@ -89,9 +90,9 @@ export function CalibrationShareDialog({
     if (!share) return;
     try {
       await navigator.clipboard.writeText(share.markdown);
-      toast.success('Copied');
+      toast.success(t("calibration.copied"));
     } catch {
-      toast.error('Could not copy to clipboard');
+      toast.error(t("calibration.copyFailed"));
     }
   };
 

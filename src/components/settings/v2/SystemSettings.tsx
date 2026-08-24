@@ -274,7 +274,7 @@ export function SystemSettings({
                 size="sm"
                 onClick={onCheckForUpdate}
                 disabled={updateState?.status === 'checking'}
-                title="Check for updates"
+                title={t("system.checkForUpdates")}
                 aria-label={t("settings.checkUpdates")}
               >
                 {updateState?.status === 'checking' ? (
@@ -333,7 +333,7 @@ export function SystemSettings({
         />
         <SettingsRow
           label={t("settings.whatWeCollect")}
-          description="Read exactly what is and isn't sent."
+          description={t("system.whatWeCollectDesc")}
           control={
             <Button
               variant="outline"
@@ -494,7 +494,7 @@ export function SystemSettings({
       <SettingsGroup label={t("settings.files")} description={t("settings.filesDesc")}>
         <SettingsRow
           label={t("settings.showHiddenFiles")}
-          description='Show dotfiles and dot-directories (starting with ".") in the sidebar file tree.'
+          description={t("system.showHiddenFilesDesc")}
           htmlFor="show-hidden-files"
           control={
             <Switch
@@ -547,18 +547,18 @@ export function SystemSettings({
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Clear viewport cache?</AlertDialogTitle>
+                  <AlertDialogTitle>{t("system.clearViewportCacheQuestion")}</AlertDialogTitle>
                   <AlertDialogDescription>
                     This removes all cached viewport snapshots from IndexedDB. The next cold open of each file will rebuild the cache automatically.
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogCancel>{t("system.cancel")}</AlertDialogCancel>
                   <AlertDialogAction
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                     onClick={() => {
                       clearAllViewports().then(() => {
-                        toast.success('Viewport cache cleared');
+                        toast.success(t("system.viewportCacheCleared"));
                       });
                     }}
                   >
@@ -593,10 +593,10 @@ export function SystemSettings({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="error">Error</SelectItem>
-                <SelectItem value="warn">Warn</SelectItem>
-                <SelectItem value="info">Info</SelectItem>
-                <SelectItem value="debug">Debug</SelectItem>
+                <SelectItem value="error">{t("system.logError")}</SelectItem>
+                <SelectItem value="warn">{t("system.logWarn")}</SelectItem>
+                <SelectItem value="info">{t("system.logInfo")}</SelectItem>
+                <SelectItem value="debug">{t("system.logDebug")}</SelectItem>
               </SelectContent>
             </Select>
           }
@@ -630,7 +630,7 @@ export function SystemSettings({
                     <FolderOpen className="h-3.5 w-3.5" strokeWidth={1.5} />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Reveal in Finder</TooltipContent>
+                <TooltipContent>{t("system.revealInFinder")}</TooltipContent>
               </Tooltip>
 
               <AlertDialog>
@@ -647,18 +647,18 @@ export function SystemSettings({
                       </Button>
                     </AlertDialogTrigger>
                   </TooltipTrigger>
-                  <TooltipContent>Clear logs</TooltipContent>
+                  <TooltipContent>{t("system.clearLogs")}</TooltipContent>
                 </Tooltip>
                 <AlertDialogContent>
                   <AlertDialogHeader>
-                    <AlertDialogTitle>Clear log files?</AlertDialogTitle>
+                    <AlertDialogTitle>{t("system.clearLogFilesQuestion")}</AlertDialogTitle>
                     <AlertDialogDescription>
                       This will permanently delete all diagnostic log data.
                       This action cannot be undone.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogCancel>{t("system.cancel")}</AlertDialogCancel>
                     <AlertDialogAction
                       onClick={async () => {
                         try {
@@ -730,7 +730,7 @@ export function SystemSettings({
                   });
                   if (path) {
                     await tauriApi.writeFile(path, json);
-                    toast.success('Diagnostics exported');
+                    toast.success(t("system.diagnosticsExported"));
                     tauriApi.revealInFinder(path);
                   }
                 } catch (err) {

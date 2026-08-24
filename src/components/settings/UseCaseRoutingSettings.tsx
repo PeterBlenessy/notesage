@@ -31,6 +31,7 @@ import {
   type RoutingSlot,
 } from '@/lib/ai/model-fit';
 import { cn } from '@/lib/utils';
+import { t } from '@/lib/i18n';
 
 /**
  * Map a routing use case to the model-fit slot. Only `completion` and `agent`
@@ -191,7 +192,7 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
         <DropdownMenuItem
           onSelect={() => setUseCaseModel(useCase, undefined)}
         >
-          <span className="flex-1 text-muted-foreground">Default</span>
+          <span className="flex-1 text-muted-foreground">{t("common.default")}</span>
           {!currentModel && <Check className="h-3.5 w-3.5 ml-2 shrink-0" />}
         </DropdownMenuItem>
         {showRecommended && recommendedModels.length > 0 && (

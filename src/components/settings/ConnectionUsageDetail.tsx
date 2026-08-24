@@ -31,6 +31,7 @@ import {
   isWarningStatus,
 } from '@/components/chat/UsagePopover';
 import type { Connection } from '@/lib/ai/connections';
+import { t } from '@/lib/i18n';
 
 function DetailRow({ label, value, valueClassName }: { label: string; value: string; valueClassName?: string }) {
   return (
@@ -60,7 +61,7 @@ export function ConnectionUsageDetail({ connection }: { connection: Connection }
           variant="ghost"
           size="icon"
           className="h-7 w-7 text-muted-foreground hover:text-foreground"
-          title="Usage details"
+          title={t("usage.details")}
           aria-label={`Usage details for ${connection.label}`}
         >
           <Info className="h-3.5 w-3.5" strokeWidth={1.5} />
@@ -77,7 +78,7 @@ export function ConnectionUsageDetail({ connection }: { connection: Connection }
             {snapshot.contextSize !== undefined && snapshot.contextUsed !== undefined && (
               <div className="pb-1">
                 <DetailRow
-                  label="Context"
+                  label={t("usage.context")}
                   value={`${snapshot.confidence === 'estimated' ? '≈' : ''}${formatTokenCount(snapshot.contextUsed)} / ${formatTokenCount(snapshot.contextSize)} (${Math.round(
                     Math.min(snapshot.contextUsed / Math.max(snapshot.contextSize, 1), 1) * 100,
                   )}%)`}
@@ -89,7 +90,7 @@ export function ConnectionUsageDetail({ connection }: { connection: Connection }
             {snapshot.cost && (
               <div className="py-1">
                 <DetailRow
-                  label="Session cost"
+                  label={t("usage.sessionCost")}
                   value={`${snapshot.cost.currency === 'USD' ? '$' : snapshot.cost.currency + ' '}${snapshot.cost.amount.toFixed(2)}`}
                 />
               </div>
@@ -98,23 +99,23 @@ export function ConnectionUsageDetail({ connection }: { connection: Connection }
             {/* Rate limit */}
             {snapshot.rateLimit && (
               <div className="pb-1">
-                <SectionLabel>Rate limit</SectionLabel>
+                <SectionLabel>{t("usage.rateLimit")}</SectionLabel>
                 {snapshot.rateLimit.rateLimitType && (
-                  <DetailRow label="Window" value={formatRateLimitType(snapshot.rateLimit.rateLimitType)} />
+                  <DetailRow label={t("usage.window")} value={formatRateLimitType(snapshot.rateLimit.rateLimitType)} />
                 )}
                 {snapshot.rateLimit.status && (
                   <DetailRow
-                    label="Status"
+                    label={t("usage.status")}
                     value={formatRateLimitStatus(snapshot.rateLimit.status)}
                     // Same urgency cue as the chat popover — destructive at/above warning.
                     valueClassName={isWarningStatus(snapshot.rateLimit.status) ? 'text-destructive' : undefined}
                   />
                 )}
                 {snapshot.rateLimit.utilization !== undefined && (
-                  <DetailRow label="Used" value={`${Math.round(snapshot.rateLimit.utilization)}%`} />
+                  <DetailRow label={t("usage.used")} value={`${Math.round(snapshot.rateLimit.utilization)}%`} />
                 )}
                 {snapshot.rateLimit.resetsAt !== undefined && (
-                  <DetailRow label="Reset" value={formatResetCountdown(snapshot.rateLimit.resetsAt, now)} />
+                  <DetailRow label={t("usage.reset")} value={formatResetCountdown(snapshot.rateLimit.resetsAt, now)} />
                 )}
               </div>
             )}
@@ -122,17 +123,17 @@ export function ConnectionUsageDetail({ connection }: { connection: Connection }
             {/* Per-turn tokens */}
             {snapshot.lastTurnUsage && (
               <div className="pb-1">
-                <SectionLabel>Last turn</SectionLabel>
-                <DetailRow label="Input" value={formatTokenCount(snapshot.lastTurnUsage.inputTokens)} />
-                <DetailRow label="Output" value={formatTokenCount(snapshot.lastTurnUsage.outputTokens)} />
+                <SectionLabel>{t("usage.lastTurn")}</SectionLabel>
+                <DetailRow label={t("usage.input")} value={formatTokenCount(snapshot.lastTurnUsage.inputTokens)} />
+                <DetailRow label={t("usage.output")} value={formatTokenCount(snapshot.lastTurnUsage.outputTokens)} />
                 {snapshot.lastTurnUsage.thoughtTokens !== undefined && (
-                  <DetailRow label="Thinking" value={formatTokenCount(snapshot.lastTurnUsage.thoughtTokens)} />
+                  <DetailRow label={t("usage.thinking")} value={formatTokenCount(snapshot.lastTurnUsage.thoughtTokens)} />
                 )}
                 {snapshot.lastTurnUsage.cachedReadTokens !== undefined && (
-                  <DetailRow label="Cache read" value={formatTokenCount(snapshot.lastTurnUsage.cachedReadTokens)} />
+                  <DetailRow label={t("usage.cacheRead")} value={formatTokenCount(snapshot.lastTurnUsage.cachedReadTokens)} />
                 )}
                 {snapshot.lastTurnUsage.cachedWriteTokens !== undefined && (
-                  <DetailRow label="Cache write" value={formatTokenCount(snapshot.lastTurnUsage.cachedWriteTokens)} />
+                  <DetailRow label={t("usage.cacheWrite")} value={formatTokenCount(snapshot.lastTurnUsage.cachedWriteTokens)} />
                 )}
               </div>
             )}

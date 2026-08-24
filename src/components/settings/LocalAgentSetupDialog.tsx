@@ -29,6 +29,7 @@ import { LocalAgentAttribution } from './LocalAgentAttribution';
 import type { LocalAgentActiveStage } from '@/stores/local-ai-store';
 import { cn } from '@/lib/utils';
 import { log } from '@/lib/logger';
+import { t } from '@/lib/i18n';
 
 const GB = 1024 ** 3;
 
@@ -184,7 +185,7 @@ export function LocalAgentSetupDialog() {
     if (lastFailureRef.current === key) return;
     lastFailureRef.current = key;
     log.error('ai', `Local Agent setup failed at ${setup.failedStage ?? 'unknown'} stage: ${setup.error ?? '(no detail)'}`);
-    toast.error('Local Agent setup failed', {
+    toast.error(t("localAgent.setupFailed"), {
       description: failureHint(setup.failedStage),
     });
   }, [isFailed, isReady, setup.stage, setup.failedStage, setup.error]);
@@ -222,7 +223,7 @@ export function LocalAgentSetupDialog() {
         {/* Model picker — only meaningful before the flow starts or after failure. */}
         {(setup.stage === 'idle' || isFailed) && (
           <div className="space-y-2">
-            <Label className="text-sm font-medium text-foreground">Model</Label>
+            <Label className="text-sm font-medium text-foreground">{t("localAgent.model")}</Label>
             <Select
               value={effectiveModel ?? undefined}
               onValueChange={setChosenModel}
@@ -281,7 +282,7 @@ export function LocalAgentSetupDialog() {
 
         <DialogFooter>
           {isReady ? (
-            <Button onClick={() => onOpenChange(false)}>Done</Button>
+            <Button onClick={() => onOpenChange(false)}>{t("localAgent.done")}</Button>
           ) : running ? (
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Continue in background

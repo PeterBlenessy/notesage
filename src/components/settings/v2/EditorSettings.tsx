@@ -149,7 +149,7 @@ export function EditorSettings() {
           control={
             <Select value={fontFamily} onValueChange={setFontFamily}>
               <SelectTrigger className="w-[200px]" aria-label={t("settings.fontFamily")}>
-                <SelectValue placeholder="Pick a font" />
+                <SelectValue placeholder={t("editorSettings.pickFont")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
@@ -257,8 +257,8 @@ export function EditorSettings() {
         description={t("settings.editorOptionsDesc")}
       >
         <SettingsRow
-          label="Top toolbar"
-          description="Show the formatting toolbar above the editor."
+          label={t("editorSettings.topToolbar")}
+          description={t("editorSettings.topToolbarDesc")}
           htmlFor="toolbar-visible"
           control={
             <Switch
@@ -374,7 +374,7 @@ export function EditorSettings() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="full">Full Width</SelectItem>
+                <SelectItem value="full">{t("editorSettings.fullWidth")}</SelectItem>
                 <SelectItem value="auto">Auto (720px)</SelectItem>
                 <SelectItem value="a4">{pageLabel('a4', 'A4')}</SelectItem>
                 <SelectItem value="a5">{pageLabel('a5', 'A5')}</SelectItem>

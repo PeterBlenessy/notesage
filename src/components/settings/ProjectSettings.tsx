@@ -41,6 +41,7 @@ import { ProviderLogo } from '@/components/ProviderLogo';
 import { AgentIcon } from '@/components/AgentIcon';
 import { formatDisplayPath } from '@/lib/utils';
 import { useFormatLocale } from "@/lib/useLocale";
+import { t } from '@/lib/i18n';
 
 interface ProjectSettingsProps {
   projectPath: string;
@@ -106,7 +107,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
     try {
       const exists = await tauriApi.pathExists(newPath);
       if (exists) {
-        toast.error(`A folder named "${newName}" already exists`);
+        toast.error(t("project.folderExists", { name: newName }));
         setLocalName(metadata.name);
         return;
       }
@@ -123,9 +124,9 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
       // so the rename's path change IS the state update.
 
       onPathChanged?.(newPath);
-      toast.success(`Project folder renamed to "${newName}"`);
+      toast.success(t("project.folderRenamedTo", { name: newName }));
     } catch (err) {
-      toast.error(`Failed to rename folder: ${err}`);
+      toast.error(t("project.renameFailed", { error: String(err) }));
       setLocalName(metadata.name);
     } finally {
       setRenaming(false);
@@ -154,17 +155,17 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
         const newPath = await tauriApi.migrateToICloud(projectPath, icloudNotesagePath);
         await migrateProjectPath(projectPath, newPath);
         onPathChanged?.(newPath);
-        toast.success("Project moved to iCloud Drive");
+        toast.success(t("project.movedToIcloud"));
       } else if (!pendingSync && notesRootPath) {
         // Move the project back out of iCloud to the local library.
         // Same logic: the path change IS the state change.
         const newPath = await tauriApi.migrateFromICloud(projectPath, notesRootPath);
         await migrateProjectPath(projectPath, newPath);
         onPathChanged?.(newPath);
-        toast.success("Project moved to local library");
+        toast.success(t("project.movedToLocal"));
       }
     } catch (err) {
-      toast.error(`Failed to ${pendingSync ? "move to iCloud" : "move to local"}: ${err}`);
+      toast.error(t(pendingSync ? "project.moveToIcloudFailed" : "project.moveToLocalFailed", { error: String(err) }));
     } finally {
       setPendingSync(null);
       setApplying(false);
@@ -200,7 +201,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
       {/* Project Info */}
       <div className="space-y-4">
         <div>
-          <Label className="text-sm font-semibold">Project Info</Label>
+          <Label className="text-sm font-semibold">{t("project.info")}</Label>
           <p className="text-xs text-muted-foreground mt-1">
             Basic information about this project
           </p>
@@ -275,7 +276,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
               id="project-description"
               value={metadata.description}
               onChange={(e) => updateMetadata(projectPath, { description: e.target.value })}
-              placeholder="Optional project description"
+              placeholder={t("project.descriptionPlaceholder")}
               className="text-sm transition-all hover:border-foreground/20 focus:border-foreground/40"
             />
           </div>
@@ -299,14 +300,14 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
             className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
           >
             <div>
-              <Label className="text-sm font-medium">Provider</Label>
+              <Label className="text-sm font-medium">{t("project.provider")}</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Override the global AI provider for this project
               </p>
             </div>
             {connections.length === 0 ? (
               <div className="ml-auto flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">No providers configured</span>
+                <span className="text-xs text-muted-foreground">{t("project.noProviders")}</span>
                 {onOpenAISettings && (
                   <Button
                     variant="link"
@@ -328,20 +329,20 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                 <SelectTrigger className="ml-auto w-56 text-left">
                   <SelectValue>
                     {metadata.ai.provider === null ? (
-                      <span className="text-muted-foreground">Use Global Default</span>
+                      <span className="text-muted-foreground">{t("project.useGlobalDefault")}</span>
                     ) : selectedConnection ? (
                       <div className="flex items-center gap-2">
                         <ProviderLogo provider={selectedConnection.provider} className="w-4 h-4" />
                         <span>{selectedConnection.label}</span>
                       </div>
                     ) : (
-                      <span className="text-muted-foreground">Use Global Default</span>
+                      <span className="text-muted-foreground">{t("project.useGlobalDefault")}</span>
                     )}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="_global">
-                    <span className="text-muted-foreground">Use Global Default</span>
+                    <span className="text-muted-foreground">{t("project.useGlobalDefault")}</span>
                   </SelectItem>
                   {connections.map((conn) => (
                     <SelectItem key={conn.id} value={conn.id}>
@@ -361,7 +362,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
             className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
           >
             <div>
-              <Label className="text-sm font-medium">Agent</Label>
+              <Label className="text-sm font-medium">{t("project.agent")}</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
                 Override the global AI agent for this project
               </p>
@@ -375,7 +376,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
               <SelectTrigger className="ml-auto w-56 text-left">
                 <SelectValue>
                   {metadata.ai.agentName == null ? (
-                    <span className="text-muted-foreground">Use Global Default</span>
+                    <span className="text-muted-foreground">{t("project.useGlobalDefault")}</span>
                   ) : (() => {
                     const a = allAgents.find((a) => a.name === metadata.ai.agentName);
                     return a ? (
@@ -391,7 +392,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="_global">
-                  <span className="text-muted-foreground">Use Global Default</span>
+                  <span className="text-muted-foreground">{t("project.useGlobalDefault")}</span>
                 </SelectItem>
                 {allAgents.map((agent) => (
                   <SelectItem key={agent.path} value={agent.name}>
@@ -448,7 +449,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <Lock className="h-3.5 w-3.5 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
-                  <Label className="text-sm font-medium">Locked</Label>
+                  <Label className="text-sm font-medium">{t("project.locked")}</Label>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
                   This project is locked to{' '}
@@ -474,7 +475,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
           ) : (
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <Label className="text-sm font-medium">Not locked</Label>
+                <Label className="text-sm font-medium">{t("project.notLocked")}</Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
                   Any configured provider can be used with this project.
                 </p>
@@ -507,15 +508,15 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
       <AlertDialog open={unlockDialogOpen} onOpenChange={setUnlockDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Unlock this project?</AlertDialogTitle>
+            <AlertDialogTitle>{t("project.unlockQuestion")}</AlertDialogTitle>
             <AlertDialogDescription>
               After unlocking, any configured AI provider can access this project again. You can
               re-lock it at any time.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction onClick={handleConfirmUnlock}>Unlock</AlertDialogAction>
+            <AlertDialogCancel>{t("project.cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmUnlock}>{t("project.unlock")}</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -527,7 +528,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
 
           <div className="space-y-4">
             <div>
-              <Label className="text-sm font-semibold">Sync</Label>
+              <Label className="text-sm font-semibold">{t("project.sync")}</Label>
               <p className="text-xs text-muted-foreground mt-1">
                 iCloud sync for this project
               </p>
