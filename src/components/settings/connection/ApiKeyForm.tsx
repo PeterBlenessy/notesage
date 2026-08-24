@@ -2,6 +2,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Eye, EyeOff } from 'lucide-react';
+import { t } from '@/lib/i18n';
 
 interface ApiKeyFormProps {
   apiKey: string;
@@ -50,7 +51,7 @@ export function ApiKeyForm({
       {/* API Key */}
       {showApiKeyField && (
         <div className="space-y-1.5">
-          <Label className="text-sm">API Key</Label>
+          <Label className="text-sm">{t("conn.apiKey")}</Label>
           <div className="relative">
             <Input
               type={showApiKey ? 'text' : 'password'}

@@ -13,6 +13,7 @@ import {
 import type { AutomationStep } from '@/lib/automations/types';
 import { TokenInput } from './TokenInput';
 import type { TokenOption } from './VariablePicker';
+import { t } from '@/lib/i18n';
 
 const STEP_META: Record<AutomationStep['type'], { icon: typeof Bot; label: string }> = {
   agent: { icon: Bot, label: 'Agent task' },
@@ -57,7 +58,7 @@ export function StepEditor({
           <div className="flex items-center gap-1">
             <span className="text-xs text-muted-foreground">id</span>
             <Input
-              aria-label="Step id"
+              aria-label={t("automation.stepId")}
               value={step.id}
               onChange={(e) => onChange({ ...step, id: e.target.value })}
               className="h-7 w-28 font-mono text-xs"
@@ -71,7 +72,7 @@ export function StepEditor({
             size="icon"
             className="size-7"
             disabled={!canMoveUp}
-            aria-label="Move step up"
+            aria-label={t("automation.moveStepUp")}
             onClick={onMoveUp}
           >
             <ArrowUp className="size-3.5" strokeWidth={1.5} />
@@ -82,7 +83,7 @@ export function StepEditor({
             size="icon"
             className="size-7"
             disabled={!canMoveDown}
-            aria-label="Move step down"
+            aria-label={t("automation.moveStepDown")}
             onClick={onMoveDown}
           >
             <ArrowDown className="size-3.5" strokeWidth={1.5} />
@@ -92,7 +93,7 @@ export function StepEditor({
             variant="ghost"
             size="icon"
             className="size-7 text-muted-foreground hover:text-[var(--color-destructive)]"
-            aria-label="Remove step"
+            aria-label={t("automation.removeStep")}
             onClick={onRemove}
           >
             <X className="size-3.5" strokeWidth={1.5} />
@@ -104,15 +105,15 @@ export function StepEditor({
         <>
           <TokenInput
             id={`${idField}-prompt`}
-            label="Prompt"
+            label={t("automation.prompt")}
             value={step.prompt}
             onChange={(v) => onChange({ ...step, prompt: v })}
             tokens={tokens}
             multiline
-            placeholder="Summarize my notes edited since yesterday."
+            placeholder={t("automation.promptPlaceholder")}
           />
           <p className="text-xs text-muted-foreground">
-            Runs on your <span className="font-medium">Agent Tasks</span> provider (Settings → AI
+            Runs on your <span className="font-medium">{t("automation.agentTasks")}</span> provider (Settings → AI
             Providers → routing). Tool calls are auto-approved within the automation&apos;s scope, so
             the run never stops to ask — keep file work in-scope and pre-allow any domains the agent
             needs.
@@ -123,7 +124,7 @@ export function StepEditor({
       {step.type === 'document' && (
         <>
           <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Mode</Label>
+            <Label className="text-xs text-muted-foreground">{t("automation.mode")}</Label>
             <Select
               value={step.op}
               onValueChange={(v) => onChange({ ...step, op: v as 'create' | 'append' })}
@@ -132,14 +133,14 @@ export function StepEditor({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="append">Append</SelectItem>
-                <SelectItem value="create">Create / overwrite</SelectItem>
+                <SelectItem value="append">{t("automation.modeAppend")}</SelectItem>
+                <SelectItem value="create">{t("automation.modeOverwrite")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
           <TokenInput
             id={`${idField}-path`}
-            label="Path (relative to the scope)"
+            label={t("automation.pathRelative")}
             value={step.path}
             onChange={(v) => onChange({ ...step, path: v })}
             tokens={tokens}
@@ -147,12 +148,12 @@ export function StepEditor({
           />
           <TokenInput
             id={`${idField}-content`}
-            label="Content"
+            label={t("automation.content")}
             value={step.content}
             onChange={(v) => onChange({ ...step, content: v })}
             tokens={tokens}
             multiline
-            placeholder="Markdown to write…"
+            placeholder={t("automation.contentPlaceholder")}
           />
         </>
       )}
@@ -161,19 +162,19 @@ export function StepEditor({
         <>
           <TokenInput
             id={`${idField}-title`}
-            label="Title"
+            label={t("automation.notifyTitle")}
             value={step.title}
             onChange={(v) => onChange({ ...step, title: v })}
             tokens={tokens}
-            placeholder="Daily digest ready"
+            placeholder={t("automation.notifyTitlePlaceholder")}
           />
           <TokenInput
             id={`${idField}-body`}
-            label="Body"
+            label={t("automation.notifyBody")}
             value={step.body}
             onChange={(v) => onChange({ ...step, body: v })}
             tokens={tokens}
-            placeholder="Notification text"
+            placeholder={t("automation.notifyBodyPlaceholder")}
           />
         </>
       )}
@@ -182,7 +183,7 @@ export function StepEditor({
         <div className="space-y-1">
           <TokenInput
             id={`${idField}-if`}
-            label="Only run this step if…"
+            label={t("automation.onlyRunIf")}
             value={step.if ?? ''}
             onChange={(v) => onChange({ ...step, if: v.trim() || undefined })}
             tokens={tokens}

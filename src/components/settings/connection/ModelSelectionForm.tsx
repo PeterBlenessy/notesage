@@ -27,6 +27,7 @@ import type { Connection, ReasoningEffort } from '@/lib/ai/connections';
 import { getAgentModels, prettyModelName } from '@/lib/ai/connections';
 import { tauriApi } from '@/lib/tauri';
 import { cn } from '@/lib/utils';
+import { t } from '@/lib/i18n';
 
 // --- Constants ---
 
@@ -221,14 +222,14 @@ export function ModelSelectionForm({
       {/* Local AI model picker */}
       {isLocalBundled && (
         <div className="space-y-1.5">
-          <Label className="text-sm">Model</Label>
+          <Label className="text-sm">{t("conn.model")}</Label>
           {downloadedLocalModels.length > 0 ? (
             <Select
               value={localModelId ?? ''}
               onValueChange={onLocalModelIdChange}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder="Select a model" />
+                <SelectValue placeholder={t("conn.selectModel")} />
               </SelectTrigger>
               <SelectContent>
                 {downloadedLocalModels.map((localModel) => (
@@ -270,7 +271,7 @@ export function ModelSelectionForm({
 
       {/* Agent-managed or API model picker */}
       {!isLocalBundled && <div className="space-y-1.5">
-        <Label className="text-sm">Model</Label>
+        <Label className="text-sm">{t("conn.model")}</Label>
         {isAgentManaged ? (() => {
           let currentModel: string | null = null;
           let defaultLabel: string;
@@ -361,18 +362,18 @@ export function ModelSelectionForm({
               <Command>
                 <div className="flex items-center gap-1 px-1">
                   <CommandInput
-                    placeholder="Search or type model name\u2026"
+                    placeholder={t("conn.searchModelPlaceholder")}
                     value={model}
                     onValueChange={onModelChange}
                     className="flex-1"
                   />
-                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label={modelsLoading ? "Loading models" : "Refresh models"} title="Refresh models" onClick={(e) => { e.stopPropagation(); onFetchModels(); }} disabled={modelsLoading}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label={modelsLoading ? "Loading models" : "Refresh models"} title={t("conn.refreshModels")} onClick={(e) => { e.stopPropagation(); onFetchModels(); }} disabled={modelsLoading}>
                     {modelsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   </Button>
                 </div>
                 <CommandList className="max-h-[240px]">
                   {modelsError && <p className="px-3 py-2 text-xs text-destructive">{modelsError}</p>}
-                  {!modelsLoading && !modelsError && models.length === 0 && <CommandEmpty>Type a model name or click refresh</CommandEmpty>}
+                  {!modelsLoading && !modelsError && models.length === 0 && <CommandEmpty>{t("conn.typeOrRefresh")}</CommandEmpty>}
                   {models.length > 0 && (
                     <CommandGroup>
                       {models.map((modelId) => (
@@ -406,7 +407,7 @@ export function ModelSelectionForm({
         <>
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
-              <Label className="text-sm">Creativity</Label>
+              <Label className="text-sm">{t("conn.creativity")}</Label>
               <span className="text-xs text-muted-foreground">
                 {temperature !== null
                   ? `${getTemperatureLabel(temperature)} (${temperature.toFixed(1)})`
@@ -430,7 +431,7 @@ export function ModelSelectionForm({
 
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
-              <Label className="text-sm">Response Length</Label>
+              <Label className="text-sm">{t("conn.responseLength")}</Label>
               <span className="text-xs text-muted-foreground">
                 {maxTokensIndex !== null
                   ? `${formatTokenCount(MAX_TOKEN_PRESETS[maxTokensIndex])} tokens`
@@ -444,9 +445,9 @@ export function ModelSelectionForm({
               className={cn(maxTokensIndex === null && 'opacity-40')}
             />
             <div className="flex justify-between px-0.5">
-              <span className="text-[10px] text-muted-foreground">Short</span>
-              <span className="text-[10px] text-muted-foreground">Medium</span>
-              <span className="text-[10px] text-muted-foreground">Long</span>
+              <span className="text-[10px] text-muted-foreground">{t("conn.lengthShort")}</span>
+              <span className="text-[10px] text-muted-foreground">{t("conn.lengthMedium")}</span>
+              <span className="text-[10px] text-muted-foreground">{t("conn.lengthLong")}</span>
             </div>
           </div>
         </>
@@ -456,7 +457,7 @@ export function ModelSelectionForm({
       {isLocalBundled && (
         <>
           <div className="flex items-center justify-between">
-            <Label className="text-sm">Context Length</Label>
+            <Label className="text-sm">{t("conn.contextLength")}</Label>
             <Select value={String(contextLength)} onValueChange={(v) => onContextLengthChange(Number(v))}>
               <SelectTrigger className="w-28 h-8 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -468,12 +469,12 @@ export function ModelSelectionForm({
             </Select>
           </div>
           <div className="flex items-center justify-between">
-            <Label className="text-sm">GPU Layers</Label>
+            <Label className="text-sm">{t("conn.gpuLayers")}</Label>
             <Select value={String(gpuLayers)} onValueChange={(v) => onGpuLayersChange(Number(v))}>
               <SelectTrigger className="w-28 h-8 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="-1">Auto (all)</SelectItem>
-                <SelectItem value="0">CPU only</SelectItem>
+                <SelectItem value="0">{t("conn.cpuOnly")}</SelectItem>
                 <SelectItem value="16">16 layers</SelectItem>
                 <SelectItem value="32">32 layers</SelectItem>
                 <SelectItem value="48">48 layers</SelectItem>
