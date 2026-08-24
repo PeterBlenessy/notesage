@@ -1068,16 +1068,39 @@ describe("links in rendered markdown", () => {
     await screen.findByText(/link/);
   };
 
+  /**
+   * Click until the effect lands, rather than clicking once and then waiting.
+   *
+   * `openNote` resolves as soon as the link TEXT is in the DOM, but the click
+   * handler is attached separately — so a single `fireEvent.click` can hit an
+   * element that is rendered and not yet wired. That click is simply lost, and
+   * no amount of `waitFor` afterwards recovers it: the assertion waits for an
+   * effect whose cause already happened and did nothing.
+   *
+   * This is what made "opens external links" fail in CI while passing locally
+   * and in isolation — a race that only loses when the machine is loaded.
+   *
+   * Retrying inside `waitFor` closes it. Every assertion here is a
+   * "has been called" or a final-state check, so repeated clicks cannot make a
+   * passing case pass for the wrong reason.
+   */
+  const clickUntil = async (text: string, assertion: () => void) => {
+    await waitFor(() => {
+      fireEvent.click(screen.getByText(text));
+      assertion();
+    });
+  };
+
   it("opens external links in the system browser, never in the app frame", async () => {
     await openNote('<p><a href="https://example.com/x">ext link</a></p>');
-    fireEvent.click(screen.getByText("ext link"));
-    await waitFor(() => expect(openUrlMock).toHaveBeenCalledWith("https://example.com/x"));
+    await clickUntil("ext link", () =>
+      expect(openUrlMock).toHaveBeenCalledWith("https://example.com/x"),
+    );
   });
 
   it("navigates relative note links inside the library", async () => {
     await openNote('<p><a href="../other/target.md">rel link</a></p>');
-    fireEvent.click(screen.getByText("rel link"));
-    await waitFor(() =>
+    await clickUntil("rel link", () =>
       expect(useMobileStore.getState().openDoc).toEqual({
         relPath: "other/target.md",
         name: "target.md",
@@ -1087,9 +1110,8 @@ describe("links in rendered markdown", () => {
 
   it("refuses links that escape the library root", async () => {
     await openNote('<p><a href="../../../etc/passwd">bad link</a></p>');
-    fireEvent.click(screen.getByText("bad link"));
     const { toast } = await import("sonner");
-    await waitFor(() => expect(toast.error).toHaveBeenCalled());
+    await clickUntil("bad link", () => expect(toast.error).toHaveBeenCalled());
     expect(useMobileStore.getState().openDoc?.relPath).toBe("docs/note.md");
   });
 });
