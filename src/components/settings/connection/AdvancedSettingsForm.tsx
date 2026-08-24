@@ -7,6 +7,7 @@ import { GlobeLock, Shield, X as XIcon, Plus } from 'lucide-react';
 import type { Connection } from '@/lib/ai/connections';
 import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { usePermissionStore } from '@/stores/permission-store';
+import { t } from '@/lib/i18n';
 
 /** Telemetry domains managed by the toggle (not shown in the domain list) */
 const TELEMETRY_DOMAINS: readonly string[] = ['sentry.io', '*.sentry.io', '*.datadoghq.com'];
@@ -51,14 +52,14 @@ export function AdvancedSettingsForm({
     <>
       <Separator />
       <div className="space-y-3">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Security</p>
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{t("conn.security")}</p>
 
         {/* Sandbox */}
         <div className="rounded-lg border border-border p-3 space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Shield className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
-              <Label className="text-sm font-medium">Sandbox</Label>
+              <Label className="text-sm font-medium">{t("conn.sandbox")}</Label>
             </div>
             <Switch
               checked={sandboxEnabled}
@@ -73,14 +74,14 @@ export function AdvancedSettingsForm({
           </p>
           {sandboxEnabled && extraWritablePaths.length > 0 && (
             <div className="space-y-1 pt-1">
-              <p className="text-[11px] font-medium text-muted-foreground">Extra writable paths</p>
+              <p className="text-[11px] font-medium text-muted-foreground">{t("conn.extraWritablePaths")}</p>
               {extraWritablePaths.map((p) => (
                 <div key={p} className="flex items-center gap-2 text-xs">
                   <span className="font-mono text-muted-foreground flex-1 truncate">{p}</span>
                   <button
                     className="text-muted-foreground hover:text-destructive transition-colors"
                     onClick={() => onExtraWritablePathsChange(extraWritablePaths.filter((x) => x !== p))}
-                    title="Remove"
+                    title={t("conn.remove")}
                   >
                     <XIcon className="h-3 w-3" strokeWidth={1.5} />
                   </button>
@@ -92,7 +93,7 @@ export function AdvancedSettingsForm({
             <div className="flex items-center gap-1.5">
               <Input
                 type="text"
-                placeholder="Add writable path..."
+                placeholder={t("conn.addWritablePathPlaceholder")}
                 value={newWritablePath}
                 onChange={(e) => onNewWritablePathChange(e.target.value)}
                 className="h-7 text-xs flex-1"
@@ -105,8 +106,8 @@ export function AdvancedSettingsForm({
               />
               <Button
                 variant="ghost" size="icon" className="h-7 w-7 shrink-0"
-                aria-label="Add writable path"
-                title="Add writable path"
+                aria-label={t("conn.addWritablePath")}
+                title={t("conn.addWritablePath")}
                 onClick={() => {
                   if (newWritablePath.trim()) {
                     onExtraWritablePathsChange([...extraWritablePaths, newWritablePath.trim()]);
@@ -126,7 +127,7 @@ export function AdvancedSettingsForm({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <GlobeLock className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
-                <Label className="text-sm font-medium">Network Restriction</Label>
+                <Label className="text-sm font-medium">{t("conn.networkRestriction")}</Label>
               </div>
               <Switch
                 checked={networkSandbox}
@@ -139,7 +140,7 @@ export function AdvancedSettingsForm({
             {networkSandbox && (
               <div className="pt-1 space-y-1">
                 <div className="flex items-center justify-between gap-3">
-                  <Label className="text-xs font-medium">Kernel enforcement</Label>
+                  <Label className="text-xs font-medium">{t("conn.kernelEnforcement")}</Label>
                   <Switch
                     checked={kernelNetworkDeny}
                     onCheckedChange={onKernelNetworkDenyChange}
@@ -203,7 +204,7 @@ export function AdvancedSettingsForm({
                     </p>
                   </div>
                   <Separator />
-                  <p className="text-[11px] font-medium text-muted-foreground">Allowed domains</p>
+                  <p className="text-[11px] font-medium text-muted-foreground">{t("conn.allowedDomains")}</p>
                   <div className="space-y-1">
                     {builtInDomains.map((d) => (
                       <div key={d} className="flex items-center gap-2 text-xs">
@@ -214,17 +215,17 @@ export function AdvancedSettingsForm({
                     {activeTelemetryDomains.map((d) => (
                       <div key={d} className="flex items-center gap-2 text-xs">
                         <span className="font-mono text-muted-foreground flex-1 truncate">{d}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">Telemetry</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">{t("conn.telemetry")}</span>
                       </div>
                     ))}
                     {customDomains.map((d) => (
                       <div key={d} className="flex items-center gap-2 text-xs">
                         <span className="font-mono text-muted-foreground flex-1 truncate">{d}</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">User</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">{t("conn.user")}</span>
                         <button
                           className="text-muted-foreground hover:text-destructive transition-colors"
                           onClick={() => usePermissionStore.getState().removeDomain(connection.id, d, null)}
-                          title="Remove"
+                          title={t("conn.remove")}
                         >
                           <XIcon className="h-3 w-3" strokeWidth={1.5} />
                         </button>
@@ -234,7 +235,7 @@ export function AdvancedSettingsForm({
                   <div className="flex items-center gap-1.5">
                     <Input
                       type="text"
-                      placeholder="Add domain..."
+                      placeholder={t("conn.addDomainPlaceholder")}
                       value={newDomain}
                       onChange={(e) => onNewDomainChange(e.target.value)}
                       className="h-7 text-xs flex-1"
@@ -247,8 +248,8 @@ export function AdvancedSettingsForm({
                     />
                     <Button
                       variant="ghost" size="icon" className="h-7 w-7 shrink-0"
-                      aria-label="Add allowed domain"
-                      title="Add allowed domain"
+                      aria-label={t("conn.addAllowedDomain")}
+                      title={t("conn.addAllowedDomain")}
                       onClick={() => {
                         if (newDomain.trim()) {
                           usePermissionStore.getState().allowDomain(connection.id, newDomain.trim(), 'always', null);
