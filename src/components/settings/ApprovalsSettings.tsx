@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 import { usePermissionStore, type ScopedApproval } from '@/stores/permission-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import type { Connection } from '@/lib/ai/connections';
+import { t } from '@/lib/i18n';
 
 type ApprovalCategory = 'tool_call' | 'acp_tool' | 'skill_script';
 
@@ -217,7 +218,7 @@ export function ApprovalsSettings() {
         <div>
           <div className="flex items-center gap-2">
             <ShieldCheck className="h-4 w-4 text-foreground" strokeWidth={1.5} />
-            <Label className="text-sm font-semibold">Approvals</Label>
+            <Label className="text-sm font-semibold">{t("approvals.title")}</Label>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
             Review and revoke persisted &quot;Always allow&quot; approvals. Scoped by tool,
@@ -241,10 +242,10 @@ export function ApprovalsSettings() {
                   variant="outline"
                   size="xs"
                   onClick={handleRevokeAllLegacy}
-                  aria-label="Revoke all legacy approvals"
+                  aria-label={t("approvals.revokeAllLegacy")}
                 >
                   <AlertTriangle className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-                  Revoke all legacy approvals
+                  {t("approvals.revokeAllLegacy")}
                 </Button>
               )}
               {allScopeConnections.map((connId) => (
@@ -277,12 +278,12 @@ export function ApprovalsSettings() {
                 <table className="w-full text-[11px]">
                   <thead className="bg-muted/40">
                     <tr className="text-left text-muted-foreground">
-                      <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">Tool</th>
-                      <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">Kind</th>
-                      <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">Connection</th>
-                      <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">Project</th>
-                      <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">Granted</th>
-                      <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider text-right">Actions</th>
+                      <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">{t("approvals.colTool")}</th>
+                      <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">{t("approvals.colKind")}</th>
+                      <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">{t("approvals.colConnection")}</th>
+                      <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">{t("approvals.colProject")}</th>
+                      <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">{t("approvals.colGranted")}</th>
+                      <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider text-right">{t("approvals.colActions")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -344,7 +345,7 @@ export function ApprovalsSettings() {
                                     <Trash2 className="h-3 w-3" strokeWidth={1.5} />
                                   </Button>
                                 </TooltipTrigger>
-                                <TooltipContent>Revoke</TooltipContent>
+                                <TooltipContent>{t("approvals.revoke")}</TooltipContent>
                               </Tooltip>
                             </div>
                           </td>
@@ -366,10 +367,10 @@ export function ApprovalsSettings() {
                   <table className="w-full text-[11px]">
                     <thead className="bg-muted/40">
                       <tr className="text-left text-muted-foreground">
-                        <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">Domain</th>
-                        <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">Connection</th>
-                        <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">Project</th>
-                        <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider text-right">Actions</th>
+                        <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">{t("approvals.colDomain")}</th>
+                        <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">{t("approvals.colConnection")}</th>
+                        <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider">{t("approvals.colProject")}</th>
+                        <th className="px-2.5 py-1.5 font-semibold text-[10px] uppercase tracking-wider text-right">{t("approvals.colActions")}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -412,7 +413,7 @@ export function ApprovalsSettings() {
                                   <Trash2 className="h-3 w-3" strokeWidth={1.5} />
                                 </Button>
                               </TooltipTrigger>
-                              <TooltipContent>Revoke</TooltipContent>
+                              <TooltipContent>{t("approvals.revoke")}</TooltipContent>
                             </Tooltip>
                           </td>
                         </tr>
