@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { Check, Copy } from 'lucide-react';
+import { t } from '@/lib/i18n';
 
 // --- Connection timeout helper ---
 
@@ -151,7 +152,7 @@ function CopyableCommand({ command }: { command: string }) {
       <button
         onClick={handleCopy}
         className="shrink-0 p-0.5 rounded hover:bg-muted transition-colors cursor-pointer"
-        title="Copy to clipboard"
+        title={t("common.copyToClipboard")}
       >
         {copied ? (
           <Check className="h-3.5 w-3.5 text-green-500" strokeWidth={1.5} />
@@ -179,7 +180,7 @@ function CopyableUrl({ url }: { url: string }) {
       <button
         onClick={handleCopy}
         className="shrink-0 p-0.5 rounded hover:bg-muted transition-colors cursor-pointer"
-        title="Copy URL"
+        title={t("common.copyUrl")}
       >
         {copied ? (
           <Check className="h-3 w-3 text-green-500" strokeWidth={1.5} />

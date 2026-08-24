@@ -13,6 +13,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { ScrollText, RefreshCw, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
+import { t } from '@/lib/i18n';
 
 /**
  * Viewer for the inference engine's own log.
@@ -37,7 +38,7 @@ export function ServerLogDialog() {
       // The log is a diagnostic aid — failing to read it must not throw an
       // unhandled rejection into a settings panel.
       log.warn('ai', 'Failed to read local server log', error);
-      toast.error('Could not read the server log');
+      toast.error(t("serverLog.readFailed"));
     } finally {
       setLoading(false);
     }
@@ -58,7 +59,7 @@ export function ServerLogDialog() {
       setTimeout(() => setCopied(false), 1500);
     } catch (error) {
       log.warn('ai', 'Failed to copy server log', error);
-      toast.error('Could not copy the log');
+      toast.error(t("serverLog.copyFailed"));
     }
   }, [lines]);
 
@@ -72,7 +73,7 @@ export function ServerLogDialog() {
       </DialogTrigger>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Server log</DialogTitle>
+          <DialogTitle>{t("serverLog.title")}</DialogTitle>
           <DialogDescription>
             Recent output from the local inference engine. Useful when a local agent stops
             before finishing — look for messages about context size or the KV cache.

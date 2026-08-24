@@ -18,6 +18,7 @@ import {
 } from '@/stores/mcp-store';
 import { filterValidMcpConfigs, extractMcpServersRecord } from '@/lib/mcp/config-guards';
 import { cn } from '@/lib/utils';
+import { t } from '@/lib/i18n';
 
 interface ImportSource {
   id: string;
@@ -145,8 +146,8 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Import MCP Servers</DialogTitle>
-          <DialogDescription>Import MCP server configurations from other tools.</DialogDescription>
+          <DialogTitle>{t("mcp.importTitle")}</DialogTitle>
+          <DialogDescription>{t("mcp.importSubtitle")}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
@@ -173,7 +174,7 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                       <div>
                         <span className="text-sm font-medium">{source.label}</span>
                         {!available && (
-                          <p className="text-xs text-muted-foreground">Not installed</p>
+                          <p className="text-xs text-muted-foreground">{t("mcp.notInstalled")}</p>
                         )}
                       </div>
                     </button>
@@ -192,7 +193,7 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
 
           {selectedSource && !loading && discoveredServers.length === 0 && (
             <div className="text-center py-8">
-              <p className="text-sm text-muted-foreground">No MCP servers found</p>
+              <p className="text-sm text-muted-foreground">{t("mcp.noServersFound")}</p>
               <Button
                 variant="ghost"
                 size="sm"

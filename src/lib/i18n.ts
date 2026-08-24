@@ -574,6 +574,67 @@ const en = {
     "Read-only view of each running agent's network proxy — port, session-approved domains, and the effective domain allowlist.",
   "settings.persistedApprovalsDesc":
     "Tool-call and domain approvals you've remembered via 'Allow always'. Revoke individually or in bulk.",
+  // Local AI — model metadata tooltip
+  "model.parameters": "Parameters",
+  "model.contextLabel": "Context",
+  "model.quantization": "Quantization",
+  "model.languages": "Languages",
+  "model.license": "License",
+  // Changelog dialog section headings
+  "changelog.features": "Features",
+  "changelog.fixes": "Fixes",
+  "changelog.improvements": "Improvements",
+  "changelog.underTheHood": "Under the hood",
+  // MCP — import dialog
+  "mcp.importTitle": "Import MCP Servers",
+  "mcp.importSubtitle": "Import MCP server configurations from other tools.",
+  "mcp.notInstalled": "Not installed",
+  "mcp.noServersFound": "No MCP servers found",
+  // Editor settings
+  "editorSettings.pickFont": "Pick a font",
+  "editorSettings.topToolbar": "Top toolbar",
+  "editorSettings.topToolbarDesc": "Show the formatting toolbar above the editor.",
+  "editorSettings.fullWidth": "Full Width",
+  // Agent connection flows
+  "connectAgent.starting": "Starting agent...",
+  "connectAgent.waitingForSignIn": "Waiting for sign-in...",
+  "connectAgent.startingCopilot": "Starting Copilot...",
+  "connectAgent.copyCode": "Copy code",
+  // Connection config dialog
+  "conn.agentDefaults": "Agent Defaults",
+  "conn.defaultMode": "Default Mode",
+  "conn.save": "Save",
+  // Local Agent setup
+  "localAgent.setupFailed": "Local Agent setup failed",
+  "localAgent.model": "Model",
+  "localAgent.done": "Done",
+  // Server log dialog
+  "serverLog.readFailed": "Could not read the server log",
+  "serverLog.copyFailed": "Could not copy the log",
+  "serverLog.title": "Server log",
+  // Appearance
+  "appearance.tintHue": "Tint hue",
+  "appearance.tintHueDesc": "Shifts the tint hue.",
+  // Calibration share
+  "calibration.copied": "Copied",
+  "calibration.copyFailed": "Could not copy to clipboard",
+  // Project lock dialog
+  "lock.selectProvider": "Select a provider",
+  "lock.hardEnforcement": "This lock is hard enforcement.",
+  // Sandbox activity
+  "sandbox.refreshStatus": "Refresh sandbox status",
+  // Shared connection utilities
+  "common.copyToClipboard": "Copy to clipboard",
+  "common.copyUrl": "Copy URL",
+  "common.settings": "Settings",
+  "common.default": "Default",
+  // Automations — runs history and pickers
+  "automation.noStepsRecorded": "No steps recorded.",
+  "automation.noRunsYet": "No runs yet.",
+  "automation.replaceWith": "Replace with",
+  "automation.clickToInsert": "Click to insert",
+  // Projects settings
+  "projectsSettings.gitNotInstalled": "Git is not installed on this system",
   // Automations — step editor
   "automation.stepId": "Step id",
   "automation.moveStepUp": "Move step up",
@@ -1340,6 +1401,67 @@ const sv: Dict = {
     "Skrivskyddad vy över varje körande agents nätverksproxy — port, sessionsgodkända domäner och den gällande domänlistan.",
   "settings.persistedApprovalsDesc":
     "Verktygs- och domängodkännanden som du sparat via ”Tillåt alltid”. Återkalla enskilt eller i klump.",
+  // Local AI — model metadata tooltip
+  "model.parameters": "Parametrar",
+  "model.contextLabel": "Kontext",
+  "model.quantization": "Kvantisering",
+  "model.languages": "Språk",
+  "model.license": "Licens",
+  // Changelog dialog section headings
+  "changelog.features": "Nyheter",
+  "changelog.fixes": "Rättningar",
+  "changelog.improvements": "Förbättringar",
+  "changelog.underTheHood": "Under huven",
+  // MCP — import dialog
+  "mcp.importTitle": "Importera MCP-servrar",
+  "mcp.importSubtitle": "Importera MCP-serverkonfigurationer från andra verktyg.",
+  "mcp.notInstalled": "Inte installerad",
+  "mcp.noServersFound": "Inga MCP-servrar hittades",
+  // Editor settings
+  "editorSettings.pickFont": "Välj ett typsnitt",
+  "editorSettings.topToolbar": "Övre verktygsfält",
+  "editorSettings.topToolbarDesc": "Visa formateringsverktygen ovanför redigeraren.",
+  "editorSettings.fullWidth": "Full bredd",
+  // Agent connection flows
+  "connectAgent.starting": "Startar agenten …",
+  "connectAgent.waitingForSignIn": "Väntar på inloggning …",
+  "connectAgent.startingCopilot": "Startar Copilot …",
+  "connectAgent.copyCode": "Kopiera koden",
+  // Connection config dialog
+  "conn.agentDefaults": "Standardval för agenten",
+  "conn.defaultMode": "Standardläge",
+  "conn.save": "Spara",
+  // Local Agent setup
+  "localAgent.setupFailed": "Konfigurationen av den lokala agenten misslyckades",
+  "localAgent.model": "Modell",
+  "localAgent.done": "Klart",
+  // Server log dialog
+  "serverLog.readFailed": "Kunde inte läsa serverloggen",
+  "serverLog.copyFailed": "Kunde inte kopiera loggen",
+  "serverLog.title": "Serverlogg",
+  // Appearance
+  "appearance.tintHue": "Färgton",
+  "appearance.tintHueDesc": "Förskjuter färgtonen.",
+  // Calibration share
+  "calibration.copied": "Kopierat",
+  "calibration.copyFailed": "Kunde inte kopiera till urklipp",
+  // Project lock dialog
+  "lock.selectProvider": "Välj en leverantör",
+  "lock.hardEnforcement": "Den här låsningen är hård.",
+  // Sandbox activity
+  "sandbox.refreshStatus": "Uppdatera sandlådans status",
+  // Shared connection utilities
+  "common.copyToClipboard": "Kopiera till urklipp",
+  "common.copyUrl": "Kopiera URL",
+  "common.settings": "Inställningar",
+  "common.default": "Standard",
+  // Automations — runs history and pickers
+  "automation.noStepsRecorded": "Inga steg registrerade.",
+  "automation.noRunsYet": "Inga körningar än.",
+  "automation.replaceWith": "Ersätt med",
+  "automation.clickToInsert": "Klicka för att infoga",
+  // Projects settings
+  "projectsSettings.gitNotInstalled": "Git är inte installerat på det här systemet",
   // Automations — step editor
   "automation.stepId": "Steg-id",
   "automation.moveStepUp": "Flytta steget uppåt",

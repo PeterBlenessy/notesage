@@ -5,7 +5,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { ModelMetadata } from '@/lib/tauri';
-import { getFormatLocale } from "@/lib/i18n";
+import { getFormatLocale, t } from "@/lib/i18n";
 import { useFormatLocale } from "@/lib/useLocale";
 
 interface ModelMetadataTooltipProps {
@@ -86,35 +86,35 @@ export function ModelMetadataTooltip({
           <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
             {metadata.parameters && (
               <>
-                <span className="text-muted-foreground">Parameters</span>
+                <span className="text-muted-foreground">{t("model.parameters")}</span>
                 <span>{metadata.parameters}</span>
               </>
             )}
 
             {metadata.context_length && (
               <>
-                <span className="text-muted-foreground">Context</span>
+                <span className="text-muted-foreground">{t("model.contextLabel")}</span>
                 <span>{formatContextLength(metadata.context_length)}</span>
               </>
             )}
 
             {modelType === 'llm' && metadata.quantization && (
               <>
-                <span className="text-muted-foreground">Quantization</span>
+                <span className="text-muted-foreground">{t("model.quantization")}</span>
                 <span>{metadata.quantization}</span>
               </>
             )}
 
             {modelType === 'whisper' && metadata.languages && (
               <>
-                <span className="text-muted-foreground">Languages</span>
+                <span className="text-muted-foreground">{t("model.languages")}</span>
                 <span>{metadata.languages.length} supported</span>
               </>
             )}
 
             {metadata.license && (
               <>
-                <span className="text-muted-foreground">License</span>
+                <span className="text-muted-foreground">{t("model.license")}</span>
                 <span>{formatLicense(metadata.license)}</span>
               </>
             )}

@@ -95,7 +95,7 @@ export function ProjectsSettings() {
           }
         />
         {gitNotAvailable && (
-          <SettingsHint tone="warning" title="Git is not installed on this system">
+          <SettingsHint tone="warning" title={t("projectsSettings.gitNotInstalled")}>
             <p>
               Install it from{' '}
               <span className="font-medium text-foreground">git-scm.com</span>{' '}

@@ -12,6 +12,7 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { PROVIDER_OPTIONS, type Connection } from '@/lib/ai/connections';
 import { cn } from '@/lib/utils';
+import { t } from '@/lib/i18n';
 
 /**
  * Minimal sandbox observability panel (Settings > AI Providers > Sandbox
@@ -102,7 +103,7 @@ export function SandboxActivitySettings() {
           onClick={() => void refresh()}
           disabled={loading}
           aria-busy={loading}
-          aria-label="Refresh sandbox status"
+          aria-label={t("sandbox.refreshStatus")}
         >
           <RefreshCw
             size={14}

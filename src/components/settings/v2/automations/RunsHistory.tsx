@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 import { useAutomationStore } from '@/stores/automation-store';
 import type { AutomationRun, RunStatus } from '@/lib/automations/types';
 import { useFormatLocale } from '@/lib/useLocale';
+import { t } from '@/lib/i18n';
 
 function StatusIcon({ status }: { status: RunStatus }) {
   switch (status) {
@@ -46,7 +47,7 @@ function RunRow({ run }: { run: AutomationRun }) {
       </button>
       {open && (
         <div className="space-y-2 border-t border-border px-3 py-2 text-xs">
-          {run.steps.length === 0 && <p className="text-muted-foreground">No steps recorded.</p>}
+          {run.steps.length === 0 && <p className="text-muted-foreground">{t("automation.noStepsRecorded")}</p>}
           {run.steps.map((s, i) => (
             <div key={`${s.id}-${i}`} className="space-y-1">
               <div className="font-medium">
@@ -74,7 +75,7 @@ export function RunsHistory({ sourcePath }: { sourcePath: string }) {
   const runs = useAutomationStore((s) => s.runsByAutomation[sourcePath] ?? []);
 
   if (runs.length === 0) {
-    return <p className="py-4 text-sm text-muted-foreground">No runs yet.</p>;
+    return <p className="py-4 text-sm text-muted-foreground">{t("automation.noRunsYet")}</p>;
   }
   return (
     <div className="space-y-1.5">

@@ -22,6 +22,7 @@ import { X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Label } from '@/components/ui/label';
 import { VariablePicker, type TokenOption } from './VariablePicker';
+import { t } from '@/lib/i18n';
 
 const TOKEN_RE = /\{\{\s*[^{}]+?\s*\}\}/g;
 
@@ -332,7 +333,7 @@ export function TokenInput({
               {tokensRef.current.length > 0 && (
                 <>
                   <div className="my-1 border-t border-border" />
-                  <div className="px-2 py-0.5 text-[0.7rem] text-muted-foreground">Replace with</div>
+                  <div className="px-2 py-0.5 text-[0.7rem] text-muted-foreground">{t("automation.replaceWith")}</div>
                   <div className="max-h-40 overflow-auto">
                     {tokensRef.current.map((t) => (
                       <button

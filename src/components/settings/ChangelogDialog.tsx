@@ -11,6 +11,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { useChangelog, type Release } from '@/hooks/useChangelog';
 import { cn } from '@/lib/utils';
 import { useState } from 'react';
+import { t } from '@/lib/i18n';
 
 declare const __APP_VERSION__: string;
 
@@ -84,22 +85,22 @@ function ReleaseCard({ release }: { release: Release }) {
       {expanded && (
         <div className="px-4 pb-3 space-y-3 border-t border-border pt-3">
           <ReleaseSection
-            title="Features"
+            title={t("changelog.features")}
             icon={Sparkles}
             items={release.sections.features ?? []}
           />
           <ReleaseSection
-            title="Fixes"
+            title={t("changelog.fixes")}
             icon={Bug}
             items={release.sections.fixes ?? []}
           />
           <ReleaseSection
-            title="Improvements"
+            title={t("changelog.improvements")}
             icon={Zap}
             items={release.sections.improvements ?? []}
           />
           <ReleaseSection
-            title="Under the hood"
+            title={t("changelog.underTheHood")}
             icon={Wrench}
             items={release.underTheHood ?? []}
           />
