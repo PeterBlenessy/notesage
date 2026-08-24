@@ -69,14 +69,14 @@ const BUILDER_REACHABILITY: &[(&str, Option<&str>, &str)] = &[
         "extracted article, HTML format",
     ),
     (
-        // NOT waived. This is the live defect, recorded rather than hidden:
-        // the builder exists, is unit-tested, and no FFI export reaches it, so
-        // X posts never take the X-aware path. Wiring it is tracked work; the
-        // row stays failing-shaped so that landing the wiring is what removes
-        // the exception, not editing this comment.
         "build_x_note",
-        None,
-        "UNWIRED (2026-08-23): X post capture has no FFI export — see the module docs",
+        Some("notesage_capture_x_contents"),
+        "X post metadata note — the fallback when there is no article to extract",
+    ),
+    (
+        "build_x_article_note",
+        Some("notesage_capture_x_contents"),
+        "X article, markdown format: extraction enriched with syndication metadata",
     ),
 ];
 
@@ -119,18 +119,138 @@ fn every_note_builder_is_reachable_or_documented() {
     }
 }
 
+// The `the_unwired_x_path_is_still_unwired` canary lived here until
+// 2026-08-24. It tripped when X was wired, which is what it was for, and the
+// BUILDER_REACHABILITY rows above now name the real export. Nothing replaces
+// it — a canary for a fixed defect is noise.
+//
+// What DOES replace it is the Swift check below, because the X incident
+// exposed that "reachable from ffi.rs" was only half the chain.
+
+/// Read a Share Extension source. These live outside the crate, which is the
+/// point: the chain the module note draws crosses that boundary, and a
+/// contract that stops at the crate edge stops one link short of where X
+/// actually broke.
+fn ios_src(file: &str) -> String {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../ios")
+        .join(file);
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
+}
+
+/// Does `haystack` name `symbol` as a whole word?
+///
+/// Needed because Swift reaches these exports two ways and both are correct:
+/// called directly (`notesage_capture_x_metadata_url(u)`) or passed as a
+/// function value (`callCapture(notesage_capture_rel_path, …)`). Requiring a
+/// following `(` would reject the second — a legitimate pattern used four
+/// times in LibraryCapture.swift.
+fn mentions(haystack: &str, symbol: &str) -> bool {
+    let ident = |c: char| c.is_ascii_alphanumeric() || c == '_';
+    let mut from = 0usize;
+    while let Some(rel) = haystack[from..].find(symbol) {
+        let start = from + rel;
+        let end = start + symbol.len();
+        let before_ok = haystack[..start].chars().next_back().map_or(true, |c| !ident(c));
+        let after_ok = haystack[end..].chars().next().map_or(true, |c| !ident(c));
+        if before_ok && after_ok {
+            return true;
+        }
+        from = end;
+    }
+    false
+}
+
+/// Every FFI export, and the Swift that calls it.
+///
+/// An export nothing calls is the same defect as a builder nothing exports —
+/// one stage further down. X had a working builder and would, with only the
+/// first contract, have been declared fixed by adding an export that Swift
+/// never invoked.
+///
+/// Deliberately a text scan rather than a build: the Share Extension only
+/// compiles on a Mac with an iOS toolchain, and a contract that cannot run in
+/// CI is a contract that runs never.
+const EXPORT_CALL_SITES: &[(&str, &str)] = &[
+    ("notesage_capture_contents", "LibraryCapture.swift"),
+    ("notesage_capture_rel_path", "LibraryCapture.swift"),
+    ("notesage_capture_rel_path_from_html", "LibraryCapture.swift"),
+    ("notesage_capture_oembed_url", "LibraryCapture.swift"),
+    ("notesage_capture_video_rel_path", "LibraryCapture.swift"),
+    ("notesage_capture_video_contents", "LibraryCapture.swift"),
+    ("notesage_capture_article_contents", "LibraryCapture.swift"),
+    ("notesage_capture_article_html_contents", "LibraryCapture.swift"),
+    ("notesage_capture_x_metadata_url", "LibraryCapture.swift"),
+    ("notesage_capture_x_rel_path", "LibraryCapture.swift"),
+    ("notesage_capture_x_contents", "LibraryCapture.swift"),
+    ("notesage_capture_x_html_contents", "LibraryCapture.swift"),
+    ("notesage_capture_string_free", "LibraryCapture.swift"),
+];
+
 #[test]
-fn the_unwired_x_path_is_still_unwired() {
-    // A canary, not an endorsement. It documents the current broken state so
-    // that WIRING X — the actual fix — trips this test and forces the
-    // reachability row above to be corrected at the same time. Without it the
-    // `None` row would quietly stay `None` forever.
+fn every_ffi_export_is_called_from_swift_and_declared_in_the_header() {
     let ffi = crate_src("ffi.rs");
-    let wired = ffi.contains("build_x_note") || ffi.contains("x_syndication");
+    let header = ios_src("NotesageCapture.h");
+
+    // Collect the real export list from the source rather than trusting the
+    // table — a NEW export with no row is exactly the gap being closed.
+    let mut exports: Vec<String> = Vec::new();
+    for line in ffi.lines() {
+        let t = line.trim_start();
+        if let Some(rest) = t.strip_prefix("pub unsafe extern \"C\" fn ") {
+            exports.push(rest.split('(').next().unwrap_or("").trim().to_string());
+        }
+    }
+    assert!(!exports.is_empty(), "no FFI exports found — did the signature style change?");
+
+    for export in &exports {
+        let Some((_, file)) = EXPORT_CALL_SITES.iter().find(|(e, _)| e == export) else {
+            panic!(
+                "FFI export `{export}` has no entry in EXPORT_CALL_SITES.\n\
+                 Name the Swift file that calls it. An export nothing calls is the\n\
+                 same dead code as an unexported builder, one stage later — and that\n\
+                 is precisely how X capture looked present while doing nothing."
+            );
+        };
+
+        // A bare `contains` is not enough: every one of these names is a
+        // PREFIX of another. `notesage_capture_rel_path` is a prefix of
+        // `notesage_capture_rel_path_from_html`, so a substring check would
+        // report the first as present on the strength of the second — passing
+        // for entirely the wrong reason, which is the failure mode this whole
+        // file exists to prevent. Match on a word boundary instead.
+        assert!(
+            mentions(&header, export),
+            "`{export}` is not declared in NotesageCapture.h, so Swift cannot see it.\n\
+             The bridging header is the only thing that makes an export callable."
+        );
+
+        let swift = ios_src(file);
+        assert!(
+            mentions(&swift, export),
+            "`{export}` is declared and exported but never called from {file}.\n\
+             Wire it, or delete it — a reachable-but-uncalled export passes every\n\
+             other test in this file while shipping nothing."
+        );
+    }
+}
+
+#[test]
+fn the_share_controller_routes_x_urls_through_the_x_writer() {
+    // The final link: `LibraryCapture` can expose a perfect X writer and
+    // `ShareViewController` can still send every X share down the generic
+    // article path. That is a one-line omission with no other symptom than
+    // the bug we started from.
+    let controller = ios_src("ShareViewController.swift");
     assert!(
-        !wired,
-        "X capture now appears wired into ffi.rs. Good — update BUILDER_REACHABILITY\n\
-         to name the export, and delete this canary."
+        controller.contains("xMetadataEndpoint"),
+        "ShareViewController never asks whether a URL is an X status, so the X\n\
+         path cannot be taken no matter what the crate exports."
+    );
+    assert!(
+        controller.contains("writeXCapture"),
+        "ShareViewController never calls writeXCapture — X shares still take the\n\
+         generic article path, which is the defect this whole file exists for."
     );
 }
 
@@ -195,6 +315,79 @@ fn html_capture_image_survives_to_the_thumbnail() {
         notesage_capture::article_lead_image(&inlined).is_some(),
         "HTML capture's image is not thumbnail-discoverable:\n{inlined}"
     );
+}
+
+#[test]
+fn an_x_captures_cover_survives_to_the_thumbnail() {
+    // The exact chain that failed. An X Article's cover is rendered by the
+    // client, so extraction never sees it — the note came out imageless and
+    // the gallery showed a thumbnail of the article's own text.
+    //
+    // Runs the whole way: enrich → note → sweep finds the URL → inline →
+    // `article_lead_image` locates it. Each step is a place it broke before.
+    let post = notesage_capture::XPost {
+        article_title: Some("The real subject".into()),
+        cover_image_url: Some(IMAGE_URL.into()),
+        author_handle: Some("rvaniaaaa".into()),
+        ..Default::default()
+    };
+    let mut article = notesage_capture::Article {
+        title: Some("Rania (@rvaniaaaa) on X".into()),
+        markdown: "The extracted body of the piece.".into(),
+        html: "<p>The extracted body of the piece.</p>".into(),
+    };
+    notesage_capture::enrich_x_article(&mut article, &post);
+
+    let note = notesage_capture::build_x_article_note(
+        &input("https://x.com/rvaniaaaa/status/1"),
+        &article,
+        &post,
+        NOW,
+    );
+
+    let urls = notesage_capture::markdown_image_urls(&note.contents);
+    assert!(
+        urls.iter().any(|u| u == IMAGE_URL),
+        "the sweep cannot find the X cover, so it will never be inlined: {urls:?}"
+    );
+
+    let inlined = notesage_capture::inline_markdown_images(
+        &note.contents,
+        &[(IMAGE_URL.to_string(), DATA_URI.to_string())],
+    );
+    assert!(
+        notesage_capture::article_lead_image(&inlined).is_some(),
+        "X cover inlined but not thumbnail-discoverable — back to a picture of\n\
+         the text, which is the whole reported defect.\n\n{inlined}"
+    );
+}
+
+#[test]
+fn an_x_url_is_not_treated_as_a_video_page() {
+    // Load-bearing, and easy to break without noticing. The share sheet hides
+    // BOTH article formats for any URL with an oEmbed endpoint (a video page
+    // has no article to extract). Adding x.com to `oembed_url` — plausible,
+    // since X hosts video — would leave X shares offering only Video and Link,
+    // and every path built here would become unreachable. Silently: the picker
+    // would still work, captures would still save, and the enrichment would
+    // simply never run again.
+    for url in [
+        "https://x.com/rvaniaaaa/status/1234567890",
+        "https://twitter.com/jack/status/20",
+    ] {
+        assert!(
+            notesage_capture::oembed_url(url).is_none(),
+            "{url} now has an oEmbed endpoint, so the share sheet will offer only\n\
+             Video + Link for it and the X article path can never run.\n\
+             If X really needs a video format, it must not displace the article\n\
+             formats for status URLs."
+        );
+        assert!(
+            notesage_capture::x_syndication_url(url).is_some(),
+            "{url} is no longer recognised as an X status — the enrichment path\n\
+             is unreachable for it."
+        );
+    }
 }
 
 #[test]

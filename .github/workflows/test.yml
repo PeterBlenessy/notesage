@@ -291,11 +291,27 @@ jobs:
           # `set -euo pipefail` kills the step before grep ever runs.
           syms="$(nm -gU "$LIB" 2>/dev/null || true)"
           [ -n "$syms" ] || { echo "nm produced no symbols at all — cannot verify the C ABI"; exit 1; }
-          for sym in _notesage_capture_rel_path _notesage_capture_contents _notesage_capture_string_free; do
+          # Derived from the bridging header, not hardcoded. A fixed list only
+          # ever checks the symbols someone remembered to add to it — and this
+          # step passed for months while the X exports did not exist at all,
+          # because none of the three named here were the missing ones.
+          # Everything Swift can call is declared in the header, so the header
+          # IS the list, and it cannot go stale.
+          expected="$(grep -oE 'notesage_capture_[a-z_]+\(' src-tauri/ios/NotesageCapture.h \
+                      | tr -d '(' | sort -u)"
+          [ -n "$expected" ] || { echo "no exports found in NotesageCapture.h — parse failed"; exit 1; }
+          echo "Checking $(printf '%s\n' "$expected" | wc -l | tr -d ' ') declared exports."
+          # `while read` rather than `for name in $expected`: iterating an
+          # unquoted variable relies on the shell's word-splitting rules, which
+          # differ between shells and would silently treat the whole list as
+          # one name.
+          printf '%s\n' "$expected" | while IFS= read -r name; do
+            [ -n "$name" ] || continue
             # `grep -q` exits on first match, which SIGPIPEs printf and — under
             # pipefail — fails the step precisely when the symbol IS found.
             # Plain grep with output discarded consumes all input instead.
-            printf '%s\n' "$syms" | grep " T $sym\$" >/dev/null || { echo "missing exported symbol: $sym"; exit 1; }
+            printf '%s\n' "$syms" | grep " T _$name\$" >/dev/null \
+              || { echo "declared in NotesageCapture.h but NOT exported by the staticlib: $name"; exit 1; }
           done
           echo "All capture C ABI symbols exported."
 
