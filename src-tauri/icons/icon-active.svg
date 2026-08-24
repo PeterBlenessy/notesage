@@ -1,0 +1,72 @@
+<!--
+  Notesage app icon — ACTIVE state.
+
+  Identical to icon.svg except the orb is lit. Intended for a runtime Dock swap
+  on macOS via `NSApplication.applicationIconImage`, driven by the state
+  `activity-store` already tracks (agent work, recording, transcription) — the
+  same signal that decides whether the in-app AgentOrb pulses.
+
+  NOT WIRED UP. Nothing renders or ships this yet; it exists so the design
+  decision is recorded and the runtime work is only plumbing when someone
+  wants it.
+
+  If you do wire it:
+    - Dock only. Finder, Launchpad and Spotlight keep the bundle icon, so the
+      app will have two faces. That is acceptable; pretending otherwise is not.
+    - Debounce it. A burst of short agent tasks would otherwise flicker the
+      Dock, which reads as a fault rather than as activity.
+    - macOS only. There is no Windows or Linux equivalent, so this can never be
+      the sole indication that something is running.
+
+  The geometry here is IDENTICAL to icon.svg's orb — same centre, same radii.
+  Only colour and the glow differ, so a swap never looks like movement. Keep it
+  that way.
+
+  Render with:
+      node scripts/render-app-icon.mjs --active
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="slate" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4A4A4E"/>
+      <stop offset="1" stop-color="#2E2E31"/>
+    </linearGradient>
+    <linearGradient id="vig" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.34"/>
+    </linearGradient>
+    <radialGradient id="glowOn">
+      <stop offset="0" stop-color="#F4622E" stop-opacity="0.90"/>
+      <stop offset="0.5" stop-color="#F4622E" stop-opacity="0.24"/>
+      <stop offset="1" stop-color="#F4622E" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="tile">
+      <rect width="512" height="512" rx="114"/>
+    </clipPath>
+  </defs>
+
+  <rect width="512" height="512" rx="114" fill="url(#slate)"/>
+
+  <g clip-path="url(#tile)">
+    <g fill="#FFFFFF" fill-opacity="0.30" text-anchor="middle"
+       font-family="Source Serif 4, Georgia, serif" font-size="27">
+      <text x="256" y="70">The hardest part of thinking</text>
+      <text x="256" y="104">is not the thinking itself</text>
+      <text x="256" y="384">but holding still long enough</text>
+      <text x="256" y="418">for a thought to arrive.</text>
+    </g>
+    <!-- Glow sits inside the clip so it cannot bleed past the tile's corner. -->
+    <circle cx="256" cy="464" r="58" fill="url(#glowOn)"/>
+    <rect width="512" height="512" fill="url(#vig)"/>
+  </g>
+
+  <text x="256" y="322" text-anchor="middle"
+        font-family="Source Serif 4, Times New Roman, Georgia, serif"
+        font-style="italic" font-size="268" fill="#FFFFFF">N</text>
+
+  <!-- Orb — ACTIVE. Geometry must match icon.svg exactly. -->
+  <g transform="translate(256,464)">
+    <circle cx="0" cy="0" r="26" fill="none" stroke="#F4622E" stroke-opacity="0.55" stroke-width="3"/>
+    <circle cx="0" cy="0" r="13" fill="#F4622E"/>
+  </g>
+</svg>
