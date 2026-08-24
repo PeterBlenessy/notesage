@@ -2228,6 +2228,119 @@ pub fn build_x_note(input: &CaptureInput, post: &XPost, now_rfc3339: &str) -> Ca
     }
 }
 
+/// Is this title X's own page chrome rather than the post's subject?
+///
+/// Readability names an X article after the page `<title>`, which is always
+/// `<display name> (@<handle>) on X` — so every X capture lands in the Inbox
+/// named after its author instead of its subject, and two articles by the same
+/// person collide into `Name-1.md`. The syndication endpoint knows the real
+/// title; this decides when to prefer it.
+///
+/// Deliberately narrow. A post genuinely titled "Notes on X" must survive, so
+/// the handle-in-parens shape has to be present — matching a bare " on X"
+/// suffix would eat real titles.
+pub fn is_x_chrome_title(title: &str) -> bool {
+    let t = title.trim();
+    let lower = t.to_lowercase();
+    // `Name (@handle) on X` / `… on Twitter`, the two shapes X has shipped.
+    if t.contains("(@") && (lower.ends_with(") on x") || lower.ends_with(") on twitter")) {
+        return true;
+    }
+    // `@handle on X`, seen from some share sheets.
+    t.starts_with('@') && (lower.ends_with(" on x") || lower.ends_with(" on twitter"))
+}
+
+/// Fold what the syndication endpoint knows into an extraction.
+///
+/// Two corrections, both invisible to the extractor because the information is
+/// simply not in the page it parsed:
+///
+/// 1. **Title.** See [`is_x_chrome_title`].
+/// 2. **Lead image.** An X Article's cover is rendered by the client, not
+///    served in the markup, so extraction never sees it. Without this the
+///    gallery card shows a thumbnail of the article's own rendered text —
+///    which is exactly what a reader does NOT recognise the piece by, and the
+///    defect that sent us here.
+///
+/// The cover is *prepended*, because `article_lead_image` takes the first
+/// image in document order and the share preview's photo is the one the user
+/// expects to see on the card. Skipped when the cover already appears in the
+/// body, so an article that does carry its cover is not given two.
+///
+/// This never touches the extracted BODY text. The module note above is
+/// load-bearing: syndication carries a ~200-character teaser, and letting it
+/// displace a 7,000-character extraction would be a straight regression.
+pub fn enrich_x_article(article: &mut Article, post: &XPost) {
+    if let Some(real) = post.article_title.as_deref() {
+        let replaceable = article
+            .title
+            .as_deref()
+            .map(|t| t.trim().is_empty() || is_x_chrome_title(t))
+            .unwrap_or(true);
+        if replaceable {
+            article.title = Some(real.to_string());
+        }
+    }
+
+    if let Some(cover) = post.cover_image_url.as_deref() {
+        if !article.html.contains(cover) && !article.markdown.contains(cover) {
+            article.html = format!(
+                "<img src=\"{}\" alt=\"\">{}",
+                escape_html_text(cover),
+                article.html
+            );
+            article.markdown = format!("![]({cover})\n\n{}", article.markdown);
+        }
+    }
+}
+
+/// An X capture note: the full extracted article, plus the post metadata that
+/// only syndication knows (author, handle, posted-at).
+///
+/// Same body as [`build_article_note`] — this adds frontmatter, it does not
+/// take anything away. The `.html` format gets the same enrichment through
+/// [`enrich_x_article`] but no frontmatter, because it writes a document
+/// rather than a note.
+pub fn build_x_article_note(
+    input: &CaptureInput,
+    article: &Article,
+    post: &XPost,
+    now_rfc3339: &str,
+) -> CaptureNote {
+    // A chrome title from the share sheet must not beat the real one either —
+    // `build_article_note` prefers `input.title` whenever it is not URL-like,
+    // and "Peter (@peter) on X" clears that bar.
+    let cleaned = CaptureInput {
+        title: input
+            .title
+            .as_deref()
+            .filter(|t| !is_x_chrome_title(t))
+            .map(str::to_string),
+        ..input.clone()
+    };
+    let base = build_article_note(&cleaned, article, now_rfc3339);
+
+    let mut fm = String::new();
+    if let Some(name) = post.author_name.as_deref() {
+        fm.push_str(&format!("\nauthor: {}", yaml_quote(name)));
+    }
+    if let Some(handle) = post.author_handle.as_deref() {
+        fm.push_str(&format!("\nauthor_handle: {}", yaml_quote(&format!("@{handle}"))));
+    }
+    if let Some(date) = post.created_at.as_deref() {
+        fm.push_str(&format!("\nposted_at: {}", yaml_quote(date)));
+    }
+    if fm.is_empty() {
+        return base;
+    }
+
+    let mut contents = base.contents;
+    if let Some(close) = contents[3..].find("\n---") {
+        contents.insert_str(3 + close, &fm);
+    }
+    CaptureNote { contents, ..base }
+}
+
 #[cfg(test)]
 mod x_post_tests {
     use super::*;
@@ -2349,5 +2462,146 @@ mod x_post_tests {
         assert!(title_line.contains("one two three four five six seven eight"));
         assert!(!title_line.contains("nine"), "title not capped: {title_line}");
         assert!(note.contents.contains("nine ten"), "body lost the full text");
+    }
+}
+
+#[cfg(test)]
+mod x_enrichment_tests {
+    use super::*;
+
+    fn article(title: Option<&str>, body: &str) -> Article {
+        Article {
+            title: title.map(str::to_string),
+            markdown: body.to_string(),
+            html: format!("<p>{body}</p>"),
+        }
+    }
+
+    fn post() -> XPost {
+        XPost {
+            text: String::new(),
+            author_name: Some("Rania".into()),
+            author_handle: Some("rvaniaaaa".into()),
+            created_at: Some("2026-08-20T09:00:00Z".into()),
+            article_title: Some("The real subject of the piece".into()),
+            article_preview: Some("A teaser".into()),
+            cover_image_url: Some("https://pbs.twimg.com/cover.jpg".into()),
+        }
+    }
+
+    #[test]
+    fn page_chrome_titles_are_recognised() {
+        for t in [
+            "Rania (@rvaniaaaa) on X",
+            "rania (@rvaniaaaa) on Twitter",
+            "@rvaniaaaa on X",
+        ] {
+            assert!(is_x_chrome_title(t), "should be chrome: {t}");
+        }
+    }
+
+    #[test]
+    fn a_real_title_that_merely_mentions_x_survives() {
+        // The whole risk of the chrome check is eating a genuine title. The
+        // handle-in-parens shape is what makes it safe to act on.
+        for t in [
+            "Notes on X",
+            "A field guide to X",
+            "What Elon did on Twitter",
+            "On X: a reckoning",
+        ] {
+            assert!(!is_x_chrome_title(t), "wrongly flagged as chrome: {t}");
+        }
+    }
+
+    #[test]
+    fn the_syndication_title_replaces_page_chrome() {
+        let mut a = article(Some("Rania (@rvaniaaaa) on X"), "body");
+        enrich_x_article(&mut a, &post());
+        assert_eq!(a.title.as_deref(), Some("The real subject of the piece"));
+    }
+
+    #[test]
+    fn a_genuine_extracted_title_is_left_alone() {
+        let mut a = article(Some("What the extractor found"), "body");
+        enrich_x_article(&mut a, &post());
+        assert_eq!(a.title.as_deref(), Some("What the extractor found"));
+    }
+
+    #[test]
+    fn the_cover_becomes_the_first_image_so_it_becomes_the_thumbnail() {
+        let mut a = article(Some("T"), "body");
+        enrich_x_article(&mut a, &post());
+        assert!(a.markdown.starts_with("![](https://pbs.twimg.com/cover.jpg)"), "{}", a.markdown);
+        assert!(a.html.starts_with("<img src=\"https://pbs.twimg.com/cover.jpg\""), "{}", a.html);
+    }
+
+    #[test]
+    fn a_cover_already_in_the_body_is_not_added_twice() {
+        let mut a = article(Some("T"), "![](https://pbs.twimg.com/cover.jpg)\n\nbody");
+        enrich_x_article(&mut a, &post());
+        assert_eq!(a.markdown.matches("cover.jpg").count(), 1, "{}", a.markdown);
+    }
+
+    #[test]
+    fn enrichment_never_replaces_the_extracted_body() {
+        // The load-bearing invariant from the module note: syndication's
+        // 200-character teaser must never displace a real extraction.
+        let long = "x".repeat(7_000);
+        let mut a = article(Some("T"), &long);
+        enrich_x_article(&mut a, &post());
+        assert!(a.markdown.contains(&long), "extraction was displaced");
+        assert!(!a.markdown.contains("A teaser"), "teaser leaked into the body");
+    }
+
+    #[test]
+    fn the_note_carries_author_handle_and_date() {
+        let mut a = article(Some("Rania (@rvaniaaaa) on X"), "body text");
+        enrich_x_article(&mut a, &post());
+        let note = build_x_article_note(
+            &CaptureInput {
+                url: "https://x.com/rvaniaaaa/status/1".into(),
+                title: None,
+                selection_text: None,
+                tags: vec![],
+            },
+            &a,
+            &post(),
+            "2026-08-24T10:00:00Z",
+        );
+        assert!(note.contents.contains("author: \"Rania\""), "{}", note.contents);
+        assert!(note.contents.contains("author_handle: \"@rvaniaaaa\""), "{}", note.contents);
+        assert!(note.contents.contains("posted_at:"), "{}", note.contents);
+        assert!(note.contents.contains("capture_format: markdown"), "{}", note.contents);
+        assert!(note.contents.contains("body text"), "body lost: {}", note.contents);
+    }
+
+    #[test]
+    fn a_chrome_title_from_the_share_sheet_does_not_beat_the_real_one() {
+        // `build_article_note` prefers `input.title` over the extracted one
+        // whenever it is not URL-like — and "Rania (@rvaniaaaa) on X" clears
+        // that bar, so without the filter the file is named after the author.
+        let mut a = article(None, "body");
+        enrich_x_article(&mut a, &post());
+        let note = build_x_article_note(
+            &CaptureInput {
+                url: "https://x.com/rvaniaaaa/status/1".into(),
+                title: Some("Rania (@rvaniaaaa) on X".into()),
+                selection_text: None,
+                tags: vec![],
+            },
+            &a,
+            &post(),
+            "2026-08-24T10:00:00Z",
+        );
+        assert_eq!(note.rel_path, "Inbox/The real subject of the piece.md");
+    }
+
+    #[test]
+    fn a_post_with_no_syndication_data_changes_nothing() {
+        let mut a = article(Some("Extracted"), "body");
+        let before = a.clone();
+        enrich_x_article(&mut a, &XPost::default());
+        assert_eq!(a, before);
     }
 }

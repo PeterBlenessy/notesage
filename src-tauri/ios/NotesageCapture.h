@@ -92,6 +92,42 @@ char *notesage_capture_article_html_contents(const char *url,
                                              const char *tags,
                                              const char *html);
 
+/// The embed-data endpoint for an X status URL, or NULL when the URL is not
+/// one. Fetch it and pass the JSON to the three X builders below.
+///
+/// That JSON is METADATA, not the capture: it carries the post's real title,
+/// author and cover image, but only a ~200-character teaser of an Article's
+/// text. The body still comes from extracting the page. Every builder below
+/// works with a NULL json — the endpoint is undocumented and may stop
+/// answering, and a share must not fail when it does.
+/// Caller frees with notesage_capture_string_free().
+char *notesage_capture_x_metadata_url(const char *url);
+
+/// Relative path for an X capture, named from the post's real title instead of
+/// the page chrome (`<name> (@<handle>) on X`). Caller frees.
+char *notesage_capture_x_rel_path(const char *url,
+                                  const char *title,
+                                  const char *x_json);
+
+/// Contents of an X capture note (markdown): the extracted article enriched
+/// with the real title, the cover image as its lead, and author/handle/date.
+/// Falls back to a metadata-only note when there is no article to extract, so
+/// this returns NULL only on panic. Caller frees.
+char *notesage_capture_x_contents(const char *url,
+                                  const char *title,
+                                  const char *selection_text,
+                                  const char *tags,
+                                  const char *html,
+                                  const char *x_json);
+
+/// Contents of an X capture as a self-contained HTML document, same
+/// enrichment. NULL when extraction declines — the caller falls back to the
+/// markdown note, which still carries the metadata. Caller frees.
+char *notesage_capture_x_html_contents(const char *url,
+                                       const char *title,
+                                       const char *html,
+                                       const char *x_json);
+
 void notesage_capture_string_free(char *ptr);
 
 #ifdef __cplusplus

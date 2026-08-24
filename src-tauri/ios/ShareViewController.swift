@@ -88,6 +88,19 @@ final class ShareViewController: UIViewController {
     private var renderedHtml: String?
     private var documentProviders: [NSItemProvider] = []
 
+    /// X's embed-data JSON for this share, fetched once before the article
+    /// chain runs. nil when the URL is not an X status, or when the endpoint
+    /// declined — it is undocumented and unversioned, so every path below has
+    /// to work without it.
+    private var xJson: String?
+
+    /// Is this share an X status URL? Decided by the capture crate, so Swift
+    /// carries no second opinion about which hosts and path shapes count.
+    private var isXStatus: Bool {
+        guard let url = sharedUrl else { return false }
+        return LibraryAccess.xMetadataEndpoint(for: url) != nil
+    }
+
     private let previewLabel = UILabel()
     private var previewCard: UIView?
     private var linkView: LPLinkView?
@@ -416,48 +429,98 @@ final class ShareViewController: UIViewController {
                 }
             }
         case .article, .html:
-            // Safari already gave us the RENDERED page — use it and skip the
-            // network entirely.
-            //
-            // This is not a shortcut for the same data. A fetch runs no
-            // JavaScript, so on any lazy-loading site it returns placeholder
-            // image URLs and the real ones exist nowhere in the markup. The
-            // rendered DOM carries `currentSrc` for every image: the exact URL
-            // the browser chose after srcset, sizes and DPR. No parsing of ours
-            // can reconstruct that, because it is the outcome of decisions only
-            // the browser made.
-            if let rendered = renderedHtml, writeArticle(url: url, html: rendered) {
-                finish()
+            // An X status needs its metadata BEFORE the article chain runs:
+            // the real title names the file, and the cover image has to be in
+            // the document before it is written, not patched in afterwards.
+            // Best-effort — `saveArticle` works with `xJson` still nil.
+            if isXStatus {
+                fetchXMetadata(url: url) { [weak self] json in
+                    guard let self else { return }
+                    self.xJson = json
+                    self.saveArticle(url: url)
+                }
                 return
             }
-            // No payload (a bare URL from Messages/Mail), or the rendered DOM
-            // held no extractable article. Fall back to fetching.
-            fetch(url: url) { [weak self] html in
+            saveArticle(url: url)
+        }
+    }
+
+    /// The article chain, shared by both article formats and by X.
+    ///
+    ///   rendered DOM -> fetched HTML -> rendered fetch -> fallback note
+    ///
+    /// Split out of `saveTapped` so the X branch can run the identical chain
+    /// after its metadata fetch rather than duplicating it.
+    private func saveArticle(url: String) {
+        // Safari already gave us the RENDERED page — use it and skip the
+        // network entirely.
+        //
+        // This is not a shortcut for the same data. A fetch runs no
+        // JavaScript, so on any lazy-loading site it returns placeholder
+        // image URLs and the real ones exist nowhere in the markup. The
+        // rendered DOM carries `currentSrc` for every image: the exact URL
+        // the browser chose after srcset, sizes and DPR. No parsing of ours
+        // can reconstruct that, because it is the outcome of decisions only
+        // the browser made.
+        if let rendered = renderedHtml, writeArticle(url: url, html: rendered) {
+            finish()
+            return
+        }
+        // No payload (a bare URL from Messages/Mail), or the rendered DOM
+        // held no extractable article. Fall back to fetching.
+        fetch(url: url) { [weak self] html in
+            guard let self else { return }
+            guard let html else {
+                self.saveArticleFallback(url: url)
+                return
+            }
+            // Both article formats share one fallback chain (#611):
+            //   raw HTML -> rendered DOM -> link note.
+            // The render is a SECOND attempt only. A page whose article is
+            // already in the fetched HTML never pays for a webview.
+            if self.writeArticle(url: url, html: html) {
+                self.finish()
+                return
+            }
+            PageRenderer.renderedHTML(url: url) { [weak self] rendered in
                 guard let self else { return }
-                guard let html else {
-                    self.saveLink(url: url)
-                    return
-                }
-                // Both article formats share one fallback chain (#611):
-                //   raw HTML -> rendered DOM -> link note.
-                // The render is a SECOND attempt only. A page whose article is
-                // already in the fetched HTML never pays for a webview.
-                if self.writeArticle(url: url, html: html) {
+                if let rendered, self.writeArticle(url: url, html: rendered) {
                     self.finish()
-                    return
-                }
-                PageRenderer.renderedHTML(url: url) { [weak self] rendered in
-                    guard let self else { return }
-                    if let rendered, self.writeArticle(url: url, html: rendered) {
-                        self.finish()
-                    } else {
-                        // Neither source yielded an article — the link note
-                        // never fails.
-                        self.saveLink(url: url)
-                    }
+                } else {
+                    self.saveArticleFallback(url: url)
                 }
             }
         }
+    }
+
+    /// Last resort when no source yielded an article.
+    ///
+    /// For an X status this is NOT the link note. Syndication still knows the
+    /// title, author and cover, so the metadata note is strictly better — and
+    /// a plain post (nothing long-form to extract) reaches here every time, by
+    /// design rather than by failure.
+    ///
+    /// It writes markdown even when the user picked HTML. Both fallbacks write
+    /// `.md` — `saveLink` does too — so the choice here is between a metadata
+    /// note and a bare link, not between formats.
+    ///
+    /// Everything else, and X when the metadata is missing too, gets the link
+    /// note. That one never fails, which is what keeps a share from ever
+    /// ending in nothing.
+    private func saveArticleFallback(url: String) {
+        if isXStatus, xJson != nil {
+            let written = try? LibraryAccess.writeXCapture(
+                url: url, title: sharedTitle, tags: [], html: nil,
+                xJson: xJson, asHtml: false)
+            // `try?` on a throwing function that also returns an optional
+            // yields String?? — flatten before testing, or a thrown error and
+            // a declined build become indistinguishable.
+            if written.flatMap({ $0 }) != nil {
+                finish()
+                return
+            }
+        }
+        saveLink(url: url)
     }
 
     /// Write the active article format from `html`. Returns false when
@@ -467,6 +530,16 @@ final class ShareViewController: UIViewController {
     /// format-specific: if the article is not in the fetched HTML, neither the
     /// markdown nor the HTML rendering can find it.
     private func writeArticle(url: String, html: String) -> Bool {
+        // X routes through its own writer at EVERY link in the chain, not just
+        // the first. Enrichment has to travel with the extraction — a capture
+        // that succeeded on the second attempt is exactly as entitled to its
+        // real title and cover image as one that succeeded on the first.
+        if isXStatus {
+            let written = try? LibraryAccess.writeXCapture(
+                url: url, title: sharedTitle, tags: [], html: html,
+                xJson: xJson, asHtml: format == .html)
+            return written.flatMap { $0 } != nil
+        }
         if format == .html {
             return (try? LibraryAccess.writeArticleHtml(
                 url: url, title: sharedTitle, html: html)) != nil
@@ -500,6 +573,37 @@ final class ShareViewController: UIViewController {
                 } else {
                     completion(nil)
                 }
+            }
+        }.resume()
+    }
+
+    /// Fetch X's embed-data JSON (5 s, 512 KB — an Article's entry carries a
+    /// teaser and media block, so a little larger than oEmbed's five fields).
+    ///
+    /// nil on ANY failure, and every caller must cope: this endpoint is
+    /// undocumented, unversioned, and rate-limits. A capture whose enrichment
+    /// is missing is a worse capture; a capture that fails because enrichment
+    /// was unavailable would be a bug.
+    private func fetchXMetadata(url: String, completion: @escaping (String?) -> Void) {
+        guard let endpoint = LibraryAccess.xMetadataEndpoint(for: url),
+              let parsed = URL(string: endpoint)
+        else {
+            completion(nil)
+            return
+        }
+        var request = URLRequest(url: parsed)
+        request.timeoutInterval = 5
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        URLSession(configuration: .ephemeral).dataTask(with: request) { data, response, _ in
+            let ok = (response as? HTTPURLResponse)?.statusCode == 200
+            DispatchQueue.main.async {
+                guard ok, let data, data.count <= 512 * 1024,
+                      let json = String(data: data, encoding: .utf8)
+                else {
+                    completion(nil)
+                    return
+                }
+                completion(json)
             }
         }.resume()
     }

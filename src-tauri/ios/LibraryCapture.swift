@@ -173,6 +173,94 @@ extension LibraryAccess {
         }
     }
 
+    /// X's embed-data endpoint for `url`, or nil when the URL is not an X
+    /// status. See `x_syndication_url` in the capture crate for why this is the
+    /// metadata path and not the capture path.
+    static func xMetadataEndpoint(for url: String) -> String? {
+        url.withCString { u in
+            guard let raw = notesage_capture_x_metadata_url(u) else { return nil }
+            defer { notesage_capture_string_free(raw) }
+            return String(cString: raw)
+        }
+    }
+
+    /// Write an X capture: the extracted article, enriched with the post's own
+    /// title, cover image and author.
+    ///
+    /// `xJson` may be nil (endpoint down, or not fetched) — the note still
+    /// builds, it just keeps whatever the extractor found. `html` may be nil
+    /// too, in which case this writes the metadata-only note rather than
+    /// failing, so an X share always produces something.
+    ///
+    /// `asHtml` picks the document format. It returns nil when extraction
+    /// declines, because an HTML document with no article in it is not worth
+    /// writing; the markdown path never returns nil for that reason.
+    static func writeXCapture(
+        url: String, title: String?, tags: [String], html: String?, xJson: String?, asHtml: Bool
+    ) throws -> String? {
+        let joinedTags = tags.joined(separator: ",")
+
+        // Two optional C strings to thread through, so the nesting is explicit
+        // rather than four combinatorial branches.
+        func withTwo<R>(
+            _ a: String?, _ b: String?,
+            _ body: (UnsafePointer<CChar>?, UnsafePointer<CChar>?) -> R
+        ) -> R {
+            func withOne<T>(_ v: String?, _ f: (UnsafePointer<CChar>?) -> T) -> T {
+                guard let v else { return f(nil) }
+                return v.withCString { f($0) }
+            }
+            return withOne(a) { ap in withOne(b) { bp in body(ap, bp) } }
+        }
+
+        let (relPath, contents): (String?, String?) = withTwo(html, xJson) { htmlPtr, jsonPtr in
+            let path = callCapture({ u, t, _, _ in
+                notesage_capture_x_rel_path(u, t, jsonPtr)
+            }, url, title, nil, "")
+
+            let body: String?
+            if asHtml {
+                body = callCapture({ u, t, _, _ in
+                    notesage_capture_x_html_contents(u, t, htmlPtr, jsonPtr)
+                }, url, title, nil, "")
+            } else {
+                body = callCapture({ u, t, sel, tg in
+                    notesage_capture_x_contents(u, t, sel, tg, htmlPtr, jsonPtr)
+                }, url, title, nil, joinedTags)
+            }
+            return (path, body)
+        }
+        guard let relPath, let contents else { return nil }
+
+        let root = try resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+
+        let ext = asHtml ? "html" : "md"
+        let stem = ((relPath as NSString).lastPathComponent as NSString).deletingPathExtension
+        var name = "\(stem).\(ext)"
+        var target = inbox.appendingPathComponent(name)
+        var n = 1
+        while FileManager.default.fileExists(atPath: target.path) {
+            name = "\(stem)-\(n).\(ext)"
+            target = inbox.appendingPathComponent(name)
+            n += 1
+        }
+
+        var coordError: NSError?
+        var writeError: Error?
+        NSFileCoordinator().coordinate(
+            writingItemAt: target, options: .forReplacing, error: &coordError
+        ) { url in
+            do { try contents.data(using: .utf8)?.write(to: url) } catch { writeError = error }
+        }
+        if let coordError { throw coordError }
+        if let writeError { throw writeError }
+        return "Inbox/\(name)"
+    }
+
     /// Write a VIDEO capture note: a labelled link to the source, the author,
     /// and the provider's clean poster as a plain image. `oembedJson` may be
     /// nil — a provider that answers with nothing still yields a usable note.

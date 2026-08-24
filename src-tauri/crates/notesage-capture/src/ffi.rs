@@ -24,8 +24,10 @@ use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use crate::{
-    build_article_html_document, build_article_note, build_capture_note, build_video_note, extract_article, extract_meta_title,
-    meaningful_title, oembed_url, parse_oembed, timestamps, CaptureInput,
+    build_article_html_document, build_article_note, build_capture_note, build_video_note,
+    build_x_article_note, build_x_note, enrich_x_article, extract_article, extract_meta_title,
+    is_x_chrome_title, meaningful_title, oembed_url, parse_oembed, parse_x_post, timestamps,
+    x_syndication_url, Article, CaptureInput, XPost,
 };
 
 /// Borrow a C string as `Option<String>`; `NULL` or invalid UTF-8 → `None`.
@@ -246,6 +248,151 @@ pub unsafe extern "C" fn notesage_capture_article_html_contents(
     .unwrap_or(std::ptr::null_mut())
 }
 
+// ---------------------------------------------------------------------------
+// X posts
+//
+// Four exports, mirroring the video trio's shape: one that names an endpoint
+// for the caller to fetch, and builders that take the returned JSON.
+//
+// The syndication JSON is METADATA, never the capture. Read the module note
+// above `x_syndication_url` in lib.rs before changing any of this: the
+// endpoint carries a ~200-character teaser, and an X Article's real body comes
+// from extracting the status page. Every function here degrades to the plain
+// article path when `x_json` is NULL or unparseable, because that endpoint is
+// undocumented and can stop answering without notice.
+// ---------------------------------------------------------------------------
+
+/// The embed-data endpoint for an X status URL, or NULL when the URL is not
+/// one. The caller fetches it and hands the JSON to the builders below.
+///
+/// # Safety
+/// `url` must be a NUL-terminated C string or NULL. The returned pointer is
+/// owned by the caller and must be freed with `notesage_capture_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn notesage_capture_x_metadata_url(url: *const c_char) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(
+        || match opt_str(url).and_then(|u| x_syndication_url(&u)) {
+            Some(endpoint) => into_c_string(endpoint),
+            None => std::ptr::null_mut(),
+        },
+    ))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Rel path for an X capture, named from the post's real title rather than the
+/// page chrome.
+///
+/// Without this every X capture is named `<display name> (@<handle>) on X`, so
+/// a second article by the same author collides into `…-1.md` and neither file
+/// says what it holds.
+///
+/// # Safety
+/// All arguments must be NUL-terminated C strings or NULL. The returned
+/// pointer is owned by the caller and must be freed with
+/// `notesage_capture_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn notesage_capture_x_rel_path(
+    url: *const c_char,
+    title: *const c_char,
+    x_json: *const c_char,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        let mut input = input_from(url, title, std::ptr::null(), std::ptr::null());
+        let post = x_post_from(x_json);
+        if input.title.as_deref().map(is_x_chrome_title).unwrap_or(false) {
+            input.title = None;
+        }
+        if meaningful_title(input.title.as_deref()).is_none() {
+            input.title = post.article_title.clone();
+        }
+        let (now, _stamp) = timestamps();
+        into_c_string(build_capture_note(&input, &now).rel_path)
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Contents of an X capture note (markdown): the extracted article, enriched
+/// with the post's real title, its cover image as the lead, and the author /
+/// handle / posted-at that only syndication knows.
+///
+/// Falls back to the metadata-only note when extraction declines — a post with
+/// no article to extract still deserves a note. Returns NULL only on panic, so
+/// unlike the plain article export this one always yields something.
+///
+/// # Safety
+/// All pointers must be NUL-terminated C strings or NULL, valid for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn notesage_capture_x_contents(
+    url: *const c_char,
+    title: *const c_char,
+    selection_text: *const c_char,
+    tags: *const c_char,
+    html: *const c_char,
+    x_json: *const c_char,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        let input = input_from(url, title, selection_text, tags);
+        let post = x_post_from(x_json);
+        let (now, _stamp) = timestamps();
+
+        match x_article_from(html, &input.url, &post) {
+            Some(article) => {
+                into_c_string(build_x_article_note(&input, &article, &post, &now).contents)
+            }
+            // No extractable article — the metadata note is the whole point of
+            // having a fallback builder.
+            None => into_c_string(build_x_note(&input, &post, &now).contents),
+        }
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Contents of an X capture as a self-contained HTML document, with the same
+/// enrichment as the markdown path.
+///
+/// Returns NULL when extraction declines — an HTML document with no article in
+/// it is not worth writing, and the caller falls back to the markdown note
+/// (which still has the metadata) or the link note.
+///
+/// # Safety
+/// All pointers must be NUL-terminated C strings or NULL, valid for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn notesage_capture_x_html_contents(
+    url: *const c_char,
+    title: *const c_char,
+    html: *const c_char,
+    x_json: *const c_char,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        let input = input_from(url, title, std::ptr::null(), std::ptr::null());
+        let post = x_post_from(x_json);
+        let article = match x_article_from(html, &input.url, &post) {
+            Some(a) => a,
+            None => return std::ptr::null_mut(),
+        };
+        let title = meaningful_title(input.title.as_deref())
+            .filter(|t| !is_x_chrome_title(t))
+            .or_else(|| article.title.clone());
+        into_c_string(build_article_html_document(&article, title.as_deref(), &input.url))
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Parse the syndication JSON, treating absent/invalid as "no metadata" rather
+/// than failing the capture. The endpoint is undocumented; it WILL change.
+unsafe fn x_post_from(x_json: *const c_char) -> XPost {
+    opt_str(x_json).map(|j| parse_x_post(&j)).unwrap_or_default()
+}
+
+/// Extract and enrich in one step — the two always travel together, and doing
+/// them separately at each call site is how one path ends up un-enriched.
+unsafe fn x_article_from(html: *const c_char, url: &str, post: &XPost) -> Option<Article> {
+    let html = opt_str(html)?;
+    let mut article = extract_article(&html, url)?;
+    enrich_x_article(&mut article, post);
+    Some(article)
+}
+
 /// Free a string returned by this module. Passing NULL is a no-op.
 ///
 /// # Safety
@@ -386,6 +533,213 @@ mod tests {
     #[test]
     fn freeing_null_is_a_no_op() {
         unsafe { notesage_capture_string_free(std::ptr::null_mut()) };
+    }
+}
+
+#[cfg(test)]
+mod x_ffi_tests {
+    use super::*;
+    use std::ffi::CString;
+
+    const URL: &str = "https://x.com/rvaniaaaa/status/1234567890";
+    /// What the share sheet hands over for an X status: the page chrome.
+    const SHARED_TITLE: &str = "Rania (@rvaniaaaa) on X";
+
+    fn syndication_json() -> CString {
+        CString::new(
+            r#"{
+              "text": "https://t.co/abc",
+              "user": { "name": "Rania", "screen_name": "rvaniaaaa" },
+              "created_at": "2026-08-20T09:00:00Z",
+              "article": {
+                "title": "A community is what sharing bread means",
+                "preview_text": "The opening lines of the piece.",
+                "cover_media": { "media_info": { "original_img_url": "https://pbs.twimg.com/cover.jpg" } }
+              }
+            }"#,
+        )
+        .unwrap()
+    }
+
+    /// Enough prose to clear the extractor's 400-character floor.
+    fn article_html() -> CString {
+        let body = "This is the real body of the article, server-rendered on the status page. "
+            .repeat(12);
+        CString::new(format!("<html><body><article><h1>Ignored</h1><p>{body}</p></article></body></html>"))
+            .unwrap()
+    }
+
+    unsafe fn take(ptr: *mut c_char) -> Option<String> {
+        if ptr.is_null() {
+            return None;
+        }
+        let s = CStr::from_ptr(ptr).to_str().unwrap().to_owned();
+        notesage_capture_string_free(ptr);
+        Some(s)
+    }
+
+    #[test]
+    fn the_metadata_endpoint_is_offered_for_x_and_withheld_elsewhere() {
+        unsafe {
+            let x = CString::new(URL).unwrap();
+            let endpoint = take(notesage_capture_x_metadata_url(x.as_ptr())).expect("an endpoint");
+            assert!(endpoint.contains("cdn.syndication.twimg.com"), "{endpoint}");
+            assert!(endpoint.contains("id=1234567890"), "{endpoint}");
+
+            let other = CString::new("https://example.com/a").unwrap();
+            assert!(notesage_capture_x_metadata_url(other.as_ptr()).is_null());
+        }
+    }
+
+    #[test]
+    fn the_capture_is_named_after_the_post_not_its_author() {
+        // The defect this fixes: every X capture landing in the Inbox called
+        // "Rania (@rvaniaaaa) on X", so a second article by the same person
+        // collides and neither filename says what it holds.
+        unsafe {
+            let url = CString::new(URL).unwrap();
+            let title = CString::new(SHARED_TITLE).unwrap();
+            let json = syndication_json();
+            let out = take(notesage_capture_x_rel_path(
+                url.as_ptr(),
+                title.as_ptr(),
+                json.as_ptr(),
+            ))
+            .expect("a path");
+            assert_eq!(out, "Inbox/A community is what sharing bread means.md", "{out}");
+        }
+    }
+
+    #[test]
+    fn the_cover_image_leads_the_note_so_the_gallery_card_shows_it() {
+        unsafe {
+            let url = CString::new(URL).unwrap();
+            let title = CString::new(SHARED_TITLE).unwrap();
+            let html = article_html();
+            let json = syndication_json();
+            let out = take(notesage_capture_x_contents(
+                url.as_ptr(),
+                title.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                html.as_ptr(),
+                json.as_ptr(),
+            ))
+            .expect("contents");
+
+            assert!(out.contains("https://pbs.twimg.com/cover.jpg"), "cover missing: {out}");
+            assert!(out.contains("author_handle: \"@rvaniaaaa\""), "{out}");
+            assert!(out.contains("This is the real body"), "extraction lost: {out}");
+            // The cover must precede the body — `article_lead_image` takes the
+            // FIRST image, and that is the whole point of prepending it.
+            let cover_at = out.find("cover.jpg").unwrap();
+            let body_at = out.find("This is the real body").unwrap();
+            assert!(cover_at < body_at, "cover is not the lead image: {out}");
+        }
+    }
+
+    #[test]
+    fn a_missing_endpoint_degrades_to_the_plain_article_rather_than_failing() {
+        // The syndication endpoint is undocumented and unversioned. When it
+        // stops answering, an X share must still save the article — losing
+        // enrichment is acceptable, losing the capture is not.
+        unsafe {
+            let url = CString::new(URL).unwrap();
+            let html = article_html();
+            let out = take(notesage_capture_x_contents(
+                url.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                html.as_ptr(),
+                std::ptr::null(), // no metadata
+            ))
+            .expect("contents even with no metadata");
+            assert!(out.contains("This is the real body"), "{out}");
+            assert!(out.contains("type: capture"), "{out}");
+        }
+    }
+
+    #[test]
+    fn a_post_with_no_article_still_yields_a_note() {
+        // A plain post has nothing to extract — that is the normal case, not a
+        // failure, and it is what the fallback builder is for.
+        unsafe {
+            let url = CString::new(URL).unwrap();
+            let json = CString::new(
+                r#"{"text":"a short post","user":{"name":"Rania","screen_name":"rvaniaaaa"}}"#,
+            )
+            .unwrap();
+            let out = take(notesage_capture_x_contents(
+                url.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(), // no html at all
+                json.as_ptr(),
+            ))
+            .expect("the metadata note");
+            assert!(out.contains("capture_format: x-post"), "{out}");
+            assert!(out.contains("a short post"), "{out}");
+        }
+    }
+
+    #[test]
+    fn the_html_format_declines_when_there_is_no_article() {
+        // Unlike the markdown path, an HTML document with no article in it is
+        // not worth writing — NULL tells Swift to try the next fallback.
+        unsafe {
+            let url = CString::new(URL).unwrap();
+            let json = syndication_json();
+            let ptr = notesage_capture_x_html_contents(
+                url.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                json.as_ptr(),
+            );
+            assert!(ptr.is_null(), "should decline with no html");
+        }
+    }
+
+    #[test]
+    fn the_html_document_carries_the_real_title_and_the_cover() {
+        unsafe {
+            let url = CString::new(URL).unwrap();
+            let title = CString::new(SHARED_TITLE).unwrap();
+            let html = article_html();
+            let json = syndication_json();
+            let out = take(notesage_capture_x_html_contents(
+                url.as_ptr(),
+                title.as_ptr(),
+                html.as_ptr(),
+                json.as_ptr(),
+            ))
+            .expect("a document");
+            assert!(
+                out.contains("<title>A community is what sharing bread means</title>"),
+                "page chrome leaked into the title: {out}"
+            );
+            assert!(out.contains("<img src=\"https://pbs.twimg.com/cover.jpg\""), "{out}");
+        }
+    }
+
+    #[test]
+    fn garbage_json_is_treated_as_absent_not_as_a_crash() {
+        unsafe {
+            let url = CString::new(URL).unwrap();
+            let html = article_html();
+            let junk = CString::new("<html>429 Too Many Requests</html>").unwrap();
+            let out = take(notesage_capture_x_contents(
+                url.as_ptr(),
+                std::ptr::null(),
+                std::ptr::null(),
+                std::ptr::null(),
+                html.as_ptr(),
+                junk.as_ptr(),
+            ))
+            .expect("contents");
+            assert!(out.contains("This is the real body"), "{out}");
+        }
     }
 }
 

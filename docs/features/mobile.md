@@ -130,6 +130,34 @@ links and documents. PRD:
   never goes quiet (the ceiling catches it), and one that lazy-loads past 5 s
   yields a partial DOM (still better than a link note).
 
+  **X statuses are enriched, not special-cased.** An X share runs the same two
+  formats and the same fallback chain; what it adds is a metadata fetch
+  beforehand. X's public embed endpoint
+  (`cdn.syndication.twimg.com/tweet-result`) knows three things the page does
+  not tell an extractor: the post's real title, its author/handle/date, and
+  the **cover image** — which an X Article renders client-side, so it exists
+  nowhere in the markup readability parses. Without it a capture was named
+  `<display name> (@<handle>) on X` (so two articles by one author collided)
+  and carried no image at all, which is why the gallery card showed a
+  thumbnail of the article's own rendered text.
+
+  The endpoint is the METADATA path, never the capture path — it returns a
+  ~200-character teaser, and letting that displace a full extraction would be
+  a straight regression. `enrich_x_article` therefore only corrects the title
+  and prepends the cover; the body is whatever extraction found. The cover is
+  *prepended* because `article_lead_image` takes the first image in document
+  order, which is what makes it the thumbnail.
+
+  It is undocumented, unversioned and rate-limits, so every path works without
+  it: no JSON, or unparseable JSON, degrades to the plain article capture. A
+  post with no long-form article to extract — the common case — falls back to
+  the metadata-only note (`capture_format: x-post`) rather than a bare link.
+
+  Wiring: `notesage_capture_x_metadata_url` / `_x_rel_path` / `_x_contents` /
+  `_x_html_contents` → `LibraryAccess.writeXCapture` →
+  `ShareViewController.saveArticle`. The chain from builder to gallery card is
+  regression-locked — see "The capture pipeline contract" below.
+
   Documents (PDF/EPUB/file shares — the extension also declares
   `NSExtensionActivationSupportsFileWithMaxCount`) skip the picker and store
   immediately in `Inbox/` with their original names, streamed via
@@ -412,6 +440,50 @@ content (guideline 5.2.3) — a real risk for an app heading to TestFlight. The
 readable part of a video is what a note wants anyway. Transcribing a shared
 media FILE with the desktop's Whisper stack is the planned next step, and
 carries none of those problems.
+
+## The capture pipeline contract
+
+`src-tauri/crates/notesage-capture/tests/pipeline_contract.rs` exists because
+of a specific failure. X capture shipped in v0.52.0 and TestFlight build 11 —
+`build_x_note`, `x_syndication_url` and `XPost` written, unit-tested, and
+**never exported over the FFI**, so nothing in the app could reach them. X
+articles still saved (generic readability works on X's server-rendered status
+pages), so the feature looked present while its whole metadata path was
+structurally absent. Every test passed throughout.
+
+A capture crosses four languages, and unit tests only ever covered the first:
+
+```
+builder (Rust) → FFI (C ABI) → bridging header (C) → Swift → saved file
+  → sweep finds its images → inliner rewrites them
+  → article_lead_image locates one → gallery card shows it
+```
+
+Four contracts, each catching a different link:
+
+| Contract | Catches |
+| --- | --- |
+| `every_note_builder_is_reachable_or_documented` | A builder no FFI export reaches — dead code wearing a test suite. `None` is allowed but demands a written reason. |
+| `every_ffi_export_is_called_from_swift_and_declared_in_the_header` | An export missing from `NotesageCapture.h` (Swift cannot see it), or declared but never called. An uncalled export is the same defect one stage later. |
+| `the_share_controller_routes_x_urls_through_the_x_writer` | A perfect writer that `ShareViewController` never invokes — a one-line omission with no symptom but the bug. |
+| `*_survives_to_the_thumbnail` (markdown / HTML / X) | An image that exists in the file but that the sweep cannot find or `article_lead_image` cannot locate — the card falls back to a picture of the text. |
+
+Two design notes. The Swift checks are **text scans, not builds**: the Share
+Extension only compiles on a Mac with an iOS toolchain, and a contract that
+cannot run in CI is a contract that runs never. And they match on **word
+boundaries**, because every export name here is a prefix of another —
+`notesage_capture_rel_path` is a prefix of `notesage_capture_rel_path_from_html`,
+so a plain substring check reports the first as present on the strength of the
+second, passing for exactly the wrong reason.
+
+The same principle applies one layer down: CI's "verify exported symbols" step
+derives its list from `NotesageCapture.h` rather than hardcoding names. It had
+hardcoded three, and passed for months while the X exports did not exist —
+because none of the three were the missing ones.
+
+**Adding a share source means adding a row.** Forgetting one fails the build
+naming the stage that broke, instead of shipping a feature that quietly does
+nothing.
 
 ## Launch: no white flash (#675)
 
