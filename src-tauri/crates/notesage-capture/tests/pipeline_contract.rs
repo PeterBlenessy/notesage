@@ -143,10 +143,12 @@ fn macos_src(file: &str) -> String {
     ext_src("macos", file)
 }
 
-fn ext_src(platform: &str, file: &str) -> String {
+fn ext_src(dir: &str, file: &str) -> String {
+    // `dir` is relative to `src-tauri/` — either a platform folder (`ios`,
+    // `macos`) or the iOS plugin package, which lives under `crates/`.
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
-        .join(platform)
+        .join(dir)
         .join(file);
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
 }
@@ -317,6 +319,58 @@ fn the_share_controller_routes_x_urls_through_the_x_writer() {
          shares of an X post would fall through to the generic article path —\n\
          the exact bug iOS had, on the other platform."
     );
+}
+
+#[test]
+fn both_platforms_enter_the_security_scope_before_minting_a_bookmark() {
+    // `bookmarkData(options: .withSecurityScope)` requires being INSIDE the
+    // URL's security scope. A folder-picker URL carries an implicit grant, but
+    // both pickers hand it back ASYNCHRONOUSLY and that grant is not
+    // guaranteed to still be live when the completion runs.
+    //
+    // iOS wrapped it from the start; macOS did not, and threw "you don't have
+    // permission" — presenting to the user as "Could not remember that
+    // folder" after they had just chosen it. The grant could never be stored,
+    // so Save stayed disabled forever.
+    //
+    // Cheap to reintroduce (the wrap looks redundant), expensive to diagnose:
+    // it depends on timing, so it can work on one machine and fail on another.
+    for (label, src, func_marker) in [
+        (
+            "iOS",
+            ext_src(
+                "crates/tauri-plugin-notesage-ios/ios/Sources",
+                "LibraryAccess.swift",
+            ),
+            "static func persistBookmark(",
+        ),
+        ("macOS", macos_src("ShareLibraryAccess.swift"), "static func requestGrant("),
+    ] {
+        let start = src
+            .find(func_marker)
+            .unwrap_or_else(|| panic!("{label}: `{func_marker}` not found"));
+        // Bound the slice by the NEXT declaration rather than a fixed byte
+        // count — a fixed window silently stops covering the function the
+        // moment someone adds a comment, and then passes for that reason.
+        let after = &src[start + func_marker.len()..];
+        let end = ["\n    static func ", "\n    private static func ", "\n}"]
+            .iter()
+            .filter_map(|m| after.find(m))
+            .min()
+            .map(|i| start + func_marker.len() + i)
+            .unwrap_or(src.len());
+        let body = &src[start..end];
+        let mint = body
+            .find("bookmarkData(")
+            .unwrap_or_else(|| panic!("{label}: no bookmarkData call in {func_marker}"));
+        assert!(
+            body[..mint].contains("startAccessingSecurityScopedResource()"),
+            "{label} mints a bookmark without first entering the URL's security\n\
+             scope. The picker's implicit grant may have lapsed by the time the\n\
+             async completion runs, and the throw reads as \"could not remember\n\
+             that folder\" — after the user just chose it.\n\n{body}"
+        );
+    }
 }
 
 #[test]

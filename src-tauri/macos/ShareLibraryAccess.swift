@@ -62,10 +62,18 @@ enum ShareLibraryAccess {
     /// user may simply have the volume unmounted, and discarding the bookmark
     /// would make a temporary condition permanent.
     static func currentGrant() -> Grant {
-        guard let url = try? resolveRoot() else {
+        do {
+            let url = try resolveRoot()
+            return Grant(displayName: url.lastPathComponent, granted: true)
+        } catch {
+            // `try?` swallowed this, which is why two grant bugs in a row had
+            // nothing to read. The three causes look identical on screen — a
+            // greyed-out Save — and are completely different problems: no
+            // bookmark stored at all, a bookmark that will not resolve, or one
+            // whose security scope the system refuses to re-open.
+            NSLog("[notesage-share] currentGrant: not granted — %@", String(describing: error))
             return Grant(displayName: "", granted: false)
         }
-        return Grant(displayName: url.lastPathComponent, granted: true)
     }
 
     /// Ask the user for their library folder and remember it.
@@ -89,6 +97,20 @@ enum ShareLibraryAccess {
                 return
             }
             do {
+                // Enter the security scope BEFORE minting the bookmark.
+                //
+                // `panel.begin` is asynchronous, and the implicit access the
+                // panel grants is not guaranteed to still be live by the time
+                // this completion runs. Without the explicit scope,
+                // `bookmarkData` throws "you don't have permission" — the user
+                // picks their library, the panel closes, and the extension
+                // reports that it could not remember the folder.
+                //
+                // iOS has always done this (`persistBookmark`); macOS did not,
+                // which is why it worked there and failed here.
+                let scoped = url.startAccessingSecurityScopedResource()
+                defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
                 let data = try url.bookmarkData(
                     options: .withSecurityScope,
                     includingResourceValuesForKeys: nil,
@@ -96,8 +118,21 @@ enum ShareLibraryAccess {
                 )
                 UserDefaults.standard.set(data, forKey: bookmarkKey)
                 UserDefaults.standard.set(url.lastPathComponent, forKey: displayNameKey)
+                // Prove the bookmark we just wrote can be read back. Writing
+                // one and resolving one are separate permissions, and a grant
+                // that cannot be resolved presents exactly like no grant at
+                // all — the user picks a folder and nothing changes.
+                let readBack = (try? resolveRoot()) != nil
+                NSLog("[notesage-share] grant stored for %@ (%d bytes); resolves=%@",
+                      url.lastPathComponent, data.count, readBack ? "yes" : "NO")
                 completion(.success(Grant(displayName: url.lastPathComponent, granted: true)))
             } catch {
+                // The full error, not just `localizedDescription` — the
+                // localized string for this failure is the useless
+                // "you don't have permission to view it", while the underlying
+                // NSError carries the domain and code that say which permission.
+                NSLog("[notesage-share] bookmarkData failed for %@: %@",
+                      url.path, String(describing: error))
                 completion(.failure(ShareLibraryError.ioError(
                     "Could not remember that folder: \(error.localizedDescription)")))
             }
@@ -127,6 +162,7 @@ enum ShareLibraryAccess {
     /// is a write that silently lands nowhere.
     private static func resolveRoot() throws -> URL {
         guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else {
+            NSLog("[notesage-share] resolveRoot: no bookmark stored under %@", bookmarkKey)
             throw ShareLibraryError.notGranted
         }
         var stale = false
@@ -150,6 +186,7 @@ enum ShareLibraryAccess {
                     UserDefaults.standard.set(fresh, forKey: bookmarkKey)
                 }
             } else {
+                NSLog("[notesage-share] resolveRoot: bookmark is stale and the security scope would not open")
                 throw ShareLibraryError.staleGrant
             }
         }
