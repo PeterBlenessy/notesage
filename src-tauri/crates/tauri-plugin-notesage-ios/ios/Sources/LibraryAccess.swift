@@ -322,6 +322,77 @@ enum LibraryAccess {
         return finalRel
     }
 
+    /// Move a FILE into another directory under the library root (#754).
+    ///
+    /// Distinct from `renameFile`, which takes a single name segment and stays
+    /// in place. This takes a destination DIRECTORY and keeps the filename,
+    /// which is what filing a capture out of `Inbox/` means.
+    ///
+    /// Files only, matching `deleteFile`. Moving a directory would let one
+    /// call relocate an arbitrary subtree — a much larger blast radius than
+    /// anything else on this surface, and not what the feature is for.
+    ///
+    /// `destDir` is `""` for the library root. The name is deduped on
+    /// collision, so filing two captures with the same title into one folder
+    /// keeps both. Returns the relative path actually produced.
+    static func moveFile(_ rel: String, toDirectory destDir: String) throws -> String {
+        guard !rel.isEmpty else { throw LibraryAccessError.ioError("empty path") }
+        let root = try resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+
+        let src = root.appendingPathComponent(rel)
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: src.path, isDirectory: &isDir) else {
+            throw LibraryAccessError.ioError("no such file")
+        }
+        if isDir.boolValue {
+            throw LibraryAccessError.ioError("Only files can be moved")
+        }
+
+        // The destination must exist and be a directory. Creating it here
+        // would make this two operations behind one name; the picker calls
+        // `ensureDirectory` explicitly when the user asks for a new folder.
+        if !destDir.isEmpty {
+            let dstDirURL = root.appendingPathComponent(destDir)
+            var destIsDir: ObjCBool = false
+            guard FileManager.default.fileExists(atPath: dstDirURL.path, isDirectory: &destIsDir),
+                  destIsDir.boolValue
+            else {
+                throw LibraryAccessError.ioError("Destination folder does not exist")
+            }
+        }
+
+        let name = (rel as NSString).lastPathComponent
+        let targetRel = destDir.isEmpty ? name : "\(destDir)/\(name)"
+        // Already there — a no-op rather than a dedupe to `name-1`, so a
+        // double tap in the picker cannot silently fork the file.
+        if targetRel == rel { return rel }
+
+        let (dst, finalRel) = deduped(targetRel, under: root)
+        var coordError: NSError?
+        var result: Result<Void, Error> = .failure(LibraryAccessError.ioError("uncoordinated"))
+        let coordinator = NSFileCoordinator()
+        coordinator.coordinate(
+            writingItemAt: src, options: .forMoving,
+            writingItemAt: dst, options: .forReplacing,
+            error: &coordError
+        ) { s, d in
+            do {
+                try FileManager.default.moveItem(at: s, to: d)
+                // Tells the coordination machinery the file's identity moved,
+                // so other processes watching it follow rather than seeing a
+                // delete plus an unrelated create. The library is an iCloud
+                // folder several devices write to.
+                coordinator.item(at: s, didMoveTo: d)
+                result = .success(())
+            } catch { result = .failure(error) }
+        }
+        if let coordError { throw coordError }
+        try result.get()
+        return finalRel
+    }
+
     /// Generate a thumbnail PNG via the system QuickLook generator — renders
     /// PDFs, images, videos and office documents off the app's main thread
     /// (replaces the WebView-side pdf.js raster for gallery cards). The

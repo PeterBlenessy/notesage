@@ -206,6 +206,21 @@ export function iosRenameFile(relPath: string, newName: string): Promise<string>
 }
 
 /**
+ * Move a FILE into another folder under the library root (#754).
+ *
+ * `destDir` is a directory relative path; `""` is the library root. Files
+ * only — the native side refuses directories, matching `iosDeleteFile`'s
+ * stance, because moving a folder relocates an arbitrary subtree in one call.
+ *
+ * The destination must already exist; this does not create it. Deduped
+ * natively on collision, so filing two captures with the same title into one
+ * folder keeps both. Resolves the relative path actually produced.
+ */
+export function iosMoveFile(relPath: string, destDir: string): Promise<string> {
+  return invoke<string>("ios_move_file", { relPath, destDir });
+}
+
+/**
  * Create `relPath` if it doesn't exist (no dedupe, unlike
  * `iosCreateDirectory`). Idempotent — safe to call before every write.
  */

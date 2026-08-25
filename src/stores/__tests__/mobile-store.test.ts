@@ -335,3 +335,32 @@ describe("mobile-store pinned paths & group-by (#652)", () => {
     expect(persisted.groupMode).toBe("pinned");
   });
 });
+
+describe("rewritePath (#754)", () => {
+  beforeEach(() => useMobileStore.getState().reset());
+
+  it("repoints recents, the open doc and the back trail", async () => {
+    useMobileStore.setState({
+      recentlyRead: ["Inbox/a.md", "Other/b.md"],
+      openDoc: { relPath: "Inbox/a.md", name: "a.md" },
+      docStack: [{ relPath: "Inbox/a.md", name: "a.md" }],
+      scrollOffsets: { "Inbox/a.md": 120, "Other/b.md": 40 },
+    });
+
+    await useMobileStore.getState().rewritePath("Inbox/a.md", "Archive/a.md");
+
+    const s = useMobileStore.getState();
+    expect(s.recentlyRead).toEqual(["Archive/a.md", "Other/b.md"]);
+    expect(s.openDoc?.relPath).toBe("Archive/a.md");
+    expect(s.docStack[0].relPath).toBe("Archive/a.md");
+    // A stale offset key would restore the wrong scroll position forever.
+    expect(s.scrollOffsets["Archive/a.md"]).toBe(120);
+    expect(s.scrollOffsets["Inbox/a.md"]).toBeUndefined();
+  });
+
+  it("leaves everything alone when the path did not change", async () => {
+    useMobileStore.setState({ recentlyRead: ["Inbox/a.md"] });
+    await useMobileStore.getState().rewritePath("Inbox/a.md", "Inbox/a.md");
+    expect(useMobileStore.getState().recentlyRead).toEqual(["Inbox/a.md"]);
+  });
+});

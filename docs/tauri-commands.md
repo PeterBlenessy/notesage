@@ -1550,6 +1550,7 @@ init` on a Mac — see `src-tauri/ios/README.md`.
 | `ios_create_file` | `(relPath, content) -> String` | Create a new UTF-8 file; the name is deduped natively (`note.md` → `note-1.md`). Returns the rel path actually created. |
 | `ios_create_directory` | `(relPath) -> String` | Create a new folder, name deduped. Returns the rel path actually created. |
 | `ios_rename_file` | `(relPath, newName) -> String` | Rename WITHIN the directory (single validated name segment — the title-becomes-filename primitive, not a move). Deduped; returns the final rel path. |
+| `ios_move_file` | `(relPath, destDir) -> String` | Move a FILE into another folder under the library root (#754). Files only; `destDir` must already exist (`""` = root); BOTH paths sanitized. Deduped; returns the final rel path. |
 | `ios_stat_file` | `(relPath) -> FileStat { sizeBytes }` | On-disk file size without reading content. Called before `ios_read_file` for text/markdown/html so the reader can decline an oversized file instead of freezing the WebView on a giant JSON read (issue #616). |
 | `ios_text_prompt` | `(title, placeholder, confirmLabel) -> Option<String>` | Native single-line `UIAlertController` text prompt (the create flow's name entry). `None` = cancelled. Pure UI, no filesystem. |
 

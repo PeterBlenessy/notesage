@@ -569,6 +569,52 @@ pub async fn ios_rename_file(
     }
 }
 
+/// Move a FILE into another folder under the granted library root (#754).
+///
+/// This WIDENS the mobile write surface, which was deliberately scoped in #586
+/// to library-root-confined note editing with no delete and no move. Three
+/// things keep the widening narrow:
+///
+/// - **Both** paths go through `sanitize_rel_path`, so neither the source nor
+///   the destination can be absolute or escape the root with `..`.
+/// - **Files only**, enforced natively, matching `ios_delete_file`. Moving a
+///   directory would relocate an arbitrary subtree in one call — a far larger
+///   blast radius than anything else here, and not what filing a capture out
+///   of `Inbox/` needs.
+/// - The destination must **already exist**. Creating it here would hide a
+///   second operation behind one name; the picker calls `ios_create_directory`
+///   explicitly when the user asks for a new folder.
+///
+/// `dest_dir` is `""` for the library root. Deduped natively on collision.
+/// Returns the relative path actually produced.
+#[tauri::command]
+pub async fn ios_move_file(
+    app: tauri::AppHandle,
+    rel_path: String,
+    dest_dir: String,
+) -> Result<String, String> {
+    let rel = sanitize_rel_path(&rel_path)?;
+    if rel.is_empty() {
+        return Err("Cannot move the library root".into());
+    }
+    let dest = sanitize_rel_path(&dest_dir)?;
+    // Moving a file into its own subtree is impossible for a file, but a
+    // destination that IS the source is a caller bug worth naming rather than
+    // silently deduping to `name-1`.
+    if dest == rel {
+        return Err("Cannot move a file into itself".into());
+    }
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::move_file(&app, &rel, &dest).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, rel, dest);
+        Err("ios_move_file is only available on iOS".into())
+    }
+}
+
 /// Create a directory at an exact relative path if it does not exist yet —
 /// unlike `ios_create_directory`, which dedupes and would turn a second call
 /// into `.notesage-1`. Used before writing the shared pins file (#680).
@@ -858,6 +904,10 @@ mod ios_impl {
         app.notesage_ios().rename_file(rel, new_name).map_err(|e| e.to_string())
     }
 
+    pub async fn move_file(app: &AppHandle, rel: &str, dest_dir: &str) -> Result<String, String> {
+        app.notesage_ios().move_file(rel, dest_dir).map_err(|e| e.to_string())
+    }
+
     pub async fn ensure_directory(app: &AppHandle, rel: &str) -> Result<(), String> {
         app.notesage_ios().ensure_directory(rel).map_err(|e| e.to_string())
     }
@@ -977,6 +1027,7 @@ mod tests {
             "ios_create_directory",
             "ios_rename_file",
             "ios_delete_file",
+            "ios_move_file",
             "ios_stat_file",
         ] {
             let body_start = src
@@ -997,7 +1048,7 @@ mod tests {
         // Same source-shape idiom as the sanitizer test above, for the same
         // reason: the command bodies are iOS-only seams.
         let src = include_str!("ios_library.rs");
-        for cmd in ["ios_write_file", "ios_create_file", "ios_create_directory", "ios_rename_file", "ios_delete_file"] {
+        for cmd in ["ios_write_file", "ios_create_file", "ios_create_directory", "ios_rename_file", "ios_delete_file", "ios_move_file"] {
             let body_start = src
                 .find(&format!("pub async fn {cmd}("))
                 .unwrap_or_else(|| panic!("{cmd} not found"));
@@ -1007,6 +1058,50 @@ mod tests {
                 "{cmd} does not guard against the empty (library-root) path"
             );
         }
+    }
+
+    #[test]
+    fn move_sanitizes_the_destination_as_well_as_the_source() {
+        // `ios_move_file` is the ONLY command on this surface taking two
+        // caller-supplied paths, and it is the one that widened the write
+        // surface (#754). The generic sanitizer test above proves a
+        // `sanitize_rel_path` call exists; it cannot tell one from two, so a
+        // destination of `../../../Documents` would sail through it.
+        let src = include_str!("ios_library.rs");
+        let start = src.find("pub async fn ios_move_file(").expect("ios_move_file not found");
+        let body = &src[start..start + 900];
+        assert_eq!(
+            body.matches("sanitize_rel_path").count(),
+            2,
+            "ios_move_file must sanitize BOTH rel_path and dest_dir:\n{body}"
+        );
+        assert!(
+            body.contains("sanitize_rel_path(&dest_dir)"),
+            "the destination directory is not sanitized — it could escape the granted root"
+        );
+    }
+
+    #[test]
+    fn move_is_files_only_on_the_native_side() {
+        // Matching `ios_delete_file`'s stance. Moving a directory would
+        // relocate an arbitrary subtree in one call — a far larger blast
+        // radius than anything else on this surface. Rust cannot check the
+        // filesystem here, so the guard lives in Swift and this asserts it
+        // stayed there.
+        let swift = include_str!(
+            "../../crates/tauri-plugin-notesage-ios/ios/Sources/LibraryAccess.swift"
+        );
+        let start = swift.find("static func moveFile(").expect("moveFile not found");
+        let body = &swift[start..start + 1400];
+        assert!(
+            body.contains("Only files can be moved"),
+            "moveFile no longer refuses directories:\n{body}"
+        );
+        assert!(
+            body.contains("Destination folder does not exist"),
+            "moveFile no longer requires the destination to exist — it would\n\
+             silently create one, hiding a second operation behind one name"
+        );
     }
 
     #[test]

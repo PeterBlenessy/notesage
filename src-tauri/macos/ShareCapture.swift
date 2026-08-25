@@ -55,36 +55,134 @@ enum ShareCapture {
             return
         }
 
-        fetch(parsed) { html in
-            guard let html else {
-                completion(.failure(ShareCaptureError.fetchFailed))
-                return
-            }
-            // A page with no extractable article degrades to a link note
-            // rather than failing. The user asked to save something; saving
-            // less is better than saving nothing.
-            let result = build(url: url, title: title, html: html, format: format)
-            if case .failure = result {
-                completion(build(url: url, title: title, html: nil, format: .link))
-            } else {
-                completion(result)
+        // An X status needs its metadata BEFORE the page is built: the real
+        // title names the file, and the cover image has to be in the document
+        // when it is written rather than patched in afterwards. Best-effort —
+        // `proceed` runs either way.
+        //
+        // Same shape as the iOS extension. Both are consumers of one crate,
+        // and a capture that behaves differently depending on which machine
+        // shared it is a bug on whichever one is worse.
+        let proceed: (String?) -> Void = { xJson in
+            fetch(parsed) { html in
+                guard let html else {
+                    // With no page but with metadata, an X share can still
+                    // produce a real note — better than the fetch error.
+                    if xJson != nil {
+                        let meta = build(
+                            url: url, title: title, html: nil, format: format, xJson: xJson)
+                        if case .success = meta {
+                            completion(meta)
+                            return
+                        }
+                    }
+                    completion(.failure(ShareCaptureError.fetchFailed))
+                    return
+                }
+                // A page with no extractable article degrades to a link note
+                // rather than failing. The user asked to save something; saving
+                // less is better than saving nothing.
+                let result = build(
+                    url: url, title: title, html: html, format: format, xJson: xJson)
+                if case .failure = result {
+                    completion(build(url: url, title: title, html: nil, format: .link))
+                } else {
+                    completion(result)
+                }
             }
         }
+
+        if xMetadataEndpoint(for: url) != nil {
+            fetchXMetadata(url: url, completion: proceed)
+        } else {
+            proceed(nil)
+        }
+    }
+
+    /// X's embed-data endpoint for `url`, or nil when it is not an X status.
+    /// The crate decides which hosts and path shapes count — Swift holding a
+    /// second opinion is how the two extensions would drift.
+    private static func xMetadataEndpoint(for url: String) -> String? {
+        callRust { notesage_capture_x_metadata_url(url) }
+    }
+
+    /// Fetch X's embed-data JSON (5 s, 512 KB). nil on ANY failure.
+    ///
+    /// The endpoint is undocumented, unversioned and rate-limits. A capture
+    /// missing its enrichment is a worse capture; a capture that FAILS because
+    /// enrichment was unavailable would be a bug.
+    private static func fetchXMetadata(url: String, completion: @escaping (String?) -> Void) {
+        guard let endpoint = xMetadataEndpoint(for: url),
+              let parsed = URL(string: endpoint)
+        else {
+            completion(nil)
+            return
+        }
+        var request = URLRequest(url: parsed)
+        request.timeoutInterval = 5
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieStorage = nil
+        config.urlCache = nil
+
+        URLSession(configuration: config).dataTask(with: request) { data, response, _ in
+            guard (response as? HTTPURLResponse)?.statusCode == 200,
+                  let data, data.count <= 512 * 1024,
+                  let json = String(data: data, encoding: .utf8)
+            else {
+                completion(nil)
+                return
+            }
+            completion(json)
+        }.resume()
     }
 
     // MARK: - Rust bridge
 
     private static func build(
-        url: String, title: String?, html: String?, format: Format
+        url: String, title: String?, html: String?, format: Format, xJson: String? = nil
     ) -> Result<String, Error> {
         let relPath: String?
         let contents: String?
+        // Whether the bytes we end up with are an HTML DOCUMENT or a markdown
+        // note. Not the same as `format == .articleHtml`: both HTML builders
+        // decline when there is no article, and we fall back to markdown.
+        // Tracking the request rather than the outcome is how "Article (HTML)"
+        // came to write a `<!doctype html>` document into a `.md` file.
+        var wroteHtmlDocument = false
 
-        if let html, format != .link {
+        if xJson != nil, format != .link {
+            // X routes through its own builders whenever we have metadata,
+            // even with no page: `notesage_capture_x_contents` falls back to
+            // the metadata-only note rather than returning NULL, so a plain
+            // post (nothing long-form to extract) still lands as a real note.
+            //
+            // The HTML variant DOES decline without an article, which is why
+            // it falls through to the markdown builder below rather than
+            // failing — a document with no article in it is not worth writing,
+            // but the metadata note still is.
+            relPath = callRust { notesage_capture_x_rel_path(url, title, xJson) }
+            if format == .articleHtml,
+               let doc = callRust({ notesage_capture_x_html_contents(url, title, html, xJson) }) {
+                contents = doc
+                wroteHtmlDocument = true
+            } else {
+                contents = callRust {
+                    notesage_capture_x_contents(url, title, nil, nil, html, xJson)
+                }
+            }
+        } else if let html, format != .link {
             relPath = callRust { notesage_capture_rel_path_from_html(url, title, html) }
-            contents = format == .articleHtml
-                ? callRust { notesage_capture_article_html_contents(url, title, nil, nil, html) }
-                : callRust { notesage_capture_article_contents(url, title, nil, nil, html) }
+            if format == .articleHtml,
+               let doc = callRust({
+                   notesage_capture_article_html_contents(url, title, nil, nil, html)
+               }) {
+                contents = doc
+                wroteHtmlDocument = true
+            } else {
+                contents = callRust { notesage_capture_article_contents(url, title, nil, nil, html) }
+            }
         } else {
             relPath = callRust { notesage_capture_rel_path(url, title, nil, nil) }
             contents = callRust { notesage_capture_contents(url, title, nil, nil) }
@@ -93,11 +191,25 @@ enum ShareCapture {
         guard let relPath, let contents, !relPath.isEmpty, !contents.isEmpty else {
             return .failure(ShareCaptureError.buildFailed)
         }
+        let finalPath = wroteHtmlDocument ? withExtension(relPath, "html") : relPath
         do {
-            return .success(try ShareLibraryAccess.writeCapture(relPath: relPath, contents: contents))
+            return .success(
+                try ShareLibraryAccess.writeCapture(relPath: finalPath, contents: contents))
         } catch {
             return .failure(error)
         }
+    }
+
+    /// Replace a relative path's extension.
+    ///
+    /// Every rel-path builder in the crate returns `.md`, because a capture is
+    /// a note by default. "Article (HTML)" writes a `<!doctype html>` document
+    /// instead and must be named accordingly — otherwise it opens in the
+    /// editor as raw markup, which is exactly what the format exists to avoid.
+    /// The iOS extension does the same thing in `writeArticleHtml`.
+    private static func withExtension(_ relPath: String, _ ext: String) -> String {
+        ((relPath as NSString).deletingPathExtension as NSString)
+            .appendingPathExtension(ext) ?? relPath
     }
 
     /// Call a Rust function that returns an owned C string, and free it.

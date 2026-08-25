@@ -176,11 +176,19 @@ links and documents. PRD:
   editing saves first. On save the note's TITLE (first heading / non-empty
   line, sanitized) becomes the filename via `ios_rename_file` (deduped
   natively) and the doc re-opens under the new name.
-- **Confined writes & private.** The app's write surface is exactly four
+- **Confined writes & private.** The app's write surface is exactly six
   allowlisted commands (`ios_write_file`, `ios_create_file`,
-  `ios_create_directory`, `ios_rename_file`) — library-root-confined relative
-  paths (sanitizer-guarded, source-shape-locked tests), no delete, no move,
-  coordinated `NSFileCoordinator` writes. Link/article capture still runs
+  `ios_create_directory`, `ios_rename_file`, `ios_delete_file`,
+  `ios_move_file`) — library-root-confined relative paths (sanitizer-guarded,
+  source-shape-locked tests), coordinated `NSFileCoordinator` writes.
+
+  Each of the last two widened the surface and was reviewed on its own for
+  that reason. **Delete** is files-only, never directories. **Move** (#754) is
+  files-only for the same reason — relocating a directory would move an
+  arbitrary subtree in one call — sanitizes BOTH its paths, and requires the
+  destination to already exist rather than creating it, so one name never
+  hides two operations. A dedicated test asserts the two-path sanitization,
+  because the generic "every command sanitizes" check counts a call, not two. Link/article capture still runs
   only in the Share Extension's separate process. The desktop's broad
   write/exec/credential commands remain compiled out of the iOS binary, and
   the mobile test suite's ALLOWED/FORBIDDEN lock asserts the shell never
@@ -295,10 +303,31 @@ scroll position** when you come back from a document — the browser unmounts
 while the Reader is open, so the offset is kept per folder in the store
 (session-only) and reapplied once the rows exist.
 
+**Move to…** (#754) files a document out of `Inbox/`, which is where every
+capture lands. The picker is a stack of flat native action sheets rather than
+one tree: `ios_context_menu` presents a `UIAlertController`, which has no
+nesting, and a bespoke SwiftUI browser is a lot of native surface for choosing
+a folder. Each level offers *Move here*, its subfolders, and a way back up —
+which is also how Files behaves. It opens in the file's OWN folder, so moving
+to a sibling is one step, and "Move here" on that first screen is a deliberate
+no-op rather than a dedupe to `note-1.md`.
+
+It does **not** create folders. `ios_create_directory` exists and it would be
+cheap, but a picker that also creates is a bigger surface than one that only
+picks, and filing into an existing folder is the common case; the "+" button
+already makes folders.
+
+Two things a move breaks that are invisible until they go wrong, both handled:
+the thumbnail cache is keyed by path (a stale key makes the moved card render
+someone else's image), and Recents, the back trail, scroll offsets and the
+shared pins file all hold paths. `mobile-store.rewritePath` fixes all of them
+— and read-modify-writes the pins FILE rather than just the cached array,
+since the desktop shares it.
+
 **Shape (Apple Notes):** the pressed item lifts out of the list as a large
 rounded **preview card** over a blurred backdrop, with the actions in a panel
 beneath — an inline icon row (Share / Pin / Delete) above full-width rows
-(Rename). The card **morphs out of the pressed row and back into it**: the web
+(Rename, Move to… — the latter files only, matching the native command). The card **morphs out of the pressed row and back into it**: the web
 layer measures the element at pointer-down and passes its rect, and the native
 view interpolates position and scale from there. Dismiss by tapping the
 backdrop or **swiping the preview down**. Notes render through the app's OWN markdown pipeline (a `WKWebView` on the
