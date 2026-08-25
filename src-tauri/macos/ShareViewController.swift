@@ -219,6 +219,17 @@ final class ShareViewController: NSViewController {
         sharedUrl = url
         titleLabel.stringValue = sharedTitle?.isEmpty == false ? sharedTitle! : "Save to Notesage"
         urlLabel.stringValue = url
+        // Save is gated on `sharedUrl != nil`, and the URL arrives HERE —
+        // asynchronously, long after `viewDidAppear` ran the check with it
+        // still nil. Without this line the button is enabled only by the other
+        // caller, `chooseLibrary`'s success path.
+        //
+        // Which is why the FIRST share worked and every later one did not: the
+        // first needs a library grant, and granting re-ran the check once the
+        // URL had landed. With a grant already stored the button stays hidden,
+        // nothing re-runs the check, and Save is dead for the rest of the
+        // extension's life.
+        refreshGrantState()
     }
 
     /// Show the library picker only when there is no usable grant.

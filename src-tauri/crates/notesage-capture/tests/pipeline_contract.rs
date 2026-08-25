@@ -320,6 +320,45 @@ fn the_share_controller_routes_x_urls_through_the_x_writer() {
 }
 
 #[test]
+fn the_macos_save_button_is_re_enabled_when_the_url_arrives() {
+    // The shared URL arrives ASYNCHRONOUSLY, from `loadItem`'s completion.
+    // `viewDidAppear` runs the enablement check before that — with `sharedUrl`
+    // still nil — so unless `show(url:)` re-runs it, Save is never enabled by
+    // the URL landing.
+    //
+    // That shipped, and it hid behind the grant flow: the FIRST share needs a
+    // library folder, and granting re-ran the check once the URL had arrived.
+    // Every share after that found a stored grant, showed no grant button, and
+    // left Save permanently disabled. "Works once, then never again" is a
+    // miserable shape to debug from a bug report and invisible to any test
+    // that only checks a first run.
+    //
+    // A source scan because the extension is AppKit — it cannot be driven
+    // from CI, and a contract that cannot run in CI runs never.
+    let src = macos_src("ShareViewController.swift");
+    let start = src
+        .find("private func show(url: String?")
+        .expect("show(url:) not found — did the URL sink get renamed?");
+    let end = src[start..]
+        .find("\n    /// Show the library picker")
+        .map(|i| start + i)
+        .unwrap_or(src.len());
+    let body = &src[start..end];
+
+    assert!(
+        body.contains("sharedUrl = url"),
+        "show(url:) no longer assigns sharedUrl — this test is watching the wrong function"
+    );
+    assert!(
+        body.contains("refreshGrantState()"),
+        "show(url:) sets sharedUrl but never refreshes the save button.\n\
+         Save is gated on `sharedUrl != nil` and the check already ran with it\n\
+         nil, so the button stays disabled for every share that does not also\n\
+         go through the grant flow — i.e. all of them after the first.\n\n{body}"
+    );
+}
+
+#[test]
 fn an_html_capture_is_not_written_with_a_markdown_name() {
     // Every rel-path builder returns `.md`, because a capture is a note by
     // default. The "Article (HTML)" format writes a `<!doctype html>` document
