@@ -12,6 +12,12 @@
 	<string>Notesage</string>
 	<key>CFBundlePackageType</key>
 	<string>XPC!</string>
+	<!-- The fallback locale for any language we do not ship, and what tells
+	     the loader that en.lproj is a real localization rather than a stray
+	     folder. Without it a Swedish system can fall through to raw key
+	     names instead of English. -->
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
 	<key>NSExtension</key>
 	<dict>
 		<key>NSExtensionAttributes</key>
@@ -20,6 +26,18 @@
 			<dict>
 				<key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
 				<integer>1</integer>
+				<!-- Per-type keys, mirroring iOS. A blanket `File` key is
+				     NOT documented to cover Image/Movie UTIs, and iOS
+				     declares them separately for that reason — so relying
+				     on File alone would be an assumption about activation
+				     matching that nothing here verifies. Declaring each
+				     explicitly costs nothing and removes the question. -->
+				<key>NSExtensionActivationSupportsFileWithMaxCount</key>
+				<integer>10</integer>
+				<key>NSExtensionActivationSupportsImageWithMaxCount</key>
+				<integer>10</integer>
+				<key>NSExtensionActivationSupportsMovieWithMaxCount</key>
+				<integer>3</integer>
 			</dict>
 		</dict>
 		<key>NSExtensionPointIdentifier</key>

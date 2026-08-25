@@ -223,6 +223,11 @@ const EXPORT_CALL_SITES: &[(&str, &str, MacExpectation)] = &[
     ("notesage_capture_x_rel_path", "LibraryCapture.swift", Ok("ShareCapture.swift")),
     ("notesage_capture_x_contents", "LibraryCapture.swift", Ok("ShareCapture.swift")),
     ("notesage_capture_x_html_contents", "LibraryCapture.swift", Ok("ShareCapture.swift")),
+    (
+        "notesage_capture_x_is_article",
+        "ShareViewController.swift",
+        Ok("ShareCapture.swift"),
+    ),
     ("notesage_capture_string_free", "LibraryCapture.swift", Ok("ShareCapture.swift")),
 ];
 
@@ -319,6 +324,263 @@ fn the_share_controller_routes_x_urls_through_the_x_writer() {
          shares of an X post would fall through to the generic article path —\n\
          the exact bug iOS had, on the other platform."
     );
+}
+
+#[test]
+fn both_platforms_retry_a_failed_extraction_against_a_rendered_dom() {
+    // A network fetch runs no JavaScript, so on an SPA the fetched HTML holds
+    // no article and extraction declines. Rendering the page and re-extracting
+    // is the second attempt that turns a bare link note back into an article.
+    //
+    // iOS shipped this in #611; macOS went without it, so every JS-rendered
+    // site captured as a link on the Mac while the phone got the article. It
+    // is invisible without a side-by-side comparison — nothing errors, the
+    // capture just quietly contains less.
+    for (label, src) in [
+        ("iOS", ios_src("ShareViewController.swift")),
+        ("macOS", macos_src("ShareCapture.swift")),
+    ] {
+        assert!(
+            src.contains("PageRenderer.renderedHTML"),
+            "{label} never retries against a rendered DOM, so any page whose\n\
+             article is assembled by JavaScript degrades to a link note."
+        );
+    }
+
+    // Reachability, not just presence.
+    //
+    // The call above existing is NOT the same as it running. macOS shipped
+    // with the call present and unreachable for every X share, because
+    // `notesage_capture_x_contents` never returns null — so the first attempt
+    // always "succeeded" and the retry below it was dead code. This test
+    // passed throughout.
+    //
+    // `requireArticle: true` on the earlier attempts is what makes the retry
+    // reachable. Drop it and the dead-code state returns silently.
+    // Both platforms. iOS had the identical dead-retry for its markdown X
+    // path and was fixed alongside macOS — leaving one side gated and the
+    // other not is the divergence this whole file exists to prevent.
+    let mac = macos_src("ShareCapture.swift");
+    assert_eq!(
+        mac.matches("requireArticle: true").count(),
+        2,
+        "macOS must demand a genuine extraction on BOTH the raw-HTML and\n\
+         rendered-DOM attempts. Without it an X share succeeds on the first\n\
+         attempt regardless of whether an article was found, and the rendered\n\
+         retry becomes unreachable — present in the source, never executed."
+    );
+    assert!(
+        mac.contains("requireArticle: Bool"),
+        "the requireArticle parameter is gone; the retry cannot be gated"
+    );
+    assert!(
+        ios_src("ShareViewController.swift").contains("requireArticle: true"),
+        "iOS does not demand a genuine extraction, so its X shares succeed on the\n\
+         first attempt and the rendered retry never runs"
+    );
+    assert!(
+        ios_src("LibraryCapture.swift").contains("requireArticle: Bool"),
+        "iOS's writeXCapture cannot be gated; the retry is unreachable for X"
+    );
+}
+
+#[test]
+fn no_capture_write_runs_on_the_main_thread() {
+    // A readability parse over up to 5 MB plus a coordinated write against
+    // what is usually an iCloud folder. On main it freezes the share sheet
+    // whenever the coordinator stalls.
+    //
+    // The previous version of this test anchored on the `PageRenderer` call
+    // site and inspected only what came AFTER it — so it was structurally
+    // blind to the two earlier write attempts in the same function, including
+    // the raw-HTML one, which is the COMMON path. It reported the freeze fixed
+    // while two of three call sites still ran on main. Seventh guard in this
+    // branch to pass for the wrong reason.
+    //
+    // So: check every call site, by name, across the whole file.
+    for (label, src, writer, hop) in [
+        (
+            "iOS",
+            ios_src("ShareViewController.swift"),
+            "writeArticle(url:",
+            "writeOffMain(",
+        ),
+        ("macOS", macos_src("ShareCapture.swift"), "build(", "DispatchQueue.global"),
+    ] {
+        if label == "iOS" {
+            // The hop must be INSIDE writeOffMain's own body. The previous
+            // version checked `src.contains("writeOffMain(")`, which the
+            // declaration and its call sites satisfy — so stripping the
+            // DispatchQueue hop out of the funnel left the guard green while
+            // every write ran synchronously on main. Mutation-proven hollow
+            // in review round six. Existence is not behaviour.
+            let f = src
+                .find("private func writeOffMain(")
+                .expect("writeOffMain moved — this guard is anchored to it");
+            let fend = src[f..]
+                .find("\n    /// Reads ONLY the snapshot")
+                .map(|i| f + i)
+                .unwrap_or(src.len());
+            let funnel = &src[f..fend];
+            assert!(
+                funnel.contains("DispatchQueue.global"),
+                "iOS writeOffMain no longer hops off the main thread — every capture\n\
+                 write runs on the thread the share sheet draws on.\n\n{funnel}"
+            );
+            assert!(
+                funnel.contains("DispatchQueue.main.async"),
+                "iOS writeOffMain no longer completes back on main; its callers touch\n\
+                 UIKit from whatever queue the write finished on."
+            );
+
+            // Count CALLS, not the declaration. `private func writeArticle(url:`
+            // also contains the name, and counting it made the assertion fire
+            // against correct code — the mirror image of a guard that passes
+            // for the wrong reason, and just as useless.
+            let direct = src
+                .lines()
+                .filter(|l| l.contains("writeArticle(url:") && !l.contains("func "))
+                .count();
+            // EXACTLY one — the funnel's own call. `<= 1` also accepted ZERO,
+            // i.e. writeArticle never called at all and every article capture
+            // silently degrading to the fallback note, without failing.
+            assert_eq!(
+                direct, 1,
+                "iOS must call writeArticle exactly once, from inside writeOffMain.\n\
+                 {direct} direct calls found: 0 means captures silently degrade to\n\
+                 fallback notes; more than 1 means a call site bypassed the funnel\n\
+                 and runs on main."
+            );
+            let _ = writer;
+        } else {
+            assert!(
+                src.contains(hop),
+                "{label} has no off-main hop at all — every capture write would run\n\
+                 on the thread the share sheet draws on."
+            );
+        }
+    }
+}
+
+#[test]
+fn the_capture_write_does_not_read_mutable_view_state() {
+    // `writeArticle` runs on a background queue. The format picker's menu
+    // stays live after Save is tapped and mutates `format` on MAIN, so
+    // reading it from the write was an unsynchronised cross-thread read —
+    // introduced by moving the write off main, which is the fix that was
+    // supposed to make things safer.
+    //
+    // A snapshot taken on main also pins the user's intent to the moment they
+    // pressed Save, which is what they actually meant.
+    let src = ios_src("ShareViewController.swift");
+    let start = src
+        .find("private func writeArticle(url: String")
+        .expect("writeArticle moved");
+    let end = src[start..]
+        .find("\n    /// Fetch the page")
+        .map(|i| start + i)
+        .unwrap_or(src.len());
+    let body = &src[start..end];
+    // Strip comments, then strip every `snapshot.<field>` read, and only then
+    // ban the bare identifiers. The previous list mixed `self.format` with
+    // bare `sharedTitle` — but Swift permits omitting `self.`, so rewriting
+    // the body to read bare `xJson` sailed past the `self.xJson` ban.
+    // Mutation-proven hollow in review round six: the exact race this guard
+    // names could be reintroduced without failing it.
+    let code: String = body
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for field in ["format", "sharedTitle", "xJson", "isXStatus"] {
+        // An argument LABEL (`xJson: snapshot.xJson`) is not a read — the
+        // label is the identifier followed by `:`. Strip labels as well as
+        // snapshot reads, or the guard fires on correct code, which is the
+        // mirror image of hollow and just as disqualifying.
+        let cleaned = code
+            .replace(&format!("snapshot.{field}"), "")
+            .replace(&format!("{field}:"), ":");
+        // Word boundary: `format` must not match `CaptureFormat` or a label
+        // like `format:` in an unrelated signature... but in this body any
+        // bare occurrence IS a self-read, so plain containment is right —
+        // provided snapshot reads and comments are gone.
+        assert!(
+            !mentions(&cleaned, field),
+            "writeArticle reads `{field}` — mutable view state, from a background\n\
+             queue. Take it from the CaptureSnapshot instead.\n\n{body}"
+        );
+    }
+    assert!(
+        body.contains("snapshot."),
+        "writeArticle no longer reads the snapshot; the parameter is decorative"
+    );
+}
+
+#[test]
+fn both_platforms_claim_a_filename_atomically() {
+    // Two shared files with the same name, ten concurrent callbacks: without a
+    // claim, both see the path free and one silently overwrites the other,
+    // with the UI reporting success. A shared file vanishing without a trace.
+    //
+    // A claim is only a claim if it HOLDS. An earlier version created a
+    // placeholder, then deleted it and copied — leaving the path genuinely
+    // free in between and reopening the race it closed. `replaceItemAt` swaps
+    // atomically and has no such window.
+    for (label, src) in [
+        ("iOS", ios_src("LibraryCapture.swift")),
+        ("macOS", macos_src("ShareLibraryAccess.swift")),
+    ] {
+        assert!(
+            src.contains("claimName"),
+            "{label} picks a filename without claiming it — check-then-use across\n\
+             concurrent callbacks loses a file silently."
+        );
+        // The CALL, not the word. The first version matched
+        // `src.contains("replaceItemAt")`, which its own explanatory comment
+        // satisfied — so swapping the real call for `moveItem` left the test
+        // green. Prose is not code, and a guard that reads its own
+        // documentation is the purest form of passing for the wrong reason.
+        assert!(
+            src.contains("FileManager.default.replaceItemAt("),
+            "{label} does not swap the staged copy in atomically. remove-then-copy\n\
+             leaves the claimed path free in between, which is the race itself."
+        );
+        // No brittle negative guard here. An exact-string check that encodes
+        // one indentation level stops catching a reintroduced remove-then-copy
+        // the moment anyone reformats — and the positive `replaceItemAt`
+        // assertion above already pins the load-bearing invariant.
+    }
+}
+
+#[test]
+fn both_platforms_accept_shared_files_not_just_links() {
+    // Sharing a PDF or an EPUB into the library is a first-class capture, and
+    // the activation rule is what decides whether Notesage even APPEARS in the
+    // share sheet for one. macOS declared only WebURL, so a PDF could not be
+    // shared to the Mac at all — the extension was not offered.
+    for (label, plist) in [
+        ("iOS", ios_src("ShareExtension-Info.plist")),
+        ("macOS", macos_src("ShareExtension-Info.plist")),
+    ] {
+        assert!(
+            plist.contains("NSExtensionActivationSupportsFileWithMaxCount"),
+            "{label} does not declare file support, so the share sheet will not\n\
+             offer Notesage for a PDF, EPUB or image."
+        );
+    }
+
+    // Declaring it and handling it are separate — an activation rule that
+    // offers the extension for a file it then cannot store is worse than not
+    // offering it.
+    for (label, src, writer) in [
+        ("iOS", ios_src("LibraryCapture.swift"), "writeDocument"),
+        ("macOS", macos_src("ShareLibraryAccess.swift"), "writeDocument"),
+    ] {
+        assert!(
+            src.contains(writer),
+            "{label} declares file support but has no {writer} to store one."
+        );
+    }
 }
 
 #[test]

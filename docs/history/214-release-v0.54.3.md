@@ -3,7 +3,7 @@
 **Date:** 2026-08-25
 **Previous version:** 0.54.2
 
-Choosing your library folder in the Share menu works again.
+Sharing to Notesage on the Mac now does what it does on the phone.
 
 ## Changes
 
@@ -15,8 +15,41 @@ Choosing your library folder in the Share menu works again.
   but never remembered, so every later share was stuck at the same step. It
   depended on timing, which is why it could work once and then stop, and why
   it behaved differently on one Mac than another.
+- **Articles on JavaScript-heavy sites save as articles again.** Many news
+  sites build the page after it loads. On the Mac those were saving as a bare
+  link, because Notesage only looked at the page as first delivered — the
+  phone has always waited for the page to finish assembling itself, and now
+  the Mac does too.
+- **You can share a PDF, EPUB or image to the Mac.** Notesage did not appear
+  in the share sheet for any of them, so a document you could file from your
+  phone could not be filed from your Mac. They now save into `Inbox/` under
+  their own names.
+- **The Mac share window speaks your language.** Every word in it was English
+  regardless of the language you picked — the buttons, the folder picker, and
+  the messages it shows when something goes wrong.
 
 ## Under the hood
+
+All three are the same defect wearing different clothes: the Mac extension was
+written as a sibling of the iOS one rather than a port, so each shared
+behaviour was reimplemented and each reimplementation dropped something. Four
+found in one day — X capture, HTML file naming, the save button, the bookmark
+scope — plus the three above. None was a decision; all were omissions.
+
+The Mac extension now uses the SAME strings files as the phone rather than a
+copy of its own, since a second copy is a second thing to forget.
+
+The contract test now checks **both** platforms for each of the behaviours
+fixed here — several of its earlier checks were single-platform, which is how
+a bug fixed on one side stayed live on the other.
+
+Five review rounds went into this, and each one found defects introduced by
+the previous round's fixes. Several of the bugs they caught were on **iOS**,
+not macOS — the same filename race, the same unreachable retry, and a freeze
+that turned out to affect the *common* path rather than the rare one. Found
+only because the reviews compared the two platforms, and then compared a fix
+against every call site it claimed to cover rather than the one it was written
+for.
 
 - macOS was creating the security-scoped bookmark on the bare picker URL. That
   call has to happen **inside** the URL's security scope: the panel grants
@@ -41,12 +74,28 @@ Choosing your library folder in the Share menu works again.
 
 - X capture on the desktop is now reachable in principle but has still never
   been observed working end to end: the enrichment (real title, cover image)
-  needs one successful share to confirm, and the three bugs above stood in the
-  way of getting one.
+  needs one successful share to confirm, and the bugs above stood in the way
+  of getting one.
+- **Video and audio shares are accepted in code but unverified on hardware.**
+  macOS's activation rules have no Audio key, so an audio file should activate
+  through the generic File rule — should, by reading the documentation, not by
+  having been tried. Video declares its own key. Both need one real share from
+  Finder before either is claimed to work, which is why neither is in the
+  fixes above.
+- **Cancelling mid-save does not stop the save**, on either platform — the
+  sheet closes but the capture still lands. Real, pre-existing, and now
+  tracked (#779) rather than left as a footnote; the fix wants a cancellable
+  chain, not a patch.
+- The rendered-DOM fallback's settle constants (500 ms quiet period, 5 s
+  ceiling) are inherited from iOS, where they are starting points rather than
+  measured truths. A page that mutates forever hits the ceiling; one that
+  lazy-loads past 5 s yields a partial DOM — still better than a link note.
 - The performance gate remains red on benchmarks already red in v0.53.1 — see
   the 2026-08-25 entry in `docs/performance-baseline.md`. Not a regression;
   cause still undetermined.
 
 ## Files Changed
 
-- The macOS Share Extension's grant path, plus its contract guard.
+- The macOS Share Extension: the grant path, a new `PageRenderer`, the
+  document-storing path, its activation rule and its localization — plus a
+  contract guard for each.

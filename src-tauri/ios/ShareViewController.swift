@@ -462,34 +462,103 @@ final class ShareViewController: UIViewController {
         // the browser chose after srcset, sizes and DPR. No parsing of ours
         // can reconstruct that, because it is the outcome of decisions only
         // the browser made.
-        if let rendered = renderedHtml, writeArticle(url: url, html: rendered) {
-            finish()
-            return
-        }
-        // No payload (a bare URL from Messages/Mail), or the rendered DOM
-        // held no extractable article. Fall back to fetching.
-        fetch(url: url) { [weak self] html in
+        // Snapshot every piece of view state the write needs, ON MAIN, before
+        // any of it can be read from a background queue.
+        //
+        // `writeArticle` used to read `self.format` live. Once the write moved
+        // off main that became an unsynchronised cross-thread read: the format
+        // picker's menu stays enabled after Save is tapped, and the render
+        // window is seconds long, so the user can change `format` on main
+        // while a background write reads it. A snapshot also makes the
+        // captured intent unambiguous — what was on screen when Save was
+        // pressed.
+        let snapshot = CaptureSnapshot(
+            format: format, title: sharedTitle, xJson: xJson, isX: isXStatus)
+
+        // ALL THREE attempts go through `writeOffMain`.
+        //
+        // The previous fix hopped only the rendered-DOM attempt, leaving the
+        // other two on main — including the raw-HTML one, which is the common
+        // path: every page whose article is already in the fetched markup.
+        // Fixing the rarest of three call sites and describing it as fixed is
+        // how this file has repeatedly looked correct while not being.
+        writeOffMain(url: url, html: renderedHtml, snapshot: snapshot) { [weak self] ok in
             guard let self else { return }
-            guard let html else {
-                self.saveArticleFallback(url: url)
-                return
-            }
-            // Both article formats share one fallback chain (#611):
-            //   raw HTML -> rendered DOM -> link note.
-            // The render is a SECOND attempt only. A page whose article is
-            // already in the fetched HTML never pays for a webview.
-            if self.writeArticle(url: url, html: html) {
+            if ok {
                 self.finish()
                 return
             }
-            PageRenderer.renderedHTML(url: url) { [weak self] rendered in
+            // No payload (a bare URL from Messages/Mail), or the rendered DOM
+            // held no extractable article. Fall back to fetching.
+            self.fetch(url: url) { [weak self] html in
                 guard let self else { return }
-                if let rendered, self.writeArticle(url: url, html: rendered) {
-                    self.finish()
-                } else {
+                guard let html else {
                     self.saveArticleFallback(url: url)
+                    return
+                }
+                // Both article formats share one fallback chain (#611):
+                //   raw HTML -> rendered DOM -> link note.
+                // The render is a SECOND attempt only. A page whose article is
+                // already in the fetched HTML never pays for a webview.
+                self.writeOffMain(url: url, html: html, snapshot: snapshot) { [weak self] ok in
+                    guard let self else { return }
+                    if ok {
+                        self.finish()
+                        return
+                    }
+                    // A plain X post has no long-form article by definition,
+                    // so rendering one spends up to five seconds to reach the
+                    // same metadata note it would reach immediately. Only an X
+                    // Article is worth the render, and the CRATE decides which
+                    // this is — `parse_x_post`, not a substring check here.
+                    if snapshot.isX, let json = snapshot.xJson,
+                       json.withCString({ notesage_capture_x_is_article($0) == 0 }) {
+                        self.saveArticleFallback(url: url)
+                        return
+                    }
+                    PageRenderer.renderedHTML(url: url) { [weak self] rendered in
+                        guard let self else { return }
+                        self.writeOffMain(url: url, html: rendered, snapshot: snapshot) { ok in
+                            if ok {
+                                self.finish()
+                            } else {
+                                self.saveArticleFallback(url: url)
+                            }
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    /// What a capture needs from the view, taken once on main.
+    private struct CaptureSnapshot {
+        let format: CaptureFormat
+        let title: String?
+        let xJson: String?
+        let isX: Bool
+    }
+
+    /// Extract and write OFF the main thread, then call back ON it.
+    ///
+    /// A readability parse over up to 5 MB plus a coordinated write against
+    /// what is usually an iCloud folder. Run on main it freezes the share
+    /// sheet whenever the file coordinator stalls — and every caller here
+    /// arrives on main, either directly or from `fetch`/`PageRenderer`, both
+    /// of which deliver there.
+    ///
+    /// A nil `html` is "nothing to try", not a failure to report.
+    private func writeOffMain(
+        url: String, html: String?, snapshot: CaptureSnapshot,
+        completion: @escaping (Bool) -> Void
+    ) {
+        guard let html else {
+            completion(false)
+            return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let ok = self.writeArticle(url: url, html: html, snapshot: snapshot)
+            DispatchQueue.main.async { completion(ok) }
         }
     }
 
@@ -529,23 +598,34 @@ final class ShareViewController: UIViewController {
     /// Shared by both article formats because the SPA problem is not
     /// format-specific: if the article is not in the fetched HTML, neither the
     /// markdown nor the HTML rendering can find it.
-    private func writeArticle(url: String, html: String) -> Bool {
+    /// Reads ONLY the snapshot, never `self`'s mutable view state.
+    ///
+    /// This runs on a background queue. `format` in particular is mutated on
+    /// main by the format picker, whose menu stays live after Save is tapped —
+    /// so reading it here was an unsynchronised cross-thread read introduced
+    /// by moving the write off main. The snapshot also pins the user's intent
+    /// to the moment they pressed Save.
+    private func writeArticle(url: String, html: String, snapshot: CaptureSnapshot) -> Bool {
         // X routes through its own writer at EVERY link in the chain, not just
         // the first. Enrichment has to travel with the extraction — a capture
         // that succeeded on the second attempt is exactly as entitled to its
         // real title and cover image as one that succeeded on the first.
-        if isXStatus {
+        if snapshot.isX {
+            // Demand a genuine extraction here: this is one of the "try
+            // harder" attempts (raw HTML, then rendered DOM). The metadata-only
+            // note is reached deliberately by `saveArticleFallback`, not by an
+            // attempt silently succeeding.
             let written = try? LibraryAccess.writeXCapture(
-                url: url, title: sharedTitle, tags: [], html: html,
-                xJson: xJson, asHtml: format == .html)
+                url: url, title: snapshot.title, tags: [], html: html,
+                xJson: snapshot.xJson, asHtml: snapshot.format == .html, requireArticle: true)
             return written.flatMap { $0 } != nil
         }
-        if format == .html {
+        if snapshot.format == .html {
             return (try? LibraryAccess.writeArticleHtml(
-                url: url, title: sharedTitle, html: html)) != nil
+                url: url, title: snapshot.title, html: html)) != nil
         }
         return (try? LibraryAccess.writeArticleCapture(
-            url: url, title: sharedTitle, selectionText: nil, tags: [], html: html)) != nil
+            url: url, title: snapshot.title, selectionText: nil, tags: [], html: html)) != nil
     }
 
     /// Fetch the page (10 s budget, 5 MB cap, Safari UA — unknown agents get

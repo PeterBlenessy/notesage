@@ -6,7 +6,10 @@
       "previousVersion": "0.54.2",
       "sections": {
         "fixes": [
-          "**\"Could not remember that folder\" when setting up sharing.** Picking your Notesage library from the share panel could fail the moment the panel closed, leaving Save greyed out with no way forward — the folder was chosen but never remembered, so every later share was stuck at the same step. It depended on timing, which is why it could work once and then stop, and why it behaved differently on one Mac than another."
+          "**\"Could not remember that folder\" when setting up sharing.** Picking your Notesage library from the share panel could fail the moment the panel closed, leaving Save greyed out with no way forward — the folder was chosen but never remembered, so every later share was stuck at the same step. It depended on timing, which is why it could work once and then stop, and why it behaved differently on one Mac than another.",
+          "**Articles on JavaScript-heavy sites save as articles again.** Many news sites build the page after it loads. On the Mac those were saving as a bare link, because Notesage only looked at the page as first delivered — the phone has always waited for the page to finish assembling itself, and now the Mac does too.",
+          "**You can share a PDF, EPUB or image to the Mac.** Notesage did not appear in the share sheet for any of them, so a document you could file from your phone could not be filed from your Mac. They now save into `Inbox/` under their own names.",
+          "**The Mac share window speaks your language.** Every word in it was English regardless of the language you picked — the buttons, the folder picker, and the messages it shows when something goes wrong."
         ]
       }
     },

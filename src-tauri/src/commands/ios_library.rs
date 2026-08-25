@@ -1061,6 +1061,151 @@ mod tests {
     }
 
     #[test]
+    fn the_macos_share_extension_is_localized_too() {
+        // The test above reads only the iOS file, so the macOS extension
+        // shipped with EVERY string hardcoded English — 17 `L()` calls on
+        // iOS, zero on macOS — while the app itself gained 295 translated
+        // strings. Nothing caught it because nothing looked.
+        //
+        // Source-shape assertion for the same reason as its iOS sibling: no
+        // XCTest harness exists in this repo (#590).
+        let files: [(&str, &str); 3] = [
+            ("ShareViewController", include_str!("../../macos/ShareViewController.swift")),
+            ("ShareLibraryAccess", include_str!("../../macos/ShareLibraryAccess.swift")),
+            ("ShareCapture", include_str!("../../macos/ShareCapture.swift")),
+        ];
+        // Count CALL SITES, not the helper.
+        //
+        // The first version of this asserted `src.contains("NSLocalizedString")`
+        // — which the private `L()` helper's OWN body satisfies. It passed with
+        // every call site removed, and did in fact pass while five failure
+        // messages sat hardcoded in English. A test that cannot fail is worse
+        // than no test: it is a false assurance someone will rely on.
+        for (name, src, min_calls) in [
+            (files[0].0, files[0].1, 18usize),
+            (files[1].0, files[1].1, 5),
+            (files[2].0, files[2].1, 3),
+        ] {
+            let calls = src.matches("L(\"share.").count();
+            assert!(
+                calls >= min_calls,
+                "{name}.swift routes only {calls} strings through L() (expected >= {min_calls}).\n\
+                 A UI string was probably hardcoded back to English."
+            );
+        }
+
+        // No user-visible literal may be assigned straight to a label, and no
+        // failure detail may bypass the table. These are the exact shapes that
+        // slipped through: `fail("…")` and `stringValue = "…"`.
+        let controller = files[0].1;
+        assert!(
+            !controller.contains("fail(\""),
+            "ShareViewController.swift: a failure detail is hardcoded English.\n\
+             Route it through L() and add the key to BOTH .lproj files."
+        );
+        // `stringValue = ""` CLEARS a label and carries no text, so it is
+        // allowed; anything else assigned as a literal is user-visible English.
+        for (i, line) in controller.lines().enumerate() {
+            if let Some(rest) = line.split_once("stringValue = \"").map(|(_, r)| r) {
+                assert!(
+                    rest.starts_with('"'),
+                    "ShareViewController.swift:{}: a label is assigned a hardcoded\n\
+                     English literal. Route it through L() and add the key to BOTH\n\
+                     .lproj files.\n  {}",
+                    i + 1,
+                    line.trim()
+                );
+            }
+        }
+
+        // Every key the macOS surfaces use must exist in BOTH strings files.
+        // A key present in code but missing from the table renders as the raw
+        // key name on screen, which is worse than English.
+        let en = include_str!("../../ios/ShareResources/en.lproj/Localizable.strings");
+        let sv = include_str!("../../ios/ShareResources/sv.lproj/Localizable.strings");
+        // EVERY key the macOS files use, discovered from the source rather
+        // than listed by hand. A hardcoded list only ever checks the keys
+        // someone remembered to add to it, and the key added next is exactly
+        // the one that will be missing a translation.
+        let mut checked = 0usize;
+        for (_, src) in files {
+            let mut from = 0usize;
+            while let Some(rel) = src[from..].find("L(\"share.") {
+                let start = from + rel + 2; // past `L(`
+                let Some(end_rel) = src[start + 1..].find('"') else { break };
+                let key = &src[start..start + 1 + end_rel + 1]; // includes both quotes
+                assert!(en.contains(key), "{key} is used in Swift but missing from en.lproj");
+                assert!(
+                    sv.contains(key),
+                    "{key} is used in Swift but missing from sv.lproj — it would\n\
+                     render in English inside an otherwise Swedish share sheet"
+                );
+                checked += 1;
+                from = start + 1 + end_rel;
+            }
+        }
+        assert!(checked >= 25, "only {checked} localized keys found — did the L() shape change?");
+
+        // Format specifiers must AGREE between locales. A `%ld` that became
+        // `%@` in translation is not a wrong word, it is a crash inside
+        // `String(format:)` — and it would only fire for the one user whose
+        // language hit that line.
+        // Compare VALUE against VALUE. The first version sliced the English
+        // value out but then matched it against the whole Swedish LINE — key,
+        // quotes and all. It happened not to misfire only because no key
+        // contains a `%`, which is luck, not construction, and exactly the
+        // "passes for the wrong reason" shape this file keeps producing.
+        let value_of = |line: &str| -> Option<String> {
+            let (_, rest) = line.split_once("\" = \"")?;
+            rest.rsplit_once("\";").map(|(v, _)| v.to_string())
+        };
+        let specifiers =
+            |s: &str| (s.matches("%@").count(), s.matches("%ld").count(), s.matches("%d").count());
+
+        let mut compared = 0usize;
+        for line in en.lines() {
+            if !line.trim_start().starts_with("\"share.") { continue }
+            let Some((key, _)) = line.split_once("\" = \"") else { continue };
+            let key = format!("{key}\"");
+            let Some(sv_line) = sv.lines().find(|l| l.trim_start().starts_with(&key)) else {
+                panic!("{key} is in en.lproj but absent from sv.lproj");
+            };
+            // PANIC on an unparseable line rather than skipping it.
+            //
+            // `else { continue }` here was mutation-proven to pass on the very
+            // bug this loop exists to catch: drop the trailing `;` from the
+            // English line and change the Swedish `%ld` to `%@`, and the pair
+            // is silently exempted while 36 other pairs clear the `>= 20`
+            // threshold. A malformed line is the MOST likely one to also have
+            // a bad specifier — skipping it inverts the test's purpose.
+            let (en_val, sv_val) = match (value_of(line), value_of(sv_line)) {
+                (Some(a), Some(b)) => (a, b),
+                _ => panic!(
+                    "{key} could not be parsed as `\"key\" = \"value\";` in one or both\n\
+                     locales — a malformed entry is exactly where a bad format\n\
+                     specifier hides.\n  en: {line}\n  sv: {sv_line}"
+                ),
+            };
+            assert_eq!(
+                specifiers(&en_val),
+                specifiers(&sv_val),
+                "format specifiers differ between locales for {key}:\n  en: {en_val}\n  sv: {sv_val}\n\
+                 String(format:) would crash for whichever language hits that line."
+            );
+            compared += 1;
+        }
+        assert!(compared >= 20, "only {compared} key pairs compared — did the .strings shape change?");
+
+        // Declaring the strings is useless if the bundle never carries them.
+        let build = include_str!("../../../scripts/build-macos-share-extension.sh");
+        assert!(
+            build.contains("lproj"),
+            "the macOS build does not copy any .lproj into the extension bundle, so\n\
+             NSLocalizedString would fall through to the raw key names"
+        );
+    }
+
+    #[test]
     fn move_sanitizes_the_destination_as_well_as_the_source() {
         // `ios_move_file` is the ONLY command on this surface taking two
         // caller-supplied paths, and it is the one that widened the write

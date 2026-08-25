@@ -378,6 +378,28 @@ pub unsafe extern "C" fn notesage_capture_x_html_contents(
     .unwrap_or(std::ptr::null_mut())
 }
 
+/// Is this syndication payload a long-form X ARTICLE, rather than a plain post?
+///
+/// Returns 1 for an Article, 0 otherwise (including absent or unparseable
+/// JSON). Exists because Swift needs the answer to decide whether a render
+/// pass is worth up to five seconds — a plain post has no article to find, so
+/// rendering one buys nothing.
+///
+/// The alternative was a substring check on the raw JSON in Swift, which was
+/// tried and reverted: `parse_x_post` already computes this, and this crate's
+/// own rule is that the crate decides. Two opinions about the same payload is
+/// how the extensions drifted in the first place.
+///
+/// # Safety
+/// `x_json` must be a NUL-terminated C string or NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn notesage_capture_x_is_article(x_json: *const c_char) -> u8 {
+    catch_unwind(AssertUnwindSafe(|| {
+        u8::from(x_post_from(x_json).article_title.is_some())
+    }))
+    .unwrap_or(0)
+}
+
 /// Parse the syndication JSON, treating absent/invalid as "no metadata" rather
 /// than failing the capture. The endpoint is undocumented; it WILL change.
 unsafe fn x_post_from(x_json: *const c_char) -> XPost {

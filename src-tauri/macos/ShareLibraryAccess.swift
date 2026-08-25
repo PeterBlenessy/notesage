@@ -24,6 +24,13 @@
 import AppKit
 import Foundation
 
+/// Localized string lookup. See the note on the same helper in
+/// ShareViewController — the strings are shared with the iOS extension.
+private func L(_ key: String, _ args: CVarArg...) -> String {
+    let format = NSLocalizedString(key, comment: "")
+    return args.isEmpty ? format : String(format: format, arguments: args)
+}
+
 enum ShareLibraryError: LocalizedError {
     case notGranted
     case staleGrant
@@ -32,11 +39,11 @@ enum ShareLibraryError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notGranted:
-            return "Choose your Notesage library folder to save here."
+            return L("share.chooseLibraryToSave")
         case .staleGrant:
             // The folder moved or was renamed. Recoverable, and saying so
             // beats a generic failure the user cannot act on.
-            return "Your Notesage library moved. Choose it again to save here."
+            return L("share.libraryMoved")
         case .ioError(let message):
             return message
         }
@@ -84,8 +91,8 @@ enum ShareLibraryAccess {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Use as Library"
-        panel.message = "Choose your Notesage library folder."
+        panel.prompt = L("share.useAsLibrary")
+        panel.message = L("share.chooseLibraryFolder")
         // Point at the likely answer rather than the file system root: the
         // library is `~/Notesage` unless the user moved it, and an iCloud
         // library lives somewhere nobody navigates to by choice.
@@ -134,7 +141,7 @@ enum ShareLibraryAccess {
                 NSLog("[notesage-share] bookmarkData failed for %@: %@",
                       url.path, String(describing: error))
                 completion(.failure(ShareLibraryError.ioError(
-                    "Could not remember that folder: \(error.localizedDescription)")))
+                    L("share.couldNotRemember", error.localizedDescription))))
             }
         }
     }
@@ -229,6 +236,123 @@ enum ShareLibraryAccess {
         if let writeError { throw ShareLibraryError.ioError(writeError.localizedDescription) }
 
         return unique.path.replacingOccurrences(of: root.path + "/", with: "")
+    }
+
+    /// Store a shared FILE (PDF, EPUB, image, …) in `Inbox/` under its own
+    /// name, deduped. Returns the relative path actually used.
+    ///
+    /// The source is the temp file the share sheet hands the extension. Copied
+    /// under coordination for the same reason every other write here is: the
+    /// library is normally an iCloud folder that several devices write to, and
+    /// an uncoordinated copy into a syncing folder is how conflict copies
+    /// appear.
+    ///
+    /// `copyItem` streams rather than loading the file into memory, so a large
+    /// video never sits in the extension's budget — the same property the iOS
+    /// path relies on.
+    /// Serialises name-choice AND write for concurrent document saves.
+    ///
+    /// `dedupedURL` is a check-then-use against the filesystem. Ten
+    /// `loadFileRepresentation` callbacks land on arbitrary queues at once, so
+    /// two items with the same name can both see the target as free and both
+    /// write it — the second silently overwriting the first, with no error
+    /// raised and the UI reporting success. A shared file vanishing without a
+    /// trace is the worst failure this path can have.
+    private static let nameLock = NSLock()
+
+    /// Claim a free name by creating a placeholder, under the lock.
+    ///
+    /// Holding the lock across the whole copy would serialise ten concurrent
+    /// document saves behind each other — one large file or one stalled iCloud
+    /// coordinator blocking the rest, inside an extension with an execution
+    /// budget. So the lock covers the check-and-claim only.
+    ///
+    /// Claiming means CREATING the file, not just picking a name: a name that
+    /// merely looked free is the race we started with. The claim then has to
+    /// survive until the real content lands — see `writeDocument`, which
+    /// swaps content in atomically rather than deleting the placeholder first.
+    /// An earlier version removed it and then copied, which left the path
+    /// genuinely free in between and reopened the very race this closes.
+    ///
+    /// Returns nil when the claim could not be made — `createFile` reports
+    /// failure as a discardable Bool, and a claim that silently failed is a
+    /// claim two callers both think they hold.
+    private static func claimName(_ preferred: URL) -> URL? {
+        nameLock.lock()
+        defer { nameLock.unlock() }
+        let target = dedupedURL(for: preferred)
+        // `dedupedURL` returns the ORIGINAL url when it exhausts its 999
+        // attempts, and that url still exists — so `createFile` would truncate
+        // a real file to zero bytes and report it as claimed. Silent data
+        // loss, in the function whose entire purpose is preventing exactly
+        // that. Refuse instead.
+        guard !FileManager.default.fileExists(atPath: target.path) else { return nil }
+        guard FileManager.default.createFile(atPath: target.path, contents: nil) else {
+            return nil
+        }
+        return target
+    }
+
+    @discardableResult
+    static func writeDocument(from src: URL, suggestedName: String) throws -> String {
+        let root = try resolveRoot()
+        guard root.startAccessingSecurityScopedResource() else {
+            throw ShareLibraryError.staleGrant
+        }
+        defer { root.stopAccessingSecurityScopedResource() }
+
+        let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+
+        // Keep the shared file's own name — that is what the user will look
+        // for — minus anything path-like.
+        var name = (suggestedName as NSString).lastPathComponent
+        if name.isEmpty || name == "." || name == ".." { name = "Shared document" }
+        guard let target = claimName(inbox.appendingPathComponent(name)) else {
+            throw ShareLibraryError.ioError("Could not reserve a name in Inbox")
+        }
+
+        // Stage beside the target, then swap ATOMICALLY.
+        //
+        // `removeItem` followed by `copyItem` leaves the path free in between,
+        // so a second claimant can take the name and both writers end up
+        // targeting it — one file silently overwriting the other, which is the
+        // exact failure the claim exists to prevent. `replaceItemAt` has no
+        // such window, and it cleans up the placeholder as part of the swap.
+        //
+        // Staging in the SAME directory matters: a cross-volume replace falls
+        // back to a copy, and the library is often an iCloud folder on its own
+        // volume.
+        let staged = inbox.appendingPathComponent(".notesage-staging-\(UUID().uuidString)")
+        var coordError: NSError?
+        var copyError: Error?
+        var landed = target
+        NSFileCoordinator().coordinate(
+            writingItemAt: target, options: .forReplacing, error: &coordError
+        ) { url in
+            do {
+                try FileManager.default.copyItem(at: src, to: staged)
+                // KEEP the returned URL. `replaceItemAt` is documented to fall
+                // back to a non-atomic path on filesystems that cannot swap in
+                // place, and to land the item at a DIFFERENT url when it does
+                // — callers are told to use what it returns. This library is
+                // "usually an iCloud folder", which is precisely that class of
+                // filesystem, so reporting the path we PLANNED rather than the
+                // one it reached would be a success message pointing at
+                // nothing.
+                landed = try FileManager.default.replaceItemAt(url, withItemAt: staged) ?? url
+            } catch {
+                copyError = error
+                // Never leave litter. A failed share that permanently occupies
+                // the user's chosen filename would also push every retry to
+                // `name-1`, `name-2`, … with nothing to show for it.
+                try? FileManager.default.removeItem(at: staged)
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+        if let coordError { throw ShareLibraryError.ioError(coordError.localizedDescription) }
+        if let copyError { throw ShareLibraryError.ioError(copyError.localizedDescription) }
+        return "Inbox/\(landed.lastPathComponent)"
     }
 
     /// `note.md` → `note-1.md` → `note-2.md` on collision.
