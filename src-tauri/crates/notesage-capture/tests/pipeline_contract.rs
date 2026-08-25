@@ -407,16 +407,32 @@ fn no_capture_write_runs_on_the_main_thread() {
         ),
         ("macOS", macos_src("ShareCapture.swift"), "build(", "DispatchQueue.global"),
     ] {
-        assert!(
-            src.contains(hop),
-            "{label} has no off-main hop at all — every capture write would run\n\
-             on the thread the share sheet draws on."
-        );
-
-        // iOS funnels every attempt through `writeOffMain`, which owns the
-        // hop; the only direct `writeArticle(url:` call left may be that
-        // funnel's own body. More than one means a call site bypassed it.
         if label == "iOS" {
+            // The hop must be INSIDE writeOffMain's own body. The previous
+            // version checked `src.contains("writeOffMain(")`, which the
+            // declaration and its call sites satisfy — so stripping the
+            // DispatchQueue hop out of the funnel left the guard green while
+            // every write ran synchronously on main. Mutation-proven hollow
+            // in review round six. Existence is not behaviour.
+            let f = src
+                .find("private func writeOffMain(")
+                .expect("writeOffMain moved — this guard is anchored to it");
+            let fend = src[f..]
+                .find("\n    /// Reads ONLY the snapshot")
+                .map(|i| f + i)
+                .unwrap_or(src.len());
+            let funnel = &src[f..fend];
+            assert!(
+                funnel.contains("DispatchQueue.global"),
+                "iOS writeOffMain no longer hops off the main thread — every capture\n\
+                 write runs on the thread the share sheet draws on.\n\n{funnel}"
+            );
+            assert!(
+                funnel.contains("DispatchQueue.main.async"),
+                "iOS writeOffMain no longer completes back on main; its callers touch\n\
+                 UIKit from whatever queue the write finished on."
+            );
+
             // Count CALLS, not the declaration. `private func writeArticle(url:`
             // also contains the name, and counting it made the assertion fire
             // against correct code — the mirror image of a guard that passes
@@ -425,13 +441,23 @@ fn no_capture_write_runs_on_the_main_thread() {
                 .lines()
                 .filter(|l| l.contains("writeArticle(url:") && !l.contains("func "))
                 .count();
-            assert!(
-                direct <= 1,
-                "iOS calls writeArticle directly {direct} times. Every attempt must go\n\
-                 through writeOffMain, which is what moves the parse and the disk\n\
-                 write off the thread the UI draws on."
+            // EXACTLY one — the funnel's own call. `<= 1` also accepted ZERO,
+            // i.e. writeArticle never called at all and every article capture
+            // silently degrading to the fallback note, without failing.
+            assert_eq!(
+                direct, 1,
+                "iOS must call writeArticle exactly once, from inside writeOffMain.\n\
+                 {direct} direct calls found: 0 means captures silently degrade to\n\
+                 fallback notes; more than 1 means a call site bypassed the funnel\n\
+                 and runs on main."
             );
             let _ = writer;
+        } else {
+            assert!(
+                src.contains(hop),
+                "{label} has no off-main hop at all — every capture write would run\n\
+                 on the thread the share sheet draws on."
+            );
         }
     }
 }
@@ -455,9 +481,31 @@ fn the_capture_write_does_not_read_mutable_view_state() {
         .map(|i| start + i)
         .unwrap_or(src.len());
     let body = &src[start..end];
-    for field in ["self.format", "sharedTitle", "self.xJson", "isXStatus"] {
+    // Strip comments, then strip every `snapshot.<field>` read, and only then
+    // ban the bare identifiers. The previous list mixed `self.format` with
+    // bare `sharedTitle` — but Swift permits omitting `self.`, so rewriting
+    // the body to read bare `xJson` sailed past the `self.xJson` ban.
+    // Mutation-proven hollow in review round six: the exact race this guard
+    // names could be reintroduced without failing it.
+    let code: String = body
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    for field in ["format", "sharedTitle", "xJson", "isXStatus"] {
+        // An argument LABEL (`xJson: snapshot.xJson`) is not a read — the
+        // label is the identifier followed by `:`. Strip labels as well as
+        // snapshot reads, or the guard fires on correct code, which is the
+        // mirror image of hollow and just as disqualifying.
+        let cleaned = code
+            .replace(&format!("snapshot.{field}"), "")
+            .replace(&format!("{field}:"), ":");
+        // Word boundary: `format` must not match `CaptureFormat` or a label
+        // like `format:` in an unrelated signature... but in this body any
+        // bare occurrence IS a self-read, so plain containment is right —
+        // provided snapshot reads and comments are gone.
         assert!(
-            !body.contains(field),
+            !mentions(&cleaned, field),
             "writeArticle reads `{field}` — mutable view state, from a background\n\
              queue. Take it from the CaptureSnapshot instead.\n\n{body}"
         );

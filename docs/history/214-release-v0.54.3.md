@@ -39,8 +39,9 @@ scope — plus the three above. None was a decision; all were omissions.
 The Mac extension now uses the SAME strings files as the phone rather than a
 copy of its own, since a second copy is a second thing to forget.
 
-The contract test now checks **both** platforms for each behaviour, so the
-class is at least visible. Before today it checked only iOS.
+The contract test now checks **both** platforms for each of the behaviours
+fixed here — several of its earlier checks were single-platform, which is how
+a bug fixed on one side stayed live on the other.
 
 Five review rounds went into this, and each one found defects introduced by
 the previous round's fixes. Several of the bugs they caught were on **iOS**,
@@ -81,6 +82,10 @@ for.
   having been tried. Video declares its own key. Both need one real share from
   Finder before either is claimed to work, which is why neither is in the
   fixes above.
+- **Cancelling mid-save does not stop the save**, on either platform — the
+  sheet closes but the capture still lands. Real, pre-existing, and now
+  tracked (#779) rather than left as a footnote; the fix wants a cancellable
+  chain, not a patch.
 - The rendered-DOM fallback's settle constants (500 ms quiet period, 5 s
   ceiling) are inherited from iOS, where they are starting points rather than
   measured truths. A page that mutates forever hits the ceiling; one that
