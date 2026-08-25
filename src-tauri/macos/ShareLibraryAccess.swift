@@ -238,10 +238,6 @@ enum ShareLibraryAccess {
         return unique.path.replacingOccurrences(of: root.path + "/", with: "")
     }
 
-    /// `note.md` → `note-1.md` → `note-2.md` on collision.
-    ///
-    /// Saving the same article twice should produce two notes, not silently
-    /// overwrite the first — the user may have annotated it.
     /// Store a shared FILE (PDF, EPUB, image, …) in `Inbox/` under its own
     /// name, deduped. Returns the relative path actually used.
     ///
@@ -262,12 +258,28 @@ enum ShareLibraryAccess {
     /// write it — the second silently overwriting the first, with no error
     /// raised and the UI reporting success. A shared file vanishing without a
     /// trace is the worst failure this path can have.
-    private static let writeLock = NSLock()
+    private static let nameLock = NSLock()
+
+    /// Claim a free name by CREATING the file, atomically.
+    ///
+    /// Holding a lock across the copy would serialise ten concurrent document
+    /// saves behind each other — one large file or one stalled iCloud
+    /// coordinator blocking the rest, inside an extension with an execution
+    /// budget. The lock only needs to cover the check-and-claim.
+    ///
+    /// Claiming means creating a zero-byte placeholder, not just picking a
+    /// name: a name that merely *looked* free is the race we started with.
+    /// The copy then replaces it.
+    private static func claimName(_ preferred: URL) -> URL {
+        nameLock.lock()
+        defer { nameLock.unlock() }
+        let target = dedupedURL(for: preferred)
+        FileManager.default.createFile(atPath: target.path, contents: nil)
+        return target
+    }
 
     @discardableResult
     static func writeDocument(from src: URL, suggestedName: String) throws -> String {
-        writeLock.lock()
-        defer { writeLock.unlock() }
         let root = try resolveRoot()
         guard root.startAccessingSecurityScopedResource() else {
             throw ShareLibraryError.staleGrant
@@ -281,20 +293,28 @@ enum ShareLibraryAccess {
         // for — minus anything path-like.
         var name = (suggestedName as NSString).lastPathComponent
         if name.isEmpty || name == "." || name == ".." { name = "Shared document" }
-        let target = dedupedURL(for: inbox.appendingPathComponent(name))
+        let target = claimName(inbox.appendingPathComponent(name))
 
         var coordError: NSError?
         var copyError: Error?
         NSFileCoordinator().coordinate(
             writingItemAt: target, options: .forReplacing, error: &coordError
         ) { url in
-            do { try FileManager.default.copyItem(at: src, to: url) } catch { copyError = error }
+            do {
+                // The placeholder from `claimName` holds the name; replace it.
+                try? FileManager.default.removeItem(at: url)
+                try FileManager.default.copyItem(at: src, to: url)
+            } catch { copyError = error }
         }
         if let coordError { throw ShareLibraryError.ioError(coordError.localizedDescription) }
         if let copyError { throw ShareLibraryError.ioError(copyError.localizedDescription) }
         return "Inbox/\(target.lastPathComponent)"
     }
 
+    /// `note.md` → `note-1.md` → `note-2.md` on collision.
+    ///
+    /// Saving the same article twice should produce two notes, not silently
+    /// overwrite the first — the user may have annotated it.
     private static func dedupedURL(for url: URL) -> URL {
         let fm = FileManager.default
         guard fm.fileExists(atPath: url.path) else { return url }

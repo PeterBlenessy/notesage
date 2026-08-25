@@ -28,11 +28,20 @@
 "share.cantSaveThis" = "Can't save this";
 "share.cancel" = "Cancel";
 "share.saveOneFile" = "Save this file to Notesage";
-"share.saveManyFiles" = "Save %d files to Notesage";
+"share.saveManyFiles" = "Save %ld files to Notesage";
 "share.couldNotSaveFiles" = "Could not save those files.";
-"share.someFilesFailed" = "Saved some files; %d could not be saved.";
+"share.someFilesFailed" = "Saved some files; %ld could not be saved.";
 "share.notAWebLink" = "That does not look like a web link.";
 "share.couldNotReach" = "Could not reach that page. Check your connection and try again.";
 "share.couldNotBuildNote" = "Could not build a note from that page.";
 "share.couldNotRemember" = "Could not remember that folder: %@";
 "share.libraryMoved" = "Your Notesage library moved. Choose it again to save here.";
+
+/* Share-failure detail lines. The TITLE was localized and these were not,
+   which produced a Swedish title over an English body — worse than either. */
+"share.noShareItem" = "No share item was received.";
+"share.noAttachments" = "The share carried no attachments.";
+"share.noLinkOffered" = "This share had no link. It offered: %@";
+"share.couldNotReadLink" = "Could not read a link from this share (%@, %@).";
+"share.notAWebLinkWas" = "Notesage captures web links. This was: %@";
+"share.saveToNotesage" = "Save to Notesage";

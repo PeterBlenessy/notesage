@@ -195,9 +195,10 @@ final class ShareViewController: NSViewController {
         saveButton.isEnabled = false
         statusLabel.stringValue = L("share.saving")
 
-        // Bounded to match the activation rule. Anything beyond would be
-        // dropped silently, so the count that the summary compares against
-        // must be the count actually ATTEMPTED, not the count offered.
+        // Bounded at the activation rule's LARGEST count (File/Image are 10;
+        // Movie is 3, so a >3-movie batch never reaches us at all). Anything
+        // beyond would be dropped silently, so the count the summary compares
+        // against must be the count actually ATTEMPTED, not the count offered.
         let attempted = Array(providers.prefix(10))
         let group = DispatchGroup()
         // `loadFileRepresentation` calls back on an arbitrary queue and these
@@ -254,11 +255,11 @@ final class ShareViewController: NSViewController {
             // Distinct message per failure, deliberately. All three paths used
             // to say "Nothing to save.", so a screenshot could not tell them
             // apart and diagnosing meant guessing — which is how this shipped.
-            fail("No share item was received.")
+            fail(L("share.noShareItem"))
             return
         }
         guard let attachments = item.attachments, !attachments.isEmpty else {
-            fail("The share carried no attachments.")
+            fail(L("share.noAttachments"))
             return
         }
         sharedTitle = item.attributedContentText?.string
@@ -288,7 +289,7 @@ final class ShareViewController: NSViewController {
         guard let (provider, identifier) = Self.urlTypeIdentifiers.lazy.compactMap({ type -> (NSItemProvider, String)? in
             attachments.first { $0.hasItemConformingToTypeIdentifier(type) }.map { ($0, type) }
         }).first else {
-            fail("This share had no link. It offered: \(offered.joined(separator: ", "))")
+            fail(L("share.noLinkOffered", offered.joined(separator: ", ")))
             return
         }
 
@@ -327,16 +328,16 @@ final class ShareViewController: NSViewController {
     private func show(url: String?, from identifier: String, raw: Any?) {
         guard let url, !url.isEmpty else {
             let describedType = raw.map { String(describing: type(of: $0)) } ?? "nil"
-            fail("Could not read a link from this share (\(identifier), \(describedType)).")
+            fail(L("share.couldNotReadLink", identifier, describedType))
             return
         }
         guard url.lowercased().hasPrefix("http://") || url.lowercased().hasPrefix("https://") else {
             // A file:// URL or similar is a real share, just not one we capture.
-            fail("Notesage captures web links. This was: \(url)")
+            fail(L("share.notAWebLinkWas", url))
             return
         }
         sharedUrl = url
-        titleLabel.stringValue = sharedTitle?.isEmpty == false ? sharedTitle! : L("share.title")
+        titleLabel.stringValue = sharedTitle?.isEmpty == false ? sharedTitle! : L("share.saveToNotesage")
         urlLabel.stringValue = url
         // Save is gated on `sharedUrl != nil`, and the URL arrives HERE —
         // asynchronously, long after `viewDidAppear` ran the check with it

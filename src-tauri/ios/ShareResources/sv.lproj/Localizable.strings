@@ -27,11 +27,20 @@
 "share.cantSaveThis" = "Det här går inte att spara";
 "share.cancel" = "Avbryt";
 "share.saveOneFile" = "Spara filen till Notesage";
-"share.saveManyFiles" = "Spara %d filer till Notesage";
+"share.saveManyFiles" = "Spara %ld filer till Notesage";
 "share.couldNotSaveFiles" = "Kunde inte spara filerna.";
-"share.someFilesFailed" = "Sparade en del filer; %d kunde inte sparas.";
+"share.someFilesFailed" = "Sparade en del filer; %ld kunde inte sparas.";
 "share.notAWebLink" = "Det där ser inte ut som en webblänk.";
 "share.couldNotReach" = "Kunde inte nå sidan. Kontrollera din anslutning och försök igen.";
 "share.couldNotBuildNote" = "Kunde inte skapa någon anteckning från sidan.";
 "share.couldNotRemember" = "Kunde inte komma ihåg mappen: %@";
 "share.libraryMoved" = "Ditt Notesage-bibliotek har flyttats. Välj det igen för att spara här.";
+
+/* Feltexter vid delning. Rubriken översattes men inte dessa, vilket gav en
+   svensk rubrik över en engelsk brödtext — sämre än något av alternativen. */
+"share.noShareItem" = "Ingen delning togs emot.";
+"share.noAttachments" = "Delningen innehöll inga bilagor.";
+"share.noLinkOffered" = "Delningen innehöll ingen länk. Den erbjöd: %@";
+"share.couldNotReadLink" = "Kunde inte läsa någon länk ur delningen (%@, %@).";
+"share.notAWebLinkWas" = "Notesage sparar webblänkar. Det här var: %@";
+"share.saveToNotesage" = "Spara till Notesage";

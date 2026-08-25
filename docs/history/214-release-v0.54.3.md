@@ -20,10 +20,10 @@ Sharing to Notesage on the Mac now does what it does on the phone.
   link, because Notesage only looked at the page as first delivered — the
   phone has always waited for the page to finish assembling itself, and now
   the Mac does too.
-- **You can share a PDF, EPUB, image, video or sound file to the Mac.**
-  Notesage did not appear in the share sheet for any of them, so a document
-  you could file from your phone could not be filed from your Mac. They now
-  save into `Inbox/` under their own names.
+- **You can share a PDF, EPUB or image to the Mac.** Notesage did not appear
+  in the share sheet for any of them, so a document you could file from your
+  phone could not be filed from your Mac. They now save into `Inbox/` under
+  their own names.
 - **The Mac share window speaks your language.** Every word in it was English
   regardless of the language you picked — the buttons, the folder picker, and
   the messages it shows when something goes wrong.
@@ -67,6 +67,12 @@ class is at least visible. Before today it checked only iOS.
   been observed working end to end: the enrichment (real title, cover image)
   needs one successful share to confirm, and the bugs above stood in the way
   of getting one.
+- **Video and audio shares are accepted in code but unverified on hardware.**
+  macOS's activation rules have no Audio key, so an audio file should activate
+  through the generic File rule — should, by reading the documentation, not by
+  having been tried. Video declares its own key. Both need one real share from
+  Finder before either is claimed to work, which is why neither is in the
+  fixes above.
 - The rendered-DOM fallback's settle constants (500 ms quiet period, 5 s
   ceiling) are inherited from iOS, where they are starting points rather than
   measured truths. A page that mutates forever hits the ceiling; one that

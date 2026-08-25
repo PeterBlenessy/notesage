@@ -161,14 +161,17 @@ enum ShareCapture {
         config.urlCache = nil
 
         URLSession(configuration: config).dataTask(with: request) { data, response, _ in
-            guard (response as? HTTPURLResponse)?.statusCode == 200,
-                  let data, data.count <= 512 * 1024,
-                  let json = String(data: data, encoding: .utf8)
-            else {
-                completion(nil)
-                return
-            }
-            completion(json)
+            let json: String? = {
+                guard (response as? HTTPURLResponse)?.statusCode == 200,
+                      let data, data.count <= 512 * 1024
+                else { return nil }
+                return String(data: data, encoding: .utf8)
+            }()
+            // Main, so the continuation is on the same queue as every other
+            // step of the chain. Safe today only because `proceed` does
+            // nothing but call `fetch` — and an invariant that holds by
+            // accident is one edit away from the crash class above.
+            DispatchQueue.main.async { completion(json) }
         }.resume()
     }
 
@@ -314,20 +317,21 @@ enum ShareCapture {
                     ?? String(data: data, encoding: .isoLatin1)
             }()
 
-            // Hop to main BEFORE calling back.
+            // Deliberately NOT hopping to main here.
             //
-            // `URLSession` created without a delegate queue runs completions
-            // on a private background queue. The caller goes on to construct a
-            // `WKWebView` (PageRenderer) and to touch AppKit — both of which
-            // are main-thread-only, and WebKit's violation is not a warning:
-            // it is a crash or a silent hang that takes the whole extension
-            // down, losing the share entirely.
+            // The first fix for the WKWebView main-thread crash hopped the
+            // whole completion, which also dragged article extraction (a
+            // readability parse over up to 5 MB) and the coordinated disk
+            // write onto the main thread for EVERY capture — including the
+            // common one that never constructs a webview. If the file
+            // coordinator stalls against a syncing iCloud folder, that freezes
+            // the extension's UI rather than leaving it showing "Saving…".
             //
-            // iOS has always done this (`fetch` in its ShareViewController).
-            // The port dropped the hop, which was harmless while the
-            // completion only called into Rust and became fatal the moment a
-            // webview appeared behind it.
-            DispatchQueue.main.async { completion(html) }
+            // WebKit is the only main-thread requirement in this chain, and
+            // `PageRenderer.renderedHTML` guards itself at the point that
+            // actually needs it. AppKit is reached only through the
+            // ShareViewController completion, which hops on its own.
+            completion(html)
         }.resume()
     }
 }

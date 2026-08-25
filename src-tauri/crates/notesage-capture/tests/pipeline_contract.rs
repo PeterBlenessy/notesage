@@ -341,6 +341,30 @@ fn both_platforms_retry_a_failed_extraction_against_a_rendered_dom() {
              article is assembled by JavaScript degrades to a link note."
         );
     }
+
+    // Reachability, not just presence.
+    //
+    // The call above existing is NOT the same as it running. macOS shipped
+    // with the call present and unreachable for every X share, because
+    // `notesage_capture_x_contents` never returns null — so the first attempt
+    // always "succeeded" and the retry below it was dead code. This test
+    // passed throughout.
+    //
+    // `requireArticle: true` on the earlier attempts is what makes the retry
+    // reachable. Drop it and the dead-code state returns silently.
+    let mac = macos_src("ShareCapture.swift");
+    assert_eq!(
+        mac.matches("requireArticle: true").count(),
+        2,
+        "macOS must demand a genuine extraction on BOTH the raw-HTML and\n\
+         rendered-DOM attempts. Without it an X share succeeds on the first\n\
+         attempt regardless of whether an article was found, and the rendered\n\
+         retry becomes unreachable — present in the source, never executed."
+    );
+    assert!(
+        mac.contains("requireArticle: Bool"),
+        "the requireArticle parameter is gone; the retry cannot be gated"
+    );
 }
 
 #[test]
