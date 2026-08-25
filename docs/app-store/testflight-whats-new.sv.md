@@ -9,8 +9,7 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Håll ned på ett dokument och välj **Flytta till …** för att flytta det ut ur
-inkorgen. Väljaren öppnas i mappen dokumentet redan ligger i; tryck på en mapp
-för att gå djupare, eller ”Upp en nivå” för att gå ut. Mappar går inte att
-flytta, bara filer. Kontrollera gärna att en flyttad anteckning behåller sitt
-nålmärke och sin bild i biblioteket.
+Stabilitetsrunda för delning. Dela några saker i rad — även två filer med
+samma namn — och kontrollera att inget försvinner och inget fryser mitt i.
+Ett vanligt X-inlägg ska sparas direkt nu; en X-artikel tar fortfarande en
+stund. Känt: att avbryta mitt i stoppar ännu inte sparandet.
