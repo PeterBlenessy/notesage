@@ -84,6 +84,23 @@ enum ShareCapture {
                     }
                 }
 
+                // A plain X post has no long-form article by definition, so
+                // rendering one is up to five seconds spent to reach the same
+                // metadata note it would reach immediately. Only an X ARTICLE
+                // is worth the render, and the syndication payload says which
+                // this is — `article` is present only for long-form.
+                //
+                // Without this, fixing the dead-retry bug would have made the
+                // commonest X case (share a tweet) several seconds slower. A
+                // correctness fix that quietly costs latency is still a
+                // regression.
+                let isPlainXPost = xJson.map { !$0.contains("\"article\"") } ?? false
+                if isPlainXPost {
+                    completion(build(url: url, title: title, html: nil, format: format,
+                                     xJson: xJson))
+                    return
+                }
+
                 // Nothing extractable in the fetched HTML — which is what
                 // happens on any JavaScript-rendered page, where the article
                 // does not exist until a bundle runs. Render and try once more.
@@ -93,6 +110,22 @@ enum ShareCapture {
                 // every SPA captured as a bare link here while the phone got
                 // the article.
                 PageRenderer.renderedHTML(url: url) { rendered in
+                    // Back OFF main before doing the heavy work.
+                    //
+                    // `PageRenderer` guarantees its completion on the main
+                    // thread — it forces itself there to touch WebKit, and
+                    // every exit path is a WKWebView callback or a main-queue
+                    // timer. So without this hop the readability parse and the
+                    // coordinated disk write below run on main, which is
+                    // exactly the freeze `fetch` above goes out of its way to
+                    // avoid.
+                    //
+                    // And it is the MAINLINE case, not an edge one: this path
+                    // exists for JavaScript-rendered pages, i.e. most modern
+                    // news sites. Narrowing the earlier over-hop fixed one
+                    // half and left this one — the same defect, one branch
+                    // over.
+                    DispatchQueue.global(qos: .userInitiated).async {
                     if let rendered {
                         let result = build(
                             url: url, title: title, html: rendered, format: format, xJson: xJson,
@@ -121,6 +154,7 @@ enum ShareCapture {
                         completion(.failure(ShareCaptureError.fetchFailed))
                     } else {
                         completion(build(url: url, title: title, html: nil, format: .link))
+                    }
                     }
                 }
             }

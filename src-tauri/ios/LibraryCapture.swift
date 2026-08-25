@@ -371,26 +371,71 @@ extension LibraryAccess {
 
         // Keep the shared file's own name — that's what the user will look
         // for — minus anything path-like; dedupe with a numeric suffix.
+        //
+        // CLAIMED under a lock, not merely checked. `saveDocuments` fires up
+        // to ten `loadFileRepresentation` completions on arbitrary queues at
+        // once, so two items with the same name can both see the path as free
+        // and both write it — the second silently overwriting the first, with
+        // no error raised and the UI reporting success. A shared file
+        // vanishing without a trace is the worst failure this path can have.
+        //
+        // Kept identical to the macOS implementation deliberately: this race
+        // was found on macOS, and fixing only that side would have left the
+        // two platforms silently diverged on the same defect.
         var name = (suggestedName as NSString).lastPathComponent
         if name.isEmpty || name == "." || name == ".." { name = "Shared document" }
-        let ext = (name as NSString).pathExtension
-        let stem = (name as NSString).deletingPathExtension
-        var target = inbox.appendingPathComponent(name)
-        var n = 1
-        while FileManager.default.fileExists(atPath: target.path) {
-            name = ext.isEmpty ? "\(stem)-\(n)" : "\(stem)-\(n).\(ext)"
-            target = inbox.appendingPathComponent(name)
-            n += 1
+        guard let target = claimName(inbox.appendingPathComponent(name)) else {
+            throw NSError(
+                domain: "Notesage", code: 4,
+                userInfo: [NSLocalizedDescriptionKey: "Could not reserve a name in Inbox"])
         }
+        name = target.lastPathComponent
 
+        // Stage beside the target, then swap ATOMICALLY. Removing the
+        // placeholder and copying afterwards would leave the path free in
+        // between, reopening the race the claim just closed.
+        let staged = inbox.appendingPathComponent(".notesage-staging-\(UUID().uuidString)")
         var coordError: NSError?
         var copyError: Error?
         NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &coordError) { url in
-            do { try FileManager.default.copyItem(at: src, to: url) }
-            catch { copyError = error }
+            do {
+                try FileManager.default.copyItem(at: src, to: staged)
+                _ = try FileManager.default.replaceItemAt(url, withItemAt: staged)
+            } catch {
+                copyError = error
+                // Never leave litter: a zero-byte placeholder left under the
+                // user's chosen name would push every retry to `name-1`.
+                try? FileManager.default.removeItem(at: staged)
+                try? FileManager.default.removeItem(at: url)
+            }
         }
         if let coordError { throw coordError }
         if let copyError { throw copyError }
         return "Inbox/\(name)"
+    }
+
+    /// Serialises name choice across the concurrent `loadFileRepresentation`
+    /// callbacks, and CLAIMS the name by creating it — a name that merely
+    /// looked free is the race itself. Returns nil when the claim failed.
+    private static let nameLock = NSLock()
+
+    private static func claimName(_ preferred: URL) -> URL? {
+        nameLock.lock()
+        defer { nameLock.unlock() }
+        let fm = FileManager.default
+        let ext = preferred.pathExtension
+        let stem = preferred.deletingPathExtension().lastPathComponent
+        let folder = preferred.deletingLastPathComponent()
+        var candidate = preferred
+        var n = 1
+        // Bounded: an unbounded loop against a pathological directory would
+        // hang the share sheet with no way out.
+        while fm.fileExists(atPath: candidate.path), n <= 999 {
+            let named = ext.isEmpty ? "\(stem)-\(n)" : "\(stem)-\(n).\(ext)"
+            candidate = folder.appendingPathComponent(named)
+            n += 1
+        }
+        guard fm.createFile(atPath: candidate.path, contents: nil) else { return nil }
+        return candidate
     }
 }

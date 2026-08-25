@@ -368,6 +368,76 @@ fn both_platforms_retry_a_failed_extraction_against_a_rendered_dom() {
 }
 
 #[test]
+fn the_rendered_path_does_its_heavy_work_off_the_main_thread() {
+    // `PageRenderer` guarantees its completion on MAIN — it forces itself
+    // there to touch WebKit, and every exit is a WKWebView callback or a
+    // main-queue timer. So the closure that receives the rendered DOM must hop
+    // off before extracting (a readability parse over up to 5 MB) and writing
+    // (a blocking coordinated write against what is usually an iCloud folder).
+    //
+    // Without the hop the extension UI freezes on exactly the case this path
+    // exists for — JavaScript-rendered pages, i.e. most news sites. Round two
+    // narrowed an over-broad main hop and left this branch on main; the defect
+    // was one branch away from the fix for it.
+    let mac = macos_src("ShareCapture.swift");
+    let start = mac
+        .find("PageRenderer.renderedHTML(url: url) {")
+        .expect("the rendered-DOM call site moved");
+    // Bound by the first `build(` AFTER the call site, not by a byte count.
+    // A fixed window stops covering the code the moment someone adds a
+    // comment — which is precisely how this assertion first failed against a
+    // correct fix, and how an earlier check in this file passed against a
+    // broken one.
+    let rest = &mac[start..];
+    let heavy = rest
+        .find("build(")
+        .expect("no build() call after the rendered-DOM completion — did the shape change?");
+    let prelude = &rest[..heavy];
+    assert!(
+        prelude.contains("DispatchQueue.global"),
+        "the rendered-DOM completion reaches extraction and the coordinated disk\n\
+         write without leaving the main thread — and PageRenderer always calls\n\
+         back on main.\n\n{prelude}"
+    );
+}
+
+#[test]
+fn both_platforms_claim_a_filename_atomically() {
+    // Two shared files with the same name, ten concurrent callbacks: without a
+    // claim, both see the path free and one silently overwrites the other,
+    // with the UI reporting success. A shared file vanishing without a trace.
+    //
+    // A claim is only a claim if it HOLDS. An earlier version created a
+    // placeholder, then deleted it and copied — leaving the path genuinely
+    // free in between and reopening the race it closed. `replaceItemAt` swaps
+    // atomically and has no such window.
+    for (label, src) in [
+        ("iOS", ios_src("LibraryCapture.swift")),
+        ("macOS", macos_src("ShareLibraryAccess.swift")),
+    ] {
+        assert!(
+            src.contains("claimName"),
+            "{label} picks a filename without claiming it — check-then-use across\n\
+             concurrent callbacks loses a file silently."
+        );
+        // The CALL, not the word. The first version matched
+        // `src.contains("replaceItemAt")`, which its own explanatory comment
+        // satisfied — so swapping the real call for `moveItem` left the test
+        // green. Prose is not code, and a guard that reads its own
+        // documentation is the purest form of passing for the wrong reason.
+        assert!(
+            src.contains("FileManager.default.replaceItemAt("),
+            "{label} does not swap the staged copy in atomically. remove-then-copy\n\
+             leaves the claimed path free in between, which is the race itself."
+        );
+        assert!(
+            !src.contains("try? FileManager.default.removeItem(at: url)\n                try FileManager.default.copyItem"),
+            "{label} still removes the placeholder before copying — the free window is back."
+        );
+    }
+}
+
+#[test]
 fn both_platforms_accept_shared_files_not_just_links() {
     // Sharing a PDF or an EPUB into the library is a first-class capture, and
     // the activation rule is what decides whether Notesage even APPEARS in the

@@ -260,21 +260,30 @@ enum ShareLibraryAccess {
     /// trace is the worst failure this path can have.
     private static let nameLock = NSLock()
 
-    /// Claim a free name by CREATING the file, atomically.
+    /// Claim a free name by creating a placeholder, under the lock.
     ///
-    /// Holding a lock across the copy would serialise ten concurrent document
-    /// saves behind each other — one large file or one stalled iCloud
+    /// Holding the lock across the whole copy would serialise ten concurrent
+    /// document saves behind each other — one large file or one stalled iCloud
     /// coordinator blocking the rest, inside an extension with an execution
-    /// budget. The lock only needs to cover the check-and-claim.
+    /// budget. So the lock covers the check-and-claim only.
     ///
-    /// Claiming means creating a zero-byte placeholder, not just picking a
-    /// name: a name that merely *looked* free is the race we started with.
-    /// The copy then replaces it.
-    private static func claimName(_ preferred: URL) -> URL {
+    /// Claiming means CREATING the file, not just picking a name: a name that
+    /// merely looked free is the race we started with. The claim then has to
+    /// survive until the real content lands — see `writeDocument`, which
+    /// swaps content in atomically rather than deleting the placeholder first.
+    /// An earlier version removed it and then copied, which left the path
+    /// genuinely free in between and reopened the very race this closes.
+    ///
+    /// Returns nil when the claim could not be made — `createFile` reports
+    /// failure as a discardable Bool, and a claim that silently failed is a
+    /// claim two callers both think they hold.
+    private static func claimName(_ preferred: URL) -> URL? {
         nameLock.lock()
         defer { nameLock.unlock() }
         let target = dedupedURL(for: preferred)
-        FileManager.default.createFile(atPath: target.path, contents: nil)
+        guard FileManager.default.createFile(atPath: target.path, contents: nil) else {
+            return nil
+        }
         return target
     }
 
@@ -293,18 +302,38 @@ enum ShareLibraryAccess {
         // for — minus anything path-like.
         var name = (suggestedName as NSString).lastPathComponent
         if name.isEmpty || name == "." || name == ".." { name = "Shared document" }
-        let target = claimName(inbox.appendingPathComponent(name))
+        guard let target = claimName(inbox.appendingPathComponent(name)) else {
+            throw ShareLibraryError.ioError("Could not reserve a name in Inbox")
+        }
 
+        // Stage beside the target, then swap ATOMICALLY.
+        //
+        // `removeItem` followed by `copyItem` leaves the path free in between,
+        // so a second claimant can take the name and both writers end up
+        // targeting it — one file silently overwriting the other, which is the
+        // exact failure the claim exists to prevent. `replaceItemAt` has no
+        // such window, and it cleans up the placeholder as part of the swap.
+        //
+        // Staging in the SAME directory matters: a cross-volume replace falls
+        // back to a copy, and the library is often an iCloud folder on its own
+        // volume.
+        let staged = inbox.appendingPathComponent(".notesage-staging-\(UUID().uuidString)")
         var coordError: NSError?
         var copyError: Error?
         NSFileCoordinator().coordinate(
             writingItemAt: target, options: .forReplacing, error: &coordError
         ) { url in
             do {
-                // The placeholder from `claimName` holds the name; replace it.
+                try FileManager.default.copyItem(at: src, to: staged)
+                _ = try FileManager.default.replaceItemAt(url, withItemAt: staged)
+            } catch {
+                copyError = error
+                // Never leave litter. A failed share that permanently occupies
+                // the user's chosen filename would also push every retry to
+                // `name-1`, `name-2`, … with nothing to show for it.
+                try? FileManager.default.removeItem(at: staged)
                 try? FileManager.default.removeItem(at: url)
-                try FileManager.default.copyItem(at: src, to: url)
-            } catch { copyError = error }
+            }
         }
         if let coordError { throw ShareLibraryError.ioError(coordError.localizedDescription) }
         if let copyError { throw ShareLibraryError.ioError(copyError.localizedDescription) }

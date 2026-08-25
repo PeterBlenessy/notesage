@@ -1150,18 +1150,36 @@ mod tests {
         // `%@` in translation is not a wrong word, it is a crash inside
         // `String(format:)` — and it would only fire for the one user whose
         // language hit that line.
+        // Compare VALUE against VALUE. The first version sliced the English
+        // value out but then matched it against the whole Swedish LINE — key,
+        // quotes and all. It happened not to misfire only because no key
+        // contains a `%`, which is luck, not construction, and exactly the
+        // "passes for the wrong reason" shape this file keeps producing.
+        let value_of = |line: &str| -> Option<String> {
+            let (_, rest) = line.split_once("\" = \"")?;
+            rest.rsplit_once("\";").map(|(v, _)| v.to_string())
+        };
+        let specifiers =
+            |s: &str| (s.matches("%@").count(), s.matches("%ld").count(), s.matches("%d").count());
+
+        let mut compared = 0usize;
         for line in en.lines() {
-            let Some((key, en_val)) = line.split_once("\" = \"") else { continue };
+            if !line.trim_start().starts_with("\"share.") { continue }
+            let Some((key, _)) = line.split_once("\" = \"") else { continue };
             let key = format!("{key}\"");
-            if !key.starts_with("\"share.") { continue }
-            let Some(sv_line) = sv.lines().find(|l| l.starts_with(&key)) else { continue };
-            let count = |s: &str| (s.matches("%@").count(), s.matches("%ld").count(), s.matches("%d").count());
+            let Some(sv_line) = sv.lines().find(|l| l.trim_start().starts_with(&key)) else {
+                panic!("{key} is in en.lproj but absent from sv.lproj");
+            };
+            let (Some(en_val), Some(sv_val)) = (value_of(line), value_of(sv_line)) else { continue };
             assert_eq!(
-                count(en_val),
-                count(sv_line),
-                "format specifiers differ between locales for {key} — String(format:) would crash"
+                specifiers(&en_val),
+                specifiers(&sv_val),
+                "format specifiers differ between locales for {key}:\n  en: {en_val}\n  sv: {sv_val}\n\
+                 String(format:) would crash for whichever language hits that line."
             );
+            compared += 1;
         }
+        assert!(compared >= 20, "only {compared} key pairs compared — did the .strings shape change?");
 
         // Declaring the strings is useless if the bundle never carries them.
         let build = include_str!("../../../scripts/build-macos-share-extension.sh");
