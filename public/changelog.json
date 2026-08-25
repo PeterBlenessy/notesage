@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.54.1",
+      "date": "2026-08-25",
+      "previousVersion": "0.54.0",
+      "sections": {
+        "fixes": [
+          "**An X post shared from the Mac keeps its title and picture.** It used to save under the author's name — \"Someone (@handle) on X\" — with no image, so two articles by the same person collided and neither one said what it held. Now the note is named after the post, shows the post's own photo in the library, and carries the author and date. The phone already did this; the Mac does now too.",
+          "**\"Article (HTML)\" saves a real web page again.** Shares in that format were being saved with a `.md` name, so opening one showed raw markup instead of the article. They now save as `.html` and open as a page."
+        ]
+      }
+    },
+    {
       "version": "0.54.0",
       "date": "2026-08-25",
       "previousVersion": "0.53.1",

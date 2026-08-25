@@ -11,7 +11,7 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Share an X post to Notesage. The saved note should now be named after the
-post — not "Someone (@handle) on X" — and its card in the library should show
-the post's own photo instead of a picture of the text. Author and date are in
-the note too. Long-form X Articles are the case to try.
+Long-press a document and pick **Move to…** to file it out of the Inbox. The
+picker opens in the folder the document is already in; tap a folder to go
+deeper, or "Up one level" to go out. Folders cannot be moved, only files.
+Check that a moved note keeps its pin and its picture in the library.

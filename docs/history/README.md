@@ -215,3 +215,4 @@ Chronological log of major implementation milestones and changes.
 | 209 | [Release v0.53.0](209-release-v0.53.0.md) | A new app icon. |
 | 210 | [Release v0.53.1](210-release-v0.53.1.md) | More of the app speaks Swedish, and a text field stops showing gibberish. |
 | 211 | [Release v0.54.0](211-release-v0.54.0.md) | Every settings panel now speaks your language. |
+| 212 | [Release v0.54.1](212-release-v0.54.1.md) | X posts shared from the Mac keep their title and picture; HTML captures open as pages. |
