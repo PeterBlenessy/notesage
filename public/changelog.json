@@ -1,6 +1,41 @@
 {
   "releases": [
     {
+      "version": "0.54.0",
+      "date": "2026-08-25",
+      "previousVersion": "0.53.1",
+      "sections": {
+        "improvements": [
+          "**Settings is fully translated.** Projects, Connections, Local AI, Skills, Agents, Voice, MCP, Automations, Privacy and System — every panel, dialog, button, placeholder and confirmation message now follows the language you picked, instead of switching back to English partway down a page.",
+          "**Notifications are translated too.** The confirmations and error messages that appear when you rename a project, move one to iCloud, sign out of a provider or set up a local agent no longer arrive in English.",
+          "**Language switching is complete where it matters most.** Settings was the worst offender because it is the one place you go when something needs explaining — reading half of it in a second language made it harder, not easier."
+        ]
+      }
+    },
+    {
+      "version": "0.53.1",
+      "date": "2026-08-24",
+      "previousVersion": "0.53.0",
+      "sections": {
+        "improvements": [
+          "**Automations and Connections are translated.** Two settings areas that were still entirely in English now follow your chosen language — the automation builder (triggers, steps, scheduling) and the connection forms (sandbox, writable paths, allowed domains, model selection)."
+        ],
+        "fixes": [
+          "**The model search field showed `…` instead of `…`.** A literal escape sequence was rendering as visible text in the connection settings."
+        ]
+      }
+    },
+    {
+      "version": "0.53.0",
+      "date": "2026-08-24",
+      "previousVersion": "0.52.1",
+      "sections": {
+        "features": [
+          "**A new app icon.** The letterform stays; everything around it is new. The editor's own preview sentence sits above and below it, faint enough to read as texture, and the agent orb sits below — the same mark the app shows while something is running. The ground is darker and a touch warmer."
+        ]
+      }
+    },
+    {
       "version": "0.52.1",
       "date": "2026-08-23",
       "previousVersion": "0.52.0",
