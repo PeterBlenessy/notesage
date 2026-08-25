@@ -132,8 +132,21 @@ fn every_note_builder_is_reachable_or_documented() {
 /// contract that stops at the crate edge stops one link short of where X
 /// actually broke.
 fn ios_src(file: &str) -> String {
+    ext_src("ios", file)
+}
+
+/// Same, for the macOS Share Extension. It links the SAME staticlib and the
+/// SAME bridging header, so it is a second consumer of every export — and the
+/// first version of this file forgot it existed, which let macOS ship without
+/// the X path for the whole time iOS had it.
+fn macos_src(file: &str) -> String {
+    ext_src("macos", file)
+}
+
+fn ext_src(platform: &str, file: &str) -> String {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../ios")
+        .join("../..")
+        .join(platform)
         .join(file);
     fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()))
 }
@@ -171,20 +184,44 @@ fn mentions(haystack: &str, symbol: &str) -> bool {
 /// Deliberately a text scan rather than a build: the Share Extension only
 /// compiles on a Mac with an iOS toolchain, and a contract that cannot run in
 /// CI is a contract that runs never.
-const EXPORT_CALL_SITES: &[(&str, &str)] = &[
-    ("notesage_capture_contents", "LibraryCapture.swift"),
-    ("notesage_capture_rel_path", "LibraryCapture.swift"),
-    ("notesage_capture_rel_path_from_html", "LibraryCapture.swift"),
-    ("notesage_capture_oembed_url", "LibraryCapture.swift"),
-    ("notesage_capture_video_rel_path", "LibraryCapture.swift"),
-    ("notesage_capture_video_contents", "LibraryCapture.swift"),
-    ("notesage_capture_article_contents", "LibraryCapture.swift"),
-    ("notesage_capture_article_html_contents", "LibraryCapture.swift"),
-    ("notesage_capture_x_metadata_url", "LibraryCapture.swift"),
-    ("notesage_capture_x_rel_path", "LibraryCapture.swift"),
-    ("notesage_capture_x_contents", "LibraryCapture.swift"),
-    ("notesage_capture_x_html_contents", "LibraryCapture.swift"),
-    ("notesage_capture_string_free", "LibraryCapture.swift"),
+/// `(export, iOS caller, macOS caller-or-reason)`.
+///
+/// TWO consumers, not one. Both extensions link the same staticlib through the
+/// same bridging header, so an export is only as wired as its least-wired
+/// caller — and "wired on iOS" is what X looked like for a whole release while
+/// macOS silently had no X path at all.
+///
+/// A macOS `Err(reason)` is a DELIBERATE omission with the reason written
+/// down, exactly like a `None` row in BUILDER_REACHABILITY. An empty reason is
+/// not accepted.
+type MacExpectation = Result<&'static str, &'static str>;
+
+const EXPORT_CALL_SITES: &[(&str, &str, MacExpectation)] = &[
+    ("notesage_capture_contents", "LibraryCapture.swift", Ok("ShareCapture.swift")),
+    ("notesage_capture_rel_path", "LibraryCapture.swift", Ok("ShareCapture.swift")),
+    ("notesage_capture_rel_path_from_html", "LibraryCapture.swift", Ok("ShareCapture.swift")),
+    (
+        "notesage_capture_oembed_url",
+        "LibraryCapture.swift",
+        Err("macOS offers no Video format — its picker is Article (HTML) / Article (Markdown) / Link"),
+    ),
+    (
+        "notesage_capture_video_rel_path",
+        "LibraryCapture.swift",
+        Err("no Video format on macOS; see notesage_capture_oembed_url"),
+    ),
+    (
+        "notesage_capture_video_contents",
+        "LibraryCapture.swift",
+        Err("no Video format on macOS; see notesage_capture_oembed_url"),
+    ),
+    ("notesage_capture_article_contents", "LibraryCapture.swift", Ok("ShareCapture.swift")),
+    ("notesage_capture_article_html_contents", "LibraryCapture.swift", Ok("ShareCapture.swift")),
+    ("notesage_capture_x_metadata_url", "LibraryCapture.swift", Ok("ShareCapture.swift")),
+    ("notesage_capture_x_rel_path", "LibraryCapture.swift", Ok("ShareCapture.swift")),
+    ("notesage_capture_x_contents", "LibraryCapture.swift", Ok("ShareCapture.swift")),
+    ("notesage_capture_x_html_contents", "LibraryCapture.swift", Ok("ShareCapture.swift")),
+    ("notesage_capture_string_free", "LibraryCapture.swift", Ok("ShareCapture.swift")),
 ];
 
 #[test]
@@ -204,12 +241,15 @@ fn every_ffi_export_is_called_from_swift_and_declared_in_the_header() {
     assert!(!exports.is_empty(), "no FFI exports found — did the signature style change?");
 
     for export in &exports {
-        let Some((_, file)) = EXPORT_CALL_SITES.iter().find(|(e, _)| e == export) else {
+        let Some((_, ios_file, mac)) = EXPORT_CALL_SITES.iter().find(|(e, _, _)| e == export)
+        else {
             panic!(
                 "FFI export `{export}` has no entry in EXPORT_CALL_SITES.\n\
-                 Name the Swift file that calls it. An export nothing calls is the\n\
-                 same dead code as an unexported builder, one stage later — and that\n\
-                 is precisely how X capture looked present while doing nothing."
+                 Name the Swift file that calls it on EACH platform — or an\n\
+                 Err(reason) where a platform deliberately does not. An export\n\
+                 nothing calls is the same dead code as an unexported builder, one\n\
+                 stage later — and that is precisely how X capture looked present\n\
+                 while doing nothing."
             );
         };
 
@@ -222,16 +262,31 @@ fn every_ffi_export_is_called_from_swift_and_declared_in_the_header() {
         assert!(
             mentions(&header, export),
             "`{export}` is not declared in NotesageCapture.h, so Swift cannot see it.\n\
-             The bridging header is the only thing that makes an export callable."
+             The bridging header is the only thing that makes an export callable.\n\
+             Note BOTH extensions share this one header."
         );
 
-        let swift = ios_src(file);
         assert!(
-            mentions(&swift, export),
-            "`{export}` is declared and exported but never called from {file}.\n\
+            mentions(&ios_src(ios_file), export),
+            "`{export}` is declared and exported but never called from iOS's {ios_file}.\n\
              Wire it, or delete it — a reachable-but-uncalled export passes every\n\
              other test in this file while shipping nothing."
         );
+
+        match mac {
+            Ok(mac_file) => assert!(
+                mentions(&macos_src(mac_file), export),
+                "`{export}` is called on iOS but never from macOS's {mac_file}.\n\
+                 Same crate, same header, same staticlib — a capture that behaves\n\
+                 differently depending on which machine shared it is a bug on\n\
+                 whichever one is worse. Wire it, or change the row to an\n\
+                 Err(reason) saying why macOS legitimately does not."
+            ),
+            Err(reason) => assert!(
+                !reason.trim().is_empty(),
+                "`{export}` is marked macOS-exempt with no reason. Say why, or wire it."
+            ),
+        }
     }
 }
 
@@ -244,13 +299,47 @@ fn the_share_controller_routes_x_urls_through_the_x_writer() {
     let controller = ios_src("ShareViewController.swift");
     assert!(
         controller.contains("xMetadataEndpoint"),
-        "ShareViewController never asks whether a URL is an X status, so the X\n\
-         path cannot be taken no matter what the crate exports."
+        "iOS ShareViewController never asks whether a URL is an X status, so the\n\
+         X path cannot be taken no matter what the crate exports."
     );
     assert!(
         controller.contains("writeXCapture"),
-        "ShareViewController never calls writeXCapture — X shares still take the\n\
-         generic article path, which is the defect this whole file exists for."
+        "iOS ShareViewController never calls writeXCapture — X shares still take\n\
+         the generic article path, which is the defect this whole file exists for."
+    );
+
+    // Same question on macOS, where the routing lives in ShareCapture rather
+    // than the view controller.
+    let mac = macos_src("ShareCapture.swift");
+    assert!(
+        mac.contains("xMetadataEndpoint"),
+        "macOS ShareCapture never asks whether a URL is an X status. Desktop\n\
+         shares of an X post would fall through to the generic article path —\n\
+         the exact bug iOS had, on the other platform."
+    );
+}
+
+#[test]
+fn an_html_capture_is_not_written_with_a_markdown_name() {
+    // Every rel-path builder returns `.md`, because a capture is a note by
+    // default. The "Article (HTML)" format writes a `<!doctype html>` document
+    // and must be named accordingly — otherwise it opens in the editor as raw
+    // markup, which is precisely what that format exists to avoid.
+    //
+    // iOS got this right from the start; macOS shipped without it, writing
+    // HTML documents into `.md` files. Cheap to reintroduce, invisible until
+    // someone opens one.
+    let ios = ios_src("LibraryCapture.swift");
+    assert!(
+        ios.contains(r#""\(stem).html""#),
+        "iOS writeArticleHtml no longer names its output `.html`."
+    );
+
+    let mac = macos_src("ShareCapture.swift");
+    assert!(
+        mac.contains("withExtension") && mac.contains(r#""html""#),
+        "macOS ShareCapture does not rewrite the extension for HTML captures, so\n\
+         an Article (HTML) share lands as a `.md` file full of markup."
     );
 }
 
