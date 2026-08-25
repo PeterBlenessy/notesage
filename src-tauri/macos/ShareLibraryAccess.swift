@@ -281,6 +281,12 @@ enum ShareLibraryAccess {
         nameLock.lock()
         defer { nameLock.unlock() }
         let target = dedupedURL(for: preferred)
+        // `dedupedURL` returns the ORIGINAL url when it exhausts its 999
+        // attempts, and that url still exists — so `createFile` would truncate
+        // a real file to zero bytes and report it as claimed. Silent data
+        // loss, in the function whose entire purpose is preventing exactly
+        // that. Refuse instead.
+        guard !FileManager.default.fileExists(atPath: target.path) else { return nil }
         guard FileManager.default.createFile(atPath: target.path, contents: nil) else {
             return nil
         }
@@ -320,12 +326,21 @@ enum ShareLibraryAccess {
         let staged = inbox.appendingPathComponent(".notesage-staging-\(UUID().uuidString)")
         var coordError: NSError?
         var copyError: Error?
+        var landed = target
         NSFileCoordinator().coordinate(
             writingItemAt: target, options: .forReplacing, error: &coordError
         ) { url in
             do {
                 try FileManager.default.copyItem(at: src, to: staged)
-                _ = try FileManager.default.replaceItemAt(url, withItemAt: staged)
+                // KEEP the returned URL. `replaceItemAt` is documented to fall
+                // back to a non-atomic path on filesystems that cannot swap in
+                // place, and to land the item at a DIFFERENT url when it does
+                // — callers are told to use what it returns. This library is
+                // "usually an iCloud folder", which is precisely that class of
+                // filesystem, so reporting the path we PLANNED rather than the
+                // one it reached would be a success message pointing at
+                // nothing.
+                landed = try FileManager.default.replaceItemAt(url, withItemAt: staged) ?? url
             } catch {
                 copyError = error
                 // Never leave litter. A failed share that permanently occupies
@@ -337,7 +352,7 @@ enum ShareLibraryAccess {
         }
         if let coordError { throw ShareLibraryError.ioError(coordError.localizedDescription) }
         if let copyError { throw ShareLibraryError.ioError(copyError.localizedDescription) }
-        return "Inbox/\(target.lastPathComponent)"
+        return "Inbox/\(landed.lastPathComponent)"
     }
 
     /// `note.md` → `note-1.md` → `note-2.md` on collision.

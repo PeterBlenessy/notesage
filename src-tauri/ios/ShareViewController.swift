@@ -482,12 +482,39 @@ final class ShareViewController: UIViewController {
                 self.finish()
                 return
             }
+            // A plain X post has no long-form article by definition, so
+            // rendering one spends up to five seconds to reach the same
+            // metadata note it would reach immediately. Only an X Article is
+            // worth the render, and the CRATE decides which this is —
+            // `parse_x_post`, not a substring check here.
+            //
+            // Gating the retry (above) without this would have made the
+            // commonest X case measurably slower on both platforms.
+            if self.isXStatus, let json = self.xJson,
+               json.withCString({ notesage_capture_x_is_article($0) == 0 }) {
+                self.saveArticleFallback(url: url)
+                return
+            }
             PageRenderer.renderedHTML(url: url) { [weak self] rendered in
                 guard let self else { return }
-                if let rendered, self.writeArticle(url: url, html: rendered) {
-                    self.finish()
-                } else {
-                    self.saveArticleFallback(url: url)
+                // `PageRenderer` always calls back on MAIN — it forces itself
+                // there for WebKit. `writeArticle` is a readability parse plus
+                // a coordinated write against what is usually an iCloud
+                // folder, so doing it here freezes the share sheet whenever
+                // the coordinator stalls.
+                //
+                // Found on macOS and fixed there first; iOS had the identical
+                // hazard on the identical line. Fixing only one platform is
+                // how this extension accumulated five bugs in two days.
+                DispatchQueue.global(qos: .userInitiated).async {
+                    let written = rendered.map { self.writeArticle(url: url, html: $0) } ?? false
+                    DispatchQueue.main.async {
+                        if written {
+                            self.finish()
+                        } else {
+                            self.saveArticleFallback(url: url)
+                        }
+                    }
                 }
             }
         }
@@ -535,9 +562,13 @@ final class ShareViewController: UIViewController {
         // that succeeded on the second attempt is exactly as entitled to its
         // real title and cover image as one that succeeded on the first.
         if isXStatus {
+            // Demand a genuine extraction here: this is one of the "try
+            // harder" attempts (raw HTML, then rendered DOM). The metadata-only
+            // note is reached deliberately by `saveArticleFallback`, not by an
+            // attempt silently succeeding.
             let written = try? LibraryAccess.writeXCapture(
                 url: url, title: sharedTitle, tags: [], html: html,
-                xJson: xJson, asHtml: format == .html)
+                xJson: xJson, asHtml: format == .html, requireArticle: true)
             return written.flatMap { $0 } != nil
         }
         if format == .html {

@@ -196,9 +196,30 @@ extension LibraryAccess {
     /// declines, because an HTML document with no article in it is not worth
     /// writing; the markdown path never returns nil for that reason.
     static func writeXCapture(
-        url: String, title: String?, tags: [String], html: String?, xJson: String?, asHtml: Bool
+        url: String, title: String?, tags: [String], html: String?, xJson: String?, asHtml: Bool,
+        requireArticle: Bool = false
     ) throws -> String? {
         let joinedTags = tags.joined(separator: ",")
+
+        // `requireArticle` means "the caller is still willing to try harder".
+        //
+        // `notesage_capture_x_contents` NEVER returns nil — by design, it falls
+        // back to the metadata-only note so a plain post still saves. That made
+        // the markdown X path succeed unconditionally, so the rendered-DOM
+        // retry below it was dead code for every X share: a rate-limited or
+        // bot-shell response quietly saved a metadata stub instead of
+        // rendering and getting the real article.
+        //
+        // Found and fixed on macOS first; iOS had the identical defect.
+        if requireArticle {
+            guard let html else { return nil }
+            let hasArticle = html.withCString { htmlPtr in
+                callCapture({ u, t, sel, tg in
+                    notesage_capture_article_contents(u, t, sel, tg, htmlPtr)
+                }, url, title, nil, "") != nil
+            }
+            guard hasArticle else { return nil }
+        }
 
         // Two optional C strings to thread through, so the nesting is explicit
         // rather than four combinatorial branches.
@@ -397,10 +418,19 @@ extension LibraryAccess {
         let staged = inbox.appendingPathComponent(".notesage-staging-\(UUID().uuidString)")
         var coordError: NSError?
         var copyError: Error?
+        var landed = target
         NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &coordError) { url in
             do {
                 try FileManager.default.copyItem(at: src, to: staged)
-                _ = try FileManager.default.replaceItemAt(url, withItemAt: staged)
+                // KEEP the returned URL. `replaceItemAt` is documented to fall
+                // back to a non-atomic path on filesystems that cannot swap in
+                // place, and to land the item at a DIFFERENT url when it does
+                // — callers are told to use what it returns. This library is
+                // "usually an iCloud folder", which is precisely that class of
+                // filesystem, so reporting the path we PLANNED rather than the
+                // one it reached would be a success message pointing at
+                // nothing.
+                landed = try FileManager.default.replaceItemAt(url, withItemAt: staged) ?? url
             } catch {
                 copyError = error
                 // Never leave litter: a zero-byte placeholder left under the
@@ -411,7 +441,7 @@ extension LibraryAccess {
         }
         if let coordError { throw coordError }
         if let copyError { throw copyError }
-        return "Inbox/\(name)"
+        return "Inbox/\(landed.lastPathComponent)"
     }
 
     /// Serialises name choice across the concurrent `loadFileRepresentation`
@@ -435,6 +465,10 @@ extension LibraryAccess {
             candidate = folder.appendingPathComponent(named)
             n += 1
         }
+        // The loop can exit on the counter with `candidate` still pointing at
+        // an existing file, and `createFile` TRUNCATES — silent data loss in
+        // the function written to prevent it. Refuse the claim instead.
+        guard !fm.fileExists(atPath: candidate.path) else { return nil }
         guard fm.createFile(atPath: candidate.path, contents: nil) else { return nil }
         return candidate
     }

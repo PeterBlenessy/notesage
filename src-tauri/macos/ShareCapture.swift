@@ -94,7 +94,9 @@ enum ShareCapture {
                 // commonest X case (share a tweet) several seconds slower. A
                 // correctness fix that quietly costs latency is still a
                 // regression.
-                let isPlainXPost = xJson.map { !$0.contains("\"article\"") } ?? false
+                let isPlainXPost = xJson.map { json in
+                    json.withCString { notesage_capture_x_is_article($0) == 0 }
+                } ?? false
                 if isPlainXPost {
                     completion(build(url: url, title: title, html: nil, format: format,
                                      xJson: xJson))

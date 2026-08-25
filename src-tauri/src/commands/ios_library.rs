@@ -1170,7 +1170,22 @@ mod tests {
             let Some(sv_line) = sv.lines().find(|l| l.trim_start().starts_with(&key)) else {
                 panic!("{key} is in en.lproj but absent from sv.lproj");
             };
-            let (Some(en_val), Some(sv_val)) = (value_of(line), value_of(sv_line)) else { continue };
+            // PANIC on an unparseable line rather than skipping it.
+            //
+            // `else { continue }` here was mutation-proven to pass on the very
+            // bug this loop exists to catch: drop the trailing `;` from the
+            // English line and change the Swedish `%ld` to `%@`, and the pair
+            // is silently exempted while 36 other pairs clear the `>= 20`
+            // threshold. A malformed line is the MOST likely one to also have
+            // a bad specifier — skipping it inverts the test's purpose.
+            let (en_val, sv_val) = match (value_of(line), value_of(sv_line)) {
+                (Some(a), Some(b)) => (a, b),
+                _ => panic!(
+                    "{key} could not be parsed as `\"key\" = \"value\";` in one or both\n\
+                     locales — a malformed entry is exactly where a bad format\n\
+                     specifier hides.\n  en: {line}\n  sv: {sv_line}"
+                ),
+            };
             assert_eq!(
                 specifiers(&en_val),
                 specifiers(&sv_val),

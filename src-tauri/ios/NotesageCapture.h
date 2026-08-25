@@ -128,6 +128,12 @@ char *notesage_capture_x_html_contents(const char *url,
                                        const char *html,
                                        const char *x_json);
 
+/// 1 when the syndication payload is a long-form X Article, 0 otherwise
+/// (including absent or unparseable JSON). Lets the caller decide whether a
+/// render pass is worth its latency: a plain post has no article to find.
+/// Returns a value, not a string — nothing to free.
+unsigned char notesage_capture_x_is_article(const char *x_json);
+
 void notesage_capture_string_free(char *ptr);
 
 #ifdef __cplusplus

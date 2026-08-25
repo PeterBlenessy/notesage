@@ -223,6 +223,11 @@ const EXPORT_CALL_SITES: &[(&str, &str, MacExpectation)] = &[
     ("notesage_capture_x_rel_path", "LibraryCapture.swift", Ok("ShareCapture.swift")),
     ("notesage_capture_x_contents", "LibraryCapture.swift", Ok("ShareCapture.swift")),
     ("notesage_capture_x_html_contents", "LibraryCapture.swift", Ok("ShareCapture.swift")),
+    (
+        "notesage_capture_x_is_article",
+        "ShareViewController.swift",
+        Ok("ShareCapture.swift"),
+    ),
     ("notesage_capture_string_free", "LibraryCapture.swift", Ok("ShareCapture.swift")),
 ];
 
@@ -352,6 +357,9 @@ fn both_platforms_retry_a_failed_extraction_against_a_rendered_dom() {
     //
     // `requireArticle: true` on the earlier attempts is what makes the retry
     // reachable. Drop it and the dead-code state returns silently.
+    // Both platforms. iOS had the identical dead-retry for its markdown X
+    // path and was fixed alongside macOS — leaving one side gated and the
+    // other not is the divergence this whole file exists to prevent.
     let mac = macos_src("ShareCapture.swift");
     assert_eq!(
         mac.matches("requireArticle: true").count(),
@@ -364,6 +372,15 @@ fn both_platforms_retry_a_failed_extraction_against_a_rendered_dom() {
     assert!(
         mac.contains("requireArticle: Bool"),
         "the requireArticle parameter is gone; the retry cannot be gated"
+    );
+    assert!(
+        ios_src("ShareViewController.swift").contains("requireArticle: true"),
+        "iOS does not demand a genuine extraction, so its X shares succeed on the\n\
+         first attempt and the rendered retry never runs"
+    );
+    assert!(
+        ios_src("LibraryCapture.swift").contains("requireArticle: Bool"),
+        "iOS's writeXCapture cannot be gated; the retry is unreachable for X"
     );
 }
 
@@ -379,26 +396,36 @@ fn the_rendered_path_does_its_heavy_work_off_the_main_thread() {
     // exists for — JavaScript-rendered pages, i.e. most news sites. Round two
     // narrowed an over-broad main hop and left this branch on main; the defect
     // was one branch away from the fix for it.
-    let mac = macos_src("ShareCapture.swift");
+    // BOTH platforms. The first version of this test read only macOS while
+    // the release notes claimed cross-platform coverage — and iOS had the
+    // identical defect on the identical line, unfixed and unchecked.
+    for (label, src) in [
+        ("macOS", macos_src("ShareCapture.swift")),
+        ("iOS", ios_src("ShareViewController.swift")),
+    ] {
+    let mac = src;
     let start = mac
         .find("PageRenderer.renderedHTML(url: url) {")
-        .expect("the rendered-DOM call site moved");
+        .unwrap_or_else(|| panic!("{label}: the rendered-DOM call site moved"));
     // Bound by the first `build(` AFTER the call site, not by a byte count.
     // A fixed window stops covering the code the moment someone adds a
     // comment — which is precisely how this assertion first failed against a
     // correct fix, and how an earlier check in this file passed against a
     // broken one.
     let rest = &mac[start..];
-    let heavy = rest
-        .find("build(")
-        .expect("no build() call after the rendered-DOM completion — did the shape change?");
+    let heavy = ["build(", "writeArticle("]
+        .iter()
+        .filter_map(|m| rest.find(m))
+        .min()
+        .unwrap_or_else(|| panic!("{label}: no extraction call after the rendered-DOM completion"));
     let prelude = &rest[..heavy];
     assert!(
         prelude.contains("DispatchQueue.global"),
-        "the rendered-DOM completion reaches extraction and the coordinated disk\n\
-         write without leaving the main thread — and PageRenderer always calls\n\
-         back on main.\n\n{prelude}"
+        "{label}: the rendered-DOM completion reaches extraction and the\n\
+         coordinated disk write without leaving the main thread — and\n\
+         PageRenderer always calls back on main.\n\n{prelude}"
     );
+    }
 }
 
 #[test]
@@ -430,10 +457,10 @@ fn both_platforms_claim_a_filename_atomically() {
             "{label} does not swap the staged copy in atomically. remove-then-copy\n\
              leaves the claimed path free in between, which is the race itself."
         );
-        assert!(
-            !src.contains("try? FileManager.default.removeItem(at: url)\n                try FileManager.default.copyItem"),
-            "{label} still removes the placeholder before copying — the free window is back."
-        );
+        // No brittle negative guard here. An exact-string check that encodes
+        // one indentation level stops catching a reintroduced remove-then-copy
+        // the moment anyone reformats — and the positive `replaceItemAt`
+        // assertion above already pins the load-bearing invariant.
     }
 }
 
