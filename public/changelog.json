@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.54.2",
+      "date": "2026-08-25",
+      "previousVersion": "0.54.1",
+      "sections": {
+        "fixes": [
+          "**Sharing to Notesage from another app works on every share.** Until now only the first one did: the Save button stayed greyed out on the second and every one after it, with nothing on screen to say why. The first share worked because it was the one that asked you to pick your library folder — answering that happened to wake the button up. Once the folder was remembered there was nothing left to wake it, so Save never became available again. Both the Safari share menu and a site's own share button were affected."
+        ]
+      }
+    },
+    {
       "version": "0.54.1",
       "date": "2026-08-25",
       "previousVersion": "0.54.0",
