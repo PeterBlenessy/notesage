@@ -1061,6 +1061,57 @@ mod tests {
     }
 
     #[test]
+    fn the_macos_share_extension_is_localized_too() {
+        // The test above reads only the iOS file, so the macOS extension
+        // shipped with EVERY string hardcoded English — 17 `L()` calls on
+        // iOS, zero on macOS — while the app itself gained 295 translated
+        // strings. Nothing caught it because nothing looked.
+        //
+        // Source-shape assertion for the same reason as its iOS sibling: no
+        // XCTest harness exists in this repo (#590).
+        let files: [(&str, &str); 3] = [
+            ("ShareViewController", include_str!("../../macos/ShareViewController.swift")),
+            ("ShareLibraryAccess", include_str!("../../macos/ShareLibraryAccess.swift")),
+            ("ShareCapture", include_str!("../../macos/ShareCapture.swift")),
+        ];
+        for (name, src) in files {
+            assert!(
+                src.contains("NSLocalizedString"),
+                "{name}.swift has no localization helper — its UI is hardcoded English"
+            );
+        }
+
+        // Every key the macOS surfaces use must exist in BOTH strings files.
+        // A key present in code but missing from the table renders as the raw
+        // key name on screen, which is worse than English.
+        let en = include_str!("../../ios/ShareResources/en.lproj/Localizable.strings");
+        let sv = include_str!("../../ios/ShareResources/sv.lproj/Localizable.strings");
+        for key in [
+            "share.chooseLibrary",
+            "share.useAsLibrary",
+            "share.chooseLibraryToSave",
+            "share.saving",
+            "share.cantSaveThis",
+            "share.cancel",
+            "share.saveOneFile",
+            "share.notAWebLink",
+            "share.couldNotRemember",
+        ] {
+            let quoted = format!("\"{key}\"");
+            assert!(en.contains(&quoted), "{key} missing from en.lproj");
+            assert!(sv.contains(&quoted), "{key} missing from sv.lproj — it would render in English");
+        }
+
+        // Declaring the strings is useless if the bundle never carries them.
+        let build = include_str!("../../../scripts/build-macos-share-extension.sh");
+        assert!(
+            build.contains("lproj"),
+            "the macOS build does not copy any .lproj into the extension bundle, so\n\
+             NSLocalizedString would fall through to the raw key names"
+        );
+    }
+
+    #[test]
     fn move_sanitizes_the_destination_as_well_as_the_source() {
         // `ios_move_file` is the ONLY command on this surface taking two
         // caller-supplied paths, and it is the one that widened the write

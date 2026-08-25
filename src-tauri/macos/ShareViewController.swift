@@ -24,15 +24,30 @@
 import AppKit
 import Foundation
 
+/// Localized string lookup, same helper as the iOS extension.
+///
+/// The strings themselves are SHARED — `src-tauri/ios/ShareResources/*.lproj`,
+/// copied into this bundle by `scripts/build-macos-share-extension.sh`. Both
+/// extensions show the same words, so a second copy would be a second thing to
+/// forget updating.
+///
+/// A hardcoded literal here ships an English word into a Swedish share sheet,
+/// which is precisely what this extension did until now: 17 `L()` calls on
+/// iOS, zero on macOS.
+private func L(_ key: String, _ args: CVarArg...) -> String {
+    let format = NSLocalizedString(key, comment: "")
+    return args.isEmpty ? format : String(format: format, arguments: args)
+}
+
 final class ShareViewController: NSViewController {
     private enum Format: Int, CaseIterable {
         case articleHtml, articleMarkdown, link
 
         var label: String {
             switch self {
-            case .articleHtml: return "Article (HTML)"
-            case .articleMarkdown: return "Article (Markdown)"
-            case .link: return "Link"
+            case .articleHtml: return L("share.formatHtml")
+            case .articleMarkdown: return L("share.formatArticle")
+            case .link: return L("share.formatLink")
             }
         }
 
@@ -58,6 +73,11 @@ final class ShareViewController: NSViewController {
     private let formatPopup = NSPopUpButton()
     private let saveButton = NSButton()
     private let grantButton = NSButton()
+
+    /// Attachments that are FILES rather than links (PDF, EPUB, image, …).
+    /// Non-empty means this share is a document drop, which skips the format
+    /// picker entirely — there is no article to extract from a PDF.
+    private var documentProviders: [NSItemProvider] = []
 
     override func loadView() {
         view = NSView(frame: NSRect(x: 0, y: 0, width: 380, height: 210))
@@ -90,20 +110,20 @@ final class ShareViewController: NSViewController {
         }
         formatPopup.selectItem(at: UserDefaults.standard.integer(forKey: Self.formatKey))
 
-        saveButton.title = "Save"
+        saveButton.title = L("share.save")
         saveButton.bezelStyle = .rounded
         saveButton.keyEquivalent = "\r"
         saveButton.target = self
         saveButton.action = #selector(save)
 
         let cancelButton = NSButton()
-        cancelButton.title = "Cancel"
+        cancelButton.title = L("share.cancel")
         cancelButton.bezelStyle = .rounded
         cancelButton.keyEquivalent = "\u{1b}"
         cancelButton.target = self
         cancelButton.action = #selector(cancel)
 
-        grantButton.title = "Choose Library…"
+        grantButton.title = L("share.chooseLibrary")
         grantButton.bezelStyle = .rounded
         grantButton.target = self
         grantButton.action = #selector(chooseLibrary)
@@ -146,6 +166,89 @@ final class ShareViewController: NSViewController {
         "com.apple.property-list",
     ]
 
+    /// Types that mean "this is a file to store", not "this is a link to
+    /// capture". Mirrors the iOS list so the two platforms accept the same
+    /// drops.
+    ///
+    /// The file check still has to run BEFORE the link check: a shared PDF
+    /// also advertises `public.file-url`, which IS in `urlTypeIdentifiers`, so
+    /// checking for a link first would route every document down the article
+    /// path and try to extract prose from a PDF.
+    ///
+    /// `public.file-url` is deliberately absent from THIS list. It says
+    /// nothing about what the file is, so treating it as a document marker
+    /// would swallow link shares that happen to carry a file URL.
+    private static let documentTypeIdentifiers = [
+        "com.adobe.pdf",
+        "org.idpf.epub-container",
+        "public.image",
+        "public.movie",
+        "public.audio",
+    ]
+
+    /// Copy each shared file into `Inbox/` under its own name.
+    ///
+    /// Bounded at 10, matching the activation rule — a share of a whole folder
+    /// should not silently turn into an unbounded copy loop inside an
+    /// extension.
+    private func saveDocuments(_ providers: [NSItemProvider]) {
+        saveButton.isEnabled = false
+        statusLabel.stringValue = L("share.saving")
+
+        // Bounded to match the activation rule. Anything beyond would be
+        // dropped silently, so the count that the summary compares against
+        // must be the count actually ATTEMPTED, not the count offered.
+        let attempted = Array(providers.prefix(10))
+        let group = DispatchGroup()
+        // `loadFileRepresentation` calls back on an arbitrary queue and these
+        // run concurrently, so the counter needs a lock. Unsynchronised `+= 1`
+        // from several queues is a genuine race, and the failure it produces —
+        // an occasional wrong count — is exactly the kind that never
+        // reproduces on the machine you debug it on.
+        let lock = NSLock()
+        var failures = 0
+        func recordFailure() {
+            lock.lock()
+            failures += 1
+            lock.unlock()
+        }
+        for provider in attempted {
+            // Most specific conforming type first — the provider hands back
+            // the richest file representation for it.
+            let typeId = Self.documentTypeIdentifiers
+                .first(where: provider.hasItemConformingToTypeIdentifier) ?? "public.data"
+            group.enter()
+            provider.loadFileRepresentation(forTypeIdentifier: typeId) { url, error in
+                defer { group.leave() }
+                guard let url else {
+                    NSLog("[notesage-share] file load failed: %@", String(describing: error))
+                    recordFailure()
+                    return
+                }
+                do {
+                    try ShareLibraryAccess.writeDocument(
+                        from: url, suggestedName: url.lastPathComponent)
+                } catch {
+                    NSLog("[notesage-share] file write failed: %@", String(describing: error))
+                    recordFailure()
+                }
+            }
+        }
+        group.notify(queue: .main) { [weak self] in
+            guard let self else { return }
+            if failures == 0 {
+                self.extensionContext?.completeRequest(returningItems: [])
+            } else {
+                // Never close on failure — a sheet that vanishes having saved
+                // nothing is indistinguishable from one that worked.
+                self.saveButton.isEnabled = true
+                self.statusLabel.stringValue = failures == attempted.count
+                    ? L("share.couldNotSaveFiles")
+                    : L("share.someFilesFailed", failures)
+            }
+        }
+    }
+
     private func loadSharedItem() {
         guard let item = extensionContext?.inputItems.first as? NSExtensionItem else {
             // Distinct message per failure, deliberately. All three paths used
@@ -165,6 +268,22 @@ final class ShareViewController: NSViewController {
         let offered = attachments.flatMap { $0.registeredTypeIdentifiers }
         NSLog("[notesage-share] attachments=%d types=%@",
               attachments.count, offered.joined(separator: ", "))
+
+        // Files first. A shared PDF also advertises `public.file-url`, so
+        // checking for a link before checking for a file would route every
+        // document down the article path and try to extract prose from it.
+        documentProviders = attachments.filter { p in
+            Self.documentTypeIdentifiers.contains(where: p.hasItemConformingToTypeIdentifier)
+        }
+        if !documentProviders.isEmpty {
+            let count = documentProviders.count
+            titleLabel.stringValue = count == 1
+                ? L("share.saveOneFile") : L("share.saveManyFiles", count)
+            urlLabel.stringValue = ""
+            formatPopup.isHidden = true
+            refreshGrantState()
+            return
+        }
 
         guard let (provider, identifier) = Self.urlTypeIdentifiers.lazy.compactMap({ type -> (NSItemProvider, String)? in
             attachments.first { $0.hasItemConformingToTypeIdentifier(type) }.map { ($0, type) }
@@ -217,7 +336,7 @@ final class ShareViewController: NSViewController {
             return
         }
         sharedUrl = url
-        titleLabel.stringValue = sharedTitle?.isEmpty == false ? sharedTitle! : "Save to Notesage"
+        titleLabel.stringValue = sharedTitle?.isEmpty == false ? sharedTitle! : L("share.title")
         urlLabel.stringValue = url
         // Save is gated on `sharedUrl != nil`, and the URL arrives HERE —
         // asynchronously, long after `viewDidAppear` ran the check with it
@@ -240,9 +359,10 @@ final class ShareViewController: NSViewController {
     private func refreshGrantState() {
         let grant = ShareLibraryAccess.currentGrant()
         grantButton.isHidden = grant.granted
-        saveButton.isEnabled = grant.granted && sharedUrl != nil
+        // Either a link or a set of files makes this share saveable.
+        saveButton.isEnabled = grant.granted && (sharedUrl != nil || !documentProviders.isEmpty)
         if !grant.granted {
-            statusLabel.stringValue = "Choose your Notesage library folder to save here."
+            statusLabel.stringValue = L("share.chooseLibraryToSave")
         }
     }
 
@@ -269,12 +389,16 @@ final class ShareViewController: NSViewController {
     }
 
     @objc private func save() {
+        if !documentProviders.isEmpty {
+            saveDocuments(documentProviders)
+            return
+        }
         guard let url = sharedUrl else { return }
         UserDefaults.standard.set(formatPopup.indexOfSelectedItem, forKey: Self.formatKey)
         let format = Format(rawValue: formatPopup.indexOfSelectedItem) ?? .link
 
         saveButton.isEnabled = false
-        statusLabel.stringValue = "Saving…"
+        statusLabel.stringValue = L("share.saving")
 
         ShareCapture.save(url: url, title: sharedTitle, format: format.captureFormat) {
             [weak self] result in
@@ -298,7 +422,7 @@ final class ShareViewController: NSViewController {
         // "Nothing to save" for every failure told the user nothing and told
         // whoever had to debug it less. The message carries the specific
         // cause; the title just says something went wrong.
-        titleLabel.stringValue = "Can't save this"
+        titleLabel.stringValue = L("share.cantSaveThis")
         statusLabel.stringValue = message
         statusLabel.lineBreakMode = .byWordWrapping
         statusLabel.maximumNumberOfLines = 4

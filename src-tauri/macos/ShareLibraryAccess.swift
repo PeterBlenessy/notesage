@@ -24,6 +24,13 @@
 import AppKit
 import Foundation
 
+/// Localized string lookup. See the note on the same helper in
+/// ShareViewController — the strings are shared with the iOS extension.
+private func L(_ key: String, _ args: CVarArg...) -> String {
+    let format = NSLocalizedString(key, comment: "")
+    return args.isEmpty ? format : String(format: format, arguments: args)
+}
+
 enum ShareLibraryError: LocalizedError {
     case notGranted
     case staleGrant
@@ -32,11 +39,11 @@ enum ShareLibraryError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .notGranted:
-            return "Choose your Notesage library folder to save here."
+            return L("share.chooseLibraryToSave")
         case .staleGrant:
             // The folder moved or was renamed. Recoverable, and saying so
             // beats a generic failure the user cannot act on.
-            return "Your Notesage library moved. Choose it again to save here."
+            return L("share.libraryMoved")
         case .ioError(let message):
             return message
         }
@@ -84,8 +91,8 @@ enum ShareLibraryAccess {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Use as Library"
-        panel.message = "Choose your Notesage library folder."
+        panel.prompt = L("share.useAsLibrary")
+        panel.message = L("share.chooseLibraryFolder")
         // Point at the likely answer rather than the file system root: the
         // library is `~/Notesage` unless the user moved it, and an iCloud
         // library lives somewhere nobody navigates to by choice.
@@ -134,7 +141,7 @@ enum ShareLibraryAccess {
                 NSLog("[notesage-share] bookmarkData failed for %@: %@",
                       url.path, String(describing: error))
                 completion(.failure(ShareLibraryError.ioError(
-                    "Could not remember that folder: \(error.localizedDescription)")))
+                    L("share.couldNotRemember", error.localizedDescription))))
             }
         }
     }
@@ -235,6 +242,59 @@ enum ShareLibraryAccess {
     ///
     /// Saving the same article twice should produce two notes, not silently
     /// overwrite the first — the user may have annotated it.
+    /// Store a shared FILE (PDF, EPUB, image, …) in `Inbox/` under its own
+    /// name, deduped. Returns the relative path actually used.
+    ///
+    /// The source is the temp file the share sheet hands the extension. Copied
+    /// under coordination for the same reason every other write here is: the
+    /// library is normally an iCloud folder that several devices write to, and
+    /// an uncoordinated copy into a syncing folder is how conflict copies
+    /// appear.
+    ///
+    /// `copyItem` streams rather than loading the file into memory, so a large
+    /// video never sits in the extension's budget — the same property the iOS
+    /// path relies on.
+    /// Serialises name-choice AND write for concurrent document saves.
+    ///
+    /// `dedupedURL` is a check-then-use against the filesystem. Ten
+    /// `loadFileRepresentation` callbacks land on arbitrary queues at once, so
+    /// two items with the same name can both see the target as free and both
+    /// write it — the second silently overwriting the first, with no error
+    /// raised and the UI reporting success. A shared file vanishing without a
+    /// trace is the worst failure this path can have.
+    private static let writeLock = NSLock()
+
+    @discardableResult
+    static func writeDocument(from src: URL, suggestedName: String) throws -> String {
+        writeLock.lock()
+        defer { writeLock.unlock() }
+        let root = try resolveRoot()
+        guard root.startAccessingSecurityScopedResource() else {
+            throw ShareLibraryError.staleGrant
+        }
+        defer { root.stopAccessingSecurityScopedResource() }
+
+        let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+
+        // Keep the shared file's own name — that is what the user will look
+        // for — minus anything path-like.
+        var name = (suggestedName as NSString).lastPathComponent
+        if name.isEmpty || name == "." || name == ".." { name = "Shared document" }
+        let target = dedupedURL(for: inbox.appendingPathComponent(name))
+
+        var coordError: NSError?
+        var copyError: Error?
+        NSFileCoordinator().coordinate(
+            writingItemAt: target, options: .forReplacing, error: &coordError
+        ) { url in
+            do { try FileManager.default.copyItem(at: src, to: url) } catch { copyError = error }
+        }
+        if let coordError { throw ShareLibraryError.ioError(coordError.localizedDescription) }
+        if let copyError { throw ShareLibraryError.ioError(copyError.localizedDescription) }
+        return "Inbox/\(target.lastPathComponent)"
+    }
+
     private static func dedupedURL(for url: URL) -> URL {
         let fm = FileManager.default
         guard fm.fileExists(atPath: url.path) else { return url }

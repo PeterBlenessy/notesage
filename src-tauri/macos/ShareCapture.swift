@@ -11,6 +11,13 @@
 
 import Foundation
 
+/// Localized string lookup. See ShareViewController's copy — the strings are
+/// shared with the iOS extension.
+private func L(_ key: String, _ args: CVarArg...) -> String {
+    let format = NSLocalizedString(key, comment: "")
+    return args.isEmpty ? format : String(format: format, arguments: args)
+}
+
 enum ShareCaptureError: LocalizedError {
     case badUrl
     case fetchFailed
@@ -18,12 +25,12 @@ enum ShareCaptureError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .badUrl: return "That does not look like a web link."
+        case .badUrl: return L("share.notAWebLink")
         case .fetchFailed:
             // Distinguished from "no article found": the user can retry a
             // network failure, and cannot retry a page with no article in it.
-            return "Could not reach that page. Check your connection and try again."
-        case .buildFailed: return "Could not build a note from that page."
+            return L("share.couldNotReach")
+        case .buildFailed: return L("share.couldNotBuildNote")
         }
     }
 }
@@ -65,9 +72,39 @@ enum ShareCapture {
         // shared it is a bug on whichever one is worse.
         let proceed: (String?) -> Void = { xJson in
             fetch(parsed) { html in
-                guard let html else {
-                    // With no page but with metadata, an X share can still
-                    // produce a real note — better than the fetch error.
+                // Raw HTML first; a page whose article is already there never
+                // pays for a webview.
+                if let html {
+                    let result = build(
+                        url: url, title: title, html: html, format: format, xJson: xJson,
+                        requireArticle: true)
+                    if case .success = result {
+                        completion(result)
+                        return
+                    }
+                }
+
+                // Nothing extractable in the fetched HTML — which is what
+                // happens on any JavaScript-rendered page, where the article
+                // does not exist until a bundle runs. Render and try once more.
+                //
+                // This chain matches iOS (#611): raw HTML → rendered DOM →
+                // fallback note. macOS shipped without the middle step, so
+                // every SPA captured as a bare link here while the phone got
+                // the article.
+                PageRenderer.renderedHTML(url: url) { rendered in
+                    if let rendered {
+                        let result = build(
+                            url: url, title: title, html: rendered, format: format, xJson: xJson,
+                            requireArticle: true)
+                        if case .success = result {
+                            completion(result)
+                            return
+                        }
+                    }
+
+                    // With no article from either source but WITH metadata, an
+                    // X share still produces a real note.
                     if xJson != nil {
                         let meta = build(
                             url: url, title: title, html: nil, format: format, xJson: xJson)
@@ -76,18 +113,15 @@ enum ShareCapture {
                             return
                         }
                     }
-                    completion(.failure(ShareCaptureError.fetchFailed))
-                    return
-                }
-                // A page with no extractable article degrades to a link note
-                // rather than failing. The user asked to save something; saving
-                // less is better than saving nothing.
-                let result = build(
-                    url: url, title: title, html: html, format: format, xJson: xJson)
-                if case .failure = result {
-                    completion(build(url: url, title: title, html: nil, format: .link))
-                } else {
-                    completion(result)
+
+                    // The link note never fails, which is what keeps a share
+                    // from ever ending in nothing. Only a page we could not
+                    // even fetch reports an error the user can retry.
+                    if html == nil {
+                        completion(.failure(ShareCaptureError.fetchFailed))
+                    } else {
+                        completion(build(url: url, title: title, html: nil, format: .link))
+                    }
                 }
             }
         }
@@ -140,8 +174,21 @@ enum ShareCapture {
 
     // MARK: - Rust bridge
 
+    /// `requireArticle` means "the caller is still willing to try harder".
+    ///
+    /// It exists because `notesage_capture_x_contents` NEVER returns null — by
+    /// design, it falls back internally to the metadata-only note so a plain
+    /// post still saves. That makes an X build unconditionally succeed, so the
+    /// raw-HTML attempt always won and the rendered-DOM retry below it was
+    /// dead code for every X share. A rate-limited or bot-shell response would
+    /// quietly save a metadata stub instead of rendering and getting the real
+    /// article.
+    ///
+    /// So the first two attempts demand a genuine extraction; only the final
+    /// fallback accepts the metadata note.
     private static func build(
-        url: String, title: String?, html: String?, format: Format, xJson: String? = nil
+        url: String, title: String?, html: String?, format: Format, xJson: String? = nil,
+        requireArticle: Bool = false
     ) -> Result<String, Error> {
         let relPath: String?
         let contents: String?
@@ -153,6 +200,17 @@ enum ShareCapture {
         var wroteHtmlDocument = false
 
         if xJson != nil, format != .link {
+            // Does this HTML actually contain an article? `article_contents`
+            // returns NULL when it does not, which is the only honest signal
+            // available — the X builders cannot tell us, because they are
+            // built never to fail.
+            if requireArticle {
+                guard let html,
+                      callRust({
+                          notesage_capture_article_contents(url, title, nil, nil, html)
+                      }) != nil
+                else { return .failure(ShareCaptureError.buildFailed) }
+            }
             // X routes through its own builders whenever we have metadata,
             // even with no page: `notesage_capture_x_contents` falls back to
             // the metadata-only note rather than returning NULL, so a plain
@@ -244,18 +302,32 @@ enum ShareCapture {
         config.urlCache = nil
 
         URLSession(configuration: config).dataTask(with: request) { data, response, _ in
-            guard let http = response as? HTTPURLResponse,
-                  (200..<300).contains(http.statusCode),
-                  let data,
-                  // 5 MB: enough for any article, small enough that a
-                  // pathological page cannot exhaust the extension.
-                  data.count <= 5 * 1024 * 1024
-            else {
-                completion(nil)
-                return
-            }
-            completion(String(data: data, encoding: .utf8)
-                ?? String(data: data, encoding: .isoLatin1))
+            let html: String? = {
+                guard let http = response as? HTTPURLResponse,
+                      (200..<300).contains(http.statusCode),
+                      let data,
+                      // 5 MB: enough for any article, small enough that a
+                      // pathological page cannot exhaust the extension.
+                      data.count <= 5 * 1024 * 1024
+                else { return nil }
+                return String(data: data, encoding: .utf8)
+                    ?? String(data: data, encoding: .isoLatin1)
+            }()
+
+            // Hop to main BEFORE calling back.
+            //
+            // `URLSession` created without a delegate queue runs completions
+            // on a private background queue. The caller goes on to construct a
+            // `WKWebView` (PageRenderer) and to touch AppKit — both of which
+            // are main-thread-only, and WebKit's violation is not a warning:
+            // it is a crash or a silent hang that takes the whole extension
+            // down, losing the share entirely.
+            //
+            // iOS has always done this (`fetch` in its ShareViewController).
+            // The port dropped the hop, which was harmless while the
+            // completion only called into Rust and became fatal the moment a
+            // webview appeared behind it.
+            DispatchQueue.main.async { completion(html) }
         }.resume()
     }
 }

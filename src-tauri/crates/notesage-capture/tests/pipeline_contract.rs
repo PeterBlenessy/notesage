@@ -322,6 +322,59 @@ fn the_share_controller_routes_x_urls_through_the_x_writer() {
 }
 
 #[test]
+fn both_platforms_retry_a_failed_extraction_against_a_rendered_dom() {
+    // A network fetch runs no JavaScript, so on an SPA the fetched HTML holds
+    // no article and extraction declines. Rendering the page and re-extracting
+    // is the second attempt that turns a bare link note back into an article.
+    //
+    // iOS shipped this in #611; macOS went without it, so every JS-rendered
+    // site captured as a link on the Mac while the phone got the article. It
+    // is invisible without a side-by-side comparison — nothing errors, the
+    // capture just quietly contains less.
+    for (label, src) in [
+        ("iOS", ios_src("ShareViewController.swift")),
+        ("macOS", macos_src("ShareCapture.swift")),
+    ] {
+        assert!(
+            src.contains("PageRenderer.renderedHTML"),
+            "{label} never retries against a rendered DOM, so any page whose\n\
+             article is assembled by JavaScript degrades to a link note."
+        );
+    }
+}
+
+#[test]
+fn both_platforms_accept_shared_files_not_just_links() {
+    // Sharing a PDF or an EPUB into the library is a first-class capture, and
+    // the activation rule is what decides whether Notesage even APPEARS in the
+    // share sheet for one. macOS declared only WebURL, so a PDF could not be
+    // shared to the Mac at all — the extension was not offered.
+    for (label, plist) in [
+        ("iOS", ios_src("ShareExtension-Info.plist")),
+        ("macOS", macos_src("ShareExtension-Info.plist")),
+    ] {
+        assert!(
+            plist.contains("NSExtensionActivationSupportsFileWithMaxCount"),
+            "{label} does not declare file support, so the share sheet will not\n\
+             offer Notesage for a PDF, EPUB or image."
+        );
+    }
+
+    // Declaring it and handling it are separate — an activation rule that
+    // offers the extension for a file it then cannot store is worse than not
+    // offering it.
+    for (label, src, writer) in [
+        ("iOS", ios_src("LibraryCapture.swift"), "writeDocument"),
+        ("macOS", macos_src("ShareLibraryAccess.swift"), "writeDocument"),
+    ] {
+        assert!(
+            src.contains(writer),
+            "{label} declares file support but has no {writer} to store one."
+        );
+    }
+}
+
+#[test]
 fn both_platforms_enter_the_security_scope_before_minting_a_bookmark() {
     // `bookmarkData(options: .withSecurityScope)` requires being INSIDE the
     // URL's security scope. A folder-picker URL carries an implicit grant, but

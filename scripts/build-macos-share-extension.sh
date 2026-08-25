@@ -113,6 +113,31 @@ nm -u "$BIN" 2>/dev/null | grep -q "_NSExtensionMain" \
 
 cp "$SRC/ShareExtension-Info.plist" "$APPEX/Contents/Info.plist"
 
+# Localized strings, SHARED with the iOS extension.
+#
+# `NSLocalizedString` reads `Localizable.strings` from the bundle's `.lproj`
+# folders; with none present every key falls through to itself, so the UI
+# renders the raw key names — which is worse than English. Copying them is the
+# whole of what makes the Mac share sheet speak Swedish.
+#
+# They live under `ios/ShareResources` and are deliberately NOT duplicated
+# here: the two extensions show the same strings, and a second copy is a
+# second thing to forget. `en.lproj` is the development region, so it also
+# serves as the fallback for any locale we do not ship.
+#
+# A macOS bundle puts resources in Contents/Resources; iOS puts them at the
+# bundle root. Same files, different destination.
+RESOURCES="$REPO/src-tauri/ios/ShareResources"
+mkdir -p "$APPEX/Contents/Resources"
+for LPROJ in "$RESOURCES"/*.lproj; do
+  [ -d "$LPROJ" ] || continue
+  cp -R "$LPROJ" "$APPEX/Contents/Resources/"
+done
+# Assert rather than assume: a missing strings file is invisible at build time
+# and shows up as key names in the user's share sheet.
+[ -f "$APPEX/Contents/Resources/en.lproj/Localizable.strings" ] \
+  || { echo "No en.lproj/Localizable.strings in the extension bundle — the UI would render raw key names"; exit 1; }
+
 # NO principal-class check here, deliberately. One was added and removed the
 # same day, having blocked a release on a false positive.
 #

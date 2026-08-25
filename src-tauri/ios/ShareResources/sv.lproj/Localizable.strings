@@ -15,3 +15,23 @@
 "share.oneFile" = "1 fil";
 "share.manyFiles" = "%d filer";
 "share.savesToInboxKeepName" = "Sparas i Inbox i ditt Notesage-bibliotek med originalnamnet.";
+
+/* macOS-only surfaces (#778 sweep). Mac-tillägget har sin EGEN biblioteks-
+   behörighet — ingen App Group med Developer ID-signering — så det har en
+   mappväljare och behörighetslägen som iOS aldrig visar. */
+"share.chooseLibrary" = "Välj bibliotek …";
+"share.useAsLibrary" = "Använd som bibliotek";
+"share.chooseLibraryFolder" = "Välj mappen med ditt Notesage-bibliotek.";
+"share.chooseLibraryToSave" = "Välj mappen med ditt Notesage-bibliotek för att spara här.";
+"share.saving" = "Sparar …";
+"share.cantSaveThis" = "Det här går inte att spara";
+"share.cancel" = "Avbryt";
+"share.saveOneFile" = "Spara filen till Notesage";
+"share.saveManyFiles" = "Spara %d filer till Notesage";
+"share.couldNotSaveFiles" = "Kunde inte spara filerna.";
+"share.someFilesFailed" = "Sparade en del filer; %d kunde inte sparas.";
+"share.notAWebLink" = "Det där ser inte ut som en webblänk.";
+"share.couldNotReach" = "Kunde inte nå sidan. Kontrollera din anslutning och försök igen.";
+"share.couldNotBuildNote" = "Kunde inte skapa någon anteckning från sidan.";
+"share.couldNotRemember" = "Kunde inte komma ihåg mappen: %@";
+"share.libraryMoved" = "Ditt Notesage-bibliotek har flyttats. Välj det igen för att spara här.";

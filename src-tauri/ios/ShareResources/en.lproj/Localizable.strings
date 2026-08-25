@@ -16,3 +16,23 @@
 "share.oneFile" = "1 file";
 "share.manyFiles" = "%d files";
 "share.savesToInboxKeepName" = "Saves to Inbox in your Notesage library, keeping the original filename.";
+
+/* macOS-only surfaces (#778 sweep). The Mac extension holds its OWN library
+   grant — there is no App Group on Developer ID signing — so it has a folder
+   picker and grant states that iOS never shows. */
+"share.chooseLibrary" = "Choose Library…";
+"share.useAsLibrary" = "Use as Library";
+"share.chooseLibraryFolder" = "Choose your Notesage library folder.";
+"share.chooseLibraryToSave" = "Choose your Notesage library folder to save here.";
+"share.saving" = "Saving…";
+"share.cantSaveThis" = "Can't save this";
+"share.cancel" = "Cancel";
+"share.saveOneFile" = "Save this file to Notesage";
+"share.saveManyFiles" = "Save %d files to Notesage";
+"share.couldNotSaveFiles" = "Could not save those files.";
+"share.someFilesFailed" = "Saved some files; %d could not be saved.";
+"share.notAWebLink" = "That does not look like a web link.";
+"share.couldNotReach" = "Could not reach that page. Check your connection and try again.";
+"share.couldNotBuildNote" = "Could not build a note from that page.";
+"share.couldNotRemember" = "Could not remember that folder: %@";
+"share.libraryMoved" = "Your Notesage library moved. Choose it again to save here.";
