@@ -11,7 +11,7 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Long-press a document and pick **Move to…** to file it out of the Inbox. The
-picker opens in the folder the document is already in; tap a folder to go
-deeper, or "Up one level" to go out. Folders cannot be moved, only files.
-Check that a moved note keeps its pin and its picture in the library.
+Reliability round for sharing. Share a few things in a row — including two
+files with the same name — and check nothing is lost and nothing freezes
+mid-save. A plain X post should save instantly now; an X Article still takes a
+moment. Known: cancelling mid-save does not yet stop the save.
