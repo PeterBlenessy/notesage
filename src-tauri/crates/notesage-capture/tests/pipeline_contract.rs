@@ -385,47 +385,87 @@ fn both_platforms_retry_a_failed_extraction_against_a_rendered_dom() {
 }
 
 #[test]
-fn the_rendered_path_does_its_heavy_work_off_the_main_thread() {
-    // `PageRenderer` guarantees its completion on MAIN — it forces itself
-    // there to touch WebKit, and every exit is a WKWebView callback or a
-    // main-queue timer. So the closure that receives the rendered DOM must hop
-    // off before extracting (a readability parse over up to 5 MB) and writing
-    // (a blocking coordinated write against what is usually an iCloud folder).
+fn no_capture_write_runs_on_the_main_thread() {
+    // A readability parse over up to 5 MB plus a coordinated write against
+    // what is usually an iCloud folder. On main it freezes the share sheet
+    // whenever the coordinator stalls.
     //
-    // Without the hop the extension UI freezes on exactly the case this path
-    // exists for — JavaScript-rendered pages, i.e. most news sites. Round two
-    // narrowed an over-broad main hop and left this branch on main; the defect
-    // was one branch away from the fix for it.
-    // BOTH platforms. The first version of this test read only macOS while
-    // the release notes claimed cross-platform coverage — and iOS had the
-    // identical defect on the identical line, unfixed and unchecked.
-    for (label, src) in [
-        ("macOS", macos_src("ShareCapture.swift")),
-        ("iOS", ios_src("ShareViewController.swift")),
+    // The previous version of this test anchored on the `PageRenderer` call
+    // site and inspected only what came AFTER it — so it was structurally
+    // blind to the two earlier write attempts in the same function, including
+    // the raw-HTML one, which is the COMMON path. It reported the freeze fixed
+    // while two of three call sites still ran on main. Seventh guard in this
+    // branch to pass for the wrong reason.
+    //
+    // So: check every call site, by name, across the whole file.
+    for (label, src, writer, hop) in [
+        (
+            "iOS",
+            ios_src("ShareViewController.swift"),
+            "writeArticle(url:",
+            "writeOffMain(",
+        ),
+        ("macOS", macos_src("ShareCapture.swift"), "build(", "DispatchQueue.global"),
     ] {
-    let mac = src;
-    let start = mac
-        .find("PageRenderer.renderedHTML(url: url) {")
-        .unwrap_or_else(|| panic!("{label}: the rendered-DOM call site moved"));
-    // Bound by the first `build(` AFTER the call site, not by a byte count.
-    // A fixed window stops covering the code the moment someone adds a
-    // comment — which is precisely how this assertion first failed against a
-    // correct fix, and how an earlier check in this file passed against a
-    // broken one.
-    let rest = &mac[start..];
-    let heavy = ["build(", "writeArticle("]
-        .iter()
-        .filter_map(|m| rest.find(m))
-        .min()
-        .unwrap_or_else(|| panic!("{label}: no extraction call after the rendered-DOM completion"));
-    let prelude = &rest[..heavy];
-    assert!(
-        prelude.contains("DispatchQueue.global"),
-        "{label}: the rendered-DOM completion reaches extraction and the\n\
-         coordinated disk write without leaving the main thread — and\n\
-         PageRenderer always calls back on main.\n\n{prelude}"
-    );
+        assert!(
+            src.contains(hop),
+            "{label} has no off-main hop at all — every capture write would run\n\
+             on the thread the share sheet draws on."
+        );
+
+        // iOS funnels every attempt through `writeOffMain`, which owns the
+        // hop; the only direct `writeArticle(url:` call left may be that
+        // funnel's own body. More than one means a call site bypassed it.
+        if label == "iOS" {
+            // Count CALLS, not the declaration. `private func writeArticle(url:`
+            // also contains the name, and counting it made the assertion fire
+            // against correct code — the mirror image of a guard that passes
+            // for the wrong reason, and just as useless.
+            let direct = src
+                .lines()
+                .filter(|l| l.contains("writeArticle(url:") && !l.contains("func "))
+                .count();
+            assert!(
+                direct <= 1,
+                "iOS calls writeArticle directly {direct} times. Every attempt must go\n\
+                 through writeOffMain, which is what moves the parse and the disk\n\
+                 write off the thread the UI draws on."
+            );
+            let _ = writer;
+        }
     }
+}
+
+#[test]
+fn the_capture_write_does_not_read_mutable_view_state() {
+    // `writeArticle` runs on a background queue. The format picker's menu
+    // stays live after Save is tapped and mutates `format` on MAIN, so
+    // reading it from the write was an unsynchronised cross-thread read —
+    // introduced by moving the write off main, which is the fix that was
+    // supposed to make things safer.
+    //
+    // A snapshot taken on main also pins the user's intent to the moment they
+    // pressed Save, which is what they actually meant.
+    let src = ios_src("ShareViewController.swift");
+    let start = src
+        .find("private func writeArticle(url: String")
+        .expect("writeArticle moved");
+    let end = src[start..]
+        .find("\n    /// Fetch the page")
+        .map(|i| start + i)
+        .unwrap_or(src.len());
+    let body = &src[start..end];
+    for field in ["self.format", "sharedTitle", "self.xJson", "isXStatus"] {
+        assert!(
+            !body.contains(field),
+            "writeArticle reads `{field}` — mutable view state, from a background\n\
+             queue. Take it from the CaptureSnapshot instead.\n\n{body}"
+        );
+    }
+    assert!(
+        body.contains("snapshot."),
+        "writeArticle no longer reads the snapshot; the parameter is decorative"
+    );
 }
 
 #[test]

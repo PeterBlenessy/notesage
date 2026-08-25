@@ -42,11 +42,13 @@ copy of its own, since a second copy is a second thing to forget.
 The contract test now checks **both** platforms for each behaviour, so the
 class is at least visible. Before today it checked only iOS.
 
-Four review rounds went into this, and each one found defects introduced by
-the previous round's fixes. Three of the bugs they caught were on **iOS**, not
-macOS — the same freeze, the same filename race, the same unreachable retry —
-found only because the reviews compared the two platforms rather than reading
-one. Those are fixed here too.
+Five review rounds went into this, and each one found defects introduced by
+the previous round's fixes. Several of the bugs they caught were on **iOS**,
+not macOS — the same filename race, the same unreachable retry, and a freeze
+that turned out to affect the *common* path rather than the rare one. Found
+only because the reviews compared the two platforms, and then compared a fix
+against every call site it claimed to cover rather than the one it was written
+for.
 
 - macOS was creating the security-scoped bookmark on the bare picker URL. That
   call has to happen **inside** the URL's security scope: the panel grants
