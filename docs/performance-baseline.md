@@ -682,3 +682,37 @@ Dataset: 6 iCloud projects, 4 explorer folders, 11 sidebar sections, **4,343 tot
 | tabs restored (1 tab, 590 KB pptx) | 1,860 |
 
 **Comparison vs the last recorded startup baseline (v0.32.1, 2026-04-14):** a large across-the-board improvement, achieved despite ~3.5× the files (4,343 vs 1,237). startup ready 13,068 → 2,274 ms (−83%); phase1-ready 5,426 → 1,049 ms (−81%); tree refresh 10,487 → 1,460 ms (−86%); skills total 8,793 → 1,099 ms (−88%, the old sequential skill-tool-extract bottleneck is gone — 3,175 → 47 ms). No regressions. Cross-date/cross-dataset comparison is approximate, but the direction is unambiguous.
+
+### 2026-08-25 — v0.54.0 release (`577a3338`), Apple M3 8-core, dev 1×
+
+Recorded because the release perf gate FAILED and the failure turned out not to
+be the release. Both columns measured on the same machine, minutes apart, at
+load < 2.8.
+
+| benchmark | budget | v0.53.1 (shipped) | v0.54.0 |
+| --- | ---: | ---: | ---: |
+| parse 1KB | 38 | 79.2 ❌ | 61.9 ❌ |
+| parse 10KB | 100 | 154.8 ❌ | 109.8 ❌ |
+| parse 50KB | 276 | 414.1 ❌ | pass |
+| cmdbar context row (3 projects) | 20 | 24.0 ❌ | 22.6 ❌ |
+| orb pulse render cost | 5 | 9.0 ❌ | 6.0 ❌ |
+| orb reduced-motion render | 5 | 5.6 ❌ | pass |
+
+**v0.54.0 is faster than the already-shipped v0.53.1 on every shared
+benchmark**, so the release introduces no regression — its content is
+dictionary lookups in settings panels, which cannot plausibly affect markdown
+parsing.
+
+**But the gate is red on a released version, which is its own problem.** Two
+candidate explanations, not yet distinguished:
+
+1. These budgets were set on a quieter machine and are stale for this hardware
+   in its current state (44 days uptime, 9 user sessions).
+2. Something regressed at some point and nobody caught it, because CI runs at
+   `PERF_BUDGET_MULTIPLIER=5` and treats overruns as advisory. Absent coverage
+   looks exactly like passing coverage.
+
+Which one it is needs a bisect against an older tag on a freshly-booted
+machine. Until then, treat a local 1× perf failure as **unresolved rather than
+clean** — the numbers above are the reference for "no worse than shipped".
+
