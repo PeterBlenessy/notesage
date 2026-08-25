@@ -217,3 +217,4 @@ Chronological log of major implementation milestones and changes.
 | 211 | [Release v0.54.0](211-release-v0.54.0.md) | Every settings panel now speaks your language. |
 | 212 | [Release v0.54.1](212-release-v0.54.1.md) | X posts shared from the Mac keep their title and picture; HTML captures open as pages. |
 | 213 | [Release v0.54.2](213-release-v0.54.2.md) | The Share menu works every time now, not just the first time. |
+| 214 | [Release v0.54.3](214-release-v0.54.3.md) | Choosing your library folder in the Share menu works again. |

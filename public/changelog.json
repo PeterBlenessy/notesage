@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.54.3",
+      "date": "2026-08-25",
+      "previousVersion": "0.54.2",
+      "sections": {
+        "fixes": [
+          "**\"Could not remember that folder\" when setting up sharing.** Picking your Notesage library from the share panel could fail the moment the panel closed, leaving Save greyed out with no way forward — the folder was chosen but never remembered, so every later share was stuck at the same step. It depended on timing, which is why it could work once and then stop, and why it behaved differently on one Mac than another."
+        ]
+      }
+    },
+    {
       "version": "0.54.2",
       "date": "2026-08-25",
       "previousVersion": "0.54.1",
