@@ -17,13 +17,15 @@ import {
   iosContextMenu,
   iosEntryMenu,
   iosDeleteFile,
+  iosListDirectory,
+  iosMoveFile,
   iosRenameFile,
   iosShareFile,
   iosTextPrompt,
   type IosEntryMenuItem,
 } from "@/lib/ios-api";
 import { t } from "@/lib/i18n";
-import { getThumbnail } from "@/lib/mobile-thumbnails";
+import { evictThumbnail, getThumbnail } from "@/lib/mobile-thumbnails";
 
 export interface EntryActionContext {
   /** Whether a root-relative path is in the shared pins file. A predicate
@@ -31,16 +33,18 @@ export interface EntryActionContext {
   isPinned: (relPath: string) => boolean;
   /** Toggle the pin, writing `.notesage/pins.json`. */
   togglePin: (relPath: string) => Promise<void>;
-  /** Called after the listing changed (delete, rename) so it can reload. */
+  /** Called after the listing changed (delete, rename, move) so it can reload. */
   onChanged?: () => void;
+  /** Rewrite any stored reference to `from` so it points at `to`. Recent and
+   *  pinned entries hold PATHS, so a move leaves both aiming at a file that no
+   *  longer exists — the same problem `useFileRenameSync` solves on desktop. */
+  onPathMoved?: (from: string, to: string) => void;
 }
 
 /**
  * The rows for one entry.
  *
  * Deliberately NOT included, and why:
- * - **Move** needs a folder picker and a native move command — real work,
- *   not a menu row (tracked separately).
  * - **Duplicate** needs a binary-safe copy command to be honest about
  *   non-markdown files; a markdown-only Duplicate would silently skip PDFs.
  * - **Info** would only repeat the date already printed on the row/card.
@@ -75,7 +79,66 @@ export function entryMenuItems(entry: FileEntry, ctx: EntryActionContext): IosEn
     inline: true,
   });
   items.push({ id: "rename", title: t("action.rename"), systemImage: "pencil" });
+  // Files only — the native command refuses directories, so offering the row
+  // for a folder would be a menu entry whose only outcome is an error toast.
+  if (!entry.is_directory) {
+    items.push({ id: "move", title: t("action.moveTo"), systemImage: "folder" });
+  }
   return items;
+}
+
+/** The library root, as the picker's own pseudo-folder. */
+const ROOT_DIR = "";
+
+/**
+ * Drill down the library and return the chosen destination directory, or
+ * `null` if cancelled.
+ *
+ * A stack of flat native action sheets rather than one tree: `ios_context_menu`
+ * presents a `UIAlertController`, which has no nesting, and a bespoke
+ * SwiftUI browser is a lot of native surface for picking a folder. Each level
+ * offers "Move here", its subfolders, and a way back up — which is also how
+ * Files itself behaves.
+ *
+ * Deliberately does NOT create folders. `ios_create_directory` exists and it
+ * would be cheap, but a picker that also creates is a bigger surface than one
+ * that only picks, and filing into a folder that already exists is the common
+ * case (issue #754, "worth deciding"). The "+" button already makes folders.
+ */
+export async function pickDestinationFolder(startDir = ROOT_DIR): Promise<string | null> {
+  let dir = startDir;
+  for (;;) {
+    const entries = await iosListDirectory(dir).catch(() => []);
+    const folders = entries
+      .filter((e) => e.is_directory)
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    const items = [
+      { id: "__here__", title: t("action.moveHere", { name: dirLabel(dir) }) },
+      ...folders.map((f) => ({ id: `dir:${f.path}`, title: f.name })),
+    ];
+    if (dir !== ROOT_DIR) {
+      items.push({ id: "__up__", title: t("action.upOneLevel") });
+    }
+
+    const chosen = await iosContextMenu({ title: dirLabel(dir), items });
+    if (chosen === null) return null;
+    if (chosen === "__here__") return dir;
+    if (chosen === "__up__") {
+      dir = parentDir(dir);
+      continue;
+    }
+    if (chosen.startsWith("dir:")) dir = chosen.slice(4);
+  }
+}
+
+function dirLabel(dir: string): string {
+  return dir === ROOT_DIR ? t("action.libraryRoot") : dir.split("/").pop() || dir;
+}
+
+function parentDir(dir: string): string {
+  const cut = dir.lastIndexOf("/");
+  return cut === -1 ? ROOT_DIR : dir.slice(0, cut);
 }
 
 /**
@@ -133,6 +196,29 @@ export async function runEntryAction(
       await iosDeleteFile(entry.path)
         .then(() => ctx.onChanged?.())
         .catch((err) => toast.error(t("action.deleteFailed", { error: String(err) })));
+      return;
+    }
+    case "move": {
+      const dest = await pickDestinationFolder(parentDir(entry.path));
+      if (dest === null) return;
+      // Picking the folder it is already in is a no-op, not a dedupe to
+      // `note-1.md`. The native side agrees, but saying so here saves a
+      // round trip and a pointless "moved" toast.
+      if (dest === parentDir(entry.path)) return;
+      try {
+        const moved = await iosMoveFile(entry.path, dest);
+        // The thumbnail cache is keyed by PATH. Left alone, the card for the
+        // moved file resolves the old key and renders a stale image — or the
+        // next file to land on that path renders this one's.
+        evictThumbnail(entry.path);
+        // Recent and pinned entries hold paths too; without this the file
+        // stays in Recent pointing at nothing and silently loses its pin.
+        ctx.onPathMoved?.(entry.path, moved);
+        ctx.onChanged?.();
+        toast.success(t("action.movedTo", { name: dirLabel(dest) }));
+      } catch (err) {
+        toast.error(t("action.moveFailed", { error: String(err) }));
+      }
       return;
     }
     default:

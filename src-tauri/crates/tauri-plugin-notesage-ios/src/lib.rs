@@ -120,6 +120,14 @@ struct RenameArgs<'a> {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+struct MoveArgs<'a> {
+    rel_path: &'a str,
+    /// Destination DIRECTORY relative to the library root; `""` is the root.
+    dest_dir: &'a str,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ThumbnailArgs<'a> {
     rel_path: &'a str,
     max_pixel: f64,
@@ -334,6 +342,14 @@ impl<R: Runtime> NotesageIos<R> {
             .map(|r| r.rel_path)
     }
 
+    /// Move a FILE into another directory under the library root (#754).
+    /// Files only; the destination must already exist. Deduped on collision.
+    /// Returns the relative path actually produced.
+    pub fn move_file(&self, rel: &str, dest_dir: &str) -> Result<String> {
+        self.call::<_, PathResponse>("moveFile", MoveArgs { rel_path: rel, dest_dir })
+            .map(|r| r.rel_path)
+    }
+
     /// Create a directory at an exact relative path if absent (no dedupe).
     pub fn ensure_directory(&self, rel: &str) -> Result<()> {
         self.call("ensureDirectory", RelPathArgs { rel_path: rel })
@@ -450,6 +466,9 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn rename_file(&self, _rel: &str, _new_name: &str) -> Result<String> {
+        Err(Error::Unavailable)
+    }
+    pub fn move_file(&self, _rel: &str, _dest_dir: &str) -> Result<String> {
         Err(Error::Unavailable)
     }
     pub fn content_ready(&self) -> Result<()> {

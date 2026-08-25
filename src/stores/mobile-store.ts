@@ -177,6 +177,11 @@ interface MobileStore {
    *  pin made on the desktop since the last load is not clobbered. */
   togglePin: (relPath: string) => Promise<void>;
 
+  /** Rewrite every stored reference to `from` so it points at `to` (#754).
+   *  Recents, the open document, the back trail and the pins file all hold
+   *  PATHS, so a move leaves them aiming at a file that no longer exists. */
+  rewritePath: (from: string, to: string) => Promise<void>;
+
   /** Test/reset helper. */
   reset: () => void;
 }
@@ -359,6 +364,39 @@ export const useMobileStore = create<MobileStore>()(
         // `.notesage/` may not exist in a library the desktop has never
         // written to. `iosEnsureDirectory` is idempotent (no dedupe), so this
         // is safe on every call.
+        await iosEnsureDirectory(".notesage");
+        await iosWriteFile(PINS_FILE_REL_PATH, serializePinsFileContent(next));
+        set({ pinnedPaths: next });
+      },
+
+      rewritePath: async (from, to) => {
+        if (from === to) return;
+        const swap = (p: string) => (p === from ? to : p);
+
+        set((s) => ({
+          recentlyRead: s.recentlyRead.map(swap),
+          openDoc: s.openDoc?.relPath === from ? { ...s.openDoc, relPath: to } : s.openDoc,
+          docStack: s.docStack.map((d) => (d.relPath === from ? { ...d, relPath: to } : d)),
+          // Scroll offsets are keyed by path too; a stale key would restore
+          // the wrong position and never be collected.
+          scrollOffsets: Object.fromEntries(
+            Object.entries(s.scrollOffsets).map(([k, v]) => [swap(k), v]),
+          ),
+        }));
+
+        // The pins FILE is the source of truth and is shared with the
+        // desktop — updating only the cached array would drop the pin the
+        // next time either side read the file. Read-modify-write, same as
+        // `togglePin`, and only when this path is actually pinned so an
+        // ordinary move does not rewrite a shared file for nothing.
+        let current: string[] = [];
+        try {
+          current = parsePinsFileContent(await iosReadFile(PINS_FILE_REL_PATH));
+        } catch {
+          return;
+        }
+        if (!current.includes(from)) return;
+        const next = current.map(swap);
         await iosEnsureDirectory(".notesage");
         await iosWriteFile(PINS_FILE_REL_PATH, serializePinsFileContent(next));
         set({ pinnedPaths: next });

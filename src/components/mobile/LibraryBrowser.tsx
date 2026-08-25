@@ -46,6 +46,7 @@ export function LibraryBrowser() {
   const recentlyRead = useMobileStore((s) => s.recentlyRead);
   const pinnedPaths = useMobileStore((s) => s.pinnedPaths);
   const togglePin = useMobileStore((s) => s.togglePin);
+  const rewritePath = useMobileStore((s) => s.rewritePath);
   const loadPinnedPaths = useMobileStore((s) => s.loadPinnedPaths);
   const viewMode = useMobileStore((s) => s.viewMode);
   const setViewMode = useMobileStore((s) => s.setViewMode);
@@ -354,6 +355,7 @@ export function LibraryBrowser() {
     isPinned: (relPath) => pinnedPaths.includes(relPath),
     togglePin,
     onChanged: () => void load(true),
+    onPathMoved: (from, to) => void rewritePath(from, to),
   };
 
   const promptName = useCallback(async (title: string): Promise<string | null> => {

@@ -20,6 +20,12 @@ struct RenameArgs: Decodable {
   let newName: String
 }
 
+struct MoveArgs: Decodable {
+  let relPath: String
+  /// Destination DIRECTORY, relative to the library root. `""` is the root.
+  let destDir: String
+}
+
 struct ThumbnailArgs: Decodable {
   let relPath: String
   let maxPixel: Double
@@ -596,6 +602,17 @@ class NotesageIosPlugin: Plugin {
     do {
       let args = try invoke.parseArgs(RenameArgs.self)
       invoke.resolve(["relPath": try LibraryAccess.renameFile(args.relPath, to: args.newName)])
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Move a file into another folder under the library root (#754). Files
+  /// only; the destination must already exist.
+  @objc public func moveFile(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(MoveArgs.self)
+      invoke.resolve([
+        "relPath": try LibraryAccess.moveFile(args.relPath, toDirectory: args.destDir)
+      ])
     } catch { invoke.reject(String(describing: error)) }
   }
 
