@@ -88,3 +88,7 @@ src-tauri/crates/*/.tauri/
 # both because they are re-fetchable and so a `git add -A` cannot sweep them
 # into an unrelated commit, which is how they reached main once already.
 tests/fixtures/speech/
+
+# SwiftPM build dir from a local `swift build` on the iOS plugin package.
+# Generated, ~2000 files including vendored checkouts.
+src-tauri/crates/tauri-plugin-notesage-ios/ios/.build/
