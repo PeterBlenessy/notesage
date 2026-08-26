@@ -11,13 +11,27 @@ Decided 2026-08-26, implementing the follow-up ADR 0009 flagged in its
 Consequences ("a second, bridge-less WKWebView … becomes the natural next
 simplification; tracked separately"). Issue #606.
 
-**Verification status:** the native path is built and type-checked (the plugin
-package compiles against the iOS SDK; CI now type-checks `ReportWebView.swift`
-too) but has **not** been exercised on a device or simulator at the time of
-writing. A green compile says nothing about whether a report paints, whether
-the find bar opens, or whether the app's back button survives being covered by
-the new web view. Treat the on-device pass as outstanding until this paragraph
-says otherwise.
+**Verification status.** Split deliberately, because "verified" was doing too
+much work in the first draft of this paragraph.
+
+*Established:* the full iOS app builds for the simulator — which is what
+compiles the `cfg(target_os = "ios")` Rust that no desktop `cargo check` can
+reach (`cargo check --target aarch64-apple-ios` fails for unrelated
+build-script reasons). All three Tauri commands and all three Swift plugin
+selectors are present in the built binary, so the bridge is wired end to end
+rather than merely written. The app launches in a simulator and renders its
+onboarding screen with no startup crash — which is where a plugin-registration
+fault would surface.
+
+*Outstanding, and it is the part that matters:* nothing here has shown a report
+actually painting in the new web view, the find bar opening, a link tap making
+the round trip, or — the one that is both unproven and load-bearing —
+`bringChromeToFront()` keeping the back button reachable under a full-screen
+report. Get that last one wrong and a report has no exit.
+
+Those need the library grant, which is a native document-picker interaction:
+genuinely a human step, not an automatable one. Until this paragraph says
+otherwise, treat the on-device pass as owed.
 
 ## Context
 
