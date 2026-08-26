@@ -39,6 +39,32 @@ private func L(_ key: String, _ args: CVarArg...) -> String {
     return args.isEmpty ? format : String(format: format, arguments: args)
 }
 
+/// Whether the user has cancelled this share.
+///
+/// The same eight lines as the iOS extension's `CancelFlag`, and deliberately
+/// so — the two extensions cannot link each other, and the identical defect
+/// existed on both. `pipeline_contract.rs` asserts both copies exist rather
+/// than trusting the discipline that has already failed here repeatedly.
+///
+/// A plain `Bool` will not do: the save chain crosses main, two URLSession
+/// delegate queues and a background write queue, and Cancel is tapped on main.
+final class CancelFlag {
+    private let lock = NSLock()
+    private var flag = false
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return flag
+    }
+
+    func cancel() {
+        lock.lock()
+        flag = true
+        lock.unlock()
+    }
+}
+
 final class ShareViewController: NSViewController {
     private enum Format: Int, CaseIterable {
         case articleHtml, articleMarkdown, link
@@ -73,6 +99,13 @@ final class ShareViewController: NSViewController {
     private let formatPopup = NSPopUpButton()
     private let saveButton = NSButton()
     private let grantButton = NSButton()
+
+    /// Raised by Cancel, read from every queue the save chain touches.
+    ///
+    /// Cancel dismissed the sheet and left the fetch/render/write chain
+    /// running, so an explicitly cancelled share still landed in the library
+    /// and `completeRequest` was then called on an already-cancelled context.
+    private let cancelled = CancelFlag()
 
     /// Attachments that are FILES rather than links (PDF, EPUB, image, …).
     /// Non-empty means this share is a document drop, which skips the format
@@ -219,8 +252,12 @@ final class ShareViewController: NSViewController {
             let typeId = Self.documentTypeIdentifiers
                 .first(where: provider.hasItemConformingToTypeIdentifier) ?? "public.data"
             group.enter()
-            provider.loadFileRepresentation(forTypeIdentifier: typeId) { url, error in
+            provider.loadFileRepresentation(forTypeIdentifier: typeId) { [weak self] url, error in
                 defer { group.leave() }
+                // Per item, not just at the end: a ten-file batch off an iCloud
+                // volume is seconds of copying, and Cancel should stop it where
+                // it stands rather than after every file has landed.
+                guard let self, !self.cancelled.isCancelled else { return }
                 guard let url else {
                     NSLog("[notesage-share] file load failed: %@", String(describing: error))
                     recordFailure()
@@ -236,7 +273,7 @@ final class ShareViewController: NSViewController {
             }
         }
         group.notify(queue: .main) { [weak self] in
-            guard let self else { return }
+            guard let self, !self.cancelled.isCancelled else { return }
             if failures == 0 {
                 self.extensionContext?.completeRequest(returningItems: [])
             } else {
@@ -385,6 +422,15 @@ final class ShareViewController: NSViewController {
     }
 
     @objc private func cancel() {
+        // Raise the flag BEFORE dismissing. `ShareCapture.save` checks it
+        // immediately before it writes, so a save already in flight when
+        // Cancel lands leaves nothing behind.
+        //
+        // Cancel deliberately stays enabled after Save is tapped: disabling it
+        // would also have closed this bug, but a sheet that cannot be dismissed
+        // for the length of a fetch-plus-render is its own bug.
+        cancelled.cancel()
+        saveButton.isEnabled = false
         extensionContext?.cancelRequest(withError: NSError(
             domain: "com.notesage.app.share", code: NSUserCancelledError))
     }
@@ -401,10 +447,12 @@ final class ShareViewController: NSViewController {
         saveButton.isEnabled = false
         statusLabel.stringValue = L("share.saving")
 
-        ShareCapture.save(url: url, title: sharedTitle, format: format.captureFormat) {
-            [weak self] result in
+        ShareCapture.save(
+            url: url, title: sharedTitle, format: format.captureFormat,
+            isCancelled: { [cancelled] in cancelled.isCancelled }
+        ) { [weak self] result in
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, !self.cancelled.isCancelled else { return }
                 switch result {
                 case .success:
                     self.extensionContext?.completeRequest(returningItems: [])

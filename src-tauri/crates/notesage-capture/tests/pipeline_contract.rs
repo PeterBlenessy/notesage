@@ -843,3 +843,373 @@ fn a_capture_with_no_image_is_allowed_to_have_no_thumbnail() {
     assert!(notesage_capture::markdown_image_urls(&note.contents).is_empty());
     assert!(notesage_capture::article_lead_image(&note.contents).is_none());
 }
+
+// ---------------------------------------------------------------------------
+// 3. Cancellation (#779)
+// ---------------------------------------------------------------------------
+//
+// The save chain is up to twenty seconds long — X metadata ≤5 s, page fetch
+// ≤10–15 s, render ≤5 s, then a coordinated iCloud write — and none of it was
+// tied to the extension context's lifecycle. Tap Cancel mid-save and the sheet
+// dismissed, the chain kept running, the write landed, and `completeRequest`
+// was then called on an already-cancelled context.
+//
+// So an explicitly cancelled share still appeared in the library. Reachable on
+// every capture that takes the fetch path, i.e. most articles, and present
+// since the first long network call — six review rounds never traced the
+// Cancel terminal.
+//
+// Source scans for the same reason as everything else here: neither extension
+// can be driven from CI, and a contract that cannot run in CI runs never.
+
+/// Slice one Swift method body out of `src`, from `marker` to the next
+/// declaration at the same nesting level.
+///
+/// Bounded by the NEXT declaration rather than a byte count: a fixed window
+/// stops covering the function the moment someone adds a comment, and then
+/// passes for that reason — the failure mode this file has hit repeatedly.
+fn swift_body<'a>(src: &'a str, marker: &str) -> &'a str {
+    let start = src
+        .find(marker)
+        .unwrap_or_else(|| panic!("`{marker}` not found — the guard is anchored to a moved symbol"));
+    let after = &src[start + marker.len()..];
+    let end = [
+        "\n    private func ",
+        "\n    @objc private func ",
+        "\n    private static func ",
+        "\n    static func ",
+        "\n    override func ",
+        "\n    func ",
+        "\n    private struct ",
+        "\n    private enum ",
+        // NOT `private let` / `private var`: a type's own stored properties are
+        // declared at this indent, so treating them as boundaries truncates a
+        // CLASS body at its first field — which is how the CancelFlag guard
+        // first fired against correct code.
+        "\n}",
+    ]
+    .iter()
+    .filter_map(|m| after.find(m))
+    .min()
+    .map(|i| start + marker.len() + i)
+    .unwrap_or(src.len());
+    &src[start..end]
+}
+
+/// Strip `//` comments so a guard cannot be satisfied by prose describing it.
+///
+/// "A guard that reads its own documentation is the purest form of passing for
+/// the wrong reason" — learned here, twice.
+fn swift_code(body: &str) -> String {
+    body.lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn both_platforms_hold_cancellation_in_a_locked_flag() {
+    // A plain `Bool` will not do. The save chain crosses main, two URLSession
+    // delegate queues and a background write queue, while Cancel is tapped on
+    // main — an unsynchronised flag is a data race on the single value that
+    // decides whether anything reaches disk.
+    for (label, src) in [
+        ("iOS", ios_src("ShareViewController.swift")),
+        ("macOS", macos_src("ShareViewController.swift")),
+    ] {
+        let flag = swift_code(swift_body(&src, "final class CancelFlag {"));
+        assert!(
+            flag.contains("NSLock"),
+            "{label}'s CancelFlag does not take a lock. Cancel is written on main and\n\
+             read from the fetch, render and write queues; an unsynchronised Bool is a\n\
+             data race on the one value that decides whether a cancelled share still\n\
+             lands in the library.\n\n{flag}"
+        );
+    }
+}
+
+#[test]
+fn cancel_raises_the_flag_before_dismissing_the_sheet() {
+    // Order is the whole fix. `cancelRequest` tears the sheet down
+    // immediately; if the flag goes up afterwards, an in-flight write can pass
+    // its check in the window between the two and still land.
+    for (label, src, marker) in [
+        ("iOS", ios_src("ShareViewController.swift"), "@objc private func cancelTapped("),
+        ("macOS", macos_src("ShareViewController.swift"), "@objc private func cancel("),
+    ] {
+        let body = swift_code(swift_body(&src, marker));
+        let raise = body.find("cancelled.cancel()").unwrap_or_else(|| {
+            panic!(
+                "{label}'s Cancel never raises the cancellation flag, so the save chain\n\
+                 keeps running after the sheet is gone and a cancelled share still\n\
+                 lands in the library.\n\n{body}"
+            )
+        });
+        let dismiss = body
+            .find("cancelRequest")
+            .unwrap_or_else(|| panic!("{label}'s Cancel no longer dismisses the sheet\n\n{body}"));
+        assert!(
+            raise < dismiss,
+            "{label} dismisses the sheet BEFORE raising the cancellation flag. A write\n\
+             that checks the flag in that window passes and lands anyway.\n\n{body}"
+        );
+    }
+}
+
+#[test]
+fn no_platform_completes_an_already_cancelled_context() {
+    // `completeRequest` on a context that was cancelled is undefined per
+    // `NSExtensionContext` — and observably wrong regardless, since reaching
+    // it means the write it reports already happened.
+    for (label, src, marker) in [
+        ("iOS", ios_src("ShareViewController.swift"), "private func finish("),
+        ("macOS", macos_src("ShareViewController.swift"), "@objc private func save("),
+    ] {
+        let body = swift_code(swift_body(&src, marker));
+        let complete = body.find("completeRequest").unwrap_or_else(|| {
+            panic!("{label}: `{marker}` no longer completes the request — guard is misanchored\n\n{body}")
+        });
+
+        // Scope the search to the block that actually reaches `completeRequest`,
+        // not the whole method.
+        //
+        // A plain "does the body mention isCancelled anywhere before it" check
+        // was hollow on macOS: `save()` passes `isCancelled:` as an ARGUMENT to
+        // `ShareCapture.save`, several lines above, so deleting the real guard
+        // on the completion left the test green. Mutation-proven, in the file
+        // whose whole subject is guards that pass for the wrong reason.
+        //
+        // The anchor is the innermost `async {` before the completion, or the
+        // method opening when there is none (iOS's `finish()` is synchronous).
+        let head = &body[..complete];
+        let anchor = head.rfind(".async {").map(|i| i + ".async {".len()).unwrap_or(0);
+        assert!(
+            head[anchor..].contains("cancelled.isCancelled"),
+            "{label} reaches completeRequest without consulting the cancellation flag in\n\
+             the same block. Completing an already-cancelled context is undefined per\n\
+             NSExtensionContext — and reaching it at all means the write it reports has\n\
+             already happened.\n\n{}",
+            &head[anchor..]
+        );
+    }
+}
+
+/// Every iOS path that writes to the library: the function, the writer it
+/// calls, and how it gets off the main thread.
+///
+/// `None` for the hop means the caller is ALREADY off main and why — an empty
+/// reason is not accepted, exactly like the `None` rows in
+/// BUILDER_REACHABILITY.
+type Hop = Result<&'static str, &'static str>;
+
+const IOS_WRITE_PATHS: &[(&str, &str, Hop)] = &[
+    ("private func writeOffMain(", "writeArticle(url:", Ok("DispatchQueue.global")),
+    ("private func saveLink(", "LibraryAccess.writeCapture(", Ok("DispatchQueue.global")),
+    (
+        "private func saveArticleFallback(",
+        "LibraryAccess.writeXCapture(",
+        Ok("DispatchQueue.global"),
+    ),
+    (
+        "@objc private func saveTapped(",
+        "LibraryAccess.writeVideoCapture(",
+        Ok("DispatchQueue.global"),
+    ),
+    (
+        "private func saveDocuments(",
+        "LibraryAccess.writeDocument(",
+        Err("loadFileRepresentation calls back on an arbitrary queue, never main"),
+    ),
+];
+
+#[test]
+fn every_ios_capture_write_is_off_main_and_checks_cancellation() {
+    // `writeOffMain` covered `writeArticle` only. The link note, the X
+    // metadata note and the video note all ran their coordinated iCloud writes
+    // on the thread the share sheet draws on — the identical freeze three
+    // review rounds fixed for articles, live on the SIMPLEST save paths.
+    //
+    // And every one of them is a place a cancelled share could still land, so
+    // the two invariants are checked together: a write that hops but does not
+    // check, or checks but does not hop, is still one of the two bugs.
+    let src = ios_src("ShareViewController.swift");
+    for (marker, writer, hop) in IOS_WRITE_PATHS {
+        let body = swift_code(swift_body(&src, marker));
+        let write_at = body.find(writer).unwrap_or_else(|| {
+            panic!(
+                "iOS `{marker}` no longer calls `{writer}`. Either the capture silently\n\
+                 stopped happening or this guard is watching a renamed symbol — both\n\
+                 need a human.\n\n{body}"
+            )
+        });
+
+        match hop {
+            Ok(hop_marker) => {
+                let hop_at = body.find(hop_marker).unwrap_or_else(|| {
+                    panic!(
+                        "iOS `{marker}` calls `{writer}` with no `{hop_marker}` hop, so a\n\
+                         coordinated write against what is usually an iCloud folder runs on\n\
+                         the thread the share sheet draws on. A stalled file coordinator\n\
+                         freezes the sheet.\n\n{body}"
+                    )
+                });
+                assert!(
+                    hop_at < write_at,
+                    "iOS `{marker}` hops off main only AFTER writing.\n\n{body}"
+                );
+            }
+            Err(reason) => assert!(
+                !reason.trim().is_empty(),
+                "iOS `{marker}` is exempt from the off-main hop with no reason given."
+            ),
+        }
+
+        let check_at = body.find("cancelled.isCancelled").unwrap_or_else(|| {
+            panic!(
+                "iOS `{marker}` writes via `{writer}` without checking whether the user\n\
+                 cancelled. Cancel dismisses the sheet instantly; this write is up to\n\
+                 twenty seconds behind it, and an explicitly cancelled share must not\n\
+                 appear in the library.\n\n{body}"
+            )
+        });
+        assert!(
+            check_at < write_at,
+            "iOS `{marker}` checks cancellation only AFTER `{writer}` has already run —\n\
+             the bytes are on disk by then.\n\n{body}"
+        );
+    }
+}
+
+#[test]
+fn the_macos_link_note_is_written_off_main_and_checks_cancellation() {
+    // The `.link` short-circuit skips the fetch, so it ran straight from the
+    // button action: a coordinated write on main, on the one path that never
+    // declines and that every other path falls through to.
+    let src = macos_src("ShareCapture.swift");
+    let body = swift_code(swift_body(&src, "static func save("));
+
+    let branch = body
+        .find("if format == .link {")
+        .expect("macOS `.link` short-circuit moved — this guard is anchored to it");
+    let tail = &body[branch..];
+    let hop = tail.find("DispatchQueue.global").unwrap_or_else(|| {
+        panic!(
+            "macOS writes the link note on the calling thread, which is main — `save()`\n\
+             is invoked straight from the button action. Same freeze the article path\n\
+             went through three rounds to fix, on the simplest save path.\n\n{tail}"
+        )
+    });
+    let check = tail.find("isCancelled()").unwrap_or_else(|| {
+        panic!("macOS's link-note branch never consults the cancellation flag\n\n{tail}")
+    });
+    let build = tail
+        .find("build(")
+        .expect("macOS's link-note branch no longer builds a note");
+    assert!(
+        hop < build && check < build,
+        "macOS's link-note branch must hop off main AND check cancellation before it\n\
+         writes.\n\n{tail}"
+    );
+
+    // The chain's own writes, not just the short-circuit. `save()` takes an
+    // `isCancelled` closure precisely so the answer can change under a
+    // 15-second fetch and a 5-second render; a signature without it means the
+    // chain cannot be stopped at all.
+    assert!(
+        body.contains("isCancelled: @escaping () -> Bool"),
+        "macOS `ShareCapture.save` no longer accepts a cancellation check, so nothing\n\
+         between the fetch and the write can be stopped.\n\n{body}"
+    );
+    assert!(
+        !swift_code(&src).contains("completion(build("),
+        "macOS reports a build result without routing it through the cancellation\n\
+         guard (`complete(...)`). A cancelled share would still be reported — and,\n\
+         worse, already written."
+    );
+}
+
+#[test]
+fn the_ios_page_renderer_guards_the_main_thread_like_macos() {
+    // WKWebView must be created and driven on main. Dormant today — every iOS
+    // call site arrives from a `fetch` completion that already hops — but the
+    // macOS port added the guard and iOS did not, and an invariant that holds
+    // by accident is one edit away from a hang inside WebKit with the share
+    // sheet already gone.
+    for (label, src) in [
+        ("iOS", ios_src("PageRenderer.swift")),
+        ("macOS", macos_src("PageRenderer.swift")),
+    ] {
+        let body = swift_code(swift_body(&src, "static func renderedHTML("));
+        assert!(
+            body.contains("Thread.isMainThread"),
+            "{label}'s PageRenderer builds a WKWebView without checking it is on the\n\
+             main thread. In an app extension that is a hang or a crash, and the sheet\n\
+             vanishes having saved nothing.\n\n{body}"
+        );
+    }
+}
+
+#[test]
+fn the_macos_deduper_refuses_rather_than_returning_an_occupied_name() {
+    // `dedupedURL` returned the ORIGINAL url when it exhausted its 999
+    // attempts — a url that by definition exists. `writeCapture` then wrote it
+    // with `.forReplacing`, overwriting a note the user may have annotated,
+    // from the function whose entire purpose is preventing that.
+    //
+    // The same defect `claimName` was fixed for, one function over. Practically
+    // unreachable, structurally identical.
+    let src = macos_src("ShareLibraryAccess.swift");
+    let body = swift_code(swift_body(&src, "private static func dedupedURL("));
+    assert!(
+        body.contains("-> URL?"),
+        "macOS `dedupedURL` no longer returns an Optional, so exhausting its 999\n\
+         attempts hands the caller an occupied path to overwrite.\n\n{body}"
+    );
+    assert!(
+        body.trim_end().ends_with("return nil\n    }") || body.contains("return nil"),
+        "macOS `dedupedURL` does not refuse on exhaustion.\n\n{body}"
+    );
+
+    let write = swift_code(swift_body(&src, "static func writeCapture("));
+    assert!(
+        write.contains("guard let unique = dedupedURL("),
+        "macOS `writeCapture` does not handle a refused dedupe, so an exhausted\n\
+         deduper falls back to overwriting.\n\n{write}"
+    );
+}
+
+#[test]
+fn both_share_extension_localizations_carry_the_same_keys() {
+    // The two extensions share ONE set of `.strings` files
+    // (`src-tauri/ios/ShareResources/*.lproj`, copied into the macOS bundle by
+    // `scripts/build-macos-share-extension.sh`). A key added to `en` and
+    // forgotten in `sv` does not fail anything: `NSLocalizedString` falls back
+    // to the key's own default, so a Swedish share sheet shows one English
+    // line. That is worse than either language on its own — the exact defect
+    // #653 fixed, and nothing stopped it recurring.
+    let keys = |lang: &str| -> Vec<String> {
+        let src = ext_src("ios/ShareResources", &format!("{lang}.lproj/Localizable.strings"));
+        let mut found: Vec<String> = src
+            .lines()
+            .filter_map(|l| l.trim().strip_prefix('"'))
+            .filter_map(|rest| rest.split('"').next())
+            .map(str::to_string)
+            .collect();
+        found.sort();
+        found.dedup();
+        found
+    };
+    let (en, sv) = (keys("en"), keys("sv"));
+    assert!(!en.is_empty(), "no keys parsed from en.lproj — did the file format change?");
+
+    let missing_sv: Vec<_> = en.iter().filter(|k| !sv.contains(k)).collect();
+    let missing_en: Vec<_> = sv.iter().filter(|k| !en.contains(k)).collect();
+    assert!(
+        missing_sv.is_empty() && missing_en.is_empty(),
+        "Share Extension localizations have drifted.\n\
+         Missing from sv.lproj: {missing_sv:?}\n\
+         Missing from en.lproj: {missing_en:?}\n\
+         An untranslated key renders as the key's English default inside an\n\
+         otherwise-Swedish sheet."
+    );
+}

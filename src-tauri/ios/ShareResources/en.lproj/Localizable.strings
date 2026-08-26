@@ -34,6 +34,7 @@
 "share.notAWebLink" = "That does not look like a web link.";
 "share.couldNotReach" = "Could not reach that page. Check your connection and try again.";
 "share.couldNotBuildNote" = "Could not build a note from that page.";
+"share.couldNotFindFreeName" = "Could not find a free name for %@ in Inbox.";
 "share.couldNotRemember" = "Could not remember that folder: %@";
 "share.libraryMoved" = "Your Notesage library moved. Choose it again to save here.";
 

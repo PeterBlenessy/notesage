@@ -259,6 +259,25 @@ verified basis for the App Store privacy label **"Data Not Collected"**:
   overwriting). The Share Extension calls the
   same Rust implementation over a C ABI (`notesage-capture` staticlib +
   `NotesageCapture.h`) — one format, one implementation, tested once.
+- **Cancel is binding, and every write is off main (#779).** The save chain is
+  up to twenty seconds long (X metadata ≤5 s, page fetch ≤10–15 s, render ≤5 s,
+  then a coordinated iCloud write) and was tied to nothing: Cancel dismissed the
+  sheet, the chain kept running, and an explicitly cancelled share still landed
+  in the library — after which `completeRequest` was called on an
+  already-cancelled context. Both extensions now hold a lock-guarded
+  `CancelFlag`, raised **before** `cancelRequest` and consulted immediately
+  before every write and every completion. Cancel deliberately stays enabled
+  after Save: disabling it would also have closed the bug, but an
+  undismissable fifteen-second sheet is its own. A residual window remains
+  between the last check and the write itself — microseconds rather than the
+  twenty seconds it was — and closing it fully would need a transactional
+  write, which the file coordinator does not offer.
+  In the same family, every capture writer now hops off the main thread:
+  `writeOffMain` covered the article path only, so the link note, the X
+  metadata note and the video note all ran their coordinated iCloud writes on
+  the thread the share sheet draws on. `pipeline_contract.rs` asserts all of
+  this per call site — the guards were mutation-tested, since this file has
+  repeatedly shipped tests that passed for the wrong reason.
 - **Share Extension wiring is scripted.** `tauri ios init` cannot create
   extension targets; `src-tauri/ios/integrate-share-extension.py` adds the
   `NotesageShare` app-extension target to the generated xcodegen project

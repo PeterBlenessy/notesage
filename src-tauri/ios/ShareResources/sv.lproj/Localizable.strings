@@ -33,6 +33,7 @@
 "share.notAWebLink" = "Det där ser inte ut som en webblänk.";
 "share.couldNotReach" = "Kunde inte nå sidan. Kontrollera din anslutning och försök igen.";
 "share.couldNotBuildNote" = "Kunde inte skapa någon anteckning från sidan.";
+"share.couldNotFindFreeName" = "Hittade inget ledigt namn för %@ i Inbox.";
 "share.couldNotRemember" = "Kunde inte komma ihåg mappen: %@";
 "share.libraryMoved" = "Ditt Notesage-bibliotek har flyttats. Välj det igen för att spara här.";
 

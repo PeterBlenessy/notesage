@@ -11,7 +11,7 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Reliability round for sharing. Share a few things in a row — including two
-files with the same name — and check nothing is lost and nothing freezes
-mid-save. A plain X post should save instantly now; an X Article still takes a
-moment. Known: cancelling mid-save does not yet stop the save.
+Cancel now actually cancels. Share an article, tap Save, then tap Cancel
+before it finishes — nothing should appear in your library. Try it on a slow
+page, where there is time to catch it. Saving a plain link or a video should
+also feel instant now, with no frozen sheet.

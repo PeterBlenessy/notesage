@@ -38,6 +38,34 @@ private func L(_ key: String, _ args: CVarArg...) -> String {
 }
 import UniformTypeIdentifiers
 
+/// Whether the user has cancelled this share.
+///
+/// A `Bool` would not do. The save chain crosses at least four queues — main,
+/// two URLSession delegate queues, and the background write queue — while
+/// Cancel is tapped on main, so an unsynchronised flag is a genuine data race
+/// on the one value that decides whether anything reaches disk.
+///
+/// Shared with the macOS extension by shape, not by code: the two extensions
+/// cannot link each other, so `ShareViewController.swift` on macOS carries the
+/// same eight lines. Divergence there is the failure this project keeps
+/// having, so both are asserted by `pipeline_contract.rs`.
+final class CancelFlag {
+    private let lock = NSLock()
+    private var flag = false
+
+    var isCancelled: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return flag
+    }
+
+    func cancel() {
+        lock.lock()
+        flag = true
+        lock.unlock()
+    }
+}
+
 final class ShareViewController: UIViewController {
     private static let appGroup = "group.com.notesage.app"
     private static let formatKey = "capture-format"
@@ -109,6 +137,17 @@ final class ShareViewController: UIViewController {
     private let formatRow = UIView()
     private var formatButton: UIButton?
     private var saveButton: UIBarButtonItem?
+
+    /// Raised by Cancel, read from every queue the save chain touches.
+    ///
+    /// The save chain is up to 20 seconds long (X metadata ≤5 s, page fetch
+    /// ≤10 s, render ≤5 s, then a coordinated iCloud write) and none of it was
+    /// tied to the extension context's lifecycle. Cancel dismissed the sheet
+    /// and the chain kept running, so an explicitly cancelled share still
+    /// appeared in the library — and `finish()` then called `completeRequest`
+    /// on a context that had already been cancelled, which
+    /// `NSExtensionContext` leaves undefined.
+    private let cancelled = CancelFlag()
 
     // MARK: - Lifecycle
 
@@ -402,7 +441,17 @@ final class ShareViewController: UIViewController {
     // MARK: - Actions
 
     @objc private func cancelTapped() {
-        extensionContext?.cancelRequest(withError: NSError(domain: "Notesage", code: 0))
+        // Raise the flag BEFORE dismissing. Every step of the save chain
+        // checks it immediately before it writes, so a save already in flight
+        // when Cancel lands leaves nothing behind — which is what Cancel means.
+        //
+        // Cancel deliberately stays enabled after Save is tapped. Disabling it
+        // would also have closed this bug, but a 15-second sheet with no way
+        // out is its own bug.
+        cancelled.cancel()
+        saveButton?.isEnabled = false
+        extensionContext?.cancelRequest(
+            withError: NSError(domain: "Notesage", code: NSUserCancelledError))
     }
 
     @objc private func saveTapped() {
@@ -421,11 +470,23 @@ final class ShareViewController: UIViewController {
             // the video itself.
             fetchOembed(url: url) { [weak self] json in
                 guard let self else { return }
-                if (try? LibraryAccess.writeVideoCapture(
-                    url: url, title: self.sharedTitle, tags: [], oembedJson: json)) != nil {
-                    self.finish()
-                } else {
-                    self.saveLink(url: url)
+                // Off main: same coordinated iCloud write as every other
+                // capture writer. `fetchOembed` delivers on main, so without
+                // this hop the video note was a third write running on the
+                // thread the sheet draws on.
+                let title = self.sharedTitle
+                DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                    guard let self, !self.cancelled.isCancelled else { return }
+                    let ok = (try? LibraryAccess.writeVideoCapture(
+                        url: url, title: title, tags: [], oembedJson: json)) != nil
+                    DispatchQueue.main.async {
+                        guard !self.cancelled.isCancelled else { return }
+                        if ok {
+                            self.finish()
+                        } else {
+                            self.saveLink(url: url)
+                        }
+                    }
                 }
             }
         case .article, .html:
@@ -557,8 +618,19 @@ final class ShareViewController: UIViewController {
             return
         }
         DispatchQueue.global(qos: .userInitiated).async {
+            // Last gate before the bytes land. The fetch and the render above
+            // are seconds long, and Cancel can arrive anywhere in them.
+            //
+            // Abandoning the completion rather than reporting failure is
+            // deliberate: `false` means "try the next source", which would
+            // walk a cancelled share all the way down to the link note that
+            // never fails. Silence stops the chain.
+            guard !self.cancelled.isCancelled else { return }
             let ok = self.writeArticle(url: url, html: html, snapshot: snapshot)
-            DispatchQueue.main.async { completion(ok) }
+            DispatchQueue.main.async {
+                guard !self.cancelled.isCancelled else { return }
+                completion(ok)
+            }
         }
     }
 
@@ -577,19 +649,36 @@ final class ShareViewController: UIViewController {
     /// note. That one never fails, which is what keeps a share from ever
     /// ending in nothing.
     private func saveArticleFallback(url: String) {
-        if isXStatus, xJson != nil {
+        guard isXStatus, let json = xJson else {
+            saveLink(url: url)
+            return
+        }
+        // OFF MAIN, like every other capture write.
+        //
+        // `writeOffMain` covered `writeArticle` only, so the metadata-note
+        // branch — the one a plain X post reaches EVERY time, by design —
+        // still ran its coordinated iCloud write on the thread the share sheet
+        // draws on. Three review rounds fixed this freeze for articles while
+        // it stayed live on the commonest X path.
+        let title = sharedTitle
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self, !self.cancelled.isCancelled else { return }
             let written = try? LibraryAccess.writeXCapture(
-                url: url, title: sharedTitle, tags: [], html: nil,
-                xJson: xJson, asHtml: false)
+                url: url, title: title, tags: [], html: nil,
+                xJson: json, asHtml: false)
             // `try?` on a throwing function that also returns an optional
             // yields String?? — flatten before testing, or a thrown error and
             // a declined build become indistinguishable.
-            if written.flatMap({ $0 }) != nil {
-                finish()
-                return
+            let ok = written.flatMap { $0 } != nil
+            DispatchQueue.main.async {
+                guard !self.cancelled.isCancelled else { return }
+                if ok {
+                    self.finish()
+                } else {
+                    self.saveLink(url: url)
+                }
             }
         }
-        saveLink(url: url)
     }
 
     /// Write the active article format from `html`. Returns false when
@@ -714,10 +803,21 @@ final class ShareViewController: UIViewController {
         }.resume()
     }
 
+    /// The link note — the one write that never declines, and so the one every
+    /// other path falls through to.
+    ///
+    /// Off main for the same reason the article write is: `writeCapture` runs a
+    /// coordinated write against what is usually an iCloud folder, and a
+    /// stalled file coordinator freezes the share sheet. This is the SIMPLEST
+    /// save path and it was the last one still on main.
     private func saveLink(url: String) {
-        _ = try? LibraryAccess.writeCapture(
-            url: url, title: sharedTitle, selectionText: nil, tags: [])
-        finish()
+        let title = sharedTitle
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self, !self.cancelled.isCancelled else { return }
+            _ = try? LibraryAccess.writeCapture(
+                url: url, title: title, selectionText: nil, tags: [])
+            DispatchQueue.main.async { self.finish() }
+        }
     }
 
     /// Copy shared files into Inbox/ (streamed via temp-file representations
@@ -741,9 +841,13 @@ final class ShareViewController: UIViewController {
                 candidates.first(where: provider.hasItemConformingToTypeIdentifier)
                 ?? UTType.data.identifier
             group.enter()
-            provider.loadFileRepresentation(forTypeIdentifier: typeId) { url, _ in
+            provider.loadFileRepresentation(forTypeIdentifier: typeId) { [weak self] url, _ in
                 defer { group.leave() }
-                guard let url else { return }
+                // A ten-file batch off an iCloud volume is seconds of copying,
+                // and each item is a separate write. Check per item so Cancel
+                // stops the batch where it stands rather than only suppressing
+                // the completion after every file has already landed.
+                guard let self, !self.cancelled.isCancelled, let url else { return }
                 _ = try? LibraryAccess.writeDocument(from: url, suggestedName: url.lastPathComponent)
             }
         }
@@ -757,6 +861,10 @@ final class ShareViewController: UIViewController {
     }
 
     private func finish() {
+        // Completing an already-cancelled context is undefined per
+        // `NSExtensionContext`. Every terminal path in this file funnels
+        // through here, so this one guard covers all of them.
+        guard !cancelled.isCancelled else { return }
         extensionContext?.completeRequest(returningItems: [], completionHandler: nil)
     }
 }
