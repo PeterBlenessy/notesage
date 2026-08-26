@@ -1213,3 +1213,61 @@ fn both_share_extension_localizations_carry_the_same_keys() {
          otherwise-Swedish sheet."
     );
 }
+
+#[test]
+fn the_settle_script_is_returned_so_the_heuristic_actually_runs() {
+    // `callAsyncJavaScript` treats its script as a FUNCTION BODY. Without a
+    // `return`, the promise is evaluated and discarded, the call resolves
+    // `.success(nil)`, the `as? String` cast fails, and the completion takes
+    // its "script failed (CSP, a hostile page)" branch — which captures the
+    // DOM immediately at `didFinish`.
+    //
+    // So the mutation-quiescence settle both PageRenderers are largely ABOUT
+    // had never run once, on either platform. Nothing errored. Captures simply
+    // contained whatever had loaded at an arbitrary early moment, which is why
+    // the same article yielded a different image count on each attempt — a
+    // shipped bug that reads, in the source, as a fully implemented feature.
+    //
+    // Verified directly against the API: without `return` → `success(nil)`,
+    // with it → the value.
+    for (label, src) in [
+        ("iOS", ios_src("PageRenderer.swift")),
+        ("macOS", macos_src("PageRenderer.swift")),
+    ] {
+        let code = swift_code(&src);
+        let at = code.find("new Promise").unwrap_or_else(|| {
+            panic!("{label}: no settle promise found — this guard is anchored to it")
+        });
+        // The 7 chars before it, so `return new Promise` passes and a bare
+        // `new Promise` at the head of a line does not.
+        let before = &code[at.saturating_sub(8)..at];
+        assert!(
+            before.contains("return"),
+            "{label}'s settle script is not returned, so callAsyncJavaScript resolves\n\
+             nil and the renderer silently falls back to capturing the DOM at\n\
+             didFinish — before the page has assembled itself. The quiescence\n\
+             heuristic becomes dead code that still reads as implemented.\n\n\
+             found before `new Promise`: {before:?}"
+        );
+
+        // The other half: lazy images only load when scrolled into view, and
+        // this webview never scrolls on its own. Without the walk, everything
+        // below the fold stays a placeholder and the capture keeps whichever
+        // images happened to be above it — on a Medium article, 9 of 31.
+        // The WALK, not merely the word. A bare `window.scrollTo` also matches
+        // the scroll-BACK-to-top at the end of the walk, so deleting the loop
+        // body left this green — mutation-proven hollow on the first attempt,
+        // in the file whose whole subject is guards that pass for the wrong
+        // reason. The moving target is what loads lazy images.
+        assert!(
+            code.contains("window.scrollTo(0, y)"),
+            "{label}'s renderer never scrolls THROUGH the document (only, at most, back\n\
+             to the top), so lazy-loaded images below the fold are never fetched and the\n\
+             capture silently loses most of the article's pictures."
+        );
+        assert!(
+            code.contains("img.loading = 'eager'"),
+            "{label}'s renderer does not force images eager before walking the page."
+        );
+    }
+}
