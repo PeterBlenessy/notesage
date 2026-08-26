@@ -752,6 +752,65 @@ pub async fn ios_set_chrome(app: tauri::AppHandle, spec: serde_json::Value) -> R
     }
 }
 
+/// Show an exported HTML report in its own bridge-less WKWebView (#606,
+/// ADR 0010) instead of the sandboxed `htmlpreview://` iframe.
+///
+/// The document travels as a STRING, already read and size-checked by the
+/// reader — handing the native layer a path would give the report web view a
+/// reason to touch the library, which is the reach this change removes.
+///
+/// Rejects on every non-iOS target, and that rejection is the contract: the
+/// reader falls back to the iframe path on it.
+#[tauri::command]
+pub async fn ios_present_report(
+    app: tauri::AppHandle,
+    html: String,
+    inset_top: Option<f64>,
+    inset_bottom: Option<f64>,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::present_report(&app, &html, inset_top.unwrap_or(0.0), inset_bottom.unwrap_or(0.0))
+            .await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, html, inset_top, inset_bottom);
+        Err("ios_present_report is only available on iOS".into())
+    }
+}
+
+/// Tear down the presented report. Idempotent.
+#[tauri::command]
+pub async fn ios_dismiss_report(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::dismiss_report(&app).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = &app;
+        Err("ios_dismiss_report is only available on iOS".into())
+    }
+}
+
+/// Open WebKit's find bar over the presented report.
+///
+/// `false` means no report is on screen; the caller falls back to the web
+/// search island rather than leaving the user with a dead button.
+#[tauri::command]
+pub async fn ios_find_in_report(app: tauri::AppHandle) -> Result<bool, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::find_in_report(&app).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = &app;
+        Err("ios_find_in_report is only available on iOS".into())
+    }
+}
+
 /// Present the iOS share sheet for a library file. The native layer copies
 /// the file to temp first (share targets can't read through the
 /// security-scoped grant) and presents a `UIActivityViewController`.
@@ -966,6 +1025,22 @@ mod ios_impl {
 
     pub async fn set_chrome(app: &AppHandle, spec: serde_json::Value) -> Result<(), String> {
         app.notesage_ios().set_chrome(spec).map_err(|e| e.to_string())
+    }
+
+    pub async fn present_report(
+        app: &AppHandle, html: &str, inset_top: f64, inset_bottom: f64,
+    ) -> Result<(), String> {
+        app.notesage_ios()
+            .present_report(html, inset_top, inset_bottom)
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn dismiss_report(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().dismiss_report().map_err(|e| e.to_string())
+    }
+
+    pub async fn find_in_report(app: &AppHandle) -> Result<bool, String> {
+        app.notesage_ios().find_in_report().map_err(|e| e.to_string())
     }
 
     pub async fn share_file(app: &AppHandle, rel: &str) -> Result<(), String> {

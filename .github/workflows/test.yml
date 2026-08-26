@@ -270,6 +270,17 @@ jobs:
             src-tauri/ios/LibraryCapture.swift \
             src-tauri/ios/PageRenderer.swift \
             src-tauri/ios/ShareViewController.swift
+          # The report web view and the chrome overlay import only UIKit /
+          # WebKit / SwiftUI / Combine — no Tauri — so unlike the plugin they
+          # can be genuinely type-checked here. Together, because
+          # ReportWebView calls ChromeManager.
+          #
+          # Added with #606: ReportWebView.swift was landing in a job that
+          # read every OTHER iOS Swift file, so a type error in the newest and
+          # least-exercised native code was the one thing CI could not see.
+          swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios16.0 \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ChromeOverlay.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ReportWebView.swift
           swiftc -parse src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/NotesageIosPlugin.swift
 
       # The Share Extension links this static library to call the shared

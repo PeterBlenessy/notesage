@@ -31,6 +31,20 @@ struct ThumbnailArgs: Decodable {
   let maxPixel: Double
 }
 
+/// An exported HTML report to show in its own web view (#606, ADR 0010).
+///
+/// The document travels as a STRING rather than a rel path: the reader has
+/// already read and size-checked the file, and handing the native layer a path
+/// would give the report webview a reason to touch the library — which is
+/// exactly the reach this change removes.
+struct PresentReportArgs: Decodable {
+  let html: String
+  /// The reader's measured safe-area padding, in points. Applied as a scroll
+  /// content inset rather than injected into the report's markup.
+  let insetTop: Double?
+  let insetBottom: Double?
+}
+
 struct InlineImagesArgs: Decodable {
   let urls: [String]
   let maxPixel: UInt32
@@ -788,6 +802,49 @@ class NotesageIosPlugin: Plugin {
         invoke.resolve()
       }
     } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Show an exported HTML report in its own bridge-less web view (#606).
+  ///
+  /// See `ReportWebView.swift` for why a second web view rather than the
+  /// sandboxed `htmlpreview://` iframe it replaces.
+  @objc public func presentReport(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(PresentReportArgs.self)
+      DispatchQueue.main.async {
+        guard let webView = self.resolveWebView() else {
+          invoke.reject("No webview to present a report over")
+          return
+        }
+        ReportPresenter.shared.present(
+          html: args.html, over: webView,
+          insetTop: CGFloat(args.insetTop ?? 0),
+          insetBottom: CGFloat(args.insetBottom ?? 0),
+          // A WKWebView paints its OWN background before the document's, so
+          // leaving this default white reintroduces the dark-report white
+          // flash by a different route than the iframe's opaque backing did.
+          backgroundColor: .systemBackground)
+        invoke.resolve()
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func dismissReport(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      ReportPresenter.shared.dismiss()
+      invoke.resolve()
+    }
+  }
+
+  /// Open WebKit's find bar over the presented report.
+  ///
+  /// Resolves `{ presented: false }` rather than rejecting when no report is
+  /// on screen — the caller needs to fall back to the web search island, and a
+  /// rejection is indistinguishable from the native layer being absent.
+  @objc public func findInReport(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      invoke.resolve(["presented": ReportPresenter.shared.presentFind()])
+    }
   }
 
   @objc public func shareFile(_ invoke: Invoke) {

@@ -25,9 +25,21 @@ links and documents. PRD:
   ~10 s on a 113-page PDF; base64 with native `Uint8Array.fromBase64` decoding
   brings a 10 MB PDF to ~0.5 s. EPUB/DOCX/PPTX show an "open on your Mac"
   state in v1.
-- **Open exported HTML reports, with their scripts running.** `.html`/`.htm`
-  files render in a sandboxed iframe served from the **`htmlpreview://`
-  custom scheme** — the same mechanism as the desktop HtmlViewer, for the same
+- **Open exported HTML reports, with their scripts running.** On device
+  `.html`/`.htm` files render in a **second, bridge-less `WKWebView`**
+  (#606, ADR 0010): its own content process, an empty
+  `WKUserContentController`, no Tauri plugin bridge, and `loadHTMLString` with
+  `baseURL: nil`. A separate web view has no inherited CSP, so the report's own
+  styles and scripts simply work — which is why none of the custom-scheme
+  plumbing below is needed there. Link taps are intercepted natively in
+  `decidePolicyFor` rather than by an injected agent, and find-in-page is
+  WebKit's own `UIFindInteraction` (the system find bar), reached from a
+  magnifier button rather than the search island.
+
+  **The iframe path below is the fallback and a real code path** — desktop dev,
+  the vitest suite, and any build without the native plugin take it, because
+  `ios_present_report` rejects there. It renders in a sandboxed iframe served
+  from the **`htmlpreview://` custom scheme** — the same mechanism as the desktop HtmlViewer, for the same
   reason: `srcdoc`, `blob:` AND `data:` documents all inherit the host
   window's CSP, and the embedded build's nonce injection neutralises
   `'unsafe-inline'`, so the report's own styles and scripts would be refused
@@ -73,10 +85,14 @@ links and documents. PRD:
 - **Search everywhere, bottom-center.** The folder view filters filenames; a
   collapsed island shows passive status (item count / PDF page indicator,
   Files-style). Documents get find-in-document: markdown/text via the shared
-  `dom-search` marker, PDFs via the viewer's text-layer search, and sandboxed
-  HTML reports via an **injected find agent** (`html-find-agent.ts`) driven
-  over postMessage — the app cannot reach a cross-origin frame's DOM, so
-  search runs inside the report itself. (PDF search on WebKit also needed
+  `dom-search` marker, PDFs via the viewer's text-layer search, and HTML reports
+  via WebKit's native `UIFindInteraction` on device (#606). On the iframe
+  fallback path only, search still runs inside the report via an **injected
+  find agent** (`html-find-agent.ts`) driven over postMessage — the app cannot
+  reach a cross-origin frame's DOM. That agent is retired by the native path
+  and will be deleted once it is confirmed on a device; it is deliberately
+  still present so the fallback does not lose search before its replacement is
+  proven. (PDF search on WebKit also needed
   `src/lib/readablestream-asynciterator-polyfill.ts`: pdf.js ≥ 4 iterates a
   ReadableStream with `for await`, which WebKit doesn't implement — this had
   silently broken PDF text search on desktop macOS too.)
