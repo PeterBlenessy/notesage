@@ -64,11 +64,22 @@ Notesage for Mac is available separately.
 ## Keywords (100 chars, comma-separated, no spaces after commas)
 
 ```
-markdown,notes,notetaking,icloud,plain text,writing,editor,obsidian,capture,inbox
+notetaking,icloud,plain text,writing,editor,obsidian,capture,inbox
 ```
 
 Do not repeat the app name or the subtitle words — Apple indexes those
 already, so repeating them wastes the budget.
+
+> `markdown` and `notes` were removed on 2026-08-26: both appear in the
+> subtitle (*Your markdown notes, on iPhone*), so they were bought twice —
+> against the rule stated directly above them. Caught by
+> `src/lib/__tests__/app-store-listing.test.ts`, which is why that check
+> exists rather than trusting the prose.
+>
+> **~34 characters of budget are now free** (66/100). Deliberately left unspent
+> rather than padded: which terms are worth buying is a marketing judgement,
+> not something to guess. Candidates worth considering — `zettelkasten`,
+> `wiki`, `backlinks`, `research`, `pdf`, `offline`.
 
 ## Category
 
