@@ -47,10 +47,64 @@ final class PageRenderer: NSObject, WKNavigationDelegate {
     /// Ceiling on the whole render. Past this we take whatever exists.
     private static let hardTimeout: TimeInterval = 5.0
 
+    /// Budget for the lazy-image walk, inside the hard timeout.
+    private static let scrollWalkMs = 1800
+
     private var webView: WKWebView?
     private var completion: ((String?) -> Void)?
     private var timeoutWork: DispatchWorkItem?
     private var selfRef: PageRenderer?
+
+    /// Settle, then hand back the rendered DOM.
+    ///
+    /// **The `return` is load-bearing and its absence was a shipped bug.**
+    /// `callAsyncJavaScript` treats the script as a FUNCTION BODY, so an
+    /// expression statement evaluates and is discarded — the call resolved
+    /// `.success(nil)`, `nil` failed the `as? String` cast, and the completion
+    /// took its "script failed (CSP, a hostile page)" branch into
+    /// `captureAndFinish()`. Which grabbed the DOM immediately at `didFinish`.
+    ///
+    /// So the mutation-quiescence heuristic this file is largely about had
+    /// never run, on either platform. Nothing errored; captures just contained
+    /// whatever happened to have loaded at an arbitrary early moment, which is
+    /// why the same article yielded a different number of images each time.
+    /// Verified against `callAsyncJavaScript` directly: without `return` →
+    /// `success(nil)`, with it → the value.
+    ///
+    /// **The scroll walk is the other half.** Lazy images load when they enter
+    /// the viewport, and this webview never scrolls, so everything below the
+    /// fold stayed a placeholder. Walking the document once takes a Medium
+    /// article from 9 loaded images to 31. Bounded by `scrollWalkMs` so a long
+    /// page cannot eat the whole budget, and wrapped in try/catch because a
+    /// page that throws on scroll is not a reason to capture nothing.
+    private static var settleScript: String {
+        """
+        return new Promise(async (resolve) => {
+          const done = () => resolve(document.documentElement.outerHTML);
+          const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+          try {
+            for (const img of document.images) img.loading = 'eager';
+            const deadline = Date.now() + \(scrollWalkMs);
+            const step = Math.max(240, window.innerHeight * 0.8);
+            for (let y = 0; y < document.body.scrollHeight && Date.now() < deadline; y += step) {
+              window.scrollTo(0, y);
+              await sleep(50);
+            }
+            window.scrollTo(0, 0);
+          } catch (e) { /* keep going — a partial page still extracts */ }
+          let timer;
+          const bump = () => {
+            clearTimeout(timer);
+            timer = setTimeout(() => { observer.disconnect(); done(); }, \(quietPeriodMs));
+          };
+          const observer = new MutationObserver(bump);
+          observer.observe(document.documentElement, {
+            childList: true, subtree: true, characterData: true, attributes: true,
+          });
+          bump();
+        })
+        """
+    }
 
     /// Render `url` and call back with the settled DOM's outer HTML, or nil.
     ///
@@ -122,21 +176,7 @@ final class PageRenderer: NSObject, WKNavigationDelegate {
         // `didFinish` means the initial load completed, NOT that the page is
         // done assembling itself — on an SPA it typically fires before any
         // article exists. Watch for the DOM to go quiet instead.
-        let script = """
-        new Promise((resolve) => {
-          let timer;
-          const settle = () => resolve(document.documentElement.outerHTML);
-          const bump = () => {
-            clearTimeout(timer);
-            timer = setTimeout(() => { observer.disconnect(); settle(); }, \(Self.quietPeriodMs));
-          };
-          const observer = new MutationObserver(bump);
-          observer.observe(document.documentElement, {
-            childList: true, subtree: true, characterData: true, attributes: true,
-          });
-          bump();
-        })
-        """
+        let script = Self.settleScript
         webView.callAsyncJavaScript(script, in: nil, in: .page) { [weak self] result in
             guard let self else { return }
             if case .success(let value) = result, let html = value as? String {
