@@ -62,6 +62,18 @@ final class PageRenderer: NSObject, WKNavigationDelegate {
             completion(nil)
             return
         }
+        // WKWebView must be created and driven on the main thread. Every call
+        // site here reaches this from a `fetch` completion that already hops to
+        // main, so this guard is dormant — but the macOS port added it and iOS
+        // did not, and an invariant that holds by accident is one edit away
+        // from a hang inside WebKit with the share sheet gone.
+        //
+        // Violating it in an app extension is not a warning: the sheet vanishes
+        // having saved nothing.
+        guard Thread.isMainThread else {
+            DispatchQueue.main.async { renderedHTML(url: url, completion: completion) }
+            return
+        }
         let renderer = PageRenderer()
         renderer.selfRef = renderer
         renderer.completion = completion

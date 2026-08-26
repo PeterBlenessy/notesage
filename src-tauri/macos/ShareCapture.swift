@@ -41,10 +41,27 @@ enum ShareCapture {
     }
 
     /// Fetch, extract and write. Calls back on an arbitrary queue.
+    ///
+    /// `isCancelled` is consulted immediately before every write and before
+    /// each completion. It is a closure rather than a flag because the answer
+    /// changes underneath this chain — Cancel is tapped on main while the fetch
+    /// and the render are in flight — and the whole point is to read it as late
+    /// as possible.
+    ///
+    /// A cancelled chain calls back with **nothing at all** — it simply stops.
+    /// There is no result to report: the sheet is already gone, and a
+    /// `.failure` would put the "could not save" message back on a dismissed
+    /// view. Silence is the only correct terminal state for a cancelled share.
+    ///
+    /// `isCancelled` has no default value on purpose. A defaulted `{ false }`
+    /// would let a future call site opt out of cancellation by saying nothing,
+    /// which is precisely how this bug reached six review rounds — the quiet
+    /// path is the one nobody inspects.
     static func save(
         url: String,
         title: String?,
         format: Format,
+        isCancelled: @escaping () -> Bool,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
         guard let parsed = URL(string: url),
@@ -54,11 +71,26 @@ enum ShareCapture {
             return
         }
 
+        /// Report a result unless the share was cancelled while it was produced.
+        let complete: (Result<String, Error>) -> Void = { result in
+            guard !isCancelled() else { return }
+            completion(result)
+        }
+
         if format == .link {
             // No fetch at all: a link note needs nothing the share sheet did
             // not already give us, and making the user wait on the network for
             // it would be gratuitous.
-            completion(build(url: url, title: title, html: nil, format: format))
+            //
+            // OFF MAIN regardless. `save()` is called straight from the button
+            // action, so this branch ran its coordinated write against what is
+            // usually an iCloud folder on the thread the sheet draws on — the
+            // identical freeze the article path went through three rounds to
+            // fix, live on the SIMPLEST save path.
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard !isCancelled() else { return }
+                complete(build(url: url, title: title, html: nil, format: format))
+            }
             return
         }
 
@@ -72,6 +104,10 @@ enum ShareCapture {
         // shared it is a bug on whichever one is worse.
         let proceed: (String?) -> Void = { xJson in
             fetch(parsed) { html in
+                // Cancel can have landed during the fetch — up to 15 s. Check
+                // before the first thing that writes, not only before the
+                // completion that reports it.
+                guard !isCancelled() else { return }
                 // Raw HTML first; a page whose article is already there never
                 // pays for a webview.
                 if let html {
@@ -79,7 +115,7 @@ enum ShareCapture {
                         url: url, title: title, html: html, format: format, xJson: xJson,
                         requireArticle: true)
                     if case .success = result {
-                        completion(result)
+                        complete(result)
                         return
                     }
                 }
@@ -98,8 +134,8 @@ enum ShareCapture {
                     json.withCString { notesage_capture_x_is_article($0) == 0 }
                 } ?? false
                 if isPlainXPost {
-                    completion(build(url: url, title: title, html: nil, format: format,
-                                     xJson: xJson))
+                    complete(build(url: url, title: title, html: nil, format: format,
+                                   xJson: xJson))
                     return
                 }
 
@@ -128,12 +164,14 @@ enum ShareCapture {
                     // half and left this one — the same defect, one branch
                     // over.
                     DispatchQueue.global(qos: .userInitiated).async {
+                    // The render is another 5 s in which Cancel can arrive.
+                    guard !isCancelled() else { return }
                     if let rendered {
                         let result = build(
                             url: url, title: title, html: rendered, format: format, xJson: xJson,
                             requireArticle: true)
                         if case .success = result {
-                            completion(result)
+                            complete(result)
                             return
                         }
                     }
@@ -144,7 +182,7 @@ enum ShareCapture {
                         let meta = build(
                             url: url, title: title, html: nil, format: format, xJson: xJson)
                         if case .success = meta {
-                            completion(meta)
+                            complete(meta)
                             return
                         }
                     }
@@ -153,9 +191,9 @@ enum ShareCapture {
                     // from ever ending in nothing. Only a page we could not
                     // even fetch reports an error the user can retry.
                     if html == nil {
-                        completion(.failure(ShareCaptureError.fetchFailed))
+                        complete(.failure(ShareCaptureError.fetchFailed))
                     } else {
-                        completion(build(url: url, title: title, html: nil, format: .link))
+                        complete(build(url: url, title: title, html: nil, format: .link))
                     }
                     }
                 }

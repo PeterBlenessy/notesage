@@ -9,7 +9,7 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Stabilitetsrunda för delning. Dela några saker i rad — även två filer med
-samma namn — och kontrollera att inget försvinner och inget fryser mitt i.
-Ett vanligt X-inlägg ska sparas direkt nu; en X-artikel tar fortfarande en
-stund. Känt: att avbryta mitt i stoppar ännu inte sparandet.
+Avbryt avbryter nu på riktigt. Dela en artikel, tryck Spara och sedan Avbryt
+innan den hinner klart — inget ska dyka upp i biblioteket. Testa på en långsam
+sida, där du hinner. Att spara en vanlig länk eller en video ska också kännas
+direkt, utan att arket fryser.

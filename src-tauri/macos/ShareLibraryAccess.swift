@@ -220,7 +220,10 @@ enum ShareLibraryAccess {
         try FileManager.default.createDirectory(
             at: folder, withIntermediateDirectories: true)
 
-        let unique = dedupedURL(for: target)
+        guard let unique = dedupedURL(for: target) else {
+            throw ShareLibraryError.ioError(
+                L("share.couldNotFindFreeName", target.lastPathComponent))
+        }
         var coordError: NSError?
         var writeError: Error?
         NSFileCoordinator().coordinate(
@@ -280,12 +283,14 @@ enum ShareLibraryAccess {
     private static func claimName(_ preferred: URL) -> URL? {
         nameLock.lock()
         defer { nameLock.unlock() }
-        let target = dedupedURL(for: preferred)
-        // `dedupedURL` returns the ORIGINAL url when it exhausts its 999
-        // attempts, and that url still exists — so `createFile` would truncate
-        // a real file to zero bytes and report it as claimed. Silent data
-        // loss, in the function whose entire purpose is preventing exactly
-        // that. Refuse instead.
+        // `dedupedURL` returns nil when it exhausts its 999 attempts, rather
+        // than handing back a url that exists — `createFile` TRUNCATES, so a
+        // claim on an occupied path is silent data loss in the function whose
+        // entire purpose is preventing it.
+        guard let target = dedupedURL(for: preferred) else { return nil }
+        // Belt and braces against a writer OUTSIDE this process taking the name
+        // between the check and the claim. The lock only serialises our own
+        // callbacks; the library is a shared iCloud folder.
         guard !FileManager.default.fileExists(atPath: target.path) else { return nil }
         guard FileManager.default.createFile(atPath: target.path, contents: nil) else {
             return nil
@@ -309,7 +314,10 @@ enum ShareLibraryAccess {
         var name = (suggestedName as NSString).lastPathComponent
         if name.isEmpty || name == "." || name == ".." { name = "Shared document" }
         guard let target = claimName(inbox.appendingPathComponent(name)) else {
-            throw ShareLibraryError.ioError("Could not reserve a name in Inbox")
+            // Was an English literal in a file where every other user-facing
+            // string goes through `L()` — a Swedish sheet showing one English
+            // line is worse than either language on its own (#653).
+            throw ShareLibraryError.ioError(L("share.couldNotFindFreeName", name))
         }
 
         // Stage beside the target, then swap ATOMICALLY.
@@ -359,7 +367,15 @@ enum ShareLibraryAccess {
     ///
     /// Saving the same article twice should produce two notes, not silently
     /// overwrite the first — the user may have annotated it.
-    private static func dedupedURL(for url: URL) -> URL {
+    ///
+    /// Returns **nil** when the 999 attempts are exhausted, rather than the
+    /// original URL. Returning the original was the same defect `claimName` was
+    /// fixed for, one function over: the caller then wrote to a path it had
+    /// just been told was taken. `writeCapture` uses `.forReplacing`, so the
+    /// user's existing note was overwritten — by the function whose entire
+    /// purpose is preventing that. Practically unreachable, structurally
+    /// identical, and cheaper to close than to keep reasoning about.
+    private static func dedupedURL(for url: URL) -> URL? {
         let fm = FileManager.default
         guard fm.fileExists(atPath: url.path) else { return url }
         let ext = url.pathExtension
@@ -373,6 +389,6 @@ enum ShareLibraryAccess {
                 .appendingPathExtension(ext)
             if !fm.fileExists(atPath: candidate.path) { return candidate }
         }
-        return url
+        return nil
     }
 }
