@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 import { listen } from '@tauri-apps/api/event';
 import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
+import type { LocalAgentEngine } from '@/lib/ai/local-agent-engines';
 import type {
   LocalModelInfo,
   SystemMemoryInfo,
@@ -40,6 +41,37 @@ export interface LocalAgentSetupState {
   error?: string;
   /** Model chosen for the agent. Persisted so an interrupted flow can resume. */
   modelId?: string;
+  /**
+   * WHICH engine this flow belongs to.
+   *
+   * There is one setup flow at a time (one dialog), but there are two engines
+   * and they coexist — so an untagged flow is ambiguous the moment the second
+   * one is set up. It was: with Goose installed, `stage: 'ready'` persisted and
+   * opening the pi dialog showed every step already complete, so nothing was
+   * downloaded or configured and pi could never be added at all.
+   *
+   * Read it through `setupStateFor(state, engine)`, never directly — the whole
+   * point is that state belonging to the other engine must read as `idle`.
+   */
+  engine?: LocalAgentEngine;
+}
+
+/**
+ * This engine's setup state, or a fresh `idle` when the stored flow belongs to
+ * the other one.
+ *
+ * The untagged case (`engine` undefined) is persisted state written before the
+ * tag existed. It is treated as belonging to whichever engine asks, which
+ * preserves resume-after-relaunch for the single-engine users who make up
+ * everyone upgrading — and is harmless for the two-engine case, because the
+ * first thing the dialog does on a mismatch is claim the flow.
+ */
+export function setupStateFor(
+  setup: LocalAgentSetupState,
+  engine: LocalAgentEngine,
+): LocalAgentSetupState {
+  if (setup.engine && setup.engine !== engine) return { stage: 'idle' };
+  return setup;
 }
 
 export interface DownloadState {
@@ -69,7 +101,7 @@ interface LocalAIStore {
   /** Which engine the setup dialog should configure. Chosen at the Add
    *  Connection menu — there are separate entries per engine — so the dialog
    *  itself no longer asks. Non-persisted UI state. */
-  localAgentSetupEngine: 'goose' | 'pi';
+  localAgentSetupEngine: LocalAgentEngine;
   /**
    * Local Agent setup-flow state machine (task #15). Persisted enough to resume
    * an interrupted flow after relaunch (stage + modelId; the transient `error`
@@ -103,7 +135,7 @@ interface LocalAIStore {
   resetLocalAgentSetup: () => void;
   /** Open/close the app-level Local Agent setup dialog (#17). Pass the engine
    *  when opening; it is chosen by which Add Connection entry was picked. */
-  setLocalAgentSetupDialogOpen: (open: boolean, engine?: 'goose' | 'pi') => void;
+  setLocalAgentSetupDialogOpen: (open: boolean, engine?: LocalAgentEngine) => void;
   setModels: (models: LocalModelInfo[]) => void;
   setSystemMemory: (info: SystemMemoryInfo) => void;
   setHardwareProfile: (profile: HardwareProfile | null) => void;
@@ -224,9 +256,19 @@ export const useLocalAIStore = create<LocalAIStore>()(
             // Carry the chosen model id forward across stage transitions unless a
             // call explicitly overrides it. Clear `error`/`failedStage` on any
             // non-failed stage so a recovered flow doesn't show a stale error.
+            // Stamp the flow with the engine the dialog is configuring. The
+            // caller never passes it — the flow is always for whichever engine
+            // was picked in Add Connection, and taking it from one place keeps
+            // the tag impossible to forget at a call site.
+            //
+            // Carrying `modelId` forward only makes sense WITHIN one engine's
+            // flow; a stored model chosen for the other engine is not this
+            // engine's choice, so it is dropped along with the rest.
+            const own = setupStateFor(s.localAgentSetup, s.localAgentSetupEngine);
             const merged: LocalAgentSetupState = {
-              modelId: s.localAgentSetup.modelId,
+              modelId: own.modelId,
               ...next,
+              engine: s.localAgentSetupEngine,
             };
             if (merged.stage !== 'failed') {
               delete merged.error;
@@ -236,8 +278,20 @@ export const useLocalAIStore = create<LocalAIStore>()(
           }),
         resetLocalAgentSetup: () => set({ localAgentSetup: { stage: 'idle' } }),
         setLocalAgentSetupDialogOpen: (open, engine) =>
-          set(engine ? { localAgentSetupDialogOpen: open, localAgentSetupEngine: engine }
-                     : { localAgentSetupDialogOpen: open }),
+          set((s) => {
+            if (!engine) return { localAgentSetupDialogOpen: open };
+            // Opening for a DIFFERENT engine than the stored flow means the
+            // stored flow is not this one's. Clear it here, at the single
+            // entry point every caller goes through, rather than leaving each
+            // consumer to notice — that is how `stage: 'ready'` from Goose came
+            // to be shown as pi's completed setup.
+            const stale = s.localAgentSetup.engine && s.localAgentSetup.engine !== engine;
+            return {
+              localAgentSetupDialogOpen: open,
+              localAgentSetupEngine: engine,
+              ...(stale ? { localAgentSetup: { stage: 'idle' as const } } : {}),
+            };
+          }),
         setModels: (models) => set({ models }),
         setSystemMemory: (info) => set({ systemMemory: info }),
         dismissFirstRun: () => set({ dismissedFirstRun: true }),
@@ -428,6 +482,10 @@ export const useLocalAIStore = create<LocalAIStore>()(
         localAgentSetup: {
           stage: state.localAgentSetup.stage,
           modelId: state.localAgentSetup.modelId,
+          // The tag persists with the flow. Without it, a relaunch reads the
+          // stored stage as belonging to whichever engine asks first — which is
+          // exactly the ambiguity the tag exists to remove.
+          engine: state.localAgentSetup.engine,
         },
       }),
     },
