@@ -99,11 +99,23 @@ export function LocalAgentSetupDialog() {
   const open = useLocalAIStore((s) => s.localAgentSetupDialogOpen);
   const onOpenChange = useLocalAIStore((s) => s.setLocalAgentSetupDialogOpen);
   const { setup, start, reset } = useLocalAgentSetup();
-  const hasPresetConnection = useConnectionsStore((s) => s.connections.some(isLocalAgentPreset));
-  // Defensive: if the persisted setup state says `ready` but the preset
-  // connection no longer exists (removed here, or absent after an iCloud sync /
-  // reinstall that carried the persisted state), the state is stale — reset to
-  // idle so opening the dialog re-runs setup instead of showing a dead "Done".
+  // Which engine to configure is decided by which "Local agent using <engine>"
+  // entry the user picked in Add Connection, and carried on the store.
+  const engine = useLocalAIStore((s) => s.localAgentSetupEngine);
+  // THIS engine's connection, not merely any Local Agent preset.
+  //
+  // `connections.some(isLocalAgentPreset)` was the bug: with Goose installed it
+  // is true while setting up pi, so the staleness reset below never fired and
+  // pi inherited Goose's persisted `stage: 'ready'`. The dialog opened with
+  // every step ticked, ran nothing, and pi could not be added at all.
+  const hasPresetConnection = useConnectionsStore((s) =>
+    s.connections.some((c) => isLocalAgentPreset(c) && c.config?.localAgentPreset === engine),
+  );
+  // Defensive: if the persisted setup state says `ready` but this engine's
+  // preset connection does not exist (removed here, or absent after an iCloud
+  // sync / reinstall that carried the persisted state), the state is stale —
+  // reset to idle so opening the dialog re-runs setup instead of showing a dead
+  // "Done".
   useEffect(() => {
     if (open && setup.stage === 'ready' && !hasPresetConnection) {
       reset();
@@ -121,10 +133,6 @@ export function LocalAgentSetupDialog() {
   );
   const [chosenModel, setChosenModel] = useState<string | null>(null);
   const effectiveModel = chosenModel ?? setup.modelId ?? recommended;
-  // Which engine to configure is decided by which "Local agent using <engine>"
-  // entry the user picked in Add Connection, and carried on the store. The
-  // dialog no longer asks — by the time it opens, the choice is made.
-  const engine = useLocalAIStore((s) => s.localAgentSetupEngine);
 
   // Goose binary download percent (0–100) from `agent-install-progress`. The
   // backend emits bytes downloaded / content-length during the GitHub-binary

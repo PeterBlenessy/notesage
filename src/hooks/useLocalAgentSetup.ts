@@ -10,7 +10,7 @@
 import { useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { tauriApi, type BinaryResolution, type LocalAgentConfig } from '@/lib/tauri';
-import { useLocalAIStore } from '@/stores/local-ai-store';
+import { useLocalAIStore, setupStateFor } from '@/stores/local-ai-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useChatStore, selectProjectPaths } from '@/stores/chat-store';
@@ -57,7 +57,12 @@ export interface UseLocalAgentSetup {
 }
 
 export function useLocalAgentSetup(): UseLocalAgentSetup {
-  const setup = useLocalAIStore((s) => s.localAgentSetup);
+  // Scoped to the engine being configured, so a completed flow for the OTHER
+  // engine reads as `idle` rather than as this one's finished setup. Done here
+  // rather than at each consumer: the dialog was the only reader, and it read
+  // the raw state — which is how Goose's `stage: 'ready'` came to be shown as
+  // pi's, with every step ticked and nothing actually run.
+  const setup = useLocalAIStore((s) => setupStateFor(s.localAgentSetup, s.localAgentSetupEngine));
 
   const start = useCallback(async (
     modelOverride?: string,

@@ -30,7 +30,7 @@ vi.mock('@/lib/tauri', () => ({
 vi.mock('@tauri-apps/api/event', () => ({ listen: vi.fn().mockResolvedValue(() => {}) }));
 vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn(), info: vi.fn() } }));
 
-import { useLocalAIStore } from '../local-ai-store';
+import { useLocalAIStore, setupStateFor } from '../local-ai-store';
 
 describe('local-ai-store — Local Agent setup slice (task #15)', () => {
   beforeEach(() => {
@@ -69,12 +69,93 @@ describe('local-ai-store — Local Agent setup slice (task #15)', () => {
     expect(useLocalAIStore.getState().localAgentSetup).toEqual({ stage: 'idle' });
   });
 
-  it('persists stage + modelId but never the transient error', () => {
+  it('persists stage + modelId + engine but never the transient error', () => {
     useLocalAIStore.getState().setLocalAgentSetup({
       stage: 'failed', failedStage: 'downloading', error: 'network error', modelId: 'm1',
     });
     const persisted = JSON.parse(storageBacking.get('notesage-local-ai') ?? '{}');
-    expect(persisted.state.localAgentSetup).toEqual({ stage: 'failed', modelId: 'm1' });
+    // `engine` joined the persisted shape so a relaunch can still tell whose
+    // flow this is; the point of the test is unchanged — the transient error
+    // and failedStage stay out.
+    expect(persisted.state.localAgentSetup).toEqual({
+      stage: 'failed', modelId: 'm1', engine: 'goose',
+    });
     expect(persisted.state.localAgentSetup.error).toBeUndefined();
+    expect(persisted.state.localAgentSetup.failedStage).toBeUndefined();
+  });
+});
+
+/**
+ * Two engines, one state machine.
+ *
+ * The setup flow was untagged, so `stage: 'ready'` from whichever engine was
+ * installed first was read as the second engine's completed setup: the dialog
+ * opened with every step ticked, ran nothing, and the second agent could never
+ * be added.
+ *
+ * This is the SECOND time this shape has bitten. The first was remove-then-
+ * re-add, patched by resetting on removal — a fix for one path through an
+ * ambiguity rather than for the ambiguity. Hence a tag, and hence these.
+ */
+describe('local-ai-store — two coexisting Local Agent engines', () => {
+  beforeEach(() => {
+    useLocalAIStore.getState().resetLocalAgentSetup();
+    useLocalAIStore.setState({ localAgentSetupEngine: 'goose' });
+    storageBacking.clear();
+  });
+
+  it("does not show one engine's finished setup as the other's", () => {
+    const store = () => useLocalAIStore.getState();
+    // Goose completes.
+    store().setLocalAgentSetupDialogOpen(true, 'goose');
+    store().setLocalAgentSetup({ stage: 'ready', modelId: 'qwen2.5-coder-7b' });
+    expect(setupStateFor(store().localAgentSetup, 'goose').stage).toBe('ready');
+
+    // Now add pi. The reported symptom was this reading 'ready'.
+    expect(setupStateFor(store().localAgentSetup, 'pi').stage).toBe('idle');
+  });
+
+  it('clears the stale flow when the dialog opens for the other engine', () => {
+    const store = () => useLocalAIStore.getState();
+    store().setLocalAgentSetupDialogOpen(true, 'goose');
+    store().setLocalAgentSetup({ stage: 'ready', modelId: 'qwen2.5-coder-7b' });
+
+    store().setLocalAgentSetupDialogOpen(true, 'pi');
+    expect(store().localAgentSetup.stage).toBe('idle');
+    // The model was chosen for Goose; it is not pi's choice to inherit.
+    expect(store().localAgentSetup.modelId).toBeUndefined();
+  });
+
+  it('keeps a flow intact when the dialog re-opens for the SAME engine', () => {
+    // Resume-after-interruption must still work — the fix must not turn every
+    // re-open into a reset.
+    const store = () => useLocalAIStore.getState();
+    store().setLocalAgentSetupDialogOpen(true, 'pi');
+    store().setLocalAgentSetup({ stage: 'downloading', modelId: 'qwen2.5-coder-7b' });
+    store().setLocalAgentSetupDialogOpen(false);
+    store().setLocalAgentSetupDialogOpen(true, 'pi');
+
+    expect(store().localAgentSetup.stage).toBe('downloading');
+    expect(store().localAgentSetup.modelId).toBe('qwen2.5-coder-7b');
+  });
+
+  it('persists the engine tag, so a relaunch cannot re-orphan the flow', () => {
+    const store = () => useLocalAIStore.getState();
+    store().setLocalAgentSetupDialogOpen(true, 'pi');
+    store().setLocalAgentSetup({ stage: 'verifying', modelId: 'qwen2.5-coder-7b' });
+
+    const persisted = JSON.parse(storageBacking.get('notesage-local-ai') ?? '{}');
+    expect(persisted.state.localAgentSetup.engine).toBe('pi');
+    // Without the tag surviving the write, the next launch is back to the
+    // original ambiguity — the stage would be read by whichever engine asks.
+    expect(setupStateFor(persisted.state.localAgentSetup, 'goose').stage).toBe('idle');
+  });
+
+  it('treats an untagged persisted flow as the asking engine', () => {
+    // State written before the tag existed. Everyone upgrading has exactly one
+    // engine, so honouring it preserves their resume; the alternative silently
+    // discards an in-flight setup on upgrade.
+    expect(setupStateFor({ stage: 'downloading' }, 'goose').stage).toBe('downloading');
+    expect(setupStateFor({ stage: 'downloading' }, 'pi').stage).toBe('downloading');
   });
 });
