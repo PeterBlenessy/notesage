@@ -1,0 +1,99 @@
+# Watch pi's extension surface and file an issue when it moves.
+#
+# `notesage-acp-pi` drives pi's pre-1.0 RPC, and we ship two TypeScript
+# extensions into pi's config dir. They are duck-typed against whatever pi is
+# installed, so an upstream signature change is caught by nothing today.
+#
+# The failure that matters is SILENT: if `permission-gate.ts` stops
+# registering, pi runs writes with no permission prompt. The agent still works,
+# it just no longer asks — so every other signal, telemetry included, reads as
+# health. That is why this is a scheduled check rather than something we expect
+# to notice.
+#
+# DELIBERATELY NOTIFY-ONLY. It opens an issue and stops. It never bumps a pin,
+# never touches the bridge, never opens a PR. The AW pipeline was switched off
+# for being too autonomous; this is a smoke alarm, not a robot with a wrench.
+name: pi compatibility watch
+
+on:
+  schedule:
+    # Mondays, 07:00 UTC. pi ships several releases a week, so a weekly read is
+    # frequent enough to catch drift long before a release wants to move the pin.
+    - cron: '0 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: pi-compat-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check pi extension surface
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Compare the pinned pi against the latest published types
+        id: check
+        # NOT `set -e` on the script: a moved surface exits 1 by design (that
+        # exit code is for humans running it by hand), and a red job is a job
+        # people mute. The verdict is read from the JSON instead.
+        run: |
+          node scripts/check-pi-compat.mjs --json > result.json || true
+          cat result.json
+          {
+            echo "verdict=$(jq -r .verdict result.json)"
+            echo "pinned=$(jq -r .pinned result.json)"
+            echo "latest=$(jq -r .latest result.json)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summarise
+        run: |
+          {
+            echo "## pi compatibility"
+            echo
+            echo "| | |"
+            echo "| --- | --- |"
+            echo "| pinned | \`${{ steps.check.outputs.pinned }}\` |"
+            echo "| latest | \`${{ steps.check.outputs.latest }}\` |"
+            echo "| verdict | **${{ steps.check.outputs.verdict }}** |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # Only a MOVED surface files an issue. `upgrade-candidate` is the normal
+      # state — pi releases weekly and we pin deliberately — so filing for it
+      # would produce a weekly issue that means nothing and trains everyone to
+      # close it unread. It goes in the run summary above instead.
+      - name: File an issue when the surface has moved
+        if: steps.check.outputs.verdict == 'surface-moved'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PINNED: ${{ steps.check.outputs.pinned }}
+          LATEST: ${{ steps.check.outputs.latest }}
+        run: |
+          set -euo pipefail
+          # One open issue at a time. Without this the alarm re-files every
+          # Monday for as long as the drift is unresolved, which is exactly how
+          # a useful alert becomes a muted one.
+          existing=$(gh issue list --state open --label pi-compat --limit 1 --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Still drifting as of $(date -u +%Y-%m-%d): pinned \`$PINNED\`, latest \`$LATEST\`."
+            exit 0
+          fi
+          # The body lives in a reviewable file rather than a heredoc — a
+          # heredoc inside a YAML block scalar has to be indented to stay valid
+          # YAML, which silently mangles markdown.
+          sed -e "s/__PINNED__/$PINNED/g" -e "s/__LATEST__/$LATEST/g" \
+            .github/pi-compat-issue.md > /tmp/pi-compat-body.md
+          gh label create pi-compat --description "pi/bridge compatibility drift" --color B60205 --force >/dev/null 2>&1 || true
+          gh issue create \
+            --label pi-compat \
+            --title "pi's extension surface moved — bridge compatibility needs review ($PINNED -> $LATEST)" \
+            --body-file /tmp/pi-compat-body.md
