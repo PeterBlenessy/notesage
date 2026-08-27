@@ -111,6 +111,32 @@ The orb pulse animation is CSS-only (`@keyframes orb-pulse`) — there is no `re
 
 The N=500 / N=2000 first-keystroke budgets are intentionally loose — they document the current ceiling of the unmemoized `PinnedRow` / `RecentRow` implementation in jsdom. Real production workloads rarely have more than ~50 items in either section. Memoization opportunity tracked as F6 in `2026-04-21-ui-refresh-phase1-followups.md`. Once the rows are wrapped in `React.memo`, the budgets should be tightened toward the 50ms spec target — that's the regression-lock value.
 
+## Synthetic benchmark runs
+
+### 2026-08-27 — v0.54.4 release gate
+
+Three consecutive `pnpm test:perf` runs on a machine that had been building
+and testing all session:
+
+| Run | Failing set |
+| --- | --- |
+| 1 | `orb pulse render cost` (5.41 ms / 5 ms) |
+| 2 | none — 45/45 clean |
+| 3 | `orb reduced-motion render` (7.6 ms), `parse 50KB` (329 ms / 276 ms) |
+
+The failing SET changes between runs, which is the contention signature this
+document already describes ("a real regression fails the same benchmark every
+time"). `orb pulse render cost` is additionally red in the two prior recorded
+entries (9.0 ms, 6.0 ms against the same 5 ms budget), so it is not new here.
+
+Nothing in v0.54.4 touches a measured path: the changes are the local-agent
+setup state machine, two Swift page renderers, and the Swift share-extension
+write paths.
+
+**Real-world startup was NOT captured for this release.** It needs the app run
+in dev mode and the `[perf:*]` console logs read out of the Tauri WebView,
+which cannot be done headlessly. The last real measurement stands.
+
 ## Startup Performance (real-world, dev mode)
 
 Measured with 6 iCloud projects, 3 explorer folders, 22 open tabs, 679 total files. Times are from `[perf:*]` console logs on page refresh (steady-state, not cold first launch).

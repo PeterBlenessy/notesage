@@ -1,6 +1,22 @@
 {
   "releases": [
     {
+      "version": "0.54.4",
+      "date": "2026-08-27",
+      "previousVersion": "0.54.3",
+      "sections": {
+        "fixes": [
+          "**Adding a second local agent does something.** With one local agent already set up, choosing the other opened its setup window with every step already ticked — so nothing was downloaded, nothing was configured, and the second agent could never be added at all. Both can now be set up and used side by side, in either order.",
+          "**Cancel now cancels.** Sharing an article starts a chain of work that can run for the better part of a minute: fetching the page, rendering it, then writing the note. Tapping Cancel closed the window but did not stop any of it, so a share you had explicitly cancelled still turned up in your library. Cancel now stops the save, and stays available while one is running rather than leaving you with a window you cannot dismiss.",
+          "**Saved articles keep their pictures.** Captured articles were arriving with most or all of their images missing — often just the author's portrait and nothing else. Notesage was reading the page too early, before it had finished loading, and never scrolled far enough for the rest of the pictures to load at all. How many you got depended on how fast the page happened to be that day, which is why the same article could save differently twice.",
+          "**Saving a link or a video no longer freezes the share window.** The simplest saves were doing their filing work on the same thread that draws the window, so a slow moment from iCloud showed up as a share sheet that stopped responding."
+        ],
+        "improvements": [
+          "The share window no longer risks overwriting a note you already had when you save the same article many times over."
+        ]
+      }
+    },
+    {
       "version": "0.54.3",
       "date": "2026-08-25",
       "previousVersion": "0.54.2",
