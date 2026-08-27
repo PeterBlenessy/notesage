@@ -54,6 +54,14 @@ const ALLOWED = new Set([
   // Declares the native chrome overlay — pure UI, no filesystem access. In
   // tests it is unmocked and rejects, which is exactly the web-fallback path.
   "ios_set_chrome",
+  // #606 / ADR 0010 — the bridge-less report web view. Pure UI, and notably
+  // NOT a widening of the read surface: the report travels as a STRING the
+  // reader has already read and size-checked, so the native layer is never
+  // given a library path to open. `ios_find_in_report` and
+  // `ios_dismiss_report` take no arguments at all.
+  "ios_present_report",
+  "ios_dismiss_report",
+  "ios_find_in_report",
   // Pure render — takes markdown text, returns an HTML fragment. Touches no
   // filesystem and no library path, so it cannot widen the read surface.
   "render_markdown_fragment",
@@ -911,7 +919,12 @@ describe("onboarding", () => {
 
 describe("HTML reports", () => {
   const registered: Array<{ id: string; content: string }> = [];
-  const openHtml = async (fileName = "report.html") => {
+  /// Open a report and stop there.
+  ///
+  /// Split from `openHtml` because the NATIVE path (#606) renders no iframe at
+  /// all — the report lives in a sibling web view — so a helper that ends by
+  /// waiting for one cannot be used to test it.
+  const tapHtml = async (fileName = "report.html") => {
     registered.length = 0;
     setMockInvokeHandler("ios_list_directory", () => [
       { name: fileName, path: fileName, is_directory: false, hidden: false },
@@ -926,6 +939,10 @@ describe("HTML reports", () => {
     setMockInvokeHandler("html_preview_unregister", () => {});
     renderWithProviders(<Shell />);
     fireEvent.click(await screen.findByText(fileName));
+  };
+
+  const openHtml = async (fileName = "report.html") => {
+    await tapHtml(fileName);
     return await screen.findByTitle(fileName);
   };
 
@@ -1005,6 +1022,56 @@ describe("HTML reports", () => {
   it("treats .htm the same as .html", async () => {
     const frame = await openHtml("legacy.htm");
     expect(frame.tagName).toBe("IFRAME");
+  });
+
+  // --- #606 / ADR 0010: native first, iframe as the real fallback ---------
+
+  it("tries the native bridge-less web view before the iframe", async () => {
+    // On device a report renders in its OWN WKWebView — own content process,
+    // no Tauri bridge, no reachable postMessage channel — which is a stronger
+    // isolation posture than a sandboxed iframe sharing this webview's
+    // process. Everything above this point exercises the FALLBACK, so without
+    // this assertion the native path could stop being attempted at all and
+    // every other test here would still pass.
+    const calls: unknown[] = [];
+    setMockInvokeHandler("ios_present_report", (args) => {
+      calls.push(args);
+      // What the desktop stub does: `Error::Unavailable`.
+      throw new Error("ios_present_report is only available on iOS");
+    });
+    await openHtml();
+    expect(calls).toHaveLength(1);
+    expect((calls[0] as { html: string }).html).toContain("renderCharts()");
+  });
+
+  it("falls back to the iframe when the native layer is absent", async () => {
+    // ADR 0010 commits to this being a REAL code path, not a claim: desktop
+    // dev and this suite take it. If `ios_present_report` is ever changed to
+    // RESOLVE off-iOS instead of rejecting, the reader would commit the
+    // native state and show an empty pane — this is what catches that.
+    setMockInvokeHandler("ios_present_report", () => {
+      throw new Error("ios_present_report is only available on iOS");
+    });
+    const frame = await openHtml();
+    expect(frame.tagName).toBe("IFRAME");
+    expect(frame.getAttribute("src") ?? "").toMatch(/^htmlpreview:\/\/localhost\//);
+  });
+
+  it("renders no iframe when the native web view took the report", async () => {
+    // The native view is a SIBLING of this webview, not a child, so the React
+    // tree renders nothing for it. An iframe here as well would mean the
+    // document is loaded twice — once visibly, once behind the native view.
+    setMockInvokeHandler("ios_present_report", () => {});
+    await tapHtml();
+    // The reader has to have COMMITTED the native state, not merely not got
+    // round to rendering an iframe yet — otherwise this passes on any slow
+    // load. The title chrome is what the reader draws either way.
+    await screen.findByText("report.html");
+    await waitFor(() => expect(document.querySelector("iframe")).toBeNull());
+    // And nothing was registered with the preview store: the custom-scheme
+    // workaround exists only for the iframe, and a document left registered
+    // is orphaned forever (the store has no eviction).
+    expect(registered).toHaveLength(0);
   });
 });
 

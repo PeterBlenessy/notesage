@@ -13,6 +13,9 @@ import {
   iosCreateFile,
   iosStatFile,
   iosContextMenu,
+  iosPresentReport,
+  iosDismissReport,
+  iosFindInReport,
 } from "@/lib/ios-api";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
@@ -71,6 +74,11 @@ type ReaderState =
   | { status: "markdown"; html: string }
   | { status: "image"; url: string }
   | { status: "html"; url: string; previewId: string }
+  // The report is on screen in a NATIVE web view sitting above this one
+  // (#606, ADR 0010), so this branch renders nothing. It is a distinct status
+  // rather than a flag on `html` because the two are mutually exclusive and
+  // every consumer — find, cleanup, the render switch — has to pick one.
+  | { status: "html-native" }
   | { status: "pdf"; filePath: string };
 
 /**
@@ -190,6 +198,10 @@ export function Reader() {
   const pdfFindRef = useRef<PdfMobileFindHandle | null>(null);
   const [pdfFind, setPdfFind] = useState<PdfMobileFindState>({ current: -1, total: 0, page: 0, pages: 0 });
   const isPdf = state.status === "pdf";
+  // Declared up here with the other status flags, not beside the effects that
+  // use it: the native-chrome spec below reads it, and a `const` declared
+  // after that point is a temporal-dead-zone crash on every render.
+  const hasNativeReport = state.status === "html-native";
   const htmlFrameRef = useRef<HTMLIFrameElement | null>(null);
   // Which html url has finished loading and may therefore be shown. Keyed by
   // url rather than a boolean so opening a SECOND report re-hides the frame
@@ -204,6 +216,10 @@ export function Reader() {
     const timer = window.setTimeout(() => setHtmlShownUrl(htmlUrl), 1200);
     return () => window.clearTimeout(timer);
   }, [htmlUrl]);
+  // A natively-presented report is searchable too, but not by the island —
+  // WebKit's own find bar runs over it (#606), so the island must NOT expand
+  // for it. `searchable` gates the island; `nativeReportSearch` is the
+  // separate affordance.
   const searchable =
     state.status === "markdown" || state.status === "text" || state.status === "html";
   const isHtml = state.status === "html";
@@ -329,7 +345,7 @@ export function Reader() {
         // Plain tap keeps the established default: local files open in the
         // reader, the web opens where the web belongs.
         if (target) openHere();
-        else void openUrl(href).catch(() => toast.error("Couldn't open the link"));
+        else void openUrl(href).catch(() => toast.error(t("reader.openLinkFailed")));
         return;
       }
 
@@ -351,7 +367,7 @@ export function Reader() {
       else if (chosen === "share" && target) {
         void iosShareFile(target).catch(() => toast.error("Couldn't share that file"));
       } else if (chosen === "browser") {
-        void openUrl(href).catch(() => toast.error("Couldn't open the link"));
+        void openUrl(href).catch(() => toast.error(t("reader.openLinkFailed")));
       } else if (chosen === "copy") {
         void writeText(href)
           .then(() => toast.success("Link copied"))
@@ -563,6 +579,14 @@ export function Reader() {
               menu: [{ id: "share", title: "Share", icon: "square.and.arrow.up" }],
             }
           : { id: "share", icon: "square.and.arrow.up" },
+      // A natively-presented report searches through WebKit's own find bar,
+      // which is a system UI the island cannot host — so the slot becomes a
+      // plain button that opens it (#606). Reports are the ONLY document kind
+      // that gets the system bar; markdown/text keep the island's dom-search
+      // and PDFs keep the viewer's text-layer search.
+      bottomRight: hasNativeReport
+        ? { id: "findReport", icon: "magnifyingglass" }
+        : undefined,
       search: editing
         ? undefined
         : isPdf
@@ -594,6 +618,14 @@ export function Reader() {
       "search-close": () => (isPdf ? pdfFindRef.current?.setQuery("") : setFindQuery("")),
       "search-next": () => (isPdf ? pdfFindRef.current?.next() : goToMatch(true)),
       "search-prev": () => (isPdf ? pdfFindRef.current?.prev() : goToMatch(false)),
+      findReport: () => {
+        // `false` means the native layer said no report is on screen. Nothing
+        // to fall back TO here — the island cannot search a document living in
+        // another web view — so say so rather than leaving a dead button.
+        void iosFindInReport().then((opened) => {
+          if (!opened) toast.error(t("reader.findUnavailable"));
+        });
+      },
     },
   );
 
@@ -656,21 +688,58 @@ export function Reader() {
         }
       }
       if (kind === "html") {
-        // Served from the `htmlpreview://` custom scheme — the same mechanism
-        // as the desktop HtmlViewer, for the same reason: srcDoc, blob: AND
-        // data: documents all INHERIT the host window's CSP, and in the
-        // embedded build Tauri's nonce injection neutralises 'unsafe-inline',
-        // so a report's own <style>/<script> blocks are refused and it renders
-        // bare (dev builds hide this — Vite serves the app with no CSP). A
+        const raw = await iosReadFile(relPath);
+        if (!isCurrent()) return;
+
+        // NATIVE FIRST (#606, ADR 0010): its own WKWebView, its own content
+        // process, no bridge. A separate web view has no inherited CSP, so
+        // `loadHTMLString` just works — which is why none of the custom-scheme
+        // plumbing in the fallback below is needed on device.
+        try {
+          const insets = measureReaderInsets();
+          await iosPresentReport(raw, { top: insets.top, bottom: insets.bottom });
+          if (!isCurrent()) {
+            // Superseded while presenting — take it back down, or the previous
+            // document stays on screen over whatever the reader shows next.
+            void iosDismissReport().catch(() => {});
+            return;
+          }
+          setState({ status: "html-native" });
+          return;
+        } catch {
+          // No native layer: desktop dev, the vitest suite, or a build without
+          // the plugin. ADR 0010 commits to this fallback being a REAL path
+          // rather than a claim, so the original mechanism stays intact rather
+          // than being trimmed to something that has never run.
+          //
+          // `ios_present_report` REJECTS off-iOS by design; if it is ever
+          // changed to resolve, this catch stops running and the reader shows
+          // an empty pane on desktop.
+        }
+
+        // The `htmlpreview://` custom scheme — the same mechanism as the
+        // desktop HtmlViewer, for the same reason: srcDoc, blob: AND data:
+        // documents all INHERIT the host window's CSP, and in the embedded
+        // build Tauri's nonce injection neutralises 'unsafe-inline', so a
+        // report's own <style>/<script> blocks are refused and it renders bare
+        // (dev builds hide this — Vite serves the app with no CSP). A
         // custom-scheme response carries its own empty policy; the
         // `sandbox="allow-scripts"` attribute is what isolates the document.
-        const raw = await iosReadFile(relPath);
         const id = crypto.randomUUID();
         // The find agent rides along inside the document — the only place
         // search can run in a sandboxed cross-origin frame.
+        //
+        // It is deliberately still here. #606 retires it for the native path,
+        // but deleting it now would take find-in-report away from the fallback
+        // BEFORE the native replacement has been verified on device — which is
+        // the sequencing the issue's own acceptance criteria ask for. The
+        // deletion is the last step, not the first.
+        //
         // Padding is injected INTO the document: the parent cannot reach into
         // a sandboxed iframe's scroll area, and `env(safe-area-inset-*)` does
-        // not resolve inside one (#722). Measured here, where it does.
+        // not resolve inside one (#722). Measured here, where it does. The
+        // native path needs none of this — it sets a scroll content inset on a
+        // web view it legitimately owns, instead of rewriting the report.
         await invoke("html_preview_register", {
           id,
           content: withReaderInsets(withLinkAgent(withFindAgent(raw)), measureReaderInsets()),
@@ -767,7 +836,7 @@ export function Reader() {
       if (!href) return;
       e.preventDefault();
       if (/^(https?:|mailto:)/i.test(href)) {
-        void openUrl(href).catch(() => toast.error("Couldn't open the link"));
+        void openUrl(href).catch(() => toast.error(t("reader.openLinkFailed")));
         return;
       }
       if (href.startsWith("#")) return; // in-page anchors: no-op in v1
@@ -799,6 +868,45 @@ export function Reader() {
       void invoke("html_preview_unregister", { id: htmlPreviewId }).catch(() => {});
     };
   }, [htmlPreviewId]);
+
+  // Take the NATIVE report down when it stops being what the reader is
+  // showing (#606). The native web view is a sibling of this one, not a child
+  // — React unmounting the reader does not remove it, so a report left up
+  // would float over the folder list with no way to dismiss it.
+  //
+  // Keyed on the boolean rather than on `state`: the reader re-commits state
+  // for unrelated reasons (theme flips, StrictMode double-invokes), and a
+  // cleanup keyed on object identity would dismiss the report out from under
+  // itself on the second commit.
+  useEffect(() => {
+    if (!hasNativeReport) return;
+    return () => {
+      void iosDismissReport().catch(() => {});
+    };
+  }, [hasNativeReport]);
+
+  // The report's own web view speaks back through exactly two events, both
+  // native-mediated (`ReportWebView.swift`): a link tap WebKit was about to
+  // perform, and its content process dying. Nothing the report's JS can reach
+  // produces either.
+  useEffect(() => {
+    if (!hasNativeReport) return;
+    const onReport = (e: Event) => {
+      const detail = (e as CustomEvent<{ type?: string; href?: string }>).detail;
+      if (detail?.type === "crashed") {
+        // Its own content process, so a report can die alone. Say so — a blank
+        // rectangle is indistinguishable from an empty document.
+        setState({ status: "error", message: t("reader.reportCrashed") });
+        return;
+      }
+      if (detail?.type !== "link" || !detail.href) return;
+      if (/^(https?:|mailto:)/i.test(detail.href)) {
+        void openUrl(detail.href).catch(() => toast.error(t("reader.openLinkFailed")));
+      }
+    };
+    window.addEventListener("notesage:report", onReport);
+    return () => window.removeEventListener("notesage:report", onReport);
+  }, [hasNativeReport, t]);
 
   // Render ```mermaid fences into SVG diagrams — parity with the desktop
   // editor's Mermaid node view, using the same lazily-imported library. The

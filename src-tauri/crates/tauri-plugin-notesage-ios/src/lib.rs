@@ -91,6 +91,12 @@ struct StateResponse {
 struct SizeResponse {
     size_bytes: u64,
 }
+/// Whether WebKit's find bar actually opened — false when no report is on
+/// screen, which the caller uses to fall back to the web search island.
+#[derive(Deserialize)]
+struct PresentedResponse {
+    presented: bool,
+}
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -399,6 +405,30 @@ impl<R: Runtime> NotesageIos<R> {
         self.call("setChrome", spec)
     }
 
+    /// Show an exported HTML report in its own bridge-less WKWebView, instead
+    /// of the sandboxed `htmlpreview://` iframe (#606, ADR 0010).
+    pub fn present_report(&self, html: &str, inset_top: f64, inset_bottom: f64) -> Result<()> {
+        self.call(
+            "presentReport",
+            serde_json::json!({
+                "html": html,
+                "insetTop": inset_top,
+                "insetBottom": inset_bottom,
+            }),
+        )
+    }
+
+    pub fn dismiss_report(&self) -> Result<()> {
+        self.call("dismissReport", ())
+    }
+
+    /// Open WebKit's find bar over the presented report. `false` means no
+    /// report is on screen — fall back to the web search island.
+    pub fn find_in_report(&self) -> Result<bool> {
+        let r: PresentedResponse = self.call("findInReport", ())?;
+        Ok(r.presented)
+    }
+
     /// Present the iOS share sheet for a library file (copied to temp first —
     /// share targets can't read through the security-scoped grant).
     pub fn share_file(&self, rel: &str) -> Result<()> {
@@ -500,6 +530,19 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn set_chrome(&self, _spec: serde_json::Value) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    /// `Unavailable` is load-bearing, not a placeholder: it is the signal the
+    /// reader falls back to the `htmlpreview://` iframe on. Desktop dev and the
+    /// vitest suite take that path, which is what keeps ADR 0010's fallback a
+    /// real code path rather than a claim.
+    pub fn present_report(&self, _html: &str, _top: f64, _bottom: f64) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn dismiss_report(&self) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn find_in_report(&self) -> Result<bool> {
         Err(Error::Unavailable)
     }
     pub fn share_file(&self, _rel: &str) -> Result<()> {

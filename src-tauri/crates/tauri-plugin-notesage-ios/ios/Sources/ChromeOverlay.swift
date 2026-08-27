@@ -152,6 +152,24 @@ final class ChromeManager {
     setSearch(spec.search, over: webView)
   }
 
+  /// Lift every chrome host back above whatever was just inserted over the
+  /// web view.
+  ///
+  /// `ReportPresenter` puts a second web view directly above the app's, so a
+  /// report covers the content — which is the intent — but it would also cover
+  /// the back button, and a full-screen report with no way out is not a
+  /// reading surface, it is a trap. Ordering is re-asserted rather than
+  /// assumed because the chrome hosts were added at various times and their
+  /// relative z-order is not something either side should have to track.
+  func bringChromeToFront() {
+    guard let container = webView?.superview else { return }
+    for host in hosts.values {
+      container.bringSubviewToFront(host.view)
+    }
+    if let breadcrumbHost { container.bringSubviewToFront(breadcrumbHost.view) }
+    if let searchHost { container.bringSubviewToFront(searchHost.view) }
+  }
+
   private var breadcrumbHost: UIHostingController<AnyView>?
   private var topScrim: UIView?
 

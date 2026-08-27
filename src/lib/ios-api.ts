@@ -327,6 +327,48 @@ export async function iosTextPrompt(
   return text ?? null;
 }
 
+/**
+ * Show an exported HTML report in its own bridge-less WKWebView (#606,
+ * ADR 0010) instead of the sandboxed `htmlpreview://` iframe.
+ *
+ * REJECTS when the native layer is absent — desktop dev, the vitest suite, any
+ * build without the plugin — and that rejection is the contract, not a bug:
+ * the reader falls back to the iframe path on it. Callers must not swallow it
+ * into a resolved promise, or the fallback never runs and the reader shows an
+ * empty pane.
+ */
+export function iosPresentReport(
+  html: string,
+  insets?: { top?: number; bottom?: number },
+): Promise<void> {
+  return invoke("ios_present_report", {
+    html,
+    insetTop: insets?.top ?? 0,
+    insetBottom: insets?.bottom ?? 0,
+  });
+}
+
+/** Tear down the presented report. Idempotent; safe to call when none is up. */
+export function iosDismissReport(): Promise<void> {
+  return invoke("ios_dismiss_report");
+}
+
+/**
+ * Open WebKit's find bar over the presented report.
+ *
+ * Resolves `false` when no report is on screen, and — unlike the two above —
+ * swallows a rejection into `false` as well. Both mean the same thing to the
+ * caller ("native find is not available, use the island"), and the search
+ * affordance is a worse place to surface an error than a silent fallback.
+ */
+export async function iosFindInReport(): Promise<boolean> {
+  try {
+    return await invoke<boolean>("ios_find_in_report");
+  } catch {
+    return false;
+  }
+}
+
 /** Present the iOS share sheet for a library file. */
 export function iosShareFile(relPath: string): Promise<void> {
   return invoke("ios_share_file", { relPath });
