@@ -71,6 +71,23 @@ function npmLatest(pkg) {
   return execFileSync('npm', ['view', pkg, 'version'], { encoding: 'utf8' }).trim();
 }
 
+/**
+ * Emit a verdict and stop, without throwing.
+ *
+ * Everything below can fail for reasons that are not drift: npm unreachable, a
+ * renamed package, the Rust registry restructured. Left unhandled, the script
+ * threw, CI's `result.json` was empty, `jq` failed on it, and the step went
+ * RED — indistinguishable from the alarm firing, and on the noisiest possible
+ * trigger (a transient npm outage). A check whose false alarms look like real
+ * ones gets muted, which is the one outcome that makes this worse than nothing.
+ */
+function bail(reason) {
+  const out = { pinned: null, latest: null, behind: null, compatible: null, verdict: 'check-failed', errors: reason };
+  console.log(asJson ? JSON.stringify(out, null, 2) : `verdict: check-failed\n${reason}`);
+  // Exit 0: this is not a compatibility finding, and CI reads the verdict.
+  process.exit(0);
+}
+
 /** Type-check the shipped extensions against `version` of the pi types. */
 function typecheckAgainst(version) {
   const dir = mkdtempSync(join(tmpdir(), 'pi-compat-'));
@@ -84,8 +101,15 @@ function typecheckAgainst(version) {
       },
       include: ['*.ts'],
     }));
-    execFileSync('npm', ['install', '--silent', '--no-audit', '--no-fund', `${PKG}@${version}`, 'typescript'],
-      { cwd: dir, stdio: 'pipe' });
+    try {
+      execFileSync('npm', ['install', '--silent', '--no-audit', '--no-fund', `${PKG}@${version}`, 'typescript'],
+        { cwd: dir, stdio: 'pipe' });
+    } catch (e) {
+      // Could not even fetch the types. That is infrastructure, not drift —
+      // reporting it as `surface-moved` would file an issue blaming pi for a
+      // flaky runner.
+      return { infra: `npm install failed for ${PKG}@${version}: ${(e.stderr ?? '').toString().trim().split('\n').slice(-1)[0]}` };
+    }
     try {
       execFileSync('npx', ['tsc', '--noEmit'], { cwd: dir, stdio: 'pipe' });
       return { ok: true, output: '' };
@@ -97,13 +121,24 @@ function typecheckAgainst(version) {
   }
 }
 
-const pinned = pinnedPiVersion();
-const latest = npmLatest(PKG);
+let pinned;
+let latest;
+try {
+  pinned = pinnedPiVersion();
+} catch (e) {
+  bail(`Could not read the pinned pi version: ${e.message}`);
+}
+try {
+  latest = npmLatest(PKG);
+} catch (e) {
+  bail(`Could not reach npm for ${PKG}: ${(e.stderr ?? e.message ?? '').toString().trim().split('\n').slice(-2).join(' ')}`);
+}
 const behind = pinned !== latest;
 
 // Only worth checking when there is something new. A clean result against the
 // version we already pin proves nothing about an upgrade.
 const check = behind ? typecheckAgainst(latest) : { ok: true, output: '(pinned == latest; nothing to check)' };
+if (check.infra) bail(check.infra);
 
 const result = {
   pinned,
