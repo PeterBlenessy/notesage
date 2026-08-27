@@ -868,29 +868,6 @@ pub async fn copilot_lsp_finish_auth(
     Ok(())
 }
 
-/// Sign out of GitHub Copilot.
-#[tauri::command]
-pub async fn copilot_lsp_sign_out(
-    state: State<'_, CopilotLspState>,
-) -> Result<(), String> {
-    let guard = state.process.lock().await;
-    let process = guard
-        .as_ref()
-        .ok_or("Copilot LSP not running.")?;
-
-    process
-        .transport
-        .send_request("signOut", Some(serde_json::json!({})))
-        .await
-        .map_err(|e| format!("signOut failed: {}", e))?;
-
-    // Update local status
-    let mut status = process.status.lock().await;
-    status.authenticated = false;
-    status.message = "Signed out".to_string();
-
-    Ok(())
-}
 
 // ---------------------------------------------------------------------------
 // Tauri commands — document sync

@@ -17,7 +17,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle, Shield, Globe, KeyRound, BrainCog, Trash2, LogOut } from 'lucide-react';
+import { Settings2, Unplug, HeartPulse, Loader2, Check, X, ArrowUpCircle, Shield, Globe, KeyRound, BrainCog, Trash2 } from 'lucide-react';
 import { LocalAIModelsDialog } from './LocalAIModelsDialog';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
@@ -98,7 +98,6 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
   const [reauthOpen, setReauthOpen] = useState(false);
   const [uninstallOpen, setUninstallOpen] = useState(false);
   const [uninstalling, setUninstalling] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
   const labelInputRef = useRef<HTMLInputElement>(null);
   const updateConnection = useConnectionsStore((s) => s.updateConnection);
 
@@ -110,7 +109,6 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
     connection.authMethod === 'agent_managed'
       ? (connection.credentials as { agentBinary?: string }).agentBinary ?? null
       : null;
-  const isCopilotLsp = agentBinary === 'copilot-language-server';
   // Uninstall applies only to binaries Notesage itself installed
   // (~/.notesage/agents/bin/) — never to PATH-resolved system binaries.
   const canUninstall = connection.binarySource === 'managed' && !!agentBinary;
@@ -141,22 +139,6 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
       setUninstalling(false);
     }
   }, [agentBinary, connection.id, updateConnection]);
-
-  const handleCopilotSignOut = useCallback(async () => {
-    setSigningOut(true);
-    try {
-      await tauriApi.copilotLspSignOut();
-      // The OAuth token is gone — mark the connection as needing re-auth so
-      // the key icon (re-authenticate) surfaces, mirroring the reauth flow's
-      // status transitions.
-      updateConnection(connection.id, { status: 'expired' });
-      toast.success(t("conn.signedOutCopilot"));
-    } catch (err) {
-      toast.error(`Sign out failed: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      setSigningOut(false);
-    }
-  }, [connection.id, updateConnection]);
 
   // Download progress for THIS agent's update.
   //
@@ -551,23 +533,6 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               </Button>
             );
           })()}
-          {isCopilotLsp && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 text-muted-foreground hover:text-foreground"
-              onClick={handleCopilotSignOut}
-              disabled={signingOut}
-              title={t("conn.signOutCopilot")}
-              aria-label={t("conn.signOutCopilot")}
-            >
-              {signingOut ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
-              ) : (
-                <LogOut className="h-3.5 w-3.5" strokeWidth={1.5} />
-              )}
-            </Button>
-          )}
           {canUninstall && (
             <Button
               variant="ghost"

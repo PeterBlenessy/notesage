@@ -1792,10 +1792,6 @@ export const tauriApi = {
 
   // --- Copilot LSP auth ---
 
-  /** Sign out of GitHub Copilot via the LSP. Errors if the LSP is not running. */
-  async copilotLspSignOut(): Promise<void> {
-    await invoke('copilot_lsp_sign_out');
-  },
 
   // --- MCP servers (mcp.rs) ---
 
