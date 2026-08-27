@@ -310,7 +310,15 @@ final class ShareViewController: UIViewController {
         }
         if !documentProviders.isEmpty {
             let count = documentProviders.count
-            previewLabel.text = count == 1 ? L("share.oneFile") : L("share.manyFiles", count)
+            // NAME the files (#794). The sheet previously said only "1 file",
+            // so it gave no confirmation of WHICH file was about to be saved —
+            // which is how a share that silently wrote nothing still looked
+            // plausible. `suggestedName` is synchronous and free; the count
+            // string stays as the fallback for a provider that has none.
+            let names = documentProviders.compactMap { $0.suggestedName }
+            previewLabel.text = names.isEmpty
+                ? (count == 1 ? L("share.oneFile") : L("share.manyFiles", count))
+                : names.joined(separator: "\n")
             formatRow.isHidden = true
             saveButton?.isEnabled = true
             updateFilenamePreview()
@@ -825,8 +833,36 @@ final class ShareViewController: UIViewController {
     /// the image activation cap; other kinds are capped lower by their own
     /// activation rules.
     private func saveDocuments(_ providers: [NSItemProvider]) {
+        // Bounded at the activation rule's largest count.
+        let attempted = Array(providers.prefix(10))
         let group = DispatchGroup()
-        for provider in providers.prefix(10) {
+        // `loadFileRepresentation` calls back on an arbitrary queue and these
+        // run concurrently, so the counter needs a lock — same reasoning, and
+        // now the same shape, as the macOS side.
+        let lock = NSLock()
+        var failures = 0
+        func recordFailure(_ reason: String) {
+            NSLog("[notesage-share] document save failed: %@", reason)
+            lock.lock()
+            failures += 1
+            lock.unlock()
+        }
+
+        // Capture the FLAG, not `self` (#794).
+        //
+        // #779 added `[weak self]` here to reach the cancellation flag, on a
+        // path that until then wrote unconditionally. That made the write
+        // conditional on the view controller still being alive — and it fails
+        // SILENTLY when it is not, which is exactly the reported symptom: a
+        // shared PDF that never reaches Inbox while the sheet closes as though
+        // it had.
+        //
+        // `CancelFlag` is a lock-guarded class, so capturing it strongly is
+        // both safe from any queue and independent of the controller's
+        // lifetime. Nothing about cancellation ever needed `self`.
+        let cancelled = self.cancelled
+
+        for provider in attempted {
             // Most specific conforming type first — the provider hands the
             // richest file representation for it (a screenshot shared as
             // UIImage still yields a PNG file via UTType.image).
@@ -841,17 +877,43 @@ final class ShareViewController: UIViewController {
                 candidates.first(where: provider.hasItemConformingToTypeIdentifier)
                 ?? UTType.data.identifier
             group.enter()
-            provider.loadFileRepresentation(forTypeIdentifier: typeId) { [weak self] url, _ in
+            provider.loadFileRepresentation(forTypeIdentifier: typeId) { url, error in
                 defer { group.leave() }
                 // A ten-file batch off an iCloud volume is seconds of copying,
-                // and each item is a separate write. Check per item so Cancel
-                // stops the batch where it stands rather than only suppressing
-                // the completion after every file has already landed.
-                guard let self, !self.cancelled.isCancelled, let url else { return }
-                _ = try? LibraryAccess.writeDocument(from: url, suggestedName: url.lastPathComponent)
+                // so Cancel is checked per item rather than only at the end.
+                if cancelled.isCancelled { return }
+                guard let url else {
+                    recordFailure("could not load \(typeId): \(String(describing: error))")
+                    return
+                }
+                do {
+                    _ = try LibraryAccess.writeDocument(
+                        from: url, suggestedName: url.lastPathComponent)
+                } catch {
+                    // NOT `try?`. Swallowing this is why a failed share looked
+                    // identical to a successful one, and why there was nothing
+                    // in the log to read when one was reported.
+                    recordFailure("write failed: \(String(describing: error))")
+                }
             }
         }
-        group.notify(queue: .main) { self.finish() }
+
+        group.notify(queue: .main) { [weak self] in
+            guard let self, !cancelled.isCancelled else { return }
+            if failures == 0 {
+                self.finish()
+                return
+            }
+            // Never close on failure. A sheet that vanishes having saved
+            // nothing is indistinguishable from one that worked — the user
+            // finds out days later, if ever. macOS already refused to close
+            // here; iOS closed regardless.
+            self.saveButton?.isEnabled = true
+            self.previewLabel.isHidden = false
+            self.previewLabel.text = failures == attempted.count
+                ? L("share.couldNotSaveFiles")
+                : L("share.someFilesFailed", failures)
+        }
     }
 
     private static func firstURL(in text: String) -> String? {

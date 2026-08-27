@@ -1271,3 +1271,53 @@ fn the_settle_script_is_returned_so_the_heuristic_actually_runs() {
         );
     }
 }
+
+#[test]
+fn the_document_write_is_not_gated_on_the_view_controller_being_alive() {
+    // #794: a shared PDF stopped reaching `Inbox/` while the sheet closed as
+    // though it had worked.
+    //
+    // The cause was a `[weak self]` capture added to `saveDocuments`'s
+    // `loadFileRepresentation` callback in #779, purely to reach the
+    // cancellation flag. Until then the write was unconditional; afterwards it
+    // depended on the view controller still being alive, and failed SILENTLY
+    // when it was not.
+    //
+    // `CancelFlag` is a lock-guarded class, so the flag can be captured
+    // directly from any queue with no reference to `self` at all. Nothing
+    // about cancellation ever needed the controller.
+    //
+    // `both_platforms_accept_shared_files_not_just_links` already asserts the
+    // activation rule and that `writeDocument` EXISTS — this asserts the call
+    // can actually be reached, which is the same "present but unreachable"
+    // shape one layer down.
+    let src = ios_src("ShareViewController.swift");
+    let body = swift_code(swift_body(&src, "private func saveDocuments("));
+
+    let load = body
+        .find("loadFileRepresentation")
+        .expect("iOS saveDocuments no longer loads a file representation");
+    let write = body
+        .find("LibraryAccess.writeDocument")
+        .expect("iOS saveDocuments no longer writes the document at all");
+    let callback = &body[load..write];
+    assert!(
+        !callback.contains("[weak self]"),
+        "iOS's document write is inside a `[weak self]` closure again, so it is\n\
+         skipped whenever the share controller has been released — silently, on\n\
+         the path that stores the user's file.\n\n{callback}"
+    );
+
+    // And the failure must be visible. `try?` here is what made a failed share
+    // indistinguishable from a successful one, with nothing in the log.
+    assert!(
+        !body.contains("try? LibraryAccess.writeDocument"),
+        "iOS swallows the document-write error again. A share that saved nothing\n\
+         then closes reporting success, and leaves nothing to diagnose from."
+    );
+    assert!(
+        body.contains("failures"),
+        "iOS does not count document-write failures, so it cannot keep the sheet\n\
+         open when one happens — macOS has done this since the parity pass."
+    );
+}
