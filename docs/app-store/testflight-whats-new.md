@@ -11,7 +11,7 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Cancel now actually cancels. Share an article, tap Save, then tap Cancel
-before it finishes — nothing should appear in your library. Try it on a slow
-page, where there is time to catch it. Saving a plain link or a video should
-also feel instant now, with no frozen sheet.
+Reports now open in their own window under the hood, with the system's own
+Find bar. Open an exported HTML report: check it still renders with its charts
+and styling, tap the magnifier to search it, tap a link inside it — and most
+importantly, check the back button still works and you can get out.
