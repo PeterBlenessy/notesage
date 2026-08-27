@@ -9,7 +9,8 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Avbryt avbryter nu på riktigt. Dela en artikel, tryck Spara och sedan Avbryt
-innan den hinner klart — inget ska dyka upp i biblioteket. Testa på en långsam
-sida, där du hinner. Att spara en vanlig länk eller en video ska också kännas
-direkt, utan att arket fryser.
+Rapporter öppnas nu i ett eget fönster under ytan, med systemets egen
+sökruta. Öppna en exporterad HTML-rapport: kontrollera att den fortfarande
+visas med diagram och formatering, tryck på förstoringsglaset för att söka,
+tryck på en länk i den — och framför allt, kontrollera att bakåtknappen
+fungerar och att du kan ta dig ut.
