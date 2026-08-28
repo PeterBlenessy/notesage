@@ -460,3 +460,51 @@ describe("blob URLs are released", () => {
     expect(revoke).not.toHaveBeenCalled();
   });
 });
+
+describe("OpenDocument thumbnails (share-to-Inbox coverage)", () => {
+  /** A minimal but REAL .odt: a zip with the spec-mandated embedded preview. */
+  async function odtBytes(withThumbnail: boolean): Promise<Uint8Array> {
+    const { default: JSZip } = await import("jszip");
+    const zip = new JSZip();
+    zip.file("mimetype", "application/vnd.oasis.opendocument.text");
+    zip.file("content.xml", "<office:document-content/>");
+    if (withThumbnail) {
+      // Not a valid PNG, and deliberately so — the pipeline must not need to
+      // decode it. `shrinkForCard` degrades to the original bytes when
+      // createImageBitmap is unavailable, which is exactly the jsdom case.
+      zip.file("Thumbnails/thumbnail.png", new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]));
+    }
+    return await zip.generateAsync({ type: "uint8array" });
+  }
+
+  it("falls back to the preview embedded in the package when QuickLook has none", async () => {
+    // iOS ships no OpenDocument generator, so the native call failing here is
+    // the expected production path for odt/odp, not an edge case.
+    iosReadBinaryMock.mockResolvedValue(await odtBytes(true));
+    const result = await getThumbnail(entry({ name: "report.odt" }), {
+      theme: "light",
+    });
+    expect(result).toEqual({ kind: "image", url: "blob:mock-thumbnail-url" });
+    expect(iosThumbnailMock).toHaveBeenCalled(); // native tried first
+  });
+
+  it("degrades to the generic icon when the package carries no preview", async () => {
+    // The ODF spec allows omitting it. A produced-by-script document might.
+    iosReadBinaryMock.mockResolvedValue(await odtBytes(false));
+    const result = await getThumbnail(entry({ name: "bare.odp" }), {
+      theme: "light",
+    });
+    expect(result).toEqual({ kind: "icon" });
+  });
+
+  it("does not read the file at all when QuickLook succeeds", async () => {
+    // The fallback is strictly a fallback: on an OS that grows ODF support,
+    // this must cost nothing — no multi-MB read, no zip parse.
+    iosThumbnailMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    const result = await getThumbnail(entry({ name: "report.odt" }), {
+      theme: "light",
+    });
+    expect(result).toEqual({ kind: "image", url: "blob:mock-thumbnail-url" });
+    expect(iosReadBinaryMock).not.toHaveBeenCalled();
+  });
+});

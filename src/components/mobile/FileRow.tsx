@@ -36,6 +36,15 @@ export function isAudioFile(name: string): boolean {
   return AUDIO_EXTENSIONS.includes(extensionOf(name));
 }
 
+/** OpenDocument text / presentation.
+ *
+ *  Split out because these are the one `doc` type iOS QuickLook has no
+ *  generator for, so the thumbnail pipeline needs a name for "try the
+ *  preview embedded in the package instead". */
+export function isOpenDocument(name: string): boolean {
+  return ["odt", "odp"].includes(extensionOf(name));
+}
+
 /** Classify a file by extension for icon + viewer routing.
  *
  *  INVARIANT: every extension the capture pipeline can land in the library must
