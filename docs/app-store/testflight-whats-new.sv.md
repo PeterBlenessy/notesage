@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Öppna en webbsida du sparat i din Inbox. Texten ska se ut som sidan avser i stället för uppförstorad, och en logotyp ska inte längre fylla hela skärmen. Om något fortfarande ser fel ut — öppna samma fil i Safari och berätta om det skiljer sig.
+Version 0.53.0. Dela en länk till ett dokument — en PDF, artikel, bild eller inspelning — och kontrollera att den hamnar i din Inbox med en riktig förhandsvisning och öppnas i rätt visare. Allt från build 6–22 finns med, så berätta om något ser fel ut.

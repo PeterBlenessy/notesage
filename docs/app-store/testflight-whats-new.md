@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Open a web page you saved to your Inbox. The text should look the way the page intends rather than blown up, and a site logo should no longer fill the whole screen. If a report still looks wrong, try the same file in Safari and tell me whether it differs.
+Version 0.53.0. Share a link to a document — a PDF, article, image or recording — and check it lands in your Inbox with a proper preview and opens in the right viewer. Everything from builds 6–22 is in here, so anything that looks off is worth telling me about.
