@@ -11,7 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Reports now open in their own window under the hood, with the system's own
-Find bar. Open an exported HTML report: check it still renders with its charts
-and styling, tap the magnifier to search it, tap a link inside it — and most
-importantly, check the back button still works and you can get out.
+Share a PDF from Files or Safari into Notesage and check it actually turns up in your Inbox — the sheet should now show the file's name, and stay open with an error if the save fails instead of closing as if it worked. Also still worth a look: opening an HTML file you exported from your Mac, and getting back out of it.

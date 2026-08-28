@@ -9,8 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Rapporter öppnas nu i ett eget fönster under ytan, med systemets egen
-sökruta. Öppna en exporterad HTML-rapport: kontrollera att den fortfarande
-visas med diagram och formatering, tryck på förstoringsglaset för att söka,
-tryck på en länk i den — och framför allt, kontrollera att bakåtknappen
-fungerar och att du kan ta dig ut.
+Dela en PDF från Filer eller Safari till Notesage och kontrollera att den verkligen hamnar i din Inbox — arket ska nu visa filens namn, och stanna kvar med ett fel om det inte gick, i stället för att stängas som om allt var bra. Värt att titta på också: öppna en HTML-fil du exporterat från din Mac, och ta dig ut ur den igen.
