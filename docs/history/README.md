@@ -219,3 +219,4 @@ Chronological log of major implementation milestones and changes.
 | 213 | [Release v0.54.2](213-release-v0.54.2.md) | The Share menu works every time now, not just the first time. |
 | 214 | [Release v0.54.3](214-release-v0.54.3.md) | Choosing your library folder in the Share menu works again. |
 | 215 | [Release v0.54.4](215-release-v0.54.4.md) | Both local agents can be set up side by side; Cancel stops a share, and saved articles keep their pictures. |
+| 216 | [Release v0.55.0](216-release-v0.55.0.md) | Transcribe recordings you already have; agent updates show versions; attachments reach agents as files. |
