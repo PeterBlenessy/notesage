@@ -1331,3 +1331,41 @@ fn the_document_write_is_not_gated_on_the_view_controller_being_alive() {
          open when one happens — macOS has done this since the parity pass."
     );
 }
+
+/// The iframe path applied three things to every report via `withReaderInsets`
+/// in `Reader.tsx`: body padding, box-sizing, and `-webkit-text-size-adjust`.
+/// The native `ReportWebView` translated the padding into a scroll content
+/// inset — a better mechanism — and dropped the text-size-adjust, because
+/// there is no `WKWebViewConfiguration` setting for it and nothing failed
+/// loudly when it went missing. Reports then rendered with WebKit free to
+/// inflate their text.
+///
+/// The two are separate code in separate languages with no shared type, so
+/// nothing but a test ties them together. This asserts the native path still
+/// carries the property the web path documents as necessary — whichever
+/// mechanism it uses to get there.
+#[test]
+fn native_report_view_keeps_text_size_adjust_parity_with_the_iframe_path() {
+    let web = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../../../src/components/mobile/html-insets.ts"),
+    )
+    .expect("html-insets.ts");
+    assert!(
+        web.contains("-webkit-text-size-adjust"),
+        "the web fallback dropped text-size-adjust — if that was deliberate, \
+         this guard and its native counterpart should go together"
+    );
+
+    let native = ext_src(
+        "crates/tauri-plugin-notesage-ios/ios/Sources",
+        "ReportWebView.swift",
+    );
+    assert!(
+        native.contains("-webkit-text-size-adjust"),
+        "ReportWebView does not pin -webkit-text-size-adjust, so WebKit may \
+         inflate a report's text. The iframe path it replaced set it via \
+         withReaderInsets; the native path has no WKWebViewConfiguration \
+         equivalent, so it must inject the CSS itself."
+    );
+}

@@ -602,6 +602,8 @@ h1,h2,h3{line-height:1.25;margin:2rem 0 .75rem}\
 h1{font-size:1.75rem;margin-top:0}\
 p,li{margin:0 0 1rem}\
 img{max-width:100%;height:auto;border-radius:6px;display:block;margin:1.5rem auto}\
+svg{max-width:100%;height:auto}\
+svg:not([width]):not([height]){width:1.25em;height:1.25em;vertical-align:-.15em}\
 figure{margin:1.5rem 0}figcaption{font-size:.875rem;color:#666;text-align:center}\
 blockquote{margin:1.5rem 0;padding-left:1rem;border-left:3px solid #ddd;color:#444}\
 pre{overflow-x:auto;padding:1rem;background:#f5f5f5;border-radius:6px}\
@@ -2841,4 +2843,44 @@ mod linked_document_tests {
         assert!(filename_from_content_disposition(r#"attachment; filename="..""#).is_none());
         assert!(filename_from_content_disposition("attachment").is_none());
     }
+    /// An inline `<svg>` carrying only a `viewBox` — no width or height — has
+    /// no intrinsic size, so it expands to fill its container. In an article
+    /// body that means a site logo rendering full-screen, which is what a real
+    /// capture did: 18 of the 44 inline SVGs in one saved page were unsized.
+    ///
+    /// `img` was constrained from the start and `svg` was simply never
+    /// considered, because the extractor's output was assumed to carry images
+    /// as `<img>`. Modern sites inline their icons instead.
+    #[test]
+    fn article_html_style_constrains_unsized_inline_svg() {
+        let style = ARTICLE_HTML_STYLE;
+        assert!(
+            style.contains("svg{max-width:100%"),
+            "inline SVG must be width-capped like img, or a wide graphic overflows the measure"
+        );
+        assert!(
+            style.contains("svg:not([width]):not([height])"),
+            "a viewBox-only SVG has no intrinsic size and fills its container — it needs an \
+             explicit fallback size, which max-width alone does not give it"
+        );
+    }
+
+    /// The document must parse in standards mode. Without the doctype the
+    /// renderer falls back to quirks mode, which changes layout and makes iOS
+    /// text autosizing more eager (#805).
+    #[test]
+    fn article_html_document_starts_with_a_doctype() {
+        let article = Article {
+            title: Some("T".into()),
+            markdown: "Body".into(),
+            html: "<p>Body</p>".into(),
+        };
+        let doc = build_article_html_document(&article, None, "https://example.com/a");
+        assert!(
+            doc.starts_with("<!doctype html>"),
+            "document must open with the doctype, got: {:?}",
+            &doc[..doc.len().min(40)]
+        );
+    }
+
 }

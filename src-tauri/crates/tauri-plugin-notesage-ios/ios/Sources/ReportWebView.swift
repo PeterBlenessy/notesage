@@ -95,6 +95,32 @@ final class ReportPresenter: NSObject {
     // file's header is only true for as long as nobody adds a handler here,
     // and an explicit empty object is where a reviewer looks.
     config.userContentController = WKUserContentController()
+    // Carried over from the iframe path this replaced, where it rode in via
+    // `withReaderInsets`. That helper injected THREE things: body padding,
+    // box-sizing, and this. The padding became a scroll content inset — a
+    // better mechanism, and the reason the rewrite looked complete. But there
+    // is no native equivalent for text-size-adjust, so it was dropped in the
+    // migration rather than translated, and nothing failed loudly when it was.
+    //
+    // Without it WebKit may inflate a document's text on its own. A captured
+    // article is exactly the shape that invites it: many are parsed in quirks
+    // mode (#805), where autosizing is more eager, and the reader stylesheet
+    // sets a fixed 17px body — so any inflation is visibly not what the
+    // document asked for.
+    //
+    // A user SCRIPT is not a message handler: it adds no channel from the
+    // document back to the app, so the bridge-less claim above is unchanged.
+    // It is also the only lever WebKit offers here — the setting exists in
+    // CSS and nowhere in `WKWebViewConfiguration`.
+    config.userContentController.addUserScript(
+      WKUserScript(
+        source: """
+          var s = document.createElement('style');
+          s.textContent = 'html{-webkit-text-size-adjust:100%}';
+          document.documentElement.appendChild(s);
+          """,
+        injectionTime: .atDocumentEnd,
+        forMainFrameOnly: true))
     // Reports are self-contained documents that draw charts and run tabs;
     // scripts are the point.
     config.defaultWebpagePreferences.allowsContentJavaScript = true
