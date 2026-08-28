@@ -1996,6 +1996,14 @@ pub struct AgentUpdateInfo {
     /// `false`.
     #[serde(default)]
     pub held_back: bool,
+    /// Whether `latest_version` differs from what is installed.
+    ///
+    /// This list used to contain ONLY agents with an update pending, which
+    /// meant the UI had no way to show an installed version for an agent that
+    /// was current — so "check for updates" could report nothing at all and
+    /// look broken. Every managed agent is now returned; this flag is what
+    /// distinguishes "up to date" from "update pending".
+    pub update_available: bool,
 }
 
 #[tauri::command]
@@ -2039,23 +2047,34 @@ pub async fn agent_check_updates(force: Option<bool>) -> Result<Vec<AgentUpdateI
 
         match latest_result {
             Ok(latest) => {
-                if latest != entry.version {
-                    // Past the exact-tested ceiling → report as held back, not
-                    // installable (agent_update would clamp to the pin anyway).
-                    let held_back = github_binary_agent_config(agent_id)
+                let update_available = latest != entry.version;
+                // Past the exact-tested ceiling → held back, not installable
+                // (agent_update would clamp to the pin anyway).
+                let held_back = update_available
+                    && github_binary_agent_config(agent_id)
                         .and_then(|c| c.max_version)
                         .is_some_and(|max| version_at_least(&latest, max) && latest != max);
-                    updates.push(AgentUpdateInfo {
-                        agent_id: agent_id.clone(),
-                        current_version: entry.version.clone(),
-                        latest_version: latest,
-                        repo,
-                        held_back,
-                    });
-                }
+                updates.push(AgentUpdateInfo {
+                    agent_id: agent_id.clone(),
+                    current_version: entry.version.clone(),
+                    latest_version: latest,
+                    repo,
+                    held_back,
+                    update_available,
+                });
             }
             Err(e) => {
+                // A failed check must still report the INSTALLED version —
+                // otherwise a network blip makes the agent look uninstalled.
                 log::warn!(target: "notesage::agent_manager", "Failed to check updates for {}: {}", agent_id, e);
+                updates.push(AgentUpdateInfo {
+                    agent_id: agent_id.clone(),
+                    current_version: entry.version.clone(),
+                    latest_version: entry.version.clone(),
+                    repo,
+                    held_back: false,
+                    update_available: false,
+                });
             }
         }
     }

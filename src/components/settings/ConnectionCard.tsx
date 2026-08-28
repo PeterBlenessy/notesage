@@ -1,4 +1,5 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
+import { listen } from '@tauri-apps/api/event';
 import type { Connection } from '@/lib/ai/connections';
 import { CAPABILITY_LABELS, prettyModelName, setAgentModels } from '@/lib/ai/connections';
 import { useConnectionsStore } from '@/stores/connections-store';
@@ -68,6 +69,13 @@ export interface AgentUpdateAvailable {
   /** Upstream is past the exact-tested version pin — not installable here.
    *  Renders as an informational "held back" line, not a clickable update. */
   heldBack?: boolean;
+  /** Whether an update is actually pending.
+   *
+   *  This object is now present for EVERY managed agent, including current
+   *  ones, so the card can show an installed version rather than nothing —
+   *  which is what made "check for agent updates" look like it did nothing.
+   *  Its presence no longer implies an update; this flag does. */
+  hasUpdate: boolean;
 }
 
 interface ConnectionCardProps {
@@ -82,6 +90,8 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
   const [health, setHealth] = useState<HealthState>('idle');
   const [healthError, setHealthError] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
+  /** 0–100 while an update downloads, `null` when unknown. */
+  const [updateProgress, setUpdateProgress] = useState<number | null>(null);
   const [editingLabel, setEditingLabel] = useState(false);
   const [labelDraft, setLabelDraft] = useState('');
   const [modelsDialogOpen, setModelsDialogOpen] = useState(false);
@@ -147,6 +157,38 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
       setSigningOut(false);
     }
   }, [connection.id, updateConnection]);
+
+  // Download progress for THIS agent's update.
+  //
+  // `agent_install` (which `agent_update` reuses) emits `agent-install-progress`
+  // with `agent_id`, `progress` and `total`. `LocalAgentSetupDialog` already
+  // draws a bar from these; this surface ignored them and showed a bare
+  // spinner, which for a ~79 MB tarball is indistinguishable from a hang.
+  //
+  // Mounted only while updating, so idle cards register no listeners.
+  useEffect(() => {
+    if (!updating || !updateAvailable) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void listen<{ agent_id: string; progress: number; total: number }>(
+      'agent-install-progress',
+      (event) => {
+        const p = event.payload;
+        if (p.agent_id !== updateAvailable.agentId) return;
+        // `total` is 0 until the server reports a content-length; leave the
+        // label on the version string rather than showing a fake 0%.
+        if (!p.total) return;
+        setUpdateProgress(Math.min(100, Math.round((p.progress / p.total) * 100)));
+      },
+    ).then((un) => {
+      if (cancelled) un();
+      else unlisten = un;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [updating, updateAvailable]);
 
   const startRename = useCallback(() => {
     setLabelDraft(connection.label);
@@ -305,6 +347,9 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
   const handleUpdate = useCallback(async () => {
     if (!updateAvailable) return;
     setUpdating(true);
+    // Reset per attempt — a stale percentage from a previous run would read as
+    // progress that is not happening.
+    setUpdateProgress(null);
     try {
       const newVersion = await invoke<string>('agent_update', { agentId: updateAvailable.agentId });
       toast.success(`Updated ${updateAvailable.agentId} to v${newVersion}`);
@@ -313,6 +358,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
       toast.error(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setUpdating(false);
+      setUpdateProgress(null);
     }
   }, [updateAvailable, onUpdateComplete]);
 
@@ -423,7 +469,20 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
                 Managed
               </span>
             )}
-            {updateAvailable && updateAvailable.heldBack && (
+            {/* The INSTALLED version, always, whenever it is known.
+                Previously nothing showed a version at all, and an agent with
+                no pending update rendered nothing whatsoever — so pressing
+                "check for agent updates" produced no visible change and read
+                as broken. A version badge is the confirmation the check ran. */}
+            {updateAvailable && (
+              <span
+                className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0 tabular-nums"
+                title={t("conn.installedVersion", { version: updateAvailable.currentVersion })}
+              >
+                v{updateAvailable.currentVersion}
+              </span>
+            )}
+            {updateAvailable && updateAvailable.hasUpdate && updateAvailable.heldBack && (
               <span
                 className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0"
                 title={`v${updateAvailable.latestVersion} is available upstream but not yet tested with Notesage — it will install when a Notesage update includes it.`}
@@ -431,11 +490,11 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
                 Update held back
               </span>
             )}
-            {updateAvailable && !updateAvailable.heldBack && (
+            {updateAvailable && updateAvailable.hasUpdate && !updateAvailable.heldBack && (
               <button
                 onClick={handleUpdate}
                 disabled={updating}
-                className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-foreground/10 text-foreground shrink-0 hover:bg-foreground/20 transition-colors cursor-pointer flex items-center gap-1"
+                className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-foreground/10 text-foreground shrink-0 hover:bg-foreground/20 transition-colors cursor-pointer flex items-center gap-1 disabled:cursor-default"
                 title={`Update from v${updateAvailable.currentVersion} to v${updateAvailable.latestVersion}`}
               >
                 {updating ? (
@@ -443,7 +502,14 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
                 ) : (
                   <ArrowUpCircle className="h-2.5 w-2.5" strokeWidth={2} />
                 )}
-                v{updateAvailable.currentVersion} → v{updateAvailable.latestVersion}
+                {/* Real progress, not just a spinner. `agent_install` already
+                    emits `agent-install-progress` with bytes/total — the setup
+                    dialog draws a bar from exactly these events, and this
+                    surface was throwing them away. A ~79 MB download behind an
+                    unlabelled spinner is indistinguishable from a hang. */}
+                {updating && updateProgress !== null
+                  ? `${updateProgress}%`
+                  : `v${updateAvailable.currentVersion} → v${updateAvailable.latestVersion}`}
               </button>
             )}
           </div>
