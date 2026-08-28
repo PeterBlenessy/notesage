@@ -607,6 +607,7 @@ pub async fn acp_agent_smoke_test(
             session_id,
             SMOKE_PROMPT.to_string(),
             None,
+            None,
         ),
     )
     .await;
@@ -744,6 +745,9 @@ pub async fn acp_session_prompt(
     session_id: String,
     content: String,
     images: Option<Vec<crate::commands::ai::ImageData>>,
+    // Absolute paths attached in the command bar. Sent as ACP resource links
+    // rather than named in the system prompt — see `handle_prompt`.
+    attached_file_paths: Option<Vec<String>>,
 ) -> Result<String, String> {
     let cmd_tx = {
         let agents = state.agents.lock().await;
@@ -760,6 +764,7 @@ pub async fn acp_session_prompt(
             session_id,
             content,
             images,
+            attached_file_paths: attached_file_paths.unwrap_or_default(),
             reply: reply_tx,
         })
         .await
