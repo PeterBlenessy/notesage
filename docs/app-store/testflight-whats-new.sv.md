@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Version 0.53.0. Dela en länk till ett dokument — en PDF, artikel, bild eller inspelning — och kontrollera att den hamnar i din Inbox med en riktig förhandsvisning och öppnas i rätt visare. Allt från build 6–22 finns med, så berätta om något ser fel ut.
+Öppna en sparad artikel eller rapport och tryck på en länk som hoppar inom samma dokument — en innehållsrad, en fotnot. Den ska scrolla dit; tidigare hände ingenting alls. Länkar till webben öppnas fortfarande i din webbläsare. Testa gärna även sökknappen medan du läser.

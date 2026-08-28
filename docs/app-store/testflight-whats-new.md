@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Version 0.53.0. Share a link to a document — a PDF, article, image or recording — and check it lands in your Inbox with a proper preview and opens in the right viewer. Everything from builds 6–22 is in here, so anything that looks off is worth telling me about.
+Open a saved article or report and tap a link that jumps within the same document — a contents entry, a footnote. It should scroll there; before, nothing happened at all. Links to the web still open in your browser. Also worth trying: the search button while reading.
