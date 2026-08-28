@@ -24,7 +24,8 @@ mod types;
 mod tests;
 
 use std::collections::HashMap;
-use tauri::{AppHandle, State};
+use std::sync::Arc;
+use tauri::{AppHandle, Listener, Manager, State};
 use tokio::sync::{mpsc, oneshot};
 
 use crate::commands::acp_binary::{resolve_absolute_binary, resolve_agent_binary};
@@ -456,6 +457,15 @@ const SMOKE_PROMPT_TIMEOUT_SECS: u64 = 180;
 /// A trivial prompt that should elicit a one-token reply on any working model.
 const SMOKE_PROMPT: &str = "Reply with the single word: ok";
 
+/// Prompt for the permission stage — asks for a WRITE, which the gate must
+/// intercept. Deliberately concrete and small: a vague instruction gives a
+/// small local model too much room to answer in prose instead of acting.
+const SMOKE_PERMISSION_PROMPT: &str =
+    "Create a file called notesage-permission-probe.txt containing the word ok.";
+/// Ceiling for the permission probe. Shorter than the main prompt: the model
+/// is already loaded by the time this runs.
+const SMOKE_PERMISSION_TIMEOUT_SECS: u64 = 90;
+
 /// Probe the bundled llama-server `/health`. `Ok(())` only when a port is bound
 /// AND the endpoint returns success within the budget; otherwise a stage error.
 async fn smoke_check_local_health(
@@ -510,7 +520,14 @@ pub async fn acp_agent_smoke_test(
     kernel_network_deny: Option<bool>,
     extra_localhost_ports: Option<Vec<u16>>,
     require_local_server: Option<bool>,
+    // Run the permission stage. Only the pi preset needs it: its permission
+    // gate is a TypeScript extension we ship into pi's config dir, loaded by
+    // whatever pi is installed and type-checked against nothing.
+    verify_permission_gate: Option<bool>,
 ) -> Result<SmokeTestReport, String> {
+    // Cloned up front: `app` is moved into the network-proxy start below, and
+    // the permission probe needs a handle of its own to listen on.
+    let app_for_probe = app.clone();
     let started = std::time::Instant::now();
     let elapsed = |s: &std::time::Instant| s.elapsed().as_millis() as u64;
     let fail = |stage: SmokeStage, err: String, s: &std::time::Instant| SmokeTestReport {
@@ -604,7 +621,7 @@ pub async fn acp_agent_smoke_test(
         acp_session_prompt(
             state.clone(),
             instance_id.clone(),
-            session_id,
+            session_id.clone(),
             SMOKE_PROMPT.to_string(),
             None,
             None,
@@ -634,8 +651,36 @@ pub async fn acp_agent_smoke_test(
         )),
     };
 
-    // Single teardown for both the success and prompt-failure paths.
+    // Stage 5 — the permission gate still gates (pi preset only).
+    //
+    // Provoke a NON-read-only tool call and watch two streams: does a
+    // permission request arrive, and does a tool call run? Three outcomes,
+    // and only one of them is a failure:
+    //
+    //   tool call ran, no permission request  ->  FAIL. The gate is not
+    //       gating: pi is writing without asking. Unambiguous.
+    //   permission request arrived            ->  PASS.
+    //   no tool call attempted at all         ->  INCONCLUSIVE. The model
+    //       declined to act, which small local models do. Warn, do not fail.
+    //
+    // That third case is why this is not simply "assert a request arrives".
+    // A check that randomly blocks setup on a healthy agent gets ignored, and
+    // an ignored check protects nobody — so it stays quiet where it cannot
+    // tell, and is loud only where it can.
+    let permission_failure = if verify_permission_gate.unwrap_or(false)
+        && prompt_failure.is_none()
+    {
+        run_permission_probe(&app_for_probe, &state, &instance_id, &session_id, &started, &fail).await
+    } else {
+        None
+    };
+
+    // Single teardown for every path.
     let _ = acp_agent_stop(state.clone(), instance_id).await;
+
+    if let Some(report) = permission_failure {
+        return Ok(report);
+    }
 
     Ok(prompt_failure.unwrap_or(SmokeTestReport {
         ok: true,
@@ -643,6 +688,156 @@ pub async fn acp_agent_smoke_test(
         error: None,
         elapsed_ms: elapsed(&started),
     }))
+}
+
+
+
+/// What the permission probe observed.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum PermissionVerdict {
+    /// A tool ran with no permission request in front of it.
+    GateMissing(&'static str),
+    /// A permission request arrived — the gate is doing its job.
+    Gated,
+    /// The model never attempted a tool call, so the gate was never exercised.
+    Inconclusive,
+}
+
+/// Decide the probe's outcome from the two things it watched.
+///
+/// The whole design is in this function, so it is separate and tested.
+///
+/// Only ONE combination is a failure: a tool call that ran with no permission
+/// request. "No tool call at all" is deliberately NOT a failure — small local
+/// models routinely answer in prose instead of acting, and a check that
+/// randomly blocks setup on a healthy agent gets ignored. An ignored check
+/// protects nobody, so this stays quiet where it cannot tell and is loud only
+/// where it can.
+pub(crate) fn permission_verdict(acted: bool, asked: bool) -> PermissionVerdict {
+    match (acted, asked) {
+        (true, false) => PermissionVerdict::GateMissing(
+            "the agent ran a tool without asking permission — the gate is not loading. \
+             pi runs writes unprompted in this state; do not use this agent until the \
+             bridge is rebuilt against the installed pi.",
+        ),
+        (_, true) => PermissionVerdict::Gated,
+        (false, false) => PermissionVerdict::Inconclusive,
+    }
+}
+
+/// Provoke a write and observe whether the permission gate intercepts it.
+///
+/// Returns `Some(report)` only for the one unambiguous failure: a tool call
+/// that ran with no permission request in front of it. Everything else —
+/// including the model simply not attempting a write — returns `None`.
+///
+/// Listens on the same Tauri events the frontend uses rather than reaching
+/// into the client, so it observes exactly what the UI would: no new plumbing,
+/// and no risk of the probe passing through a path the real app does not take.
+async fn run_permission_probe(
+    app: &AppHandle,
+    state: &State<'_, AcpState>,
+    instance_id: &str,
+    session_id: &str,
+    started: &std::time::Instant,
+    fail: &impl Fn(SmokeStage, String, &std::time::Instant) -> SmokeTestReport,
+) -> Option<SmokeTestReport> {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    let saw_permission = Arc::new(AtomicBool::new(false));
+    let saw_tool_call = Arc::new(AtomicBool::new(false));
+
+    // Auto-DENY every request this probe provokes. The probe must leave nothing
+    // behind — the point is to observe the gate, not to write a file — and no
+    // UI is listening for a probe agent, so an unanswered request would simply
+    // hang until the timeout.
+    let perm_flag = saw_permission.clone();
+    let perm_app = app.clone();
+    let perm_instance = instance_id.to_string();
+    let perm_listener = app.listen("acp-permission-request", move |event| {
+        let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) else {
+            return;
+        };
+        if payload.get("instanceId").and_then(|v| v.as_str()) != Some(perm_instance.as_str()) {
+            return;
+        }
+        perm_flag.store(true, Ordering::SeqCst);
+        let Some(request_id) = payload.get("requestId").and_then(|v| v.as_str()) else {
+            return;
+        };
+        // Answer through the SAME command the UI uses, rather than reaching
+        // into the waiter map — the probe should exercise the real path, and
+        // the map lives behind the agent handle anyway.
+        //
+        // Deny (no option id): the probe exists to observe the gate, not to
+        // write a file, and it must leave nothing behind. Spawned because the
+        // listener is sync and the respond path is async; the state is re-fetched
+        // from the app handle since `State` cannot cross into a 'static closure.
+        let app_for_reply = perm_app.clone();
+        let instance = perm_instance.clone();
+        let rid = request_id.to_string();
+        tauri::async_runtime::spawn(async move {
+            let state = app_for_reply.state::<AcpState>();
+            let _ = acp_permission_respond(state, instance, rid, None).await;
+        });
+    });
+
+    let tool_flag = saw_tool_call.clone();
+    let tool_instance = instance_id.to_string();
+    let update_listener = app.listen("acp-session-update", move |event| {
+        let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) else {
+            return;
+        };
+        if payload.get("instanceId").and_then(|v| v.as_str()) != Some(tool_instance.as_str()) {
+            return;
+        }
+        // `sessionUpdate` names the variant; a tool call is what we care about.
+        let kind = payload
+            .get("update")
+            .and_then(|u| u.get("sessionUpdate"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_default();
+        if kind == "tool_call" {
+            tool_flag.store(true, Ordering::SeqCst);
+        }
+    });
+
+    let verdict = {
+        {
+            let _ = tokio::time::timeout(
+                std::time::Duration::from_secs(SMOKE_PERMISSION_TIMEOUT_SECS),
+                acp_session_prompt(
+                    state.clone(),
+                    instance_id.to_string(),
+                    session_id.to_string(),
+                    SMOKE_PERMISSION_PROMPT.to_string(),
+                    None,
+                    None,
+                ),
+            )
+            .await;
+
+            let asked = saw_permission.load(Ordering::SeqCst);
+            let acted = saw_tool_call.load(Ordering::SeqCst);
+            match permission_verdict(acted, asked) {
+                PermissionVerdict::GateMissing(msg) => {
+                    Some(fail(SmokeStage::Permission, msg.to_string(), started))
+                }
+                PermissionVerdict::Gated => None,
+                PermissionVerdict::Inconclusive => {
+                    log::warn!(
+                        target: "notesage::acp",
+                        "Permission probe inconclusive: the model attempted no tool call, so the gate was not exercised"
+                    );
+                    None
+                }
+            }
+        }
+    };
+
+    app.unlisten(perm_listener);
+    app.unlisten(update_listener);
+    verdict
 }
 
 /// Create a new ACP session.

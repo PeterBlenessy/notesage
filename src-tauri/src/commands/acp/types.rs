@@ -178,6 +178,19 @@ pub enum SmokeStage {
     Session,
     /// A single short prompt round-trip.
     Prompt,
+    /// The permission gate still gates (pi preset only).
+    ///
+    /// Provokes a NON-read-only tool call and asserts a
+    /// `session/request_permission` arrives. Its own stage because the failure
+    /// it catches is the one nothing else can see: pi's extension API is
+    /// pre-1.0, our `permission-gate.ts` is duck-typed against whatever pi is
+    /// installed, and if it stops registering, pi runs writes with no prompt.
+    ///
+    /// That failure is SILENT. The agent works; it just no longer asks. Every
+    /// other signal reads as health — more tool calls succeed, nothing errors,
+    /// and telemetry would show a healthier agent, not a broken one. So it has
+    /// to be provoked deliberately rather than waited for.
+    Permission,
     /// All stages passed.
     Done,
 }

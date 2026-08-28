@@ -225,6 +225,12 @@ export function useLocalAgentSetup(): UseLocalAgentSetup {
           agentBinary: presetBinaryPath,
           agentArgs: smokeArgs,
           workingDirectory: cwd,
+          // pi ONLY. Its permission gate is an extension we ship into pi's
+          // config dir; pi is pre-1.0 and the extension is duck-typed against
+          // whatever version is installed, so a pi upgrade can stop it
+          // registering — and then pi writes without asking, silently. Goose
+          // has no equivalent surface, so it does not pay for this stage.
+          verifyPermissionGate: engine === 'pi',
           envVars: configResult?.env ?? null,
           sandboxEnabled: true,
           sandboxPaths,

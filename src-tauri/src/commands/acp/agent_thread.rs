@@ -324,7 +324,7 @@ fn handle_cancel(
 }
 
 /// Deliver the user's permission decision to the waiting inbound handler task.
-fn handle_permission_respond(
+pub(super) fn handle_permission_respond(
     permission_waiters: &PermissionWaiters,
     request_id: String,
     option_id: Option<String>,

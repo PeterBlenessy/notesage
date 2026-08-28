@@ -82,7 +82,7 @@ export interface LocalAgentConfig {
 }
 
 /** Stage the smoke test reached. `done` = success; otherwise the failed stage. */
-export type SmokeStage = 'health' | 'spawn' | 'session' | 'prompt' | 'done';
+export type SmokeStage = 'health' | 'spawn' | 'session' | 'prompt' | 'permission' | 'done';
 
 /** Result of `acp_agent_smoke_test` — see `src-tauri/.../acp.rs`. */
 export interface SmokeTestReport {
@@ -108,6 +108,14 @@ export interface SmokeTestParams {
   kernelNetworkDeny?: boolean | null;
   extraLocalhostPorts?: number[] | null;
   requireLocalServer?: boolean | null;
+  /** Run the permission-gate stage (pi preset only).
+   *
+   *  pi's gate is a TypeScript extension shipped into pi's config dir, loaded
+   *  by whatever pi is installed and type-checked against nothing. If it stops
+   *  registering, pi runs writes with NO prompt — silently, and looking
+   *  healthier rather than broken. This stage provokes a write and checks the
+   *  prompt appears. */
+  verifyPermissionGate?: boolean | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1118,6 +1126,7 @@ export const tauriApi = {
       kernelNetworkDeny: params.kernelNetworkDeny ?? null,
       extraLocalhostPorts: params.extraLocalhostPorts ?? null,
       requireLocalServer: params.requireLocalServer ?? null,
+      verifyPermissionGate: params.verifyPermissionGate ?? null,
     });
   },
 

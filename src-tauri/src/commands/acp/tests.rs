@@ -466,3 +466,54 @@ mod prompt_blocks {
         assert_eq!(link.uri, "file:///");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Permission-gate probe verdict
+// ---------------------------------------------------------------------------
+//
+// pi's permission gate is a TypeScript extension shipped into pi's config dir,
+// loaded at runtime and type-checked against nothing. If a pi upgrade stops it
+// registering, pi runs non-read-only tools with NO prompt. The agent keeps
+// working; it just stops asking — so every other signal, telemetry included,
+// reads as HEALTHIER rather than broken. That is why the gate has to be
+// provoked deliberately rather than waited for.
+//
+// The design decision lives entirely in `permission_verdict`, so it is tested
+// here rather than only exercised through a live agent.
+mod permission_probe {
+    use super::super::{permission_verdict, PermissionVerdict};
+
+    #[test]
+    fn a_tool_call_with_no_prompt_is_the_failure() {
+        // The one unambiguous case: pi acted, nothing asked. This is the state
+        // in which a local agent writes files without permission.
+        assert!(matches!(
+            permission_verdict(true, false),
+            PermissionVerdict::GateMissing(_)
+        ));
+    }
+
+    #[test]
+    fn a_permission_request_means_the_gate_works() {
+        assert_eq!(permission_verdict(true, true), PermissionVerdict::Gated);
+    }
+
+    #[test]
+    fn no_tool_call_is_inconclusive_not_a_failure() {
+        // Small local models routinely answer in prose instead of acting. If
+        // that failed setup, the check would block healthy agents at random —
+        // and a check that cries wolf gets ignored, which protects nobody.
+        //
+        // This is the load-bearing half of the design: it is what keeps the
+        // stage trustworthy enough to act on when it DOES fire.
+        assert_eq!(permission_verdict(false, false), PermissionVerdict::Inconclusive);
+    }
+
+    #[test]
+    fn a_prompt_with_no_observed_tool_call_still_counts_as_gated() {
+        // The permission request itself is proof the extension loaded, whether
+        // or not a `tool_call` update was seen first — ordering between the two
+        // event streams is not guaranteed.
+        assert_eq!(permission_verdict(false, true), PermissionVerdict::Gated);
+    }
+}
