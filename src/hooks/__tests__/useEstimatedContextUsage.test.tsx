@@ -6,6 +6,7 @@
 // estimate), message-boundary memoization (stream chunks / keystrokes never
 // re-run the token walk), and the estimate write-through to the usage-store.
 
+import "@/test/local-storage";
 import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
 import { useEstimatedContextUsage } from '../useEstimatedContextUsage';
