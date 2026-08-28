@@ -44,6 +44,21 @@ type AddFlowState =
   | { step: 'connecting'; option: ProviderOption }
   | { step: 'custom' };
 
+
+/**
+ * The managed-agent id for a connection's `agentBinary`.
+ *
+ * Standard agents store a bare name ("copilot-language-server"); a Local Agent
+ * preset stores an ABSOLUTE PATH, because `useLocalAgentSetup` fills it from
+ * `resolveManagedPath`. The registry is keyed by id, so the basename is the
+ * common denominator and the only value that matches both shapes.
+ */
+export function agentIdFromBinary(binary?: string | null): string | null {
+  if (!binary) return null;
+  const base = binary.split('/').pop() ?? binary;
+  return base || null;
+}
+
 export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (tab: string) => void } = {}) {
   const connections = useConnectionsStore((s) => s.connections);
   const addConnection = useConnectionsStore((s) => s.addConnection);
@@ -80,7 +95,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
   const [oaiLabel, setOaiLabel] = useState('');
 
   // Agent update checking
-  const [agentUpdates, setAgentUpdates] = useState<Record<string, { currentVersion: string; latestVersion: string; heldBack?: boolean }>>({});
+  const [agentUpdates, setAgentUpdates] = useState<Record<string, { currentVersion: string; latestVersion: string; heldBack?: boolean; hasUpdate: boolean }>>({});
   const [checkingUpdates, setCheckingUpdates] = useState(false);
 
   const checkForUpdates = useCallback((force = false) => {
@@ -89,14 +104,27 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
     let toastMsg: (() => void) | null = null;
     const check = invoke<AgentUpdateInfo[]>('agent_check_updates', { force })
       .then((updates) => {
-        const map: Record<string, { currentVersion: string; latestVersion: string; heldBack?: boolean }> = {};
+        const map: Record<string, { currentVersion: string; latestVersion: string; heldBack?: boolean; hasUpdate: boolean }> = {};
         for (const u of updates) {
-          map[u.agent_id] = { currentVersion: u.current_version, latestVersion: u.latest_version, heldBack: u.held_back };
+          map[u.agent_id] = {
+            currentVersion: u.current_version,
+            latestVersion: u.latest_version,
+            heldBack: u.held_back,
+            // The backend now returns EVERY managed agent so the card can show
+            // an installed version even when current. `update_available` is
+            // what separates the two; the comparison is the fallback for an
+            // older backend that omits the field.
+            hasUpdate: u.update_available ?? u.current_version !== u.latest_version,
+          };
         }
         setAgentUpdates(map);
         if (force) {
-          toastMsg = updates.length > 0
-            ? () => toast.info(`${updates.length} update${updates.length > 1 ? 's' : ''} available`)
+          // Count only real updates — the list now includes up-to-date agents.
+          const pending = updates.filter(
+            (u) => u.update_available ?? u.current_version !== u.latest_version,
+          );
+          toastMsg = pending.length > 0
+            ? () => toast.info(`${pending.length} update${pending.length > 1 ? 's' : ''} available`)
             : () => toast.success(t("conn.allAgentsUpToDate"));
         }
       })
@@ -571,8 +599,21 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                 conn.credentials.type === 'agent_managed'
                   ? (() => {
                       const creds = conn.credentials as { agentBinary: string };
-                      const u = agentUpdates[creds.agentBinary];
-                      return u ? { agentId: creds.agentBinary, ...u } : null;
+                      // Key by AGENT ID, which is the basename.
+                      //
+                      // `agentUpdates` is keyed by agent id ("goose", "pi"),
+                      // but `agentBinary` is a bare name for standard agents
+                      // and an ABSOLUTE PATH for a Local Agent preset (it comes
+                      // from `resolveManagedPath`). So the lookup was
+                      // `agentUpdates["/Users/…/bin/goose"]` and could never
+                      // match — the check found Goose ten versions behind, and
+                      // the card silently had nowhere to show it. That is why
+                      // "check for agent updates" spun and appeared to do
+                      // nothing.
+                      const agentId = agentIdFromBinary(creds.agentBinary);
+                      if (!agentId) return null;
+                      const u = agentUpdates[agentId];
+                      return u ? { agentId, ...u } : null;
                     })()
                   : null
               }
@@ -581,7 +622,8 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                 setAgentUpdates((prev) => {
                   const next = { ...prev };
                   const creds = conn.credentials as { agentBinary?: string };
-                  if (creds.agentBinary) delete next[creds.agentBinary];
+                  const agentId = agentIdFromBinary(creds.agentBinary);
+                  if (agentId) delete next[agentId];
                   return next;
                 });
               }}

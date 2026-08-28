@@ -248,6 +248,13 @@ export interface AgentUpdateInfo {
    *  until a Notesage release moves the pin (UI shows "held back"). Always
    *  false for npm agents and unpinned GitHub-binary agents. */
   held_back?: boolean;
+  /** Whether `latest_version` differs from what is installed.
+   *
+   *  The list used to contain ONLY agents with a pending update, so the UI had
+   *  no installed version to show for an agent that was current — "check for
+   *  updates" could report nothing and look broken. Every managed agent is now
+   *  returned; this is what separates "up to date" from "update pending". */
+  update_available?: boolean;
 }
 
 /** Mirrors the Rust `SearchResult` struct (`web_search.rs`) — entries of `web_search`. */
