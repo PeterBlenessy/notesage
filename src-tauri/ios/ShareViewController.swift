@@ -275,7 +275,22 @@ final class ShareViewController: UIViewController {
         }
         if let rel = LibraryAccess.previewRelPath(url: url, title: sharedTitle) {
             let stem = ((rel as NSString).lastPathComponent as NSString).deletingPathExtension
-            filenameLabel.text = L("share.savesToInboxAs", "\(stem).\(format.fileExtension)")
+            let name = "\(stem).\(format.fileExtension)"
+            // This is a PREDICTION, and it used to be printed as a fact.
+            //
+            // An article format only produces its extension if an article is
+            // actually found; when extraction declines, the chain falls back to
+            // a link note and writes `.md` instead. So the sheet could promise
+            // `secure.ubs.com.html` and deliver `secure.ubs.com.md` holding
+            // nothing but the URL — which is precisely what was reported.
+            //
+            // Linked PDFs and other documents now take their own path and keep
+            // their real name, so the remaining gap is narrower: a page with no
+            // extractable article. Saying so is cheaper than pretending the
+            // name is certain.
+            filenameLabel.text = (format == .article || format == .html)
+                ? L("share.savesToInboxAsOrLink", name)
+                : L("share.savesToInboxAs", name)
         } else {
             filenameLabel.text = L("share.savesToInbox")
         }
@@ -727,6 +742,69 @@ final class ShareViewController: UIViewController {
 
     /// Fetch the page (10 s budget, 5 MB cap, Safari UA — unknown agents get
     /// bot-shells from many sites). nil on any failure.
+
+    /// Extension for a `Content-Type` that serves a storable document, or nil
+    /// for a page to extract. Decided by the CRATE so both extensions agree —
+    /// a second opinion in Swift is how the two platforms drift.
+    private static func linkedDocumentExtension(_ contentType: String) -> String? {
+        contentType.withCString { ct in
+            guard let raw = notesage_capture_linked_document_extension(ct) else { return nil }
+            defer { notesage_capture_string_free(raw) }
+            return String(cString: raw)
+        }
+    }
+
+    /// The server's suggested filename, basename only, or nil.
+    private static func dispositionFilename(_ header: String) -> String? {
+        header.withCString { h in
+            guard let raw = notesage_capture_disposition_filename(h) else { return nil }
+            defer { notesage_capture_string_free(raw) }
+            return String(cString: raw)
+        }
+    }
+
+    /// Download a URL that serves a document and store it in `Inbox/`.
+    ///
+    /// Streamed to disk with `downloadTask` rather than held in memory: the
+    /// extension has a ~120 MB ceiling and a linked video or deck can be large.
+    /// Named from `Content-Disposition` when the server offers one — the URL's
+    /// last segment is frequently an opaque id, which is how a shared PDF would
+    /// otherwise land as `secure.ubs.com`.
+    private func saveLinkedDocument(
+        from parsed: URL, response: HTTPURLResponse, ext: String, completion: @escaping (Bool) -> Void
+    ) {
+        let disposition = response.value(forHTTPHeaderField: "Content-Disposition") ?? ""
+        let suggested = Self.dispositionFilename(disposition)
+            ?? response.suggestedFilename
+            ?? "\(parsed.lastPathComponent).\(ext)"
+        // Ensure the extension is right even when the server's name lacks one —
+        // the file type is what decides whether the library can open it.
+        let name = (suggested as NSString).pathExtension.isEmpty
+            ? "\(suggested).\(ext)" : suggested
+
+        var request = URLRequest(url: parsed)
+        request.timeoutInterval = 60
+        request.setValue(Self.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        URLSession(configuration: .ephemeral).downloadTask(with: request) { [weak self] temp, _, _ in
+            guard let temp else {
+                DispatchQueue.main.async { completion(false) }
+                return
+            }
+            // Already off main, and `writeDocument` is a coordinated iCloud
+            // write — do it here rather than hopping back.
+            if let self, self.cancelled.isCancelled {
+                DispatchQueue.main.async { completion(false) }
+                return
+            }
+            let ok = (try? LibraryAccess.writeDocument(from: temp, suggestedName: name)) != nil
+            DispatchQueue.main.async { completion(ok) }
+        }.resume()
+    }
+
+    private static let safariUserAgent =
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 "
+        + "(KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1"
+
     private func fetch(url: String, completion: @escaping (String?) -> Void) {
         guard let parsed = URL(string: url), parsed.scheme == "https" || parsed.scheme == "http" else {
             completion(nil)
@@ -734,14 +812,37 @@ final class ShareViewController: UIViewController {
         }
         var request = URLRequest(url: parsed)
         request.timeoutInterval = 10
-        request.setValue(
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1",
-            forHTTPHeaderField: "User-Agent")
-        request.setValue("text/html,application/xhtml+xml", forHTTPHeaderField: "Accept")
-        URLSession(configuration: .ephemeral).dataTask(with: request) { data, response, _ in
-            let contentType =
-                (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? ""
+        request.setValue(Self.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        // Accept documents too — a link does not always lead to a page, and
+        // sending an HTML-only Accept invited a 406 for the very responses this
+        // now handles.
+        request.setValue("text/html,application/xhtml+xml,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        URLSession(configuration: .ephemeral).dataTask(with: request) { [weak self] data, response, _ in
+            let http = response as? HTTPURLResponse
+            let contentType = http?.value(forHTTPHeaderField: "Content-Type") ?? ""
             let maxBytes = 5 * 1024 * 1024
+
+            // The bytes ARE the document. A link to a PDF, EPUB, deck, image,
+            // video or audio file used to fail the `text/html` check below and
+            // fall through to a link note — a `.md` holding only the URL, after
+            // the sheet had promised otherwise. Store the file instead.
+            if let http, let ext = Self.linkedDocumentExtension(contentType) {
+                guard let self else {
+                    DispatchQueue.main.async { completion(nil) }
+                    return
+                }
+                self.saveLinkedDocument(from: parsed, response: http, ext: ext) { ok in
+                    if ok {
+                        self.finish()
+                    } else {
+                        // Could not store it — the link note is still better
+                        // than nothing, and is what the chain does anyway.
+                        completion(nil)
+                    }
+                }
+                return
+            }
+
             DispatchQueue.main.async {
                 if let data, data.count <= maxBytes,
                    contentType.lowercased().contains("text/html"),

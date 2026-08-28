@@ -134,6 +134,20 @@ char *notesage_capture_x_html_contents(const char *url,
 /// Returns a value, not a string — nothing to free.
 unsigned char notesage_capture_x_is_article(const char *x_json);
 
+/// Extension ("pdf", "epub", "pptx", "jpg", "mp4", "mp3", …) for a
+/// `Content-Type` that serves a storable document, or NULL when the response is
+/// a page to extract.
+///
+/// A URL does not always lead to an article. A link to a PDF used to take the
+/// article path, fail the `text/html` check, and fall through to a link note —
+/// a `.md` file holding only the URL, after the sheet had promised otherwise.
+char *notesage_capture_linked_document_extension(const char *content_type);
+
+/// Filename a server suggested via `Content-Disposition`, basename only, or
+/// NULL. The URL's last segment is often an opaque id while the header carries
+/// the real title. A server-supplied path is never honoured.
+char *notesage_capture_disposition_filename(const char *header);
+
 void notesage_capture_string_free(char *ptr);
 
 #ifdef __cplusplus

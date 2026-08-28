@@ -11,6 +11,7 @@
 "share.formatHtml" = "Article (HTML)";
 "share.savesToInbox" = "Saves to Inbox in your Notesage library.";
 "share.savesToInboxAs" = "Saves to Inbox in your Notesage library as\n%@";
+"share.savesToInboxAsOrLink" = "Saves to Inbox as %@ — or as a link note if the page has no article to extract.";
 "share.setUpFirst" = "Open Notesage to set up before sharing.";
 "share.nothingToSave" = "Nothing to save.";
 "share.oneFile" = "1 file";

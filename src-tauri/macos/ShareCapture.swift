@@ -103,7 +103,7 @@ enum ShareCapture {
         // and a capture that behaves differently depending on which machine
         // shared it is a bug on whichever one is worse.
         let proceed: (String?) -> Void = { xJson in
-            fetch(parsed) { html in
+            fetch(parsed, documentSaved: complete) { html in
                 // Cancel can have landed during the fetch — up to 15 s. Check
                 // before the first thing that writes, not only before the
                 // completion that reports it.
@@ -366,7 +366,64 @@ enum ShareCapture {
     /// The agent is not cosmetic: many sites serve an unrecognised client a
     /// bot-shell with no article in it, which would look to us like a page not
     /// worth extracting.
-    private static func fetch(_ url: URL, completion: @escaping (String?) -> Void) {
+    /// Extension for a `Content-Type` that serves a storable document, or nil
+    /// for a page to extract. Decided by the CRATE, so both extensions agree —
+    /// a second opinion in Swift is exactly how the two platforms drift.
+    private static func linkedDocumentExtension(_ contentType: String) -> String? {
+        callRust { notesage_capture_linked_document_extension(contentType) }
+    }
+
+    /// The server's suggested filename, basename only, or nil.
+    private static func dispositionFilename(_ header: String) -> String? {
+        callRust { notesage_capture_disposition_filename(header) }
+    }
+
+    /// Download a URL that serves a document and store it in `Inbox/`.
+    ///
+    /// Streamed to disk with `downloadTask` rather than held in memory — a
+    /// linked deck or video can be large. Named from `Content-Disposition`
+    /// when offered: the URL's last segment is frequently an opaque id, which
+    /// is how a shared PDF would otherwise land named after its host.
+    private static func saveLinkedDocument(
+        from url: URL, response: HTTPURLResponse, ext: String,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        let disposition = response.value(forHTTPHeaderField: "Content-Disposition") ?? ""
+        let suggested = dispositionFilename(disposition)
+            ?? response.suggestedFilename
+            ?? "\(url.lastPathComponent).\(ext)"
+        let name = (suggested as NSString).pathExtension.isEmpty
+            ? "\(suggested).\(ext)" : suggested
+
+        var request = URLRequest(url: url)
+        request.timeoutInterval = 60
+        let config = URLSessionConfiguration.ephemeral
+        config.httpCookieStorage = nil
+        config.urlCache = nil
+        URLSession(configuration: config).downloadTask(with: request) { temp, _, error in
+            guard let temp else {
+                completion(.failure(error ?? ShareCaptureError.fetchFailed))
+                return
+            }
+            do {
+                completion(.success(try ShareLibraryAccess.writeDocument(
+                    from: temp, suggestedName: name)))
+            } catch {
+                completion(.failure(error))
+            }
+        }.resume()
+    }
+
+    /// Fetch a page, or store the document the URL actually serves.
+    ///
+    /// `documentSaved` fires INSTEAD of `completion` when the response is a
+    /// document — a second channel rather than an overloaded `String?`, so a
+    /// caller cannot mistake "stored a PDF" for "found no article".
+    private static func fetch(
+        _ url: URL,
+        documentSaved: @escaping (Result<String, Error>) -> Void,
+        completion: @escaping (String?) -> Void
+    ) {
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
         request.setValue(
@@ -379,6 +436,19 @@ enum ShareCapture {
         config.urlCache = nil
 
         URLSession(configuration: config).dataTask(with: request) { data, response, _ in
+            // The bytes ARE the document. A link to a PDF, EPUB, deck, image,
+            // video or audio file used to fail the HTML path below and fall
+            // through to a link note — a `.md` holding only the URL. Signalled
+            // to the caller through `documentSaved` so the chain stops.
+            if let http = response as? HTTPURLResponse,
+               (200..<300).contains(http.statusCode),
+               let ct = http.value(forHTTPHeaderField: "Content-Type"),
+               let ext = linkedDocumentExtension(ct) {
+                saveLinkedDocument(from: url, response: http, ext: ext) { result in
+                    documentSaved(result)
+                }
+                return
+            }
             let html: String? = {
                 guard let http = response as? HTTPURLResponse,
                       (200..<300).contains(http.statusCode),

@@ -228,6 +228,16 @@ const EXPORT_CALL_SITES: &[(&str, &str, MacExpectation)] = &[
         "ShareViewController.swift",
         Ok("ShareCapture.swift"),
     ),
+    (
+        "notesage_capture_linked_document_extension",
+        "ShareViewController.swift",
+        Ok("ShareCapture.swift"),
+    ),
+    (
+        "notesage_capture_disposition_filename",
+        "ShareViewController.swift",
+        Ok("ShareCapture.swift"),
+    ),
     ("notesage_capture_string_free", "LibraryCapture.swift", Ok("ShareCapture.swift")),
 ];
 

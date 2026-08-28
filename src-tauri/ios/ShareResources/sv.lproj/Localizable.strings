@@ -10,6 +10,7 @@
 "share.formatHtml" = "Artikel (HTML)";
 "share.savesToInbox" = "Sparas i Inbox i ditt Notesage-bibliotek.";
 "share.savesToInboxAs" = "Sparas i Inbox i ditt Notesage-bibliotek som\n%@";
+"share.savesToInboxAsOrLink" = "Sparas i Inbox som %@ — eller som en länkanteckning om sidan saknar artikel att extrahera.";
 "share.setUpFirst" = "Öppna Notesage för att komma igång innan du delar.";
 "share.nothingToSave" = "Inget att spara.";
 "share.oneFile" = "1 fil";
