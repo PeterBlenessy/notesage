@@ -45,6 +45,18 @@ import type { PdfMobileFindHandle, PdfMobileFindState } from "@/components/edito
  * never navigate outside the grant.
  */
 export function resolveRelativeLink(currentRelPath: string, href: string): string | null {
+  // An href carrying a URI scheme is not a path, and must not be coerced into
+  // one. Without this, `about:blank#top` — which is what an in-document anchor
+  // becomes once WebKit resolves it against a `baseURL: nil` document — was
+  // joined onto the current directory and returned as `Inbox/about:blank`: a
+  // library path to a file that cannot exist. The reader then tried to open
+  // it, failed, and showed nothing, which is why a dead anchor tap looked like
+  // the app ignoring the tap rather than like an error.
+  //
+  // Callers handle `http(s):` and `mailto:` before reaching here; everything
+  // else with a scheme (`about:`, `data:`, `javascript:`, `file:`) is
+  // something this function has no answer for, and `null` says so.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href)) return null;
   const clean = decodeURIComponent(href.split(/[?#]/)[0]);
   if (!clean) return null;
   const baseDir = currentRelPath.includes("/")

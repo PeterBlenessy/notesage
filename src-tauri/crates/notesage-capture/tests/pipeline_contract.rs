@@ -1369,3 +1369,55 @@ fn native_report_view_keeps_text_size_adjust_parity_with_the_iframe_path() {
          equivalent, so it must inject the CSS itself."
     );
 }
+
+/// A report's in-document anchors must be detected against the DOCUMENT's url,
+/// not against the shape of the href in the markup.
+///
+/// `WKNavigationAction.request.url` is always the RESOLVED absolute url. The
+/// first version of this handler tested `url.scheme == nil ||
+/// absoluteString.hasPrefix("#")` — a description of the markup, not of
+/// anything that ever arrives at the delegate. Because the report is loaded
+/// with `loadHTMLString(baseURL: nil)`, its base is `about:blank`, so
+/// `href="#top"` reaches the handler as `about:blank#top`: scheme "about", no
+/// leading "#". Every anchor missed the branch and was emitted as an outbound
+/// link, which the app could resolve as neither a remote url nor a library
+/// path — so tapping a table-of-contents entry did nothing whatsoever.
+///
+/// The bug is invisible in review (the condition reads plausibly) and needs a
+/// device plus a report containing anchors to see, which is why it survived to
+/// a release. Pinning the mechanism is cheaper than rediscovering it.
+#[test]
+fn report_anchor_taps_are_matched_against_the_document_url() {
+    let src = ext_src(
+        "crates/tauri-plugin-notesage-ios/ios/Sources",
+        "ReportWebView.swift",
+    );
+    let start = src
+        .find("decidePolicyFor navigationAction")
+        .expect("navigation policy handler not found");
+    let end = src[start..]
+        .find("\n  /// Same document")
+        .map(|i| start + i)
+        .unwrap_or(src.len());
+    // Strip comments before asserting. The code below documents the old
+    // broken condition by quoting it, and a guard that matched its own
+    // explanation would fail for the wrong reason — as this one did, first
+    // run, which is the cheapest possible demonstration of why it matters.
+    let handler: String = src[start..end]
+        .lines()
+        .filter(|l| !l.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    assert!(
+        handler.contains("isSameDocument("),
+        "the anchor branch must compare the resolved url against the document's \
+         own url; matching on scheme or a \"#\" prefix describes the href in the \
+         markup and never matches a real navigation"
+    );
+    assert!(
+        !handler.contains("hasPrefix(\"#\")"),
+        "`hasPrefix(\"#\")` cannot match: request.url is resolved, so an anchor \
+         arrives as `about:blank#...`, never as `#...`"
+    );
+}
