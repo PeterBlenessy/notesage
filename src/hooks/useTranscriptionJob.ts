@@ -7,6 +7,49 @@ import { useRecordingStore } from '@/stores/recording-store';
 import { renderTranscript } from '@/lib/transcription/render-transcript';
 import { emitWorkflowEvent } from '@/lib/automations/event-bus';
 import { writeTranscriptToBundle } from '@/lib/transcription/bundle';
+import { track, type AudioContainer } from '@/lib/telemetry';
+
+/**
+ * Bucket a path's extension into the low-cardinality set the telemetry event
+ * accepts. Never the filename — the container is the whole signal, and a
+ * recording's name is the user's business.
+ */
+export function audioContainerOf(path: string): AudioContainer {
+  const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
+  switch (ext) {
+    case "wav":
+    case "mp3":
+    case "m4a":
+    case "flac":
+    case "ogg":
+    case "caf":
+      return ext;
+    case "aif":
+    case "aiff":
+      return "aiff";
+    default:
+      return "other";
+  }
+}
+
+/**
+ * Did this fail at the DECODE step, as opposed to anywhere else in the job?
+ *
+ * Matched against the messages `decode_audio_f32` produces. A missing Whisper
+ * model or a transcription error also lands in the same catch, and reporting
+ * those as `decoder: "failed"` would poison exactly the number this event
+ * exists to measure — the rate at which a container defeats both decoders.
+ */
+export function isDecodeFailure(err: unknown): boolean {
+  const message = String(err);
+  return (
+    message.includes("Unrecognised audio format") ||
+    message.includes("Unsupported audio codec") ||
+    message.includes("no audio track") ||
+    message.includes("decoded to no samples") ||
+    message.includes("CoreAudio")
+  );
+}
 
 /**
  * Event name and detail shape for the decoupled transcription trigger.
@@ -164,6 +207,15 @@ export function useTranscriptionJob(): void {
           effectiveLanguage || undefined,
         );
 
+        // Which decoder read it (#803). The CoreAudio fallback covers two
+        // known symphonia gaps (Opus, and AAC it rejects); this is how we find
+        // out whether either actually bites, rather than assuming. No-ops
+        // entirely when usage telemetry is off.
+        track("audio_decoded", {
+          container: audioContainerOf(audioPath),
+          decoder: result.decoder === "coreaudio" ? "coreaudio" : "symphonia",
+        });
+
         const markdown = renderTranscript(result.segments, {
           title: label,
           durationSecs: result.duration_secs,
@@ -177,6 +229,15 @@ export function useTranscriptionJob(): void {
         // Phase 3: surface a transcription-done workflow event for automations.
         emitWorkflowEvent({ event: 'transcription-done', transcriptPath });
       } catch (err) {
+        // The most valuable half of this signal: a container NEITHER decoder
+        // could read. Only reported when the failure is a decode failure —
+        // a missing model or a Whisper error says nothing about the format.
+        if (isDecodeFailure(err)) {
+          track("audio_decoded", {
+            container: audioContainerOf(audioPath),
+            decoder: "failed",
+          });
+        }
         useActivityStore.getState().setTranscriptionError(jobId);
         toast.error(`Transcription failed: ${err}`);
       } finally {

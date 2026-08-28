@@ -57,6 +57,7 @@ const SUCCESS: TranscriptionResult = {
   segments: [{ start: 0, end: 1, text: 'hi', speaker_id: null, speaker_name: null }],
   duration_secs: 1.5,
   language: 'en',
+  decoder: 'symphonia',
 };
 
 beforeEach(() => {

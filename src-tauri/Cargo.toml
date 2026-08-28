@@ -183,12 +183,33 @@ tauri-plugin-sentry = "0.5.0"
 # Goals), so both stay off rather than being dead weight in a read-only reader.
 whisper-rs = "0.16"
 cpal = "0.17"
+# Audio decoding for transcription (#803). Codecs are opt-in, so this compiles
+# only the containers a shared or recorded file can actually arrive in — the
+# `all-codecs` feature would pull in video and subtitle decoders we never call.
+#
+# Deliberately NOT AVFoundation as the primary: `transcription.rs` carries no
+# `target_os` gate today, and decoding an MP3 is not a platform-specific
+# capability the way Seatbelt or the NSColor bridge are. A pure-Rust decoder
+# also stays testable as a function over bytes.
+#
+# MPL-2.0: file-level copyleft, obligations attach to symphonia's own sources
+# and not to what links them. Already precedented here — `option-ext` and
+# `selectors` are both MPL-2.0 in Cargo.lock.
+symphonia = { version = "0.6", default-features = false, features = [
+    "wav", "pcm", "mp3", "aac", "alac", "isomp4", "flac", "ogg", "vorbis", "aiff", "caf",
+] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.16", features = ["metal"] }
 # AppKit bridge for NSColor.controlAccentColor (system accent color picker option)
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSColor", "NSColorSpace"] }
+# CoreAudio fallback for files symphonia cannot decode (#803). Two known gaps
+# it covers: Opus in an .ogg container (symphonia ships `vorbis`, not Opus),
+# and any AAC its decoder rejects that Apple accepts. Failure path only — it
+# never runs when symphonia succeeds.
+objc2-avf-audio = { version = "0.3", features = ["AVAudioFile", "AVAudioBuffer", "AVAudioFormat", "AVAudioTypes"] }
+objc2-foundation = { version = "0.3", features = ["NSURL", "NSString", "NSError"] }
 
 [features]
 default = []

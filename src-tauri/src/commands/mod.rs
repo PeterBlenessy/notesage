@@ -39,6 +39,12 @@ pub mod transcription;
 #[cfg(mobile)]
 #[path = "transcription_stub.rs"]
 pub mod transcription;
+
+/// Audio decoding for transcription (#803). Desktop only, for the same reason
+/// `transcription` is: the mobile reader neither records nor transcribes, so a
+/// decoder stack is dead weight in it.
+#[cfg(desktop)]
+pub mod audio_decode;
 pub mod local_inference;
 pub mod model_management;
 pub mod model_providers;
