@@ -21,7 +21,7 @@
  */
 import { iosReadFile, iosReadBinary, iosThumbnail, iosArticleThumbnail } from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
-import { classifyFile } from "@/components/mobile/FileRow";
+import { classifyFile, isOpenDocument } from "@/components/mobile/FileRow";
 import type { FileEntry } from "@/lib/tauri";
 
 /** How many source lines of a note feed the thumbnail preview. */
@@ -149,7 +149,15 @@ function imageMimeFor(name: string): string {
       return "image/svg+xml";
     case "bmp":
       return "image/bmp";
+    case "heic":
+    case "heif":
+      return "image/heic";
+    case "tif":
+    case "tiff":
+      return "image/tiff";
     default:
+      // Deliberately not a guess. An unknown type tagged as an image type
+      // still fails to decode, just later and less legibly.
       return "application/octet-stream";
   }
 }
@@ -229,6 +237,38 @@ async function buildThumbnail(
       } catch (err) {
         if (err instanceof ThumbnailCancelled) throw err;
         // Fall through to the web pipeline (desktop dev, tests).
+      }
+    }
+    if (isOpenDocument(entry.name)) {
+      // ODF is the one format above where QuickLook is expected to come back
+      // empty — iOS has no OpenDocument generator, so odt/odp would otherwise
+      // be the only things share-to-Inbox saves that can never show a preview.
+      //
+      // They can, though, and cheaply: an ODF package is a zip, and the spec
+      // requires it to carry a rendered `Thumbnails/thumbnail.png` of the first
+      // page. Every producer that matters (LibreOffice, OpenOffice, Google
+      // Docs export) writes one. So we just read the preview the file already
+      // contains, with the zip reader the PPTX parser already pulls in.
+      //
+      // This runs ONLY after the native attempt failed, so on an OS that grows
+      // ODF support it costs nothing — and if the package omits the thumbnail
+      // (spec allows it), the catch below drops to the document icon.
+      try {
+        const bytes = await iosReadBinary(entry.path);
+        if (isStale()) throw new ThumbnailCancelled();
+        const { default: JSZip } = await import("jszip");
+        const zip = await JSZip.loadAsync(bytes);
+        const embedded = zip.file("Thumbnails/thumbnail.png");
+        if (embedded) {
+          const png = await embedded.async("uint8array");
+          if (isStale()) throw new ThumbnailCancelled();
+          const blob = await shrinkForCard(png, "image/png");
+          if (isStale()) throw new ThumbnailCancelled();
+          return { kind: "image", url: URL.createObjectURL(blob) };
+        }
+      } catch (err) {
+        if (err instanceof ThumbnailCancelled) throw err;
+        // Not a readable ODF package, or no embedded preview — generic icon.
       }
     }
     if (kind === "image") {

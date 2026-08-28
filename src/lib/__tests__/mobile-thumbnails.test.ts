@@ -460,3 +460,94 @@ describe("blob URLs are released", () => {
     expect(revoke).not.toHaveBeenCalled();
   });
 });
+
+describe("OpenDocument thumbnails (share-to-Inbox coverage)", () => {
+  /** A minimal but REAL .odt: a zip with the spec-mandated embedded preview. */
+  async function odtBytes(withThumbnail: boolean): Promise<Uint8Array> {
+    const { default: JSZip } = await import("jszip");
+    const zip = new JSZip();
+    zip.file("mimetype", "application/vnd.oasis.opendocument.text");
+    zip.file("content.xml", "<office:document-content/>");
+    if (withThumbnail) {
+      // Not a valid PNG, and deliberately so — the pipeline must not need to
+      // decode it. `shrinkForCard` degrades to the original bytes when
+      // createImageBitmap is unavailable, which is exactly the jsdom case.
+      zip.file("Thumbnails/thumbnail.png", new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]));
+    }
+    return await zip.generateAsync({ type: "uint8array" });
+  }
+
+  it("falls back to the preview embedded in the package when QuickLook has none", async () => {
+    // iOS ships no OpenDocument generator, so the native call failing here is
+    // the expected production path for odt/odp, not an edge case.
+    iosReadBinaryMock.mockResolvedValue(await odtBytes(true));
+    const result = await getThumbnail(entry({ name: "report.odt" }), {
+      theme: "light",
+    });
+    expect(result).toEqual({ kind: "image", url: "blob:mock-thumbnail-url" });
+    expect(iosThumbnailMock).toHaveBeenCalled(); // native tried first
+  });
+
+  it("degrades to the generic icon when the package carries no preview", async () => {
+    // The ODF spec allows omitting it. A produced-by-script document might.
+    iosReadBinaryMock.mockResolvedValue(await odtBytes(false));
+    const result = await getThumbnail(entry({ name: "bare.odp" }), {
+      theme: "light",
+    });
+    expect(result).toEqual({ kind: "icon" });
+  });
+
+  it("does not read the file at all when QuickLook succeeds", async () => {
+    // The fallback is strictly a fallback: on an OS that grows ODF support,
+    // this must cost nothing — no multi-MB read, no zip parse.
+    iosThumbnailMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    const result = await getThumbnail(entry({ name: "report.odt" }), {
+      theme: "light",
+    });
+    expect(result).toEqual({ kind: "image", url: "blob:mock-thumbnail-url" });
+    expect(iosReadBinaryMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("imageMimeFor coverage of capture-pipeline image formats", () => {
+  /**
+   * The web fallback tags the blob with this MIME. Every image format
+   * share-to-Inbox can save must map to a real one — `application/octet-stream`
+   * renders nothing, and the failure is silent (an empty card, not an error).
+   *
+   * heic and tiff are the ones that were missing: heic since the fallback was
+   * written, tiff the moment the classifier learned about it.
+   */
+  it.each([
+    ["photo.png", "image/png"],
+    ["photo.jpg", "image/jpeg"],
+    ["photo.jpeg", "image/jpeg"],
+    ["photo.gif", "image/gif"],
+    ["photo.webp", "image/webp"],
+    ["photo.svg", "image/svg+xml"],
+    ["photo.heic", "image/heic"],
+    ["scan.tiff", "image/tiff"],
+    ["scan.tif", "image/tiff"],
+  ])("maps %s to %s", async (name, expected) => {
+    // Exercised through the public path: native fails, so the web fallback
+    // runs and shrinkForCard receives the blob built from this MIME.
+    iosReadBinaryMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    const blobs: string[] = [];
+    const RealBlob = globalThis.Blob;
+    vi.stubGlobal(
+      "Blob",
+      class extends RealBlob {
+        constructor(parts: BlobPart[], opts?: BlobPropertyBag) {
+          super(parts, opts);
+          if (opts?.type) blobs.push(opts.type);
+        }
+      },
+    );
+    try {
+      await getThumbnail(entry({ name }), { theme: "light" });
+    } finally {
+      vi.stubGlobal("Blob", RealBlob);
+    }
+    expect(blobs).toContain(expected);
+  });
+});

@@ -1,4 +1,4 @@
-import { ChevronRight, Folder, FileText, FileImage, FileType, FileCode, File, FilePlay, Share, Trash2 } from "lucide-react";
+import { ChevronRight, Folder, FileText, FileImage, FileType, FileCode, File, FilePlay, FileAudio, Share, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import type { FileEntry } from "@/lib/tauri";
 import { iosShareFile, iosDeleteFile } from "@/lib/ios-api";
@@ -13,18 +13,63 @@ import {
 } from "@/lib/mobile-entry-actions";
 import { getFormatLocale } from "@/lib/i18n";
 
-/** Classify a file by extension for icon + viewer routing. */
+/** The `media` kind, split by what the icon should say.
+ *
+ *  Both halves open in the same native player, so this split does not affect
+ *  routing — it picks the glyph. That matters more than it looks: QuickLook can
+ *  only make a thumbnail for an audio file carrying embedded cover art, so for
+ *  a voice memo the icon is not a fallback, it is permanently the entire card.
+ *
+ *  Declared as the two halves and unioned below rather than written out twice.
+ *  A second hand-maintained copy of these extensions is precisely the drift
+ *  this file's guard exists to catch, and it would fail silently here: an
+ *  audio format added to one list and not the other still classifies as
+ *  `media`, so nothing breaks — it just quietly wears the video glyph. */
+const AUDIO_EXTENSIONS = ["mp3", "m4a", "wav", "aac", "caf", "ogg", "flac"];
+const VIDEO_EXTENSIONS = ["mp4", "mov", "m4v", "webm"];
+
+function extensionOf(name: string): string {
+  return name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+}
+
+export function isAudioFile(name: string): boolean {
+  return AUDIO_EXTENSIONS.includes(extensionOf(name));
+}
+
+/** OpenDocument text / presentation.
+ *
+ *  Split out because these are the one `doc` type iOS QuickLook has no
+ *  generator for, so the thumbnail pipeline needs a name for "try the
+ *  preview embedded in the package instead". */
+export function isOpenDocument(name: string): boolean {
+  return ["odt", "odp"].includes(extensionOf(name));
+}
+
+/** Classify a file by extension for icon + viewer routing.
+ *
+ *  INVARIANT: every extension the capture pipeline can land in the library must
+ *  be classified here as something other than `other`. `other` is the dead end
+ *  — generic icon, no thumbnail attempted (`mobile-thumbnails.ts` gates its
+ *  native QuickLook call on the kinds below), and activation falls to the
+ *  Reader's "unsupported" card rather than the native viewer.
+ *
+ *  That is how odt/odp/rtf/tiff/webm/ogg/flac arrived broken: `linked_document_
+ *  for_content_type` (notesage-capture) learned to save them, this list did
+ *  not, and they landed as grey generic rows. When adding a row there, add the
+ *  extension here — `classify_file_covers_every_linked_document_extension` in
+ *  FileRow.test.tsx fails the build if the two lists drift apart. */
 export function classifyFile(
   name: string,
 ): "markdown" | "image" | "text" | "pdf" | "doc" | "media" | "html" | "other" {
-  const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+  const ext = extensionOf(name);
   if (ext === "md" || ext === "markdown") return "markdown";
-  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "heic"].includes(ext)) return "image";
+  if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "heic", "tif", "tiff"].includes(ext))
+    return "image";
   if (ext === "pdf") return "pdf";
-  if (["epub", "docx", "pptx"].includes(ext)) return "doc";
+  if (["epub", "docx", "pptx", "odt", "odp", "rtf"].includes(ext)) return "doc";
   // Videos and audio (shared screen recordings, voice memos, …) — opened
   // via the native QuickLook player, never the web reader.
-  if (["mp4", "mov", "m4v", "mp3", "m4a", "wav", "aac", "caf"].includes(ext)) return "media";
+  if (VIDEO_EXTENSIONS.includes(ext) || AUDIO_EXTENSIONS.includes(ext)) return "media";
   // Rendered, not shown as source: exported reports are self-contained HTML
   // whose charts and interactivity are inline scripts. iOS Files shows them as
   // markup with scripts disabled, which is the gap this reader closes.
@@ -55,7 +100,7 @@ export function iconFor(entry: FileEntry) {
     case "doc":
       return FileType;
     case "media":
-      return FilePlay;
+      return isAudioFile(entry.name) ? FileAudio : FilePlay;
     case "html":
       return FileCode;
     case "text":
