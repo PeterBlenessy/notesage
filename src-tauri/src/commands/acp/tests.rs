@@ -385,3 +385,84 @@ fn only_end_turn_means_the_agent_actually_finished() {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// Prompt content blocks — attachments must travel as resource links
+// ---------------------------------------------------------------------------
+//
+// An attachment used to be NAMED in the system prompt ("File in context:
+// /path/to/note.md") and nothing else. The agent got a string that happened to
+// look like a path, with no reason to connect it to "read this" — so attaching
+// a document did nothing, and pasting the path by hand worked exactly as well.
+// That was the reported bug.
+//
+// `ContentBlock::ResourceLink` is the ACP concept for this, and the schema is
+// unambiguous that it needs no capability gate: "All agents MUST support
+// resource links in prompts."
+mod prompt_blocks {
+    use super::super::agent_thread::build_prompt_blocks;
+    use agent_client_protocol::schema::ContentBlock;
+
+    fn kinds(blocks: &[ContentBlock]) -> Vec<&'static str> {
+        blocks
+            .iter()
+            .map(|b| match b {
+                ContentBlock::Text(_) => "text",
+                ContentBlock::Image(_) => "image",
+                ContentBlock::ResourceLink(_) => "resource_link",
+                _ => "other",
+            })
+            .collect()
+    }
+
+    #[test]
+    fn an_attachment_becomes_a_resource_link_not_prose() {
+        let blocks = build_prompt_blocks(
+            "summarise this".to_string(),
+            None,
+            &["/Users/p/Notesage/note.md".to_string()],
+        );
+        assert_eq!(kinds(&blocks), vec!["resource_link", "text"]);
+
+        let ContentBlock::ResourceLink(link) = &blocks[0] else {
+            panic!("expected a resource link, got {:?}", kinds(&blocks));
+        };
+        // A `file://` URI is what makes it resolvable rather than descriptive.
+        assert_eq!(link.uri, "file:///Users/p/Notesage/note.md");
+        // The basename is what a human recognises in an agent's own transcript;
+        // the full path lives in the URI.
+        assert_eq!(link.name, "note.md");
+    }
+
+    #[test]
+    fn the_users_text_comes_last() {
+        // The question should follow the material it refers to, not precede it.
+        let blocks = build_prompt_blocks(
+            "what changed?".to_string(),
+            None,
+            &["/a/one.md".to_string(), "/b/two.md".to_string()],
+        );
+        assert_eq!(kinds(&blocks), vec!["resource_link", "resource_link", "text"]);
+    }
+
+    #[test]
+    fn no_attachments_produces_exactly_the_text_block() {
+        // The overwhelmingly common case must not gain an empty block or an
+        // extra round trip.
+        let blocks = build_prompt_blocks("hello".to_string(), None, &[]);
+        assert_eq!(kinds(&blocks), vec!["text"]);
+    }
+
+    #[test]
+    fn a_path_with_no_basename_still_yields_a_usable_name() {
+        // `file_name()` returns None for a trailing-slash or root path. Falling
+        // back to the whole path keeps the link valid rather than panicking or
+        // sending an empty name.
+        let blocks = build_prompt_blocks("x".to_string(), None, &["/".to_string()]);
+        let ContentBlock::ResourceLink(link) = &blocks[0] else {
+            panic!("expected a resource link");
+        };
+        assert_eq!(link.name, "/");
+        assert_eq!(link.uri, "file:///");
+    }
+}

@@ -178,6 +178,59 @@ pub(crate) fn stop_reason_str(reason: StopReason) -> String {
 /// `Cancel` and `PermissionRespond` while the agent processes the prompt.
 /// `ConnectionTo` is Send + Clone, so a plain `tokio::spawn` suffices; using it
 /// (rather than `conn.spawn`) keeps a prompt error from tearing down the whole
+
+/// Assemble the content blocks for one `session/prompt`.
+///
+/// Pure and separate so the ordering and the attachment shape are testable —
+/// `handle_prompt` itself spawns a task against a live connection.
+///
+/// Order is images, then attachments, then the user's text. The text goes last
+/// so the agent reads the question after the material it refers to.
+pub(crate) fn build_prompt_blocks(
+    content: String,
+    images: Option<&[crate::commands::ai::ImageData]>,
+    attached_file_paths: &[String],
+) -> Vec<ContentBlock> {
+    let mut blocks: Vec<ContentBlock> = Vec::new();
+    if let Some(imgs) = images {
+        for img in imgs {
+            blocks.push(ContentBlock::Image(ImageContent::new(
+                img.data.clone(),
+                img.mime_type.clone(),
+            )));
+        }
+    }
+    // Attachments as RESOURCE LINKS.
+    //
+    // Every ACP agent must support these ("All agents MUST support resource
+    // links in prompts" — schema v2), so unlike images this needs no
+    // capability gate.
+    //
+    // This replaces naming the path in the system prompt, which is what an
+    // attachment used to do and why it did nothing: the agent received a
+    // string that happened to look like a path, with no reason to connect it
+    // to "read this". Pasting the path by hand produced an identical result,
+    // which is exactly what was reported.
+    //
+    // `Resource` (embedded contents) would save a round-trip but is gated
+    // behind `embeddedContext` and would inline whole files into the prompt —
+    // the failure mode being avoided, not chosen.
+    for path in attached_file_paths {
+        let name = std::path::Path::new(path)
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.clone());
+        // `ResourceLink` is #[non_exhaustive] — built through its constructor
+        // so a field added upstream cannot break this.
+        blocks.push(ContentBlock::ResourceLink(ResourceLink::new(
+            name,
+            format!("file://{path}"),
+        )));
+    }
+    blocks.push(ContentBlock::Text(TextContent::new(content)));
+    blocks
+}
+
 /// connection. Not `async` — it only spawns and returns.
 fn handle_prompt(
     conn: &AgentConn,
@@ -185,6 +238,7 @@ fn handle_prompt(
     sid: String,
     content: String,
     images: Option<Vec<crate::commands::ai::ImageData>>,
+    attached_file_paths: Vec<String>,
     usage_ctx: ClientContext,
     reply: oneshot::Sender<Result<String, String>>,
 ) {
@@ -199,16 +253,7 @@ fn handle_prompt(
             images.as_ref().map_or(0, |v| v.len()),
         );
         let start = std::time::Instant::now();
-        let mut blocks: Vec<ContentBlock> = Vec::new();
-        if let Some(ref imgs) = images {
-            for img in imgs {
-                blocks.push(ContentBlock::Image(ImageContent::new(
-                    img.data.clone(),
-                    img.mime_type.clone(),
-                )));
-            }
-        }
-        blocks.push(ContentBlock::Text(TextContent::new(content)));
+        let blocks = build_prompt_blocks(content, images.as_deref(), &attached_file_paths);
         let req = PromptRequest::new(SessionId::new(sid), blocks);
         match conn.send_request(req).block_task().await {
             Ok(resp) => {
@@ -813,8 +858,8 @@ pub(crate) fn run_agent_thread(
                         AgentCmd::LoadSession { session_id: sid, working_directory: cwd, mcp_servers, reply } => {
                             handle_load_session(&conn, sid, cwd, mcp_servers, reply).await;
                         }
-                        AgentCmd::Prompt { session_id: sid, content, images, reply } => {
-                            handle_prompt(&conn, &agent_binary, sid, content, images, usage_ctx.clone(), reply);
+                        AgentCmd::Prompt { session_id: sid, content, images, attached_file_paths, reply } => {
+                            handle_prompt(&conn, &agent_binary, sid, content, images, attached_file_paths, usage_ctx.clone(), reply);
                         }
                         AgentCmd::Cancel { session_id: sid, reply } => {
                             handle_cancel(&conn, &permission_waiters, sid, reply);

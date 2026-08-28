@@ -678,6 +678,13 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             sessionId: promptSessionId,
             content: promptContent,
             images: acpImages,
+            // The attachment, as an ACP resource link the agent can resolve.
+            //
+            // Previously the path was only NAMED in the system prompt ("File
+            // in context: /…"), which is why attaching a document did nothing
+            // an agent could act on and why pasting the path by hand worked
+            // exactly as well — it received a string, not an attachment.
+            attachedFilePaths: opts?.attachedFilePaths ?? null,
           });
           // How the turn finished, in aggregate. `ai_chat_sent` fires at send
           // and cannot know the outcome; this is the only signal for how often
@@ -933,6 +940,9 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
           sessionId: retrySessionId,
           content: promptContent,
           images: retryImages,
+          // A retry must carry the same attachments as the original send, or
+          // the agent silently loses the document it was working on.
+          attachedFilePaths: prompt.attachedFilePaths ?? null,
         });
         // Same early-stop surfacing as the initial send — a retried turn can
         // exhaust its budget just as easily, and silence would be just as wrong.

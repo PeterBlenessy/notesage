@@ -253,6 +253,14 @@ pub(crate) enum AgentCmd {
     Prompt {
         session_id: String,
         content: String,
+        /// Absolute paths the user attached in the command bar.
+        ///
+        /// Sent as ACP `ContentBlock::ResourceLink`s alongside the text, NOT
+        /// named in the system prompt. Naming a path in prose is what the old
+        /// `File in context: <path>` line did, and it is why pasting the path
+        /// by hand worked exactly as well — the agent had a string, not an
+        /// attachment.
+        attached_file_paths: Vec<String>,
         images: Option<Vec<crate::commands::ai::ImageData>>,
         /// The turn's ACP `StopReason`, serialized snake_case (`end_turn`,
         /// `max_tokens`, `max_turn_requests`, `refusal`, `cancelled`).
