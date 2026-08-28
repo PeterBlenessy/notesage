@@ -13,16 +13,27 @@ import {
 } from "@/lib/mobile-entry-actions";
 import { getFormatLocale } from "@/lib/i18n";
 
-/** Audio, as opposed to video, within the `media` kind.
+/** The `media` kind, split by what the icon should say.
  *
- *  Both open in the same native player, so this does not affect routing — it
- *  picks the icon. That matters more than it looks: QuickLook can only make a
- *  thumbnail for an audio file that carries embedded cover art, so for a voice
- *  memo or a bare MP3 the icon IS the card, permanently. A video glyph on an
- *  audio file is then not a small inaccuracy, it is the whole visual. */
+ *  Both halves open in the same native player, so this split does not affect
+ *  routing — it picks the glyph. That matters more than it looks: QuickLook can
+ *  only make a thumbnail for an audio file carrying embedded cover art, so for
+ *  a voice memo the icon is not a fallback, it is permanently the entire card.
+ *
+ *  Declared as the two halves and unioned below rather than written out twice.
+ *  A second hand-maintained copy of these extensions is precisely the drift
+ *  this file's guard exists to catch, and it would fail silently here: an
+ *  audio format added to one list and not the other still classifies as
+ *  `media`, so nothing breaks — it just quietly wears the video glyph. */
+const AUDIO_EXTENSIONS = ["mp3", "m4a", "wav", "aac", "caf", "ogg", "flac"];
+const VIDEO_EXTENSIONS = ["mp4", "mov", "m4v", "webm"];
+
+function extensionOf(name: string): string {
+  return name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+}
+
 export function isAudioFile(name: string): boolean {
-  const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
-  return ["mp3", "m4a", "wav", "aac", "caf", "ogg", "flac"].includes(ext);
+  return AUDIO_EXTENSIONS.includes(extensionOf(name));
 }
 
 /** Classify a file by extension for icon + viewer routing.
@@ -41,7 +52,7 @@ export function isAudioFile(name: string): boolean {
 export function classifyFile(
   name: string,
 ): "markdown" | "image" | "text" | "pdf" | "doc" | "media" | "html" | "other" {
-  const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
+  const ext = extensionOf(name);
   if (ext === "md" || ext === "markdown") return "markdown";
   if (["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "heic", "tif", "tiff"].includes(ext))
     return "image";
@@ -49,11 +60,7 @@ export function classifyFile(
   if (["epub", "docx", "pptx", "odt", "odp", "rtf"].includes(ext)) return "doc";
   // Videos and audio (shared screen recordings, voice memos, …) — opened
   // via the native QuickLook player, never the web reader.
-  if (
-    ["mp4", "mov", "m4v", "webm", "mp3", "m4a", "wav", "aac", "caf", "ogg", "flac"].includes(ext)
-  ) {
-    return "media";
-  }
+  if (VIDEO_EXTENSIONS.includes(ext) || AUDIO_EXTENSIONS.includes(ext)) return "media";
   // Rendered, not shown as source: exported reports are self-contained HTML
   // whose charts and interactivity are inline scripts. iOS Files shows them as
   // markup with scripts disabled, which is the gap this reader closes.
