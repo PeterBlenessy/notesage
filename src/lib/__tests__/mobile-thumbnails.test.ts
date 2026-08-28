@@ -508,3 +508,46 @@ describe("OpenDocument thumbnails (share-to-Inbox coverage)", () => {
     expect(iosReadBinaryMock).not.toHaveBeenCalled();
   });
 });
+
+describe("imageMimeFor coverage of capture-pipeline image formats", () => {
+  /**
+   * The web fallback tags the blob with this MIME. Every image format
+   * share-to-Inbox can save must map to a real one — `application/octet-stream`
+   * renders nothing, and the failure is silent (an empty card, not an error).
+   *
+   * heic and tiff are the ones that were missing: heic since the fallback was
+   * written, tiff the moment the classifier learned about it.
+   */
+  it.each([
+    ["photo.png", "image/png"],
+    ["photo.jpg", "image/jpeg"],
+    ["photo.jpeg", "image/jpeg"],
+    ["photo.gif", "image/gif"],
+    ["photo.webp", "image/webp"],
+    ["photo.svg", "image/svg+xml"],
+    ["photo.heic", "image/heic"],
+    ["scan.tiff", "image/tiff"],
+    ["scan.tif", "image/tiff"],
+  ])("maps %s to %s", async (name, expected) => {
+    // Exercised through the public path: native fails, so the web fallback
+    // runs and shrinkForCard receives the blob built from this MIME.
+    iosReadBinaryMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    const blobs: string[] = [];
+    const RealBlob = globalThis.Blob;
+    vi.stubGlobal(
+      "Blob",
+      class extends RealBlob {
+        constructor(parts: BlobPart[], opts?: BlobPropertyBag) {
+          super(parts, opts);
+          if (opts?.type) blobs.push(opts.type);
+        }
+      },
+    );
+    try {
+      await getThumbnail(entry({ name }), { theme: "light" });
+    } finally {
+      vi.stubGlobal("Blob", RealBlob);
+    }
+    expect(blobs).toContain(expected);
+  });
+});

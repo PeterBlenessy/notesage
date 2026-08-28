@@ -149,7 +149,15 @@ function imageMimeFor(name: string): string {
       return "image/svg+xml";
     case "bmp":
       return "image/bmp";
+    case "heic":
+    case "heif":
+      return "image/heic";
+    case "tif":
+    case "tiff":
+      return "image/tiff";
     default:
+      // Deliberately not a guess. An unknown type tagged as an image type
+      // still fails to decode, just later and less legibly.
       return "application/octet-stream";
   }
 }
