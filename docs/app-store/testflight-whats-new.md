@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Share a link to a document — a PDF, Word file, image, video or recording — from Safari into Notesage, then switch the library to gallery view. Each should show a real preview instead of a grey icon, and tapping one should open Apple's own viewer. Audio now gets its own symbol.
+Open a web page you saved to your Inbox. The text should look the way the page intends rather than blown up, and a site logo should no longer fill the whole screen. If a report still looks wrong, try the same file in Safari and tell me whether it differs.

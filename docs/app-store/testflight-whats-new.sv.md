@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Dela en länk till ett dokument — en PDF, Word-fil, bild, video eller inspelning — från Safari till Notesage, och växla sedan biblioteket till gallerivy. Varje fil ska visa en riktig förhandsvisning i stället för en grå ikon, och ett tryck ska öppna Apples egen visare. Ljudfiler får nu en egen symbol.
+Öppna en webbsida du sparat i din Inbox. Texten ska se ut som sidan avser i stället för uppförstorad, och en logotyp ska inte längre fylla hela skärmen. Om något fortfarande ser fel ut — öppna samma fil i Safari och berätta om det skiljer sig.
