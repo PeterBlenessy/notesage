@@ -53,9 +53,11 @@ function collectNotes() {
     const m = /^testflight-whats-new(?:\.([a-zA-Z-]+))?\.md$/.exec(file);
     if (!m) continue;
     const locale = m[1] ?? "en-US";
-    const text = readFileSync(join(NOTES_DIR, file), "utf8")
-      .replace(/<!--[\s\S]*?-->/g, "")
-      .trim();
+    const text = unwrap(
+      readFileSync(join(NOTES_DIR, file), "utf8")
+        .replace(/<!--[\s\S]*?-->/g, "")
+        .trim(),
+    );
     if (!text) {
       console.error(`${file} has no content once comments are stripped.`);
       process.exit(2);
@@ -194,4 +196,40 @@ for (const { locale, text, file } of localized) {
 if (failed > 0) {
   console.error(`${failed} of ${localized.length} locale(s) failed. Notes are incomplete.`);
   process.exitCode = 1;
+}
+
+/**
+ * Join hard-wrapped lines back into paragraphs before sending.
+ *
+ * The note files are wrapped at ~78 columns so they read well in the repo and
+ * in a diff. App Store Connect stores `whatsNew` VERBATIM, newlines included,
+ * and TestFlight then wraps it again for the device — so the source wrap and
+ * the phone's wrap compound, and the tester sees ragged half-lines breaking
+ * mid-sentence ("...med systemets egen / sökruta. Öppna en...").
+ *
+ * Observed on build 19 (Peter's screenshot, 2026-08-27) in both locales.
+ *
+ * Blank lines are the paragraph separator and are preserved; single newlines
+ * within a paragraph become spaces. Deliberately does NOT touch list markers —
+ * a line starting with `-`, `*` or a digit keeps its own line, because there
+ * the break IS the meaning.
+ */
+function unwrap(md) {
+  return md
+    .split(/\n{2,}/)
+    .map((para) =>
+      para
+        .split("\n")
+        .reduce((acc, line) => {
+          const trimmed = line.trim();
+          if (!acc.length) return [trimmed];
+          // A list item or an indented continuation keeps its own line.
+          if (/^([-*+]|\d+[.)])\s/.test(trimmed)) return [...acc, trimmed];
+          const prev = acc[acc.length - 1];
+          if (/^([-*+]|\d+[.)])\s/.test(prev.trim())) return [...acc, trimmed];
+          return [...acc.slice(0, -1), `${prev} ${trimmed}`.trim()];
+        }, [])
+        .join("\n"),
+    )
+    .join("\n\n");
 }
