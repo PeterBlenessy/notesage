@@ -9,20 +9,12 @@ import { createPortal } from "react-dom";
 import type { Editor } from "@tiptap/core";
 import { cn } from "@/lib/utils";
 import { useSidebarStatusSlotStore } from "@/stores/sidebar-status-slot-store";
-import { useLocalAIStore } from "@/stores/local-ai-store";
-import { useConnectionsStore } from "@/stores/connections-store";
-import { useReducedMotion } from "@/hooks/useReducedMotion";
 import type { ViewMode } from "@/lib/file-utils";
 import type { Comment } from "@/stores/comment-store";
 import {
-  Tooltip,
-  TooltipContent,
   TooltipProvider,
-  TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { StatusTray, type StatusTrayGroup } from "./StatusTray";
-import { localAiDotClass, localAiStatusLabel } from "./local-ai-dot";
-import { useBackgroundActivity } from "./status/use-background-activity";
 import { getFormatLocale } from "@/lib/i18n";
 import { useFormatLocale } from "@/lib/useLocale";
 
@@ -65,192 +57,6 @@ const WORD_COUNT_DEBOUNCE_MS = 250;
 // removed in #415 — the live status items now live as StatusTray groups.
 // ---------------------------------------------------------------------------
 
-/**
- * Semantic ambient dot in the strip's `data-status-dots` slot.
- *
- * Two consumers today:
- *   - Local AI status (left dot). Colour + label come from the shared
- *     `local-ai-dot` helper, so this dot and the StatusTray `SessionGroup`
- *     dot are guaranteed to match (issue #415).
- *   - Recording / dictation (right of it). Independent concept — rendered
- *     red while audio capture is live.
- *
- * The dot sits inside the strip which already handles click-to-open-tray, so
- * the dot's `onClick` must `stopPropagation` — otherwise the parent would ALSO
- * fire and the group-deep-link intent would be lost. Keyboard users still
- * reach these dots through normal tab order; Enter activates the button.
- *
- * The tooltip uses the app's shadcn `Tooltip` (not a native `title`) so it
- * matches every other tooltip in the app (issue #415).
- */
-/** Circumference of the progress ring (r=6 in the 16×16 viewBox). */
-const RING_CIRCUMFERENCE = 2 * Math.PI * 6;
-
-function StatusDot({
-  colorClass,
-  label,
-  onActivate,
-  progress,
-  spin,
-  reducedMotion,
-}: {
-  colorClass: string;
-  label: string;
-  /**
-   * Called with the pointer coordinates when activated by a mouse click
-   * (so the popover can anchor to the pointer), or `undefined` when
-   * activated by keyboard (Enter / Space) — the caller should then fall
-   * back to anchoring against the strip rect.
-   */
-  onActivate: (coords?: { x: number; y: number }) => void;
-  /**
-   * Optional 0–1 progress fraction. When set, a thin arc fills around the
-   * dot — turning it into a DUAL indicator (fill = status, ring = background
-   * activity such as indexing or a model download). #415. The ring overflows
-   * the 6px button so the click hitbox and the dot's colour class stay put.
-   */
-  progress?: number;
-  /** When true, render the ring as an indeterminate spinner (indexing) rather
-   *  than a determinate fill (downloads). The burst of short index passes has
-   *  no meaningful single %, so a spinner avoids backward arc jumps. */
-  spin?: boolean;
-  reducedMotion?: boolean;
-}) {
-  const handleClick = (e: ReactMouseEvent<HTMLButtonElement>) => {
-    // Prevent the enclosing strip from ALSO opening the tray without a
-    // group hint. We call onActivate ourselves so the click both opens
-    // the tray AND targets the correct group.
-    e.stopPropagation();
-    onActivate({ x: e.clientX, y: e.clientY });
-  };
-
-  const handleKeyDown = (e: ReactKeyboardEvent<HTMLButtonElement>) => {
-    // Same reasoning as handleClick — avoid bubbling Enter / Space up
-    // to the strip's keydown handler, which would fire handleActivate
-    // with no group hint.
-    if (e.key === "Enter" || e.key === " ") {
-      e.stopPropagation();
-      e.preventDefault();
-      onActivate();
-    }
-  };
-
-  const fraction = progress === undefined ? null : Math.max(0, Math.min(1, progress));
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label={label}
-          data-progress={fraction === null ? undefined : Math.round(fraction * 100)}
-          onClick={handleClick}
-          onKeyDown={handleKeyDown}
-          className={cn(
-            "relative h-1.5 w-1.5 rounded-full shrink-0",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1",
-          )}
-        >
-          {/* Dot fill — fills the button. The status colour AND the
-              (reduced-motion-gated) pulse live on this inner span, NOT the
-              button: CSS opacity multiplies through descendants, so with the
-              pulse on the button the progress ring (a child) blinked and hid
-              along with the dot. Keeping the ring as a SIBLING of this span,
-              both inside the un-animated button, decouples them. The button
-              has NO `grid`/flex — an absolutely-positioned ring inside a grid
-              container gets mis-centred by `place-items`. */}
-          <span
-            className={cn(
-              "block h-full w-full rounded-full transition-colors duration-200 hover:opacity-80",
-              colorClass,
-            )}
-          />
-          {fraction !== null && (
-            // Ring — a 14px square centred on the 6px dot so it sits
-            // concentrically AROUND it. Centre via left/top-1/2 + translate on a
-            // NON-animated wrapper: a spinning child owns its own `transform`, so
-            // the centring transform must live on a separate element or the spin
-            // overrides it. pointer-events-none keeps clicks on the dot.
-            <span
-              aria-hidden="true"
-              className="pointer-events-none absolute left-1/2 top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2"
-            >
-              {spin ? (
-                // Indeterminate spinner (indexing). A faint full ring under a
-                // single-quadrant arc that rotates — no backward jumps, no
-                // flashing off between the many short index passes.
-                <>
-                  <span className="absolute inset-0 rounded-full border-[1.5px] border-border" />
-                  <span
-                    className={cn(
-                      "absolute inset-0 rounded-full border-[1.5px] border-transparent border-t-foreground",
-                      !reducedMotion && "animate-spin",
-                    )}
-                  />
-                </>
-              ) : (
-                // Determinate fill (downloads) — a real 0–100% arc.
-                <svg viewBox="0 0 16 16" className="h-full w-full">
-                  <circle
-                    cx="8"
-                    cy="8"
-                    r="6"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    className="text-border"
-                  />
-                  <circle
-                    cx="8"
-                    cy="8"
-                    r="6"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    transform="rotate(-90 8 8)"
-                    strokeDasharray={RING_CIRCUMFERENCE}
-                    strokeDashoffset={RING_CIRCUMFERENCE * (1 - fraction)}
-                    className={cn(
-                      "text-foreground transition-[stroke-dashoffset] duration-300 ease-out",
-                      reducedMotion && "transition-none",
-                    )}
-                  />
-                </svg>
-              )}
-            </span>
-          )}
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="text-xs">
-        {label}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-/**
- * Compute the live Local AI state the strip's status dot reflects. The dot
- * mirrors the StatusTray `SessionGroup` exactly (same `local-ai-dot` helper)
- * and appears whenever a `local_bundled` connection exists, regardless of
- * routing.
- *
- * (Recording is no longer surfaced here — the AgentOrb owns the recording
- * indicator now, #415.)
- */
-function useStatusDotsState(): {
-  hasLocalAi: boolean;
-  serverStatus: string;
-} {
-  const serverStatus = useLocalAIStore((s) => s.serverStatus);
-  const connections = useConnectionsStore((s) => s.connections);
-
-  const hasLocalAi = connections.some(
-    (c) => c.provider === "local_ai" && c.authMethod === "local_bundled",
-  );
-
-  return { hasLocalAi, serverStatus };
-}
 
 interface StatusBarProps {
   editor: Editor | null;
@@ -294,7 +100,6 @@ export function StatusBar({
   // previous locale until an unrelated re-render.
   useFormatLocale();
 
-  const reducedMotion = useReducedMotion();
 
   // Re-read word count when the editor transacts so it tracks typing.
   // Debounced (trailing): the recompute below runs `editor.getText()` over the
@@ -374,32 +179,6 @@ export function StatusBar({
     onOpenTray?.();
   };
 
-  const openTrayForGroup = (
-    group: StatusTrayGroup,
-    coords?: { x: number; y: number },
-  ) => {
-    if (coords) {
-      setAnchorAt(coords.x, coords.y);
-    } else {
-      clearAnchor();
-    }
-    setInitialGroup(group);
-    setTrayOpen(true);
-    onOpenTray?.();
-  };
-
-  /** Open the tray with no group hint (used by the pure-activity dot). */
-  const openTrayAt = (coords?: { x: number; y: number }) => {
-    if (coords) {
-      setAnchorAt(coords.x, coords.y);
-    } else {
-      clearAnchor();
-    }
-    setInitialGroup(undefined);
-    setTrayOpen(true);
-    onOpenTray?.();
-  };
-
   const handleKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
@@ -419,27 +198,6 @@ export function StatusBar({
     if (!next) setInitialGroup(undefined);
   };
 
-  const { hasLocalAi, serverStatus } = useStatusDotsState();
-  const bg = useBackgroundActivity();
-
-  // The single status dot is a DUAL indicator: its fill shows Local AI server
-  // status (or a neutral fill when no local AI connection exists), and a
-  // progress ring around it shows background activity (indexing / model
-  // downloads). It renders whenever there's a local AI connection OR background
-  // work in flight — so indexing stays visible even without local AI. (#415)
-  const showStatusDot = hasLocalAi || bg.active;
-  const statusDotColor = hasLocalAi
-    ? localAiDotClass(serverStatus, reducedMotion)
-    : "bg-muted-foreground/30";
-  const statusDotLabel = (() => {
-    const parts: string[] = [];
-    if (hasLocalAi) parts.push(`Local AI ${localAiStatusLabel(serverStatus).toLowerCase()}`);
-    if (bg.active && bg.label) parts.push(bg.label);
-    if (parts.length === 0) parts.push("Background activity");
-    const base = parts.join(" · ");
-    return hasLocalAi ? `${base} — opens Session group` : `${base} — opens status tray`;
-  })();
-
   const content = (
     <TooltipProvider delayDuration={300}>
       <div
@@ -451,7 +209,12 @@ export function StatusBar({
         onClick={(e) => handleActivate(e)}
         onKeyDown={handleKeyDown}
         className={cn(
-          "h-8 flex items-center gap-2.5 px-2 text-xs text-muted-foreground min-w-0",
+          // `overflow-hidden` is the guard, not decoration: this strip is portaled
+          // into the sidebar footer beside the Settings gear, and the sidebar is
+          // user-resizable down to 200px. `min-w-0` lets the flex slot shrink, but
+          // without a clip the strip's content simply paints outside its box and
+          // over its neighbour. The gear must stay reachable at every width.
+          "h-8 flex items-center gap-2.5 px-2 text-xs text-muted-foreground min-w-0 overflow-hidden",
           "cursor-pointer select-none",
           "hover:text-foreground transition-colors",
           "transition-opacity duration-[340ms] ease-in-out",
@@ -459,33 +222,23 @@ export function StatusBar({
           "motion-reduce:transition-none",
         )}
       >
-        {/* Dual-indicator status dot — fill mirrors the StatusTray
-            `SessionGroup` Local AI dot exactly (shared `local-ai-dot`
-            helper); the progress ring shows background activity (indexing /
-            model downloads). stopPropagation in StatusDot keeps the strip's
-            own click from firing twice. Recording is no longer shown here —
-            the AgentOrb owns that indicator. */}
-        <div data-status-dots className="flex items-center gap-1">
-          {showStatusDot && (
-            <StatusDot
-              colorClass={statusDotColor}
-              label={statusDotLabel}
-              progress={bg.active ? bg.fraction ?? 0 : undefined}
-              spin={bg.indeterminate}
-              reducedMotion={reducedMotion}
-              onActivate={(coords) =>
-                hasLocalAi ? openTrayForGroup("session", coords) : openTrayAt(coords)
-              }
-            />
-          )}
-        </div>
+        {/* The Local AI status dot was REMOVED here (Peter, 2026-08-27).
+            Orange-then-green while the bundled server starts told the user
+            nothing they could act on, and in a narrow sidebar the strip could
+            reach across the Settings gear that shares the footer row.
+
+            Local AI status is not lost — the StatusTray's Session group shows
+            it with the same `localAiDotClass` helper, one click away. What DID
+            lose its only ambient surface is background-activity progress
+            (indexing, model downloads), which rode the same dot as a ring;
+            flagged rather than silently dropped. */}
 
         {/* Word count is only meaningful when a document is open — when
             the editor is null (landing state, no tab) we render the
             bare chrome (dots + focus hint) without a stale "0 words"
             label. Live-test 2026-04-26 bug #3. */}
         {editor ? (
-          <span className="tabular-nums">
+          <span className="tabular-nums truncate">
             {fmtNum(words)} {words === 1 ? "word" : "words"}
           </span>
         ) : null}
@@ -495,7 +248,7 @@ export function StatusBar({
             the extra width didn't fit alongside the Settings button. Auto-save
             still runs; the dirty state shows via the TitleBar dot when enabled. */}
 
-        <span className="ml-auto flex items-center gap-3">
+        <span className="ml-auto flex items-center gap-3 shrink-0">
           <span>
             <kbd className="font-sans">{"⌘"}.</kbd> focus
           </span>

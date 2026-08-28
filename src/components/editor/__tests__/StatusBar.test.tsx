@@ -160,15 +160,17 @@ describe('StatusBar', () => {
       expect(root?.getAttribute('aria-label')).toBe('Open status tray');
     });
 
-    it('reserves an empty dot slot for task #54', () => {
+    it('renders no dot slot at all — the ambient dot is gone', () => {
+      // Was "reserves an empty dot slot for task #54". The slot existed to
+      // hold the Local AI / background-activity dot; with that removed there
+      // is nothing to reserve space for, and an empty div beside the Settings
+      // gear is width the narrow sidebar footer cannot spare.
       const editor = createMockEditor({ text: 'hi' }) as unknown as Editor;
       const { container } = renderWithProviders(
         <StatusBar editor={editor} />,
       );
 
-      const slot = container.querySelector('[data-status-dots]');
-      expect(slot).toBeTruthy();
-      expect(slot?.children.length).toBe(0);
+      expect(container.querySelector('[data-status-dots]')).toBeNull();
     });
 
     it('renders word count + \u2318. focus hint (no \u2318K)', () => {
@@ -353,37 +355,28 @@ describe('StatusBar', () => {
   });
 
   // -------------------------------------------------------------------------
-  // Ambient dots (task #54)
+  // The ambient status dot was REMOVED (Peter, 2026-08-27)
   // -------------------------------------------------------------------------
-  describe('ambient dots', () => {
+  //
+  // It was a DUAL indicator: fill = Local AI server status (amber while
+  // starting, then green), ring = background activity. The status half told
+  // the user nothing they could act on, and the strip is portaled into the
+  // sidebar footer beside the Settings gear — with the sidebar resizable down
+  // to 200px, the strip could reach across the gear.
+  //
+  // Local AI status still lives in the StatusTray's Session group, one click
+  // away, via the same `localAiDotClass` helper. Background-activity progress
+  // lost its only ambient surface; recorded in the PR rather than dropped
+  // quietly.
+  //
+  // These two guards replace eleven tests that asserted the dot's colours and
+  // ring. Both invariants are things a future change could plausibly undo.
+  describe('status strip has no ambient dot', () => {
     beforeEach(() => {
       resetAmbientDotStores();
     });
 
-    /**
-     * Live-test 2026-04-25 — the left dot is now the local-AI status
-     * indicator. Tone mirrors `LocalAIIndicator`'s popover exactly:
-     *   running  → green
-     *   starting → amber (with `animate-pulse`)
-     *   error    → red
-     *   stopped  → muted
-     *
-     * The dot only renders when a `local_bundled` connection exists.
-     * The previous "inline completions active" orange semantic was
-     * dropped — completions surface through the StatusTray popover and
-     * `OutOfScopeCompletionsIndicator` instead.
-     */
-    it('renders no dots when no local_bundled connection AND not recording', () => {
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      const { container } = renderWithProviders(
-        <StatusBar editor={editor} />,
-      );
-      const slot = container.querySelector('[data-status-dots]') as HTMLElement;
-      expect(slot).toBeTruthy();
-      expect(slot.querySelectorAll('button').length).toBe(0);
-    });
-
-    it('renders a GREEN local-AI dot when local_bundled exists and serverStatus="running"', () => {
+    it('renders no status dot even with a local AI connection running', () => {
       addConnection({
         id: 'c-local',
         provider: 'local_ai',
@@ -391,220 +384,26 @@ describe('StatusBar', () => {
         label: 'Local AI',
       });
       useLocalAIStore.setState({ serverStatus: 'running' });
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      const { container } = renderWithProviders(
-        <StatusBar editor={editor} />,
-      );
-      const dots = container.querySelectorAll('[data-status-dots] button');
-      expect(dots.length).toBe(1);
-      expect(dots[0].querySelector('span')?.className).toContain('bg-green-500');
-      expect(dots[0].getAttribute('aria-label')).toContain('Local AI running');
-      expect(dots[0].getAttribute('aria-label')).toContain('Session');
-    });
-
-    it('renders an AMBER (pulsing) local-AI dot when serverStatus="starting"', () => {
-      addConnection({
-        id: 'c-local',
-        provider: 'local_ai',
-        authMethod: 'local_bundled',
-        label: 'Local AI',
-      });
-      useLocalAIStore.setState({ serverStatus: 'starting' });
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      const { container } = renderWithProviders(
-        <StatusBar editor={editor} />,
-      );
-      const dots = container.querySelectorAll('[data-status-dots] button');
-      expect(dots.length).toBe(1);
-      expect(dots[0].querySelector('span')?.className).toContain('bg-amber-500');
-      // Amber tone uses `animate-pulse` to match the popover starting state.
-      expect(dots[0].querySelector('span')?.className).toContain('animate-pulse');
-      expect(dots[0].getAttribute('aria-label')).toContain('Local AI starting');
-    });
-
-    it('renders a RED local-AI dot when serverStatus="error"', () => {
-      addConnection({
-        id: 'c-local',
-        provider: 'local_ai',
-        authMethod: 'local_bundled',
-        label: 'Local AI',
-      });
-      useLocalAIStore.setState({ serverStatus: 'error' });
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      const { container } = renderWithProviders(
-        <StatusBar editor={editor} />,
-      );
-      const dots = container.querySelectorAll('[data-status-dots] button');
-      expect(dots.length).toBe(1);
-      expect(dots[0].querySelector('span')?.className).toContain('bg-red-500');
-      expect(dots[0].getAttribute('aria-label')).toContain('Local AI error');
-    });
-
-    it('renders a MUTED local-AI dot when serverStatus is stopped', () => {
-      addConnection({
-        id: 'c-local',
-        provider: 'local_ai',
-        authMethod: 'local_bundled',
-        label: 'Local AI',
-      });
-      // Default `serverStatus` after `resetAmbientDotStores` is `"stopped"`.
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      const { container } = renderWithProviders(
-        <StatusBar editor={editor} />,
-      );
-      const dots = container.querySelectorAll('[data-status-dots] button');
-      expect(dots.length).toBe(1);
-      expect(dots[0].querySelector('span')?.className).toContain('bg-muted-foreground/30');
-      expect(dots[0].getAttribute('aria-label')).toContain('Local AI stopped');
-    });
-
-    it('omits the local-AI dot entirely when no local_bundled connection exists', () => {
-      // Routing inline completions to a non-local provider — the old
-      // orange dot would have shown here. New design: no dot.
-      addConnection({
-        id: 'c-ollama',
-        provider: 'ollama',
-        authMethod: 'local',
-        label: 'Ollama',
-      });
-      useLocalAIStore.setState({ serverStatus: 'stopped' });
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      const { container } = renderWithProviders(
-        <StatusBar editor={editor} />,
-      );
-      expect(
-        container.querySelectorAll('[data-status-dots] button').length,
-      ).toBe(0);
-    });
-
-    it('does NOT render a dot for recording alone — the AgentOrb owns that now (#415)', () => {
-      useRecordingStore.setState({ isRecording: true });
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      const { container } = renderWithProviders(
-        <StatusBar editor={editor} />,
-      );
-      // No local AI, no background activity — recording is no longer surfaced
-      // on the strip, so the dot slot stays empty.
-      expect(
-        container.querySelectorAll('[data-status-dots] button').length,
-      ).toBe(0);
-    });
-
-    it('clicking the local-AI dot opens the tray scrolled to the Session group', () => {
-      addConnection({
-        id: 'c-local',
-        provider: 'local_ai',
-        authMethod: 'local_bundled',
-        label: 'Local AI',
-      });
-      useLocalAIStore.setState({ serverStatus: 'running' });
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      const { container } = renderWithProviders(
-        <StatusBar editor={editor} />,
-      );
-      expect(document.body.textContent ?? '').not.toContain('Completions');
-      const dot = container.querySelector('[data-status-dots] button') as HTMLElement;
-      fireEvent.click(dot);
-      const text = document.body.textContent ?? '';
-      expect(text).toContain('Completions');
-      // Live-test 2026-04-25 — the "Session" group was renamed to
-      // "Local AI" and now only renders when a `local_bundled`
-      // connection exists. This test scenario does add such a
-      // connection, so the section header should be present.
-      expect(text).toContain('Local AI');
-    });
-
-    it('clicking the dot does not also trigger the strip click (no double-fire of onOpenTray)', () => {
-      addConnection({
-        id: 'c-local',
-        provider: 'local_ai',
-        authMethod: 'local_bundled',
-        label: 'Local AI',
-      });
-      useLocalAIStore.setState({ serverStatus: 'running' });
-      const onOpenTray = vi.fn();
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      const { container } = renderWithProviders(
-        <StatusBar editor={editor} onOpenTray={onOpenTray} />,
-      );
-      const dot = container.querySelector('[data-status-dots] button') as HTMLElement;
-      fireEvent.click(dot);
-      // A bubbling click would fire onOpenTray twice (once from the dot, once
-      // from the strip). stopPropagation in StatusDot must prevent that.
-      expect(onOpenTray).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  // -------------------------------------------------------------------------
-  // Dual-indicator progress ring (#415) — background activity (indexing /
-  // model downloads) fills a ring around the SAME status dot.
-  // -------------------------------------------------------------------------
-  describe('background-activity progress ring', () => {
-    beforeEach(() => {
-      resetAmbientDotStores();
-    });
-
-    it('shows an activity dot with a progress ring when a model is downloading (no local AI)', () => {
-      useRecordingStore.setState({ activeDownloads: { base: { progress: 50 } } });
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+      const editor = createMockEditor({ text: 'hi there' }) as unknown as Editor;
       const { container } = renderWithProviders(<StatusBar editor={editor} />);
 
-      const dot = container.querySelector('[data-status-dots] button') as HTMLElement | null;
-      expect(dot).toBeTruthy();
-      // Neutral fill (no local AI) + a ring at ~50%.
-      expect(dot?.querySelector('span')?.className).toContain('bg-muted-foreground/30');
-      expect(dot?.getAttribute('data-progress')).toBe('50');
-      expect(dot?.querySelector('svg')).toBeTruthy();
-      expect(dot?.getAttribute('aria-label')).toContain('Downloading');
-      expect(dot?.getAttribute('aria-label')).toContain('status tray');
+      const strip = container.querySelector('[data-quiet-status]')!;
+      expect(strip.querySelector('[data-status-dots]')).toBeNull();
+      // The word count is the part that stays.
+      expect(strip.textContent ?? '').toMatch(/word/i);
     });
 
-    it('wraps the Local AI dot with the ring when both local AI and a download are live', () => {
-      addConnection({
-        id: 'c-local',
-        provider: 'local_ai',
-        authMethod: 'local_bundled',
-        label: 'Local AI',
-      });
-      useLocalAIStore.setState({ serverStatus: 'running' });
-      useRecordingStore.setState({ activeDownloads: { base: { progress: 25 } } });
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
+    it('clips its content so it cannot paint over the Settings gear', () => {
+      // The gear shares the sidebar footer row with this strip and is
+      // `shrink-0`; `min-w-0` lets the slot shrink but does not stop content
+      // painting outside the box. Without the clip the strip overlaps the one
+      // control that opens Settings.
+      const editor = createMockEditor({ text: 'hi' }) as unknown as Editor;
       const { container } = renderWithProviders(<StatusBar editor={editor} />);
 
-      const dots = container.querySelectorAll('[data-status-dots] button');
-      // Still ONE dot — the ring wraps the existing Local AI dot (dual indicator).
-      expect(dots.length).toBe(1);
-      expect(dots[0].querySelector('span')?.className).toContain('bg-green-500');
-      expect(dots[0].getAttribute('data-progress')).toBe('25');
-      expect(dots[0].getAttribute('aria-label')).toContain('Local AI running');
-      expect(dots[0].getAttribute('aria-label')).toContain('Downloading');
-    });
-
-    it('shows no ring when there is no background activity', () => {
-      addConnection({
-        id: 'c-local',
-        provider: 'local_ai',
-        authMethod: 'local_bundled',
-        label: 'Local AI',
-      });
-      useLocalAIStore.setState({ serverStatus: 'running' });
-
-      const editor = createMockEditor({ text: 'x' }) as unknown as Editor;
-      const { container } = renderWithProviders(<StatusBar editor={editor} />);
-
-      const dot = container.querySelector('[data-status-dots] button') as HTMLElement;
-      expect(dot.getAttribute('data-progress')).toBeNull();
-      expect(dot.querySelector('svg')).toBeNull();
+      const strip = container.querySelector('[data-quiet-status]') as HTMLElement;
+      expect(strip.className).toContain('overflow-hidden');
+      expect(strip.className).toContain('min-w-0');
     });
   });
 });
