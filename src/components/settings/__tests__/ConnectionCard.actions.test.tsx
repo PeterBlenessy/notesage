@@ -160,55 +160,23 @@ describe('ConnectionCard — Copilot LSP sign out', () => {
     } as Partial<Connection>);
   }
 
-  it('shows the sign-out action only for the Copilot LSP connection', () => {
-    const acp = agentConn();
-    seedStore(acp);
-    const { unmount } = render(<ConnectionCard connection={acp} />);
-    expect(screen.queryByLabelText('Sign out of GitHub Copilot')).toBeNull();
-    unmount();
-
-    const lsp = copilotLspConn();
-    seedStore(lsp);
-    render(<ConnectionCard connection={lsp} />);
-    expect(screen.getByLabelText('Sign out of GitHub Copilot')).toBeTruthy();
-  });
-
-  it('invoke → status transitions to expired → success toast', async () => {
-    const conn = copilotLspConn();
-    seedStore(conn);
-
-    let signOutCalls = 0;
-    setMockInvokeHandler('copilot_lsp_sign_out', () => {
-      signOutCalls += 1;
-      return undefined;
-    });
-
-    render(<ConnectionCard connection={conn} />);
-    fireEvent.click(screen.getByLabelText('Sign out of GitHub Copilot'));
-
-    await waitFor(() => {
-      expect(signOutCalls).toBe(1);
-    });
-    await waitFor(() => {
-      expect(storedConn('conn-lsp')?.status).toBe('expired');
-    });
-    expect(toast.success).toHaveBeenCalledWith('Signed out of GitHub Copilot');
-  });
-
-  it('toasts the command error (e.g. LSP not running) and keeps the status', async () => {
-    const conn = copilotLspConn();
-    seedStore(conn);
-
-    setMockInvokeHandler('copilot_lsp_sign_out', () => {
-      throw new Error('Copilot LSP not running.');
-    });
-
-    render(<ConnectionCard connection={conn} />);
-    fireEvent.click(screen.getByLabelText('Sign out of GitHub Copilot'));
-
-    await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(expect.stringContaining('Copilot LSP not running'));
-    });
-    expect(storedConn('conn-lsp')?.status).toBe('connected');
+  // Sign-out was REMOVED, and this guards it staying removed.
+  //
+  // The Copilot LSP shares ONE credential store with everything else on the
+  // machine that uses it. Notesage does not run its own isolated copy, so
+  // signing out from here signs the user out of Copilot everywhere — including
+  // wherever they had signed in before Notesage was installed. That is not
+  // Notesage's credential to revoke.
+  //
+  // Disconnect deliberately leaves the token alone for the same reason: it
+  // removes the connection from Notesage and nothing else.
+  it('offers no sign-out action — the Copilot credential is shared, not ours', () => {
+    for (const conn of [agentConn(), copilotLspConn()]) {
+      seedStore(conn);
+      const { unmount } = render(<ConnectionCard connection={conn} />);
+      expect(screen.queryByLabelText(/sign out/i)).toBeNull();
+      expect(screen.queryByTitle(/sign out/i)).toBeNull();
+      unmount();
+    }
   });
 });
