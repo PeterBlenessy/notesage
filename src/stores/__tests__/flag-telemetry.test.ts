@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import "@/test/local-storage";
 import { describe, it, expect, beforeEach } from "vitest";
 import type { FlagId } from "@/lib/flags";
 

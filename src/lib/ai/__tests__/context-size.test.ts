@@ -4,6 +4,7 @@
 // The no-denominator rule: unknown model / provider ⇒ undefined ⇒ no
 // indicator. Map drift degrades gracefully by design.
 
+import "@/test/local-storage";
 import { describe, it, expect, beforeEach } from 'vitest';
 import { resolveModelContextSize, getContextSize } from '../context-size';
 import { useLocalAIStore } from '@/stores/local-ai-store';

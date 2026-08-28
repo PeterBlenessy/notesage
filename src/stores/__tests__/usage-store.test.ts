@@ -7,6 +7,7 @@
  * localStorage key — stale persisted quota is worse than none).
  */
 
+import "@/test/local-storage";
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { useUsageStore } from '../usage-store';
 
