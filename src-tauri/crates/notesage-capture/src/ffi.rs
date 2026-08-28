@@ -26,7 +26,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use crate::{
     build_article_html_document, build_article_note, build_capture_note, build_video_note,
     build_x_article_note, build_x_note, enrich_x_article, extract_article, extract_meta_title,
-    is_x_chrome_title, meaningful_title, oembed_url, parse_oembed, parse_x_post, timestamps,
+    filename_from_content_disposition, is_x_chrome_title, linked_document_for_content_type,
+    meaningful_title, oembed_url, parse_oembed, parse_x_post, timestamps,
     x_syndication_url, Article, CaptureInput, XPost,
 };
 
@@ -447,6 +448,54 @@ unsafe fn input_from(
             })
             .unwrap_or_default(),
     }
+}
+
+/// Extension for a `Content-Type` that serves a storable document, or NULL when
+/// the response is a page to extract.
+///
+/// A URL does not always lead to an article. A link to a PDF, EPUB, deck,
+/// image, video or audio file used to take the article path, fail the
+/// `text/html` check, and fall through to a link note — a `.md` file holding
+/// only the URL, after the sheet had promised otherwise.
+///
+/// # Safety
+/// `content_type` must be a NUL-terminated C string or NULL. The returned
+/// pointer is owned by the caller and must be freed with
+/// `notesage_capture_string_free`.
+#[no_mangle]
+pub unsafe extern "C" fn notesage_capture_linked_document_extension(
+    content_type: *const c_char,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        match opt_str(content_type)
+            .and_then(|ct| linked_document_for_content_type(&ct))
+        {
+            Some(doc) => into_c_string(doc.extension.to_string()),
+            None => std::ptr::null_mut(),
+        }
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// The filename a server suggested via `Content-Disposition`, basename only.
+///
+/// The URL's own last segment is often an opaque id — the reported case was
+/// `kFcVnC0GHB_ZVnO5mxL0dg` — while the header carried the document's real
+/// title. A server-supplied path is never honoured.
+///
+/// # Safety
+/// As `notesage_capture_linked_document_extension`.
+#[no_mangle]
+pub unsafe extern "C" fn notesage_capture_disposition_filename(
+    header: *const c_char,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        match opt_str(header).and_then(|h| filename_from_content_disposition(&h)) {
+            Some(name) => into_c_string(name),
+            None => std::ptr::null_mut(),
+        }
+    }))
+    .unwrap_or(std::ptr::null_mut())
 }
 
 #[cfg(test)]

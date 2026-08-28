@@ -2099,6 +2099,135 @@ mod picture_tests {
 
 /// The embed-data endpoint for an X status URL, or `None` when the URL is not
 /// one. Mirrors `oembed_url`'s shape for video providers.
+/// A binary document a URL served directly, rather than a page to extract.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkedDocument {
+    /// Extension WITHOUT the dot, for naming the stored file.
+    pub extension: &'static str,
+    /// Coarse kind, for the format picker's label ("PDF", "Image", …).
+    pub kind: &'static str,
+}
+
+/// Classify a `Content-Type` as a document worth storing verbatim.
+///
+/// A URL does not always lead to a page. Sharing a link to a PDF — a bank
+/// statement, a research note, a conference deck — used to take the article
+/// path, where `fetch` rejected the response for not being `text/html`, the
+/// chain fell through to the link note, and the user got a `.md` file
+/// containing only the URL. Silently, and after the sheet had promised an
+/// `.html` file.
+///
+/// So: if the bytes ARE the document, store the document. `write_document`
+/// already exists on both platforms for shared files; this is the same
+/// destination reached from a link instead of a file drop.
+///
+/// Returns `None` for `text/html` and anything unrecognised, which keeps the
+/// article path exactly as it was for ordinary pages.
+pub fn linked_document_for_content_type(content_type: &str) -> Option<LinkedDocument> {
+    // `application/pdf;charset=UTF-8` — parameters after `;` are not the type.
+    let mime = content_type
+        .split(';')
+        .next()
+        .unwrap_or_default()
+        .trim()
+        .to_ascii_lowercase();
+
+    let doc = |extension, kind| Some(LinkedDocument { extension, kind });
+    match mime.as_str() {
+        "application/pdf" | "application/x-pdf" => doc("pdf", "PDF"),
+        "application/epub+zip" => doc("epub", "EPUB"),
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation" => {
+            doc("pptx", "Presentation")
+        }
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
+            doc("docx", "Document")
+        }
+        "application/vnd.oasis.opendocument.text" => doc("odt", "Document"),
+        "application/vnd.oasis.opendocument.presentation" => doc("odp", "Presentation"),
+        "application/rtf" | "text/rtf" => doc("rtf", "Document"),
+        "image/jpeg" => doc("jpg", "Image"),
+        "image/png" => doc("png", "Image"),
+        "image/gif" => doc("gif", "Image"),
+        "image/webp" => doc("webp", "Image"),
+        "image/heic" | "image/heif" => doc("heic", "Image"),
+        "image/svg+xml" => doc("svg", "Image"),
+        "image/tiff" => doc("tiff", "Image"),
+        "video/mp4" => doc("mp4", "Video"),
+        "video/quicktime" => doc("mov", "Video"),
+        "video/webm" => doc("webm", "Video"),
+        // Audio is stored like any other document here. Turning a shared
+        // recording into a transcribed recording BUNDLE is a separate concern
+        // (the recordings work) — this only gets the bytes onto disk under a
+        // real name, which is the prerequisite either way.
+        "audio/mpeg" | "audio/mp3" => doc("mp3", "Audio"),
+        "audio/mp4" | "audio/x-m4a" => doc("m4a", "Audio"),
+        "audio/wav" | "audio/x-wav" | "audio/wave" => doc("wav", "Audio"),
+        "audio/aac" => doc("aac", "Audio"),
+        "audio/ogg" | "audio/opus" => doc("ogg", "Audio"),
+        "audio/flac" | "audio/x-flac" => doc("flac", "Audio"),
+        _ => None,
+    }
+}
+
+/// The filename a server suggested via `Content-Disposition`.
+///
+/// Worth honouring: the URL's own last path segment is frequently an opaque id
+/// (`kFcVnC0GHB_ZVnO5mxL0dg`) or nothing at all, while the header carries the
+/// real title. Handles both `filename="…"` and RFC 5987 `filename*=UTF-8''…`,
+/// preferring the latter because it is the one that survives non-ASCII.
+///
+/// Returns the BASENAME only — a server-supplied path is never allowed to
+/// steer where the file lands.
+pub fn filename_from_content_disposition(header: &str) -> Option<String> {
+    let extended = header
+        .split(';')
+        .map(str::trim)
+        .find(|p| p.to_ascii_lowercase().starts_with("filename*="))
+        .and_then(|p| p.splitn(2, '=').nth(1))
+        .and_then(|v| {
+            // `UTF-8''name.pdf` — charset and language, then the value.
+            let encoded = v.rsplit("''").next()?;
+            Some(percent_decode(encoded))
+        });
+
+    let plain = || {
+        header
+            .split(';')
+            .map(str::trim)
+            .find(|p| p.to_ascii_lowercase().starts_with("filename="))
+            .and_then(|p| p.splitn(2, '=').nth(1))
+            .map(|v| v.trim().trim_matches('"').to_string())
+    };
+
+    let raw = extended.or_else(plain)?;
+    // Basename only, and never a traversal segment.
+    let base = raw.rsplit(['/', '\\']).next().unwrap_or_default().trim();
+    if base.is_empty() || base == "." || base == ".." {
+        return None;
+    }
+    Some(base.to_string())
+}
+
+/// Minimal percent-decoding for `Content-Disposition` values.
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok();
+            if let Some(b) = hex.and_then(|h| u8::from_str_radix(h, 16).ok()) {
+                out.push(b);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 pub fn x_syndication_url(url: &str) -> Option<String> {
     let after_scheme = url.split("://").nth(1)?;
     let host = after_scheme.split('/').next()?.trim_start_matches("www.").to_lowercase();
@@ -2603,5 +2732,113 @@ mod x_enrichment_tests {
         let before = a.clone();
         enrich_x_article(&mut a, &XPost::default());
         assert_eq!(a, before);
+    }
+}
+
+#[cfg(test)]
+mod linked_document_tests {
+    use super::*;
+
+    #[test]
+    fn the_reported_case_is_recognised_as_a_pdf() {
+        // Peter shared a UBS link that serves `application/pdf;charset=UTF-8`.
+        // It took the article path, `fetch` rejected it for not being HTML, the
+        // chain fell through to the link note, and he got a `.md` file holding
+        // only the URL — after the sheet had promised `.html`.
+        let doc = linked_document_for_content_type("application/pdf;charset=UTF-8").unwrap();
+        assert_eq!(doc.extension, "pdf");
+        assert_eq!(doc.kind, "PDF");
+    }
+
+    #[test]
+    fn parameters_and_casing_do_not_defeat_the_match() {
+        // Real headers carry charset, whitespace and inconsistent case.
+        for header in [
+            "application/pdf",
+            "Application/PDF",
+            "  application/pdf ; charset=utf-8 ",
+        ] {
+            assert!(
+                linked_document_for_content_type(header).is_some(),
+                "{header:?} should classify as a document"
+            );
+        }
+    }
+
+    #[test]
+    fn covers_the_formats_notesage_already_stores() {
+        // The same set the share extensions accept as FILE drops — a link to
+        // one should reach the same place as the file itself.
+        for (ct, ext) in [
+            ("application/epub+zip", "epub"),
+            (
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                "pptx",
+            ),
+            (
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "docx",
+            ),
+            ("image/jpeg", "jpg"),
+            ("image/png", "png"),
+            ("video/mp4", "mp4"),
+            ("video/quicktime", "mov"),
+            ("audio/mpeg", "mp3"),
+            ("audio/wav", "wav"),
+        ] {
+            let doc = linked_document_for_content_type(ct)
+                .unwrap_or_else(|| panic!("{ct} should be storable"));
+            assert_eq!(doc.extension, ext, "wrong extension for {ct}");
+        }
+    }
+
+    #[test]
+    fn html_is_not_a_document_so_the_article_path_is_untouched() {
+        // The whole point: ordinary pages must keep extracting as articles.
+        for ct in ["text/html", "text/html; charset=utf-8", "application/xhtml+xml"] {
+            assert!(
+                linked_document_for_content_type(ct).is_none(),
+                "{ct:?} must NOT divert to the document path"
+            );
+        }
+        assert!(linked_document_for_content_type("").is_none());
+        assert!(linked_document_for_content_type("application/json").is_none());
+    }
+
+    #[test]
+    fn the_servers_filename_wins_over_an_opaque_url() {
+        // The reported URL's last segment is `kFcVnC0GHB_ZVnO5mxL0dg`; the
+        // header carries the real title, percent-encoded with spaces.
+        let name = filename_from_content_disposition(
+            "attachment; filename*=UTF-8''AI%20presentation_genAI_conference_2025_to_export.pdf",
+        )
+        .unwrap();
+        assert_eq!(name, "AI presentation_genAI_conference_2025_to_export.pdf");
+    }
+
+    #[test]
+    fn plain_filename_is_accepted_and_the_extended_form_preferred() {
+        assert_eq!(
+            filename_from_content_disposition(r#"attachment; filename="report.pdf""#).unwrap(),
+            "report.pdf"
+        );
+        // Both present: the RFC 5987 form is the one that survives non-ASCII.
+        let both = r#"attachment; filename="fallback.pdf"; filename*=UTF-8''r%C3%A4kning.pdf"#;
+        assert_eq!(filename_from_content_disposition(both).unwrap(), "räkning.pdf");
+    }
+
+    #[test]
+    fn a_server_supplied_path_cannot_steer_where_the_file_lands() {
+        // The header is attacker-controlled for any URL the user opens.
+        assert_eq!(
+            filename_from_content_disposition(r#"attachment; filename="../../etc/passwd""#).unwrap(),
+            "passwd"
+        );
+        assert_eq!(
+            filename_from_content_disposition(r#"attachment; filename="/tmp/evil.pdf""#).unwrap(),
+            "evil.pdf"
+        );
+        assert!(filename_from_content_disposition(r#"attachment; filename="..""#).is_none());
+        assert!(filename_from_content_disposition("attachment").is_none());
     }
 }
