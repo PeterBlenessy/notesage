@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Dela en PDF från Filer eller Safari till Notesage och kontrollera att den verkligen hamnar i din Inbox — arket ska nu visa filens namn, och stanna kvar med ett fel om det inte gick, i stället för att stängas som om allt var bra. Värt att titta på också: öppna en HTML-fil du exporterat från din Mac, och ta dig ut ur den igen.
+Dela en länk till ett dokument — en PDF, Word-fil, bild, video eller inspelning — från Safari till Notesage, och växla sedan biblioteket till gallerivy. Varje fil ska visa en riktig förhandsvisning i stället för en grå ikon, och ett tryck ska öppna Apples egen visare. Ljudfiler får nu en egen symbol.

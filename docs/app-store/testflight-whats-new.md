@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Share a PDF from Files or Safari into Notesage and check it actually turns up in your Inbox — the sheet should now show the file's name, and stay open with an error if the save fails instead of closing as if it worked. Also still worth a look: opening an HTML file you exported from your Mac, and getting back out of it.
+Share a link to a document — a PDF, Word file, image, video or recording — from Safari into Notesage, then switch the library to gallery view. Each should show a real preview instead of a grey icon, and tapping one should open Apple's own viewer. Audio now gets its own symbol.
