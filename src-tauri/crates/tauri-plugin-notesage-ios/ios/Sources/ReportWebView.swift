@@ -229,19 +229,52 @@ extension ReportPresenter: WKNavigationDelegate {
       return
     }
 
-    decisionHandler(.cancel)
-    guard let url = navigationAction.request.url else { return }
-
-    // In-document anchors are navigation the report SHOULD do — a table of
-    // contents in a long report is the common case — so scroll rather than
-    // hand the fragment to the app as if it were an outbound link.
-    if url.fragment != nil, url.scheme == nil || url.absoluteString.hasPrefix("#") {
-      webView.evaluateJavaScript(
-        "location.hash = \(jsString(url.absoluteString))", completionHandler: nil)
+    guard let url = navigationAction.request.url else {
+      decisionHandler(.cancel)
       return
     }
 
+    // In-document anchors are navigation the report SHOULD do — a table of
+    // contents in a long report is the common case — so let WebKit scroll
+    // rather than handing the fragment to the app as if it were an outbound
+    // link.
+    //
+    // Detected by comparing against the document's OWN url, because
+    // `request.url` is the RESOLVED absolute url, never the raw `href`. The
+    // first version of this tested `url.scheme == nil || hasPrefix("#")`,
+    // which describes the href in the markup and nothing that ever arrives
+    // here: `loadHTMLString(baseURL: nil)` bases the document on
+    // `about:blank`, so `href="#top"` reaches this method as
+    // `about:blank#top` — scheme "about", no leading "#". Every anchor
+    // therefore missed this branch and was emitted as an outbound link, which
+    // the app could resolve as neither a remote url nor a library path, so a
+    // tap did nothing at all.
+    if url.fragment != nil, isSameDocument(url, as: webView.url) {
+      // `.allow`, not a scripted `location.hash`: WebKit performs
+      // same-document navigation natively, including the scroll and the
+      // back-forward entry, and it cannot leave the document.
+      decisionHandler(.allow)
+      return
+    }
+
+    decisionHandler(.cancel)
     emitLinkTap(url.absoluteString)
+  }
+
+  /// Same document, ignoring the fragment.
+  ///
+  /// Compared as components rather than by string prefix so that
+  /// `about:blank` vs `about:blank#a` resolves correctly and a url that merely
+  /// STARTS with the document's url (a sibling path sharing a prefix) does
+  /// not read as the same document.
+  private func isSameDocument(_ url: URL, as current: URL?) -> Bool {
+    guard let current,
+      var a = URLComponents(url: url, resolvingAgainstBaseURL: false),
+      var b = URLComponents(url: current, resolvingAgainstBaseURL: false)
+    else { return false }
+    a.fragment = nil
+    b.fragment = nil
+    return a.url == b.url
   }
 
   /// Reveal once the document has painted.
