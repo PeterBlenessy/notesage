@@ -546,6 +546,14 @@ export interface TranscriptionResult {
   segments: TranscriptSegment[];
   duration_secs: number;
   language: string;
+  /**
+   * Which decoder read the audio — `"symphonia"` or `"coreaudio"` (#803).
+   *
+   * Reported as telemetry rather than shown: the CoreAudio fallback exists to
+   * cover two known symphonia gaps, and whether it earns its place is a
+   * measurable question this answers.
+   */
+  decoder: string;
 }
 
 /**

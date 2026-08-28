@@ -58,6 +58,24 @@ export type AiAction = "improve" | "summarize" | "expand";
 export type ExportFormat = "pdf" | "docx" | "pptx" | "html";
 
 /**
+ * Audio container a transcription job decoded, bucketed to the formats the app
+ * can actually receive — anything else is "other" rather than a long tail of
+ * user-supplied extensions.
+ */
+export type AudioContainer =
+  | "wav"
+  | "mp3"
+  | "m4a"
+  | "flac"
+  | "ogg"
+  | "aiff"
+  | "caf"
+  | "other";
+
+/** Which decoder read it. `failed` means neither could (#803). */
+export type AudioDecoder = "symphonia" | "coreaudio" | "failed";
+
+/**
  * Built-in export template names (export_performed). Closed set — user-uploaded
  * templates carry arbitrary, PII-bearing filenames and MUST be collapsed to
  * `"custom"` at the call site rather than sent verbatim.
@@ -209,6 +227,24 @@ export interface TelemetryEventProps {
   labs_flag_changed: { flag: string; value: "on" | "off" };
   /** A flagged feature was actually USED, not merely enabled. */
   labs_feature_used: { flag: string };
+  /**
+   * Which decoder read an audio file for transcription (#803).
+   *
+   * Exists to answer a question we deliberately did not guess at: symphonia is
+   * the primary decoder and CoreAudio the macOS fallback, chosen because
+   * symphonia has two KNOWN gaps — no Opus, and an AAC decoder less
+   * battle-tested than Apple's. Whether either gap actually bites is
+   * measurable, and without measuring it the ordering could stay wrong
+   * indefinitely while looking fine.
+   *
+   * `m4a -> coreaudio` turning up often would mean symphonia's AAC is not
+   * carrying its weight. `ogg -> failed` would mean Opus needs addressing
+   * directly. Neither is decidable from here.
+   *
+   * Low-cardinality by construction: eight containers, three outcomes. Carries
+   * NO filename, path or duration — nothing that identifies a recording.
+   */
+  audio_decoded: { container: AudioContainer; decoder: AudioDecoder };
 }
 
 /** Allowed event names. */

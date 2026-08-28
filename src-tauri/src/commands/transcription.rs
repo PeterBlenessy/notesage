@@ -15,6 +15,13 @@ pub struct TranscriptionResult {
     pub segments: Vec<TranscriptSegment>,
     pub duration_secs: f64,
     pub language: String,
+    /// Which decoder read the file — `"symphonia"` or `"coreaudio"`.
+    ///
+    /// Surfaced rather than merely logged so the frontend can report it as
+    /// telemetry. The CoreAudio fallback exists to cover two specific gaps
+    /// (Opus, and AAC that symphonia rejects); whether it earns its place is a
+    /// measurable question, and this is the measurement.
+    pub decoder: String,
 }
 
 /// A timestamped transcript segment. `speaker_id` / `speaker_name` are reserved
@@ -181,67 +188,6 @@ fn wav_header(sample_rate: u32, channels: u16, data_bytes: u32) -> Vec<u8> {
     h
 }
 
-/// Read a 16-bit PCM WAV file into (samples_f32, sample_rate, channels).
-/// Minimal parser: handles the canonical layout produced by `WavWriter` and
-/// tolerates extra chunks before `data`.
-fn read_wav_f32(path: &Path) -> Result<(Vec<f32>, u32, u16), String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("Failed to read WAV file: {}", e))?;
-    if bytes.len() < 44 || &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
-        return Err("Not a valid WAV file".into());
-    }
-
-    let mut channels: u16 = 1;
-    let mut sample_rate: u32 = 16000;
-    let mut bits_per_sample: u16 = 16;
-    let mut data: Option<(usize, usize)> = None; // (offset, len)
-
-    // Walk chunks starting after the 12-byte RIFF/WAVE header.
-    let mut pos = 12usize;
-    while pos + 8 <= bytes.len() {
-        let id = &bytes[pos..pos + 4];
-        let size = u32::from_le_bytes([
-            bytes[pos + 4],
-            bytes[pos + 5],
-            bytes[pos + 6],
-            bytes[pos + 7],
-        ]) as usize;
-        let body = pos + 8;
-        if id == b"fmt " && body + 16 <= bytes.len() {
-            channels = u16::from_le_bytes([bytes[body + 2], bytes[body + 3]]);
-            sample_rate = u32::from_le_bytes([
-                bytes[body + 4],
-                bytes[body + 5],
-                bytes[body + 6],
-                bytes[body + 7],
-            ]);
-            bits_per_sample = u16::from_le_bytes([bytes[body + 14], bytes[body + 15]]);
-        } else if id == b"data" {
-            let end = (body + size).min(bytes.len());
-            data = Some((body, end - body));
-            break;
-        }
-        // Chunks are word-aligned (padded to even length).
-        pos = body + size + (size & 1);
-    }
-
-    let (offset, len) = data.ok_or("WAV file missing data chunk")?;
-    if bits_per_sample != 16 {
-        return Err(format!(
-            "Unsupported WAV bit depth: {} (only 16-bit PCM supported)",
-            bits_per_sample
-        ));
-    }
-
-    let mut samples = Vec::with_capacity(len / 2);
-    let mut i = offset;
-    while i + 2 <= offset + len {
-        let v = i16::from_le_bytes([bytes[i], bytes[i + 1]]);
-        samples.push(v as f32 / i16::MAX as f32);
-        i += 2;
-    }
-
-    Ok((samples, sample_rate, channels))
-}
 
 // ---------------------------------------------------------------------------
 // Capture owner — single mic-stream owner with awaited teardown
@@ -970,9 +916,12 @@ pub async fn transcribe_file(
         serde_json::json!({ "jobId": job_id, "percent": 2, "segment": "Loading audio..." }),
     );
 
-    // Load + resample the WAV.
-    let (raw, file_rate, file_channels) = read_wav_f32(&audio_path)?;
-    let audio_data = resample_to_16k_mono(&raw, file_rate, file_channels);
+    // Decode + resample. Any container symphonia or (on macOS) CoreAudio can
+    // read, not just the 16-bit WAV `start_recording` happens to write (#803).
+    let decoded = crate::commands::audio_decode::decode_audio_f32(&audio_path)?;
+    let decoder_used = decoded.decoder;
+    let audio_data =
+        resample_to_16k_mono(&decoded.samples, decoded.sample_rate, decoded.channels);
     if audio_data.is_empty() {
         return Err("Audio file contains no samples".into());
     }
@@ -1103,6 +1052,7 @@ pub async fn transcribe_file(
         // Prefer the detected language; fall back to the requested value
         // (e.g. "auto") only if Whisper couldn't map the detected id.
         language: detected_lang.unwrap_or(lang_result),
+        decoder: decoder_used.as_str().to_string(),
     })
 }
 
@@ -1664,9 +1614,18 @@ mod tests {
         w.write_f32(&input).unwrap();
         w.finalize().unwrap();
 
-        let (samples, rate, channels) = read_wav_f32(&path).unwrap();
+        // Through the real decoder, not a test-only reader: this asserts the
+        // recording path's OWN output round-trips, which is the regression
+        // that would matter if the decoder swap broke plain WAV (#803).
+        let decoded = crate::commands::audio_decode::decode_audio_f32(&path).unwrap();
+        let (samples, rate, channels) = (decoded.samples, decoded.sample_rate, decoded.channels);
         assert_eq!(rate, 16000);
         assert_eq!(channels, 1);
+        assert_eq!(
+            decoded.decoder,
+            crate::commands::audio_decode::Decoder::Symphonia,
+            "plain 16-bit WAV must not need the CoreAudio fallback"
+        );
         assert_eq!(samples.len(), input.len());
         // 16-bit quantization tolerance.
         for (a, b) in input.iter().zip(samples.iter()) {
