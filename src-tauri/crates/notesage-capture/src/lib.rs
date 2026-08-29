@@ -1394,6 +1394,14 @@ fn is_remote_http_url(src: &str) -> bool {
 /// browser prefer a remote candidate over the inlined `src` and quietly
 /// reintroduce the network dependency this exists to remove — the document
 /// would look self-contained and not be.
+///
+/// Parsed as a DOCUMENT, not a fragment (#805). `Document::fragment` sets
+/// html5ever's `drop_doctype`, so re-serializing a captured article through it
+/// returned the same markup minus its `<!doctype html>` and its `<head>`/
+/// `<body>` tags — and a doctype-less file renders in QUIRKS mode, which
+/// changes layout and makes WebKit's text-size adjustment more eager. The
+/// input here is always a whole `.html` file read off disk, so document mode
+/// is also the honest description of it.
 pub fn inline_article_images(html: &str, map: &[(String, String)]) -> String {
     if map.is_empty() {
         return html.to_string();
@@ -1401,7 +1409,7 @@ pub fn inline_article_images(html: &str, map: &[(String, String)]) -> String {
     let lookup: std::collections::HashMap<&str, &str> =
         map.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
 
-    let doc = dom_query::Document::fragment(html);
+    let doc = dom_query::Document::from(html);
     for node in doc.select("img").iter() {
         let src = node.attr("src").unwrap_or_default().to_string();
         if let Some(data_uri) = lookup.get(src.as_str()) {

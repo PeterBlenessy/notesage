@@ -771,6 +771,69 @@ fn html_capture_image_survives_to_the_thumbnail() {
     );
 }
 
+/// A captured `.html` must still be a standards-mode DOCUMENT after the image
+/// sweep has rewritten it (#805).
+///
+/// Runs the real chain — extract → `build_article_html_document` → the sweep's
+/// find + rewrite — because the bug lived BETWEEN those steps. The builder
+/// emitted the doctype (a test asserted so, and passed), the sweep's
+/// re-serialization dropped it, and the pair was never exercised together. The
+/// then-existing HTML test above fed a bare `<article>` fragment in, so it had
+/// no doctype to lose.
+///
+/// The user-visible failure: `document.compatMode === "BackCompat"`, which
+/// changes layout and inline sizing and makes iOS WebKit's automatic text-size
+/// adjustment more eager — on the least trusted, most variable content the app
+/// renders. Inconsistent by nature: only documents whose images were actually
+/// inlined got rewritten, so captures made minutes apart split both ways.
+#[test]
+fn an_inlined_html_capture_is_still_a_standards_mode_document() {
+    let source = format!(
+        r#"<html><body><article><h2>Heading</h2>
+        <p>{}</p><img src="{IMAGE_URL}"></article></body></html>"#,
+        "Enough prose to clear the extractor's minimum length bar. ".repeat(12)
+    );
+    let article = notesage_capture::extract_article(&source, "https://example.com/post")
+        .expect("fixture must extract, or this test proves nothing");
+    let document = notesage_capture::build_article_html_document(
+        &article,
+        Some("A Title"),
+        "https://example.com/post",
+    );
+
+    let urls = notesage_capture::article_image_urls(&document);
+    assert!(
+        urls.iter().any(|u| u == IMAGE_URL),
+        "the sweep cannot find the image in a built document, so the rewrite below\n\
+         would never run and this test would pass vacuously. found: {urls:?}"
+    );
+
+    let inlined = notesage_capture::inline_article_images(
+        &document,
+        &[(IMAGE_URL.to_string(), DATA_URI.to_string())],
+    );
+    assert!(
+        inlined.contains(DATA_URI),
+        "precondition: the rewrite did not happen, so nothing here is being tested"
+    );
+
+    assert!(
+        inlined.trim_start().to_ascii_lowercase().starts_with("<!doctype html>"),
+        "the image sweep stripped the doctype — the saved article now renders in\n\
+         quirks mode (`document.compatMode === \"BackCompat\"`).\n\n\
+         got: {}",
+        &inlined[..inlined.len().min(160)]
+    );
+    for tag in ["<head>", "</head>", "<body>", "</body>"] {
+        assert!(
+            inlined.to_ascii_lowercase().contains(tag),
+            "the image sweep stripped `{tag}` from the saved document.\n\n\
+             got: {}",
+            &inlined[..inlined.len().min(300)]
+        );
+    }
+}
+
 #[test]
 fn an_x_captures_cover_survives_to_the_thumbnail() {
     // The exact chain that failed. An X Article's cover is rendered by the
