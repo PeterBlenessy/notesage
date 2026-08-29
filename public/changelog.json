@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.55.2",
+      "date": "2026-08-29",
+      "previousVersion": "0.55.1",
+      "sections": {
+        "fixes": [
+          "**Articles already in your library get their formatting fixed.** v0.55.1 stopped new saves coming out wrong, but the articles saved before it stayed that way — wrong text size and spacing, most noticeably on iPhone. Opening one now repairs it, and the fix is written into the file itself rather than just applied on screen, so the article also looks right in a browser, in Quick Look, or if you send it to someone. It happens once per article, silently, and an article that is already fine is left untouched. Note that a repaired article's modification date changes to the day you opened it."
+        ]
+      }
+    },
+    {
       "version": "0.55.1",
       "date": "2026-08-29",
       "previousVersion": "0.55.0",

@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Open a saved article or report and tap a link that jumps within the same document — a contents entry, a footnote. It should scroll there; before, nothing happened at all. Links to the web still open in your browser. Also worth trying: the search button while reading.
+Open an article you saved before this week — one whose text looked oddly sized or oddly spaced. It should look right now, and stay that way: opening it repairs the file for good, so it also looks right in Safari or when you share it. Articles that were already fine are left alone. A repaired article's date becomes today; that is expected.
