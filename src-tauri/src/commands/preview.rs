@@ -143,6 +143,35 @@ pub async fn render_markdown_fragment(markdown: String, theme: String) -> Result
     .map_err(|e| format!("Markdown render task failed: {}", e))?
 }
 
+/// Repair a saved article that lost its `<!doctype html>` to #805, returning
+/// the corrected document — or `None` when there is nothing to repair.
+///
+/// PURE: this reads and writes nothing. The caller owns the write, so the
+/// reader keeps using `ios_write_file` — one of the three allowlisted
+/// note-editing writes — rather than this growing new filesystem surface for a
+/// fifteen-byte prepend.
+///
+/// The decision itself lives in `notesage-capture` next to the builder whose
+/// output it repairs, so there is one opinion about what a damaged document
+/// looks like rather than one per caller — the same rule that keeps the two
+/// share extensions in step.
+///
+/// **iOS only, and that is a scoping decision rather than an oversight.**
+/// `notesage-capture` is an iOS-only dependency on purpose ("desktop builds
+/// link nothing new" — it carries a Readability stack), and the damage was
+/// only ever produced on iOS, since the image sweep that caused #805 is itself
+/// iOS-only. Because the library is iCloud-synced, a file repaired on the
+/// phone is repaired for the desktop viewer, Safari and Quick Look too. The
+/// gap that remains: an article opened ONLY on desktop never gets repaired.
+/// Closing it means either linking the capture crate into the desktop build or
+/// feature-gating its extraction dependencies — a deliberate call, not
+/// something to do by reflex.
+#[cfg(target_os = "ios")]
+#[tauri::command]
+pub async fn repair_html_doctype(content: String) -> Result<Option<String>, String> {
+    Ok(notesage_capture::repair_missing_doctype(&content))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -315,6 +315,7 @@ pub fn run() {
             ios_ensure_downloaded,
             ios_stat_file,
         render_markdown_fragment,
+        repair_html_doctype,
         html_preview_register,
         html_preview_unregister,
         log_frontend,

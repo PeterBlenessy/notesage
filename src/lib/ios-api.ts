@@ -387,6 +387,23 @@ export function iosWriteFile(relPath: string, content: string): Promise<void> {
 }
 
 /**
+ * The corrected form of a saved article that lost its `<!doctype html>` to
+ * #805, or `null` when the document is already fine.
+ *
+ * `null` is the common answer and the reason this returns an option rather
+ * than a string: the caller must be able to skip the write entirely, because a
+ * no-op rewrite would churn the file's modification date and re-sync it for
+ * nothing.
+ *
+ * The decision lives in Rust (`notesage-capture`) next to the builder whose
+ * output it repairs — deliberately NOT reimplemented here, so there is one
+ * opinion about what a damaged document looks like.
+ */
+export function iosRepairHtmlDoctype(content: string): Promise<string | null> {
+  return invoke("repair_html_doctype", { content });
+}
+
+/**
  * Create a new UTF-8 file. The name is deduped natively (`note.md` →
  * `note-1.md`) rather than overwritten; resolves to the relative path
  * actually created.

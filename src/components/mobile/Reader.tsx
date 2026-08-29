@@ -9,6 +9,7 @@ import {
   iosEnsureDownloaded,
   iosShareFile,
   iosWriteFile,
+  iosRepairHtmlDoctype,
   iosRenameFile,
   iosCreateFile,
   iosStatFile,
@@ -92,6 +93,40 @@ type ReaderState =
   // every consumer — find, cleanup, the render switch — has to pick one.
   | { status: "html-native" }
   | { status: "pdf"; filePath: string };
+
+/**
+ * Repair a saved article that lost its `<!doctype html>` to #805, returning
+ * the content to render.
+ *
+ * Articles saved before that fix are still in quirks mode on disk, and the
+ * image sweep will not revisit them — it returns early once no remote image is
+ * left. Opening one is the moment we know it needs fixing, so it is fixed
+ * then.
+ *
+ * **The file is rewritten, not just patched for display.** A saved article is
+ * meant to be self-contained and portable — opened in Safari, Quick Looked in
+ * Finder, handed to someone. Patching only our own renderer would leave the
+ * artifact broken everywhere else.
+ *
+ * The write is deliberately NOT awaited. It is a coordinated iCloud write, and
+ * making the reader wait for it would add its latency to opening every report
+ * to fix fifteen bytes. Rendering uses the repaired text either way, so a
+ * failed write costs nothing but a retry on the next open — the repair is
+ * idempotent and converges.
+ *
+ * Returns the original content unchanged when there is nothing to repair,
+ * which is the normal case; no write happens then, so an already-correct
+ * article is never touched and its modification date never moves.
+ */
+export async function repairDoctypeOnOpen(relPath: string, raw: string): Promise<string> {
+  const repaired = await iosRepairHtmlDoctype(raw).catch(() => null);
+  if (!repaired) return raw;
+  void iosWriteFile(relPath, repaired).catch(() => {
+    // Read-only volume, a vanished grant, an iCloud stall. The reader still
+    // shows the repaired document; the file is retried next time it opens.
+  });
+  return repaired;
+}
 
 /**
  * Above this, a text/markdown/html file is declined instead of read (issue
@@ -700,7 +735,7 @@ export function Reader() {
         }
       }
       if (kind === "html") {
-        const raw = await iosReadFile(relPath);
+        const raw = await repairDoctypeOnOpen(relPath, await iosReadFile(relPath));
         if (!isCurrent()) return;
 
         // NATIVE FIRST (#606, ADR 0010): its own WKWebView, its own content

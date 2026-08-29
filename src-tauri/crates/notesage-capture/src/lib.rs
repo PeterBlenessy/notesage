@@ -652,6 +652,43 @@ fn escape_html_text(text: &str) -> String {
     text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
 }
 
+/// Give back the doctype an already-saved article lost to #805, or `None` when
+/// there is nothing to repair.
+///
+/// Files written before that fix are still on disk in quirks mode, and the
+/// image sweep will not touch them again — it returns early once no remote
+/// image is left. They are repaired when opened instead.
+///
+/// **Only the doctype is restored, and that is not an oversight.** The same bug
+/// also dropped `<head>`/`<body>`, but those tags are OPTIONAL in HTML5: every
+/// parser reconstructs them, and their absence changes nothing about how the
+/// page renders. The doctype is the one byte sequence that selects standards
+/// mode over quirks. So the repair is a prepend, not a reparse — it cannot
+/// reorder, re-escape or drop any of the user's content, which matters because
+/// a reparse is precisely what damaged these files.
+///
+/// The signature is deliberately narrow: the content must open with `<html`.
+/// That is exactly what #805 produced, and it means a genuine fragment, a
+/// non-capture HTML file, or an already-correct document is left alone.
+/// Returning `None` rather than an unchanged copy lets callers skip the write
+/// entirely — an unchanged mtime keeps iCloud from syncing a no-op edit, the
+/// same reasoning `ios_inline_article_images` already applies.
+pub fn repair_missing_doctype(html: &str) -> Option<String> {
+    let trimmed = html.trim_start_matches('\u{feff}').trim_start();
+    let head: String = trimmed.chars().take(16).collect::<String>().to_ascii_lowercase();
+    if head.starts_with("<!doctype") {
+        return None;
+    }
+    // The tag has to END after `<html` — a bare `<html>` or one carrying
+    // attributes (`<html lang="en">`). Matching the prefix alone also matched
+    // `<htmlfoo>`, an unrelated element whose file we would then have rewritten.
+    let rest = head.strip_prefix("<html")?;
+    if !rest.is_empty() && !rest.starts_with('>') && !rest.starts_with(char::is_whitespace) {
+        return None;
+    }
+    Some(format!("<!doctype html>\n{html}"))
+}
+
 /// Body-bearing capture note (format v2): identical frontmatter to the
 /// link-only builder plus `capture_format: markdown`, with the extracted
 /// article as the body after the source-link line. The link-only builder
@@ -2891,4 +2928,81 @@ mod linked_document_tests {
         );
     }
 
+    /// The exact shape #805 left on disk: `<html>` with no doctype, because
+    /// `Document::fragment` re-serialization dropped it.
+    #[test]
+    fn repairs_the_document_shape_805_actually_produced() {
+        let damaged = "<html><meta charset=\"utf-8\"><title>T</title>\
+<p>Body</p><hr><p class=\"source\">Clipped from <a href=\"x\">x</a></p></html>\n";
+        let repaired = repair_missing_doctype(damaged).expect("this is the damaged shape");
+        assert!(repaired.starts_with("<!doctype html>\n<html>"));
+        assert!(
+            repaired.ends_with(damaged),
+            "repair must PREPEND only — the user's content is not reparsed, \
+             reordered or re-escaped"
+        );
+    }
+
+    /// Idempotent: opening a repaired file again must not write it again, or
+    /// every open churns the mtime and re-syncs the file.
+    #[test]
+    fn a_healthy_document_is_left_alone() {
+        for healthy in [
+            "<!doctype html>\n<html><body><p>Fine</p></body></html>",
+            "<!DOCTYPE HTML>\n<html><body><p>Fine</p></body></html>",
+            "\u{feff}<!doctype html>\n<html></html>",
+        ] {
+            assert!(
+                repair_missing_doctype(healthy).is_none(),
+                "already standards-mode, must not be rewritten: {healthy:?}"
+            );
+        }
+    }
+
+    /// The signature is narrow on purpose. A fragment, a note, or any file that
+    /// does not open with `<html` is somebody else's file — prepending a
+    /// doctype to it would be a rewrite we were never asked for.
+    #[test]
+    fn only_documents_that_open_with_html_are_touched() {
+        for untouched in [
+            "<p>Just a fragment</p>",
+            "<div><html-ish></div>",
+            "---\ntitle: a note\n---\n\n# Markdown",
+            "",
+            "   ",
+            "<htmlfoo>not an html element</htmlfoo>",
+        ] {
+            assert!(
+                repair_missing_doctype(untouched).is_none(),
+                "must not rewrite a file that is not a doctype-less HTML document: {untouched:?}"
+            );
+        }
+    }
+
+    /// Leading whitespace and a BOM are still that document, and both occur in
+    /// files written by other tools.
+    #[test]
+    fn repair_sees_past_a_bom_and_leading_whitespace() {
+        for damaged in [
+            "\n  <html><body>x</body></html>",
+            "\u{feff}<html><body>x</body></html>",
+            // Attributes on the root element are the common shape for a
+            // doctype-less document written by some other tool.
+            "<html lang=\"en\"><body>x</body></html>",
+        ] {
+            let repaired =
+                repair_missing_doctype(damaged).unwrap_or_else(|| panic!("should repair {damaged:?}"));
+            assert!(repaired.starts_with("<!doctype html>"));
+            assert!(repaired.ends_with(damaged), "content preserved byte for byte");
+        }
+    }
+
+    /// Repairing twice changes nothing the second time — the property the
+    /// on-open call site depends on to converge.
+    #[test]
+    fn repair_converges_after_one_pass() {
+        let damaged = "<html><body>x</body></html>";
+        let once = repair_missing_doctype(damaged).expect("first pass repairs");
+        assert!(repair_missing_doctype(&once).is_none(), "second pass must be a no-op");
+    }
 }
