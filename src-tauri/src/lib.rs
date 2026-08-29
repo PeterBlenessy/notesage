@@ -419,6 +419,7 @@ pub fn run() {
             render_html,
             render_markdown_preview,
             render_markdown_fragment,
+            repair_html_doctype,
             save_binary_file,
             import_pptx_template,
             list_pptx_templates,
