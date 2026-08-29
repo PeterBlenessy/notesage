@@ -221,3 +221,4 @@ Chronological log of major implementation milestones and changes.
 | 215 | [Release v0.54.4](215-release-v0.54.4.md) | Both local agents can be set up side by side; Cancel stops a share, and saved articles keep their pictures. |
 | 216 | [Release v0.55.0](216-release-v0.55.0.md) | Transcribe recordings you already have; agent updates show versions; attachments reach agents as files. |
 | 217 | [Release v0.55.1](217-release-v0.55.1.md) | Any file shared from Finder now saves; articles saved from a web page keep their formatting. |
+| 218 | [Release v0.55.2](218-release-v0.55.2.md) | Articles already in your library get their formatting repaired when you open them. |
