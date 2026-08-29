@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.55.1",
+      "date": "2026-08-29",
+      "previousVersion": "0.55.0",
+      "sections": {
+        "fixes": [
+          "**Any file you share from Finder now saves.** \"Share → Notesage\" from Finder worked for PDFs, ebooks, images, video and audio, and failed for everything else — a saved web page, a Word document, a presentation, a spreadsheet, a text or Markdown file. Those shares did not save the wrong thing; they saved nothing at all. Every file type lands in your Inbox now, under its own name.",
+          "**Saved articles keep their formatting.** Some articles saved from a web page opened with the wrong text size and spacing, most noticeably on iPhone. Whether it happened depended on the pictures in the article, so two articles saved minutes apart could come out differently. Articles saved from now on are correct. Ones already in your library keep the formatting they were saved with — repairing those is coming separately."
+        ]
+      }
+    },
+    {
       "version": "0.55.0",
       "date": "2026-08-28",
       "previousVersion": "0.54.4",
