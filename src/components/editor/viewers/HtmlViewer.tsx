@@ -211,6 +211,41 @@ export function HtmlViewer({
     [],
   );
 
+  // Repair a saved article that lost its `<!doctype html>` to #805.
+  //
+  // The desktop half of the same repair the mobile Reader does. It is NOT
+  // enough to rely on the phone fixing the file and iCloud carrying it over:
+  // an article only ever opened here would stay in quirks mode forever, and
+  // these documents are meant to be portable — opened in a browser, Quick
+  // Looked, handed to someone. So they are repaired wherever they are opened.
+  //
+  // The decision is Rust's (`repair_missing_doctype`), shared with the mobile
+  // path rather than reimplemented here, so the two cannot drift.
+  //
+  // Skipped while the tab is dirty: `content` then carries the user's unsaved
+  // edits, and saving to fix fifteen bytes would silently commit those too.
+  // The repair is idempotent, so the next clean open gets it.
+  useEffect(() => {
+    if (isDirty) return;
+    let cancelled = false;
+    void invoke<string | null>("repair_html_doctype", { content })
+      .then((repaired) => {
+        if (cancelled || !repaired) return;
+        updateTabContent(repaired);
+        saveFileWithContent(repaired);
+      })
+      .catch(() => {
+        // A build without the command, or an IPC failure. A missing doctype is
+        // a formatting problem, not a reason to fail the view.
+      });
+    return () => {
+      cancelled = true;
+    };
+    // Keyed on the FILE, not on `content`: reacting to content would re-fire on
+    // the very update this effect performs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filePath]);
+
   // Whether the content is empty or whitespace-only (triggers placeholder)
   const isEmpty = content.trim() === "";
 
