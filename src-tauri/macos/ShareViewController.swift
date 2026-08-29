@@ -199,18 +199,14 @@ final class ShareViewController: NSViewController {
         "com.apple.property-list",
     ]
 
-    /// Types that mean "this is a file to store", not "this is a link to
-    /// capture". Mirrors the iOS list so the two platforms accept the same
-    /// drops.
+    /// Richest file representation to ASK a provider for, most specific first.
     ///
-    /// The file check still has to run BEFORE the link check: a shared PDF
-    /// also advertises `public.file-url`, which IS in `urlTypeIdentifiers`, so
-    /// checking for a link first would route every document down the article
-    /// path and try to extract prose from a PDF.
-    ///
-    /// `public.file-url` is deliberately absent from THIS list. It says
-    /// nothing about what the file is, so treating it as a document marker
-    /// would swallow link shares that happen to carry a file URL.
+    /// Detection is a separate question — see `isDocumentProvider`. This list
+    /// only decides which representation `loadFileRepresentation` requests; a
+    /// type absent from it falls back to `public.data`, which every file has.
+    /// `public.file-url` must NOT appear here: it is a marker, not a content
+    /// type, and asking for it as a file representation is not the same
+    /// request. iOS keeps the same split for the same reason.
     private static let documentTypeIdentifiers = [
         "com.adobe.pdf",
         "org.idpf.epub-container",
@@ -218,6 +214,32 @@ final class ShareViewController: NSViewController {
         "public.movie",
         "public.audio",
     ]
+
+    /// Does this attachment mean "a file to store", rather than "a link to
+    /// capture"?
+    ///
+    /// `public.file-url` is the general case and the five content types above
+    /// are merely the ones we want a richer representation of. Without the
+    /// file-url arm this returned false for every file that is not a PDF,
+    /// EPUB, image, movie or audio — so an `.html`, `.md`, `.txt`, `.docx`,
+    /// `.pptx`, `.csv` or source file shared from Finder fell through to the
+    /// link branch, matched `public.file-url` in `urlTypeIdentifiers`, and was
+    /// captured as though `file:///…` were a web page. The file itself never
+    /// reached `Inbox/`.
+    ///
+    /// An earlier comment here claimed file-url was excluded deliberately,
+    /// because it "would swallow link shares that happen to carry a file URL".
+    /// That risk does not exist: `public.file-url` is a SUBTYPE of
+    /// `public.url`, so a web link conforms to `public.url` and not to
+    /// `public.file-url`. Nothing shared from Safari matches this arm.
+    ///
+    /// The file check still has to run BEFORE the link check: a shared PDF
+    /// also advertises `public.file-url`, so checking for a link first would
+    /// route every document down the article path.
+    private static func isDocumentProvider(_ p: NSItemProvider) -> Bool {
+        documentTypeIdentifiers.contains(where: p.hasItemConformingToTypeIdentifier)
+            || p.hasItemConformingToTypeIdentifier("public.file-url")
+    }
 
     /// Copy each shared file into `Inbox/` under its own name.
     ///
@@ -310,9 +332,7 @@ final class ShareViewController: NSViewController {
         // Files first. A shared PDF also advertises `public.file-url`, so
         // checking for a link before checking for a file would route every
         // document down the article path and try to extract prose from it.
-        documentProviders = attachments.filter { p in
-            Self.documentTypeIdentifiers.contains(where: p.hasItemConformingToTypeIdentifier)
-        }
+        documentProviders = attachments.filter(Self.isDocumentProvider)
         if !documentProviders.isEmpty {
             let count = documentProviders.count
             titleLabel.stringValue = count == 1

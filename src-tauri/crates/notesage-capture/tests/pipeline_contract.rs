@@ -708,6 +708,170 @@ fn an_html_capture_is_not_written_with_a_markdown_name() {
     );
 }
 
+/// Swift source with `//` and `/* */` comments removed.
+///
+/// Every assertion about a type identifier needs this. The identifiers below
+/// are also NAMED in the comments that explain them, so a plain `contains`
+/// would be satisfied by the prose describing the bug rather than by the code
+/// fixing it — a guard that cannot fail.
+fn strip_swift_comments(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let bytes: Vec<char> = src.chars().collect();
+    let (mut i, mut in_line, mut in_block, mut in_str) = (0usize, false, false, false);
+    while i < bytes.len() {
+        let c = bytes[i];
+        let next = bytes.get(i + 1).copied();
+        if in_line {
+            if c == '\n' {
+                in_line = false;
+                out.push(c);
+            }
+        } else if in_block {
+            if c == '*' && next == Some('/') {
+                in_block = false;
+                i += 1;
+            }
+        } else if in_str {
+            out.push(c);
+            if c == '\\' {
+                if let Some(n) = next {
+                    out.push(n);
+                    i += 1;
+                }
+            } else if c == '"' {
+                in_str = false;
+            }
+        } else if c == '/' && next == Some('/') {
+            in_line = true;
+            i += 1;
+        } else if c == '/' && next == Some('*') {
+            in_block = true;
+            i += 1;
+        } else {
+            if c == '"' {
+                in_str = true;
+            }
+            out.push(c);
+        }
+        i += 1;
+    }
+    out
+}
+
+/// A file shared from Finder / Files must be STORED, whatever its type — not
+/// mistaken for a link to capture.
+///
+/// Both extensions decide "file or link?" before anything else, and both must
+/// treat `public.file-url` as the general "this is a file" marker. macOS did
+/// not: its list held only PDF, EPUB, image, movie and audio, so an `.html`,
+/// `.md`, `.txt`, `.docx`, `.pptx`, `.csv` or source file shared from Finder
+/// missed the file branch and fell through to the link branch — where
+/// `public.file-url` IS accepted as a URL. The full chain:
+///
+///   Finder share → no media type matches → link branch takes `file:///…`
+///   → `ShareCapture.save` rejects any scheme that is not http(s)
+///   → `ShareCaptureError.badUrl`
+///
+/// So the share did not merely save the wrong thing; it FAILED, and nothing
+/// reached `Inbox/`. Every file type the app can open, except the five media
+/// ones, was unshareable from Finder.
+///
+/// The macOS source claimed in a comment that it "mirrors the iOS list", which
+/// was untrue and which nothing checked. Reported by Peter on 2026-08-29 for
+/// HTML; it was never HTML-specific.
+/// The balanced-brace block that follows `anchor`.
+///
+/// Scoping each assertion to the block it is about is the whole point: BOTH
+/// platforms also list `public.file-url` among the types a LINK may arrive as,
+/// so a whole-file `contains` is satisfied by the link branch and passes even
+/// with the document branch deleted. That exact hollow guard was written first
+/// and caught by mutation-testing it.
+fn block_after(code: &str, anchor: &str, what: &str) -> String {
+    let start = code
+        .find(anchor)
+        .unwrap_or_else(|| panic!("cannot find `{anchor}` — {what}"));
+    let rest = &code[start..];
+    let open = rest
+        .find('{')
+        .unwrap_or_else(|| panic!("no block opens after `{anchor}` — {what}"));
+    let mut depth = 0usize;
+    for (i, c) in rest[open..].char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return rest[open..open + i + 1].to_string();
+                }
+            }
+            _ => {}
+        }
+    }
+    panic!("unbalanced braces after `{anchor}` — {what}")
+}
+
+#[test]
+fn both_platforms_treat_any_shared_file_as_a_document() {
+    // The DECIDING block on each platform, not the whole file.
+    let cases = [
+        (
+            "iOS",
+            ios_src("ShareViewController.swift"),
+            "documentProviders = attachments.filter",
+        ),
+        (
+            "macOS",
+            macos_src("ShareViewController.swift"),
+            "func isDocumentProvider",
+        ),
+    ];
+    for (platform, src, anchor) in cases {
+        let code = strip_swift_comments(&src);
+        let decision = block_after(
+            &code,
+            anchor,
+            "the file-or-link decision moved; point this test at its new home",
+        );
+        assert!(
+            decision.contains("public.file-url") || decision.contains("UTType.fileURL"),
+            "{platform}'s file-or-link decision never tests for a file URL, so it can\n\
+             only recognise the handful of media types it names explicitly. Every\n\
+             other file type — .html, .md, .txt, .docx, .pptx, .csv, source files —\n\
+             misses the file branch, falls through to the link branch (which DOES\n\
+             accept `public.file-url`), and is captured as though `file:///…` were a\n\
+             web page. The file never reaches Inbox/.\n\n\
+             deciding block was:\n{decision}"
+        );
+    }
+}
+
+/// The file-url marker must not be requested as a file REPRESENTATION.
+///
+/// It says "there is a file here", not what the file is; the representation to
+/// ask for is the most specific content type, falling back to `public.data`.
+/// Putting the marker in the load list would change what is requested for
+/// every non-media file, so the two lists stay separate on both platforms.
+#[test]
+fn the_file_url_marker_is_not_used_as_a_load_representation() {
+    let code = strip_swift_comments(&macos_src("ShareViewController.swift"));
+    let list = code
+        .split_once("documentTypeIdentifiers = [")
+        .and_then(|(_, rest)| rest.split_once(']'))
+        .map(|(body, _)| body.to_string())
+        .expect("macOS no longer declares `documentTypeIdentifiers` as a list literal");
+    assert!(
+        !list.contains("public.file-url"),
+        "`public.file-url` is in the load-representation list, so\n\
+         `loadFileRepresentation` is asked for a marker type rather than for the\n\
+         file's content type.\n\n got: {list}"
+    );
+    assert!(
+        code.contains("public.data"),
+        "macOS dropped the `public.data` fallback, so a file whose type is not in\n\
+         the list has no representation to request at all."
+    );
+}
+
 // ---------------------------------------------------------------------------
 // 2. Discoverability
 // ---------------------------------------------------------------------------
@@ -769,6 +933,69 @@ fn html_capture_image_survives_to_the_thumbnail() {
         notesage_capture::article_lead_image(&inlined).is_some(),
         "HTML capture's image is not thumbnail-discoverable:\n{inlined}"
     );
+}
+
+/// A captured `.html` must still be a standards-mode DOCUMENT after the image
+/// sweep has rewritten it (#805).
+///
+/// Runs the real chain — extract → `build_article_html_document` → the sweep's
+/// find + rewrite — because the bug lived BETWEEN those steps. The builder
+/// emitted the doctype (a test asserted so, and passed), the sweep's
+/// re-serialization dropped it, and the pair was never exercised together. The
+/// then-existing HTML test above fed a bare `<article>` fragment in, so it had
+/// no doctype to lose.
+///
+/// The user-visible failure: `document.compatMode === "BackCompat"`, which
+/// changes layout and inline sizing and makes iOS WebKit's automatic text-size
+/// adjustment more eager — on the least trusted, most variable content the app
+/// renders. Inconsistent by nature: only documents whose images were actually
+/// inlined got rewritten, so captures made minutes apart split both ways.
+#[test]
+fn an_inlined_html_capture_is_still_a_standards_mode_document() {
+    let source = format!(
+        r#"<html><body><article><h2>Heading</h2>
+        <p>{}</p><img src="{IMAGE_URL}"></article></body></html>"#,
+        "Enough prose to clear the extractor's minimum length bar. ".repeat(12)
+    );
+    let article = notesage_capture::extract_article(&source, "https://example.com/post")
+        .expect("fixture must extract, or this test proves nothing");
+    let document = notesage_capture::build_article_html_document(
+        &article,
+        Some("A Title"),
+        "https://example.com/post",
+    );
+
+    let urls = notesage_capture::article_image_urls(&document);
+    assert!(
+        urls.iter().any(|u| u == IMAGE_URL),
+        "the sweep cannot find the image in a built document, so the rewrite below\n\
+         would never run and this test would pass vacuously. found: {urls:?}"
+    );
+
+    let inlined = notesage_capture::inline_article_images(
+        &document,
+        &[(IMAGE_URL.to_string(), DATA_URI.to_string())],
+    );
+    assert!(
+        inlined.contains(DATA_URI),
+        "precondition: the rewrite did not happen, so nothing here is being tested"
+    );
+
+    assert!(
+        inlined.trim_start().to_ascii_lowercase().starts_with("<!doctype html>"),
+        "the image sweep stripped the doctype — the saved article now renders in\n\
+         quirks mode (`document.compatMode === \"BackCompat\"`).\n\n\
+         got: {}",
+        &inlined[..inlined.len().min(160)]
+    );
+    for tag in ["<head>", "</head>", "<body>", "</body>"] {
+        assert!(
+            inlined.to_ascii_lowercase().contains(tag),
+            "the image sweep stripped `{tag}` from the saved document.\n\n\
+             got: {}",
+            &inlined[..inlined.len().min(300)]
+        );
+    }
 }
 
 #[test]
