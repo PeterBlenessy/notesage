@@ -57,6 +57,15 @@ extension LibraryAccess {
         NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &coordError) { url in
             do { try contents.data(using: .utf8)?.write(to: url) } catch { writeError = error }
         }
+        // Never leave litter (code review): `claimName` CLAIMED the name by
+        // creating a zero-byte file. If the coordinated write then failed, that
+        // placeholder stays under the clean name forever and pushes every later
+        // capture of the same title to `-1`, `-2`, … — defeating the dedup this
+        // whole path exists for. `saveDocuments` already cleaned up on its
+        // failure branch; these writers did not.
+        if coordError != nil || writeError != nil {
+            try? FileManager.default.removeItem(at: target)
+        }
         if let coordError { throw coordError }
         if let writeError { throw writeError }
         return "Inbox/\(name)"
@@ -94,6 +103,15 @@ extension LibraryAccess {
         var writeError: Error?
         NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &coordError) { url in
             do { try contents.data(using: .utf8)?.write(to: url) } catch { writeError = error }
+        }
+        // Never leave litter (code review): `claimName` CLAIMED the name by
+        // creating a zero-byte file. If the coordinated write then failed, that
+        // placeholder stays under the clean name forever and pushes every later
+        // capture of the same title to `-1`, `-2`, … — defeating the dedup this
+        // whole path exists for. `saveDocuments` already cleaned up on its
+        // failure branch; these writers did not.
+        if coordError != nil || writeError != nil {
+            try? FileManager.default.removeItem(at: target)
         }
         if let coordError { throw coordError }
         if let writeError { throw writeError }
@@ -144,6 +162,15 @@ extension LibraryAccess {
         var writeError: Error?
         NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &coordError) { url in
             do { try document.data(using: .utf8)?.write(to: url) } catch { writeError = error }
+        }
+        // Never leave litter (code review): `claimName` CLAIMED the name by
+        // creating a zero-byte file. If the coordinated write then failed, that
+        // placeholder stays under the clean name forever and pushes every later
+        // capture of the same title to `-1`, `-2`, … — defeating the dedup this
+        // whole path exists for. `saveDocuments` already cleaned up on its
+        // failure branch; these writers did not.
+        if coordError != nil || writeError != nil {
+            try? FileManager.default.removeItem(at: target)
         }
         if let coordError { throw coordError }
         if let writeError { throw writeError }
@@ -257,6 +284,15 @@ extension LibraryAccess {
         ) { url in
             do { try contents.data(using: .utf8)?.write(to: url) } catch { writeError = error }
         }
+        // Never leave litter (code review): `claimName` CLAIMED the name by
+        // creating a zero-byte file. If the coordinated write then failed, that
+        // placeholder stays under the clean name forever and pushes every later
+        // capture of the same title to `-1`, `-2`, … — defeating the dedup this
+        // whole path exists for. `saveDocuments` already cleaned up on its
+        // failure branch; these writers did not.
+        if coordError != nil || writeError != nil {
+            try? FileManager.default.removeItem(at: target)
+        }
         if let coordError { throw coordError }
         if let writeError { throw writeError }
         return "Inbox/\(name)"
@@ -311,6 +347,15 @@ extension LibraryAccess {
             writingItemAt: target, options: .forReplacing, error: &coordError
         ) { url in
             do { try contents.data(using: .utf8)?.write(to: url) } catch { writeError = error }
+        }
+        // Never leave litter (code review): `claimName` CLAIMED the name by
+        // creating a zero-byte file. If the coordinated write then failed, that
+        // placeholder stays under the clean name forever and pushes every later
+        // capture of the same title to `-1`, `-2`, … — defeating the dedup this
+        // whole path exists for. `saveDocuments` already cleaned up on its
+        // failure branch; these writers did not.
+        if coordError != nil || writeError != nil {
+            try? FileManager.default.removeItem(at: target)
         }
         if let coordError { throw coordError }
         if let writeError { throw writeError }

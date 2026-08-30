@@ -330,6 +330,45 @@ describe('useFileRenameSync — the tree must follow a file rename (#788)', () =
     expect(mockRefreshFileTree).toHaveBeenCalledWith('/project/Inbox');
   });
 
+  it('never hands refreshFileTree a mangled path for a bare filename', async () => {
+    // `slice(0, lastIndexOf("/"))` treats -1 as "from the end", so a path with
+    // no "/" came back as the path MINUS ITS LAST CHARACTER — "note.md" became
+    // "note.m" — which then sailed past the emptiness guard and was refreshed
+    // as if it were a directory. `substring` clamps to 0 and yields "".
+    useWorkspaceStore.setState({ projects: [{ path: '/project', fileTree: [] }] });
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => {
+      emitFileRenamed('old.md', 'new.md', false);
+    });
+
+    await vi.runAllTimersAsync();
+    for (const call of mockRefreshFileTree.mock.calls) {
+      expect(call[0]).not.toBe('old.m');
+      expect(call[0]).not.toBe('new.m');
+    }
+  });
+
+  it('coalesces a burst of renames in one directory into a single refresh', async () => {
+    // `file-renamed` events arrive one at a time — unlike `file-changed-batch`,
+    // which the Rust watcher coalesces — so a bulk rename fired one
+    // `list_directory` per event. That call costs ~2 s on an iCloud path.
+    useWorkspaceStore.setState({ projects: [{ path: '/project', fileTree: [] }] });
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => {
+      for (let i = 0; i < 10; i++) {
+        emitFileRenamed(`/project/Inbox/a${i}.md`, `/project/Inbox/b${i}.md`, false);
+      }
+    });
+
+    await vi.runAllTimersAsync();
+    const inboxCalls = mockRefreshFileTree.mock.calls.filter((c) => c[0] === '/project/Inbox');
+    expect(inboxCalls.length).toBe(1);
+  });
+
   it('scopes the refresh rather than re-listing every section', async () => {
     // `refreshFileTree()` with no argument re-lists all sections, which is the
     // ~2 s stall on iCloud paths that the targeted form exists to avoid.

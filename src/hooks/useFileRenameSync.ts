@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { useEditorStore } from "@/stores/editor-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -10,6 +10,9 @@ import { log } from "@/lib/logger";
 import { commentSidecarPath, parseSidecar } from "@/lib/comment-storage";
 import { executeRenameTransaction, type SidecarMigrationInput } from "@/lib/rename-transaction";
 import { tauriApi } from "@/lib/tauri";
+
+/** Matches the create/delete debounce in `useFileWatcher.ts`. */
+const RENAME_REFRESH_DEBOUNCE_MS = 300;
 
 interface FileRenamedPayload {
   old_path: string;
@@ -90,6 +93,27 @@ async function collectClosedTabMigrationInputs(
  */
 export function useFileRenameSync(): void {
   const { refreshFileTree, saveFile } = useFileOperations();
+  /**
+   * Per-directory debounce for the tree refresh (code review).
+   *
+   * `file-renamed` events arrive ONE AT A TIME — unlike `file-changed-batch`,
+   * which the Rust watcher coalesces — so a bulk rename (a Finder multi-select,
+   * a branch switch, an agent renaming a set of files) fired one immediate
+   * `list_directory` per event, per parent. That is the same IPC call
+   * `useFileWatcher` debounces at 300 ms precisely because it costs ~2 s on an
+   * iCloud path. Unawaited and unordered, a slow earlier response could also
+   * land after a fresher one and overwrite it.
+   */
+  const refreshTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  // Drop any pending refresh if the hook unmounts mid-debounce.
+  useEffect(
+    () => () => {
+      for (const timer of Object.values(refreshTimers.current)) clearTimeout(timer);
+      refreshTimers.current = {};
+    },
+    [],
+  );
 
   useEffect(() => {
     const unlisten = listen<FileRenamedPayload>("file-renamed", (event) => {
@@ -239,16 +263,27 @@ export function useFileRenameSync(): void {
         // BOTH parents, because a move changes two listings: the directory the
         // file left and the one it arrived in. They collapse to one entry for
         // a rename in place, which is the common case.
-        const parentOf = (p: string) => p.slice(0, p.lastIndexOf("/"));
+        // `substring`, NOT `slice` (code review). `slice` treats a negative
+        // index as an offset from the END, so a path with no "/" — where
+        // `lastIndexOf` returns -1 — came back as the path MINUS ITS LAST
+        // CHARACTER ("note.md" -> "note.m") rather than "", sailed past the
+        // emptiness guard below, and was handed to `refreshFileTree` as a real
+        // directory. `substring` clamps a negative argument to 0, which is why
+        // the equivalent line in `useFileWatcher.ts` uses it.
+        const parentOf = (p: string) => p.substring(0, p.lastIndexOf("/"));
         for (const dir of new Set([parentOf(old_path), parentOf(new_path)])) {
           if (!dir) continue;
           // Targeted: `refreshFileTree(dir)` refreshes only the section that
           // contains `dir` — explorer folder, project, or the notes/iCloud
           // root. A bare refresh re-lists every section, which is ~2 s on
           // iCloud paths and would make every rename feel like a stall.
-          void Promise.resolve(refreshFileTree(dir)).catch((err) => {
-            log.warn("useFileRenameSync", `refreshFileTree(${dir}) failed: ${err}`);
-          });
+          clearTimeout(refreshTimers.current[dir]);
+          refreshTimers.current[dir] = setTimeout(() => {
+            delete refreshTimers.current[dir];
+            void Promise.resolve(refreshFileTree(dir)).catch((err) => {
+              log.warn("useFileRenameSync", `refreshFileTree(${dir}) failed: ${err}`);
+            });
+          }, RENAME_REFRESH_DEBOUNCE_MS);
         }
       }
     });
