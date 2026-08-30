@@ -191,6 +191,16 @@ pub enum SmokeStage {
     /// and telemetry would show a healthier agent, not a broken one. So it has
     /// to be provoked deliberately rather than waited for.
     Permission,
+    /// The agent actually READ an attached file (#815).
+    ///
+    /// Attachments are sent as `ContentBlock::ResourceLink`, with no capability
+    /// gate, on the strength of the spec's "All agents MUST support resource
+    /// links in prompts". An agent that ignores the block returns a perfectly
+    /// normal response — no error, no warning — and the user is left with a
+    /// confident answer that never saw the file. That is the same invisible
+    /// failure the attachment feature was built to fix, arriving by another
+    /// route, so it has to be provoked deliberately rather than waited for.
+    ResourceLink,
     /// All stages passed.
     Done,
 }
