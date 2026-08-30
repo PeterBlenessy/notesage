@@ -244,6 +244,14 @@ enum ShareLibraryAccess {
                 writeError = error
             }
         }
+        // Never leave litter (code review): `claimName` CLAIMED the name by
+        // creating a zero-byte file, so a failed write would leave that
+        // placeholder occupying the clean name and push every later capture of
+        // the same title to `-1`, `-2`, … — defeating the dedup this path
+        // exists for. `saveDocuments` already did this on its failure branch.
+        if coordError != nil || writeError != nil {
+            try? FileManager.default.removeItem(at: unique)
+        }
         if let coordError { throw ShareLibraryError.ioError(coordError.localizedDescription) }
         if let writeError { throw ShareLibraryError.ioError(writeError.localizedDescription) }
 
