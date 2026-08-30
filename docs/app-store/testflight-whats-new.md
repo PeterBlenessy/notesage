@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Open an article you saved before this week — one whose text looked oddly sized or oddly spaced. It should look right now, and stay that way: opening it repairs the file for good, so it also looks right in Safari or when you share it. Articles that were already fine are left alone. A repaired article's date becomes today; that is expected.
+Share a few pages from Safari and watch the Inbox: captures should appear on their own now, with no pull-to-refresh. Try a page that is a hub rather than an article — a topic or video index — it should save a plain link instead of the page's legal small print, which is what it used to save.
