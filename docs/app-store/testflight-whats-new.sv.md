@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Öppna en artikel du sparade före den här veckan — en där texten såg konstigt stor eller konstigt luftig ut. Den ska se rätt ut nu, och förbli så: när du öppnar den lagas filen permanent, så den ser rätt ut även i Safari eller när du delar den. Artiklar som redan var korrekta rörs inte. Datumet på en lagad artikel blir dagens; det är meningen.
+Dela några sidor från Safari och håll ögonen på Inbox: sparade artiklar ska dyka upp av sig själva nu, utan att du drar för att uppdatera. Testa gärna en sida som är en översikt snarare än en artikel — ett ämnes- eller videoindex — den ska spara en enkel länk i stället för sidans juridiska finstilta, vilket är vad den sparade förut.

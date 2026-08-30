@@ -222,3 +222,4 @@ Chronological log of major implementation milestones and changes.
 | 216 | [Release v0.55.0](216-release-v0.55.0.md) | Transcribe recordings you already have; agent updates show versions; attachments reach agents as files. |
 | 217 | [Release v0.55.1](217-release-v0.55.1.md) | Any file shared from Finder now saves; articles saved from a web page keep their formatting. |
 | 218 | [Release v0.55.2](218-release-v0.55.2.md) | Articles already in your library get their formatting repaired when you open them. |
+| 219 | [Release v0.55.3](219-release-v0.55.3.md) | Captured articles appear on their own; a page with no article says so instead of saving the small print. |
