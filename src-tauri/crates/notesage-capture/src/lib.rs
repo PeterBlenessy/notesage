@@ -496,11 +496,94 @@ pub fn extract_article(html: &str, url: &str) -> Option<Article> {
     if markdown.chars().count() < MIN_ARTICLE_CHARS {
         return None;
     }
+    // A page that does not call itself an article, whose "article" is legal
+    // boilerplate, is a hub page and has nothing to capture (#807).
+    if !declares_itself_an_article(html) && boilerplate_marker_count(markdown) >= 2 {
+        return None;
+    }
     // Readability's title is usually right, but it comes up empty on app
     // shells and video pages — fall back to the page's own metadata.
     let title = meaningful_title(Some(product.title.as_str()))
         .or_else(|| extract_meta_title(html));
     Some(Article { title, markdown: markdown.to_string(), html: filtered_content })
+}
+
+/// Does the page say, in machine-readable metadata, that it IS an article?
+///
+/// Open Graph `og:type` and schema.org JSON-LD are what Google, Facebook and
+/// every reader mode consume, so this asks the publisher rather than guessing.
+/// A UBS "insights" hub declares `og:type: website` with JSON-LD of
+/// `BreadcrumbList`/`VideoObject`; the article pages that captured correctly
+/// declare `og:type: article` with `NewsArticle` or `BlogPosting` (#807).
+///
+/// Used only to SUPPRESS the boilerplate check below — never to require the
+/// declaration. Plenty of hand-rolled sites publish real articles with no
+/// metadata at all, and rejecting those would be a worse bug than the one
+/// this fixes.
+fn declares_itself_an_article(html: &str) -> bool {
+    let doc = dom_query::Document::from(html);
+
+    // `og:type: article`, and the `article:*` properties that accompany it.
+    for sel in ["meta[property='og:type']", "meta[name='og:type']"] {
+        for node in doc.select(sel).iter() {
+            if node.attr("content").unwrap_or_default().to_lowercase().contains("article") {
+                return true;
+            }
+        }
+    }
+    if doc.select("meta[property='article:published_time']").iter().next().is_some() {
+        return true;
+    }
+
+    // schema.org types, as quoted JSON tokens so `VideoObject` and a
+    // breadcrumb naming the word "article" in prose cannot match.
+    const ARTICLE_TYPES: &[&str] = &[
+        "\"Article\"",
+        "\"NewsArticle\"",
+        "\"BlogPosting\"",
+        "\"ScholarlyArticle\"",
+        "\"TechArticle\"",
+        "\"ReportageNewsArticle\"",
+    ];
+    for node in doc.select("script[type='application/ld+json']").iter() {
+        let text = node.text();
+        if ARTICLE_TYPES.iter().any(|t| text.contains(t)) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Legal / administrative boilerplate phrases, matched case-insensitively.
+///
+/// Deliberately phrases rather than a length: the UBS capture that prompted
+/// #807 was 629 characters, comfortably over `MIN_ARTICLE_CHARS`, so no
+/// defensible character bar would have caught it without also rejecting
+/// genuinely short posts.
+const BOILERPLATE_MARKERS: &[&str] = &[
+    "all rights reserved",
+    "legal information",
+    "strictly prohibited",
+    "terms of use",
+    "terms and conditions",
+    "privacy policy",
+    "cookie policy",
+    "may not be available for residents",
+    "unauthorized use",
+    "without prior written permission",
+];
+
+/// How many DISTINCT boilerplate phrases appear in `text`.
+///
+/// The threshold is two, not one, and that is the whole design: a real article
+/// often ends with a single "© 2026 Foo. All rights reserved." line that
+/// readability swept in, and rejecting those would lose real captures. Three
+/// or more distinct legal phrases carrying the entire body is not an article
+/// under any reading — the UBS disclaimer matched "legal information",
+/// "strictly prohibited" and "all rights reserved".
+fn boilerplate_marker_count(text: &str) -> usize {
+    let lower = text.to_lowercase();
+    BOILERPLATE_MARKERS.iter().filter(|m| lower.contains(*m)).count()
 }
 
 /// Ad/tracker domains observed in real captures. Matched as a substring of
@@ -2870,6 +2953,129 @@ mod linked_document_tests {
             style.contains("svg:not([width]):not([height])"),
             "a viewBox-only SVG has no intrinsic size and fills its container — it needs an \
              explicit fallback size, which max-width alone does not give it"
+        );
+    }
+
+    /// The REAL body the UBS capture saved, verbatim from the file on disk
+    /// (#807). 629 characters of legalese that cleared `MIN_ARTICLE_CHARS`
+    /// with room to spare.
+    const UBS_DISCLAIMER: &str = "Legal Information The products, services, information \
+and/or materials contained within these web pages may not be available for residents of \
+certain jurisdictions. Please consult the sales restrictions relating to the products or \
+services in question for further information. Copying, editing, modifying, distributing, \
+sharing, linking or any other use (whether for commercial purposes or otherwise) of this \
+material, other than personal viewing, without UBS's prior written permission is strictly \
+prohibited. CIO research disclaimer © UBS 1998 - 2026. All rights reserved.";
+
+    /// A hub page: link-heavy, short blurbs, and the only substantial prose is
+    /// the legal footer. This is the shape both UBS "insights" URLs actually
+    /// have — measured in a browser: 92 paragraphs / 89 links on one, 24 / 49
+    /// on the other, and on both the longest prose block is a fraud warning.
+    fn hub_page(og_type: &str, extra_head: &str) -> String {
+        let links: String = (1..40)
+            .map(|i| format!("<li><a href=\"/x{i}\">Insight number {i}</a></li>"))
+            .collect();
+        format!(
+            "<html><head><meta property=\"og:type\" content=\"{og_type}\">{extra_head}\
+</head><body><h1>Transformational Innovation Opportunities</h1>\
+<nav><ul>{links}</ul></nav>\
+<p>Watch this video from our Chief Investment Officer.</p>\
+<footer><p>{UBS_DISCLAIMER}</p></footer></body></html>"
+        )
+    }
+
+    #[test]
+    fn a_hub_page_whose_only_prose_is_a_disclaimer_is_not_an_article() {
+        // The exact failure: the capture succeeded, the title was right, and
+        // the body was the page footer. Failing visibly (None -> link note) is
+        // the point; a confident wrong answer is worse than an honest miss.
+        let page = hub_page("website", "");
+        assert!(
+            extract_article(&page, "https://www.ubs.com/global/en/insights.html").is_none(),
+            "a page that does not call itself an article, whose body is legal \
+             boilerplate, must not be captured as an article"
+        );
+    }
+
+    #[test]
+    fn the_disclaimer_alone_clears_the_character_floor() {
+        // Why a character bar could never have been the fix, and why #807 is
+        // not solved by raising MIN_ARTICLE_CHARS.
+        assert!(
+            UBS_DISCLAIMER.chars().count() > 400,
+            "if this ever drops below the floor the guard above is untested"
+        );
+    }
+
+    #[test]
+    fn a_page_that_declares_itself_an_article_is_still_captured() {
+        // The suppression arm. Same boilerplate-bearing body, but the page
+        // says it is an article — trust the publisher over our heuristic.
+        let page = hub_page("article", "");
+        assert!(
+            extract_article(&page, "https://example.com/post").is_some(),
+            "og:type=article must suppress the boilerplate check"
+        );
+    }
+
+    #[test]
+    fn json_ld_article_types_also_declare_an_article() {
+        for ld_type in ["NewsArticle", "BlogPosting", "Article"] {
+            let head = format!(
+                "<script type=\"application/ld+json\">{{\"@type\":\"{ld_type}\"}}</script>"
+            );
+            let page = hub_page("website", &head);
+            assert!(
+                extract_article(&page, "https://example.com/post").is_some(),
+                "schema.org {ld_type} must count as a self-declared article"
+            );
+        }
+    }
+
+    #[test]
+    fn a_video_hub_is_not_rescued_by_its_json_ld() {
+        // The UBS pages DO carry JSON-LD — BreadcrumbList, ListItem,
+        // VideoObject. None of them is an Article, and matching on the bare
+        // word would have let this through.
+        let head = "<script type=\"application/ld+json\">{\"@type\":\"VideoObject\",\"name\":\"An article about innovation\"}</script>";
+        let page = hub_page("website", head);
+        assert!(
+            extract_article(&page, "https://www.ubs.com/x.html").is_none(),
+            "VideoObject and a breadcrumb naming the word article must not count \
+             as a self-declared article"
+        );
+    }
+
+    #[test]
+    fn one_copyright_line_does_not_condemn_a_real_article() {
+        // The false positive that matters. Readability routinely sweeps a
+        // single footer line into a genuine article, and plenty of hand-rolled
+        // sites publish no metadata at all — so ONE marker must never reject.
+        let body: String = (1..12)
+            .map(|i| format!("<p>Paragraph {i} of a real article with genuine prose in it, \
+long enough to matter to the extractor and to a reader.</p>"))
+            .collect();
+        // The line goes INSIDE the article body, not in a `<footer>` —
+        // readability strips footers, so a fixture that puts it there never
+        // reaches the marker check and the test passes for the wrong reason.
+        // (It did, on first writing: lowering the threshold to 1 left it green.)
+        let page = format!(
+            "<html><head><title>A Real Post</title></head><body><article>{body}\
+<p>© 2026 Some Blog. All rights reserved.</p></article></body></html>"
+        );
+        let extracted = extract_article(&page, "https://example.com/post");
+        assert!(
+            extracted
+                .as_ref()
+                .is_some_and(|a| a.markdown.to_lowercase().contains("all rights reserved")),
+            "precondition: the marker must survive extraction, or this test is \
+             not exercising the boilerplate threshold at all"
+        );
+        assert!(
+            extracted.is_some(),
+            "a real article with no metadata and a single copyright line must \
+             still be captured — this is the regression the two-marker \
+             threshold exists to avoid"
         );
     }
 
