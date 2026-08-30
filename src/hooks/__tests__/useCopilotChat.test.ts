@@ -94,6 +94,12 @@ describe('useCopilotChat — Track 1 leak #15 workingDir isolation', () => {
     // Spy on the tauriApi layer so we can assert the exact argument
     // shape regardless of the invoke transport.
     copilotLspStartSpy = vi.spyOn(tauriApi, 'copilotLspStart').mockResolvedValue(undefined);
+    // Clear the CALL HISTORY, not just re-spy (#736). `vi.spyOn` on a method
+    // that is already spied hands back the EXISTING mock, so its calls from
+    // earlier tests survive — and `not.toHaveBeenCalledWith('/workspace/project-A')`
+    // was then failing on a call another test had made. Order decided whether
+    // a project-A call had happened yet.
+    copilotLspStartSpy.mockClear();
     // Default handlers for any other tauri calls.
     setMockInvokeHandler('copilot_lsp_start', () => undefined);
     setMockInvokeHandler('copilot_lsp_stop', () => undefined);
