@@ -272,6 +272,85 @@ describe('useFileRenameSync — folder rename', () => {
   });
 });
 
+describe('useFileRenameSync — the tree must follow a file rename (#788)', () => {
+  // A captured article never appeared in Inbox until a manual refresh.
+  //
+  // The share extensions write through `NSFileCoordinator` with `.forReplacing`,
+  // which is ATOMIC: the bytes are staged and RENAMED into place. `notify`
+  // reports that as `Modify(Name(Both))`, and `process_watcher_events` routes
+  // rename-both events to `file-renamed` while deliberately excluding them from
+  // `file-changed-batch` — so the create-driven refresh in `useFileWatcher`
+  // never runs for a shared article. Nothing told the tree the file existed.
+  //
+  // Folder renames already refreshed; file renames did not. That was an
+  // asymmetry, not a decision: a rename changes what a directory contains,
+  // which is exactly what the tree renders.
+  it('refreshes the tree when a file is renamed into place', async () => {
+    useWorkspaceStore.setState({ projects: [{ path: '/project', fileTree: [] }] });
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => {
+      emitFileRenamed('/project/Inbox/.tmp-capture', '/project/Inbox/Article.html', false);
+    });
+
+    await vi.runAllTimersAsync();
+    expect(mockRefreshFileTree).toHaveBeenCalledWith('/project/Inbox');
+  });
+
+  it('refreshes BOTH directories when a file moves between them', async () => {
+    // A move changes two listings — the one the file left and the one it
+    // arrived in. Refreshing only the destination leaves a ghost row behind.
+    useWorkspaceStore.setState({ projects: [{ path: '/project', fileTree: [] }] });
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => {
+      emitFileRenamed('/project/Inbox/a.md', '/project/Archive/a.md', false);
+    });
+
+    await vi.runAllTimersAsync();
+    const dirs = mockRefreshFileTree.mock.calls.map((c) => c[0]);
+    expect(new Set(dirs)).toEqual(new Set(['/project/Inbox', '/project/Archive']));
+  });
+
+  it('refreshes the containing directory once for an in-place rename', async () => {
+    // Both parents are the same here; refreshing twice would re-list an iCloud
+    // directory for no reason (~2 s per bare refresh).
+    useWorkspaceStore.setState({ projects: [{ path: '/project', fileTree: [] }] });
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => {
+      emitFileRenamed('/project/Inbox/old.md', '/project/Inbox/new.md', false);
+    });
+
+    await vi.runAllTimersAsync();
+    expect(mockRefreshFileTree).toHaveBeenCalledTimes(1);
+    expect(mockRefreshFileTree).toHaveBeenCalledWith('/project/Inbox');
+  });
+
+  it('scopes the refresh rather than re-listing every section', async () => {
+    // `refreshFileTree()` with no argument re-lists all sections, which is the
+    // ~2 s stall on iCloud paths that the targeted form exists to avoid.
+    useWorkspaceStore.setState({ projects: [{ path: '/project', fileTree: [] }] });
+
+    renderHook(() => useFileRenameSync());
+
+    act(() => {
+      emitFileRenamed('/project/Inbox/a.md', '/project/Inbox/b.md', false);
+    });
+
+    await vi.runAllTimersAsync();
+    // Called at all — without this the loop below is vacuous and the test
+    // passes with the refresh deleted, which is how it was first written.
+    expect(mockRefreshFileTree).toHaveBeenCalled();
+    for (const call of mockRefreshFileTree.mock.calls) {
+      expect(call[0]).toBeTruthy();
+    }
+  });
+});
+
 describe('useFileRenameSync — project root rename', () => {
   it('calls workspace-store.updateProjectPath when a project root is renamed', async () => {
     const mockUpdateProjectPath = vi.fn();

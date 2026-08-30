@@ -220,7 +220,16 @@ enum ShareLibraryAccess {
         try FileManager.default.createDirectory(
             at: folder, withIntermediateDirectories: true)
 
-        guard let unique = dedupedURL(for: target) else {
+        // CLAIM the name, do not merely check it (#783).
+        //
+        // `dedupedURL` alone is a check-then-use: it returns a name that looked
+        // free, and the coordinated write below is `.forReplacing`. Two writers
+        // that both saw the same name free would both write it, the second
+        // silently overwriting the first — exactly the failure `claimName` was
+        // introduced for on the DOCUMENT path, which this note path never
+        // adopted. The window is small and the library is a shared iCloud
+        // folder, so the other writer need not even be this process.
+        guard let unique = claimName(target) else {
             throw ShareLibraryError.ioError(
                 L("share.couldNotFindFreeName", target.lastPathComponent))
         }

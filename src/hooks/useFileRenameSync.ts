@@ -219,6 +219,37 @@ export function useFileRenameSync(): void {
       } else {
         // Single file rename: update pinned files if needed.
         workspaceStore.updateFilePaths(old_path, new_path);
+
+        // …and refresh the tree, exactly as the folder branch above does.
+        //
+        // Without this a CAPTURE never appears until a manual refresh (#788).
+        // The share extensions write through `NSFileCoordinator` with
+        // `.forReplacing`, which is atomic — it stages the bytes and RENAMES
+        // them into place. `notify` reports that as `Modify(Name(Both))`, and
+        // `process_watcher_events` routes rename-both events to `file-renamed`
+        // and deliberately excludes them from `file-changed-batch`. So the
+        // create-driven refresh in `useFileWatcher` never runs for a shared
+        // article: as far as the tree is concerned, nothing happened.
+        //
+        // The same gap applies to any externally renamed file, capture or not
+        // — a rename changes what the directory contains, which is precisely
+        // what the tree renders. Folder renames were refreshed and file
+        // renames were not, which was an asymmetry rather than a decision.
+        //
+        // BOTH parents, because a move changes two listings: the directory the
+        // file left and the one it arrived in. They collapse to one entry for
+        // a rename in place, which is the common case.
+        const parentOf = (p: string) => p.slice(0, p.lastIndexOf("/"));
+        for (const dir of new Set([parentOf(old_path), parentOf(new_path)])) {
+          if (!dir) continue;
+          // Targeted: `refreshFileTree(dir)` refreshes only the section that
+          // contains `dir` — explorer folder, project, or the notes/iCloud
+          // root. A bare refresh re-lists every section, which is ~2 s on
+          // iCloud paths and would make every rename feel like a stall.
+          void Promise.resolve(refreshFileTree(dir)).catch((err) => {
+            log.warn("useFileRenameSync", `refreshFileTree(${dir}) failed: ${err}`);
+          });
+        }
       }
     });
 

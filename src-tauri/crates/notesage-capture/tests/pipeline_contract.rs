@@ -708,6 +708,70 @@ fn an_html_capture_is_not_written_with_a_markdown_name() {
     );
 }
 
+/// No capture writer may pick a filename with an unbounded loop (#783).
+///
+/// Every note writer on both platforms used to spin
+/// `while fileExists { n += 1 }` with no ceiling. macOS bounded the identical
+/// loop at 999 and said why — "an unbounded loop against a pathological
+/// directory would hang the share sheet with no way out" — while five iOS
+/// writers did not. (The issue counted four; `writeXCapture` was missed.)
+///
+/// Both platforms now route every name through `claimName`, which is bounded
+/// AND claims the name by creating it. The second property matters
+/// independently: a name that merely looked free is a check-then-use, and the
+/// writes are `.forReplacing`, so two writers agreeing on a name silently
+/// overwrite one of the user's notes.
+#[test]
+fn no_capture_writer_picks_a_filename_with_an_unbounded_loop() {
+    for (platform, src) in [
+        ("iOS", ios_src("LibraryCapture.swift")),
+        ("macOS", macos_src("ShareLibraryAccess.swift")),
+    ] {
+        let code = strip_swift_comments(&src);
+        for (i, line) in code.lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("while") && l.contains("fileExists") {
+                assert!(
+                    l.contains("999"),
+                    "{platform}:{} picks a filename with an UNBOUNDED loop:\n  {l}\n\n\
+                     A pathological directory hangs the share sheet with no way out. \
+                     Route the name through `claimName`, which is bounded at 999 and \
+                     claims the name rather than only checking it.",
+                    i + 1
+                );
+            }
+        }
+        assert!(
+            code.contains("claimName"),
+            "{platform} no longer routes capture filenames through `claimName`, so \
+             nothing bounds the search or claims the name atomically."
+        );
+    }
+}
+
+/// The note path must CLAIM its filename, not merely check it (#783).
+///
+/// macOS's document path adopted `claimName`; its note path kept `dedupedURL`,
+/// which returns a name that looked free and is then written `.forReplacing`.
+/// Two writers — not necessarily two threads, since the library is a shared
+/// iCloud folder — could both take it, and the second overwrite would raise no
+/// error and report success.
+#[test]
+fn the_macos_note_writer_claims_its_name_rather_than_checking_it() {
+    let code = strip_swift_comments(&macos_src("ShareLibraryAccess.swift"));
+    let write_capture = block_after(
+        &code,
+        "static func writeCapture",
+        "the macOS note writer moved; point this test at its new home",
+    );
+    assert!(
+        write_capture.contains("claimName"),
+        "`writeCapture` does not claim its filename. If it calls `dedupedURL` \
+         directly, the name it gets was only CHECKED, and the write below is \
+         `.forReplacing` — a colliding writer overwrites a note silently.\n\n{write_capture}"
+    );
+}
+
 /// Swift source with `//` and `/* */` comments removed.
 ///
 /// Every assertion about a type identifier needs this. The identifiers below
@@ -1407,10 +1471,15 @@ fn the_macos_deduper_refuses_rather_than_returning_an_occupied_name() {
         "macOS `dedupedURL` does not refuse on exhaustion.\n\n{body}"
     );
 
+    // The CALLEE is asserted separately by
+    // `the_macos_note_writer_claims_its_name_rather_than_checking_it` — the pick
+    // now goes through `claimName`, which calls `dedupedURL` and additionally
+    // claims the name (#783). What matters here is unchanged: the refusal has
+    // to be handled, rather than falling through to an overwrite.
     let write = swift_code(swift_body(&src, "static func writeCapture("));
     assert!(
-        write.contains("guard let unique = dedupedURL("),
-        "macOS `writeCapture` does not handle a refused dedupe, so an exhausted\n\
+        write.contains("guard let unique ="),
+        "macOS `writeCapture` does not handle a refused name pick, so an exhausted\n\
          deduper falls back to overwriting.\n\n{write}"
     );
 }

@@ -47,15 +47,10 @@ extension LibraryAccess {
         // so re-sharing the same article collides by design — disambiguate
         // here, where the filesystem is actually visible, rather than
         // overwriting a note the user may have edited.
-        var name = (relPath as NSString).lastPathComponent
-        var target = inbox.appendingPathComponent(name)
-        var n = 1
-        let stem = (name as NSString).deletingPathExtension
-        while FileManager.default.fileExists(atPath: target.path) {
-            name = "\(stem)-\(n).md"
-            target = inbox.appendingPathComponent(name)
-            n += 1
-        }
+        guard let target = claimName(
+            inbox.appendingPathComponent((relPath as NSString).lastPathComponent)
+        ) else { throw nameUnavailable(inbox) }
+        let name = target.lastPathComponent
 
         var coordError: NSError?
         var writeError: Error?
@@ -90,15 +85,10 @@ extension LibraryAccess {
         let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
         try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
 
-        var name = (relPath as NSString).lastPathComponent
-        var target = inbox.appendingPathComponent(name)
-        var n = 1
-        let stem = (name as NSString).deletingPathExtension
-        while FileManager.default.fileExists(atPath: target.path) {
-            name = "\(stem)-\(n).md"
-            target = inbox.appendingPathComponent(name)
-            n += 1
-        }
+        guard let target = claimName(
+            inbox.appendingPathComponent((relPath as NSString).lastPathComponent)
+        ) else { throw nameUnavailable(inbox) }
+        let name = target.lastPathComponent
 
         var coordError: NSError?
         var writeError: Error?
@@ -146,14 +136,9 @@ extension LibraryAccess {
         try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
 
         let stem = ((relPath as NSString).lastPathComponent as NSString).deletingPathExtension
-        var name = "\(stem).html"
-        var target = inbox.appendingPathComponent(name)
-        var n = 1
-        while FileManager.default.fileExists(atPath: target.path) {
-            name = "\(stem)-\(n).html"
-            target = inbox.appendingPathComponent(name)
-            n += 1
-        }
+        guard let target = claimName(inbox.appendingPathComponent("\(stem).html"))
+        else { throw nameUnavailable(inbox) }
+        let name = target.lastPathComponent
 
         var coordError: NSError?
         var writeError: Error?
@@ -261,14 +246,9 @@ extension LibraryAccess {
 
         let ext = asHtml ? "html" : "md"
         let stem = ((relPath as NSString).lastPathComponent as NSString).deletingPathExtension
-        var name = "\(stem).\(ext)"
-        var target = inbox.appendingPathComponent(name)
-        var n = 1
-        while FileManager.default.fileExists(atPath: target.path) {
-            name = "\(stem)-\(n).\(ext)"
-            target = inbox.appendingPathComponent(name)
-            n += 1
-        }
+        guard let target = claimName(inbox.appendingPathComponent("\(stem).\(ext)"))
+        else { throw nameUnavailable(inbox) }
+        let name = target.lastPathComponent
 
         var coordError: NSError?
         var writeError: Error?
@@ -320,15 +300,10 @@ extension LibraryAccess {
 
         // Same dedupe as the other capture writers: the Rust name is the
         // note's TITLE, so re-sharing the same video collides by design.
-        var name = (relPath as NSString).lastPathComponent
-        var target = inbox.appendingPathComponent(name)
-        var n = 1
-        let stem = (name as NSString).deletingPathExtension
-        while FileManager.default.fileExists(atPath: target.path) {
-            name = "\(stem)-\(n).md"
-            target = inbox.appendingPathComponent(name)
-            n += 1
-        }
+        guard let target = claimName(
+            inbox.appendingPathComponent((relPath as NSString).lastPathComponent)
+        ) else { throw nameUnavailable(inbox) }
+        let name = target.lastPathComponent
 
         var coordError: NSError?
         var writeError: Error?
@@ -444,9 +419,35 @@ extension LibraryAccess {
         return "Inbox/\(landed.lastPathComponent)"
     }
 
+    /// Every capture writer refused a name (#783).
+    ///
+    /// Reached when `claimName` exhausts its 999 attempts or loses the claim to
+    /// another writer. Both are practically unreachable and neither is a reason
+    /// to overwrite one of the user's notes, which is what the previous
+    /// unbounded loops risked — see `claimName`.
+    private static func nameUnavailable(_ dir: URL) -> NSError {
+        NSError(
+            domain: "NotesageCapture", code: 3,
+            userInfo: [
+                NSLocalizedDescriptionKey:
+                    "Could not find a free filename in \(dir.lastPathComponent)."
+            ])
+    }
+
     /// Serialises name choice across the concurrent `loadFileRepresentation`
     /// callbacks, and CLAIMS the name by creating it — a name that merely
     /// looked free is the race itself. Returns nil when the claim failed.
+    ///
+    /// Used by EVERY capture writer, not just the document path (#783). Each
+    /// of the five note writers previously carried its own copy of the same
+    /// loop, and all five were **unbounded** — where macOS bounds the identical
+    /// loop at 999 and says why: "an unbounded loop against a pathological
+    /// directory would hang the share sheet with no way out." They also
+    /// check-then-used, so two concurrent shares could agree on a name and the
+    /// second `.forReplacing` write would overwrite the first.
+    ///
+    /// (The issue counted four unbounded loops; there were five — `writeXCapture`
+    /// was missed.)
     private static let nameLock = NSLock()
 
     private static func claimName(_ preferred: URL) -> URL? {

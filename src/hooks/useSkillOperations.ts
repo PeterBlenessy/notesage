@@ -68,6 +68,23 @@ function getConnectedProviderTypes(): string[] {
 let bundledExtracted = false;
 
 /**
+ * Reset the once-per-session extraction flag. **Tests only.**
+ *
+ * This is MODULE state, not store state, so `resetStores()` never touched it
+ * and it outlives any single test file: whichever file exercised discovery
+ * first left it `true` for every file that ran afterwards. In the fixed test
+ * order that happened to be harmless; under a shuffled order the two
+ * extraction tests failed depending on who ran first (#736).
+ *
+ * Exported rather than worked around in the test, because a module-level
+ * mutable with no way to reset it is the defect — the same class as the
+ * singletons #413 tracks.
+ */
+export function __resetBundledExtractionForTests(): void {
+  bundledExtracted = false;
+}
+
+/**
  * Build skill and agent discovery directory buckets for scanning.
  *
  * Returns per-project buckets so `scanSkills`/`scanAgents` can annotate each
