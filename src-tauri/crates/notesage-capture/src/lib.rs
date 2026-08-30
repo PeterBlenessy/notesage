@@ -498,7 +498,7 @@ pub fn extract_article(html: &str, url: &str) -> Option<Article> {
     }
     // A page that does not call itself an article, whose "article" is legal
     // boilerplate, is a hub page and has nothing to capture (#807).
-    if !declares_itself_an_article(html) && boilerplate_marker_count(markdown) >= 2 {
+    if !declares_itself_an_article(html) && is_boilerplate_body(markdown) {
         return None;
     }
     // Readability's title is usually right, but it comes up empty on app
@@ -573,17 +573,36 @@ const BOILERPLATE_MARKERS: &[&str] = &[
     "without prior written permission",
 ];
 
-/// How many DISTINCT boilerplate phrases appear in `text`.
+/// Is `text` boilerplate ITSELF, rather than prose that merely ends with a
+/// footer?
 ///
-/// The threshold is two, not one, and that is the whole design: a real article
-/// often ends with a single "© 2026 Foo. All rights reserved." line that
-/// readability swept in, and rejecting those would lose real captures. Three
-/// or more distinct legal phrases carrying the entire body is not an article
-/// under any reading — the UBS disclaimer matched "legal information",
-/// "strictly prohibited" and "all rights reserved".
-fn boilerplate_marker_count(text: &str) -> usize {
+/// Two conditions, and the second is the one that matters (code review).
+///
+/// **Count.** Two distinct phrases, not one: a real article often ends with a
+/// single "© 2026 Foo. All rights reserved." line that readability swept in.
+///
+/// **Position.** Counting alone was not safe. "Privacy policy", "terms of use"
+/// and "all rights reserved" are the footer of most of the web, so an ordinary
+/// article whose extraction kept a footer nav trips two or three markers
+/// easily — and it does so worst for hand-rolled sites, which are also the
+/// least likely to publish the `og:type` metadata that would suppress this
+/// check. The gate would have been sharpest against exactly the pages it was
+/// written to protect.
+///
+/// So position decides: a body that IS boilerplate opens with it (the UBS
+/// capture began "Legal Information …"), while a real article carries it at
+/// the end. The first marker must fall in the first half for the body to be
+/// judged boilerplate. No length threshold — a short genuine post is still an
+/// article, which was the whole objection to leaning on character counts.
+fn is_boilerplate_body(text: &str) -> bool {
     let lower = text.to_lowercase();
-    BOILERPLATE_MARKERS.iter().filter(|m| lower.contains(*m)).count()
+    let hits: Vec<usize> = BOILERPLATE_MARKERS.iter().filter_map(|m| lower.find(m)).collect();
+    if hits.len() < 2 {
+        return false;
+    }
+    let first = hits.iter().copied().min().unwrap_or(0);
+    // Guard against a zero-length body making this a division by zero.
+    !lower.is_empty() && first * 2 < lower.len()
 }
 
 /// Ad/tracker domains observed in real captures. Matched as a substring of
@@ -3076,6 +3095,61 @@ long enough to matter to the extractor and to a reader.</p>"))
             "a real article with no metadata and a single copyright line must \
              still be captured — this is the regression the two-marker \
              threshold exists to avoid"
+        );
+    }
+
+    /// The false positive the FIRST version of this gate would have shipped.
+    ///
+    /// "Privacy Policy", "Terms of Use" and "All rights reserved" are the
+    /// footer of most of the web. Counting markers alone rejected any ordinary
+    /// article whose extraction kept a footer nav — and worst for hand-rolled
+    /// sites, which are also the least likely to publish the `og:type`
+    /// metadata that suppresses the check. The gate was sharpest against
+    /// exactly the pages it exists to protect. Caught in code review.
+    #[test]
+    fn a_real_article_that_kept_its_footer_nav_is_still_an_article() {
+        let body: String = (1..14)
+            .map(|i| format!("<p>Paragraph {i} carries the actual substance of this piece, \
+with enough genuine prose to read like the article it is.</p>"))
+            .collect();
+        // Three markers, all of them AFTER the article — the ordinary shape.
+        let page = format!(
+            "<html><head><title>A Real Post</title></head><body><article>{body}\
+<p>Privacy Policy | Terms of Use | Cookie Policy</p>\
+<p>© 2026 Some Site. All rights reserved.</p></article></body></html>"
+        );
+        let extracted = extract_article(&page, "https://example.com/post");
+        assert!(
+            extracted
+                .as_ref()
+                .is_some_and(|a| a.markdown.to_lowercase().contains("privacy policy")),
+            "precondition: the footer must survive extraction, or this is not \
+             exercising the boilerplate gate at all"
+        );
+        assert!(
+            extracted.is_some(),
+            "a real article whose extraction kept a footer nav must still be \
+             captured — position, not marker count, is what separates a body \
+             that IS boilerplate from one that merely ends with it"
+        );
+    }
+
+    #[test]
+    fn boilerplate_at_the_top_is_what_condemns_a_body() {
+        // The two halves of the rule, stated directly.
+        let footer = "Real prose goes here and carries the piece. ".repeat(20)
+            + "Privacy Policy Terms of Use All rights reserved.";
+        assert!(!is_boilerplate_body(&footer), "trailing footer is not a boilerplate body");
+
+        let leading = "Legal Information Privacy Policy Terms of Use All rights reserved. "
+            .to_string()
+            + &"Real prose goes here and carries the piece. ".repeat(2);
+        assert!(is_boilerplate_body(&leading), "a body that OPENS with legalese is boilerplate");
+
+        assert!(!is_boilerplate_body(""), "empty body must not divide by zero or match");
+        assert!(
+            !is_boilerplate_body("All rights reserved."),
+            "one marker is never enough — a lone copyright line is normal"
         );
     }
 
