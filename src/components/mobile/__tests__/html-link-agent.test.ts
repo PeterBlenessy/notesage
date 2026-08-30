@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { withLinkAgent } from "@/components/mobile/html-link-agent";
 
 /**
@@ -49,6 +49,14 @@ describe("HTML link agent", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
 
+  // Restore real timers (#736). `useFakeTimers` was installed per test and
+  // never torn down, so the fake clock outlived this file — hygiene rather
+  // than a fix for a specific failure, but the kind of leak that makes an
+  // unrelated file fail depending on order.
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   function click(el: Element) {
     el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
   }
@@ -91,6 +99,17 @@ describe("HTML link agent", () => {
     fireTouch("touchstart", a, 10, 10);
     await vi.advanceTimersByTimeAsync(600);
     await vi.waitFor(() => expect(sent).toEqual([{ href: "b.html", menu: true }]));
+
+    // Consume the swallowed click this test leaves owing (#736).
+    //
+    // After a long press the agent eats exactly ONE following click, so the
+    // browser does not also open the link the menu was raised for. This test
+    // stops mid-gesture and never delivers that click, and the flag lives in
+    // the agent — which boots once for the whole file. So the debt was paid by
+    // whichever test ran next, whose first click vanished. In the fixed order
+    // that was the test immediately below, which expects exactly this
+    // behaviour and passed; under a shuffled order it was somebody else.
+    a.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
   });
 
   it("swallows the click that follows a long press", async () => {

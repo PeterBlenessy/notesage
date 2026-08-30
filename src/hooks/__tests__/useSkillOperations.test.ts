@@ -8,6 +8,7 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSkillStore } from '@/stores/skill-store';
 import { usePermissionStore } from '@/stores/permission-store';
+import { __resetBundledExtractionForTests } from '@/hooks/useSkillOperations';
 import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
@@ -174,6 +175,10 @@ describe('useSkillDiscovery', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
+    // MODULE state, not store state — `resetStores()` cannot reach it, and it
+    // outlives this file. Whichever test file exercised discovery first left
+    // it set for everyone after (#736).
+    __resetBundledExtractionForTests();
 
     mockGetHomeDir.mockResolvedValue('/Users/test');
     mockExtractBundledSkills.mockResolvedValue('/Users/test/.notesage/bundled-skills');
@@ -215,20 +220,36 @@ describe('useSkillDiscovery', () => {
     expect(scanAgentInstructions).toHaveBeenCalledTimes(1);
   });
 
-  // After the first test, bundledExtracted is true. Subsequent runs skip extraction.
+  // Extraction runs once per session; a second run only re-scans.
+  //
+  // This test used to rely on the PRECEDING test having set the module flag —
+  // a dependency on file order, which is what made it fail under shuffle
+  // (#736). It now establishes its own precondition by running discovery once
+  // and clearing the mocks, so it passes in any order and actually tests the
+  // flag rather than the test that ran before it.
   it('skips extraction on subsequent runs (bundledExtracted flag)', async () => {
+    setupStoreMocks();
+    useSettingsStore.setState({ skillsReady: true });
+
+    // First run — this is what sets the flag.
+    const first = renderHook(() => useSkillDiscovery());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100));
+    });
+    expect(mockExtractBundledSkills).toHaveBeenCalledTimes(1);
+    first.unmount();
+
+    // Second run, with a clean slate of call counts.
+    vi.clearAllMocks();
     const { scanSkills, scanAgents } = setupStoreMocks();
     useSettingsStore.setState({ skillsReady: true });
 
     renderHook(() => useSkillDiscovery());
-
     await act(async () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    // Extraction NOT called (bundledExtracted already true from previous test)
     expect(mockExtractBundledSkills).not.toHaveBeenCalled();
-    // But scanning still runs
     expect(scanSkills).toHaveBeenCalledTimes(1);
     expect(scanAgents).toHaveBeenCalledTimes(1);
   });
@@ -393,7 +414,12 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    expect(scanSkills).toHaveBeenCalledTimes(1);
+    // A DELTA, not an absolute count. The first render scans once or twice
+    // depending on whether bundled extraction ran — which is once-per-session
+    // module state, so the absolute number depended on what had run before
+    // this test (#736). The subject here is the rescan, so measure the rescan.
+    const before = scanSkills.mock.calls.length;
+    expect(before).toBeGreaterThan(0);
 
     // Trigger rescan by bumping the counter
     act(() => {
@@ -405,7 +431,7 @@ describe('useSkillDiscovery', () => {
       await new Promise((r) => setTimeout(r, 100));
     });
 
-    expect(scanSkills).toHaveBeenCalledTimes(2);
+    expect(scanSkills.mock.calls.length).toBe(before + 1);
   });
 
   // Task #19 — scanAgentInstructions now accepts an ARRAY of project roots so

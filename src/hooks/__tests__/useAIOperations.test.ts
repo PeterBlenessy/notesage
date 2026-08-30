@@ -668,6 +668,12 @@ describe('useAIOperations', () => {
 
     beforeEach(() => {
       vi.mocked(toast.error).mockClear();
+      // These tests all reuse the conversation id `conv-lock`. session-run-store
+      // persists run status, so a run another test left against that id makes
+      // the send PARK IN THE QUEUE instead of dispatching — the assertion then
+      // fails with "never called" and looks like the lock rejected it (#736).
+      useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+      useMessageQueueStore.setState({ queues: {} });
     });
 
     it('blocks new message send to a mismatching provider (direct API path)', async () => {

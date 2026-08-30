@@ -2,7 +2,7 @@
 
 import '@/test/tauri-mock';
 import { describe, it, expect, vi } from 'vitest';
-import { renderWithProviders, screen } from '@/test/component-harness';
+import { renderWithProviders, screen, waitFor } from '@/test/component-harness';
 import userEvent from '@testing-library/user-event';
 import { FindBar } from '@/components/editor/FindBar';
 
@@ -53,6 +53,19 @@ describe('FindBar', () => {
     renderWithProviders(<FindBar {...defaultProps({ onSearch })} />);
 
     const input = screen.getByPlaceholderText('Find...');
+    // Let the open-effect's auto-focus land BEFORE typing (#736).
+    //
+    // `FindBar` focuses and `select()`s the input inside a
+    // `requestAnimationFrame` when it opens, so the existing query is replaced
+    // by whatever the user types next. If that frame lands BETWEEN two
+    // keystrokes here, it re-selects what has been typed so far and the next
+    // character replaces it instead of appending — the input reads "t" rather
+    // than "te". Nothing in the test controls when that frame runs, so whether
+    // it interleaved depended on test order.
+    //
+    // Not a product bug: a real user cannot type inside the first frame after
+    // the bar opens. It is the test racing the component, so the test waits.
+    await waitFor(() => expect(document.activeElement).toBe(input));
     await user.type(input, 'test');
 
     expect(onSearch).toHaveBeenCalledWith('t');
