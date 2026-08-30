@@ -70,7 +70,12 @@ describe('useDirectApiChat — tool calling', () => {
   beforeEach(() => {
     useSettingsStore.setState({ toolCallingEnabled: true, chatHistoryLimit: 0 });
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
-    useChatStore.getState().clearMessages();
+    // Not `clearMessages()`: that deletes only the ACTIVE conversation, so
+    // conversations left behind by ANOTHER test file survive — and these tests
+    // index `conversations[0]`, which then points at a stale conversation with
+    // no activities on it. chat-store is persisted, so the leak is real across
+    // files and only order decided whether it bit (#736).
+    useChatStore.setState({ conversations: [], activeConversationId: null });
 
     setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
       setTimeout(() => emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null), 0);
@@ -163,7 +168,12 @@ describe('useDirectApiChat — listener lifecycle (#9, #15)', () => {
   beforeEach(() => {
     useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
-    useChatStore.getState().clearMessages();
+    // Not `clearMessages()`: that deletes only the ACTIVE conversation, so
+    // conversations left behind by ANOTHER test file survive — and these tests
+    // index `conversations[0]`, which then points at a stale conversation with
+    // no activities on it. chat-store is persisted, so the leak is real across
+    // files and only order decided whether it bit (#736).
+    useChatStore.setState({ conversations: [], activeConversationId: null });
     vi.mocked(invoke).mockClear();
   });
 
@@ -244,7 +254,12 @@ describe('useDirectApiChat — error handling (#17)', () => {
     // test's conversation can survive as `conversations[0]` — which is exactly
     // what the assertion below reads. Clear the list outright.
     useChatStore.setState({ conversations: [], activeConversationId: null });
-    useChatStore.getState().clearMessages();
+    // Not `clearMessages()`: that deletes only the ACTIVE conversation, so
+    // conversations left behind by ANOTHER test file survive — and these tests
+    // index `conversations[0]`, which then points at a stale conversation with
+    // no activities on it. chat-store is persisted, so the leak is real across
+    // files and only order decided whether it bit (#736).
+    useChatStore.setState({ conversations: [], activeConversationId: null });
     vi.mocked(invoke).mockClear();
   });
 
@@ -271,7 +286,12 @@ describe('useDirectApiChat — concurrent streams', () => {
   beforeEach(() => {
     useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
-    useChatStore.getState().clearMessages();
+    // Not `clearMessages()`: that deletes only the ACTIVE conversation, so
+    // conversations left behind by ANOTHER test file survive — and these tests
+    // index `conversations[0]`, which then points at a stale conversation with
+    // no activities on it. chat-store is persisted, so the leak is real across
+    // files and only order decided whether it bit (#736).
+    useChatStore.setState({ conversations: [], activeConversationId: null });
     vi.mocked(invoke).mockClear();
   });
 
@@ -398,7 +418,12 @@ describe('useDirectApiChat — abort mid-stream', () => {
   beforeEach(() => {
     useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
-    useChatStore.getState().clearMessages();
+    // Not `clearMessages()`: that deletes only the ACTIVE conversation, so
+    // conversations left behind by ANOTHER test file survive — and these tests
+    // index `conversations[0]`, which then points at a stale conversation with
+    // no activities on it. chat-store is persisted, so the leak is real across
+    // files and only order decided whether it bit (#736).
+    useChatStore.setState({ conversations: [], activeConversationId: null });
     vi.mocked(invoke).mockClear();
   });
 
@@ -444,7 +469,12 @@ describe('useDirectApiChat — approvalMode on activities (task #22)', () => {
       requireAllToolConfirmations: false,
     });
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
-    useChatStore.getState().clearMessages();
+    // Not `clearMessages()`: that deletes only the ACTIVE conversation, so
+    // conversations left behind by ANOTHER test file survive — and these tests
+    // index `conversations[0]`, which then points at a stale conversation with
+    // no activities on it. chat-store is persisted, so the leak is real across
+    // files and only order decided whether it bit (#736).
+    useChatStore.setState({ conversations: [], activeConversationId: null });
     usePermissionStore.setState({
       requests: [],
       sessionAllowed: new Set(),
@@ -457,6 +487,10 @@ describe('useDirectApiChat — approvalMode on activities (task #22)', () => {
       toolCallAlways: [],
     });
     useToolPermissionStore.setState({ pending: {} });
+    // session-run-store persists run status, so a run left 'running' by another
+    // test file makes a send park in the queue instead of streaming — the
+    // assistant message exists but never gets its tool activity (#736).
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
     vi.mocked(invoke).mockClear();
 
     // Mock web_search tool call emit + result
@@ -469,17 +503,33 @@ describe('useDirectApiChat — approvalMode on activities (task #22)', () => {
     // Stream that emits a single tool_call on the FIRST invoke only, then done
     // on the continuation invoke — otherwise handleToolCalls re-invokes forever.
     let invokeCount = 0;
+    // Emit only once the hook's listener EXISTS (#736).
+    //
+    // The hook registers its stream listeners and then awaits compaction before
+    // invoking, so a `setTimeout(…, 0)` emit normally lands after they are
+    // attached — but nothing guarantees it, and under a full run it sometimes
+    // fired first. The events were then dropped with no listener, the tool call
+    // never ran, and the assistant message came back with no activities. Whether
+    // it happened depended on how loaded the run was, which is why it looked
+    // like file order.
+    const emitWhenListening = async (fn: () => void) => {
+      for (let i = 0; i < 50; i++) {
+        if (getListenerCount(streamEvent('ai-tool-call', lastStreamId)) > 0) break;
+        await new Promise((r) => setTimeout(r, 2));
+      }
+      fn();
+    };
     setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
       invokeCount++;
       if (invokeCount === 1) {
-        setTimeout(() => {
+        void emitWhenListening(() => {
           emitMockEvent(streamEvent('ai-tool-call', lastStreamId), {
             id: 'call-1',
             name: 'web_search',
             arguments: { query: 'cats' },
           });
           emitMockEvent(streamEvent('ai-tool-calls-done', lastStreamId), null);
-        }, 0);
+        });
       } else {
         // Continuation turn — just end the stream.
         setTimeout(() => emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null), 0);
@@ -544,7 +594,12 @@ describe('useDirectApiChat — network timeout error', () => {
   beforeEach(() => {
     useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
-    useChatStore.getState().clearMessages();
+    // Not `clearMessages()`: that deletes only the ACTIVE conversation, so
+    // conversations left behind by ANOTHER test file survive — and these tests
+    // index `conversations[0]`, which then points at a stale conversation with
+    // no activities on it. chat-store is persisted, so the leak is real across
+    // files and only order decided whether it bit (#736).
+    useChatStore.setState({ conversations: [], activeConversationId: null });
     vi.mocked(invoke).mockClear();
   });
 
@@ -585,7 +640,12 @@ describe('useDirectApiChat — stamps connectionId on user messages (#10)', () =
   beforeEach(() => {
     useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
-    useChatStore.getState().clearMessages();
+    // Not `clearMessages()`: that deletes only the ACTIVE conversation, so
+    // conversations left behind by ANOTHER test file survive — and these tests
+    // index `conversations[0]`, which then points at a stale conversation with
+    // no activities on it. chat-store is persisted, so the leak is real across
+    // files and only order decided whether it bit (#736).
+    useChatStore.setState({ conversations: [], activeConversationId: null });
     setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
       setTimeout(() => emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null), 0);
     });
@@ -623,7 +683,12 @@ describe('useDirectApiChat — attachment activity log (task #30)', () => {
   beforeEach(() => {
     useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
-    useChatStore.getState().clearMessages();
+    // Not `clearMessages()`: that deletes only the ACTIVE conversation, so
+    // conversations left behind by ANOTHER test file survive — and these tests
+    // index `conversations[0]`, which then points at a stale conversation with
+    // no activities on it. chat-store is persisted, so the leak is real across
+    // files and only order decided whether it bit (#736).
+    useChatStore.setState({ conversations: [], activeConversationId: null });
 
     setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
       setTimeout(() => emitMockEvent(streamEvent('ai-stream-done', lastStreamId), null), 0);
@@ -698,7 +763,12 @@ describe('useDirectApiChat — cancel during tool loop (deep-review #1)', () => 
       requireAllToolConfirmations: false,
     });
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
-    useChatStore.getState().clearMessages();
+    // Not `clearMessages()`: that deletes only the ACTIVE conversation, so
+    // conversations left behind by ANOTHER test file survive — and these tests
+    // index `conversations[0]`, which then points at a stale conversation with
+    // no activities on it. chat-store is persisted, so the leak is real across
+    // files and only order decided whether it bit (#736).
+    useChatStore.setState({ conversations: [], activeConversationId: null });
     usePermissionStore.setState({
       requests: [],
       sessionAllowed: new Set(),
@@ -821,7 +891,12 @@ describe('useDirectApiChat — backend cancel (audit C2)', () => {
   beforeEach(() => {
     useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
     useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
-    useChatStore.getState().clearMessages();
+    // Not `clearMessages()`: that deletes only the ACTIVE conversation, so
+    // conversations left behind by ANOTHER test file survive — and these tests
+    // index `conversations[0]`, which then points at a stale conversation with
+    // no activities on it. chat-store is persisted, so the leak is real across
+    // files and only order decided whether it bit (#736).
+    useChatStore.setState({ conversations: [], activeConversationId: null });
     vi.mocked(invoke).mockClear();
   });
 
@@ -877,7 +952,12 @@ describe('useDirectApiChat — context compaction at the turn boundary', () => {
 
   beforeEach(() => {
     useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
-    useChatStore.getState().clearMessages();
+    // Not `clearMessages()`: that deletes only the ACTIVE conversation, so
+    // conversations left behind by ANOTHER test file survive — and these tests
+    // index `conversations[0]`, which then points at a stale conversation with
+    // no activities on it. chat-store is persisted, so the leak is real across
+    // files and only order decided whether it bit (#736).
+    useChatStore.setState({ conversations: [], activeConversationId: null });
     // A small window is what makes compaction necessary at all.
     useLocalAIStore.setState({ contextLength: 4096 });
     setMockInvokeHandler('ai_chat_stream', async (args) => { lastStreamId = sidOf(args);
@@ -904,7 +984,12 @@ describe('useDirectApiChat — context compaction at the turn boundary', () => {
   });
 
   it('does not compact a short conversation — that would spend a call for nothing', async () => {
-    useChatStore.getState().clearMessages();
+    // Not `clearMessages()`: that deletes only the ACTIVE conversation, so
+    // conversations left behind by ANOTHER test file survive — and these tests
+    // index `conversations[0]`, which then points at a stale conversation with
+    // no activities on it. chat-store is persisted, so the leak is real across
+    // files and only order decided whether it bit (#736).
+    useChatStore.setState({ conversations: [], activeConversationId: null });
     const { result } = renderDirectApiChat({ provider: 'local_bundled' });
 
     await act(async () => {
