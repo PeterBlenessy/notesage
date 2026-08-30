@@ -517,3 +517,54 @@ mod permission_probe {
         assert_eq!(permission_verdict(false, true), PermissionVerdict::Gated);
     }
 }
+
+// The resource-link probe's design lives entirely in `resource_link_verdict`
+// (#815), so it is tested here rather than through a real agent — which is what
+// the issue said made this hard: no capability bit to read, and an agent that
+// ignores the block returns a perfectly normal response.
+mod resource_link_probe {
+    use super::super::{resource_link_verdict, ResourceLinkVerdict};
+
+    #[test]
+    fn an_answer_without_the_token_means_the_link_was_ignored() {
+        // The one unambiguous failure. The file was attached, the token was in
+        // it, and the instruction asked for nothing else — an agent that
+        // answered at length regardless never saw the file.
+        let verdict = resource_link_verdict(true, false);
+        assert!(
+            matches!(verdict, ResourceLinkVerdict::Ignored(_)),
+            "an agent that answers without the token must be reported, or the \
+             attachment silently never reaches the model: {verdict:?}"
+        );
+    }
+
+    #[test]
+    fn the_token_coming_back_is_proof_the_file_was_read() {
+        // Unguessable by construction, so it cannot arrive by luck.
+        assert_eq!(resource_link_verdict(true, true), ResourceLinkVerdict::Honoured);
+    }
+
+    #[test]
+    fn silence_is_not_evidence_of_anything() {
+        // Deliberately NOT a failure, mirroring `permission_verdict`: small
+        // local models time out and refuse, and a check that randomly blocks
+        // registration on a healthy agent gets ignored. An ignored check
+        // protects nobody.
+        assert_eq!(
+            resource_link_verdict(false, false),
+            ResourceLinkVerdict::Inconclusive
+        );
+    }
+
+    #[test]
+    fn a_token_with_no_recorded_answer_still_counts_as_honoured() {
+        // Defensive: `answered` is derived from the same accumulated text as
+        // `echoed`, so this pairing should not occur — but if the two ever
+        // diverge, having read the file is the stronger fact, and treating it
+        // as inconclusive would throw away a definite pass.
+        assert_eq!(
+            resource_link_verdict(false, true),
+            ResourceLinkVerdict::Honoured
+        );
+    }
+}

@@ -466,6 +466,18 @@ const SMOKE_PERMISSION_PROMPT: &str =
 /// is already loaded by the time this runs.
 const SMOKE_PERMISSION_TIMEOUT_SECS: u64 = 90;
 
+/// Prompt for the resource-link stage (#815). Deliberately the least
+/// ambiguous instruction that can be given: one attached file, one token,
+/// "reply with only". The probe's whole difficulty is telling "the agent never
+/// received the file" from "the model chose to answer differently", so the
+/// instruction is written to leave a capable agent no other reasonable move.
+const SMOKE_RESOURCE_LINK_PROMPT: &str =
+    "The attached file contains a single token on one line. \
+     Reply with only that token, exactly as written, and nothing else.";
+/// Ceiling for the resource-link probe. Same reasoning as the permission
+/// probe: the model is already loaded by the time this runs.
+const SMOKE_RESOURCE_LINK_TIMEOUT_SECS: u64 = 90;
+
 /// Probe the bundled llama-server `/health`. `Ok(())` only when a port is bound
 /// AND the endpoint returns success within the budget; otherwise a stage error.
 async fn smoke_check_local_health(
@@ -524,6 +536,10 @@ pub async fn acp_agent_smoke_test(
     // gate is a TypeScript extension we ship into pi's config dir, loaded by
     // whatever pi is installed and type-checked against nothing.
     verify_permission_gate: Option<bool>,
+    // Run the resource-link stage (#815). Off by default; the frontend turns it
+    // on for `custom_acp`, where the spec's "all agents MUST support resource
+    // links" is an unenforced promise from an arbitrary third-party binary.
+    verify_resource_links: Option<bool>,
 ) -> Result<SmokeTestReport, String> {
     // Cloned up front: `app` is moved into the network-proxy start below, and
     // the permission probe needs a handle of its own to listen on.
@@ -675,10 +691,28 @@ pub async fn acp_agent_smoke_test(
         None
     };
 
+    // Stage 6 — the agent actually reads an attached file (#815).
+    //
+    // Only when the earlier stages passed: an agent that could not answer the
+    // trivial prompt tells us nothing about resource links, and running this
+    // anyway would report the wrong failure.
+    let resource_link_failure = if verify_resource_links.unwrap_or(false)
+        && prompt_failure.is_none()
+        && permission_failure.is_none()
+    {
+        run_resource_link_probe(&app_for_probe, &state, &instance_id, &session_id, &started, &fail)
+            .await
+    } else {
+        None
+    };
+
     // Single teardown for every path.
     let _ = acp_agent_stop(state.clone(), instance_id).await;
 
     if let Some(report) = permission_failure {
+        return Ok(report);
+    }
+    if let Some(report) = resource_link_failure {
         return Ok(report);
     }
 
@@ -722,6 +756,160 @@ pub(crate) fn permission_verdict(acted: bool, asked: bool) -> PermissionVerdict 
         ),
         (_, true) => PermissionVerdict::Gated,
         (false, false) => PermissionVerdict::Inconclusive,
+    }
+}
+
+/// What the resource-link probe observed (#815).
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum ResourceLinkVerdict {
+    /// The token came back — the agent genuinely read the attached file.
+    Honoured,
+    /// The agent answered, at length, without the token. The file was attached
+    /// and the instruction left no other reasonable move, so the most likely
+    /// reading is that the resource link never reached the model.
+    Ignored(&'static str),
+    /// Nothing to judge: the agent produced no text at all (timeout, refusal,
+    /// a model still loading).
+    Inconclusive,
+}
+
+/// Decide the probe's outcome from the two things it watched.
+///
+/// The whole design is in this function, so it is separate and tested.
+///
+/// Mirrors `permission_verdict`'s philosophy deliberately: be loud only where
+/// the evidence is unambiguous, and silent where it is not. An agent that said
+/// nothing proves nothing — small local models time out and refuse — so that
+/// is `Inconclusive` rather than a failure. A check that randomly blocks
+/// registration on a healthy agent gets ignored, and an ignored check protects
+/// nobody.
+///
+/// The one case this DOES call a failure is an agent that answered
+/// substantively and never produced a token that was sitting in a file it was
+/// handed, having been asked for nothing else.
+pub(crate) fn resource_link_verdict(answered: bool, echoed: bool) -> ResourceLinkVerdict {
+    match (answered, echoed) {
+        (_, true) => ResourceLinkVerdict::Honoured,
+        (true, false) => ResourceLinkVerdict::Ignored(
+            "the agent answered without reading the file it was given. Attachments are \
+             sent as ACP resource links, which the spec makes mandatory but this agent \
+             appears not to honour — files attached in the command bar will not reach \
+             it, and it will answer as though it had read them.",
+        ),
+        (false, false) => ResourceLinkVerdict::Inconclusive,
+    }
+}
+
+/// Attach a file with an unguessable token and see whether it comes back.
+///
+/// Returns `Some(report)` only for the unambiguous failure — a substantive
+/// answer with no token in it. Everything else, including the agent saying
+/// nothing at all, returns `None`.
+///
+/// Listens on the same Tauri events the frontend uses, for the same reason the
+/// permission probe does: it observes exactly what the UI would, with no new
+/// plumbing and no risk of passing through a path the real app never takes.
+async fn run_resource_link_probe(
+    app: &AppHandle,
+    state: &State<'_, AcpState>,
+    instance_id: &str,
+    session_id: &str,
+    started: &std::time::Instant,
+    fail: &impl Fn(SmokeStage, String, &std::time::Instant) -> SmokeTestReport,
+) -> Option<SmokeTestReport> {
+    // Unguessable, so a model cannot produce it by luck or by pattern — the
+    // whole probe rests on the token being impossible to know without reading
+    // the file. Derived from the clock rather than a fixed literal for the
+    // same reason.
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let token = format!("NSPROBE-{nonce:x}");
+
+    // A real file on disk, because a resource link is a POINTER — the agent
+    // has to go and read it, which is precisely the behaviour under test.
+    let path = std::env::temp_dir().join(format!("notesage-resource-probe-{nonce:x}.txt"));
+    if std::fs::write(&path, format!("{token}\n")).is_err() {
+        // Cannot set the probe up; that is not the agent's fault.
+        return None;
+    }
+    let path_string = path.to_string_lossy().into_owned();
+
+    let answer = Arc::new(std::sync::Mutex::new(String::new()));
+    let sink = answer.clone();
+    let probe_instance = instance_id.to_string();
+    let update_listener = app.listen("acp-session-update", move |event| {
+        let Ok(payload) = serde_json::from_str::<serde_json::Value>(event.payload()) else {
+            return;
+        };
+        if payload.get("instanceId").and_then(|v| v.as_str()) != Some(probe_instance.as_str()) {
+            return;
+        }
+        // Accumulate every text the agent emits, thinking included: an agent
+        // that read the file often quotes the token while reasoning, and
+        // counting that as a miss would be a false failure.
+        let Some(update) = payload.get("update") else { return };
+        if let Some(text) = update
+            .get("content")
+            .and_then(|c| c.get("text"))
+            .and_then(|t| t.as_str())
+        {
+            if let Ok(mut acc) = sink.lock() {
+                acc.push_str(text);
+            }
+        }
+    });
+
+    // Tear down on EVERY exit, including a panic or a dropped future (code
+    // review). Without this, a panic between the write above and the cleanup
+    // below leaves the temp file on disk AND — worse — leaves the listener
+    // registered on the app-wide event bus, inspecting every future
+    // `acp-session-update` for the rest of the process's life. Repeated
+    // "Add Connection" attempts would stack them.
+    struct ProbeCleanup<'a> {
+        app: &'a AppHandle,
+        listener: tauri::EventId,
+        path: std::path::PathBuf,
+    }
+    impl Drop for ProbeCleanup<'_> {
+        fn drop(&mut self) {
+            self.app.unlisten(self.listener);
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+    let _cleanup = ProbeCleanup { app, listener: update_listener, path: path.clone() };
+
+    let _ = tokio::time::timeout(
+        std::time::Duration::from_secs(SMOKE_RESOURCE_LINK_TIMEOUT_SECS),
+        acp_session_prompt(
+            state.clone(),
+            instance_id.to_string(),
+            session_id.to_string(),
+            SMOKE_RESOURCE_LINK_PROMPT.to_string(),
+            None,
+            Some(vec![path_string]),
+        ),
+    )
+    .await;
+
+    let text = answer.lock().map(|a| a.clone()).unwrap_or_default();
+    let answered = !text.trim().is_empty();
+    let echoed = text.contains(&token);
+
+    match resource_link_verdict(answered, echoed) {
+        ResourceLinkVerdict::Honoured => None,
+        ResourceLinkVerdict::Ignored(msg) => {
+            Some(fail(SmokeStage::ResourceLink, msg.to_string(), started))
+        }
+        ResourceLinkVerdict::Inconclusive => {
+            log::warn!(
+                target: "notesage::acp",
+                "Resource-link probe inconclusive: the agent produced no text, so the \
+                 attachment path was not exercised"
+            );
+            None
+        }
     }
 }
 

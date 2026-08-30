@@ -505,6 +505,32 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
       for (const activity of buildAttachmentActivities(opts?.attachedFilePaths, userTimestamp)) {
         addActivity(userTimestamp, activity, conversationId);
       }
+
+      // Tell the user when the attachment will NOT arrive (#815).
+      //
+      // Attachments go out as ACP resource links with no capability gate,
+      // resting on the spec's "All agents MUST support resource links in
+      // prompts". An agent that ignores the block returns a perfectly normal
+      // response — no error, nothing wrong-looking in the transcript — so
+      // without this the user reads a confident answer that never saw the
+      // file. That is the same invisible failure attachments were built to
+      // fix, arriving by another route.
+      //
+      // Only fires when the registration probe actually CAUGHT the agent
+      // ignoring a link (`false`, never `undefined`), so a built-in or a
+      // connection that predates the probe stays silent. Sending continues:
+      // the rest of the message is still worth answering, and the user has
+      // been told what is missing.
+      if (
+        (opts?.attachedFilePaths?.length ?? 0) > 0 &&
+        effectiveConnection.acpCapabilities?.supportsResourceLinks === false
+      ) {
+        toast.warning('This agent does not read attached files', {
+          id: `resource-links:${effectiveConnection.id}`,
+          description:
+            'Notesage checked when the agent was added: it answers without opening the files it is given. Paste what matters into the message instead.',
+        });
+      }
       const assistantMessageId = userTimestamp + 1;
       addMessage({
         role: 'assistant',
