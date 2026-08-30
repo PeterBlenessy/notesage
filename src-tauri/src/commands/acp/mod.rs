@@ -861,6 +861,25 @@ async fn run_resource_link_probe(
         }
     });
 
+    // Tear down on EVERY exit, including a panic or a dropped future (code
+    // review). Without this, a panic between the write above and the cleanup
+    // below leaves the temp file on disk AND — worse — leaves the listener
+    // registered on the app-wide event bus, inspecting every future
+    // `acp-session-update` for the rest of the process's life. Repeated
+    // "Add Connection" attempts would stack them.
+    struct ProbeCleanup<'a> {
+        app: &'a AppHandle,
+        listener: tauri::EventId,
+        path: std::path::PathBuf,
+    }
+    impl Drop for ProbeCleanup<'_> {
+        fn drop(&mut self) {
+            self.app.unlisten(self.listener);
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+    let _cleanup = ProbeCleanup { app, listener: update_listener, path: path.clone() };
+
     let _ = tokio::time::timeout(
         std::time::Duration::from_secs(SMOKE_RESOURCE_LINK_TIMEOUT_SECS),
         acp_session_prompt(
@@ -873,9 +892,6 @@ async fn run_resource_link_probe(
         ),
     )
     .await;
-
-    app.unlisten(update_listener);
-    let _ = std::fs::remove_file(&path);
 
     let text = answer.lock().map(|a| a.clone()).unwrap_or_default();
     let answered = !text.trim().is_empty();

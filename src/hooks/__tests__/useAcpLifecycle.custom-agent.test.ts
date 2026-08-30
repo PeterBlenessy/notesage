@@ -377,8 +377,12 @@ describe('custom_acp — registration probe', () => {
       binaryArgs: BINARY_ARGS,
     });
 
-    const persisted = useConnectionsStore.getState().getConnection(connectionId);
-    expect(persisted!.acpCapabilities?.supportsResourceLinks).toBe(false);
+    // Background now (code review): registration no longer waits on a second
+    // spawn plus a real model round trip, whose timeouts sum to minutes.
+    await vi.waitFor(() => {
+      const c = useConnectionsStore.getState().getConnection(connectionId);
+      expect(c!.acpCapabilities?.supportsResourceLinks).toBe(false);
+    });
   });
 
   it('does not blame the agent for attachments when an EARLIER stage failed', async () => {
@@ -406,6 +410,7 @@ describe('custom_acp — registration probe', () => {
       binaryArgs: BINARY_ARGS,
     });
 
+    await new Promise((r) => setTimeout(r, 0));
     const persisted = useConnectionsStore.getState().getConnection(connectionId);
     expect(persisted!.acpCapabilities?.supportsResourceLinks).toBeUndefined();
   });
@@ -432,7 +437,33 @@ describe('custom_acp — registration probe', () => {
       binaryArgs: BINARY_ARGS,
     });
 
+    await new Promise((r) => setTimeout(r, 0));
     expect(useConnectionsStore.getState().getConnection(connectionId)).toBeDefined();
+  });
+
+  it('does not make registration wait for the attachment probe', async () => {
+    // The probe is a second full spawn plus a real completion; its stage
+    // timeouts sum to minutes. Registration must not sit through that.
+    installSpawnSpy();
+    setMockInvokeHandler('acp_session_new', () => ({
+      session_id: 'sess-probe', current_model: null, available_models: [],
+      modes: null, config_options: null,
+    }));
+    let released!: () => void;
+    vi.mocked(tauriApi.acpAgentSmokeTest).mockReturnValueOnce(
+      new Promise((resolve) => {
+        released = () => resolve({ ok: true, stage: 'done', elapsedMs: 1 });
+      }),
+    );
+
+    // Resolves even though the probe never has.
+    const { connectionId } = await registerCustomAcpConnection({
+      label: 'Slow Probe',
+      binaryPath: BINARY_PATH,
+      binaryArgs: BINARY_ARGS,
+    });
+    expect(useConnectionsStore.getState().getConnection(connectionId)).toBeDefined();
+    released();
   });
 });
 
