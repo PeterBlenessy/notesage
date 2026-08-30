@@ -22,6 +22,7 @@ import { useChatStore } from '@/stores/chat-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useConnectionsStore } from '@/stores/connections-store';
+import { tauriApi } from '@/lib/tauri';
 import type { Connection } from '@/lib/ai/connections';
 import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import { canReauthenticate } from '@/lib/ai/reauth';
@@ -44,6 +45,9 @@ vi.mock('@/lib/tauri', () => ({
     getHomeDir: vi.fn().mockResolvedValue('/Users/test'),
     acpSessionSetMode: vi.fn().mockResolvedValue(undefined),
     acpSessionSetConfigOption: vi.fn().mockResolvedValue(undefined),
+    // #815 — the resource-link probe run at registration. Defaults to a clean
+    // pass so the tests that predate it are unaffected.
+    acpAgentSmokeTest: vi.fn().mockResolvedValue({ ok: true, stage: 'done', elapsedMs: 10 }),
   },
 }));
 
@@ -343,6 +347,123 @@ describe('custom_acp — registration probe', () => {
     expect(persisted!.config).toEqual({ binaryPath: BINARY_PATH, binaryArgs: BINARY_ARGS });
     expect(persisted!.acpCapabilities?.availableModes).toEqual([{ id: 'default', name: 'Default' }]);
     expect(capabilities.availableModes).toEqual([{ id: 'default', name: 'Default' }]);
+  });
+
+  // #815 — attachments are sent as ACP resource links with NO capability gate,
+  // resting on the spec's "All agents MUST support resource links in prompts".
+  // A custom agent is an arbitrary third-party binary, so that MUST is an
+  // unenforced promise; an agent that ignores the block returns a perfectly
+  // normal response and the user gets a confident answer that never saw the
+  // file. The probe runs ONCE, at registration.
+  it('records that the agent ignores attached files, when the probe catches it', async () => {
+    installSpawnSpy();
+    setMockInvokeHandler('acp_session_new', () => ({
+      session_id: 'sess-probe',
+      current_model: null,
+      available_models: [],
+      modes: null,
+      config_options: null,
+    }));
+    vi.mocked(tauriApi.acpAgentSmokeTest).mockResolvedValueOnce({
+      ok: false,
+      stage: 'resource_link',
+      error: 'the agent answered without reading the file it was given',
+      elapsedMs: 1200,
+    });
+
+    const { connectionId } = await registerCustomAcpConnection({
+      label: 'Ignores Attachments',
+      binaryPath: BINARY_PATH,
+      binaryArgs: BINARY_ARGS,
+    });
+
+    // Background now (code review): registration no longer waits on a second
+    // spawn plus a real model round trip, whose timeouts sum to minutes.
+    await vi.waitFor(() => {
+      const c = useConnectionsStore.getState().getConnection(connectionId);
+      expect(c!.acpCapabilities?.supportsResourceLinks).toBe(false);
+    });
+  });
+
+  it('does not blame the agent for attachments when an EARLIER stage failed', async () => {
+    // A spawn or session failure says the probe never got far enough to ask
+    // the question. Recording `false` there would warn the user about a
+    // capability that was never tested.
+    installSpawnSpy();
+    setMockInvokeHandler('acp_session_new', () => ({
+      session_id: 'sess-probe',
+      current_model: null,
+      available_models: [],
+      modes: null,
+      config_options: null,
+    }));
+    vi.mocked(tauriApi.acpAgentSmokeTest).mockResolvedValueOnce({
+      ok: false,
+      stage: 'prompt',
+      error: 'prompt timed out',
+      elapsedMs: 90000,
+    });
+
+    const { connectionId } = await registerCustomAcpConnection({
+      label: 'Slow Agent',
+      binaryPath: BINARY_PATH,
+      binaryArgs: BINARY_ARGS,
+    });
+
+    await new Promise((r) => setTimeout(r, 0));
+    const persisted = useConnectionsStore.getState().getConnection(connectionId);
+    expect(persisted!.acpCapabilities?.supportsResourceLinks).toBeUndefined();
+  });
+
+  it('registration still succeeds when the attachment probe itself errors', async () => {
+    // Best-effort: the capability probe above already established the agent
+    // works. Failing registration because a secondary check threw would block
+    // a usable agent.
+    installSpawnSpy();
+    setMockInvokeHandler('acp_session_new', () => ({
+      session_id: 'sess-probe',
+      current_model: null,
+      available_models: [],
+      modes: null,
+      config_options: null,
+    }));
+    vi.mocked(tauriApi.acpAgentSmokeTest).mockRejectedValueOnce(
+      new Error('smoke test unavailable'),
+    );
+
+    const { connectionId } = await registerCustomAcpConnection({
+      label: 'Probe Explodes',
+      binaryPath: BINARY_PATH,
+      binaryArgs: BINARY_ARGS,
+    });
+
+    await new Promise((r) => setTimeout(r, 0));
+    expect(useConnectionsStore.getState().getConnection(connectionId)).toBeDefined();
+  });
+
+  it('does not make registration wait for the attachment probe', async () => {
+    // The probe is a second full spawn plus a real completion; its stage
+    // timeouts sum to minutes. Registration must not sit through that.
+    installSpawnSpy();
+    setMockInvokeHandler('acp_session_new', () => ({
+      session_id: 'sess-probe', current_model: null, available_models: [],
+      modes: null, config_options: null,
+    }));
+    let released!: () => void;
+    vi.mocked(tauriApi.acpAgentSmokeTest).mockReturnValueOnce(
+      new Promise((resolve) => {
+        released = () => resolve({ ok: true, stage: 'done', elapsedMs: 1 });
+      }),
+    );
+
+    // Resolves even though the probe never has.
+    const { connectionId } = await registerCustomAcpConnection({
+      label: 'Slow Probe',
+      binaryPath: BINARY_PATH,
+      binaryArgs: BINARY_ARGS,
+    });
+    expect(useConnectionsStore.getState().getConnection(connectionId)).toBeDefined();
+    released();
   });
 });
 

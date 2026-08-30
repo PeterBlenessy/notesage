@@ -115,6 +115,21 @@ export interface AcpDiscoveredCapabilities {
   supportsLoadSession?: boolean;
   supportsImages?: boolean;
   agentVersion?: string;
+  /**
+   * Did the agent actually READ a file attached as an ACP resource link (#815)?
+   *
+   * `undefined` means never checked — every built-in, which claims schema v2
+   * compliance, and every connection registered before this existed. `false`
+   * means the probe caught it answering without the token from a file it was
+   * handed, so attachments do not reach it.
+   *
+   * There is no capability bit to read: the spec makes resource links
+   * mandatory ("All agents MUST support resource links in prompts"), so
+   * `PromptCapabilities` gates `image` and `embeddedContext` and nothing else.
+   * An agent that ignores the block returns a perfectly normal response, which
+   * is why this has to be probed rather than asked.
+   */
+  supportsResourceLinks?: boolean;
   lastProbed?: number;  // timestamp — re-probe if stale (>24h) or agent version changed
 }
 
