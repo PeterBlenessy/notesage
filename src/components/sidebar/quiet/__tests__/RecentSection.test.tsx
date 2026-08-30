@@ -82,6 +82,17 @@ beforeEach(() => {
   });
   // Reset the cap to the default so each test starts from a known baseline.
   useSettingsStore.setState({ sidebarRecentCap: 5 });
+  // Sweep leftover screen-reader announcements (#736).
+  //
+  // `announce()` appends a live region to `document.body` and removes it on a
+  // 2 s timer, which outlives the test that triggered it. Testing Library's
+  // cleanup only unmounts its own containers, so the stray node survived into
+  // the next test — where a `getAllByText(/file-/)` matched the announcement
+  // as well as the rows and failed with "found multiple elements". Order
+  // decided whether it happened at all.
+  for (const node of document.querySelectorAll("[data-sidebar-announcer]")) {
+    node.remove();
+  }
 });
 
 describe('RecentSection — shell', () => {

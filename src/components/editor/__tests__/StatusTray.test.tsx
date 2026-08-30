@@ -47,6 +47,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
+import { useActionStore } from '@/stores/action-store';
 import { useRecordingStore } from '@/stores/recording-store';
 import type { Connection } from '@/lib/ai/connections';
 
@@ -75,6 +76,11 @@ function resetStores() {
   useRecordingStore.setState({
     isRecording: false,
   });
+  // ActionsGroup reads `getOpenCount()` from action-store, which this reset
+  // never touched — so an action left behind by another test file made the
+  // "no open actions" assertion fail under a shuffled order (#736). The store
+  // is persisted, so it genuinely survives across files.
+  useActionStore.setState({ actions: [], actionCache: {} });
 }
 
 function addConnection(partial: Partial<Connection> & Pick<Connection, 'id' | 'provider' | 'authMethod' | 'label'>) {
