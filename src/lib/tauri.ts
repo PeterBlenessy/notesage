@@ -82,7 +82,7 @@ export interface LocalAgentConfig {
 }
 
 /** Stage the smoke test reached. `done` = success; otherwise the failed stage. */
-export type SmokeStage = 'health' | 'spawn' | 'session' | 'prompt' | 'permission' | 'done';
+export type SmokeStage = 'health' | 'spawn' | 'session' | 'prompt' | 'permission' | 'resource_link' | 'done';
 
 /** Result of `acp_agent_smoke_test` — see `src-tauri/.../acp.rs`. */
 export interface SmokeTestReport {
@@ -116,6 +116,17 @@ export interface SmokeTestParams {
    *  healthier rather than broken. This stage provokes a write and checks the
    *  prompt appears. */
   verifyPermissionGate?: boolean | null;
+  /** Run the resource-link stage (#815).
+   *
+   *  Attachments are sent as ACP resource links with no capability gate, on the
+   *  strength of the spec's "All agents MUST support resource links in
+   *  prompts". An agent that ignores the block returns a perfectly NORMAL
+   *  response — no error, nothing wrong-looking in the transcript — and the
+   *  user gets a confident answer that never saw the file.
+   *
+   *  Enabled for `custom_acp`, where that MUST is an unenforced promise from an
+   *  arbitrary third-party binary. The built-ins all claim schema v2. */
+  verifyResourceLinks?: boolean | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1135,6 +1146,7 @@ export const tauriApi = {
       extraLocalhostPorts: params.extraLocalhostPorts ?? null,
       requireLocalServer: params.requireLocalServer ?? null,
       verifyPermissionGate: params.verifyPermissionGate ?? null,
+      verifyResourceLinks: params.verifyResourceLinks ?? null,
     });
   },
 

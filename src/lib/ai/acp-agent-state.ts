@@ -1,6 +1,7 @@
 // Module-level ACP agent singleton state and spawn logic.
 // Extracted from useAcpLifecycle.ts — survives re-renders, shared across the app.
 
+import { tauriApi } from "@/lib/tauri";
 import { invoke } from '@tauri-apps/api/core';
 import { log } from '@/lib/logger';
 import { usePermissionStore } from '@/stores/permission-store';
@@ -876,7 +877,66 @@ export async function registerCustomAcpConnection(
     networkSandboxEnabled: true,
     kernelNetworkDeny: true,
   });
+  // Verify attachment support in the BACKGROUND (#815).
+  //
+  // Not awaited, on review: this is a second full agent spawn plus a real model
+  // round trip, and its stage timeouts sum to minutes in the worst case. Making
+  // "Add Connection" sit through that — for a connection nobody has used yet,
+  // and on a metered agent, at real cost — would be a poor trade for a check
+  // whose result is not needed until the user first attaches a file.
+  //
+  // The result lands on the connection whenever it arrives; until then
+  // `supportsResourceLinks` is simply `undefined`, which every reader already
+  // treats as "never checked".
+  void verifyResourceLinkSupport(connectionId, input);
+
   return { connectionId, capabilities };
+}
+
+/**
+ * Probe whether an agent honours ACP resource links, and record it (#815).
+ *
+ * Exported so the registration path can fire it without awaiting, and so it is
+ * testable on its own. Never throws: the capability probe has already
+ * established the agent works, and a secondary check that failed is not a
+ * reason to disturb a usable connection.
+ */
+export async function verifyResourceLinkSupport(
+  connectionId: string,
+  input: CustomAcpRegistrationInput,
+): Promise<void> {
+  try {
+    const report = await tauriApi.acpAgentSmokeTest({
+      agentBinary: input.binaryPath,
+      agentArgs: input.binaryArgs ?? null,
+      workingDirectory: '/tmp',
+      envVars: input.envVars ?? null,
+      sandboxEnabled: true,
+      sandboxPaths: ['/tmp'],
+      networkSandboxEnabled: true,
+      networkAllowedDomains: [],
+      kernelNetworkDeny: true,
+      verifyResourceLinks: true,
+    });
+    // Only the resource-link stage speaks to this question. A failure at any
+    // EARLIER stage says the probe never got far enough to ask it.
+    let supportsResourceLinks: boolean | undefined;
+    if (!report.ok && report.stage === 'resource_link') supportsResourceLinks = false;
+    else if (report.ok) supportsResourceLinks = true;
+    if (supportsResourceLinks === undefined) return;
+
+    const conn = useConnectionsStore.getState().getConnection(connectionId);
+    // The user may have removed the connection while this was running.
+    if (!conn) return;
+    useConnectionsStore.getState().updateConnection(connectionId, {
+      acpCapabilities: { ...conn.acpCapabilities, supportsResourceLinks },
+    });
+  } catch (err) {
+    // Logged rather than swallowed silently (code review): the sibling
+    // best-effort catches in this session all log, and losing every clue about
+    // an unexpected failure makes the check unfalsifiable in the field.
+    log.warn('acp', `resource-link probe failed for ${connectionId}: ${err}`);
+  }
 }
 
 /**
