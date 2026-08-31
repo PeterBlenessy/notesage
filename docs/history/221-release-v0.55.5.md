@@ -22,6 +22,14 @@ them.
   paywalled, changed or removed leaves your copy exactly as it was. If there is
   nothing to add, it says so and changes nothing.
 
+- **A page with no article saves its preview instead of a bare link.** Some
+  pages — a topic hub, a video index, a gated page — have no article on them to
+  save. Instead of storing just the address, Notesage now keeps the page's own
+  preview: its picture, headline and summary, the same ones the share sheet
+  showed you. It says plainly that it is a saved link rather than the article,
+  so nothing pretends to be something it is not. A page that offers nothing at
+  all still saves as a plain link.
+
 ## Under the hood
 
 - **#832.** `ios_move_file` had existed and been unused since #754 — sanitised
@@ -43,7 +51,16 @@ them.
   capture path so a repaired article is byte-identical to a fresh one.
 - iOS-only, unavoidably: the splice calls `extract_article`, so it needs the
   Readability stack desktop deliberately does not link.
+- **#839.** The fallback ladder is now article → CARD → link. No new network:
+  the card is built from HTML already in hand — the fetched markup, or
+  `PageRenderer`'s rendered DOM for a page that blocks server-side fetches
+  (`ubs.com` answers one with 509 bytes and no `og:` tags, re-verified). The
+  data was there the moment `extract_article` returned `None` and was being
+  discarded. The card is labelled "Saved link" and says why there is no
+  article — #807 was a capture that looked like the piece and was not, and a
+  card rendering like an article would repeat that with better art. Format
+  follows the PICKER; a page with no title at all still falls to the link note.
 
 ## Files Changed
 
-- 6 files across 2 commits (PR #838)
+- 12 files across 3 commits (PR #838, #841)

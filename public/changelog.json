@@ -7,7 +7,8 @@
       "sections": {
         "features": [
           "**Move a saved article into a folder.** An article could be read, edited, shared and searched, but not filed — which is the whole point of an inbox. The reader's menu now offers Move, with a picker over your library's folders. If a folder already holds a file of the same name, both are kept.",
-          "**Update an older article from its source.** Articles saved before the app kept the picture, author and summary can now fetch them back — the reader's menu offers \"Update from source\". It only ever ADDS the missing header: the text you already have is never replaced, so a page that has since been paywalled, changed or removed leaves your copy exactly as it was. If there is nothing to add, it says so and changes nothing."
+          "**Update an older article from its source.** Articles saved before the app kept the picture, author and summary can now fetch them back — the reader's menu offers \"Update from source\". It only ever ADDS the missing header: the text you already have is never replaced, so a page that has since been paywalled, changed or removed leaves your copy exactly as it was. If there is nothing to add, it says so and changes nothing.",
+          "**A page with no article saves its preview instead of a bare link.** Some pages — a topic hub, a video index, a gated page — have no article on them to save. Instead of storing just the address, Notesage now keeps the page's own preview: its picture, headline and summary, the same ones the share sheet showed you. It says plainly that it is a saved link rather than the article, so nothing pretends to be something it is not. A page that offers nothing at all still saves as a plain link."
         ]
       }
     },
