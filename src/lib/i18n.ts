@@ -885,6 +885,10 @@ const en = {
   "reader.back": "Back",
   "reader.find": "Find in document",
   "reader.saveFailed": "Couldn't save: {error}",
+  "reader.updateFromSource": "Update from source",
+  "reader.updateDone": "Updated from the source page",
+  "reader.updateNothingToAdd": "Nothing to add — the page didn't give us anything new",
+  "reader.updateFailed": "Couldn't reach the page: {error}",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1731,6 +1735,10 @@ const sv: Dict = {
   "reader.back": "Tillbaka",
   "reader.find": "Sök i dokumentet",
   "reader.saveFailed": "Kunde inte spara: {error}",
+  "reader.updateFromSource": "Uppdatera från källan",
+  "reader.updateDone": "Uppdaterad från källsidan",
+  "reader.updateNothingToAdd": "Inget att lägga till — sidan gav oss inget nytt",
+  "reader.updateFailed": "Kunde inte nå sidan: {error}",
 };
 
 const TABLES: Record<Locale, Dict> = { en, sv };

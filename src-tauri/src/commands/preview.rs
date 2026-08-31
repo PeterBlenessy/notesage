@@ -190,6 +190,43 @@ pub fn repair_missing_doctype(html: &str) -> Option<String> {
     Some(format!("<!doctype html>\n{html}"))
 }
 
+/// The page a saved article was clipped from (#829).
+///
+/// Pure. The caller fetches — on iOS the WebView does it, exactly as the Share
+/// Extension fetches rather than adding a network path to Rust.
+///
+/// iOS-only, like its sibling below and for the same reason.
+#[cfg(target_os = "ios")]
+#[tauri::command]
+pub async fn article_source_url(content: String) -> Result<Option<String>, String> {
+    Ok(notesage_capture::article_source_url(&content))
+}
+
+/// Add the masthead to an article saved before captures kept one (#829).
+///
+/// Pure, and returns `None` for "change nothing" — not ours, already repaired,
+/// or the refetched page no longer yields an article. The saved BODY is never
+/// replaced: a refetch can legitimately come back worse (a bot-block, a
+/// paywall, or a page whose article only existed in the share sheet's rendered
+/// DOM), so the worst case here is that nothing happens.
+///
+/// **iOS-only, and unavoidably so** — unlike `repair_html_doctype`, which was
+/// moved into this crate precisely because it needed no dependencies. This one
+/// calls `extract_article`, so it needs the whole Readability stack that
+/// `notesage-capture` carries and that desktop builds deliberately do not
+/// link. Offering it on desktop means linking that stack there; the doctype
+/// repair set the precedent that a fifteen-byte prepend does not justify it,
+/// and this is a genuinely different case worth deciding on its own.
+#[cfg(target_os = "ios")]
+#[tauri::command]
+pub async fn splice_article_header(
+    saved: String,
+    page_html: String,
+    source_url: String,
+) -> Result<Option<String>, String> {
+    Ok(notesage_capture::splice_article_header(&saved, &page_html, &source_url))
+}
+
 /// Repair a saved article that lost its `<!doctype html>` to #805, returning
 /// the corrected document — or `None` when there is nothing to repair.
 ///

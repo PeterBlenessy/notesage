@@ -612,6 +612,68 @@ export function Reader() {
     })();
   }, [editing, persistDraft, goBack]);
 
+  // "Update from source" (#829) — only offered for a capture that still knows
+  // where it came from.
+  //
+  // Articles saved before captures kept a masthead have no hero, byline or
+  // standfirst, and those bytes are NOT recoverable from the file: the only
+  // record of the source is the "Clipped from" footer. So this is a deliberate,
+  // user-invoked network fetch — never something that happens on open.
+  const [sourceUrl, setSourceUrl] = useState<string | null>(null);
+  const [updating, setUpdating] = useState(false);
+
+  useEffect(() => {
+    setSourceUrl(null);
+    if (!relPath.toLowerCase().endsWith(".html")) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const raw = await iosReadFile(relPath);
+        const url = await invoke<string | null>("article_source_url", { content: raw });
+        if (!cancelled) setSourceUrl(url);
+      } catch {
+        // No source, unreadable, or a build without the command — the menu
+        // entry simply does not appear.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [relPath]);
+
+  const updateFromSource = useCallback(async () => {
+    if (!sourceUrl || updating) return;
+    setUpdating(true);
+    try {
+      const saved = await iosReadFile(relPath);
+      // Fetched HERE rather than in Rust: the WebView already has a network
+      // stack, and adding one to the iOS binary would widen a surface kept
+      // deliberately narrow.
+      const res = await fetch(sourceUrl);
+      if (!res.ok) throw new Error(`${res.status}`);
+      const pageHtml = await res.text();
+      const spliced = await invoke<string | null>("splice_article_header", {
+        saved,
+        pageHtml,
+        sourceUrl,
+      });
+      if (!spliced) {
+        // Not an error. The page may be blocked, paywalled, gone, or the
+        // article may already have its masthead — in every one of those cases
+        // leaving the file untouched is the right outcome.
+        toast.info(t("reader.updateNothingToAdd"));
+        return;
+      }
+      await iosWriteFile(relPath, spliced);
+      toast.success(t("reader.updateDone"));
+      await loadRef.current?.();
+    } catch (err) {
+      toast.error(t("reader.updateFailed", { error: String(err) }));
+    } finally {
+      setUpdating(false);
+    }
+  }, [relPath, sourceUrl, updating]);
+
   const nativeChrome = useNativeChrome(
     {
       topLeft: { id: "back", icon: "chevron.backward" },
@@ -625,7 +687,24 @@ export function Reader() {
               icon: "square.and.pencil",
               menu: [{ id: "share", title: "Share", icon: "square.and.arrow.up" }],
             }
-          : { id: "share", icon: "square.and.arrow.up" },
+          : {
+              id: "share",
+              icon: "square.and.arrow.up",
+              // Only for a capture that still knows where it came from (#829).
+              // An article saved before captures kept a masthead can have one
+              // spliced in from the source page.
+              ...(sourceUrl
+                ? {
+                    menu: [
+                      {
+                        id: "updateSource",
+                        title: t("reader.updateFromSource"),
+                        icon: "arrow.clockwise",
+                      },
+                    ],
+                  }
+                : {}),
+            },
       // A natively-presented report searches through WebKit's own find bar,
       // which is a system UI the island cannot host — so the slot becomes a
       // plain button that opens it (#606). Reports are the ONLY document kind
@@ -665,6 +744,7 @@ export function Reader() {
       "search-close": () => (isPdf ? pdfFindRef.current?.setQuery("") : setFindQuery("")),
       "search-next": () => (isPdf ? pdfFindRef.current?.next() : goToMatch(true)),
       "search-prev": () => (isPdf ? pdfFindRef.current?.prev() : goToMatch(false)),
+      updateSource: () => void updateFromSource(),
       findReport: () => {
         // `false` means the native layer said no report is on screen. Nothing
         // to fall back TO here — the island cannot search a document living in
@@ -843,6 +923,7 @@ export function Reader() {
       setState({ status: "error", message: String(err) });
     }
   }, [relPath, kind, isNew]);
+
 
   loadRef.current = load;
 
