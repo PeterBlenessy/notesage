@@ -776,33 +776,21 @@ pre{background:#252525}figcaption{color:#999}a{color:#8fb3d9}\
 .endnote{color:#999}}\
 </style>";
 
-/// "Article only" capture (#612): the extracted article as a standalone,
-/// self-contained HTML document — no site nav, ads or chrome.
+/// The masthead: standfirst, byline, hero — and the attribution that closes
+/// the article.
 ///
-/// Returns a complete `.html` DOCUMENT rather than a frontmatter capture note,
-/// matching the sibling "Page (HTML)" format which also writes `.html`. A
-/// YAML-frontmatter `.md` file whose body is a `<style>` block and raw markup
-/// renders as neither one thing nor the other; the point of this format is
-/// that it opens as a readable page.
+/// Extracted so the REPAIR path (`splice_article_header`) renders byte-identical
+/// markup to a fresh capture. Two copies of this would drift, and the drift
+/// would only show up in articles saved before a given release — the hardest
+/// kind to notice.
 ///
-/// The link-only note remains the universal fallback, so a share never fails.
-pub fn build_article_html_document(article: &Article, title: Option<&str>, source_url: &str) -> String {
-    let heading = title
-        .or(article.title.as_deref())
-        .map(|t| format!("<h1>{}</h1>", escape_html_text(t)))
-        .unwrap_or_default();
-    let doc_title = title
-        .or(article.title.as_deref())
-        .map(escape_html_text)
-        .unwrap_or_else(|| "Article".to_string());
-    // Standfirst, byline and hero — the masthead readability discards.
-    //
-    // Readability picks ONE winning content node, the article body, and a
-    // blog's hero image, author and date live in the page HEADER, outside it.
-    // So captures kept the prose and dropped everything that makes a page look
-    // like the article: no lead image, no byline, and a gallery card showing
-    // whichever inline screenshot came first. Every field below was already
-    // available and simply never read.
+/// `body_html` is what the hero is checked against: readability sometimes DOES
+/// include the hero, and showing it twice is worse than not at all.
+fn build_article_header(
+    article: &Article,
+    source_url: &str,
+    body_html: &str,
+) -> (String, String) {
     let subtitle = article
         .subtitle
         .as_deref()
@@ -824,6 +812,14 @@ pub fn build_article_html_document(article: &Article, title: Option<&str>, sourc
         meta.push(escape_html_text(&site));
     }
     let byline = format!("<p class=\"byline\">{}</p>", meta.join(" · "));
+
+    let hero = article
+        .hero_image
+        .as_deref()
+        .filter(|src| !body_html.contains(*src))
+        .map(|src| format!("<img class=\"hero\" src=\"{}\" alt=\"\">", escape_html_text(src)))
+        .unwrap_or_default();
+
     // Repeated under the article, above the source link — the shape Instapaper
     // ends on. Reaching the bottom of a saved page and finding only a bare URL
     // reads as a clipping; the attribution is what makes it read as an article
@@ -834,20 +830,35 @@ pub fn build_article_html_document(article: &Article, title: Option<&str>, sourc
         format!("<p class=\"endnote\">{}</p>", meta.join(" · "))
     };
 
-    // Only when the body does not already carry it — readability sometimes
-    // DOES include the hero, and showing it twice is worse than not at all.
-    let hero = article
-        .hero_image
-        .as_deref()
-        .filter(|src| !article.html.contains(*src))
-        .map(|src| format!("<img class=\"hero\" src=\"{}\" alt=\"\">", escape_html_text(src)))
+    (format!("{subtitle}{byline}{hero}"), endnote)
+}
+
+/// "Article only" capture (#612): the extracted article as a standalone,
+/// self-contained HTML document — no site nav, ads or chrome.
+///
+/// Returns a complete `.html` DOCUMENT rather than a frontmatter capture note,
+/// matching the sibling "Page (HTML)" format which also writes `.html`. A
+/// YAML-frontmatter `.md` file whose body is a `<style>` block and raw markup
+/// renders as neither one thing nor the other; the point of this format is
+/// that it opens as a readable page.
+///
+/// The link-only note remains the universal fallback, so a share never fails.
+pub fn build_article_html_document(article: &Article, title: Option<&str>, source_url: &str) -> String {
+    let heading = title
+        .or(article.title.as_deref())
+        .map(|t| format!("<h1>{}</h1>", escape_html_text(t)))
         .unwrap_or_default();
+    let doc_title = title
+        .or(article.title.as_deref())
+        .map(escape_html_text)
+        .unwrap_or_else(|| "Article".to_string());
+    let (header, endnote) = build_article_header(article, source_url, &article.html);
 
     format!(
         "<!doctype html>\n<html><head><meta charset=\"utf-8\">\
 <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
 <title>{doc_title}</title>{ARTICLE_HTML_STYLE}</head><body>\
-{heading}{subtitle}{byline}{hero}{body}\
+{heading}{header}{body}\
 <hr>{endnote}<p class=\"source\">Clipped from <a href=\"{src}\">{src}</a></p>\
 </body></html>\n",
         body = article.html,
@@ -927,6 +938,85 @@ fn host_of(url: &str) -> Option<String> {
     let host = after_scheme.split('/').next()?;
     let host = host.trim_start_matches("www.");
     (!host.is_empty()).then(|| host.to_string())
+}
+
+/// The page a saved article was clipped from, read back out of the file.
+///
+/// The footer is the only place the source survives — captures carry no
+/// frontmatter — and it is what makes a repair possible at all: without it
+/// there is nothing to go back to.
+pub fn article_source_url(saved: &str) -> Option<String> {
+    let marker = "class=\"source\">Clipped from <a href=\"";
+    let start = saved.find(marker)? + marker.len();
+    let rest = &saved[start..];
+    let end = rest.find('"')?;
+    let url = rest[..end].replace("&amp;", "&");
+    (url.starts_with("http://") || url.starts_with("https://")).then_some(url)
+}
+
+/// Add the masthead to an article that was saved before captures kept one
+/// (#829), leaving its body untouched.
+///
+/// Returns `None` — meaning "change nothing" — in every ambiguous case:
+///
+/// * not one of our captures (no source footer),
+/// * already has a header, so a second one would duplicate it,
+/// * the refetched page no longer yields an article, which is what a
+///   bot-block, a paywall or a deleted page looks like.
+///
+/// **The saved body is never replaced.** That is the whole design. A refetch
+/// can legitimately come back worse — `openclaw.ai` extracts fine, but
+/// `ubs.com` answers a server-side fetch with Akamai *Access Denied* (#807),
+/// and articles captured from the share sheet's RENDERED DOM cannot be
+/// reproduced by a fetch at all. Splicing only the header means the worst case
+/// is "nothing changed", never "a good article was overwritten with a worse
+/// one" — which is the failure this area keeps producing.
+///
+/// The stylesheet IS replaced, because a document saved before the header
+/// existed has no rules for `.standfirst` / `.byline` / `.hero` / `.endnote`
+/// and would render the new markup unstyled.
+pub fn splice_article_header(saved: &str, page_html: &str, source_url: &str) -> Option<String> {
+    if !saved.contains("class=\"source\">Clipped from") {
+        return None; // Not ours — do not touch somebody else's file.
+    }
+    if saved.contains("class=\"byline\"") {
+        return None; // Already has a masthead.
+    }
+    let article = extract_article(page_html, source_url)?;
+
+    // Checked against the WHOLE saved document: the hero may already be in the
+    // body from the original capture even though the header is missing.
+    let (header, endnote) = build_article_header(&article, source_url, saved);
+    if header.is_empty() && endnote.is_empty() {
+        return None;
+    }
+
+    // After the title when there is one, so the masthead reads in the right
+    // order; otherwise at the top of the body.
+    let mut out = match saved.find("</h1>") {
+        Some(i) => {
+            let at = i + "</h1>".len();
+            format!("{}{header}{}", &saved[..at], &saved[at..])
+        }
+        None => match saved.find("<body>") {
+            Some(i) => {
+                let at = i + "<body>".len();
+                format!("{}{header}{}", &saved[..at], &saved[at..])
+            }
+            None => return None,
+        },
+    };
+
+    // The attribution goes above the source line, matching a fresh capture.
+    if let Some(i) = out.find("<p class=\"source\">") {
+        out = format!("{}{endnote}{}", &out[..i], &out[i..]);
+    }
+
+    // Bring the stylesheet up to date, or the spliced markup renders unstyled.
+    if let (Some(a), Some(b)) = (out.find("<style>"), out.find("</style>")) {
+        out = format!("{}{}{}", &out[..a], ARTICLE_HTML_STYLE, &out[b + "</style>".len()..]);
+    }
+    Some(out)
 }
 
 /// Minimal text escaping for the title we inject into the template. The
@@ -3469,6 +3559,106 @@ enough genuine prose that the extractor treats this div as the article.</p>"))
             "https://example.com/a",
         );
         assert!(!doc.contains("<p class=\"endnote\"></p>"), "empty endnote:\n{doc}");
+    }
+
+    /// A capture as it was saved BEFORE the header existed: title, body,
+    /// source footer, and the stylesheet of the day.
+    fn legacy_capture() -> String {
+        "<!doctype html>\n<html><head><meta charset=\"utf-8\"><title>A Real Post</title>\
+<style>body{margin:0}</style></head><body><h1>A Real Post</h1>\
+<p>The body the user already has, which must survive untouched.</p>\
+<hr><p class=\"source\">Clipped from <a href=\"https://example.com/blog/post\">\
+https://example.com/blog/post</a></p></body></html>\n"
+            .to_string()
+    }
+
+    #[test]
+    fn a_legacy_capture_gains_its_masthead_without_losing_its_body() {
+        let page = blog_with_header(
+            "<meta property=\"og:description\" content=\"A one-line summary.\">\
+<meta property=\"article:published_time\" content=\"2026-08-30T09:00:00Z\">",
+        );
+        let saved = legacy_capture();
+        let out = splice_article_header(&saved, &page, "https://example.com/blog/post")
+            .expect("a legacy capture must be repairable");
+
+        assert!(out.contains("class=\"standfirst\"") && out.contains("A one-line summary."));
+        assert!(out.contains("class=\"byline\"") && out.contains("Aug 30, 2026"));
+        assert!(out.contains("class=\"hero\"") && out.contains("/img/hero.jpg"));
+        // THE POINT: the user's body is untouched.
+        assert!(
+            out.contains("The body the user already has, which must survive untouched."),
+            "the saved body must never be replaced:\n{out}"
+        );
+        // And the stylesheet is upgraded, or the new markup renders unstyled.
+        assert!(out.contains(".standfirst{"), "the stylesheet must be brought up to date");
+    }
+
+    #[test]
+    fn the_masthead_lands_after_the_title_and_the_attribution_above_the_link() {
+        let page = blog_with_header("");
+        let out = splice_article_header(&legacy_capture(), &page, "https://example.com/blog/post")
+            .unwrap();
+        let h1 = out.find("</h1>").unwrap();
+        let byline = out.find("class=\"byline\"").unwrap();
+        let endnote = out.find("class=\"endnote\"").unwrap();
+        let source = out.find("class=\"source\"").unwrap();
+        assert!(h1 < byline && byline < endnote && endnote < source, "wrong order:\n{out}");
+    }
+
+    #[test]
+    fn a_page_that_no_longer_yields_an_article_changes_nothing() {
+        // What a bot-block, a paywall or a deleted page looks like. Returning
+        // the document unchanged is the entire safety property: the worst case
+        // must be "nothing happened", never "a good article was overwritten".
+        let blocked = "<html><body><h1>Access Denied</h1><p>You don't have permission.</p></body></html>";
+        assert!(
+            splice_article_header(&legacy_capture(), blocked, "https://example.com/blog/post")
+                .is_none(),
+            "a refetch that yields no article must leave the file alone"
+        );
+    }
+
+    #[test]
+    fn an_article_that_already_has_a_masthead_is_left_alone() {
+        // Otherwise "Update from source" would stack a second byline each time.
+        let page = blog_with_header("");
+        let once = splice_article_header(&legacy_capture(), &page, "https://example.com/blog/post")
+            .unwrap();
+        assert!(
+            splice_article_header(&once, &page, "https://example.com/blog/post").is_none(),
+            "repairing twice must be a no-op"
+        );
+    }
+
+    #[test]
+    fn a_file_we_did_not_write_is_never_touched() {
+        let stranger = "<!doctype html><html><body><h1>Someone else's page</h1></body></html>";
+        let page = blog_with_header("");
+        assert!(
+            splice_article_header(stranger, &page, "https://example.com/blog/post").is_none(),
+            "no source footer means it is not our capture"
+        );
+    }
+
+    #[test]
+    fn the_source_url_is_readable_back_out_of_a_saved_capture() {
+        // Without this there is nothing to refetch FROM — captures carry no
+        // frontmatter, so the footer is the only record of where they came from.
+        assert_eq!(
+            article_source_url(&legacy_capture()).as_deref(),
+            Some("https://example.com/blog/post")
+        );
+        assert_eq!(article_source_url("<html><body>nothing</body></html>"), None);
+        // Ampersands are escaped in the footer and must come back usable.
+        let with_query = legacy_capture().replace(
+            "https://example.com/blog/post\">",
+            "https://example.com/p?a=1&amp;b=2\">",
+        );
+        assert_eq!(
+            article_source_url(&with_query).as_deref(),
+            Some("https://example.com/p?a=1&b=2")
+        );
     }
 
     /// The document must parse in standards mode. Without the doctype the

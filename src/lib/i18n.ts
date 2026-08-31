@@ -885,6 +885,15 @@ const en = {
   "reader.back": "Back",
   "reader.find": "Find in document",
   "reader.saveFailed": "Couldn't save: {error}",
+  "reader.updateFromSource": "Update from source",
+  "reader.move": "Move to folder",
+  "reader.moveTitle": "Move to",
+  "reader.moveDone": "Moved to {folder}",
+  "reader.moveNowhere": "No other folder to move this into",
+  "reader.moveFailed": "Couldn't move: {error}",
+  "reader.updateDone": "Updated from the source page",
+  "reader.updateNothingToAdd": "Nothing to add — the page didn't give us anything new",
+  "reader.updateFailed": "Couldn't reach the page: {error}",
 } as const;
 
 export type MessageKey = keyof typeof en;
@@ -1731,6 +1740,15 @@ const sv: Dict = {
   "reader.back": "Tillbaka",
   "reader.find": "Sök i dokumentet",
   "reader.saveFailed": "Kunde inte spara: {error}",
+  "reader.updateFromSource": "Uppdatera från källan",
+  "reader.move": "Flytta till mapp",
+  "reader.moveTitle": "Flytta till",
+  "reader.moveDone": "Flyttad till {folder}",
+  "reader.moveNowhere": "Ingen annan mapp att flytta hit",
+  "reader.moveFailed": "Kunde inte flytta: {error}",
+  "reader.updateDone": "Uppdaterad från källsidan",
+  "reader.updateNothingToAdd": "Inget att lägga till — sidan gav oss inget nytt",
+  "reader.updateFailed": "Kunde inte nå sidan: {error}",
 };
 
 const TABLES: Record<Locale, Dict> = { en, sv };
