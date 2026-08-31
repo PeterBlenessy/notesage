@@ -224,3 +224,4 @@ Chronological log of major implementation milestones and changes.
 | 218 | [Release v0.55.2](218-release-v0.55.2.md) | Articles already in your library get their formatting repaired when you open them. |
 | 219 | [Release v0.55.3](219-release-v0.55.3.md) | Captured articles appear on their own; a page with no article says so instead of saving the small print. |
 | 220 | [Release v0.55.4](220-release-v0.55.4.md) | Saved articles keep their picture, author and date instead of arriving as the words alone. |
+| 221 | [Release v0.55.5](221-release-v0.55.5.md) | File a saved article into a folder, and update an older one from its source. |
