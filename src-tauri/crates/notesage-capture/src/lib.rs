@@ -466,6 +466,46 @@ pub struct Article {
     /// the SAME extraction. A second extraction would drift from this one and
     /// would have to re-apply #610's image filtering independently.
     pub html: String,
+    /// Author line, when the page declares one.
+    ///
+    /// These four fields exist because readability picks ONE winning content
+    /// node — the article body — and a blog's hero image, author and date
+    /// almost always live in the page HEADER, outside it. So a capture kept
+    /// the prose and silently dropped the masthead: no lead image, no byline,
+    /// and a gallery thumbnail showing whichever inline screenshot happened to
+    /// come first. The metadata was there the whole time; nothing read it.
+    pub byline: Option<String>,
+    /// Publication date as the page declares it (usually ISO-8601).
+    pub published_time: Option<String>,
+    /// The page's own lead image (`og:image`), which is what a reader expects
+    /// to see at the top and what the gallery card should show.
+    pub hero_image: Option<String>,
+    /// Publication name, for the source line.
+    pub site_name: Option<String>,
+    /// The page's own one-line summary (`og:description`).
+    ///
+    /// Rendered as a standfirst ONLY when it is not simply the opening of the
+    /// body — readability falls back to the first sentence when a page
+    /// declares no description, and repeating that immediately above itself
+    /// looks like a bug rather than a subtitle.
+    pub subtitle: Option<String>,
+}
+
+impl Article {
+    /// An article with no header metadata — the shape every caller used before
+    /// the header existed. Keeps the enrichment paths and tests readable.
+    pub fn new(title: Option<String>, markdown: String, html: String) -> Self {
+        Self {
+            title,
+            markdown,
+            html,
+            byline: None,
+            published_time: None,
+            hero_image: None,
+            site_name: None,
+            subtitle: None,
+        }
+    }
 }
 
 /// Readable extraction + HTML→Markdown for rich web capture (#584), with
@@ -505,7 +545,19 @@ pub fn extract_article(html: &str, url: &str) -> Option<Article> {
     // shells and video pages — fall back to the page's own metadata.
     let title = meaningful_title(Some(product.title.as_str()))
         .or_else(|| extract_meta_title(html));
-    Some(Article { title, markdown: markdown.to_string(), html: filtered_content })
+    Some(Article {
+        title,
+        markdown: markdown.to_string(),
+        html: filtered_content,
+        byline: non_empty(product.byline),
+        published_time: non_empty(product.published_time),
+        // Absolutised against the source: `og:image` is often a root-relative
+        // path, and a relative src in a file opened from disk resolves to
+        // nothing.
+        hero_image: non_empty(product.image).map(|src| absolutise(&src, url)),
+        site_name: non_empty(product.site_name),
+        subtitle: non_empty(product.excerpt).filter(|x| !opens_the_body(x, markdown)),
+    })
 }
 
 /// Does the page say, in machine-readable metadata, that it IS an article?
@@ -707,6 +759,9 @@ img{max-width:100%;height:auto;border-radius:6px;display:block;margin:1.5rem aut
 svg{max-width:100%;height:auto}\
 svg:not([width]):not([height]){width:1.25em;height:1.25em;vertical-align:-.15em}\
 figure{margin:1.5rem 0}figcaption{font-size:.875rem;color:#666;text-align:center}\
+.standfirst{font-size:1.1875rem;line-height:1.5;color:#444;margin:0 0 1rem}\
+.byline{font-size:.875rem;color:#666;margin:0 0 1.75rem}\
+img.hero{margin:0 0 1.75rem;width:100%}\
 blockquote{margin:1.5rem 0;padding-left:1rem;border-left:3px solid #ddd;color:#444}\
 pre{overflow-x:auto;padding:1rem;background:#f5f5f5;border-radius:6px}\
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9375em}\
@@ -714,6 +769,7 @@ a{color:#0a58ca}hr{border:0;border-top:1px solid #e5e5e5;margin:2rem 0}\
 @media(prefers-color-scheme:dark){\
 body{color:#e8e8e8;background:#1a1a1a}\
 blockquote{border-left-color:#444;color:#bbb}\
+.standfirst{color:#bbb}.byline{color:#999}\
 pre{background:#252525}figcaption{color:#999}a{color:#6ea8fe}}\
 </style>";
 
@@ -736,16 +792,129 @@ pub fn build_article_html_document(article: &Article, title: Option<&str>, sourc
         .or(article.title.as_deref())
         .map(escape_html_text)
         .unwrap_or_else(|| "Article".to_string());
+    // Standfirst, byline and hero — the masthead readability discards.
+    //
+    // Readability picks ONE winning content node, the article body, and a
+    // blog's hero image, author and date live in the page HEADER, outside it.
+    // So captures kept the prose and dropped everything that makes a page look
+    // like the article: no lead image, no byline, and a gallery card showing
+    // whichever inline screenshot came first. Every field below was already
+    // available and simply never read.
+    let subtitle = article
+        .subtitle
+        .as_deref()
+        .map(|t| format!("<p class=\"standfirst\">{}</p>", escape_html_text(t)))
+        .unwrap_or_default();
+
+    // One muted line, in the order a reader scans it. Parts may be missing, so
+    // the separators are JOINED rather than templated — a page with only a
+    // date must not render " ·  · ".
+    let mut meta: Vec<String> = Vec::new();
+    if let Some(by) = article.byline.as_deref() {
+        meta.push(format!("By {}", escape_html_text(by)));
+    }
+    if let Some(when) = article.published_time.as_deref() {
+        meta.push(escape_html_text(&friendly_date(when)));
+    }
+    meta.push(format!("{} min read", reading_minutes(&article.markdown)));
+    if let Some(site) = article.site_name.clone().or_else(|| host_of(source_url)) {
+        meta.push(escape_html_text(&site));
+    }
+    let byline = format!("<p class=\"byline\">{}</p>", meta.join(" · "));
+
+    // Only when the body does not already carry it — readability sometimes
+    // DOES include the hero, and showing it twice is worse than not at all.
+    let hero = article
+        .hero_image
+        .as_deref()
+        .filter(|src| !article.html.contains(*src))
+        .map(|src| format!("<img class=\"hero\" src=\"{}\" alt=\"\">", escape_html_text(src)))
+        .unwrap_or_default();
+
     format!(
         "<!doctype html>\n<html><head><meta charset=\"utf-8\">\
 <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
 <title>{doc_title}</title>{ARTICLE_HTML_STYLE}</head><body>\
-{heading}{body}\
+{heading}{subtitle}{byline}{hero}{body}\
 <hr><p class=\"source\">Clipped from <a href=\"{src}\">{src}</a></p>\
 </body></html>\n",
         body = article.html,
         src = escape_html_text(source_url),
     )
+}
+
+/// Is `candidate` just the start of the body?
+///
+/// Readability falls back to the first sentence when a page declares no
+/// description, so a standfirst would repeat the paragraph directly beneath
+/// it. Compared on the first 60 characters, normalised, because the excerpt is
+/// usually a truncation of that sentence rather than an exact copy.
+fn opens_the_body(candidate: &str, markdown: &str) -> bool {
+    let norm = |s: &str| -> String {
+        s.chars().filter(|c| c.is_alphanumeric()).take(60).collect::<String>().to_lowercase()
+    };
+    let head = norm(candidate);
+    !head.is_empty() && norm(markdown).starts_with(&head)
+}
+
+/// `Some` only for a value with visible content.
+fn non_empty(v: Option<String>) -> Option<String> {
+    v.map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// Resolve `src` against the page it came from.
+///
+/// `og:image` is very often root-relative (`/blog/x/hero.jpg`). A relative src
+/// in a document opened from disk — Safari, Quick Look, the reader — resolves
+/// against nothing and shows a broken image, so the hero has to be absolute
+/// before it is written into the file.
+fn absolutise(src: &str, page_url: &str) -> String {
+    let t = src.trim();
+    if t.starts_with("http://") || t.starts_with("https://") || t.starts_with("data:") {
+        return t.to_string();
+    }
+    // Origin = scheme + host, i.e. everything before the third '/'.
+    let origin: String = match t.starts_with('/') {
+        true => page_url
+            .match_indices('/')
+            .nth(2)
+            .map(|(i, _)| page_url[..i].to_string())
+            .unwrap_or_else(|| page_url.trim_end_matches('/').to_string()),
+        // A genuinely relative path resolves against the page's directory.
+        false => page_url.rsplit_once('/').map(|(dir, _)| dir.to_string()).unwrap_or_default(),
+    };
+    format!("{}/{}", origin.trim_end_matches('/'), t.trim_start_matches('/'))
+}
+
+/// "Aug 30, 2026" from an ISO-8601 date, or the input unchanged when it is not
+/// one. Hand-rolled rather than pulling in a date crate: this file links into
+/// the Share Extension, where every dependency is weighed.
+fn friendly_date(raw: &str) -> String {
+    const MONTHS: [&str; 12] = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ];
+    let head: String = raw.chars().take(10).collect();
+    let parts: Vec<&str> = head.split('-').collect();
+    if parts.len() != 3 {
+        return raw.to_string();
+    }
+    match (parts[0].parse::<i32>(), parts[1].parse::<usize>(), parts[2].parse::<u32>()) {
+        (Ok(y), Ok(m), Ok(d)) if (1..=12).contains(&m) => format!("{} {}, {}", MONTHS[m - 1], d, y),
+        _ => raw.to_string(),
+    }
+}
+
+/// Reading time at 200 words per minute, the convention every reader uses.
+fn reading_minutes(markdown: &str) -> usize {
+    (markdown.split_whitespace().count() / 200).max(1)
+}
+
+/// The `example.com` of a URL, for the source line.
+fn host_of(url: &str) -> Option<String> {
+    let after_scheme = url.split("://").nth(1)?;
+    let host = after_scheme.split('/').next()?;
+    let host = host.trim_start_matches("www.");
+    (!host.is_empty()).then(|| host.to_string())
 }
 
 /// Minimal text escaping for the title we inject into the template. The
@@ -2711,11 +2880,11 @@ mod x_enrichment_tests {
     use super::*;
 
     fn article(title: Option<&str>, body: &str) -> Article {
-        Article {
-            title: title.map(str::to_string),
-            markdown: body.to_string(),
-            html: format!("<p>{body}</p>"),
-        }
+        Article::new(
+            title.map(str::to_string),
+            body.to_string(),
+            format!("<p>{body}</p>"),
+        )
     }
 
     fn post() -> XPost {
@@ -3153,16 +3322,115 @@ with enough genuine prose to read like the article it is.</p>"))
         );
     }
 
+    /// The shape of a blog post whose masthead lives OUTSIDE the article body:
+    /// hero image, author and date in a `<header>`, prose in a separate
+    /// content div. Readability picks the content div and discards the rest,
+    /// which is exactly how captures lost their hero and byline.
+    fn blog_with_header(extra_head: &str) -> String {
+        let body: String = (1..14)
+            .map(|i| format!("<p>Paragraph {i} carries the substance of the piece, with \
+enough genuine prose that the extractor treats this div as the article.</p>"))
+            .collect();
+        format!(
+            "<html><head><meta property=\"og:type\" content=\"article\">\
+<meta property=\"og:image\" content=\"/img/hero.jpg\">{extra_head}</head><body>\
+<header><h1>A Real Post</h1>\
+<img class=\"article-header-image\" src=\"/img/hero.jpg\" alt=\"\">\
+<span class=\"author\">Hannes Rudolph</span></header>\
+<div data-article-content>{body}<img src=\"/img/inline.jpg\" alt=\"\"></div>\
+</body></html>"
+        )
+    }
+
+    #[test]
+    fn a_captured_article_keeps_the_masthead_readability_discards() {
+        // Reported on openclaw.ai: the capture kept the prose and dropped the
+        // hero, the standfirst and the byline — everything that makes a page
+        // look like the article rather than a wall of text.
+        let page = blog_with_header(
+            "<meta property=\"og:description\" content=\"How a small push grew into something larger.\">\
+<meta property=\"article:published_time\" content=\"2026-08-30T09:00:00Z\">",
+        );
+        let article =
+            extract_article(&page, "https://example.com/blog/post").expect("fixture must extract");
+        let doc = build_article_html_document(&article, article.title.as_deref(), "https://example.com/blog/post");
+
+        assert!(
+            doc.contains("class=\"hero\"") && doc.contains("/img/hero.jpg"),
+            "the hero image must survive — it lives in the page header, outside \
+             the node readability picks:\n{doc}"
+        );
+        assert!(
+            doc.contains("How a small push grew into something larger."),
+            "the standfirst must be rendered:\n{doc}"
+        );
+        assert!(doc.contains("Aug 30, 2026"), "the date must be readable, not ISO:\n{doc}");
+        assert!(doc.contains("min read"), "reading time belongs on the byline line");
+    }
+
+    #[test]
+    fn the_hero_is_the_first_image_so_the_gallery_card_shows_it() {
+        // The thumbnail bug was a SYMPTOM: with the hero dropped, the first
+        // surviving image was an inline screenshot, and that is what the
+        // gallery card rendered. Document order is what the sweep inlines
+        // first, and `article_lead_image` reads the first inlined image.
+        let page = blog_with_header("");
+        let article = extract_article(&page, "https://example.com/blog/post").unwrap();
+        let doc = build_article_html_document(&article, None, "https://example.com/blog/post");
+
+        let first = article_image_urls(&doc).first().cloned().unwrap_or_default();
+        assert!(
+            first.ends_with("/img/hero.jpg"),
+            "the hero must come first, or the card shows an inline screenshot: {first}"
+        );
+    }
+
+    #[test]
+    fn a_root_relative_hero_is_made_absolute() {
+        // `og:image` is usually root-relative. A relative src in a document
+        // opened from disk — Safari, Quick Look, the reader — resolves against
+        // nothing and shows a broken image.
+        let page = blog_with_header("");
+        let article = extract_article(&page, "https://example.com/blog/post").unwrap();
+        assert_eq!(
+            article.hero_image.as_deref(),
+            Some("https://example.com/img/hero.jpg")
+        );
+    }
+
+    #[test]
+    fn the_standfirst_is_dropped_when_it_merely_repeats_the_body() {
+        // Readability falls back to the first sentence when a page declares no
+        // description. Rendering that directly above the paragraph it was
+        // taken from reads as a bug, not a subtitle.
+        let page = blog_with_header("");
+        let article = extract_article(&page, "https://example.com/blog/post").unwrap();
+        let doc = build_article_html_document(&article, None, "https://example.com/blog/post");
+        let standfirsts = doc.matches("class=\"standfirst\"").count();
+        assert_eq!(
+            standfirsts, 0,
+            "no description was declared, so the excerpt is the body's own opening \
+             and must not be shown twice:\n{doc}"
+        );
+    }
+
+    #[test]
+    fn the_byline_never_renders_empty_separators() {
+        // Every part is optional. Joining rather than templating is what keeps
+        // a page with no author or date from rendering " ·  · ".
+        let bare = Article::new(Some("T".into()), "Some words here.".into(), "<p>x</p>".into());
+        let doc = build_article_html_document(&bare, None, "https://example.com/a");
+        assert!(!doc.contains("·  ·") && !doc.contains(">·"), "empty separators:\n{doc}");
+        // The parts that ARE derivable still show.
+        assert!(doc.contains("min read") && doc.contains("example.com"));
+    }
+
     /// The document must parse in standards mode. Without the doctype the
     /// renderer falls back to quirks mode, which changes layout and makes iOS
     /// text autosizing more eager (#805).
     #[test]
     fn article_html_document_starts_with_a_doctype() {
-        let article = Article {
-            title: Some("T".into()),
-            markdown: "Body".into(),
-            html: "<p>Body</p>".into(),
-        };
+        let article = Article::new(Some("T".into()), "Body".into(), "<p>Body</p>".into());
         let doc = build_article_html_document(&article, None, "https://example.com/a");
         assert!(
             doc.starts_with("<!doctype html>"),
@@ -3172,3 +3440,4 @@ with enough genuine prose to read like the article it is.</p>"))
     }
 
 }
+
