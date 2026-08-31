@@ -18,6 +18,13 @@ it, when, and the one-line summary — not just the text.
   picture instead of whichever screenshot happened to come first in the text —
   the same cause, so it is fixed by the same change.
 
+- **Links in saved articles are calmer, and the article ends with its
+  attribution.** The link colour was a saturated blue that shouted against the
+  text; it is softer now. And the foot of a saved article used to be a bare
+  "Clipped from" address — the author, date, reading time and site now sit above
+  it, so reaching the end reads as an article that came from somewhere rather
+  than a clipping.
+
 ## Under the hood
 
 - Root cause was single: the readable-article extractor picks ONE winning
@@ -48,4 +55,4 @@ it, when, and the one-line summary — not just the text.
 
 ## Files Changed
 
-- 2 files across 1 commit (PR #828)
+- 2 files across 2 commits (PR #828, #831)

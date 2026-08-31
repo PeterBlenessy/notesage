@@ -6,7 +6,8 @@
       "previousVersion": "0.55.3",
       "sections": {
         "fixes": [
-          "**Saved articles keep their picture, author and date.** A saved article used to arrive as the words alone: the lead picture, the author, the date and the one-line summary under the headline were all dropped, so it read as a wall of text rather than the page you saved. They are all kept now, laid out the way a reading app lays them out. The gallery card also shows the article's own lead picture instead of whichever screenshot happened to come first in the text — the same cause, so it is fixed by the same change."
+          "**Saved articles keep their picture, author and date.** A saved article used to arrive as the words alone: the lead picture, the author, the date and the one-line summary under the headline were all dropped, so it read as a wall of text rather than the page you saved. They are all kept now, laid out the way a reading app lays them out. The gallery card also shows the article's own lead picture instead of whichever screenshot happened to come first in the text — the same cause, so it is fixed by the same change.",
+          "**Links in saved articles are calmer, and the article ends with its attribution.** The link colour was a saturated blue that shouted against the text; it is softer now. And the foot of a saved article used to be a bare \"Clipped from\" address — the author, date, reading time and site now sit above it, so reaching the end reads as an article that came from somewhere rather than a clipping."
         ]
       }
     },
