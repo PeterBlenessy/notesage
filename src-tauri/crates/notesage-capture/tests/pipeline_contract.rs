@@ -1076,11 +1076,7 @@ fn an_x_captures_cover_survives_to_the_thumbnail() {
         author_handle: Some("rvaniaaaa".into()),
         ..Default::default()
     };
-    let mut article = notesage_capture::Article {
-        title: Some("Rania (@rvaniaaaa) on X".into()),
-        markdown: "The extracted body of the piece.".into(),
-        html: "<p>The extracted body of the piece.</p>".into(),
-    };
+    let mut article = notesage_capture::Article::new(Some("Rania (@rvaniaaaa) on X".into()), "The extracted body of the piece.".into(), "<p>The extracted body of the piece.</p>".into());
     notesage_capture::enrich_x_article(&mut article, &post);
 
     let note = notesage_capture::build_x_article_note(
