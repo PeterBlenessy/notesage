@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Share a few pages from Safari and watch the Inbox: captures should appear on their own now, with no pull-to-refresh. Try a page that is a hub rather than an article — a topic or video index — it should save a plain link instead of the page's legal small print, which is what it used to save.
+Save an article from Safari, then open it. It should now start the way the original does — the lead picture, the author and date, and the one-line summary under the headline — instead of jumping straight into the text. The card in Inbox should show that same picture, not a screenshot from further down.
