@@ -177,6 +177,64 @@ extension LibraryAccess {
         return "Inbox/\(name)"
     }
 
+    /// Write a saved LINK WITH ITS PREVIEW for a page with no article (#839).
+    ///
+    /// The rung between `writeArticleHtml` and the bare link note. A topic hub
+    /// or a gated page still declares a title, a summary and a lead image —
+    /// exactly what the share sheet showed the user before they tapped Save —
+    /// and saving a naked URL while holding all three is a worse outcome than
+    /// they can see we were capable of.
+    ///
+    /// `.html`, because that is the format the user PICKED. Handing back a
+    /// `.md` because extraction happened to decline would be the app
+    /// second-guessing them.
+    ///
+    /// Returns nil when the page declares no title, so the caller still falls
+    /// through to the link note.
+    static func writeCardHtml(url: String, html: String) throws -> String? {
+        let document: String? = html.withCString { htmlPtr in
+            url.withCString { urlPtr in
+                guard let raw = notesage_capture_card_html_contents(urlPtr, htmlPtr) else {
+                    return nil
+                }
+                defer { notesage_capture_string_free(raw) }
+                return String(cString: raw)
+            }
+        }
+        guard let document else { return nil }
+        let relPath = html.withCString { htmlPtr -> String? in
+            callCapture({ u, t, _, _ in
+                notesage_capture_rel_path_from_html(u, t, htmlPtr)
+            }, url, nil, nil, "")
+        }
+        guard let relPath else { return nil }
+
+        let root = try resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
+        try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)
+
+        let stem = ((relPath as NSString).lastPathComponent as NSString).deletingPathExtension
+        guard let target = claimName(inbox.appendingPathComponent("\(stem).html"))
+        else { throw nameUnavailable(inbox) }
+        let name = target.lastPathComponent
+
+        var coordError: NSError?
+        var writeError: Error?
+        NSFileCoordinator().coordinate(writingItemAt: target, options: .forReplacing, error: &coordError) { url in
+            do { try document.data(using: .utf8)?.write(to: url) } catch { writeError = error }
+        }
+        // Never leave litter: `claimName` created a placeholder to claim the
+        // name, and a failed write would leave it holding a clean name for good.
+        if coordError != nil || writeError != nil {
+            try? FileManager.default.removeItem(at: target)
+        }
+        if let coordError { throw coordError }
+        if let writeError { throw writeError }
+        return "Inbox/\(name)"
+    }
+
     static func oembedEndpoint(for url: String) -> String? {
         url.withCString { u in
             guard let raw = notesage_capture_oembed_url(u) else { return nil }

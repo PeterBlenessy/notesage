@@ -605,9 +605,20 @@ final class ShareViewController: UIViewController {
                         self.writeOffMain(url: url, html: rendered, snapshot: snapshot) { ok in
                             if ok {
                                 self.finish()
-                            } else {
-                                self.saveArticleFallback(url: url)
+                                return
                             }
+                            // No article anywhere — but the page still told us
+                            // its title, summary and lead image, which is what
+                            // the share sheet showed before Save was tapped.
+                            // Saving a bare URL while holding all three is a
+                            // worse outcome than the user can see we were
+                            // capable of (#839).
+                            //
+                            // `rendered` rather than the fetched markup on
+                            // purpose: a page that blocks server-side fetches —
+                            // ubs.com answers one with 509 bytes — still reaches
+                            // us here with its og: tags intact.
+                            self.saveCardOrLink(url: url, html: rendered, snapshot: snapshot)
                         }
                     }
                 }
@@ -653,6 +664,36 @@ final class ShareViewController: UIViewController {
             DispatchQueue.main.async {
                 guard !self.cancelled.isCancelled else { return }
                 completion(ok)
+            }
+        }
+    }
+
+    /// The rung between an article and a bare link (#839).
+    ///
+    /// HTML format only, because the card IS an html document and that is what
+    /// the user picked. The markdown and link formats keep their own fallback —
+    /// writing an `.html` for someone who asked for a note would be the app
+    /// second-guessing them.
+    ///
+    /// Falls through to `saveArticleFallback` when the page declares no title,
+    /// which is the genuine last resort.
+    private func saveCardOrLink(url: String, html: String?, snapshot: CaptureSnapshot) {
+        guard snapshot.format == .html, let html else {
+            saveArticleFallback(url: url)
+            return
+        }
+        // OFF MAIN, like every other capture write.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self, !self.cancelled.isCancelled else { return }
+            let written = try? LibraryAccess.writeCardHtml(url: url, html: html)
+            let ok = written.flatMap { $0 } != nil
+            DispatchQueue.main.async {
+                guard !self.cancelled.isCancelled else { return }
+                if ok {
+                    self.finish()
+                } else {
+                    self.saveArticleFallback(url: url)
+                }
             }
         }
     }

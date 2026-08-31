@@ -24,7 +24,8 @@ use std::ffi::{c_char, CStr, CString};
 use std::panic::{catch_unwind, AssertUnwindSafe};
 
 use crate::{
-    build_article_html_document, build_article_note, build_capture_note, build_video_note,
+    build_article_html_document, build_article_note, build_capture_note,
+    build_card_html_document, build_video_note, extract_page_card,
     build_x_article_note, build_x_note, enrich_x_article, extract_article, extract_meta_title,
     filename_from_content_disposition, is_x_chrome_title, linked_document_for_content_type,
     meaningful_title, oembed_url, parse_oembed, parse_x_post, timestamps,
@@ -245,6 +246,37 @@ pub unsafe extern "C" fn notesage_capture_article_html_contents(
         };
         let title = meaningful_title(input.title.as_deref()).or_else(|| article.title.clone());
         into_c_string(build_article_html_document(&article, title.as_deref(), &input.url))
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// A saved LINK WITH ITS PREVIEW, for a page that yields no article (#839).
+///
+/// The rung between the article capture above and the bare link note: a topic
+/// hub or a gated page still declares a title, a summary and a lead image, and
+/// saving a naked URL while holding all three is worse than the user can see we
+/// were capable of.
+///
+/// Returns NULL only when the page declares no title at all — the genuine last
+/// resort, which belongs to the link note. Free with
+/// [`notesage_capture_string_free`].
+///
+/// # Safety
+/// All pointers must be NUL-terminated C strings or NULL, valid for the call.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn notesage_capture_card_html_contents(
+    url: *const c_char,
+    html: *const c_char,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        let (url, html) = match (opt_str(url), opt_str(html)) {
+            (Some(u), Some(h)) => (u, h),
+            _ => return std::ptr::null_mut(),
+        };
+        match extract_page_card(&html, &url) {
+            Some(card) => into_c_string(build_card_html_document(&card, &url)),
+            None => std::ptr::null_mut(),
+        }
     }))
     .unwrap_or(std::ptr::null_mut())
 }

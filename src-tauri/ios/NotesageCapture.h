@@ -92,6 +92,13 @@ char *notesage_capture_article_html_contents(const char *url,
                                              const char *tags,
                                              const char *html);
 
+/// A saved LINK WITH ITS PREVIEW (#839): title, description and lead image
+/// from the page's own og: tags, for a page that yields no article. The rung
+/// between the article capture above and the bare link note. NULL only when
+/// the page declares no title at all.
+/// Caller frees with notesage_capture_string_free().
+char *notesage_capture_card_html_contents(const char *url, const char *html);
+
 /// The embed-data endpoint for an X status URL, or NULL when the URL is not
 /// one. Fetch it and pass the JSON to the three X builders below.
 ///
