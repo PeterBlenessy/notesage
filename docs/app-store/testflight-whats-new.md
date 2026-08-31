@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Two new things in the reader's top-right menu. Move files an article into a folder — try it on something in Inbox. Update from source brings back the picture and author line on articles saved before the app kept them; it only adds what is missing and never rewrites the text you already have.
+Three things. Move files an article into a folder. Update from source brings back the picture and author line on older saves. And sharing a page that has no article on it — a topic or video index — now keeps the page's preview picture and summary instead of just the address.

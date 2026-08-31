@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Två nya val i läsarens meny uppe till höger. Flytta lägger artikeln i en mapp — testa på något i Inbox. Uppdatera från källan hämtar tillbaka bild och författarrad på artiklar som sparades innan appen behöll dem; den lägger bara till det som saknas och skriver aldrig om texten du redan har.
+Tre saker. Flytta lägger artikeln i en mapp. Uppdatera från källan hämtar tillbaka bild och författarrad på äldre sparningar. Och när du delar en sida som inte har någon artikel — en ämnes- eller videöversikt — sparas nu sidans förhandsbild och sammanfattning i stället för bara adressen.
