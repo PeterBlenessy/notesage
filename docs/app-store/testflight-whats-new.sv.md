@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Spara en artikel från Safari och öppna den. Den ska nu börja som originalet gör — med bilden överst, författare och datum, och sammanfattningen under rubriken — i stället för att kasta dig rakt in i texten. Kortet i Inbox ska visa samma bild, inte en skärmdump längre ner.
+Två nya val i läsarens meny uppe till höger. Flytta lägger artikeln i en mapp — testa på något i Inbox. Uppdatera från källan hämtar tillbaka bild och författarrad på artiklar som sparades innan appen behöll dem; den lägger bara till det som saknas och skriver aldrig om texten du redan har.
