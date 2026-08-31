@@ -302,46 +302,52 @@ pub fn meaningful_title(title: Option<&str>) -> Option<String> {
 /// Pull a human title out of a page: `og:title`, then `twitter:title`, then
 /// `<title>`. The fallback for pages whose sharer gave us nothing usable and
 /// whose body readability cannot parse (video pages, app shells).
-pub fn extract_meta_title(html: &str) -> Option<String> {
-    fn meta_content(html: &str, property: &str) -> Option<String> {
-        // Deliberately a scan rather than a DOM parse: this runs inside the
-        // Share Extension's tight memory budget, and the shapes below cover
-        // what real pages emit.
-        let lower = html.to_lowercase();
-        let mut from = 0usize;
-        while let Some(start) = lower[from..].find("<meta").map(|i| i + from) {
-            let end = lower[start..].find('>').map(|i| i + start)?;
-            let tag = &html[start..end];
-            let tag_lower = &lower[start..end];
-            let names = [
-                format!("property=\"{property}\""),
-                format!("name=\"{property}\""),
-                format!("property='{property}'"),
-                format!("name='{property}'"),
-            ];
-            if names.iter().any(|n| tag_lower.contains(n.as_str())) {
-                if let Some(value) = attribute_value(tag, tag_lower, "content") {
-                    let value = decode_entities(value.trim());
-                    if !value.is_empty() {
-                        return Some(value);
-                    }
+fn attribute_value<'a>(tag: &'a str, tag_lower: &str, attr: &str) -> Option<&'a str> {
+    let at = tag_lower.find(&format!("{attr}="))? + attr.len() + 1;
+    let rest = &tag[at..];
+    let quote = rest.chars().next()?;
+    if quote != '"' && quote != '\'' {
+        return None;
+    }
+    let close = rest[1..].find(quote)? + 1;
+    Some(&rest[1..close])
+}
+
+/// A `<meta>` value by `property`/`name`, e.g. `og:image`.
+///
+/// Hoisted out of `extract_meta_title` so the metadata CARD (#839) reads the
+/// same tags through the same scanner — two parsers for one page would drift.
+pub(crate) fn meta_content(html: &str, property: &str) -> Option<String> {
+    // Deliberately a scan rather than a DOM parse: this runs inside the
+    // Share Extension's tight memory budget, and the shapes below cover
+    // what real pages emit.
+    let lower = html.to_lowercase();
+    let mut from = 0usize;
+    while let Some(start) = lower[from..].find("<meta").map(|i| i + from) {
+        let end = lower[start..].find('>').map(|i| i + start)?;
+        let tag = &html[start..end];
+        let tag_lower = &lower[start..end];
+        let names = [
+            format!("property=\"{property}\""),
+            format!("name=\"{property}\""),
+            format!("property='{property}'"),
+            format!("name='{property}'"),
+        ];
+        if names.iter().any(|n| tag_lower.contains(n.as_str())) {
+            if let Some(value) = attribute_value(tag, tag_lower, "content") {
+                let value = decode_entities(value.trim());
+                if !value.is_empty() {
+                    return Some(value);
                 }
             }
-            from = end;
         }
-        None
+        from = end;
     }
+    None
+}
 
-    fn attribute_value<'a>(tag: &'a str, tag_lower: &str, attr: &str) -> Option<&'a str> {
-        let at = tag_lower.find(&format!("{attr}="))? + attr.len() + 1;
-        let rest = &tag[at..];
-        let quote = rest.chars().next()?;
-        if quote != '"' && quote != '\'' {
-            return None;
-        }
-        let close = rest[1..].find(quote)? + 1;
-        Some(&rest[1..close])
-    }
+
+pub fn extract_meta_title(html: &str) -> Option<String> {
 
     for property in ["og:title", "twitter:title"] {
         if let Some(title) = meta_content(html, property).filter(|t| !is_url_like(t)) {
@@ -762,6 +768,8 @@ figure{margin:1.5rem 0}figcaption{font-size:.875rem;color:#666;text-align:center
 .standfirst{font-size:1.1875rem;line-height:1.5;color:#444;margin:0 0 1rem}\
 .byline{font-size:.875rem;color:#666;margin:0 0 1.75rem}\
 .endnote{font-size:.875rem;color:#666;text-align:center;margin:0 0 .5rem;line-height:1.5}\
+.kind{font-size:.75rem;letter-spacing:.08em;text-transform:uppercase;color:#888;margin:0 0 .5rem}\
+.note{font-size:.9375rem;color:#666;margin:1.5rem 0 0}\
 .source{font-size:.875rem;text-align:center;margin:0}\
 img.hero{margin:0 0 1.75rem;width:100%}\
 blockquote{margin:1.5rem 0;padding-left:1rem;border-left:3px solid #ddd;color:#444}\
@@ -771,7 +779,7 @@ a{color:#3d6b9e}hr{border:0;border-top:1px solid #e5e5e5;margin:2.5rem 0}\
 @media(prefers-color-scheme:dark){\
 body{color:#e8e8e8;background:#1a1a1a}\
 blockquote{border-left-color:#444;color:#bbb}\
-.standfirst{color:#bbb}.byline{color:#999}\
+.standfirst{color:#bbb}.byline{color:#999}.kind{color:#888}.note{color:#999}\
 pre{background:#252525}figcaption{color:#999}a{color:#8fb3d9}\
 .endnote{color:#999}}\
 </style>";
@@ -1017,6 +1025,100 @@ pub fn splice_article_header(saved: &str, page_html: &str, source_url: &str) -> 
         out = format!("{}{}{}", &out[..a], ARTICLE_HTML_STYLE, &out[b + "</style>".len()..]);
     }
     Some(out)
+}
+
+/// What a page tells the world about itself, when it will not give us an
+/// article (#839).
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageCard {
+    pub title: String,
+    pub description: Option<String>,
+    pub image: Option<String>,
+    pub site_name: Option<String>,
+}
+
+/// Read a page's own preview metadata.
+///
+/// The rung between "an article" and "a bare link". A page with no extractable
+/// article — a topic hub, a video index, a gated page — still usually declares
+/// a title, a summary and a lead image, and those are exactly what the share
+/// sheet shows before the user taps Save. Saving a bare URL while holding all
+/// three is a worse outcome than the user can see we were capable of.
+///
+/// No network of its own. The caller already has HTML — fetched, or rendered by
+/// `PageRenderer` when a fetch was blocked, which is how `ubs.com` (Akamai
+/// answers a server-side fetch with 509 bytes) still reaches us with its `og:`
+/// tags intact.
+///
+/// `None` when the page declares no title at all: that is the genuine last
+/// resort, and it belongs to the link note.
+pub fn extract_page_card(html: &str, url: &str) -> Option<PageCard> {
+    let title = meta_content(html, "og:title")
+        .or_else(|| meta_content(html, "twitter:title"))
+        .or_else(|| extract_meta_title(html))
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())?;
+
+    Some(PageCard {
+        description: meta_content(html, "og:description")
+            .or_else(|| meta_content(html, "twitter:description"))
+            .or_else(|| meta_content(html, "description"))
+            .map(|d| d.trim().to_string())
+            .filter(|d| !d.is_empty()),
+        image: meta_content(html, "og:image")
+            .or_else(|| meta_content(html, "twitter:image"))
+            .map(|src| absolutise(&src, url))
+            .filter(|src| is_remote_http_url(src)),
+        site_name: meta_content(html, "og:site_name")
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .or_else(|| host_of(url)),
+        title,
+    })
+}
+
+/// A saved LINK with its preview — not an article, and it must not pretend to
+/// be one (#839).
+///
+/// The honesty matters as much as the picture. #807 was a capture that looked
+/// like the article and was not; a card that rendered like an article would
+/// repeat that mistake with better art. So it says what it is, and points at
+/// the original.
+///
+/// Written in the format the user PICKED. They chose "Article (HTML)"; handing
+/// back a `.md` because extraction happened to decline would be the app
+/// second-guessing them.
+pub fn build_card_html_document(card: &PageCard, source_url: &str) -> String {
+    let image = card
+        .image
+        .as_deref()
+        .map(|src| format!("<img class=\"hero\" src=\"{}\" alt=\"\">", escape_html_text(src)))
+        .unwrap_or_default();
+    let description = card
+        .description
+        .as_deref()
+        .map(|d| format!("<p class=\"standfirst\">{}</p>", escape_html_text(d)))
+        .unwrap_or_default();
+    let site = card
+        .site_name
+        .clone()
+        .or_else(|| host_of(source_url))
+        .map(|s| escape_html_text(&s))
+        .unwrap_or_default();
+
+    format!(
+        "<!doctype html>\n<html><head><meta charset=\"utf-8\">\
+<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
+<title>{title}</title>{ARTICLE_HTML_STYLE}</head><body>\
+<p class=\"kind\">Saved link</p>\
+<h1>{title}</h1>{description}<p class=\"byline\">{site}</p>{image}\
+<p class=\"note\">This page had no article we could save, so this is its \
+preview. Open the original to read it.</p>\
+<hr><p class=\"source\">Clipped from <a href=\"{src}\">{src}</a></p>\
+</body></html>\n",
+        title = escape_html_text(&card.title),
+        src = escape_html_text(source_url),
+    )
 }
 
 /// Minimal text escaping for the title we inject into the template. The
@@ -3659,6 +3761,62 @@ https://example.com/blog/post</a></p></body></html>\n"
             article_source_url(&with_query).as_deref(),
             Some("https://example.com/p?a=1&b=2")
         );
+    }
+
+    /// The shape that motivated the card: a hub page with no article but a
+    /// full set of `og:` tags — exactly what the share sheet previews.
+    fn hub_with_og() -> String {
+        "<html><head><meta property=\"og:title\" content=\"Transformational Innovation\">\
+<meta property=\"og:description\" content=\"Three opportunities the CIO is watching.\">\
+<meta property=\"og:image\" content=\"/img/cover.jpg\">\
+<meta property=\"og:site_name\" content=\"UBS\"></head>\
+<body><nav><a href=\"/a\">One</a></nav></body></html>"
+            .to_string()
+    }
+
+    #[test]
+    fn a_page_with_no_article_still_saves_its_preview() {
+        let card = extract_page_card(&hub_with_og(), "https://www.ubs.com/x/y.html")
+            .expect("a page that declares a title must yield a card");
+        assert_eq!(card.title, "Transformational Innovation");
+        assert_eq!(card.description.as_deref(), Some("Three opportunities the CIO is watching."));
+        // Absolutised, or the image is broken in a file opened from disk.
+        assert_eq!(card.image.as_deref(), Some("https://www.ubs.com/img/cover.jpg"));
+        assert_eq!(card.site_name.as_deref(), Some("UBS"));
+    }
+
+    #[test]
+    fn the_card_says_it_is_a_saved_link_rather_than_posing_as_an_article() {
+        // #807 was a capture that LOOKED like the article and was not. A card
+        // that rendered like an article would repeat that with better art.
+        let card = extract_page_card(&hub_with_og(), "https://www.ubs.com/x/y.html").unwrap();
+        let doc = build_card_html_document(&card, "https://www.ubs.com/x/y.html");
+        assert!(doc.starts_with("<!doctype html>"), "cards are standards-mode too");
+        assert!(doc.contains("Saved link"), "the card must say what it is:\n{doc}");
+        assert!(doc.contains("no article we could save"), "and why:\n{doc}");
+        assert!(doc.contains("Clipped from"), "the source link stays");
+        assert!(doc.contains("cover.jpg"), "the image is the whole point");
+    }
+
+    #[test]
+    fn a_page_with_no_title_at_all_is_left_to_the_link_note() {
+        // The genuine last resort. A card with nothing to show would be worse
+        // than the bare link it replaced.
+        assert!(extract_page_card("<html><body><p>nothing</p></body></html>", "https://e.com/x")
+            .is_none());
+    }
+
+    #[test]
+    fn a_card_survives_a_page_that_declares_only_a_title() {
+        let only_title = "<html><head><title>Just A Title</title></head><body></body></html>";
+        let card = extract_page_card(only_title, "https://e.com/x").expect("title is enough");
+        assert_eq!(card.title, "Just A Title");
+        assert!(card.image.is_none() && card.description.is_none());
+        let doc = build_card_html_document(&card, "https://e.com/x");
+        // No empty <img> or standfirst left behind.
+        assert!(!doc.contains("<img class=\"hero\" src=\"\""), "empty hero:\n{doc}");
+        assert!(!doc.contains("class=\"standfirst\"></p>"), "empty standfirst:\n{doc}");
+        assert!(doc.contains("e.com"), "the site still shows, derived from the URL");
     }
 
     /// The document must parse in standards mode. Without the doctype the

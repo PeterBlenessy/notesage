@@ -54,6 +54,11 @@ const BUILDER_REACHABILITY: &[(&str, Option<&str>, &str)] = &[
         "the plain link note",
     ),
     (
+        "build_card_html_document",
+        Some("notesage_capture_card_html_contents"),
+        "a page with no article, saved as its own preview instead of a bare link (#839)",
+    ),
+    (
         "build_video_note",
         Some("notesage_capture_video_contents"),
         "oEmbed video metadata capture",
@@ -202,6 +207,11 @@ const EXPORT_CALL_SITES: &[(&str, &str, MacExpectation)] = &[
     ("notesage_capture_contents", "LibraryCapture.swift", Ok("ShareCapture.swift")),
     ("notesage_capture_rel_path", "LibraryCapture.swift", Ok("ShareCapture.swift")),
     ("notesage_capture_rel_path_from_html", "LibraryCapture.swift", Ok("ShareCapture.swift")),
+    (
+        "notesage_capture_card_html_contents",
+        "LibraryCapture.swift",
+        Err("iOS first (#839); macOS shares the crate and should follow, tracked in the issue"),
+    ),
     (
         "notesage_capture_oembed_url",
         "LibraryCapture.swift",
