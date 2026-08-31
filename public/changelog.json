@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.55.4",
+      "date": "2026-08-31",
+      "previousVersion": "0.55.3",
+      "sections": {
+        "fixes": [
+          "**Saved articles keep their picture, author and date.** A saved article used to arrive as the words alone: the lead picture, the author, the date and the one-line summary under the headline were all dropped, so it read as a wall of text rather than the page you saved. They are all kept now, laid out the way a reading app lays them out. The gallery card also shows the article's own lead picture instead of whichever screenshot happened to come first in the text — the same cause, so it is fixed by the same change."
+        ]
+      }
+    },
+    {
       "version": "0.55.3",
       "date": "2026-08-31",
       "previousVersion": "0.55.2",

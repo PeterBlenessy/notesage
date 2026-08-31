@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Dela några sidor från Safari och håll ögonen på Inbox: sparade artiklar ska dyka upp av sig själva nu, utan att du drar för att uppdatera. Testa gärna en sida som är en översikt snarare än en artikel — ett ämnes- eller videoindex — den ska spara en enkel länk i stället för sidans juridiska finstilta, vilket är vad den sparade förut.
+Spara en artikel från Safari och öppna den. Den ska nu börja som originalet gör — med bilden överst, författare och datum, och sammanfattningen under rubriken — i stället för att kasta dig rakt in i texten. Kortet i Inbox ska visa samma bild, inte en skärmdump längre ner.
