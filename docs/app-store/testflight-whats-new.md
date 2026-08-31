@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Save an article from Safari, then open it. It should now start the way the original does — the lead picture, the author and date, and the one-line summary under the headline — instead of jumping straight into the text. The card in Inbox should show that same picture, not a screenshot from further down.
+Two new things in the reader's top-right menu. Move files an article into a folder — try it on something in Inbox. Update from source brings back the picture and author line on articles saved before the app kept them; it only adds what is missing and never rewrites the text you already have.

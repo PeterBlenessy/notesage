@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.55.5",
+      "date": "2026-08-31",
+      "previousVersion": "0.55.4",
+      "sections": {
+        "features": [
+          "**Move a saved article into a folder.** An article could be read, edited, shared and searched, but not filed — which is the whole point of an inbox. The reader's menu now offers Move, with a picker over your library's folders. If a folder already holds a file of the same name, both are kept.",
+          "**Update an older article from its source.** Articles saved before the app kept the picture, author and summary can now fetch them back — the reader's menu offers \"Update from source\". It only ever ADDS the missing header: the text you already have is never replaced, so a page that has since been paywalled, changed or removed leaves your copy exactly as it was. If there is nothing to add, it says so and changes nothing."
+        ]
+      }
+    },
+    {
       "version": "0.55.4",
       "date": "2026-08-31",
       "previousVersion": "0.55.3",
