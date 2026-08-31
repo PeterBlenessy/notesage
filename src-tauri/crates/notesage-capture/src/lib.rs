@@ -761,16 +761,19 @@ svg:not([width]):not([height]){width:1.25em;height:1.25em;vertical-align:-.15em}
 figure{margin:1.5rem 0}figcaption{font-size:.875rem;color:#666;text-align:center}\
 .standfirst{font-size:1.1875rem;line-height:1.5;color:#444;margin:0 0 1rem}\
 .byline{font-size:.875rem;color:#666;margin:0 0 1.75rem}\
+.endnote{font-size:.875rem;color:#666;text-align:center;margin:0 0 .5rem;line-height:1.5}\
+.source{font-size:.875rem;text-align:center;margin:0}\
 img.hero{margin:0 0 1.75rem;width:100%}\
 blockquote{margin:1.5rem 0;padding-left:1rem;border-left:3px solid #ddd;color:#444}\
 pre{overflow-x:auto;padding:1rem;background:#f5f5f5;border-radius:6px}\
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9375em}\
-a{color:#0a58ca}hr{border:0;border-top:1px solid #e5e5e5;margin:2rem 0}\
+a{color:#3d6b9e}hr{border:0;border-top:1px solid #e5e5e5;margin:2.5rem 0}\
 @media(prefers-color-scheme:dark){\
 body{color:#e8e8e8;background:#1a1a1a}\
 blockquote{border-left-color:#444;color:#bbb}\
 .standfirst{color:#bbb}.byline{color:#999}\
-pre{background:#252525}figcaption{color:#999}a{color:#6ea8fe}}\
+pre{background:#252525}figcaption{color:#999}a{color:#8fb3d9}\
+.endnote{color:#999}}\
 </style>";
 
 /// "Article only" capture (#612): the extracted article as a standalone,
@@ -821,6 +824,15 @@ pub fn build_article_html_document(article: &Article, title: Option<&str>, sourc
         meta.push(escape_html_text(&site));
     }
     let byline = format!("<p class=\"byline\">{}</p>", meta.join(" · "));
+    // Repeated under the article, above the source link — the shape Instapaper
+    // ends on. Reaching the bottom of a saved page and finding only a bare URL
+    // reads as a clipping; the attribution is what makes it read as an article
+    // that came from somewhere.
+    let endnote = if meta.is_empty() {
+        String::new()
+    } else {
+        format!("<p class=\"endnote\">{}</p>", meta.join(" · "))
+    };
 
     // Only when the body does not already carry it — readability sometimes
     // DOES include the hero, and showing it twice is worse than not at all.
@@ -836,7 +848,7 @@ pub fn build_article_html_document(article: &Article, title: Option<&str>, sourc
 <meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\
 <title>{doc_title}</title>{ARTICLE_HTML_STYLE}</head><body>\
 {heading}{subtitle}{byline}{hero}{body}\
-<hr><p class=\"source\">Clipped from <a href=\"{src}\">{src}</a></p>\
+<hr>{endnote}<p class=\"source\">Clipped from <a href=\"{src}\">{src}</a></p>\
 </body></html>\n",
         body = article.html,
         src = escape_html_text(source_url),
@@ -3423,6 +3435,40 @@ enough genuine prose that the extractor treats this div as the article.</p>"))
         assert!(!doc.contains("·  ·") && !doc.contains(">·"), "empty separators:\n{doc}");
         // The parts that ARE derivable still show.
         assert!(doc.contains("min read") && doc.contains("example.com"));
+    }
+
+    #[test]
+    fn the_article_ends_with_its_attribution_above_the_source_link() {
+        // Reaching the bottom of a saved page and finding only a bare URL reads
+        // as a clipping. The attribution is what makes it read as an article
+        // that came from somewhere — the shape Instapaper ends on.
+        let mut article = Article::new(
+            Some("T".into()),
+            "Some words in the body.".into(),
+            "<p>Some words in the body.</p>".into(),
+        );
+        article.byline = Some("Hannes Rudolph".into());
+        article.published_time = Some("2026-08-30T09:00:00Z".into());
+        let doc = build_article_html_document(&article, None, "https://example.com/a");
+
+        let endnote = doc.find("class=\"endnote\"").expect("attribution must close the article");
+        let source = doc.find("class=\"source\"").expect("source link must remain");
+        assert!(endnote < source, "the attribution belongs ABOVE the link:\n{doc}");
+        assert!(doc[endnote..].contains("Hannes Rudolph"));
+        assert!(doc.contains("Clipped from"), "the link itself stays — only its presentation changed");
+    }
+
+    #[test]
+    fn a_page_with_no_attribution_shows_no_empty_endnote() {
+        // `meta` always has at least reading time, so this guards the branch
+        // rather than a live case — but an empty <p> at the foot of every
+        // article is exactly the kind of thing that ships unnoticed.
+        let doc = build_article_html_document(
+            &Article::new(None, String::new(), "<p>x</p>".into()),
+            None,
+            "https://example.com/a",
+        );
+        assert!(!doc.contains("<p class=\"endnote\"></p>"), "empty endnote:\n{doc}");
     }
 
     /// The document must parse in standards mode. Without the doctype the
