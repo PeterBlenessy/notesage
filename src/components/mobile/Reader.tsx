@@ -731,12 +731,20 @@ export function Reader() {
               ],
             }
           : {
+              // TAP opens the menu (#832/#829 follow-up). `menu` alone is a
+              // LONG-PRESS affordance with tap still firing `id` — so Move and
+              // Update from source shipped invisible, reachable only by holding
+              // a button that looks like plain Share. A reader with no pencil
+              // has no primary action worth protecting, so the whole slot
+              // becomes the overflow menu.
               id: "share",
-              icon: "square.and.arrow.up",
+              icon: "ellipsis",
+              menuOnTap: true,
               // Only for a capture that still knows where it came from (#829).
               // An article saved before captures kept a masthead can have one
               // spliced in from the source page.
               menu: [
+                { id: "share", title: t("reader.share"), icon: "square.and.arrow.up" },
                 { id: "move", title: t("reader.move"), icon: "folder" },
                 ...(sourceUrl
                   ? [
