@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Uppdatera från källan uppdaterar nu även artikelns bild i listan — tidigare behöll en lagad artikel sin gamla miniatyr. Flytta och Uppdatera fungerar båda från "…"-knappen. Obs: en nyss delad artikel kan dröja innan bilden dyker upp; det håller på att åtgärdas.
+Sparade artiklar visar sina bilder igen. Toppbilden visades som en trasig bildikon — det gällde både artiklar du redan sparat och nya, och är åtgärdat för båda. Öppna en artikel du uppdaterade tidigare: bilden ska finnas där nu, liksom bilder inne i texten.
