@@ -992,8 +992,24 @@ pub fn splice_article_header(saved: &str, page_html: &str, source_url: &str) -> 
     }
     let article = extract_article(page_html, source_url)?;
 
-    // Checked against the WHOLE saved document: the hero may already be in the
-    // body from the original capture even though the header is missing.
+    // Suppress the hero when the article ALREADY LEADS WITH AN IMAGE.
+    //
+    // `build_article_header`'s own guard compares the hero's URL against the
+    // body, which is right for a fresh capture and wrong here: by repair time
+    // the original image has usually been INLINED as a `data:` URI, so
+    // comparing it with a remote `og:image` URL never matches and a second
+    // copy is spliced above the first. X captures hit this every time — their
+    // cover is inlined at the top of the body — and the result was the same
+    // picture twice, which is what Peter saw.
+    //
+    // Position, not identity, is what can be judged here: the bytes no longer
+    // carry the URL they came from, so "does this article already open with a
+    // picture?" is the answerable question, and it is also the one that
+    // matters. A text-only article still gains its hero.
+    let mut article = article;
+    if leads_with_an_image(saved) {
+        article.hero_image = None;
+    }
     let (header, endnote) = build_article_header(&article, source_url, saved);
     if header.is_empty() && endnote.is_empty() {
         return None;
@@ -1119,6 +1135,19 @@ preview. Open the original to read it.</p>\
         title = escape_html_text(&card.title),
         src = escape_html_text(source_url),
     )
+}
+
+/// Does this saved article already open with a picture?
+///
+/// Looks only at the START of the body — an image deep inside the text is
+/// illustration, not a lead, and an article like that should still gain its
+/// hero. The window is generous enough to clear a title and a paragraph of
+/// prose, and small enough that a mid-article figure does not count.
+fn leads_with_an_image(saved: &str) -> bool {
+    const LEAD_WINDOW: usize = 2000;
+    let body = saved.split_once("<body>").map(|(_, b)| b).unwrap_or(saved);
+    let head: String = body.chars().take(LEAD_WINDOW).collect();
+    head.contains("<img")
 }
 
 /// Minimal text escaping for the title we inject into the template. The
@@ -3817,6 +3846,52 @@ https://example.com/blog/post</a></p></body></html>\n"
         assert!(!doc.contains("<img class=\"hero\" src=\"\""), "empty hero:\n{doc}");
         assert!(!doc.contains("class=\"standfirst\"></p>"), "empty standfirst:\n{doc}");
         assert!(doc.contains("e.com"), "the site still shows, derived from the URL");
+    }
+
+    #[test]
+    fn repairing_an_article_that_already_leads_with_an_image_adds_no_second_one() {
+        // X captures inline their cover at the top of the body, so by repair
+        // time it is a `data:` URI. The header builder's own guard compares the
+        // hero's REMOTE url against the body and never matches — which spliced
+        // the same picture in twice, above the one already there.
+        let saved = "<!doctype html>\n<html><head><title>T</title><style>x</style></head>\
+<body><h1>T</h1><img src=\"data:image/jpeg;base64,AAAA\" alt=\"\">\
+<p>The post body.</p>\
+<hr><p class=\"source\">Clipped from <a href=\"https://example.com/blog/post\">\
+https://example.com/blog/post</a></p></body></html>";
+        let page = blog_with_header("");
+        let out = splice_article_header(saved, &page, "https://example.com/blog/post")
+            .expect("the masthead is still missing, so it must repair");
+
+        assert_eq!(out.matches("<img").count(), 1, "the picture must not appear twice:\n{out}");
+        // The rest of the masthead still lands.
+        assert!(out.contains("class=\"byline\""), "byline still added:\n{out}");
+    }
+
+    #[test]
+    fn a_text_only_article_still_gains_its_hero() {
+        // The other half of the rule: suppressing on POSITION must not cost a
+        // hero to an article that has no lead image at all.
+        let page = blog_with_header("");
+        let out = splice_article_header(&legacy_capture(), &page, "https://example.com/blog/post")
+            .unwrap();
+        assert!(out.contains("class=\"hero\""), "a text-only article keeps its hero:\n{out}");
+    }
+
+    #[test]
+    fn an_image_deep_in_the_text_is_illustration_not_a_lead() {
+        // An article whose only picture sits far below the fold still deserves
+        // a hero — that image is illustration, not a masthead.
+        let filler = "<p>Paragraph of the body carrying real prose.</p>".repeat(60);
+        let saved = format!(
+            "<!doctype html>\n<html><head><title>T</title><style>x</style></head>\
+<body><h1>T</h1>{filler}<img src=\"data:image/jpeg;base64,AAAA\" alt=\"\">\
+<hr><p class=\"source\">Clipped from <a href=\"https://example.com/blog/post\">\
+https://example.com/blog/post</a></p></body></html>"
+        );
+        let page = blog_with_header("");
+        let out = splice_article_header(&saved, &page, "https://example.com/blog/post").unwrap();
+        assert!(out.contains("class=\"hero\""), "a late image must not suppress the hero");
     }
 
     /// The document must parse in standards mode. Without the doctype the
