@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Saved articles show their pictures again. The lead image was rendering as a broken-image icon — that affected articles you had already saved as well as new ones, and it is fixed for both. Open an article you updated earlier: its picture should now be there, along with any images inside the text.
+Updating an article no longer duplicates its picture. X posts showed the same image twice after an update — once from the post, once added by the update. Articles that already start with a picture are now left alone; ones without still gain their lead image.

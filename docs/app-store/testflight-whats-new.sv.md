@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Sparade artiklar visar sina bilder igen. Toppbilden visades som en trasig bildikon — det gällde både artiklar du redan sparat och nya, och är åtgärdat för båda. Öppna en artikel du uppdaterade tidigare: bilden ska finnas där nu, liksom bilder inne i texten.
+Att uppdatera en artikel dubblerar inte längre bilden. X-inlägg visade samma bild två gånger efter en uppdatering — en från inlägget, en tillagd av uppdateringen. Artiklar som redan börjar med en bild lämnas nu i fred; de utan får fortfarande sin toppbild.
