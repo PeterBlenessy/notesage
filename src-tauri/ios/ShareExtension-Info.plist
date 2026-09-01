@@ -1,15 +1,48 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Share Extension Info.plist (reference). Activates "Share → Notesage" when the
-  shared item contains a web URL (Safari, X/Twitter, etc.) or plain text. Set
-  NSExtensionPrincipalClass to the module-qualified ShareViewController, and set
-  the target's bundle id under the app (e.g. com.notesage.app.ShareExtension).
+  The Share Extension's Info.plist — the REAL one, for both platforms.
+
+  iOS: `integrate-share-extension.py` copies this to
+  `gen/apple/NotesageShare/Info.plist` and points INFOPLIST_FILE at that copy.
+  macOS: `scripts/build-macos-share-extension.sh` copies it into the appex.
+
+  It is copied rather than referenced so that release-time version stamping
+  writes to a gitignored file — `ios-testflight.sh` promises never to rewrite a
+  tracked file mid-release.
+
+  This file used to be documentation only, mirroring a Python dict that was the
+  thing actually built. An edit here changed nothing, which is a trap: the file
+  a reviewer opens must be the file that ships. The dict is gone; this is it.
+
+  The two version keys are absent on purpose. The copy step writes them from
+  `tauri.ios.conf.json`, the same source Tauri reads for the app, so the pair
+  can never drift — App Store Connect rejects an extension whose version
+  disagrees with its host app.
+
+  The $(...) values are build settings Xcode substitutes at build time; they are
+  what xcodegen synthesised before this file took over, reproduced exactly.
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>$(DEVELOPMENT_LANGUAGE)</string>
     <key>CFBundleDisplayName</key>
     <string>Notesage</string>
+    <key>CFBundleExecutable</key>
+    <string>$(EXECUTABLE_NAME)</string>
+    <key>CFBundleIdentifier</key>
+    <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>$(PRODUCT_NAME)</string>
+    <!-- "XPC!" is the package type for an app extension; a bundle typed as
+         anything else fails to load at RUNTIME, not at build. -->
+    <key>CFBundlePackageType</key>
+    <string>XPC!</string>
+    <key>ITSAppUsesNonExemptEncryption</key>
+    <false/>
     <key>NSExtension</key>
     <dict>
         <key>NSExtensionPointIdentifier</key>
@@ -19,21 +52,21 @@
         <key>NSExtensionAttributes</key>
         <dict>
             <!--
-              Value is the JS file's basename WITHOUT the .js extension. Safari
-              runs it in the PAGE's context before the sheet appears and hands
-              the result to the extension, so we receive the DOM as rendered
-              rather than as a server would serve it to a fetch. See
-              share-preprocess.js for why that difference matters.
+              Basename without ".js". Safari runs it in the PAGE's context
+              before the sheet appears and hands us the result, so we receive
+              the DOM as RENDERED rather than as a server serves it to a fetch
+              — the difference between a real photo and a 40px lazy-load
+              placeholder. See share-preprocess.js.
             -->
             <key>NSExtensionJavaScriptPreprocessingFile</key>
             <string>share-preprocess</string>
             <key>NSExtensionActivationRule</key>
             <dict>
                 <!--
-                  WebPage is what delivers the preprocessing payload; WebURL
-                  stays because sharing from Messages, Mail or an in-app
-                  browser hands over a bare URL with no page behind it, and
-                  those must still activate the extension.
+                  WebPage delivers the preprocessing payload. WebURL stays
+                  alongside it: Messages, Mail and in-app browsers hand over a
+                  bare URL with no page behind it, and those must still
+                  activate the extension.
                 -->
                 <key>NSExtensionActivationSupportsWebPageWithMaxCount</key>
                 <integer>1</integer>
@@ -41,11 +74,17 @@
                 <integer>1</integer>
                 <key>NSExtensionActivationSupportsText</key>
                 <true/>
+                <!--
+                  Documents (Safari-viewed PDFs, Files shares, EPUBs…) — without
+                  this iOS never lists Notesage for files. Known not to be
+                  sufficient on its own for a PDF served as an attachment: see
+                  issue #843.
+                -->
+                <key>NSExtensionActivationSupportsFileWithMaxCount</key>
+                <integer>3</integer>
                 <key>NSExtensionActivationSupportsImageWithMaxCount</key>
                 <integer>10</integer>
                 <key>NSExtensionActivationSupportsMovieWithMaxCount</key>
-                <integer>3</integer>
-                <key>NSExtensionActivationSupportsFileWithMaxCount</key>
                 <integer>3</integer>
             </dict>
         </dict>

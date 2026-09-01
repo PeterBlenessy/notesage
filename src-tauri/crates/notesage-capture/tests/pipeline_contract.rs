@@ -1791,3 +1791,70 @@ fn report_anchor_taps_are_matched_against_the_document_url() {
          arrives as `about:blank#...`, never as `#...`"
     );
 }
+
+// --- the Share Extension's plist is the one that ships -----------------------
+//
+// `src-tauri/ios/ShareExtension-Info.plist` spent its first months as
+// documentation: the activation rule that actually shipped lived in a Python
+// dict inside `integrate-share-extension.py`, which xcodegen turned into the
+// built plist. Editing the plist changed nothing and reviewed as correct —
+// the same shape as a capture source added without a pipeline row.
+//
+// These lock the arrangement that fixed it: the script must NOT declare an
+// `info:` block for NotesageShare (that is what makes xcodegen synthesise a
+// plist and take ownership), and the tracked plist must carry the rule.
+
+fn repo_file(rel: &str) -> String {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../..")
+        .join(rel);
+    fs::read_to_string(&path).unwrap_or_else(|e| panic!("cannot read {rel}: {e}"))
+}
+
+#[test]
+fn share_extension_plist_is_the_source_of_truth() {
+    let plist = repo_file("src-tauri/ios/ShareExtension-Info.plist");
+    for key in [
+        "NSExtensionActivationRule",
+        "NSExtensionActivationSupportsWebPageWithMaxCount",
+        "NSExtensionActivationSupportsWebURLWithMaxCount",
+        "NSExtensionActivationSupportsFileWithMaxCount",
+        "NSExtensionJavaScriptPreprocessingFile",
+        // Without these the appex builds and fails to LOAD; xcodegen used to
+        // supply them and no longer does.
+        "CFBundleExecutable",
+        "CFBundlePackageType",
+    ] {
+        assert!(
+            plist.contains(key),
+            "{key} is missing from the tracked ShareExtension-Info.plist — it is \
+             the file that ships now, not a mirror"
+        );
+    }
+}
+
+#[test]
+fn integration_script_does_not_reclaim_the_plist() {
+    let script = repo_file("src-tauri/ios/integrate-share-extension.py");
+    let target = script
+        .split_once("SHARE_TARGET = {")
+        .expect("SHARE_TARGET literal not found")
+        .1;
+    let target = target.split("\ndef ").next().unwrap_or(target);
+
+    assert!(
+        !target.contains("\"info\":"),
+        "SHARE_TARGET declares an `info:` block again — xcodegen will synthesise \
+         the extension plist and silently override the tracked one, making edits \
+         to ShareExtension-Info.plist do nothing (the #843 trap)"
+    );
+    assert!(
+        target.contains("\"INFOPLIST_FILE\""),
+        "SHARE_TARGET no longer sets INFOPLIST_FILE — the extension would build \
+         against no plist at all"
+    );
+    assert!(
+        script.contains("def copy_share_info_plist"),
+        "the step that installs the tracked plist into gen/ is gone"
+    );
+}
