@@ -821,6 +821,35 @@ fn chrome_menu_rows_emit_through_a_binding_not_a_button() {
     );
 }
 
+/// A report must be based on the page it was clipped from, not an opaque
+/// origin.
+///
+/// `baseURL: nil` was correct while reports were "self-contained by
+/// construction", and stopped being correct when captures started carrying a
+/// hero image (#828): a remote `https://` src on an opaque origin cannot load,
+/// so a saved article rendered a broken-image placeholder where its lead
+/// picture should be. Reverting to `nil` reintroduces that silently — the
+/// document still LOOKS right, and only the pictures are gone.
+///
+/// Comments stripped first: the fix's own comment names `baseURL: nil`.
+#[test]
+fn a_report_is_based_on_the_page_it_was_clipped_from() {
+    let code = strip_swift_comments(&ext_src(
+        "crates/tauri-plugin-notesage-ios/ios/Sources",
+        "ReportWebView.swift",
+    ));
+    assert!(
+        !code.contains("baseURL: nil"),
+        "the report web view loads on an opaque origin again — remote images in \
+         a saved article cannot load there, and the hero renders as a broken \
+         placeholder."
+    );
+    assert!(
+        code.contains("clippedFromURL"),
+        "the report is no longer based on its source page."
+    );
+}
+
 /// Swift source with `//` and `/* */` comments removed.
 ///
 /// Every assertion about a type identifier needs this. The identifiers below

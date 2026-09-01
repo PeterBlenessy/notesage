@@ -165,13 +165,48 @@ final class ReportPresenter: NSObject {
     ChromeManager.shared.bringChromeToFront()
 
     isLoadingInitialDocument = true
-    // `baseURL: nil` leaves the document on a unique opaque origin with no
-    // resolvable relative URLs — it cannot reach the library, the app's
-    // custom schemes, or anything on disk. Reports are self-contained by
-    // construction (that is what the exporter produces), so there is nothing
-    // for a base URL to resolve.
-    view.loadHTMLString(html, baseURL: nil)
+    // Base the document on the page it was CLIPPED FROM.
+    //
+    // This was `baseURL: nil` — a unique opaque origin, chosen because reports
+    // were "self-contained by construction". That stopped being true when
+    // captures started carrying a hero image (#828): a remote `https://` src on
+    // an opaque origin cannot load, so a saved article rendered a broken-image
+    // placeholder where its lead picture should be, and every inline article
+    // image with it.
+    //
+    // The source origin is the narrowest base that fixes it. What the nil base
+    // protected against is unchanged: an `https://` origin cannot reach the
+    // library, `file://`, or the app's custom schemes — those need a local or
+    // custom-scheme base, which this is not. It grants the document exactly the
+    // origin it was captured from and nothing else.
+    //
+    // Read from the document rather than plumbed through the command: the
+    // capture footer already records where it came from, and threading a second
+    // argument through TypeScript, the Rust command, the bridge and the plugin
+    // would be four more places to keep in step for a value the report is
+    // already carrying. `nil` when there is no footer — a non-capture document
+    // keeps exactly today's isolation.
+    view.loadHTMLString(html, baseURL: Self.clippedFromURL(html))
     reportView = view
+  }
+
+  /// The page a captured article was clipped from, read out of its footer.
+  ///
+  /// Matches what `notesage-capture` writes:
+  /// `<p class="source">Clipped from <a href="URL">`. Returns nil for anything
+  /// else, so a document that is not one of our captures gets no origin at all.
+  static func clippedFromURL(_ html: String) -> URL? {
+    guard let marker = html.range(of: "class=\"source\">Clipped from <a href=\"") else {
+      return nil
+    }
+    let rest = html[marker.upperBound...]
+    guard let close = rest.range(of: "\"") else { return nil }
+    // The footer HTML-escapes ampersands; a query string has to come back usable.
+    let raw = String(rest[..<close.lowerBound]).replacingOccurrences(of: "&amp;", with: "&")
+    guard let url = URL(string: raw), let scheme = url.scheme?.lowercased(),
+          scheme == "http" || scheme == "https"
+    else { return nil }
+    return url
   }
 
   /// Tear the report down. Idempotent.
