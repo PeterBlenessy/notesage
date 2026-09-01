@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Updating an article no longer duplicates its picture. X posts showed the same image twice after an update — once from the post, once added by the update. Articles that already start with a picture are now left alone; ones without still gain their lead image.
+Sharing an X post no longer saves its picture twice. The previous build fixed this only for articles you updated, not for newly shared ones — this covers both. Reshare an X post with an image and check there is a single picture at the top.

@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Att uppdatera en artikel dubblerar inte längre bilden. X-inlägg visade samma bild två gånger efter en uppdatering — en från inlägget, en tillagd av uppdateringen. Artiklar som redan börjar med en bild lämnas nu i fred; de utan får fortfarande sin toppbild.
+Att dela ett X-inlägg sparar inte längre bilden två gånger. Förra bygget åtgärdade det bara för artiklar du uppdaterat, inte för nydelade — det här täcker båda. Dela om ett X-inlägg med bild och kontrollera att det finns en enda bild överst.
