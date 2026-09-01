@@ -37,6 +37,7 @@ import yaml
 REPO = Path(__file__).resolve().parent.parent.parent
 GEN = REPO / "src-tauri" / "gen" / "apple"
 PROJECT_YML = GEN / "project.yml"
+SHARE_INFO_PLIST = GEN / "NotesageShare/Info.plist"
 APP_ENTITLEMENTS = GEN / "notesage_iOS" / "notesage_iOS.entitlements"
 
 APP_GROUP = "group.com.notesage.app"
@@ -78,41 +79,17 @@ SHARE_TARGET = {
         {"path": "../../ios/ShareResources/en.lproj", "buildPhase": "resources", "type": "folder"},
         {"path": "../../ios/ShareResources/sv.lproj", "buildPhase": "resources", "type": "folder"},
     ],
-    "info": {
-        # xcodegen GENERATES this file (adds CFBundle* defaults itself); the
-        # properties mirror src-tauri/ios/ShareExtension-Info.plist.
-        "path": "NotesageShare/Info.plist",
-        "properties": {
-            "CFBundleDisplayName": "Notesage",
-            "NSExtension": {
-                "NSExtensionPointIdentifier": "com.apple.share-services",
-                "NSExtensionPrincipalClass": "$(PRODUCT_MODULE_NAME).ShareViewController",
-                "NSExtensionAttributes": {
-                    # Basename without ".js". Safari runs it in the PAGE's
-                    # context before the sheet appears and hands us the result,
-                    # so we receive the DOM as RENDERED rather than as a server
-                    # serves it to a fetch — which is the difference between a
-                    # real photo and a 40px lazy-load placeholder. See
-                    # share-preprocess.js.
-                    "NSExtensionJavaScriptPreprocessingFile": "share-preprocess",
-                    "NSExtensionActivationRule": {
-                        # WebPage delivers the preprocessing payload. WebURL
-                        # stays alongside it: Messages, Mail and in-app browsers
-                        # hand over a bare URL with no page behind it, and those
-                        # must still activate the extension.
-                        "NSExtensionActivationSupportsWebPageWithMaxCount": 1,
-                        "NSExtensionActivationSupportsWebURLWithMaxCount": 1,
-                        "NSExtensionActivationSupportsText": True,
-                        # Documents (Safari-viewed PDFs, Files shares, EPUBs…)
-                        # — without this iOS never lists Notesage for files.
-                        "NSExtensionActivationSupportsFileWithMaxCount": 3,
-                        "NSExtensionActivationSupportsImageWithMaxCount": 10,
-                        "NSExtensionActivationSupportsMovieWithMaxCount": 3,
-                    }
-                },
-            },
-        },
-    },
+    # NO "info" key on purpose.
+    #
+    # Declaring `info:` makes xcodegen SYNTHESISE the plist, which is why the
+    # extension's activation rule used to live here as a Python dict while
+    # `src-tauri/ios/ShareExtension-Info.plist` sat beside it as a mirror that
+    # was never built. Editing the mirror changed nothing and looked correct in
+    # review — the failure mode that hides a fix in plain sight.
+    #
+    # Without the key, xcodegen leaves the plist alone and Xcode uses whatever
+    # INFOPLIST_FILE points at (see `settings` below). `copy_share_info_plist`
+    # puts the tracked file there. One source of truth, and it is a plist.
     "entitlements": {
         # Mirrors src-tauri/ios/ShareExtension.entitlements (App Group only).
         "path": "NotesageShare/NotesageShare.entitlements",
@@ -121,6 +98,9 @@ SHARE_TARGET = {
     "settings": {
         "base": {
             "PRODUCT_BUNDLE_IDENTIFIER": "com.notesage.app.ShareExtension",
+            # The copy `copy_share_info_plist` writes, NOT the tracked original:
+            # release-time version stamping must land on a gitignored file.
+            "INFOPLIST_FILE": "NotesageShare/Info.plist",
             "CODE_SIGN_STYLE": "Automatic",
             "DEVELOPMENT_TEAM": TEAM_ID,
             "SWIFT_OBJC_BRIDGING_HEADER": "$(SRCROOT)/../../ios/NotesageCapture.h",
@@ -174,19 +154,18 @@ def patch_project_yml() -> None:
     # project was first generated. Mirroring it produced an extension pinned to
     # a long-dead version (0.48.0 against an app at 0.50.1).
     app_info = app.get("info", {}).get("properties", {})
-    share_info = targets["NotesageShare"]["info"]["properties"]
+    # The extension's plist is no longer declared here — it is the tracked file
+    # copied by `copy_share_info_plist`, which writes the versions in after
+    # xcodegen has run. Only the APP target's properties are patched below.
     # Set BOTH from the config. Tauri overwrites the app's generated plist at
     # build time anyway, but a plain `xcodegen generate` + Xcode build does not
     # go through Tauri — leaving the app target stale there would just move the
     # mismatch, with the extension ahead of the app instead of behind it.
     marketing = ios_marketing_version()
     app_info["CFBundleShortVersionString"] = marketing
-    share_info["CFBundleShortVersionString"] = marketing
     # The build number is stamped onto the archive after it exists
     # (`scripts/ios-testflight.sh`), so the value here is a placeholder for
     # local builds only — mirror the app's so the two agree in Xcode.
-    if "CFBundleVersion" in app_info:
-        share_info["CFBundleVersion"] = app_info["CFBundleVersion"]
 
     # Export-compliance answer, baked in (TestFlight/App Store): Notesage
     # uses only standard HTTPS/TLS, which is exempt. Declaring it here stops
@@ -195,7 +174,7 @@ def patch_project_yml() -> None:
     # a separate binary and is asked separately.
     app_info.setdefault("ITSAppUsesNonExemptEncryption", False)
     app.setdefault("info", {}).setdefault("properties", app_info)
-    share_info.setdefault("ITSAppUsesNonExemptEncryption", False)
+    # The extension's copy of this answer lives in the tracked plist.
 
     # The App Group MUST go through the yml's entitlements `properties`, not a
     # direct plist edit: xcodegen REGENERATES the entitlements file on every
@@ -312,6 +291,36 @@ def sync_launch_assets() -> None:
     print("synced launch screen + LaunchLogo imageset")
 
 
+def copy_share_info_plist() -> None:
+    """Install the tracked Info.plist as the extension's, versions filled in.
+
+    Copied rather than referenced by INFOPLIST_FILE: `ios-testflight.sh` stamps
+    the build number into the extension's plist at release time, and it
+    promises to rewrite only gitignored files under `gen/`. Pointing Xcode at
+    the tracked original would make that promise false.
+
+    Run AFTER `xcodegen generate`: xcodegen creates the target directory, and
+    with no `info:` key it leaves the file itself alone.
+    """
+    src = REPO / "src-tauri/ios/ShareExtension-Info.plist"
+    data = plistlib.loads(src.read_bytes())
+    # Versions are deliberately absent from the tracked file so the pair cannot
+    # drift from the app. App Store Connect rejects a mismatched pair.
+    marketing = ios_marketing_version()
+    data["CFBundleShortVersionString"] = marketing
+    # CFBundleVersion is a placeholder for local builds: the real build number
+    # is stamped onto the ARCHIVE by `ios-testflight.sh`, after it exists.
+    #
+    # Deliberately NOT mirrored from project.yml's app target, which is stale by
+    # construction — Tauri writes the app's version at build time and never
+    # writes it back, so that value was 0.50.0.1 against an app at 0.53.0. The
+    # same trap the CFBundleShortVersionString comment above describes.
+    data["CFBundleVersion"] = marketing
+    SHARE_INFO_PLIST.parent.mkdir(parents=True, exist_ok=True)
+    SHARE_INFO_PLIST.write_bytes(plistlib.dumps(data))
+    print(f"installed {SHARE_INFO_PLIST.relative_to(REPO)} from the tracked plist")
+
+
 def main() -> None:
     if not PROJECT_YML.exists():
         sys.exit("gen/apple/project.yml not found — run `tauri ios init` first")
@@ -319,6 +328,7 @@ def main() -> None:
     strip_icon_alpha()
     sync_launch_assets()
     subprocess.run(["xcodegen", "generate"], cwd=GEN, check=True)
+    copy_share_info_plist()
     ent = plistlib.loads(APP_ENTITLEMENTS.read_bytes())
     assert APP_GROUP in ent.get("com.apple.security.application-groups", []), (
         "app entitlements missing the App Group after generation"
