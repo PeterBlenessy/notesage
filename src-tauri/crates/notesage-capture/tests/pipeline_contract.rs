@@ -782,6 +782,45 @@ fn the_macos_note_writer_claims_its_name_rather_than_checking_it() {
     );
 }
 
+/// Every chrome menu row must emit through a Toggle binding, never a Button.
+///
+/// `ChromeOverlay.menuRows` had two branches. Selection rows emitted from a
+/// Toggle's binding setter — with a comment saying why, since an earlier
+/// version using tap gestures shipped inert sort/view pickers. ACTION rows
+/// used a plain `Button`, which does not deliver either.
+///
+/// Nothing had ever used the action branch: every menu in the app was a
+/// selection menu, so the broken path survived untested until Move (#832) and
+/// Update from source (#829) became its first users and both did nothing when
+/// tapped. The lesson was already written down three lines above the bug.
+///
+/// Comments are stripped first — the fix's own comment names `Button`, so a
+/// whole-file check would pass on the explanation rather than the code.
+#[test]
+fn chrome_menu_rows_emit_through_a_binding_not_a_button() {
+    let src = ext_src(
+        "crates/tauri-plugin-notesage-ios/ios/Sources",
+        "ChromeOverlay.swift",
+    );
+    let code = strip_swift_comments(&src);
+    let rows = block_after(
+        &code,
+        "func menuRows",
+        "the chrome menu row builder moved; point this test at its new home",
+    );
+    assert!(
+        !rows.contains("Button"),
+        "a menu row is built with `Button`, which UIMenu never delivers a tap to — \
+         the row will render and do NOTHING. Emit from a Toggle's binding setter \
+         instead, as the selection rows do.\n\n{rows}"
+    );
+    assert!(
+        rows.contains("Toggle(isOn: Binding("),
+        "menu rows no longer emit through a binding, which is the only delivery \
+         that works.\n\n{rows}"
+    );
+}
+
 /// Swift source with `//` and `/* */` comments removed.
 ///
 /// Every assertion about a type identifier needs this. The identifiers below
