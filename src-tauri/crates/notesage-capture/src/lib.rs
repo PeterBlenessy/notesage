@@ -821,10 +821,24 @@ fn build_article_header(
     }
     let byline = format!("<p class=\"byline\">{}</p>", meta.join(" · "));
 
+    // Two independent reasons to omit the hero, and the second is the one that
+    // survives contact with real pages.
+    //
+    // URL identity catches the easy case. It is NOT enough: the same picture
+    // routinely reaches us under two different URLs — an X post's syndication
+    // cover and the status page's `og:image` are different variants of one
+    // image — and by repair time the body's copy has been INLINED to a `data:`
+    // URI that carries no URL at all. Both produced the same picture twice,
+    // once above the other.
+    //
+    // So position decides as well: an article that already OPENS with a
+    // picture has its lead, whatever that picture's URL happens to be. An
+    // image deep in the text is illustration, not a lead, so it does not
+    // suppress anything.
     let hero = article
         .hero_image
         .as_deref()
-        .filter(|src| !body_html.contains(*src))
+        .filter(|src| !body_html.contains(*src) && !leads_with_an_image(body_html))
         .map(|src| format!("<img class=\"hero\" src=\"{}\" alt=\"\">", escape_html_text(src)))
         .unwrap_or_default();
 
@@ -1006,10 +1020,9 @@ pub fn splice_article_header(saved: &str, page_html: &str, source_url: &str) -> 
     // carry the URL they came from, so "does this article already open with a
     // picture?" is the answerable question, and it is also the one that
     // matters. A text-only article still gains its hero.
-    let mut article = article;
-    if leads_with_an_image(saved) {
-        article.hero_image = None;
-    }
+    // `build_article_header` judges the hero against this document, by URL and
+    // by position — the saved body's copy is usually an inlined `data:` URI by
+    // now, so position is what catches it.
     let (header, endnote) = build_article_header(&article, source_url, saved);
     if header.is_empty() && endnote.is_empty() {
         return None;
@@ -1143,11 +1156,17 @@ preview. Open the original to read it.</p>\
 /// illustration, not a lead, and an article like that should still gain its
 /// hero. The window is generous enough to clear a title and a paragraph of
 /// prose, and small enough that a mid-article figure does not count.
-fn leads_with_an_image(saved: &str) -> bool {
-    const LEAD_WINDOW: usize = 2000;
-    let body = saved.split_once("<body>").map(|(_, b)| b).unwrap_or(saved);
-    let head: String = body.chars().take(LEAD_WINDOW).collect();
-    head.contains("<img")
+fn leads_with_an_image(html: &str) -> bool {
+    let body = html.split_once("<body>").map(|(_, b)| b).unwrap_or(html);
+    let Some(img) = body.find("<img") else { return false };
+    // Before the first paragraph ENDS. Not a byte window: an inlined image is
+    // hundreds of kilobytes of base64, so any fixed distance is meaningless
+    // once the sweep has run. "Comes before the prose" is the real question and
+    // it reads the same whether the image is a URL or a data URI.
+    match body.find("</p>") {
+        Some(para) => img < para,
+        None => true,
+    }
 }
 
 /// Minimal text escaping for the title we inject into the template. The
@@ -3892,6 +3911,30 @@ https://example.com/blog/post</a></p></body></html>"
         let page = blog_with_header("");
         let out = splice_article_header(&saved, &page, "https://example.com/blog/post").unwrap();
         assert!(out.contains("class=\"hero\""), "a late image must not suppress the hero");
+    }
+
+    #[test]
+    fn a_fresh_x_capture_does_not_get_its_cover_twice() {
+        // The reported case, on the CAPTURE path rather than the repair path.
+        // An X post's cover reaches the body from syndication while the hero
+        // comes from the status page's `og:image` — two URLs for one picture,
+        // so comparing them never matches. Verified against a real saved file:
+        // two inlined copies of the same image.
+        let mut article = Article::new(
+            Some("DAN KOE (@thedankoe) on X".into()),
+            "The body of the post.".into(),
+            "<img src=\"https://pbs.twimg.com/media/COVER?format=jpg&name=large\" alt=\"\">\
+<p>The body of the post.</p>".into(),
+        );
+        // Same picture, different URL — exactly what defeated identity.
+        article.hero_image = Some("https://pbs.twimg.com/media/COVER?format=jpg&name=900x900".into());
+
+        let doc = build_article_html_document(&article, None, "https://x.com/thedankoe/status/1");
+        assert_eq!(
+            doc.matches("<img").count(),
+            1,
+            "the cover must appear once — the article already opens with it:\n{doc}"
+        );
     }
 
     /// The document must parse in standards mode. Without the doctype the
