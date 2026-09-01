@@ -15,6 +15,7 @@ import {
   iosStatFile,
   iosContextMenu,
   iosMoveFile,
+  iosInlineArticleImages,
   iosPresentReport,
   iosDismissReport,
   iosFindInReport,
@@ -23,6 +24,7 @@ import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
 import { useMobileStore } from "@/stores/mobile-store";
 import { collectFolders } from "./library-folders";
+import { evictThumbnail } from "@/lib/mobile-thumbnails";
 import { t } from "@/lib/i18n";
 import { useLocale } from "@/lib/useLocale";
 import { classifyFile } from "./FileRow";
@@ -670,6 +672,24 @@ export function Reader() {
         return;
       }
       await iosWriteFile(relPath, spliced);
+
+      // Inline the hero we just spliced in, then drop the cached thumbnail.
+      //
+      // The splice writes a REMOTE `<img class="hero" src="https://…">`, but
+      // `article_lead_image` only reads INLINED `data:` images — that is what
+      // makes a gallery card work offline. So a repaired article kept its old
+      // card, showing whichever inline screenshot had been inlined first, while
+      // a freshly shared one showed the hero. Same document, two different
+      // cards, which is exactly what Peter saw side by side.
+      //
+      // Best-effort: the article itself is already repaired and correct on
+      // screen. A failed sweep costs a stale card, not the fix.
+      try {
+        await iosInlineArticleImages(relPath);
+        evictThumbnail(relPath);
+      } catch {
+        // Offline, or every image oversized. The next background sweep retries.
+      }
       toast.success(t("reader.updateDone"));
       await loadRef.current?.();
     } catch (err) {
