@@ -423,9 +423,19 @@ struct GlassChromeButton: View {
           }
         }
       } else {
-        Button {
-          emit(entry.id)
-        } label: {
+        // ACTION row — same Toggle-binding emit as the selection row above,
+        // and for the same reason.
+        //
+        // A `Button` here looked obviously right and was inert: Move and
+        // Update from source shipped in build 28 with a menu that OPENED and
+        // rows that did nothing when tapped. The comment above already said
+        // UIMenu rows never deliver SwiftUI tap gestures — the selection rows
+        // were fixed for it, the action rows were never exercised, so the
+        // broken path survived because nothing used it.
+        //
+        // `isOn: false` renders a plain row with no checkmark; the emit lives
+        // in the binding's setter, which is the only delivery that works.
+        Toggle(isOn: Binding(get: { false }, set: { _ in emit(entry.id) })) {
           if let icon = entry.icon {
             Label(entry.title, systemImage: icon)
           } else {
