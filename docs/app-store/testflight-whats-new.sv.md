@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Tre saker. Flytta lägger artikeln i en mapp. Uppdatera från källan hämtar tillbaka bild och författarrad på äldre sparningar. Och när du delar en sida som inte har någon artikel — en ämnes- eller videöversikt — sparas nu sidans förhandsbild och sammanfattning i stället för bara adressen.
+Flytta och Uppdatera från källan gjorde ingenting i förra bygget — tryck ignorerades tyst, och de låg dolda bakom ett långt tryck. Båda finns nu på "…"-knappen i läsaren, och båda fungerar. Testa att flytta något ur Inbox, och att uppdatera en artikel du sparade för ett tag sedan.

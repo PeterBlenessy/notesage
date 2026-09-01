@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.55.6",
+      "date": "2026-09-01",
+      "previousVersion": "0.55.5",
+      "sections": {
+        "fixes": [
+          "**Move and Update from source actually work now.** Both were added last release and neither did anything: tapping a row in the reader's menu was silently ignored. They also sat behind a long press on the share button, which is not somewhere anyone would look. Both are now on a \"…\" button that opens on a tap.",
+          "**Update from source can reach the page.** It could never load the article it was meant to fetch, so it always reported having nothing to add. It now fetches the way the rest of the app does and works as intended."
+        ]
+      }
+    },
+    {
       "version": "0.55.5",
       "date": "2026-08-31",
       "previousVersion": "0.55.4",
