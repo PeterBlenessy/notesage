@@ -648,12 +648,15 @@ export function Reader() {
     setUpdating(true);
     try {
       const saved = await iosReadFile(relPath);
-      // Fetched HERE rather than in Rust: the WebView already has a network
-      // stack, and adding one to the iOS binary would widen a surface kept
-      // deliberately narrow.
-      const res = await fetch(sourceUrl);
-      if (!res.ok) throw new Error(`${res.status}`);
-      const pageHtml = await res.text();
+      // Fetched NATIVELY, not with the WebView's `fetch()`.
+      //
+      // The first version used `fetch()` on the reasoning that iOS already had
+      // a network stack there. Wrong in the one way that matters: a WebView
+      // fetch to another origin is a CORS request, and almost no site sends
+      // `Access-Control-Allow-Origin` — so this failed before Rust was ever
+      // asked to splice, and "Update from source" did nothing. The image
+      // inliner already fetched natively for exactly this reason.
+      const pageHtml = await invoke<string>("fetch_page_html", { url: sourceUrl });
       const spliced = await invoke<string | null>("splice_article_header", {
         saved,
         pageHtml,

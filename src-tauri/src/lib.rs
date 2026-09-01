@@ -317,6 +317,7 @@ pub fn run() {
         render_markdown_fragment,
         repair_html_doctype,
         article_source_url,
+        fetch_page_html,
         splice_article_header,
         html_preview_register,
         html_preview_unregister,

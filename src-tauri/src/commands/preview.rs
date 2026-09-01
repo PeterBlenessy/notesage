@@ -190,6 +190,36 @@ pub fn repair_missing_doctype(html: &str) -> Option<String> {
     Some(format!("<!doctype html>\n{html}"))
 }
 
+/// Fetch a page for the "Update from source" repair (#829).
+///
+/// **Native, not the WebView.** The first version called `fetch()` from the
+/// reader, reasoning that iOS already had a network stack there. That was
+/// wrong in the one way that matters: a WebView fetch to another origin is a
+/// CORS request, and almost no site sends `Access-Control-Allow-Origin`, so
+/// the repair failed before Rust was ever asked to splice. `ImageInliner.swift`
+/// already fetches natively for exactly this reason — the precedent was there
+/// and I did not follow it.
+///
+/// Safari's user-agent, like the Share Extension's own fetch: an unknown agent
+/// gets a bot-shell or a block from plenty of the sites worth saving.
+#[cfg(target_os = "ios")]
+#[tauri::command]
+pub async fn fetch_page_html(url: String) -> Result<String, String> {
+    const SAFARI_UA: &str = "Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) \
+AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1";
+    // Bounded like every other capture fetch: the user is watching a menu.
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .user_agent(SAFARI_UA)
+        .build()
+        .map_err(|e| e.to_string())?;
+    let res = client.get(&url).send().await.map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("The page answered {}", res.status().as_u16()));
+    }
+    res.text().await.map_err(|e| e.to_string())
+}
+
 /// The page a saved article was clipped from (#829).
 ///
 /// Pure. The caller fetches — on iOS the WebView does it, exactly as the Share
