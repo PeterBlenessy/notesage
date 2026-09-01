@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Move and Update from source did nothing in the last build — tapping them was silently ignored, and they were hidden behind a long press. Both now live on the "…" button in the reader, and both work. Try moving something out of Inbox, and updating an article you saved a while ago.
+Update from source now refreshes the article's picture in the list too — before, a repaired article kept its old thumbnail. Move and Update both work from the "…" button. Note: a newly shared article may take a moment before its lead picture appears; that one is still being fixed.
