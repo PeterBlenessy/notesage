@@ -22,6 +22,32 @@ describe("htmlToSpeechText", () => {
     expect(out).not.toContain("AAAA");
   });
 
+  it("drops an UNCLOSED script's body, not just its opening tag", () => {
+    // A truncated capture or a malformed page leaves <script> with no closer.
+    // The balanced-pair regex then matches nothing and the self-closing one
+    // strips only "<script>", leaving the whole body — base64 and all — as
+    // plain text for the synthesiser to read out. (Review finding, Critical.)
+    const data = "A".repeat(300);
+    const html = `<p>Before.</p><script>var x = "data:image/png;base64,${data}";`;
+    const out = htmlToSpeechText(html);
+    expect(out).toBe("Before.");
+    expect(out).not.toContain("base64");
+    expect(out).not.toContain("var x");
+  });
+
+  it("drops an unclosed style's body too", () => {
+    expect(htmlToSpeechText("<p>A.</p><style>body{background:url(x)}")).toBe("A.");
+  });
+
+  it("strips a data: URI even if it reaches the output by some other route", () => {
+    // Defence in depth: the contract is "no base64 reaches the voice", and it
+    // must not rest on the tag regexes being exhaustive.
+    const out = htmlToSpeechText(`<p>data:image/jpeg;base64,${"Q".repeat(400)} tail</p>`);
+    expect(out).not.toContain("base64");
+    expect(out).not.toContain("QQQQ");
+    expect(out).toContain("tail");
+  });
+
   it("drops script and style CONTENT, not just their tags", () => {
     const html = "<style>body{color:red}</style><script>alert(1)</script><p>Words.</p>";
     expect(htmlToSpeechText(html)).toBe("Words.");
@@ -65,6 +91,22 @@ describe("markdownToSpeechText", () => {
     const out = markdownToSpeechText(md);
     expect(out).toBe("Before.\n\nAfter.");
     expect(out).not.toContain("base64");
+  });
+
+  it("drops an image whose alt text contains nested brackets", () => {
+    // `[^\]]*` cannot cross the `]` in "[nested]", so the old pattern failed
+    // to match at all and the entire image — base64 included — passed
+    // through untouched. (Review finding, Critical.)
+    const md = `Before.\n\n![a [nested] alt](data:image/png;base64,${"Z".repeat(300)})\n\nAfter.`;
+    const out = markdownToSpeechText(md);
+    expect(out).toBe("Before.\n\nAfter.");
+    expect(out).not.toContain("base64");
+  });
+
+  it("keeps link text when the label contains nested brackets", () => {
+    expect(markdownToSpeechText("See [the [good] docs](https://example.com).")).toBe(
+      "See the [good] docs.",
+    );
   });
 
   it("does not read a bare URL out character by character", () => {

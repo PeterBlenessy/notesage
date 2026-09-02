@@ -62,6 +62,19 @@ function decodeEntities(text: string): string {
  * paragraph boundary is — which would move a resume position between a
  * markdown note and the same note captured as HTML.
  */
+/**
+ * Last line of defence: strip any surviving `data:` URI.
+ *
+ * The tag handling above is regex, not a parser, and this file's contract —
+ * that a base64 payload never reaches the synthesiser — is too important to
+ * rest on one. Two Critical review findings were exactly this leak arriving by
+ * routes the tag passes did not cover, so the guarantee is enforced directly
+ * rather than inferred from the parsing being correct.
+ */
+function stripDataUris(text: string): string {
+  return text.replace(/data:[a-z0-9.+-]*\/?[a-z0-9.+-]*\s*;?\s*base64\s*,\s*[A-Za-z0-9+/=]*/gi, " ");
+}
+
 function normalise(text: string): string {
   return text
     .split("\n\n")
@@ -75,8 +88,13 @@ export function htmlToSpeechText(html: string): string {
   let text = html;
   for (const tag of DROPPED_ELEMENTS) {
     text = text.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`, "gi"), " ");
-    // Unclosed or self-closing form — drop the tag itself so its attributes
-    // (which can carry a base64 payload) never reach the output.
+    // An UNCLOSED one — a truncated capture, a malformed page — matched
+    // neither the balanced form above nor a self-closing tag, so its entire
+    // body survived as plain text and the synthesiser read the script out.
+    // Everything after an unterminated <script> IS script, so drop to the end.
+    text = text.replace(new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*$`, "i"), " ");
+    // Self-closing form — drop the tag so its attributes (which can carry a
+    // base64 payload) never reach the output.
     text = text.replace(new RegExp(`<${tag}\\b[^>]*/?>`, "gi"), " ");
   }
   text = text.replace(/<!--[\s\S]*?-->/g, " ");
@@ -86,7 +104,7 @@ export function htmlToSpeechText(html: string): string {
   text = text.replace(/<br\b[^>]*>/gi, "\n\n");
   // Everything else (inline tags, and any <img> with its data URI) goes.
   text = text.replace(/<[^>]*>/g, "");
-  return normalise(decodeEntities(text));
+  return normalise(stripDataUris(decodeEntities(text)));
 }
 
 /** Extract readable prose from a markdown note. */
@@ -99,8 +117,13 @@ export function markdownToSpeechText(markdown: string): string {
   text = text.replace(/`([^`]*)`/g, "$1");
   // Images before links: `![alt](src)` must not leave its alt text behind as
   // a bare link, and its src can be a data URI.
-  text = text.replace(/!\[[^\]]*\]\([^)]*\)/g, " ");
-  text = text.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1");
+  //
+  // Lazy `[\s\S]*?` up to the first `](`, NOT `[^\]]*`: a nested bracket in
+  // the alt text (`![a [nested] alt](data:…)`) made the old pattern fail to
+  // match at all, so the whole image — base64 payload included — passed
+  // straight through to the synthesiser.
+  text = text.replace(/!\[[\s\S]*?\]\([^)]*\)/g, " ");
+  text = text.replace(/\[([\s\S]*?)\]\([^)]*\)/g, "$1");
   // Bare autolinks and raw URLs read as noise character by character.
   text = text.replace(/<https?:\/\/[^>]*>/gi, " ");
   text = text.replace(/https?:\/\/\S+/gi, " ");
@@ -120,7 +143,7 @@ export function markdownToSpeechText(markdown: string): string {
   text = text.replace(/^[ \t]{0,3}(?:[-*_][ \t]*){3,}$/gm, "\n\n");
   // Emphasis markers.
   text = text.replace(/(\*\*|__|\*|_|~~)/g, "");
-  return normalise(decodeEntities(text));
+  return normalise(stripDataUris(decodeEntities(text)));
 }
 
 /**

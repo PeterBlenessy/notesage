@@ -456,12 +456,19 @@ export interface IosSpeechState {
   playing: boolean;
 }
 
-/** Progress pushed from the native player as it moves between paragraphs. */
-export interface IosSpeechProgress {
-  event: "progress";
-  index: number;
-  total: number;
-}
+/**
+ * Events pushed from the native player.
+ *
+ * `playing` is a SEPARATE fact from position, not derivable from it: play and
+ * pause can originate from the lock screen or Control Centre, which never
+ * touch the frontend. `finished` likewise — collapsing "reached the last
+ * paragraph" into a progress event left the transport stuck showing Pause
+ * forever after an article ended.
+ */
+export type IosSpeechEvent =
+  | { event: "progress"; index: number; total: number }
+  | { event: "playing"; playing: boolean }
+  | { event: "finished" };
 
 /**
  * Start (or restart) reading an article aloud.
@@ -514,19 +521,17 @@ export function iosSpeechState(): Promise<IosSpeechState> {
 }
 
 /**
- * Subscribe to native paragraph-progress events.
+ * Subscribe to native player events.
  *
  * The native side dispatches a `CustomEvent` on `window` rather than going
  * through Tauri's event bus — same bridge the chrome overlay uses, and it
  * keeps the player's position updates off the IPC round-trip that every
  * paragraph boundary would otherwise pay.
  */
-export function onIosSpeechProgress(
-  handler: (progress: IosSpeechProgress) => void,
-): () => void {
+export function onIosSpeechEvent(handler: (event: IosSpeechEvent) => void): () => void {
   const listener = (event: Event) => {
-    const detail = (event as CustomEvent).detail as IosSpeechProgress | undefined;
-    if (detail?.event === "progress") handler(detail);
+    const detail = (event as CustomEvent).detail as IosSpeechEvent | undefined;
+    if (detail?.event) handler(detail);
   };
   window.addEventListener("notesage:speech", listener);
   return () => window.removeEventListener("notesage:speech", listener);

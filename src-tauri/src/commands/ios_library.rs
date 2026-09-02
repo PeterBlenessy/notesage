@@ -903,8 +903,12 @@ pub async fn ios_speech_set_rate(app: tauri::AppHandle, rate: f32) -> Result<(),
     }
 }
 
-/// Where the player is now — the frontend restores its progress bar from this
-/// after a reload rather than assuming it starts at zero.
+/// Where the player is now.
+///
+/// NOT yet called by the frontend: position and playing state are pushed as
+/// events instead, which is cheaper and covers the lock-screen case. This is
+/// the reconciliation path a future library-level mini player needs — it can
+/// ask what is already playing rather than assume nothing is.
 #[tauri::command]
 pub async fn ios_speech_state(app: tauri::AppHandle) -> Result<SpeechState, String> {
     #[cfg(target_os = "ios")]
