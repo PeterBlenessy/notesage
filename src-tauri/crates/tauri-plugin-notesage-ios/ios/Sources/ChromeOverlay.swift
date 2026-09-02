@@ -278,7 +278,10 @@ final class ChromeManager {
       host.view.bottomAnchor.constraint(
         equalTo: container.safeAreaLayoutGuide.bottomAnchor, constant: -10),
       host.view.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-      host.view.heightAnchor.constraint(equalToConstant: 72),
+      host.view.heightAnchor.constraint(equalToConstant: 66),
+      // Never wider than the screen: a strip that overshoots clips its end
+      // buttons and loses the capsule's rounded ends off-screen.
+      host.view.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -24),
     ])
     // Intrinsic width: the hosting view must be allowed to be as wide as its
     // content, or SwiftUI squeezes the position label into a wrap.
@@ -827,14 +830,18 @@ struct GlassPlayer: View {
     // first cut was "so close" that a thumb landed on the neighbour. The
     // capsule grows a little; the article behind it is not what a listener is
     // looking at.
-    // Each control is the SAME glass button as the corner buttons
-    // (`GlassCircle`), not a plain glyph on a pill: Peter asked for "the same
-    // colors as the other buttons we use in the app", and the corner buttons
-    // are the reference. The capsule behind them is a material, deliberately
-    // not a glass effect — a glass surface WRAPPING controls swallows their
-    // taps (the search-island lesson) — and it is softened so the article
-    // shows through, which is what "a bit transparent" means here.
-    HStack(spacing: 10) {
+    // The ISLAND is the glass surface — the same Liquid Glass the corner
+    // buttons and the search island wear — with plain glyphs on it. Peter's
+    // first note read as "make each button glass"; he meant the capsule that
+    // hosts them: "a bit transparent background and the same colours as the
+    // other buttons". `.interactive()` on the effect is what keeps the inner
+    // buttons tappable — a non-interactive glass surface wrapping controls
+    // swallowed their taps in the search island. Verified by tapping
+    // skip-forward on the simulator and watching the position advance.
+    // Budget: 402pt (iPhone 17 Pro) minus 24pt margins. Five circles at
+    // 46/54 plus the two labels and 6pt gaps come to ~340pt; the first cut at
+    // 52/60 with 10pt gaps was ~412pt and clipped both end buttons.
+    HStack(spacing: 6) {
       button("player-back", system: "backward.fill")
       button("player-toggle", system: spec.playing ? "pause.fill" : "play.fill", large: true)
       button("player-forward", system: "forward.fill")
@@ -842,39 +849,54 @@ struct GlassPlayer: View {
       // "6 / 178" onto two lines inside the fixed-height host and showed
       // "6" over "…" — which read as a mystery control, not a position.
       Text(spec.position)
-        .font(.subheadline.monospacedDigit())
+        .font(.footnote.monospacedDigit())
         .foregroundStyle(.secondary)
         .lineLimit(1)
         .fixedSize()
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 2)
       Button { emit("player-rate") } label: {
         Text(spec.rate)
-          .font(.subheadline.weight(.semibold).monospacedDigit())
+          .font(.footnote.weight(.semibold).monospacedDigit())
           .lineLimit(1)
           .fixedSize()
-          .frame(minWidth: 52, minHeight: 52)
+          .frame(minWidth: 46, minHeight: 46)
       }
-      .modifier(GlassCircle())
+      .buttonStyle(.plain)
       button("player-stop", system: "stop.fill")
     }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 6)
+    .padding(.horizontal, 10)
+    .padding(.vertical, 5)
     .foregroundStyle(.primary)
-    .background {
-      Capsule()
-        .fill(.ultraThinMaterial)
-        .opacity(0.72)
-        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
-    }
+    .modifier(GlassIslandSurface())
   }
 
   private func button(_ id: String, system: String, large: Bool = false) -> some View {
     Button { emit(id) } label: {
       Image(systemName: system)
         .font(large ? .title2 : .title3)
-        .frame(width: large ? 60 : 52, height: large ? 60 : 52)
+        .frame(width: large ? 54 : 46, height: large ? 54 : 46)
     }
-    .modifier(GlassCircle())
+    .buttonStyle(.plain)
+  }
+}
+
+/// The player island's surface: real Liquid Glass on iOS 26 — the same
+/// material the corner buttons and search island are made of — and the
+/// bordered-look fallback (`Color.primary.opacity(0.14)`, as the corner
+/// buttons' pre-26 style renders) before that.
+struct GlassIslandSurface: ViewModifier {
+  func body(content: Content) -> some View {
+    if #available(iOS 26.0, *) {
+      GlassEffectContainer {
+        content.glassEffect(.regular.interactive(), in: Capsule())
+      }
+    } else {
+      content.background {
+        Capsule()
+          .fill(Color.primary.opacity(0.14))
+          .overlay(Capsule().strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5))
+      }
+    }
   }
 }
 
