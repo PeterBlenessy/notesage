@@ -8,7 +8,7 @@ import {
   iosSpeechSkip,
   iosSpeechStart,
   iosSpeechStop,
-  onIosSpeechProgress,
+  onIosSpeechEvent,
 } from "@/lib/ios-api";
 import { useMobileStore } from "@/stores/mobile-store";
 
@@ -62,14 +62,30 @@ export function useSpeechPlayer(relPath: string) {
   stateRef.current = state;
 
   useEffect(() => {
-    return onIosSpeechProgress(({ index, total }) => {
+    return onIosSpeechEvent((event) => {
       const owner = playingPathRef.current;
       if (!owner) return;
-      setState((prev) => ({ ...prev, index, total, active: true }));
-      // Persist the position of whichever document is actually playing —
-      // never the one currently on screen, which may already be a different
-      // article by the time this fires.
-      rememberSpeechPosition(owner, index);
+      if (event.event === "progress") {
+        setState((prev) => ({ ...prev, index: event.index, total: event.total, active: true }));
+        // Persist the position of whichever document is actually playing —
+        // never the one currently on screen, which may already be a different
+        // article by the time this fires.
+        rememberSpeechPosition(owner, event.index);
+        return;
+      }
+      if (event.event === "playing") {
+        // Play/pause can come from the lock screen or Control Centre, which
+        // never touch this code — without this the transport shows the wrong
+        // icon and the next tap calls the wrong native method.
+        setState((prev) => ({ ...prev, playing: event.playing }));
+        return;
+      }
+      // finished: the article ended (or was stopped natively). Retire the
+      // transport instead of leaving it showing Pause for something silent,
+      // and start the NEXT listen from the top rather than the end.
+      playingPathRef.current = null;
+      rememberSpeechPosition(owner, 0);
+      setState(IDLE);
     });
   }, [rememberSpeechPosition]);
 

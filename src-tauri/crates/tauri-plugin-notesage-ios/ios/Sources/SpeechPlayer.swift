@@ -38,6 +38,20 @@ import NaturalLanguage
     /// state and move its highlight. Set by the plugin.
     @objc public var onProgress: ((Int, Int) -> Void)?
 
+    /// Called whenever playback starts, pauses or resumes — including from the
+    /// LOCK SCREEN and Control Centre, which bypass the frontend entirely.
+    ///
+    /// Without this the transport shows the wrong icon after a lock-screen
+    /// pause, and the next tap calls the wrong method.
+    @objc public var onPlayingChanged: ((Bool) -> Void)?
+
+    /// Called once when the article has been read to the end, or stopped.
+    ///
+    /// Distinct from `onProgress(count, count)`: position and liveness are
+    /// different facts, and collapsing them left the transport stuck showing
+    /// Pause forever after an article finished.
+    @objc public var onFinished: (() -> Void)?
+
     override private init() {
         super.init()
         synth.delegate = self
@@ -50,7 +64,11 @@ import NaturalLanguage
     /// `startIndex` is a paragraph index, clamped — a stored position from a
     /// since-edited article must not crash or silently start from the top.
     @objc public func start(text: String, title: String, startIndex: Int, rate: Float, voiceId: String?) {
-        stop()
+        // NOT `stop()`: that deactivates the audio session with
+        // `.notifyOthersOnDeactivation`, so the very first Listen tap ducked
+        // and un-ducked every other app's audio for no reason. Tearing down
+        // the queue is all a restart needs.
+        resetQueue()
         self.title = title
         self.rate = rate > 0 ? rate : AVSpeechUtteranceDefaultSpeechRate
         self.voiceId = voiceId
@@ -64,11 +82,16 @@ import NaturalLanguage
     }
 
     @objc public func pause() {
+        // Nothing queued means the article already finished; re-publishing
+        // now-playing info here resurrected a finished article on the lock
+        // screen with its stale title.
+        guard synth.isSpeaking || synth.isPaused else { return }
         // `.immediate` rather than `.word`: on a lock-screen tap the user
         // expects silence now, and resume re-speaks the current paragraph from
         // its start anyway.
-        if synth.isSpeaking { synth.pauseSpeaking(at: .immediate) }
+        synth.pauseSpeaking(at: .immediate)
         updateNowPlaying(playing: false)
+        onPlayingChanged?(false)
     }
 
     @objc public func resume() {
@@ -79,15 +102,30 @@ import NaturalLanguage
             // re-speak from the remembered paragraph.
             activateSession()
             speakCurrent()
+        } else if paragraphs.isEmpty {
+            // Finished or never started — nothing to resume.
+            return
         }
         updateNowPlaying(playing: true)
+        onPlayingChanged?(true)
     }
 
     @objc public func stop() {
-        synth.stopSpeaking(at: .immediate)
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        let wasLive = !paragraphs.isEmpty
+        resetQueue()
         try? AVAudioSession.sharedInstance().setActive(
             false, options: .notifyOthersOnDeactivation)
+        // Tell the frontend playback is over, so the transport can go away
+        // instead of sitting there showing Pause for an article that ended.
+        if wasLive { onFinished?() }
+    }
+
+    /// Tear down the utterance queue and the lock-screen entry, WITHOUT
+    /// touching the audio session — a restart needs this much and no more.
+    private func resetQueue() {
+        synth.stopSpeaking(at: .immediate)
+        paragraphs = []
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     }
 
     /// Move `delta` paragraphs. Skipping past the end stops; before the start
@@ -143,6 +181,7 @@ import NaturalLanguage
         synth.speak(utterance)
         onProgress?(index, paragraphs.count)
         updateNowPlaying(playing: true)
+        onPlayingChanged?(true)
     }
 
     /// Pick a voice for the ARTICLE's language, not the device's.
@@ -247,7 +286,6 @@ extension SpeechPlayer: AVSpeechSynthesizerDelegate {
         // setRate() call stopSpeaking, which fires didCancel rather than
         // didFinish — so auto-advance cannot double-step past a paragraph.
         guard index + 1 < paragraphs.count else {
-            onProgress?(paragraphs.count, paragraphs.count)
             stop()
             return
         }

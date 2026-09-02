@@ -196,6 +196,10 @@ interface MobileStore {
   reset: () => void;
 }
 
+/** How many articles keep a listening position. One small integer each; the
+ *  cap exists so the map cannot grow without bound over years of use. */
+const MAX_SPEECH_POSITIONS = 200;
+
 export const useMobileStore = create<MobileStore>()(
   persist(
     (set, get) => ({
@@ -360,7 +364,20 @@ export const useMobileStore = create<MobileStore>()(
         set((s) => ({ scrollOffsets: { ...s.scrollOffsets, [relPath]: offset } })),
 
       rememberSpeechPosition: (relPath, index) =>
-        set((s) => ({ speechPositions: { ...s.speechPositions, [relPath]: index } })),
+        set((s) => {
+          const next = { ...s.speechPositions, [relPath]: index };
+          // Capped like the other durable maps in the app: without it every
+          // path ever listened to accumulates forever. Insertion order is
+          // oldest-first, and re-writing a key keeps its original slot, so the
+          // article being listened to now is never the one evicted.
+          const keys = Object.keys(next);
+          if (keys.length > MAX_SPEECH_POSITIONS) {
+            for (const stale of keys.slice(0, keys.length - MAX_SPEECH_POSITIONS)) {
+              delete next[stale];
+            }
+          }
+          return { speechPositions: next };
+        }),
 
       togglePin: async (relPath) => {
         // Read-modify-write against the file rather than the cached array:
