@@ -11,4 +11,6 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Sharing an X post no longer saves its picture twice. The previous build fixed this only for articles you updated, not for newly shared ones — this covers both. Reshare an X post with an image and check there is a single picture at the top.
+You can listen to a saved article. Open one, tap the … menu, choose Listen. A player appears with back, play/pause, forward, speed and stop, and the position in paragraphs.
+
+The two things worth checking, because only a real phone can show them: lock the screen mid-article and confirm it keeps reading, with the controls on the lock screen; and confirm an English article is read by an English voice rather than a Swedish one. The voice will sound fairly robotic — that is Apple's default compact voice, and downloading an enhanced voice under Settings > Accessibility > Spoken Content > Voices should improve it a lot. Tell me whether it does.
