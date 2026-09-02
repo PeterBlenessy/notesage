@@ -112,6 +112,8 @@ export function iosSetChrome(spec: {
   topCenter?: IosChromeBreadcrumb;
   /** Bottom-trailing action button (the folder view's "+"). */
   bottomRight?: IosChromeItem;
+  /** Read-aloud transport (#833). */
+  bottomCenter?: IosChromePlayer;
   search?: IosChromeSearch;
 }): Promise<void> {
   return invoke("ios_set_chrome", { spec });
@@ -435,3 +437,97 @@ export function iosStatFile(relPath: string): Promise<IosFileStat> {
   return invoke<IosFileStat>("ios_stat_file", { relPath });
 }
 
+
+/** Bottom-center transport rendered by the NATIVE chrome (#833). */
+export interface IosChromePlayer {
+  playing: boolean;
+  /** Pre-formatted paragraph position, e.g. "3 / 41". */
+  position: string;
+  /** Pre-formatted rate, e.g. "1.5×". */
+  rate: string;
+}
+
+/** Where the native speech player currently is (#833). */
+export interface IosSpeechState {
+  /** Paragraph index currently being spoken. */
+  index: number;
+  /** Total paragraphs as the native side split the article. */
+  total: number;
+  playing: boolean;
+}
+
+/** Progress pushed from the native player as it moves between paragraphs. */
+export interface IosSpeechProgress {
+  event: "progress";
+  index: number;
+  total: number;
+}
+
+/**
+ * Start (or restart) reading an article aloud.
+ *
+ * `text` is plain prose — the native side splits it on blank lines into
+ * paragraph utterances, which is what makes skip-by-paragraph work and what
+ * makes a resume position survive the app being killed. `startIndex` is a
+ * paragraph index and is clamped natively, so a stored position from a
+ * since-edited article is safe to pass verbatim.
+ */
+export function iosSpeechStart(options: {
+  text: string;
+  title: string;
+  startIndex: number;
+  rate: number;
+  voiceId?: string | null;
+}): Promise<void> {
+  return invoke("ios_speech_start", {
+    text: options.text,
+    title: options.title,
+    startIndex: options.startIndex,
+    rate: options.rate,
+    voiceId: options.voiceId ?? null,
+  });
+}
+
+export function iosSpeechPause(): Promise<void> {
+  return invoke("ios_speech_pause");
+}
+
+export function iosSpeechResume(): Promise<void> {
+  return invoke("ios_speech_resume");
+}
+
+export function iosSpeechStop(): Promise<void> {
+  return invoke("ios_speech_stop");
+}
+
+/** Move `delta` paragraphs; negative goes back. Past the end stops playback. */
+export function iosSpeechSkip(delta: number): Promise<void> {
+  return invoke("ios_speech_skip", { delta });
+}
+
+export function iosSpeechSetRate(rate: number): Promise<void> {
+  return invoke("ios_speech_set_rate", { rate });
+}
+
+export function iosSpeechState(): Promise<IosSpeechState> {
+  return invoke<IosSpeechState>("ios_speech_state");
+}
+
+/**
+ * Subscribe to native paragraph-progress events.
+ *
+ * The native side dispatches a `CustomEvent` on `window` rather than going
+ * through Tauri's event bus — same bridge the chrome overlay uses, and it
+ * keeps the player's position updates off the IPC round-trip that every
+ * paragraph boundary would otherwise pay.
+ */
+export function onIosSpeechProgress(
+  handler: (progress: IosSpeechProgress) => void,
+): () => void {
+  const listener = (event: Event) => {
+    const detail = (event as CustomEvent).detail as IosSpeechProgress | undefined;
+    if (detail?.event === "progress") handler(detail);
+  };
+  window.addEventListener("notesage:speech", listener);
+  return () => window.removeEventListener("notesage:speech", listener);
+}

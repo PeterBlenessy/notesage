@@ -1,11 +1,21 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
-import { iosSetChrome, type IosChromeItem, type IosChromeBreadcrumb, type IosChromeSearch } from "@/lib/ios-api";
+import {
+  iosSetChrome,
+  type IosChromeItem,
+  type IosChromeBreadcrumb,
+  type IosChromePlayer,
+  type IosChromeSearch,
+} from "@/lib/ios-api";
 
 export interface NativeChromeSpec {
   topLeft?: IosChromeItem;
   topRight?: IosChromeItem;
   topCenter?: IosChromeBreadcrumb;
   bottomRight?: IosChromeItem;
+  /** Read-aloud transport (#833). Native rather than a React island: a
+   *  captured article is presented in a separate native web view ABOVE the
+   *  app's own, so a React-rendered bar is simply behind it. */
+  bottomCenter?: IosChromePlayer;
   search?: IosChromeSearch;
 }
 

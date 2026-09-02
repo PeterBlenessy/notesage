@@ -19,6 +19,22 @@
 use crate::commands::file::FileEntry;
 use serde::{Deserialize, Serialize};
 
+/// Where the speech player is (#833).
+///
+/// Declared here rather than re-exported: `tauri-plugin-notesage-ios` is an
+/// iOS-ONLY dependency, so a `pub use` of its types breaks the desktop build.
+/// `ios_impl` maps the plugin's struct onto this one, exactly as `grant()`
+/// already does for `LibraryGrant`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeechState {
+    /// Paragraph index currently being spoken.
+    pub index: u32,
+    /// Total paragraphs as the native side split the article.
+    pub total: u32,
+    pub playing: bool,
+}
+
 
 /// State of the iCloud library grant.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -794,6 +810,114 @@ pub async fn ios_dismiss_report(app: tauri::AppHandle) -> Result<(), String> {
     }
 }
 
+/// Start reading a saved article aloud (#833).
+///
+/// `text` is the article's plain prose; the native side splits it into
+/// paragraph utterances, which is what makes skip-by-paragraph and a
+/// kill-surviving resume position possible. `start_index` is a paragraph
+/// index and is clamped natively, so a stored position from a since-edited
+/// article cannot crash or silently restart from the top.
+#[tauri::command]
+pub async fn ios_speech_start(
+    app: tauri::AppHandle,
+    text: String,
+    title: String,
+    start_index: u32,
+    rate: f32,
+    voice_id: Option<String>,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::speech_start(&app, &text, &title, start_index, rate, voice_id.as_deref()).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, &text, &title, start_index, rate, &voice_id);
+        Err("ios_speech_start is only available on iOS".into())
+    }
+}
+
+#[tauri::command]
+pub async fn ios_speech_pause(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::speech_pause(&app).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = &app;
+        Err("ios_speech_pause is only available on iOS".into())
+    }
+}
+
+#[tauri::command]
+pub async fn ios_speech_resume(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::speech_resume(&app).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = &app;
+        Err("ios_speech_resume is only available on iOS".into())
+    }
+}
+
+#[tauri::command]
+pub async fn ios_speech_stop(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::speech_stop(&app).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = &app;
+        Err("ios_speech_stop is only available on iOS".into())
+    }
+}
+
+/// Move `delta` paragraphs. Negative goes back; skipping past the end stops.
+#[tauri::command]
+pub async fn ios_speech_skip(app: tauri::AppHandle, delta: i32) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::speech_skip(&app, delta).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, delta);
+        Err("ios_speech_skip is only available on iOS".into())
+    }
+}
+
+#[tauri::command]
+pub async fn ios_speech_set_rate(app: tauri::AppHandle, rate: f32) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::speech_set_rate(&app, rate).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, rate);
+        Err("ios_speech_set_rate is only available on iOS".into())
+    }
+}
+
+/// Where the player is now — the frontend restores its progress bar from this
+/// after a reload rather than assuming it starts at zero.
+#[tauri::command]
+pub async fn ios_speech_state(app: tauri::AppHandle) -> Result<SpeechState, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::speech_state(&app).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = &app;
+        Err("ios_speech_state is only available on iOS".into())
+    }
+}
+
 /// Open WebKit's find bar over the presented report.
 ///
 /// `false` means no report is on screen; the caller falls back to the web
@@ -876,7 +1000,7 @@ pub async fn ios_stat_file(app: tauri::AppHandle, rel_path: String) -> Result<Fi
 
 #[cfg(target_os = "ios")]
 mod ios_impl {
-    use super::{DownloadState, FileEntry, FileStat, LibraryGrant};
+    use super::{DownloadState, FileEntry, FileStat, LibraryGrant, SpeechState};
     use tauri::AppHandle;
     use tauri_plugin_notesage_ios::NotesageIosExt;
 
@@ -1032,6 +1156,42 @@ mod ios_impl {
     ) -> Result<(), String> {
         app.notesage_ios()
             .present_report(html, inset_top, inset_bottom)
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn speech_start(
+        app: &AppHandle, text: &str, title: &str, start_index: u32, rate: f32,
+        voice_id: Option<&str>,
+    ) -> Result<(), String> {
+        app.notesage_ios()
+            .speech_start(text, title, start_index, rate, voice_id)
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn speech_pause(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().speech_pause().map_err(|e| e.to_string())
+    }
+
+    pub async fn speech_resume(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().speech_resume().map_err(|e| e.to_string())
+    }
+
+    pub async fn speech_stop(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().speech_stop().map_err(|e| e.to_string())
+    }
+
+    pub async fn speech_skip(app: &AppHandle, delta: i32) -> Result<(), String> {
+        app.notesage_ios().speech_skip(delta).map_err(|e| e.to_string())
+    }
+
+    pub async fn speech_set_rate(app: &AppHandle, rate: f32) -> Result<(), String> {
+        app.notesage_ios().speech_set_rate(rate).map_err(|e| e.to_string())
+    }
+
+    pub async fn speech_state(app: &AppHandle) -> Result<SpeechState, String> {
+        app.notesage_ios()
+            .speech_state()
+            .map(|s| SpeechState { index: s.index, total: s.total, playing: s.playing })
             .map_err(|e| e.to_string())
     }
 

@@ -25,6 +25,11 @@ links and documents. PRD:
   ~10 s on a 113-page PDF; base64 with native `Uint8Array.fromBase64` decoding
   brings a 10 MB PDF to ~0.5 s. EPUB/DOCX/PPTX show an "open on your Mac"
   state in v1.
+- **Listen to a saved article** (#833). "Lyssna"/"Listen" in the reader's
+  overflow menu reads the article aloud with `AVSpeechSynthesizer`, with a
+  transport (back / play-pause / forward / speed / stop) and a paragraph
+  position. Playback survives backgrounding and the lock screen, and appears on
+  the lock screen and in Control Centre. See "Reading aloud" below.
 - **Open exported HTML reports, with their scripts running.** On device
   `.html`/`.htm` files render in a **second, bridge-less `WKWebView`**
   (#606, ADR 0010): its own content process, an empty
@@ -664,6 +669,62 @@ through the six demo-path steps on a simulator signed out of iCloud
 (Settings → \[your name\] → Sign Out, or a fresh simulator that was never
 signed in) to confirm on-device behavior matches this code-level review.
 
+## Reading aloud (#833)
+
+Listening is how a read-later library gets used away from the screen — walking,
+cooking, on a commute. Four decisions carry the feature:
+
+**Paragraph utterances, not one blob.** `SpeechPlayer` splits the text on blank
+lines and speaks one paragraph at a time. That is what makes skip-by-paragraph
+possible, but the stronger reason is resume: a paragraph index survives the app
+being killed, where a character offset into a single long utterance survives
+nothing. The position is persisted per document in `mobile-store.speechPositions`
+(path-keyed, rename-aware, like `scrollOffsets`) and clamped natively, so a
+stored position from a since-edited article cannot crash or silently restart.
+
+**`didFinish` advances; `didCancel` does not.** `skip()` and `setRate()` both
+call `stopSpeaking`, which fires *cancel*. Advancing on cancel too would
+double-step past a paragraph — a bug that presents as "it randomly skips
+ahead".
+
+**`.playback` + `.spokenAudio`.** The category is what keeps audio alive when
+the screen locks; without it the feature works only while you are already
+looking at it, which is the opposite of the point. The mode makes speech duck
+politely against navigation prompts rather than fight them.
+
+**The transport is drawn by the NATIVE chrome, not React.** A captured article
+is presented in a separate native web view that sits ABOVE the app's own
+(#606/ADR 0010), so a React-rendered island portals to `document.body` and ends
+up behind it — invisible for exactly the document kind people most want to
+listen to. `ChromeSpec.bottomCenter` renders the bar in the overlay that
+already draws above that view (the same one the back and find buttons use). The
+React `SpeechPlayerBar` remains as the fallback for builds with no native
+chrome (desktop dev, the vitest suite).
+
+**The voice follows the ARTICLE, not the device.** With no voice set, iOS speaks
+in the system language: on a Swedish phone an English article is read by
+`sv-SE.Alva`, which is close to unintelligible. `NLLanguageRecognizer` detects
+the language from the text (≥0.5 confidence, first 2000 characters) and the
+voice is resolved against `speechVoices()` — matching the language *subtag*, so
+"en" matches "en-GB" — rather than trusting `AVSpeechSynthesisVoice(language:)`
+with a bare subtag, which does not reliably resolve one. Higher-quality voices
+win when installed.
+
+**Text extraction is a hard requirement, not a nicety** (`speech-text.ts`).
+Captures inline their images, so a single X article carries ~500 KB of base64
+that a naive strip would hand to the synthesiser to read out character by
+character. The extractor drops `script`/`style`/`svg` content wholesale, drops
+every tag (and with it any `data:` URI), decodes entities, and normalises
+paragraphs so a markdown note and its HTML capture split identically — the
+paragraph index is the resume position, so the two must agree.
+
+**Known gap:** the player has no surface outside the reader, so playback stops
+when the reader closes. Backgrounding and screen lock do not unmount it, so the
+motivating case is unaffected; a library-level mini player is the follow-up.
+Simulator note: `speechVoices()` lists 68 voices there but only the
+device-language asset is installed, so a non-Swedish voice logs "utterance had
+bad voice" and falls back — selection is verifiable, audible output is not.
+
 ## v1 limitations (deferred)
 
 - EPUB/DOCX/PPTX in-app rendering (shown as "open on your Mac"). PDF renders in-app.
@@ -682,6 +743,10 @@ signed in) to confirm on-device behavior matches this code-level review.
 | `src/components/mobile/Onboarding.tsx` | One-time permission / re-grant screen |
 | `src/components/mobile/LibraryBrowser.tsx` | Push-navigation folder browser |
 | `src/components/mobile/Reader.tsx` | Markdown / HTML / mermaid / text / image / PDF reader + iCloud download + theme re-render |
+| `src/components/mobile/speech-text.ts` | Document → speech prose (strips markup, base64 images, URLs) |
+| `src/hooks/useSpeechPlayer.ts` | Speech controller + per-document resume position |
+| `src/components/mobile/SpeechPlayerBar.tsx` | Fallback transport for builds with no native chrome |
+| `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/SpeechPlayer.swift` | `AVSpeechSynthesizer` player: paragraph utterances, lock-screen controls, voice-per-language |
 | `src/lib/markdown-render.ts` | `renderMarkdownFragment` — the shared Rust markdown renderer (theme-aware) |
 | `src-tauri/src/commands/html_preview.rs` | `htmlpreview://` scheme store (mime-aware: `.svg` ids serve image/svg+xml) |
 | `src-tauri/crates/notesage-capture/` | The one capture-note formatter; C ABI for the Share Extension |

@@ -6,6 +6,22 @@ import WebKit
 
 // MARK: - Argument types (decoded from the invoke payload)
 
+struct SpeechStartArgs: Decodable {
+  let text: String
+  let title: String
+  let startIndex: Int
+  let rate: Float
+  let voiceId: String?
+}
+
+struct SpeechSkipArgs: Decodable {
+  let delta: Int
+}
+
+struct SpeechRateArgs: Decodable {
+  let rate: Float
+}
+
 struct RelPathArgs: Decodable {
   let relPath: String
 }
@@ -492,6 +508,85 @@ class NotesageIosPlugin: Plugin {
   @objc public func clearLibraryGrant(_ invoke: Invoke) {
     LibraryAccess.clearLibraryGrant()
     invoke.resolve()
+  }
+
+
+  // MARK: - Speech player (#833)
+  //
+  // The player itself is a singleton (`SpeechPlayer.shared`) rather than
+  // per-invoke state: AVAudioSession, the remote-command centre and the
+  // now-playing info centre are all process-wide, and a second synthesiser
+  // would fight the first for the same audio route.
+
+  @objc public func speechStart(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(SpeechStartArgs.self)
+      DispatchQueue.main.async {
+        // Wire progress back to the page before starting, so the very first
+        // paragraph reports its position too.
+        SpeechPlayer.shared.onProgress = { [weak self] index, total in
+          self?.emitSpeech(["event": "progress", "index": index, "total": total])
+        }
+        SpeechPlayer.shared.start(
+          text: args.text, title: args.title, startIndex: args.startIndex,
+          rate: args.rate, voiceId: args.voiceId)
+      }
+      invoke.resolve()
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func speechPause(_ invoke: Invoke) {
+    DispatchQueue.main.async { SpeechPlayer.shared.pause() }
+    invoke.resolve()
+  }
+
+  @objc public func speechResume(_ invoke: Invoke) {
+    DispatchQueue.main.async { SpeechPlayer.shared.resume() }
+    invoke.resolve()
+  }
+
+  @objc public func speechStop(_ invoke: Invoke) {
+    DispatchQueue.main.async { SpeechPlayer.shared.stop() }
+    invoke.resolve()
+  }
+
+  @objc public func speechSkip(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(SpeechSkipArgs.self)
+      DispatchQueue.main.async { SpeechPlayer.shared.skip(args.delta) }
+      invoke.resolve()
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func speechSetRate(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(SpeechRateArgs.self)
+      DispatchQueue.main.async { SpeechPlayer.shared.setRate(args.rate) }
+      invoke.resolve()
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func speechState(_ invoke: Invoke) {
+    // Read on main: the synthesiser's `isSpeaking`/`isPaused` are UIKit-thread
+    // state, and the player mutates its index from the delegate on main.
+    DispatchQueue.main.async {
+      invoke.resolve([
+        "index": SpeechPlayer.shared.currentIndex,
+        "total": SpeechPlayer.shared.paragraphCount,
+        "playing": SpeechPlayer.shared.isPlaying,
+      ])
+    }
+  }
+
+  /// Same bridge shape as the chrome overlay's `emit` — JSON-serialised so a
+  /// title with quotes or emoji cannot break out of the JS string literal.
+  private func emitSpeech(_ detail: [String: Any]) {
+    guard let data = try? JSONSerialization.data(withJSONObject: detail),
+      let json = String(data: data, encoding: .utf8)
+    else { return }
+    webViewRef?.evaluateJavaScript(
+      "window.dispatchEvent(new CustomEvent('notesage:speech',{detail:\(json)}))"
+    )
   }
 
   @objc public func listDirectory(_ invoke: Invoke) {

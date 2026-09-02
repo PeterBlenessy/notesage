@@ -104,6 +104,22 @@ struct ChromeBreadcrumbSpec: Decodable, Equatable {
   let menu: [ChromeMenuItemSpec]?
 }
 
+/// Bottom-center transport for reading an article aloud (#833).
+///
+/// Native rather than a React island because the primary listening case is a
+/// captured article, and those are presented in a SEPARATE native web view
+/// that sits above the app's own (#606/ADR 0010) — a React-rendered bar is
+/// simply behind it. The chrome overlay is already the one surface that draws
+/// above that view, which is why the back button and find button work there.
+struct ChromePlayerSpec: Decodable, Equatable {
+  let playing: Bool
+  /// Already-formatted "3 / 41" — the position is paragraphs, and formatting
+  /// it here would duplicate the frontend's locale handling.
+  let position: String
+  /// Already-formatted "1.5×".
+  let rate: String
+}
+
 struct ChromeSpec: Decodable, Equatable {
   let topLeft: ChromeItemSpec?
   let topRight: ChromeItemSpec?
@@ -112,6 +128,7 @@ struct ChromeSpec: Decodable, Equatable {
   /// bottom safe area — the keyboard covers it while typing, like Notes'
   /// compose button.
   let bottomRight: ChromeItemSpec?
+  let bottomCenter: ChromePlayerSpec?
   let search: ChromeSearchSpec?
 }
 
@@ -139,6 +156,7 @@ final class ChromeManager {
   private var searchWidthCancellable: AnyCancellable?
   private var searchCollapsedConstraints: [NSLayoutConstraint] = []
   private var searchExpandedConstraints: [NSLayoutConstraint] = []
+  private var playerHost: UIHostingController<AnyView>?
   private weak var webView: WKWebView?
 
   /// Apply a chrome spec. Main thread only.
@@ -149,6 +167,7 @@ final class ChromeManager {
     setCorner("topRight", item: spec.topRight, over: webView, leading: false)
     setCorner("bottomRight", item: spec.bottomRight, over: webView, leading: false, top: false)
     setBreadcrumb(spec.topCenter, over: webView)
+    setPlayer(spec.bottomCenter, over: webView)
     setSearch(spec.search, over: webView)
   }
 
@@ -229,6 +248,39 @@ final class ChromeManager {
       host.view.heightAnchor.constraint(equalToConstant: 46),
     ])
     breadcrumbHost = host
+  }
+
+  private func setPlayer(_ spec: ChromePlayerSpec?, over webView: WKWebView) {
+    guard let container = webView.superview else { return }
+    guard let spec else {
+      playerHost?.view.removeFromSuperview()
+      playerHost = nil
+      return
+    }
+    let view = AnyView(GlassPlayer(spec: spec) { [weak self] id in self?.emit(id, value: nil) })
+    if let host = playerHost, host.view.superview != nil {
+      // Position and playing state change constantly — swap the root view in
+      // place rather than rebuilding the hosting controller, which would drop
+      // the capsule's animation and re-run its appear transition each tick.
+      host.rootView = view
+      container.bringSubviewToFront(host.view)
+      return
+    }
+    let host = UIHostingController(rootView: view)
+    host.view.backgroundColor = .clear
+    host.view.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(host.view)
+    // Fixed-frame strip along the bottom safe area. A hosting view clips
+    // hit-testing to its own frame, so it must be no taller than the controls
+    // or it swallows taps meant for the document beneath (the corner-button
+    // lesson, #581).
+    NSLayoutConstraint.activate([
+      host.view.bottomAnchor.constraint(
+        equalTo: container.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+      host.view.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+      host.view.heightAnchor.constraint(equalToConstant: 52),
+    ])
+    playerHost = host
   }
 
   private func setSearch(_ spec: ChromeSearchSpec?, over webView: WKWebView) {
@@ -753,6 +805,49 @@ struct GlassCircleProminent: ViewModifier {
     } else {
       content.buttonStyle(.borderedProminent).clipShape(Circle())
     }
+  }
+}
+
+/// Transport controls for reading aloud (#833).
+///
+/// Five controls and a position readout, sized for one-handed use while
+/// walking — which is the case the whole feature exists for. Position is shown
+/// in PARAGRAPHS, not minutes: `AVSpeechSynthesizer` gives no reliable
+/// duration up front, and a wrong clock is worse than an honest count.
+struct GlassPlayer: View {
+  let spec: ChromePlayerSpec
+  let emit: (String) -> Void
+
+  var body: some View {
+    HStack(spacing: 2) {
+      button("player-back", system: "backward.fill")
+      button("player-toggle", system: spec.playing ? "pause.fill" : "play.fill", large: true)
+      button("player-forward", system: "forward.fill")
+      Text(spec.position)
+        .font(.caption.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 4)
+      Button { emit("player-rate") } label: {
+        Text(spec.rate)
+          .font(.caption.weight(.medium).monospacedDigit())
+          .frame(minWidth: 40, minHeight: 44)
+      }
+      .buttonStyle(.plain)
+      button("player-stop", system: "stop.fill")
+    }
+    .padding(.horizontal, 6)
+    .foregroundStyle(.primary)
+    .modifier(GlassCapsuleSurface())
+  }
+
+  private func button(_ id: String, system: String, large: Bool = false) -> some View {
+    Button { emit(id) } label: {
+      Image(systemName: system)
+        .font(large ? .title3 : .body)
+        // 44pt minimum touch target, one-handed, without looking.
+        .frame(minWidth: large ? 48 : 44, minHeight: 44)
+    }
+    .buttonStyle(.plain)
   }
 }
 
