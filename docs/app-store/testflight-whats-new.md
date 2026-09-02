@@ -11,6 +11,6 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-You can listen to a saved article. Open one, tap the … menu, choose Listen. A player appears with back, play/pause, forward, speed and stop, and the position in paragraphs.
+Fixes the wrong-language reading you hit. Ten of the 36 articles in your Inbox were being detected as Danish or Norwegian — all of them English. One localised line was enough to swing it: your X captures are titled "… på X", and that alone made 14,000 characters of English come back as Danish. The language is now decided by a majority vote across paragraphs, so a foreign title gets outvoted by the body instead of deciding for it. Your Swedish articles still read in Swedish.
 
-The two things worth checking, because only a real phone can show them: lock the screen mid-article and confirm it keeps reading, with the controls on the lock screen; and confirm an English article is read by an English voice rather than a Swedish one. The voice will sound fairly robotic — that is Apple's default compact voice, and downloading an enhanced voice under Settings > Accessibility > Spoken Content > Voices should improve it a lot. Tell me whether it does.
+Still worth checking: lock the screen mid-article and confirm it keeps reading. And the voice will still sound flat — that is Apple's compact voice. Downloading an enhanced English voice under Settings > Accessibility > Spoken Content > Voices should improve it a lot; tell me whether it does, because that decides whether we need a different speech engine.
