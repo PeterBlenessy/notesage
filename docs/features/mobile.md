@@ -715,6 +715,20 @@ already draws above that view (the same one the back and find buttons use). The
 React `SpeechPlayerBar` remains as the fallback for builds with no native
 chrome (desktop dev, the vitest suite).
 
+**Language is decided by a PER-PARAGRAPH majority vote, not by the whole
+document.** Feeding the whole text to `NLLanguageRecognizer` is what the
+obvious implementation does, and measured against Peter's real library it got
+**10 of 36 articles wrong** — all English, all read as Danish or Norwegian. One
+short foreign line was enough: an X capture whose title is localised ("Thariq
+(@trq212) **på** X") came back Danish at 0.68 across 13,917 characters of plain
+English prose. Neither more text nor `languageConstraints` helped — both made
+the WRONG answers *more* confident (0.68 → 0.75), so no threshold or margin
+could separate them. Voting can: those same documents split en=64/pl=1 and
+en=12/pl=1. Only paragraphs of 80+ characters vote, since headings, list items
+and handles are exactly the noise that misleads the recogniser. After the
+change the library resolves 30 en / 6 sv with nothing wrong, and every
+genuinely Swedish document still detects as Swedish.
+
 **The voice follows the ARTICLE, not the device.** With no voice set, iOS speaks
 in the system language: on a Swedish phone an English article is read by
 `sv-SE.Alva`, which is close to unintelligible. `NLLanguageRecognizer` detects
