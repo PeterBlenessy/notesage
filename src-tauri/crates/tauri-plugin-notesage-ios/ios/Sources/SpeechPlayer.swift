@@ -22,6 +22,12 @@ import AVFoundation
 import MediaPlayer
 import NaturalLanguage
 
+/// Paragraphs shorter than this are headings, list items and handles — the
+/// noise that misleads whole-document language detection.
+private let MIN_VOTING_PARAGRAPH_CHARS = 80
+/// Bounds the cost on a long article; the verdict is settled long before this.
+private let MAX_VOTING_PARAGRAPHS = 60
+
 @objc public final class SpeechPlayer: NSObject {
     @objc public static let shared = SpeechPlayer()
 
@@ -199,16 +205,60 @@ import NaturalLanguage
         if let explicitId, let voice = AVSpeechSynthesisVoice(identifier: explicitId) {
             return voice
         }
+        guard let code = detectLanguage(text) else { return nil }
+        return preferredVoice(forLanguageCode: code)
+    }
+
+    /// Detect the article's language by a PER-PARAGRAPH majority vote.
+    ///
+    /// Feeding the whole document to `NLLanguageRecognizer` is what the obvious
+    /// implementation does, and it is wrong often enough to matter. Measured
+    /// against Peter's real library: an X capture whose title is localised
+    /// ("Thariq (@trq212) **på** X") came back **Danish at 0.68** across 13,917
+    /// characters of plain English prose, and another English article came back
+    /// Norwegian at 0.74. One short foreign line at the top swung the verdict
+    /// for the entire document.
+    ///
+    /// Neither more text nor `languageConstraints` helps — both made the WRONG
+    /// answers more confident (da 0.68 -> 0.75), so no threshold or margin rule
+    /// can separate them from the right ones. Voting can: on the same two
+    /// documents the paragraphs split en=64/pl=1 and en=12/pl=1.
+    ///
+    /// It is also the right shape for the content — a foreign title, a pull
+    /// quote, or a boilerplate footer is outvoted by the body instead of
+    /// deciding for it.
+    static func detectLanguage(_ text: String) -> String? {
+        // Short paragraphs (headings, list items, handles) are exactly the
+        // noise that misleads the recogniser, so only substantial prose votes.
+        let paragraphs = text.components(separatedBy: "\n\n")
+            .filter { $0.count >= MIN_VOTING_PARAGRAPH_CHARS }
+            .prefix(MAX_VOTING_PARAGRAPHS)
+
+        var votes: [String: Int] = [:]
+        for paragraph in paragraphs {
+            let recogniser = NLLanguageRecognizer()
+            recogniser.processString(paragraph)
+            guard let language = recogniser.dominantLanguage else { continue }
+            let confidence = recogniser.languageHypotheses(withMaximum: 1)[language] ?? 0
+            if confidence >= 0.5 { votes[language.rawValue, default: 0] += 1 }
+        }
+
+        if let winner = votes.max(by: { $0.value < $1.value }) {
+            let total = votes.values.reduce(0, +)
+            // A plurality is not enough for a genuinely mixed document; without
+            // a majority, the system default is the safer answer.
+            if Double(winner.value) / Double(total) >= 0.5 { return winner.key }
+            return nil
+        }
+
+        // Nothing long enough to vote — a short note, a list. Fall back to
+        // whole-text detection, which is what voting replaces only because it
+        // has more to work with.
         let recogniser = NLLanguageRecognizer()
-        // A prefix is plenty and bounds the cost: captures run to hundreds of
-        // KB, and language does not change halfway down an article.
         recogniser.processString(String(text.prefix(2000)))
         guard let language = recogniser.dominantLanguage else { return nil }
-        // Below ~0.5 the guess is a coin flip; a confidently wrong voice reads
-        // worse than the system default.
         let confidence = recogniser.languageHypotheses(withMaximum: 1)[language] ?? 0
-        guard confidence >= 0.5 else { return nil }
-        return preferredVoice(forLanguageCode: language.rawValue)
+        return confidence >= 0.5 ? language.rawValue : nil
     }
 
     /// Resolve a bare language subtag ("en") to an INSTALLED voice.
