@@ -278,8 +278,12 @@ final class ChromeManager {
       host.view.bottomAnchor.constraint(
         equalTo: container.safeAreaLayoutGuide.bottomAnchor, constant: -10),
       host.view.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-      host.view.heightAnchor.constraint(equalToConstant: 52),
+      host.view.heightAnchor.constraint(equalToConstant: 56),
     ])
+    // Intrinsic width: the hosting view must be allowed to be as wide as its
+    // content, or SwiftUI squeezes the position label into a wrap.
+    host.view.setContentCompressionResistancePriority(.required, for: .horizontal)
+    host.view.setContentHuggingPriority(.required, for: .horizontal)
     playerHost = host
   }
 
@@ -819,23 +823,34 @@ struct GlassPlayer: View {
   let emit: (String) -> Void
 
   var body: some View {
-    HStack(spacing: 2) {
+    // Spacing 8 and 48/56pt targets, up from 2 and 44/48: on Peter's phone the
+    // first cut was "so close" that a thumb landed on the neighbour. The
+    // capsule grows a little; the article behind it is not what a listener is
+    // looking at.
+    HStack(spacing: 8) {
       button("player-back", system: "backward.fill")
       button("player-toggle", system: spec.playing ? "pause.fill" : "play.fill", large: true)
       button("player-forward", system: "forward.fill")
+      // `.lineLimit(1)` + `.fixedSize()`: without them SwiftUI wrapped
+      // "6 / 178" onto two lines inside the fixed-height host and showed
+      // "6" over "…" — which read as a mystery control, not a position.
       Text(spec.position)
-        .font(.caption.monospacedDigit())
+        .font(.footnote.monospacedDigit())
         .foregroundStyle(.secondary)
-        .padding(.horizontal, 4)
+        .lineLimit(1)
+        .fixedSize()
+        .padding(.horizontal, 2)
       Button { emit("player-rate") } label: {
         Text(spec.rate)
-          .font(.caption.weight(.medium).monospacedDigit())
-          .frame(minWidth: 40, minHeight: 44)
+          .font(.footnote.weight(.medium).monospacedDigit())
+          .lineLimit(1)
+          .fixedSize()
+          .frame(minWidth: 44, minHeight: 48)
       }
       .buttonStyle(.plain)
       button("player-stop", system: "stop.fill")
     }
-    .padding(.horizontal, 6)
+    .padding(.horizontal, 8)
     .foregroundStyle(.primary)
     .modifier(GlassCapsuleSurface())
   }
@@ -843,9 +858,8 @@ struct GlassPlayer: View {
   private func button(_ id: String, system: String, large: Bool = false) -> some View {
     Button { emit(id) } label: {
       Image(systemName: system)
-        .font(large ? .title3 : .body)
-        // 44pt minimum touch target, one-handed, without looking.
-        .frame(minWidth: large ? 48 : 44, minHeight: 44)
+        .font(large ? .title2 : .title3)
+        .frame(minWidth: large ? 56 : 48, minHeight: 48)
     }
     .buttonStyle(.plain)
   }

@@ -729,7 +729,32 @@ and handles are exactly the noise that misleads the recogniser. After the
 change the library resolves 30 en / 6 sv with nothing wrong, and every
 genuinely Swedish document still detects as Swedish.
 
-**The voice follows the ARTICLE, not the device.** With no voice set, iOS speaks
+**The user's chosen voice wins, and it is the app that remembers it.** There
+is no API that tells a third-party app which voice the user picked in
+Settings → Spoken Content: `AVSpeechSynthesisVoice(language:)` returns the
+compact voice regardless of what is installed or selected, and an utterance
+with no voice follows the *device* language. So the app keeps its own
+`speechVoices` map (language subtag → voice id, persisted in `mobile-store`),
+offers "Voice…" in the reader menu while listening — a native sheet listing
+installed voices for the article's language, marked `Name · Premium · en-US`
+because premium en-AU and premium en-US are both "Premium" and sound nothing
+alike — and passes the map to `speech_start`, where the native side honours it
+before any heuristic. Measured on Peter's phone: with the map empty, English
+was read by premium **en-AU Karen** — the right tier, the wrong voice, which is
+what "sounds like the regular Siri voice" was.
+
+**Novelty voices are excluded everywhere.** Apple's classic joke set
+(`com.apple.speech.synthesis.voice.*` — Albert, Bad News, Bells, Zarvox…) and
+the Eloquence screen-reader family (`com.apple.eloquence.*`) are 19 of the 25
+English voices on the simulator; left in, they bury a user's premium voices in
+the picker and are eligible for the automatic choice. `isNoveltyVoice` drops
+them from both.
+
+**When the user has not chosen, ranking is quality → the user's own region →
+US/UK → the rest.** Quality alone picks arbitrarily among equals; the region
+step reads `Locale.preferredLanguages` so a phone set to en-US gets en-US.
+
+**The voice otherwise follows the ARTICLE, not the device.** With no voice set, iOS speaks
 in the system language: on a Swedish phone an English article is read by
 `sv-SE.Alva`, which is close to unintelligible. `NLLanguageRecognizer` detects
 the language from the text (≥0.5 confidence, first 2000 characters) and the

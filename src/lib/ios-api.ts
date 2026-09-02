@@ -484,15 +484,40 @@ export function iosSpeechStart(options: {
   title: string;
   startIndex: number;
   rate: number;
-  voiceId?: string | null;
-}): Promise<void> {
-  return invoke("ios_speech_start", {
+  /** The user's own voice picks, keyed by language subtag ("en" -> id). */
+  voiceByLanguage: Record<string, string>;
+}): Promise<IosSpeechStarted> {
+  return invoke<IosSpeechStarted>("ios_speech_start", {
     text: options.text,
     title: options.title,
     startIndex: options.startIndex,
     rate: options.rate,
-    voiceId: options.voiceId ?? null,
+    voiceByLanguage: options.voiceByLanguage,
   });
+}
+
+/** What starting playback decided — the language the article is read in. */
+export interface IosSpeechStarted {
+  language: string | null;
+}
+
+/** One installed voice, as the picker shows it. */
+export interface IosSpeechVoice {
+  id: string;
+  name: string;
+  /** BCP-47, e.g. "en-US". */
+  language: string;
+  quality: "premium" | "enhanced" | "default";
+}
+
+/** Installed voices for a language subtag, best first. */
+export function iosSpeechVoices(language: string): Promise<IosSpeechVoice[]> {
+  return invoke<IosSpeechVoice[]>("ios_speech_voices", { language });
+}
+
+/** Switch voice mid-article; the current paragraph is re-spoken. */
+export function iosSpeechSetVoice(voiceId: string): Promise<void> {
+  return invoke("ios_speech_set_voice", { voiceId });
 }
 
 export function iosSpeechPause(): Promise<void> {

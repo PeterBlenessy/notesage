@@ -5,6 +5,7 @@ import {
   iosSpeechPause,
   iosSpeechResume,
   iosSpeechSetRate,
+  iosSpeechSetVoice,
   iosSpeechSkip,
   iosSpeechStart,
   iosSpeechStop,
@@ -31,9 +32,18 @@ export interface SpeechPlayerState {
   /** Total paragraphs, or 0 before the first progress event. */
   total: number;
   rate: number;
+  /** Language subtag the article is being read in ("en"), once known. */
+  language: string | null;
 }
 
-const IDLE: SpeechPlayerState = { active: false, playing: false, index: 0, total: 0, rate: 1.0 };
+const IDLE: SpeechPlayerState = {
+  active: false,
+  playing: false,
+  index: 0,
+  total: 0,
+  rate: 1.0,
+  language: null,
+};
 
 /**
  * Drive the native speech player for one document (#833).
@@ -46,6 +56,7 @@ const IDLE: SpeechPlayerState = { active: false, playing: false, index: 0, total
 export function useSpeechPlayer(relPath: string) {
   const [state, setState] = useState<SpeechPlayerState>(IDLE);
   const rememberSpeechPosition = useMobileStore((s) => s.rememberSpeechPosition);
+  const rememberSpeechVoice = useMobileStore((s) => s.rememberSpeechVoice);
 
   // Read positions off the store imperatively. Subscribing would re-render the
   // reader on every paragraph boundary — the position is written far more
@@ -115,9 +126,34 @@ export function useSpeechPlayer(relPath: string) {
         title,
         startIndex,
         rate: stateRef.current.rate * AV_DEFAULT_RATE,
-      }).catch(fail);
+        // The user's own picks win over every heuristic on the native side.
+        voiceByLanguage: useMobileStore.getState().speechVoices,
+      })
+        .then(({ language }) => {
+          // Only if this start is still the live one — a late resolve after
+          // navigation must not stamp a language onto a different article.
+          if (playingPathRef.current === relPath) {
+            setState((prev) => ({ ...prev, language }));
+          }
+        })
+        .catch(fail);
     },
     [relPath, savedIndexFor, fail],
+  );
+
+  /**
+   * Make `voiceId` the voice for the current article's language, from now on
+   * and for every later article in that language. Applies immediately if
+   * something is playing.
+   */
+  const chooseVoice = useCallback(
+    (voiceId: string) => {
+      const language = stateRef.current.language;
+      if (!language) return;
+      rememberSpeechVoice(language, voiceId);
+      if (stateRef.current.active) void iosSpeechSetVoice(voiceId).catch(fail);
+    },
+    [rememberSpeechVoice, fail],
   );
 
   const pause = useCallback(() => {
@@ -167,5 +203,5 @@ export function useSpeechPlayer(relPath: string) {
     };
   }, [relPath]);
 
-  return { state, start, pause, resume, stop, skip, cycleRate };
+  return { state, start, pause, resume, stop, skip, cycleRate, chooseVoice };
 }

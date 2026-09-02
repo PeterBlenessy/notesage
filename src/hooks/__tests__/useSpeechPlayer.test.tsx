@@ -12,9 +12,12 @@ interface SpeechStartArgs {
   title: string;
   startIndex: number;
   rate: number;
-  voiceId?: string | null;
+  voiceByLanguage: Record<string, string>;
 }
-const speechStart = vi.fn<(args: SpeechStartArgs) => Promise<void>>(() => Promise.resolve());
+const speechStart = vi.fn<(args: SpeechStartArgs) => Promise<{ language: string | null }>>(
+  () => Promise.resolve({ language: "en" }),
+);
+const speechSetVoice = vi.fn<(id: string) => Promise<void>>(() => Promise.resolve());
 const speechPause = vi.fn<() => Promise<void>>(() => Promise.resolve());
 const speechResume = vi.fn<() => Promise<void>>(() => Promise.resolve());
 const speechStop = vi.fn<() => Promise<void>>(() => Promise.resolve());
@@ -28,6 +31,7 @@ vi.mock("@/lib/ios-api", () => ({
   iosSpeechStop: () => speechStop(),
   iosSpeechSkip: (d: number) => speechSkip(d),
   iosSpeechSetRate: (r: number) => speechSetRate(r),
+  iosSpeechSetVoice: (id: string) => speechSetVoice(id),
   // Real listener semantics: the native side dispatches a window CustomEvent.
   onIosSpeechEvent: (handler: (p: { event: string; index?: number; total?: number; playing?: boolean }) => void) => {
     const listener = (e: Event) => {
@@ -63,7 +67,7 @@ function emitFinished() {
 describe("useSpeechPlayer", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    useMobileStore.setState({ speechPositions: {} });
+    useMobileStore.setState({ speechPositions: {}, speechVoices: {} });
   });
 
   it("starts at the persisted paragraph for this article", () => {
@@ -225,6 +229,44 @@ describe("useSpeechPlayer", () => {
     act(() => result.current.resume());
     expect(speechResume).toHaveBeenCalled();
     expect(result.current.state.playing).toBe(true);
+  });
+
+  it("passes the user's own voice picks to the native side", () => {
+    // There is no API for "the voice the user chose in Settings", so the app
+    // remembers it and hands it over; the native side lets it win.
+    useMobileStore.setState({ speechVoices: { en: "com.apple.voice.premium.en-US.Ava" } });
+    const { result } = renderHook(() => useSpeechPlayer("Inbox/a.html"));
+    act(() => result.current.start("body", "A"));
+    expect(speechStart).toHaveBeenCalledWith(
+      expect.objectContaining({ voiceByLanguage: { en: "com.apple.voice.premium.en-US.Ava" } }),
+    );
+  });
+
+  it("learns the article's language from the native side", async () => {
+    const { result } = renderHook(() => useSpeechPlayer("Inbox/a.html"));
+    await act(async () => {
+      result.current.start("body", "A");
+      await Promise.resolve();
+    });
+    expect(result.current.state.language).toBe("en");
+  });
+
+  it("remembers a chosen voice for the language and applies it live", async () => {
+    const { result } = renderHook(() => useSpeechPlayer("Inbox/a.html"));
+    await act(async () => {
+      result.current.start("body", "A");
+      await Promise.resolve();
+    });
+    act(() => result.current.chooseVoice("com.apple.voice.premium.en-GB.Daniel"));
+    expect(useMobileStore.getState().speechVoices.en).toBe("com.apple.voice.premium.en-GB.Daniel");
+    expect(speechSetVoice).toHaveBeenCalledWith("com.apple.voice.premium.en-GB.Daniel");
+  });
+
+  it("does not record a voice before the language is known", () => {
+    const { result } = renderHook(() => useSpeechPlayer("Inbox/a.html"));
+    act(() => result.current.chooseVoice("x"));
+    expect(useMobileStore.getState().speechVoices).toEqual({});
+    expect(speechSetVoice).not.toHaveBeenCalled();
   });
 
   it("skip forwards the delta unchanged", () => {

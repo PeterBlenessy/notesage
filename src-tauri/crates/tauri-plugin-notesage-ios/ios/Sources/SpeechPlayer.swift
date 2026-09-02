@@ -35,7 +35,6 @@ private let MAX_VOTING_PARAGRAPHS = 60
     private var paragraphs: [String] = []
     private var index = 0
     private var rate: Float = AVSpeechUtteranceDefaultSpeechRate
-    private var voiceId: String?
     /// Voice chosen for THIS article, from its own language.
     private var voice: AVSpeechSynthesisVoice?
     private var title = ""
@@ -69,7 +68,17 @@ private let MAX_VOTING_PARAGRAPHS = 60
     ///
     /// `startIndex` is a paragraph index, clamped — a stored position from a
     /// since-edited article must not crash or silently start from the top.
-    @objc public func start(text: String, title: String, startIndex: Int, rate: Float, voiceId: String?) {
+    /// The language the current article was judged to be in ("en"), or nil.
+    @objc public private(set) var language: String?
+
+    /// `voiceByLanguage` is the user's own picks, keyed by language subtag
+    /// ("en" -> a voice identifier). It wins over every heuristic below: there
+    /// is NO API that tells an app which voice the user chose in Settings, so
+    /// the app has to remember the choice itself — and honour it.
+    @objc public func start(
+        text: String, title: String, startIndex: Int, rate: Float,
+        voiceByLanguage: [String: String]
+    ) {
         // NOT `stop()`: that deactivates the audio session with
         // `.notifyOthersOnDeactivation`, so the very first Listen tap ducked
         // and un-ducked every other app's audio for no reason. Tearing down
@@ -77,10 +86,10 @@ private let MAX_VOTING_PARAGRAPHS = 60
         resetQueue()
         self.title = title
         self.rate = rate > 0 ? rate : AVSpeechUtteranceDefaultSpeechRate
-        self.voiceId = voiceId
         paragraphs = SpeechPlayer.splitIntoParagraphs(text)
         guard !paragraphs.isEmpty else { return }
-        voice = SpeechPlayer.voice(for: voiceId, text: text)
+        language = SpeechPlayer.detectLanguage(text)
+        voice = SpeechPlayer.voice(forLanguage: language, chosen: voiceByLanguage)
         index = min(max(0, startIndex), paragraphs.count - 1)
         activateSession()
         registerRemoteCommands()
@@ -162,6 +171,29 @@ private let MAX_VOTING_PARAGRAPHS = 60
         }
     }
 
+    /// Switch voice in place; the current paragraph is re-spoken so the user
+    /// hears the change immediately, as with `setRate`.
+    @objc public func setVoice(identifier: String) {
+        guard let picked = AVSpeechSynthesisVoice(identifier: identifier) else { return }
+        voice = picked
+        if synth.isSpeaking || synth.isPaused {
+            synth.stopSpeaking(at: .immediate)
+            speakCurrent()
+        }
+    }
+
+    /// Installed voices for a language subtag, best first — the picker's list.
+    @objc public static func voices(forLanguageCode code: String) -> [[String: Any]] {
+        rankedVoices(forLanguageCode: code).map {
+            [
+                "id": $0.identifier,
+                "name": $0.name,
+                "language": $0.language,
+                "quality": qualityName($0.quality),
+            ]
+        }
+    }
+
     @objc public var currentIndex: Int { index }
     @objc public var paragraphCount: Int { paragraphs.count }
     @objc public var isPlaying: Bool { synth.isSpeaking && !synth.isPaused }
@@ -201,12 +233,14 @@ private let MAX_VOTING_PARAGRAPHS = 60
     /// Falls back to the system default (nil) when detection is uncertain or
     /// no voice is installed for the detected language: a default voice is a
     /// worse reading, but silence would be a broken feature.
-    static func voice(for explicitId: String?, text: String) -> AVSpeechSynthesisVoice? {
-        if let explicitId, let voice = AVSpeechSynthesisVoice(identifier: explicitId) {
-            return voice
+    static func voice(forLanguage code: String?, chosen: [String: String]) -> AVSpeechSynthesisVoice? {
+        guard let code else { return nil }
+        // The user's own pick for this language, if it is still installed
+        // (voices can be deleted in Settings; a stale id must not silence us).
+        if let id = chosen[code], let picked = AVSpeechSynthesisVoice(identifier: id) {
+            return picked
         }
-        guard let code = detectLanguage(text) else { return nil }
-        return preferredVoice(forLanguageCode: code)
+        return rankedVoices(forLanguageCode: code).first
     }
 
     /// Detect the article's language by a PER-PARAGRAPH majority vote.
@@ -271,19 +305,62 @@ private let MAX_VOTING_PARAGRAPHS = 60
     ///
     /// Matching against `speechVoices()` also guarantees the voice is actually
     /// present, rather than naming one iOS would have to download.
-    static func preferredVoice(forLanguageCode code: String) -> AVSpeechSynthesisVoice? {
+    /// Installed voices for a language, best first.
+    ///
+    /// Order: quality tier, then the user's OWN region for that language, then
+    /// a fixed sensible order. The region step exists because ranking by
+    /// quality alone picks arbitrarily among equals — on Peter's phone it
+    /// chose premium en-AU Karen over the premium voice he had actually
+    /// selected, which is what "it sounds like the regular Siri voice" was.
+    static func rankedVoices(forLanguageCode code: String) -> [AVSpeechSynthesisVoice] {
         let candidates = AVSpeechSynthesisVoice.speechVoices().filter {
             // "en" matches "en-US" and "en-GB", but must not match "en" inside
             // some other tag — compare the subtag, not a substring.
             $0.language.split(separator: "-").first.map(String.init) == code
+                && !isNoveltyVoice($0)
         }
-        guard !candidates.isEmpty else { return nil }
-        // Prefer a better-sounding voice when the user has one installed; an
-        // article read end to end is a long time to spend with the compact one.
-        let ranked = candidates.sorted { a, b in
-            quality(a.quality) > quality(b.quality)
+        // The user's preferred regions for this language, in their order:
+        // Locale.preferredLanguages is the list from Settings > Language.
+        let userRegions = Locale.preferredLanguages
+            .filter { $0.split(separator: "-").first.map(String.init) == code }
+        func regionRank(_ v: AVSpeechSynthesisVoice) -> Int {
+            if let i = userRegions.firstIndex(where: { $0.caseInsensitiveCompare(v.language) == .orderedSame }) {
+                return i
+            }
+            // Past the user's own list, prefer the big two before the rest —
+            // an English reader who never set a region still expects US or UK,
+            // not Australian or Indian, by default.
+            let fallback = ["en-US", "en-GB"]
+            if let j = fallback.firstIndex(where: { $0.caseInsensitiveCompare(v.language) == .orderedSame }) {
+                return userRegions.count + j
+            }
+            return userRegions.count + fallback.count
         }
-        return ranked.first
+        return candidates.sorted { a, b in
+            if quality(a.quality) != quality(b.quality) { return quality(a.quality) > quality(b.quality) }
+            if regionRank(a) != regionRank(b) { return regionRank(a) < regionRank(b) }
+            return a.name < b.name
+        }
+    }
+
+    /// Apple ships two families nobody wants reading an article: the classic
+    /// novelty set (`com.apple.speech.synthesis.voice.*` — Albert, Bad News,
+    /// Bahh, Bells, Boing, Bubbles, Zarvox…) and the Eloquence screen-reader
+    /// family (`com.apple.eloquence.*` — Eddy, Flo, Grandma, Grandpa…). On the
+    /// simulator they are 19 of the 25 English voices, and on a phone they
+    /// bury the user's premium voices under a wall of jokes in the picker.
+    /// Excluded from both the list and the automatic choice.
+    static func isNoveltyVoice(_ v: AVSpeechSynthesisVoice) -> Bool {
+        v.identifier.hasPrefix("com.apple.speech.synthesis.voice.")
+            || v.identifier.hasPrefix("com.apple.eloquence.")
+    }
+
+    private static func qualityName(_ q: AVSpeechSynthesisVoiceQuality) -> String {
+        switch q {
+        case .premium: return "premium"
+        case .enhanced: return "enhanced"
+        default: return "default"
+        }
     }
 
     private static func quality(_ q: AVSpeechSynthesisVoiceQuality) -> Int {
