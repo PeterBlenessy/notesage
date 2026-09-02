@@ -172,6 +172,16 @@ interface MobileStore {
   scrollOffsets: Record<string, number>;
   rememberScroll: (relPath: string, offset: number) => void;
 
+  /** Listening position per document, as a PARAGRAPH index (#833).
+   *
+   *  Persisted, unlike `scrollOffsets`: a part-listened article is the whole
+   *  point of the feature, and picking it up on the next launch is what makes
+   *  it usable on a commute. A paragraph index also degrades safely when the
+   *  article changed underneath it — the native player clamps an out-of-range
+   *  position rather than failing. */
+  speechPositions: Record<string, number>;
+  rememberSpeechPosition: (relPath: string, index: number) => void;
+
   /** Pin or unpin a root-relative path, writing the shared
    *  `.notesage/pins.json` the desktop reads. Re-reads the file first so a
    *  pin made on the desktop since the last load is not clobbered. */
@@ -203,6 +213,7 @@ export const useMobileStore = create<MobileStore>()(
       inlineImagesEnabled: true,
       pinnedPaths: [],
       scrollOffsets: {},
+      speechPositions: {},
 
       currentRelPath: () => {
         const stack = get().folderStack;
@@ -348,6 +359,9 @@ export const useMobileStore = create<MobileStore>()(
       rememberScroll: (relPath, offset) =>
         set((s) => ({ scrollOffsets: { ...s.scrollOffsets, [relPath]: offset } })),
 
+      rememberSpeechPosition: (relPath, index) =>
+        set((s) => ({ speechPositions: { ...s.speechPositions, [relPath]: index } })),
+
       togglePin: async (relPath) => {
         // Read-modify-write against the file rather than the cached array:
         // this file is shared with the desktop, and a stale in-memory copy
@@ -379,6 +393,9 @@ export const useMobileStore = create<MobileStore>()(
           docStack: s.docStack.map((d) => (d.relPath === from ? { ...d, relPath: to } : d)),
           // Scroll offsets are keyed by path too; a stale key would restore
           // the wrong position and never be collected.
+          speechPositions: Object.fromEntries(
+            Object.entries(s.speechPositions).map(([k, v]) => [swap(k), v]),
+          ),
           scrollOffsets: Object.fromEntries(
             Object.entries(s.scrollOffsets).map(([k, v]) => [swap(k), v]),
           ),
@@ -415,6 +432,7 @@ export const useMobileStore = create<MobileStore>()(
           viewMode: "list",
           pinnedPaths: [],
           scrollOffsets: {},
+          speechPositions: {},
             }),
     }),
     {
@@ -424,6 +442,7 @@ export const useMobileStore = create<MobileStore>()(
       // are recents, the sort order, and the chosen view mode.
       partialize: (s) => ({
         recentlyRead: s.recentlyRead,
+        speechPositions: s.speechPositions,
         sortMode: s.sortMode,
         groupMode: s.groupMode,
         viewMode: s.viewMode,

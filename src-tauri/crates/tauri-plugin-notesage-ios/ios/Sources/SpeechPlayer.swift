@@ -20,6 +20,7 @@
 
 import AVFoundation
 import MediaPlayer
+import NaturalLanguage
 
 @objc public final class SpeechPlayer: NSObject {
     @objc public static let shared = SpeechPlayer()
@@ -29,6 +30,8 @@ import MediaPlayer
     private var index = 0
     private var rate: Float = AVSpeechUtteranceDefaultSpeechRate
     private var voiceId: String?
+    /// Voice chosen for THIS article, from its own language.
+    private var voice: AVSpeechSynthesisVoice?
     private var title = ""
 
     /// Called on every position change so the frontend can persist resume
@@ -53,6 +56,7 @@ import MediaPlayer
         self.voiceId = voiceId
         paragraphs = SpeechPlayer.splitIntoParagraphs(text)
         guard !paragraphs.isEmpty else { return }
+        voice = SpeechPlayer.voice(for: voiceId, text: text)
         index = min(max(0, startIndex), paragraphs.count - 1)
         activateSession()
         registerRemoteCommands()
@@ -135,12 +139,70 @@ import MediaPlayer
         guard index < paragraphs.count else { return }
         let utterance = AVSpeechUtterance(string: paragraphs[index])
         utterance.rate = rate
-        if let voiceId, let voice = AVSpeechSynthesisVoice(identifier: voiceId) {
-            utterance.voice = voice
-        }
+        utterance.voice = voice
         synth.speak(utterance)
         onProgress?(index, paragraphs.count)
         updateNowPlaying(playing: true)
+    }
+
+    /// Pick a voice for the ARTICLE's language, not the device's.
+    ///
+    /// Left to iOS, an utterance with no voice is spoken in the system
+    /// language: on a Swedish phone, an English article is read by a Swedish
+    /// voice, which is close to unintelligible. Detection uses the text
+    /// itself, so it is right for a library that mixes languages — which is
+    /// the normal case for a read-later app.
+    ///
+    /// Falls back to the system default (nil) when detection is uncertain or
+    /// no voice is installed for the detected language: a default voice is a
+    /// worse reading, but silence would be a broken feature.
+    static func voice(for explicitId: String?, text: String) -> AVSpeechSynthesisVoice? {
+        if let explicitId, let voice = AVSpeechSynthesisVoice(identifier: explicitId) {
+            return voice
+        }
+        let recogniser = NLLanguageRecognizer()
+        // A prefix is plenty and bounds the cost: captures run to hundreds of
+        // KB, and language does not change halfway down an article.
+        recogniser.processString(String(text.prefix(2000)))
+        guard let language = recogniser.dominantLanguage else { return nil }
+        // Below ~0.5 the guess is a coin flip; a confidently wrong voice reads
+        // worse than the system default.
+        let confidence = recogniser.languageHypotheses(withMaximum: 1)[language] ?? 0
+        guard confidence >= 0.5 else { return nil }
+        return preferredVoice(forLanguageCode: language.rawValue)
+    }
+
+    /// Resolve a bare language subtag ("en") to an INSTALLED voice.
+    ///
+    /// `AVSpeechSynthesisVoice(language:)` does not reliably accept a bare
+    /// subtag — it wants a region-qualified tag like "en-US" — and returns nil
+    /// when it cannot resolve one, which silently falls back to the device
+    /// language. Verified in the simulator: an English article was read by
+    /// `com.apple.voice.super-compact.sv-SE.Alva` on a Swedish device.
+    ///
+    /// Matching against `speechVoices()` also guarantees the voice is actually
+    /// present, rather than naming one iOS would have to download.
+    static func preferredVoice(forLanguageCode code: String) -> AVSpeechSynthesisVoice? {
+        let candidates = AVSpeechSynthesisVoice.speechVoices().filter {
+            // "en" matches "en-US" and "en-GB", but must not match "en" inside
+            // some other tag — compare the subtag, not a substring.
+            $0.language.split(separator: "-").first.map(String.init) == code
+        }
+        guard !candidates.isEmpty else { return nil }
+        // Prefer a better-sounding voice when the user has one installed; an
+        // article read end to end is a long time to spend with the compact one.
+        let ranked = candidates.sorted { a, b in
+            quality(a.quality) > quality(b.quality)
+        }
+        return ranked.first
+    }
+
+    private static func quality(_ q: AVSpeechSynthesisVoiceQuality) -> Int {
+        switch q {
+        case .premium: return 3
+        case .enhanced: return 2
+        default: return 1
+        }
     }
 
     private func activateSession() {

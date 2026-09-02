@@ -98,6 +98,19 @@ struct PresentedResponse {
     presented: bool,
 }
 
+/// Where the speech player currently is. Public because it crosses back to
+/// the app crate as a command return — the frontend restores its progress bar
+/// and resume position from it after a reload.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeechState {
+    /// Paragraph index currently being spoken.
+    pub index: u32,
+    /// Total paragraphs in the article as the native side split it.
+    pub total: u32,
+    pub playing: bool,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RelPathArgs<'a> {
@@ -418,6 +431,51 @@ impl<R: Runtime> NotesageIos<R> {
         )
     }
 
+    /// Start (or restart) reading an article aloud (#833).
+    ///
+    /// `start_index` is a PARAGRAPH index, not a character offset — that is
+    /// what makes a resume position survive the app being killed. The native
+    /// side clamps it, so a stored position from a since-edited article is
+    /// safe to pass verbatim.
+    pub fn speech_start(
+        &self, text: &str, title: &str, start_index: u32, rate: f32, voice_id: Option<&str>,
+    ) -> Result<()> {
+        self.call(
+            "speechStart",
+            serde_json::json!({
+                "text": text,
+                "title": title,
+                "startIndex": start_index,
+                "rate": rate,
+                "voiceId": voice_id,
+            }),
+        )
+    }
+
+    pub fn speech_pause(&self) -> Result<()> {
+        self.call("speechPause", ())
+    }
+
+    pub fn speech_resume(&self) -> Result<()> {
+        self.call("speechResume", ())
+    }
+
+    pub fn speech_stop(&self) -> Result<()> {
+        self.call("speechStop", ())
+    }
+
+    pub fn speech_skip(&self, delta: i32) -> Result<()> {
+        self.call("speechSkip", serde_json::json!({ "delta": delta }))
+    }
+
+    pub fn speech_set_rate(&self, rate: f32) -> Result<()> {
+        self.call("speechSetRate", serde_json::json!({ "rate": rate }))
+    }
+
+    pub fn speech_state(&self) -> Result<SpeechState> {
+        self.call("speechState", ())
+    }
+
     pub fn dismiss_report(&self) -> Result<()> {
         self.call("dismissReport", ())
     }
@@ -537,6 +595,29 @@ impl<R: Runtime> NotesageIos<R> {
     /// vitest suite take that path, which is what keeps ADR 0010's fallback a
     /// real code path rather than a claim.
     pub fn present_report(&self, _html: &str, _top: f64, _bottom: f64) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn speech_start(
+        &self, _text: &str, _title: &str, _start: u32, _rate: f32, _voice: Option<&str>,
+    ) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn speech_pause(&self) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn speech_resume(&self) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn speech_stop(&self) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn speech_skip(&self, _delta: i32) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn speech_set_rate(&self, _rate: f32) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn speech_state(&self) -> Result<SpeechState> {
         Err(Error::Unavailable)
     }
     pub fn dismiss_report(&self) -> Result<()> {

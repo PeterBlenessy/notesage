@@ -34,6 +34,9 @@ import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome } from "./useNativeChrome";
 import { withFindAgent } from "./html-find-agent";
 import { withLinkAgent } from "./html-link-agent";
+import { documentToSpeechText } from "./speech-text";
+import { SpeechPlayerBar } from "./SpeechPlayerBar";
+import { useSpeechPlayer } from "@/hooks/useSpeechPlayer";
 import { measureReaderInsets, withReaderInsets } from "./html-insets";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 
@@ -183,6 +186,10 @@ export function Reader() {
   // Raw markdown of the open doc — kept so a theme flip can re-render without
   // re-reading the file (and without re-fetching PDFs/images at all).
   const rawMarkdownRef = useRef<string | null>(null);
+  // Raw HTML of a saved capture, kept for the speech player (#833). The
+  // rendered document lives in a sandboxed iframe or a native web view, so
+  // there is no DOM here to read prose out of — the source is the only path.
+  const rawHtmlRef = useRef<string | null>(null);
   const renderedThemeRef = useRef<"light" | "dark" | null>(null);
 
   // The resolved app theme, tracked via the `.dark` class ThemeProvider owns.
@@ -626,13 +633,49 @@ export function Reader() {
   const [sourceUrl, setSourceUrl] = useState<string | null>(null);
   const [updating, setUpdating] = useState(false);
 
+  // Read aloud (#833). The player lives natively (audio has to survive
+  // backgrounding and the lock screen); this is the controller plus the
+  // per-document resume position.
+  const speech = useSpeechPlayer(relPath);
+
+  /** Prose for the open document, or "" when there is nothing to read. */
+  const speechSource = useCallback((): string => {
+    if (kind === "html") return documentToSpeechText(rawHtmlRef.current ?? "", "html");
+    if (kind === "markdown") return documentToSpeechText(rawMarkdownRef.current ?? "", "markdown");
+    if (kind === "text" && state.status === "text") {
+      return documentToSpeechText(state.content, "text");
+    }
+    return "";
+  }, [kind, state]);
+
+  const startListening = useCallback(() => {
+    const text = speechSource();
+    if (!text) {
+      toast.error(t("reader.listenNothing"));
+      return;
+    }
+    // Title is resolved here, not at render: it comes from content held in a
+    // ref, so a render-time read is empty on the first pass and would put a
+    // blank name on the lock screen.
+    speech.start(text, deriveNoteTitle(rawMarkdownRef.current ?? "") ?? name);
+  }, [speechSource, speech, name]);
+
   useEffect(() => {
     setSourceUrl(null);
-    if (!relPath.toLowerCase().endsWith(".html")) return;
+    rawHtmlRef.current = null;
+    // `kind`, not the extension: `classifyFile` counts `.htm` as html too, and
+    // an extension check here would leave those with no source for Listen —
+    // the menu entry would appear and then report nothing to read.
+    if (kind !== "html") return;
     let cancelled = false;
     void (async () => {
       try {
         const raw = await iosReadFile(relPath);
+        // Reuse this read for the speech player rather than adding a third
+        // one: a capture is ~500 KB of inlined base64, and reading it twice
+        // to say the same thing is the kind of cost that only shows up on a
+        // phone.
+        if (!cancelled) rawHtmlRef.current = raw;
         const url = await invoke<string | null>("article_source_url", { content: raw });
         if (!cancelled) setSourceUrl(url);
       } catch {
@@ -643,7 +686,7 @@ export function Reader() {
     return () => {
       cancelled = true;
     };
-  }, [relPath]);
+  }, [relPath, kind]);
 
   const updateFromSource = useCallback(async () => {
     if (!sourceUrl || updating) return;
@@ -751,6 +794,11 @@ export function Reader() {
               menu: [
                 { id: "share", title: "Share", icon: "square.and.arrow.up" },
                 { id: "move", title: t("reader.move"), icon: "folder" },
+                // Also here, not only in the read-only branch below: an
+                // editable note's overflow is a LONG-PRESS on the pencil, so
+                // omitting it made Listen unreachable for every markdown note
+                // while looking present in the code (#832's failure shape).
+                { id: "listen", title: t("reader.listen"), icon: "headphones" },
               ],
             }
           : {
@@ -769,6 +817,11 @@ export function Reader() {
               menu: [
                 { id: "share", title: t("reader.share"), icon: "square.and.arrow.up" },
                 { id: "move", title: t("reader.move"), icon: "folder" },
+                // Only where there is prose to read. A PDF or an image has
+                // none, and an entry that always errors is worse than absent.
+                ...(kind === "html" || kind === "markdown" || kind === "text"
+                  ? [{ id: "listen", title: t("reader.listen"), icon: "headphones" }]
+                  : []),
                 ...(sourceUrl
                   ? [
                       {
@@ -787,6 +840,19 @@ export function Reader() {
       // and PDFs keep the viewer's text-layer search.
       bottomRight: hasNativeReport
         ? { id: "findReport", icon: "magnifyingglass" }
+        : undefined,
+      // Read-aloud transport (#833), rendered natively so it is visible over a
+      // natively-presented report — which is exactly the document kind people
+      // want to listen to.
+      bottomCenter: speech.state.active
+        ? {
+            playing: speech.state.playing,
+            position:
+              speech.state.total > 0
+                ? `${Math.min(speech.state.index + 1, speech.state.total)} / ${speech.state.total}`
+                : "…",
+            rate: `${speech.state.rate}×`,
+          }
         : undefined,
       search: editing
         ? undefined
@@ -820,6 +886,12 @@ export function Reader() {
       "search-next": () => (isPdf ? pdfFindRef.current?.next() : goToMatch(true)),
       "search-prev": () => (isPdf ? pdfFindRef.current?.prev() : goToMatch(false)),
       move: () => void moveToFolder(),
+      listen: () => startListening(),
+      "player-toggle": () => (speech.state.playing ? speech.pause() : speech.resume()),
+      "player-back": () => speech.skip(-1),
+      "player-forward": () => speech.skip(1),
+      "player-rate": () => speech.cycleRate(),
+      "player-stop": () => speech.stop(),
       updateSource: () => void updateFromSource(),
       findReport: () => {
         // `false` means the native layer said no report is on screen. Nothing
@@ -1214,6 +1286,20 @@ export function Reader() {
 
   return (
     <div className="view-enter relative h-full w-full bg-background">
+      {/* Fallback transport for builds with no native chrome (desktop dev,
+          the vitest harness). On device the player is drawn by the chrome
+          overlay instead — a React island portals to document.body and would
+          sit BEHIND a natively-presented report, which is the document kind
+          people most want to listen to. */}
+      {!nativeChrome && (
+      <SpeechPlayerBar
+        state={speech.state}
+        onPlayPause={() => (speech.state.playing ? speech.pause() : speech.resume())}
+        onSkip={speech.skip}
+        onCycleRate={speech.cycleRate}
+        onStop={speech.stop}
+      />
+      )}
       {/* Button islands (iOS 26 / Notes layout, #581). Back is ALWAYS the
           top-left island — placement must not depend on the document type.
           Top-right holds Share (issue #582) — the native share sheet over a
