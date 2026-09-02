@@ -182,6 +182,15 @@ interface MobileStore {
   speechPositions: Record<string, number>;
   rememberSpeechPosition: (relPath: string, index: number) => void;
 
+  /** The user's chosen reading voice per language subtag ("en" -> voice id).
+   *
+   *  Persisted and authoritative: there is NO API that tells an app which
+   *  voice the user picked in iOS Settings, so the app has to remember the
+   *  choice itself. Peter's phone read English with premium en-AU Karen —
+   *  the right tier, the wrong voice — until this existed. */
+  speechVoices: Record<string, string>;
+  rememberSpeechVoice: (language: string, voiceId: string) => void;
+
   /** Pin or unpin a root-relative path, writing the shared
    *  `.notesage/pins.json` the desktop reads. Re-reads the file first so a
    *  pin made on the desktop since the last load is not clobbered. */
@@ -218,6 +227,7 @@ export const useMobileStore = create<MobileStore>()(
       pinnedPaths: [],
       scrollOffsets: {},
       speechPositions: {},
+      speechVoices: {},
 
       currentRelPath: () => {
         const stack = get().folderStack;
@@ -363,6 +373,9 @@ export const useMobileStore = create<MobileStore>()(
       rememberScroll: (relPath, offset) =>
         set((s) => ({ scrollOffsets: { ...s.scrollOffsets, [relPath]: offset } })),
 
+      rememberSpeechVoice: (language, voiceId) =>
+        set((s) => ({ speechVoices: { ...s.speechVoices, [language]: voiceId } })),
+
       rememberSpeechPosition: (relPath, index) =>
         set((s) => {
           const next = { ...s.speechPositions, [relPath]: index };
@@ -450,6 +463,7 @@ export const useMobileStore = create<MobileStore>()(
           pinnedPaths: [],
           scrollOffsets: {},
           speechPositions: {},
+          speechVoices: {},
             }),
     }),
     {
@@ -460,6 +474,7 @@ export const useMobileStore = create<MobileStore>()(
       partialize: (s) => ({
         recentlyRead: s.recentlyRead,
         speechPositions: s.speechPositions,
+        speechVoices: s.speechVoices,
         sortMode: s.sortMode,
         groupMode: s.groupMode,
         viewMode: s.viewMode,

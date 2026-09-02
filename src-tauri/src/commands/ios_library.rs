@@ -35,6 +35,23 @@ pub struct SpeechState {
     pub playing: bool,
 }
 
+/// What starting playback decided — the language the article is read in.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeechStarted {
+    pub language: Option<String>,
+}
+
+/// One installed voice, as the picker shows it (#833).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeechVoice {
+    pub id: String,
+    pub name: String,
+    pub language: String,
+    pub quality: String,
+}
+
 
 /// State of the iCloud library grant.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -824,16 +841,44 @@ pub async fn ios_speech_start(
     title: String,
     start_index: u32,
     rate: f32,
-    voice_id: Option<String>,
-) -> Result<(), String> {
+    voice_by_language: std::collections::HashMap<String, String>,
+) -> Result<SpeechStarted, String> {
     #[cfg(target_os = "ios")]
     {
-        ios_impl::speech_start(&app, &text, &title, start_index, rate, voice_id.as_deref()).await
+        ios_impl::speech_start(&app, &text, &title, start_index, rate, &voice_by_language).await
     }
     #[cfg(not(target_os = "ios"))]
     {
-        let _ = (&app, &text, &title, start_index, rate, &voice_id);
+        let _ = (&app, &text, &title, start_index, rate, &voice_by_language);
         Err("ios_speech_start is only available on iOS".into())
+    }
+}
+
+/// Installed voices for a language subtag, best first — the picker's list.
+#[tauri::command]
+pub async fn ios_speech_voices(app: tauri::AppHandle, language: String) -> Result<Vec<SpeechVoice>, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::speech_voices(&app, &language).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, &language);
+        Err("ios_speech_voices is only available on iOS".into())
+    }
+}
+
+/// Switch voice mid-article; the current paragraph is re-spoken.
+#[tauri::command]
+pub async fn ios_speech_set_voice(app: tauri::AppHandle, voice_id: String) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::speech_set_voice(&app, &voice_id).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, &voice_id);
+        Err("ios_speech_set_voice is only available on iOS".into())
     }
 }
 
@@ -1004,7 +1049,7 @@ pub async fn ios_stat_file(app: tauri::AppHandle, rel_path: String) -> Result<Fi
 
 #[cfg(target_os = "ios")]
 mod ios_impl {
-    use super::{DownloadState, FileEntry, FileStat, LibraryGrant, SpeechState};
+    use super::{DownloadState, FileEntry, FileStat, LibraryGrant, SpeechStarted, SpeechState, SpeechVoice};
     use tauri::AppHandle;
     use tauri_plugin_notesage_ios::NotesageIosExt;
 
@@ -1165,11 +1210,27 @@ mod ios_impl {
 
     pub async fn speech_start(
         app: &AppHandle, text: &str, title: &str, start_index: u32, rate: f32,
-        voice_id: Option<&str>,
-    ) -> Result<(), String> {
+        voice_by_language: &std::collections::HashMap<String, String>,
+    ) -> Result<SpeechStarted, String> {
         app.notesage_ios()
-            .speech_start(text, title, start_index, rate, voice_id)
+            .speech_start(text, title, start_index, rate, voice_by_language)
+            .map(|s| SpeechStarted { language: s.language })
             .map_err(|e| e.to_string())
+    }
+
+    pub async fn speech_voices(app: &AppHandle, language: &str) -> Result<Vec<SpeechVoice>, String> {
+        app.notesage_ios()
+            .speech_voices(language)
+            .map(|vs| {
+                vs.into_iter()
+                    .map(|v| SpeechVoice { id: v.id, name: v.name, language: v.language, quality: v.quality })
+                    .collect()
+            })
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn speech_set_voice(app: &AppHandle, voice_id: &str) -> Result<(), String> {
+        app.notesage_ios().speech_set_voice(voice_id).map_err(|e| e.to_string())
     }
 
     pub async fn speech_pause(app: &AppHandle) -> Result<(), String> {

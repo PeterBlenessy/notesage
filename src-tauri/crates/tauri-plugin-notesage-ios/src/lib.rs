@@ -111,6 +111,31 @@ pub struct SpeechState {
     pub playing: bool,
 }
 
+/// What `speech_start` decided: the language it will read the article in, so
+/// the frontend's voice picker knows which voices to list.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeechStarted {
+    pub language: Option<String>,
+}
+
+/// One installed voice, as the picker shows it.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SpeechVoice {
+    pub id: String,
+    pub name: String,
+    /// BCP-47, e.g. "en-US".
+    pub language: String,
+    /// "premium" | "enhanced" | "default".
+    pub quality: String,
+}
+
+#[derive(serde::Deserialize)]
+struct SpeechVoicesResponse {
+    voices: Vec<SpeechVoice>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RelPathArgs<'a> {
@@ -438,8 +463,9 @@ impl<R: Runtime> NotesageIos<R> {
     /// side clamps it, so a stored position from a since-edited article is
     /// safe to pass verbatim.
     pub fn speech_start(
-        &self, text: &str, title: &str, start_index: u32, rate: f32, voice_id: Option<&str>,
-    ) -> Result<()> {
+        &self, text: &str, title: &str, start_index: u32, rate: f32,
+        voice_by_language: &std::collections::HashMap<String, String>,
+    ) -> Result<SpeechStarted> {
         self.call(
             "speechStart",
             serde_json::json!({
@@ -447,9 +473,21 @@ impl<R: Runtime> NotesageIos<R> {
                 "title": title,
                 "startIndex": start_index,
                 "rate": rate,
-                "voiceId": voice_id,
+                "voiceByLanguage": voice_by_language,
             }),
         )
+    }
+
+    /// Installed voices for a language subtag ("en"), best first.
+    pub fn speech_voices(&self, language: &str) -> Result<Vec<SpeechVoice>> {
+        let r: SpeechVoicesResponse =
+            self.call("speechVoices", serde_json::json!({ "language": language }))?;
+        Ok(r.voices)
+    }
+
+    /// Switch voice mid-article; the current paragraph is re-spoken.
+    pub fn speech_set_voice(&self, voice_id: &str) -> Result<()> {
+        self.call("speechSetVoice", serde_json::json!({ "voiceId": voice_id }))
     }
 
     pub fn speech_pause(&self) -> Result<()> {
@@ -598,8 +636,15 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn speech_start(
-        &self, _text: &str, _title: &str, _start: u32, _rate: f32, _voice: Option<&str>,
-    ) -> Result<()> {
+        &self, _text: &str, _title: &str, _start: u32, _rate: f32,
+        _voices: &std::collections::HashMap<String, String>,
+    ) -> Result<SpeechStarted> {
+        Err(Error::Unavailable)
+    }
+    pub fn speech_voices(&self, _language: &str) -> Result<Vec<SpeechVoice>> {
+        Err(Error::Unavailable)
+    }
+    pub fn speech_set_voice(&self, _voice_id: &str) -> Result<()> {
         Err(Error::Unavailable)
     }
     pub fn speech_pause(&self) -> Result<()> {

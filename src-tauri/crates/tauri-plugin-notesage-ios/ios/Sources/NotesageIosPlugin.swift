@@ -11,7 +11,16 @@ struct SpeechStartArgs: Decodable {
   let title: String
   let startIndex: Int
   let rate: Float
-  let voiceId: String?
+  /// The user's own voice picks, keyed by language subtag ("en" -> id).
+  let voiceByLanguage: [String: String]
+}
+
+struct SpeechVoicesArgs: Decodable {
+  let language: String
+}
+
+struct SpeechVoiceArgs: Decodable {
+  let voiceId: String
 }
 
 struct SpeechSkipArgs: Decodable {
@@ -537,10 +546,11 @@ class NotesageIosPlugin: Plugin {
         }
         SpeechPlayer.shared.start(
           text: args.text, title: args.title, startIndex: args.startIndex,
-          rate: args.rate, voiceId: args.voiceId)
+          rate: args.rate, voiceByLanguage: args.voiceByLanguage)
         // Resolved from INSIDE the dispatch: resolving before the work runs
-        // meant a native failure could never reach the JS `.catch`.
-        invoke.resolve()
+        // meant a native failure could never reach the JS `.catch`. The
+        // detected language comes back so the voice picker knows what to list.
+        invoke.resolve(["language": SpeechPlayer.shared.language as Any])
       }
     } catch { invoke.reject(String(describing: error)) }
   }
@@ -581,6 +591,27 @@ class NotesageIosPlugin: Plugin {
       let args = try invoke.parseArgs(SpeechRateArgs.self)
       DispatchQueue.main.async {
         SpeechPlayer.shared.setRate(args.rate)
+        invoke.resolve()
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Installed voices for a language, best first — what the picker lists.
+  @objc public func speechVoices(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(SpeechVoicesArgs.self)
+      DispatchQueue.main.async {
+        invoke.resolve(["voices": SpeechPlayer.voices(forLanguageCode: args.language)])
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Switch voice mid-article; the current paragraph is re-spoken.
+  @objc public func speechSetVoice(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(SpeechVoiceArgs.self)
+      DispatchQueue.main.async {
+        SpeechPlayer.shared.setVoice(identifier: args.voiceId)
         invoke.resolve()
       }
     } catch { invoke.reject(String(describing: error)) }

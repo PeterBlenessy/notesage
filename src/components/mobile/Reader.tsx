@@ -19,6 +19,7 @@ import {
   iosPresentReport,
   iosDismissReport,
   iosFindInReport,
+  iosSpeechVoices,
 } from "@/lib/ios-api";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
@@ -648,6 +649,49 @@ export function Reader() {
     return "";
   }, [kind, state]);
 
+  /**
+   * Pick the reading voice for the article's language via a native sheet.
+   *
+   * Offered only once playback has started: the language is decided from the
+   * article's text on the native side, and listing voices for the wrong
+   * language would be worse than asking the user to press Listen first.
+   */
+  const pickVoice = useCallback(async () => {
+    const language = speech.state.language;
+    if (!language) {
+      toast.message(t("reader.voiceStartFirst"));
+      return;
+    }
+    let voices: Awaited<ReturnType<typeof iosSpeechVoices>>;
+    try {
+      voices = await iosSpeechVoices(language);
+    } catch (err) {
+      toast.error(String(err));
+      return;
+    }
+    if (voices.length === 0) {
+      toast.message(t("reader.voiceNone"));
+      return;
+    }
+    const current = useMobileStore.getState().speechVoices[language];
+    const qualityLabel = {
+      premium: t("reader.voiceQualityPremium"),
+      enhanced: t("reader.voiceQualityEnhanced"),
+      default: t("reader.voiceQualityDefault"),
+    } as const;
+    const chosen = await iosContextMenu({
+      title: t("reader.voiceTitle"),
+      items: voices.map((v) => ({
+        id: v.id,
+        // "✓ Ava · Premium · en-US": the sheet has no checkmark affordance of
+        // its own, and the region matters — premium en-AU and premium en-US
+        // are both "Premium" and sound nothing alike.
+        title: `${v.id === current ? "✓ " : ""}${v.name} · ${qualityLabel[v.quality]} · ${v.language}`,
+      })),
+    });
+    if (chosen) speech.chooseVoice(chosen);
+  }, [speech]);
+
   const startListening = useCallback(() => {
     const text = speechSource();
     if (!text) {
@@ -799,6 +843,9 @@ export function Reader() {
                 // omitting it made Listen unreachable for every markdown note
                 // while looking present in the code (#832's failure shape).
                 { id: "listen", title: t("reader.listen"), icon: "headphones" },
+                ...(speech.state.active
+                  ? [{ id: "voice", title: t("reader.voice"), icon: "person.wave.2" }]
+                  : []),
               ],
             }
           : {
@@ -821,6 +868,11 @@ export function Reader() {
                 // none, and an entry that always errors is worse than absent.
                 ...(kind === "html" || kind === "markdown" || kind === "text"
                   ? [{ id: "listen", title: t("reader.listen"), icon: "headphones" }]
+                  : []),
+                // Only while listening: the voice list depends on the language
+                // the native side decided from the article's text.
+                ...(speech.state.active
+                  ? [{ id: "voice", title: t("reader.voice"), icon: "person.wave.2" }]
                   : []),
                 ...(sourceUrl
                   ? [
@@ -896,6 +948,7 @@ export function Reader() {
       "search-prev": () => (isPdf ? pdfFindRef.current?.prev() : goToMatch(false)),
       move: () => void moveToFolder(),
       listen: () => startListening(),
+      voice: () => void pickVoice(),
       "player-toggle": () => (speech.state.playing ? speech.pause() : speech.resume()),
       "player-back": () => speech.skip(-1),
       "player-forward": () => speech.skip(1),

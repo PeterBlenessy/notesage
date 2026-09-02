@@ -9,7 +9,7 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Du kan nu välja uppläsningsröst. Öppna …-menyn medan du lyssnar och tryck på Röst… — den listar rösterna som är installerade för artikelns språk, märkta Premium, Förbättrad eller Kompakt med region, och kommer ihåg ditt val för det språket. Din telefon hade valt australiska premium-Karen framför rösten du valt; en app kan inte läsa valet i Inställningar, så det här är lösningen.
+Uppläsningsrösten bör nu vara den du ställt in under Inställningar › Uppläst innehåll: appen frågar iOS efter standardrösten för din region först och använder den när den är förbättrad eller premium. Din telefon hade valt australiska premium-Karen framför ditt val. Läser den fortfarande med fel röst, säg till — appen loggar vilken väg den tog och jag kan läsa det över wifi. Det finns också Röst… i …-menyn medan du lyssnar, som en manuell överstyrning; du ska inte behöva den.
 
 Dessutom: spelarens knappar är större och står glesare, och "6" över "…" var positionen som radbrutits — nu står det "6 / 178".
 

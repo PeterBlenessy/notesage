@@ -11,7 +11,7 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-You can now choose the reading voice. While listening, open the … menu and tap Voice… — it lists the voices installed for the article's language, marked Premium, Enhanced or Compact with their region, and remembers your choice for that language. Your phone had been picking premium Australian Karen over the voice you selected; there is no way for an app to read the Settings choice, so this is the fix.
+The reading voice should now be the one you configured in Settings › Spoken Content: the app asks iOS for your region's default voice first and uses it whenever it is an enhanced or premium one. Your phone had been picking premium Australian Karen over your selection. If it still reads with the wrong voice, tell me — the app logs which path it took and I can read that over WiFi. There is also a Voice… entry in the … menu while listening, as an override; you should not need it.
 
 Also: the player's buttons are bigger and further apart, and the "6" over "…" was the position wrapping onto two lines — it now reads "6 / 178".
 
