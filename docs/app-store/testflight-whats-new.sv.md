@@ -9,6 +9,6 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Du kan lyssna på en sparad artikel. Öppna en, tryck på …-menyn och välj Lyssna. En spelare visas med bakåt, spela/pausa, framåt, hastighet och stopp, samt positionen i stycken.
+Rättar uppläsningen på fel språk. Tio av de 36 artiklarna i din inkorg tolkades som danska eller norska — alla på engelska. En enda lokaliserad rad räckte: dina X-sparningar heter "… på X", och bara det gjorde att 14 000 tecken engelska tolkades som danska. Språket avgörs nu av en majoritet bland styckena, så en främmande rubrik blir överröstad av brödtexten. Dina svenska artiklar läses fortfarande på svenska.
 
-Två saker är värda att kontrollera, eftersom bara en riktig telefon kan visa dem: lås skärmen mitt i artikeln och se att uppläsningen fortsätter, med kontrollerna på låsskärmen; och kontrollera att en engelsk artikel läses av en engelsk röst, inte en svensk. Rösten låter ganska robotisk — det är Apples kompakta standardröst, och att ladda ner en förbättrad röst under Inställningar > Tillgänglighet > Uppläst innehåll > Röster bör hjälpa mycket. Berätta om det gör det.
+Kontrollera gärna ändå: lås skärmen mitt i en artikel och se att uppläsningen fortsätter. Rösten låter fortfarande platt — det är Apples kompakta röst. Att ladda ner en förbättrad engelsk röst under Inställningar > Tillgänglighet > Uppläst innehåll > Röster bör hjälpa mycket; berätta om det gör det, eftersom det avgör om vi behöver en annan uppläsningsmotor.
