@@ -278,7 +278,7 @@ final class ChromeManager {
       host.view.bottomAnchor.constraint(
         equalTo: container.safeAreaLayoutGuide.bottomAnchor, constant: -10),
       host.view.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-      host.view.heightAnchor.constraint(equalToConstant: 56),
+      host.view.heightAnchor.constraint(equalToConstant: 72),
     ])
     // Intrinsic width: the hosting view must be allowed to be as wide as its
     // content, or SwiftUI squeezes the position label into a wrap.
@@ -827,7 +827,14 @@ struct GlassPlayer: View {
     // first cut was "so close" that a thumb landed on the neighbour. The
     // capsule grows a little; the article behind it is not what a listener is
     // looking at.
-    HStack(spacing: 8) {
+    // Each control is the SAME glass button as the corner buttons
+    // (`GlassCircle`), not a plain glyph on a pill: Peter asked for "the same
+    // colors as the other buttons we use in the app", and the corner buttons
+    // are the reference. The capsule behind them is a material, deliberately
+    // not a glass effect — a glass surface WRAPPING controls swallows their
+    // taps (the search-island lesson) — and it is softened so the article
+    // shows through, which is what "a bit transparent" means here.
+    HStack(spacing: 10) {
       button("player-back", system: "backward.fill")
       button("player-toggle", system: spec.playing ? "pause.fill" : "play.fill", large: true)
       button("player-forward", system: "forward.fill")
@@ -835,33 +842,39 @@ struct GlassPlayer: View {
       // "6 / 178" onto two lines inside the fixed-height host and showed
       // "6" over "…" — which read as a mystery control, not a position.
       Text(spec.position)
-        .font(.footnote.monospacedDigit())
+        .font(.subheadline.monospacedDigit())
         .foregroundStyle(.secondary)
         .lineLimit(1)
         .fixedSize()
-        .padding(.horizontal, 2)
+        .padding(.horizontal, 4)
       Button { emit("player-rate") } label: {
         Text(spec.rate)
-          .font(.footnote.weight(.medium).monospacedDigit())
+          .font(.subheadline.weight(.semibold).monospacedDigit())
           .lineLimit(1)
           .fixedSize()
-          .frame(minWidth: 44, minHeight: 48)
+          .frame(minWidth: 52, minHeight: 52)
       }
-      .buttonStyle(.plain)
+      .modifier(GlassCircle())
       button("player-stop", system: "stop.fill")
     }
-    .padding(.horizontal, 8)
+    .padding(.horizontal, 12)
+    .padding(.vertical, 6)
     .foregroundStyle(.primary)
-    .modifier(GlassCapsuleSurface())
+    .background {
+      Capsule()
+        .fill(.ultraThinMaterial)
+        .opacity(0.72)
+        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.08), lineWidth: 0.5))
+    }
   }
 
   private func button(_ id: String, system: String, large: Bool = false) -> some View {
     Button { emit(id) } label: {
       Image(systemName: system)
         .font(large ? .title2 : .title3)
-        .frame(minWidth: large ? 56 : 48, minHeight: 48)
+        .frame(width: large ? 60 : 52, height: large ? 60 : 52)
     }
-    .buttonStyle(.plain)
+    .modifier(GlassCircle())
   }
 }
 

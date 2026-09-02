@@ -21,6 +21,7 @@
 import AVFoundation
 import MediaPlayer
 import NaturalLanguage
+import os.log
 
 /// Paragraphs shorter than this are headings, list items and handles — the
 /// noise that misleads whole-document language detection.
@@ -235,12 +236,52 @@ private let MAX_VOTING_PARAGRAPHS = 60
     /// worse reading, but silence would be a broken feature.
     static func voice(forLanguage code: String?, chosen: [String: String]) -> AVSpeechSynthesisVoice? {
         guard let code else { return nil }
-        // The user's own pick for this language, if it is still installed
-        // (voices can be deleted in Settings; a stale id must not silence us).
+        // 1. An explicit in-app pick, if it is still installed (voices can be
+        //    deleted in Settings; a stale id must not silence us).
         if let id = chosen[code], let picked = AVSpeechSynthesisVoice(identifier: id) {
+            log("chose %{public}@ via in-app pick", picked.identifier)
             return picked
         }
-        return rankedVoices(forLanguageCode: code).first
+        // 2. The SYSTEM's default voice for the user's own region of this
+        //    language — what Settings > Spoken Content configures. Peter's
+        //    objection was exactly right: if he has selected an English voice
+        //    there, the app must not make him select again. Taken only when it
+        //    is enhanced/premium, because the factory default is compact and a
+        //    compact answer here means iOS did NOT reflect a selection.
+        if let system = systemDefaultVoice(forLanguageCode: code) {
+            log("chose %{public}@ via system default", system.identifier)
+            return system
+        }
+        // 3. Best installed voice: quality, then the user's region.
+        let ranked = rankedVoices(forLanguageCode: code).first
+        log("chose %{public}@ via ranking", ranked?.identifier ?? "nil")
+        return ranked
+    }
+
+    /// iOS's own default voice for the user's regions of `code`, when it is
+    /// better than compact — i.e. when it reflects a choice the user made.
+    static func systemDefaultVoice(forLanguageCode code: String) -> AVSpeechSynthesisVoice? {
+        let regions = Locale.preferredLanguages
+            .filter { $0.split(separator: "-").first.map(String.init) == code }
+            + ["\(code)-US", "\(code)-GB"]
+        for tag in regions {
+            guard let v = AVSpeechSynthesisVoice(language: tag) else { continue }
+            log("system default for %{public}@ is %{public}@ (%{public}@)", tag, v.identifier, qualityName(v.quality))
+            if v.quality != .default && !isNoveltyVoice(v) { return v }
+        }
+        return nil
+    }
+
+    private static let logger = OSLog(subsystem: "com.notesage.app", category: "speech")
+    private static func log(_ format: StaticString, _ args: CVarArg...) {
+        // Visible in the device syslog — how the voice question gets answered
+        // on hardware without a debugger attached.
+        switch args.count {
+        case 0: os_log(format, log: logger, type: .info)
+        case 1: os_log(format, log: logger, type: .info, args[0])
+        case 2: os_log(format, log: logger, type: .info, args[0], args[1])
+        default: os_log(format, log: logger, type: .info, args[0], args[1], args[2])
+        }
     }
 
     /// Detect the article's language by a PER-PARAGRAPH majority vote.
