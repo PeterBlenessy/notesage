@@ -522,47 +522,67 @@ class NotesageIosPlugin: Plugin {
     do {
       let args = try invoke.parseArgs(SpeechStartArgs.self)
       DispatchQueue.main.async {
-        // Wire progress back to the page before starting, so the very first
-        // paragraph reports its position too.
+        // Wire the callbacks before starting, so the very first paragraph
+        // reports its position too.
         SpeechPlayer.shared.onProgress = { [weak self] index, total in
           self?.emitSpeech(["event": "progress", "index": index, "total": total])
+        }
+        // Play/pause can originate from the LOCK SCREEN, which never touches
+        // the frontend — without this the transport shows the wrong icon.
+        SpeechPlayer.shared.onPlayingChanged = { [weak self] playing in
+          self?.emitSpeech(["event": "playing", "playing": playing])
+        }
+        SpeechPlayer.shared.onFinished = { [weak self] in
+          self?.emitSpeech(["event": "finished"])
         }
         SpeechPlayer.shared.start(
           text: args.text, title: args.title, startIndex: args.startIndex,
           rate: args.rate, voiceId: args.voiceId)
+        // Resolved from INSIDE the dispatch: resolving before the work runs
+        // meant a native failure could never reach the JS `.catch`.
+        invoke.resolve()
       }
-      invoke.resolve()
     } catch { invoke.reject(String(describing: error)) }
   }
 
   @objc public func speechPause(_ invoke: Invoke) {
-    DispatchQueue.main.async { SpeechPlayer.shared.pause() }
-    invoke.resolve()
+    DispatchQueue.main.async {
+      SpeechPlayer.shared.pause()
+      invoke.resolve()
+    }
   }
 
   @objc public func speechResume(_ invoke: Invoke) {
-    DispatchQueue.main.async { SpeechPlayer.shared.resume() }
-    invoke.resolve()
+    DispatchQueue.main.async {
+      SpeechPlayer.shared.resume()
+      invoke.resolve()
+    }
   }
 
   @objc public func speechStop(_ invoke: Invoke) {
-    DispatchQueue.main.async { SpeechPlayer.shared.stop() }
-    invoke.resolve()
+    DispatchQueue.main.async {
+      SpeechPlayer.shared.stop()
+      invoke.resolve()
+    }
   }
 
   @objc public func speechSkip(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(SpeechSkipArgs.self)
-      DispatchQueue.main.async { SpeechPlayer.shared.skip(args.delta) }
-      invoke.resolve()
+      DispatchQueue.main.async {
+        SpeechPlayer.shared.skip(args.delta)
+        invoke.resolve()
+      }
     } catch { invoke.reject(String(describing: error)) }
   }
 
   @objc public func speechSetRate(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(SpeechRateArgs.self)
-      DispatchQueue.main.async { SpeechPlayer.shared.setRate(args.rate) }
-      invoke.resolve()
+      DispatchQueue.main.async {
+        SpeechPlayer.shared.setRate(args.rate)
+        invoke.resolve()
+      }
     } catch { invoke.reject(String(describing: error)) }
   }
 

@@ -687,10 +687,24 @@ call `stopSpeaking`, which fires *cancel*. Advancing on cancel too would
 double-step past a paragraph — a bug that presents as "it randomly skips
 ahead".
 
-**`.playback` + `.spokenAudio`.** The category is what keeps audio alive when
-the screen locks; without it the feature works only while you are already
-looking at it, which is the opposite of the point. The mode makes speech duck
-politely against navigation prompts rather than fight them.
+**`.playback` + `.spokenAudio` + `UIBackgroundModes: audio`.** All three, and
+the third is not optional: with the category alone iOS gives a backgrounded app
+the ordinary ~30 s grace period and then SUSPENDS it, so playback dies shortly
+after the screen locks — the feature silently broken in exactly the case it
+exists for. The background mode is declared from
+`integrate-share-extension.py` (the app plist is generated), and verified
+present in the built `.app`. The mode makes speech duck politely against
+navigation prompts rather than fight them.
+
+**Position and liveness are separate events.** `progress` carries the
+paragraph; `playing` and `finished` carry whether audio is running. Collapsing
+them left the transport showing Pause forever after an article ended, and
+`playing` is the only way a lock-screen or Control Centre pause reaches the
+frontend at all — those bypass it entirely.
+
+**The player owns the bottom-centre slot exclusively.** The search island and
+the report's find button live there too, so both are suppressed while playback
+runs; find is one tap away again the moment it stops.
 
 **The transport is drawn by the NATIVE chrome, not React.** A captured article
 is presented in a separate native web view that sits ABOVE the app's own

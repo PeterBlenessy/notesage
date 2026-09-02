@@ -838,7 +838,11 @@ export function Reader() {
       // plain button that opens it (#606). Reports are the ONLY document kind
       // that gets the system bar; markdown/text keep the island's dom-search
       // and PDFs keep the viewer's text-layer search.
-      bottomRight: hasNativeReport
+      // Suppressed while listening for the same reason as the search island
+      // below: the player is a centred capsule on the bottom safe area and
+      // this button sits at its right edge, so the two overlap. Find is one
+      // tap away again the moment playback stops.
+      bottomRight: hasNativeReport && !speech.state.active
         ? { id: "findReport", icon: "magnifyingglass" }
         : undefined,
       // Read-aloud transport (#833), rendered natively so it is visible over a
@@ -854,7 +858,12 @@ export function Reader() {
             rate: `${speech.state.rate}×`,
           }
         : undefined,
-      search: editing
+      // The player and the search island are BOTH bottom-centre capsules on
+      // the safe area, so offering them together stacks one on top of the
+      // other (review finding, Critical). Listening wins while it is running:
+      // it is the active task, and find-in-document is one tap away again the
+      // moment playback stops.
+      search: editing || speech.state.active
         ? undefined
         : isPdf
         ? {
@@ -1304,7 +1313,7 @@ export function Reader() {
           top-left island — placement must not depend on the document type.
           Top-right holds Share (issue #582) — the native share sheet over a
           temp copy of the file. */}
-      {!nativeChrome && searchable && !editing && (
+      {!nativeChrome && searchable && !editing && !speech.state.active && (
         <SearchIsland
           query={findQuery}
           onQueryChange={setFindQuery}

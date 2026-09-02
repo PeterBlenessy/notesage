@@ -173,6 +173,21 @@ def patch_project_yml() -> None:
     # in "Missing Compliance" limbo. Both targets get it — the extension is
     # a separate binary and is asked separately.
     app_info.setdefault("ITSAppUsesNonExemptEncryption", False)
+
+    # Background audio (#833) — WITHOUT this the read-aloud player is silently
+    # broken in exactly the case it exists for.
+    #
+    # `AVAudioSession(.playback)` alone is not enough: with no `audio` entry in
+    # UIBackgroundModes, iOS gives a backgrounded app the ordinary ~30 s grace
+    # period and then SUSPENDS it, so playback dies shortly after the screen
+    # locks. The category and the background mode are two halves of one thing.
+    #
+    # Declared here rather than in `src-tauri/Info.plist` because that file is
+    # merged for macOS; the iOS app's plist is the one xcodegen writes from
+    # this target's properties.
+    modes = app_info.setdefault("UIBackgroundModes", [])
+    if "audio" not in modes:
+        modes.append("audio")
     app.setdefault("info", {}).setdefault("properties", app_info)
     # The extension's copy of this answer lives in the tracked plist.
 

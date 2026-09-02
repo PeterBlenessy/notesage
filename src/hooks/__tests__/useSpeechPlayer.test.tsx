@@ -29,10 +29,10 @@ vi.mock("@/lib/ios-api", () => ({
   iosSpeechSkip: (d: number) => speechSkip(d),
   iosSpeechSetRate: (r: number) => speechSetRate(r),
   // Real listener semantics: the native side dispatches a window CustomEvent.
-  onIosSpeechProgress: (handler: (p: { event: string; index: number; total: number }) => void) => {
+  onIosSpeechEvent: (handler: (p: { event: string; index?: number; total?: number; playing?: boolean }) => void) => {
     const listener = (e: Event) => {
       const detail = (e as CustomEvent).detail;
-      if (detail?.event === "progress") handler(detail);
+      if (detail?.event) handler(detail);
     };
     window.addEventListener("notesage:speech", listener);
     return () => window.removeEventListener("notesage:speech", listener);
@@ -48,6 +48,16 @@ function emitProgress(index: number, total: number) {
   window.dispatchEvent(
     new CustomEvent("notesage:speech", { detail: { event: "progress", index, total } }),
   );
+}
+
+function emitPlaying(playing: boolean) {
+  window.dispatchEvent(
+    new CustomEvent("notesage:speech", { detail: { event: "playing", playing } }),
+  );
+}
+
+function emitFinished() {
+  window.dispatchEvent(new CustomEvent("notesage:speech", { detail: { event: "finished" } }));
 }
 
 describe("useSpeechPlayer", () => {
@@ -112,6 +122,58 @@ describe("useSpeechPlayer", () => {
 
     expect(useMobileStore.getState().speechPositions["Inbox/b.html"]).toBeUndefined();
     expect(useMobileStore.getState().speechPositions["Inbox/a.html"]).toBe(4);
+  });
+
+  it("retires the transport when the article finishes", () => {
+    // Reaching the last paragraph used to arrive as a plain progress event,
+    // which only ever sets `active: true` — so the bar sat there showing Pause
+    // for an article that had already stopped, and tapping it republished the
+    // finished article to the lock screen. (Review finding, Critical.)
+    const { result } = renderHook(() => useSpeechPlayer("Inbox/a.html"));
+    act(() => result.current.start("body", "A"));
+    act(() => emitProgress(40, 41));
+    expect(result.current.state.active).toBe(true);
+
+    act(() => emitFinished());
+    expect(result.current.state.active).toBe(false);
+    expect(result.current.state.playing).toBe(false);
+  });
+
+  it("rewinds to the top once an article has been heard to the end", () => {
+    // Otherwise the next Listen resumes at the last paragraph and says almost
+    // nothing before stopping again.
+    const { result } = renderHook(() => useSpeechPlayer("Inbox/a.html"));
+    act(() => result.current.start("body", "A"));
+    act(() => emitProgress(40, 41));
+    act(() => emitFinished());
+    expect(useMobileStore.getState().speechPositions["Inbox/a.html"]).toBe(0);
+  });
+
+  it("follows a pause driven from the lock screen", () => {
+    // The lock screen and Control Centre call the native player directly and
+    // never touch this code; without the `playing` event the transport keeps
+    // showing the wrong icon and the next tap calls the wrong method.
+    const { result } = renderHook(() => useSpeechPlayer("Inbox/a.html"));
+    act(() => result.current.start("body", "A"));
+    expect(result.current.state.playing).toBe(true);
+
+    act(() => emitPlaying(false));
+    expect(result.current.state.playing).toBe(false);
+
+    act(() => emitPlaying(true));
+    expect(result.current.state.playing).toBe(true);
+  });
+
+  it("ignores a finished event for an article that is no longer playing", () => {
+    const { result, rerender } = renderHook(({ path }) => useSpeechPlayer(path), {
+      initialProps: { path: "Inbox/a.html" },
+    });
+    act(() => result.current.start("body", "A"));
+    act(() => emitProgress(5, 9));
+    rerender({ path: "Inbox/b.html" });
+    act(() => emitFinished());
+    // The old article keeps the position it actually reached.
+    expect(useMobileStore.getState().speechPositions["Inbox/a.html"]).toBe(5);
   });
 
   it("stops native playback when the document changes", () => {
