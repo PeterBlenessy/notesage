@@ -11,6 +11,8 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Fixes the wrong-language reading you hit. Ten of the 36 articles in your Inbox were being detected as Danish or Norwegian — all of them English. One localised line was enough to swing it: your X captures are titled "… på X", and that alone made 14,000 characters of English come back as Danish. The language is now decided by a majority vote across paragraphs, so a foreign title gets outvoted by the body instead of deciding for it. Your Swedish articles still read in Swedish.
+You can now choose the reading voice. While listening, open the … menu and tap Voice… — it lists the voices installed for the article's language, marked Premium, Enhanced or Compact with their region, and remembers your choice for that language. Your phone had been picking premium Australian Karen over the voice you selected; there is no way for an app to read the Settings choice, so this is the fix.
 
-Still worth checking: lock the screen mid-article and confirm it keeps reading. And the voice will still sound flat — that is Apple's compact voice. Downloading an enhanced English voice under Settings > Accessibility > Spoken Content > Voices should improve it a lot; tell me whether it does, because that decides whether we need a different speech engine.
+Also: the player's buttons are bigger and further apart, and the "6" over "…" was the position wrapping onto two lines — it now reads "6 / 178".
+
+Still worth checking: lock the screen mid-article and confirm it keeps reading.

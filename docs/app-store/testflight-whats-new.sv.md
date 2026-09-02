@@ -9,6 +9,8 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Rättar uppläsningen på fel språk. Tio av de 36 artiklarna i din inkorg tolkades som danska eller norska — alla på engelska. En enda lokaliserad rad räckte: dina X-sparningar heter "… på X", och bara det gjorde att 14 000 tecken engelska tolkades som danska. Språket avgörs nu av en majoritet bland styckena, så en främmande rubrik blir överröstad av brödtexten. Dina svenska artiklar läses fortfarande på svenska.
+Du kan nu välja uppläsningsröst. Öppna …-menyn medan du lyssnar och tryck på Röst… — den listar rösterna som är installerade för artikelns språk, märkta Premium, Förbättrad eller Kompakt med region, och kommer ihåg ditt val för det språket. Din telefon hade valt australiska premium-Karen framför rösten du valt; en app kan inte läsa valet i Inställningar, så det här är lösningen.
 
-Kontrollera gärna ändå: lås skärmen mitt i en artikel och se att uppläsningen fortsätter. Rösten låter fortfarande platt — det är Apples kompakta röst. Att ladda ner en förbättrad engelsk röst under Inställningar > Tillgänglighet > Uppläst innehåll > Röster bör hjälpa mycket; berätta om det gör det, eftersom det avgör om vi behöver en annan uppläsningsmotor.
+Dessutom: spelarens knappar är större och står glesare, och "6" över "…" var positionen som radbrutits — nu står det "6 / 178".
+
+Kontrollera gärna fortfarande: lås skärmen mitt i en artikel och se att uppläsningen fortsätter.
