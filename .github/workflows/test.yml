@@ -489,7 +489,15 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/tauri-webdriver
-          key: ${{ runner.os }}-tauri-webdriver-${{ hashFiles('**/Cargo.lock') }}
+          # Keyed on the PINNED driver version, not Cargo.lock: the lockfile has
+          # nothing to do with which driver we want, and keying on it meant any
+          # unrelated dependency change rotated this cache, missed, and
+          # `cargo install` pulled whatever was newest. That is how #872 got
+          # tauri-webdriver 0.2.0, which needs a `tauri:options.application`
+          # capability this harness does not set, and every spec failed to
+          # create a session. Bumping the version is now a deliberate edit
+          # here, made together with the harness (#873).
+          key: ${{ runner.os }}-tauri-webdriver-0.1.1
 
       - name: Install tauri-webdriver
         # The crate / binary name is `tauri-webdriver`, not `tauri-driver`
@@ -500,7 +508,7 @@ jobs:
         # (a Cargo.lock change rotates this cache's key while the broader Rust
         # cache still restores ~/.cargo/bin), and cargo refuses to overwrite
         # without it ("binary `tauri-webdriver` already exists in destination").
-        run: cargo install tauri-webdriver --force
+        run: cargo install tauri-webdriver --version 0.1.1 --locked --force
 
       - name: Run real Tauri E2E tests
         run: pnpm test:e2e-real-full
