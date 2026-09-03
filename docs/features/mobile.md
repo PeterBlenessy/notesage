@@ -737,11 +737,16 @@ default voice of the user's own region of the article's language
 (`AVSpeechSynthesisVoice(language: "en-US")`, regions from
 `Locale.preferredLanguages`) and uses it whenever it is enhanced or premium —
 the factory default is compact, so a better-than-compact answer can only mean
-the user chose it. Only then does the ranking below run. Whether iOS actually
-hands apps the Settings selection through that API is **unverified on
-hardware** — a Mac with no premium voices could not show it either way — so
-`SpeechPlayer` logs which path it took (`subsystem com.notesage.app, category
-speech`), readable from the phone over WiFi with `idevicesyslog -n`. The "Voice…"
+the user chose it. Only then does the ranking below run. **Verified on Peter's phone
+(build 36, 2026-09-03):** iOS does hand apps the Settings selection through
+that API — the log read `system default for en-SE is compact Samantha`, then
+`system default for en-US is enhanced Tom` → `chose Tom via system default`,
+Tom being the voice he had configured. (The earlier claim that "there is no
+API for the Settings voice" came from a Mac with no premium voices installed,
+which could not show it either way — a limit asserted, not tested.)
+`SpeechPlayer` logs the path it took (`subsystem com.notesage.app, category
+speech`), readable from a paired phone over WiFi with `idevicesyslog -n`; that
+is how the question was settled. The "Voice…"
 sheet in the reader menu remains as an override the user never has to touch:
 it lists installed voices for the article's language as `Name · Premium ·
 en-US` (premium en-AU and premium en-US are both "Premium" and sound nothing

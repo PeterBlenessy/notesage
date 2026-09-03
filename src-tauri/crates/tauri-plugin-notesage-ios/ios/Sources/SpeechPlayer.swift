@@ -76,9 +76,12 @@ private let MAX_VOTING_PARAGRAPHS = 60
     /// ("en" -> a voice identifier). It wins over every heuristic below: there
     /// is NO API that tells an app which voice the user chose in Settings, so
     /// the app has to remember the choice itself — and honour it.
+    /// `language` is detected by the caller OFF the main thread (up to 60
+    /// recogniser passes on a long article — enough to hitch the UI right as
+    /// Listen is tapped, per review) and handed in here.
     @objc public func start(
         text: String, title: String, startIndex: Int, rate: Float,
-        voiceByLanguage: [String: String]
+        voiceByLanguage: [String: String], language detected: String?
     ) {
         // NOT `stop()`: that deactivates the audio session with
         // `.notifyOthersOnDeactivation`, so the very first Listen tap ducked
@@ -89,7 +92,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
         self.rate = rate > 0 ? rate : AVSpeechUtteranceDefaultSpeechRate
         paragraphs = SpeechPlayer.splitIntoParagraphs(text)
         guard !paragraphs.isEmpty else { return }
-        language = SpeechPlayer.detectLanguage(text)
+        language = detected
         voice = SpeechPlayer.voice(forLanguage: language, chosen: voiceByLanguage)
         index = min(max(0, startIndex), paragraphs.count - 1)
         activateSession()
@@ -177,7 +180,11 @@ private let MAX_VOTING_PARAGRAPHS = 60
     @objc public func setVoice(identifier: String) {
         guard let picked = AVSpeechSynthesisVoice(identifier: identifier) else { return }
         voice = picked
-        if synth.isSpeaking || synth.isPaused {
+        // `isSpeaking` only, exactly as `setRate` — NOT `isPaused`. Re-speaking
+        // while paused starts audio the user had stopped and flips the
+        // transport to Playing under them (review finding). Paused, the new
+        // voice simply takes effect from the next paragraph.
+        if synth.isSpeaking && !synth.isPaused {
             synth.stopSpeaking(at: .immediate)
             speakCurrent()
         }
@@ -258,24 +265,41 @@ private let MAX_VOTING_PARAGRAPHS = 60
         return ranked
     }
 
-    /// iOS's own default voice for the user's regions of `code`, when it is
-    /// better than compact — i.e. when it reflects a choice the user made.
+    /// iOS's own default voice for `code` — the one Settings › Spoken Content
+    /// configures — when it is better than compact, i.e. when it reflects a
+    /// choice the user made.
+    ///
+    /// Asked for EVERY installed region of the language, not only the user's
+    /// own: Settings' "English" voice can be from any region (Peter picked
+    /// Lee, en-AU), and querying just en-SE/en-US/en-GB never found it — the
+    /// player fell through to the ranking and read with premium en-AU Karen,
+    /// a different Australian voice. The user's regions are tried first so a
+    /// tie between regions resolves the way their language list does.
     static func systemDefaultVoice(forLanguageCode code: String) -> AVSpeechSynthesisVoice? {
-        let regions = Locale.preferredLanguages
-            .filter { $0.split(separator: "-").first.map(String.init) == code }
-            + ["\(code)-US", "\(code)-GB"]
+        let subtag: (String) -> String? = { $0.split(separator: "-").first.map(String.init) }
+        let userRegions = Locale.preferredLanguages.filter { subtag($0) == code }
+        let installedRegions = AVSpeechSynthesisVoice.speechVoices()
+            .filter { subtag($0.language) == code && !isNoveltyVoice($0) }
+            .map(\.language)
+        var seen = Set<String>()
+        let regions = (userRegions + (code == "en" ? ["en-US", "en-GB"] : []) + installedRegions)
+            .filter { seen.insert($0.lowercased()).inserted }
+        var best: AVSpeechSynthesisVoice?
         for tag in regions {
             guard let v = AVSpeechSynthesisVoice(language: tag) else { continue }
             log("system default for %{public}@ is %{public}@ (%{public}@)", tag, v.identifier, qualityName(v.quality))
-            if v.quality != .default && !isNoveltyVoice(v) { return v }
+            guard v.quality != .default, !isNoveltyVoice(v) else { continue }
+            // Earlier regions win ties; a strictly better tier wins outright.
+            if best == nil || quality(v.quality) > quality(best!.quality) { best = v }
         }
-        return nil
+        return best
     }
 
     private static let logger = OSLog(subsystem: "com.notesage.app", category: "speech")
     private static func log(_ format: StaticString, _ args: CVarArg...) {
         // Visible in the device syslog — how the voice question gets answered
         // on hardware without a debugger attached.
+        precondition(args.count <= 3, "log() forwards at most 3 arguments")
         switch args.count {
         case 0: os_log(format, log: logger, type: .info)
         case 1: os_log(format, log: logger, type: .info, args[0])
@@ -305,9 +329,14 @@ private let MAX_VOTING_PARAGRAPHS = 60
     static func detectLanguage(_ text: String) -> String? {
         // Short paragraphs (headings, list items, handles) are exactly the
         // noise that misleads the recogniser, so only substantial prose votes.
-        let paragraphs = text.components(separatedBy: "\n\n")
+        let substantial = text.components(separatedBy: "\n\n")
             .filter { $0.count >= MIN_VOTING_PARAGRAPH_CHARS }
-            .prefix(MAX_VOTING_PARAGRAPHS)
+        // Spread the sample over the WHOLE document rather than taking the
+        // first N: a long foreign block quote or preface at the top would
+        // otherwise be the entire electorate — the same unrepresentative-sample
+        // bug this vote exists to fix, relocated (review finding).
+        let stride = max(1, Int((Double(substantial.count) / Double(MAX_VOTING_PARAGRAPHS)).rounded(.up)))
+        let paragraphs = Swift.stride(from: 0, to: substantial.count, by: stride).map { substantial[$0] }
 
         var votes: [String: Int] = [:]
         for paragraph in paragraphs {
@@ -322,7 +351,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
             let total = votes.values.reduce(0, +)
             // A plurality is not enough for a genuinely mixed document; without
             // a majority, the system default is the safer answer.
-            if Double(winner.value) / Double(total) >= 0.5 { return winner.key }
+            if Double(winner.value) / Double(total) > 0.5 { return winner.key }
             return nil
         }
 

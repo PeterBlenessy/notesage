@@ -11,8 +11,6 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-The reading voice should now be the one you configured in Settings › Spoken Content: the app asks iOS for your region's default voice first and uses it whenever it is an enhanced or premium one. Your phone had been picking premium Australian Karen over your selection. If it still reads with the wrong voice, tell me — the app logs which path it took and I can read that over WiFi. There is also a Voice… entry in the … menu while listening, as an override; you should not need it.
+Fixes the wrong voice you hit with Lee: the app only asked iOS for the default voice of your own regions (en-SE, en-US) and en-GB, so an Australian selection was invisible and it fell back to the first premium Australian voice alphabetically — Karen. It now asks every installed region. Play an article; it should read with Lee. If not, tell me — the log capture is running.
 
-Also: the player's buttons are bigger and further apart, and the "6" over "…" was the position wrapping onto two lines — it now reads "6 / 178".
-
-Still worth checking: lock the screen mid-article and confirm it keeps reading.
+Also from code review: changing voice while paused no longer starts playback; Voice… only appears once the article's language is known; and the position label can no longer collapse to "…".

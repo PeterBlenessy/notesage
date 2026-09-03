@@ -843,7 +843,12 @@ export function Reader() {
                 // omitting it made Listen unreachable for every markdown note
                 // while looking present in the code (#832's failure shape).
                 { id: "listen", title: t("reader.listen"), icon: "headphones" },
-                ...(speech.state.active
+                // Gated on the LANGUAGE being known, not on playback having
+                // started: `active` flips synchronously, `language` arrives
+                // after the native round trip, and in that window the entry
+                // would tell a user who is already listening to start
+                // listening (review finding).
+                ...(speech.state.language
                   ? [{ id: "voice", title: t("reader.voice"), icon: "person.wave.2" }]
                   : []),
               ],
@@ -869,9 +874,9 @@ export function Reader() {
                 ...(kind === "html" || kind === "markdown" || kind === "text"
                   ? [{ id: "listen", title: t("reader.listen"), icon: "headphones" }]
                   : []),
-                // Only while listening: the voice list depends on the language
-                // the native side decided from the article's text.
-                ...(speech.state.active
+                // Only once the native side has decided the article's language
+                // (which arrives after `active`) — the list depends on it.
+                ...(speech.state.language
                   ? [{ id: "voice", title: t("reader.voice"), icon: "person.wave.2" }]
                   : []),
                 ...(sourceUrl
