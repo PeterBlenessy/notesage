@@ -14,8 +14,6 @@
 "share.savesToInboxAsOrLink" = "Sparas i Inbox som %@ — eller som en länkanteckning om sidan saknar artikel att extrahera.";
 "share.setUpFirst" = "Öppna Notesage för att komma igång innan du delar.";
 "share.nothingToSave" = "Inget att spara.";
-"share.oneFile" = "1 fil";
-"share.manyFiles" = "%d filer";
 "share.savesToInboxKeepName" = "Sparas i Inbox i ditt Notesage-bibliotek med originalnamnet.";
 
 /* macOS-only surfaces (#778 sweep). Mac-tillägget har sin EGEN biblioteks-
