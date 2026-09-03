@@ -263,6 +263,10 @@ final class ChromeManager {
       // place rather than rebuilding the hosting controller, which would drop
       // the capsule's animation and re-run its appear transition each tick.
       host.rootView = view
+      // The strip's width comes from the hosting view's intrinsic size, which
+      // a root-view swap does NOT recompute: it stayed sized to the initial
+      // "…" placeholder and the real "128 / 178" was squeezed back into "…".
+      host.view.invalidateIntrinsicContentSize()
       container.bringSubviewToFront(host.view)
       return
     }
@@ -285,8 +289,10 @@ final class ChromeManager {
     ])
     // Intrinsic width: the hosting view must be allowed to be as wide as its
     // content, or SwiftUI squeezes the position label into a wrap.
-    host.view.setContentCompressionResistancePriority(.required, for: .horizontal)
-    host.view.setContentHuggingPriority(.required, for: .horizontal)
+    // Below `.required`: the screen-width ceiling above must win when the
+    // two disagree, and the labels can now shrink to make that possible.
+    host.view.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+    host.view.setContentHuggingPriority(.defaultHigh, for: .horizontal)
     playerHost = host
   }
 
@@ -848,17 +854,24 @@ struct GlassPlayer: View {
       // `.lineLimit(1)` + `.fixedSize()`: without them SwiftUI wrapped
       // "6 / 178" onto two lines inside the fixed-height host and showed
       // "6" over "…" — which read as a mystery control, not a position.
+      // `minimumScaleFactor` instead of `fixedSize`: on a 375pt phone with a
+      // "128 / 3400" label the fixed budget could not be met, and two
+      // `.required` constraints then break arbitrarily. Letting the label
+      // shrink a little keeps it on one line AND inside the screen.
       Text(spec.position)
         .font(.footnote.monospacedDigit())
         .foregroundStyle(.secondary)
         .lineLimit(1)
-        .fixedSize()
+        .minimumScaleFactor(0.75)
+        // A floor so the capsule does not re-lay out every paragraph as the
+        // digits change width; wide enough for "128 / 178" at full size.
+        .frame(minWidth: 64)
         .padding(.horizontal, 2)
       Button { emit("player-rate") } label: {
         Text(spec.rate)
           .font(.footnote.weight(.semibold).monospacedDigit())
           .lineLimit(1)
-          .fixedSize()
+          .minimumScaleFactor(0.75)
           .frame(minWidth: 46, minHeight: 46)
       }
       .buttonStyle(.plain)

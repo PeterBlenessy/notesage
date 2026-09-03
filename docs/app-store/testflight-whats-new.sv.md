@@ -9,8 +9,6 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Uppläsningsrösten bör nu vara den du ställt in under Inställningar › Uppläst innehåll: appen frågar iOS efter standardrösten för din region först och använder den när den är förbättrad eller premium. Din telefon hade valt australiska premium-Karen framför ditt val. Läser den fortfarande med fel röst, säg till — appen loggar vilken väg den tog och jag kan läsa det över wifi. Det finns också Röst… i …-menyn medan du lyssnar, som en manuell överstyrning; du ska inte behöva den.
+Rättar fel röst med Lee: appen frågade bara iOS efter standardrösten för dina egna regioner (en-SE, en-US) och en-GB, så ett australiskt val syntes inte och den föll tillbaka på den första australiska premiumrösten i bokstavsordning — Karen. Nu frågar den alla installerade regioner. Spela en artikel; den ska läsas av Lee. Om inte, säg till — loggfångsten kör.
 
-Dessutom: spelarens knappar är större och står glesare, och "6" över "…" var positionen som radbrutits — nu står det "6 / 178".
-
-Kontrollera gärna fortfarande: lås skärmen mitt i en artikel och se att uppläsningen fortsätter.
+Också från kodgranskningen: att byta röst under paus startar inte längre uppspelningen; Röst… visas först när artikelns språk är känt; och positionsetiketten kan inte längre kollapsa till "…".

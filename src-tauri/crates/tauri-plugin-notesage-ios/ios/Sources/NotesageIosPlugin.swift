@@ -530,7 +530,12 @@ class NotesageIosPlugin: Plugin {
   @objc public func speechStart(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(SpeechStartArgs.self)
-      DispatchQueue.main.async {
+      // Language detection is up to 60 recogniser passes on a long article —
+      // done here, off the main thread, so Listen never hitches the UI
+      // (review finding); the player itself is driven on main below.
+      DispatchQueue.global(qos: .userInitiated).async {
+        let language = SpeechPlayer.detectLanguage(args.text)
+        DispatchQueue.main.async {
         // Wire the callbacks before starting, so the very first paragraph
         // reports its position too.
         SpeechPlayer.shared.onProgress = { [weak self] index, total in
@@ -546,11 +551,14 @@ class NotesageIosPlugin: Plugin {
         }
         SpeechPlayer.shared.start(
           text: args.text, title: args.title, startIndex: args.startIndex,
-          rate: args.rate, voiceByLanguage: args.voiceByLanguage)
+          rate: args.rate, voiceByLanguage: args.voiceByLanguage, language: language)
         // Resolved from INSIDE the dispatch: resolving before the work runs
         // meant a native failure could never reach the JS `.catch`. The
         // detected language comes back so the voice picker knows what to list.
-        invoke.resolve(["language": SpeechPlayer.shared.language as Any])
+        // Passed as the plain optional — JsonObject's values are `Any?`, so no
+        // `as Any` boxing of an Optional (a known footgun) is needed.
+        invoke.resolve(["language": language])
+        }
       }
     } catch { invoke.reject(String(describing: error)) }
   }
