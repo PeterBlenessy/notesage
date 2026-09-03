@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-The lock-screen player now shows the article's picture instead of a grey box — the same image the Inbox card uses. Articles without a picture still show nothing there.
+Sharing an Office web-viewer link (view.officeapps.live.com/…?src=…) now saves the document it points at — the FY27 KPIs deck lands in Inbox as the real .pptx, 4 MB, with its own thumbnail — instead of the viewer's loading spinner. Try the same link again.
