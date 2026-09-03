@@ -510,6 +510,37 @@ readable part of a video is what a note wants anyway. Transcribing a shared
 media FILE with the desktop's Whisper stack is the planned next step, and
 carries none of those problems.
 
+## The read-later list row (#836)
+
+Peter, on Instapaper's list: *"I also like this type of list view. Could have a
+more condensed option too."* A saved article's list row is now that shape —
+title (two lines), `site · 2 of 4 min left`, a two-line excerpt, a square
+thumbnail on the right, a hairline separator. The progress line is what makes
+it a read-later list rather than a file list.
+
+Everything but progress is read back out of the capture's own header by
+`article_card_meta` (capture crate; iOS-only command like
+`article_source_url`): `<title>`, `<p class="standfirst">`, and the
+` · `-joined `<p class="byline">` — "By X · N min read · site". A document
+that is not a capture — or one saved before #828, which has no header — makes
+`ArticleRow` render the plain `FileRow`, so the list never has a hole; on the
+simulator a pre-#828 X capture shows title + thumbnail only, a post-#828 one
+shows the full row.
+
+**Reading progress** is the genuinely new piece. Recorded as a 0…1 fraction
+per document in `mobile-store.readingProgress` (persisted, rename-aware,
+capped at 500) from two sources: the markdown/text reader's own scroller
+(`onScroll`), and — for a natively presented report, whose scroll view nothing
+in the WebView can see — a `scroll` message on the existing `notesage:report`
+bridge, emitted by `ReportWebView.observeScroll` off a KVO on the scroll
+view's `contentOffset`, coalesced to one message per ~300 ms. The store only
+ever moves progress FORWARD: scrolling back up to re-read a line must not
+un-read the article. `≥ 0.97` shows as "Read".
+
+**Condensed rows** — "Kompakta rader" in the view menu, a checkmark toggle
+persisted as `listDensity` — drops the excerpt and shrinks the thumbnail to one
+line per row, for a library that has grown past browsing into scanning.
+
 ## Office web-viewer URLs are documents (#868)
 
 `view.officeapps.live.com/op/view.aspx?src=<url>` (and `embed.aspx`) is not a
@@ -835,6 +866,7 @@ bad voice" and falls back — selection is verifiable, audible output is not.
 | `src/components/mobile/Onboarding.tsx` | One-time permission / re-grant screen |
 | `src/components/mobile/LibraryBrowser.tsx` | Push-navigation folder browser |
 | `src/components/mobile/Reader.tsx` | Markdown / HTML / mermaid / text / image / PDF reader + iCloud download + theme re-render |
+| `src/components/mobile/ArticleRow.tsx` | Read-later list row: title, `site · min left`, excerpt, thumbnail; falls back to `FileRow` |
 | `src/components/mobile/speech-text.ts` | Document → speech prose (strips markup, base64 images, URLs) |
 | `src/hooks/useSpeechPlayer.ts` | Speech controller + per-document resume position |
 | `src/components/mobile/SpeechPlayerBar.tsx` | Fallback transport for builds with no native chrome |

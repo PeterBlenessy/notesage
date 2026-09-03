@@ -180,6 +180,7 @@ const MAX_INLINE_TEXT_BYTES = 100 * 1024 * 1024;
 export function Reader() {
   useLocale();
   const openDoc = useMobileStore((s) => s.openDoc);
+  const rememberReadingProgress = useMobileStore((s) => s.rememberReadingProgress);
   const goBack = useMobileStore((s) => s.goBack);
   const openDocument = useMobileStore((s) => s.openDocument);
   const openLinkedDocument = useMobileStore((s) => s.openLinkedDocument);
@@ -1243,11 +1244,17 @@ export function Reader() {
   useEffect(() => {
     if (!hasNativeReport) return;
     const onReport = (e: Event) => {
-      const detail = (e as CustomEvent<{ type?: string; href?: string }>).detail;
+      const detail = (e as CustomEvent<{ type?: string; href?: string; fraction?: number }>).detail;
       if (detail?.type === "crashed") {
         // Its own content process, so a report can die alone. Say so — a blank
         // rectangle is indistinguishable from an empty document.
         setState({ status: "error", message: t("reader.reportCrashed") });
+        return;
+      }
+      if (detail?.type === "scroll") {
+        // Reading progress (#836), read off the native report's own scroll
+        // view — the only party that can see it.
+        if (typeof detail.fraction === "number") rememberReadingProgress(relPath, detail.fraction);
         return;
       }
       if (detail?.type !== "link" || !detail.href) return;
@@ -1257,7 +1264,7 @@ export function Reader() {
     };
     window.addEventListener("notesage:report", onReport);
     return () => window.removeEventListener("notesage:report", onReport);
-  }, [hasNativeReport, t]);
+  }, [hasNativeReport, t, relPath, rememberReadingProgress]);
 
   // Render ```mermaid fences into SVG diagrams — parity with the desktop
   // editor's Mermaid node view, using the same lazily-imported library. The
@@ -1491,7 +1498,18 @@ export function Reader() {
           />
         </div>
       ) : (
-      <div ref={scrollerRef} className="absolute inset-0 overflow-y-auto" style={CONTENT_INSETS}>
+      <div
+        ref={scrollerRef}
+        className="absolute inset-0 overflow-y-auto"
+        style={CONTENT_INSETS}
+        onScroll={(e) => {
+          // Reading progress (#836) for documents rendered here. Cheap: the
+          // store only writes when the fraction moves forward.
+          const el = e.currentTarget;
+          const span = el.scrollHeight - el.clientHeight;
+          if (span > 1) rememberReadingProgress(relPath, el.scrollTop / span);
+        }}
+      >
         {state.status === "loading" && <ReaderMessage spinner>{t("reader.loading")}</ReaderMessage>}
 
         {state.status === "downloading" && (

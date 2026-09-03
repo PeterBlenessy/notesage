@@ -135,6 +135,57 @@ pub fn oembed_url(url: &str) -> Option<String> {
     }
 }
 
+/// What a library list row shows for a saved article (#836): the pieces the
+/// capture header already carries, read back out of it.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardMeta {
+    pub title: Option<String>,
+    /// The standfirst — the excerpt under the title.
+    pub excerpt: Option<String>,
+    /// Estimated reading time, from the "N min read" the header carries.
+    pub minutes: Option<u32>,
+    /// The publisher's name or host, as the byline shows it.
+    pub site: Option<String>,
+}
+
+/// Read a list row's fields back out of a capture's own header (#836).
+///
+/// This parses markup the crate itself wrote (`build_article_header`), so the
+/// shapes are known: `<title>`, `<p class="standfirst">` and a
+/// `<p class="byline">` whose parts are ` · `-joined — "By X · N min read ·
+/// site". Returns `None` for a document that is not one of ours, which is the
+/// caller's cue to show the plain file row.
+pub fn article_card_meta(html: &str) -> Option<CardMeta> {
+    if article_source_url(html).is_none() {
+        return None;
+    }
+    let title = tag_text(html, "<title>", "</title>");
+    let excerpt = tag_text(html, "<p class=\"standfirst\">", "</p>");
+    let byline = tag_text(html, "<p class=\"byline\">", "</p>");
+    let mut minutes = None;
+    let mut site = None;
+    if let Some(byline) = byline.as_deref() {
+        for part in byline.split(" · ").map(str::trim) {
+            if let Some(n) = part.strip_suffix(" min read") {
+                minutes = n.trim().parse::<u32>().ok();
+            } else if !part.starts_with("By ") && !part.is_empty() {
+                // The last non-byline, non-minutes part is the site.
+                site = Some(part.to_string());
+            }
+        }
+    }
+    Some(CardMeta { title, excerpt, minutes, site })
+}
+
+/// Text between the first `open` and the following `close`, entities decoded.
+fn tag_text(html: &str, open: &str, close: &str) -> Option<String> {
+    let start = html.find(open)? + open.len();
+    let end = html[start..].find(close)? + start;
+    let text = decode_entities(html[start..end].trim());
+    (!text.is_empty()).then_some(text)
+}
+
 /// The document BEHIND an Office web-viewer URL, or `None` for anything else.
 ///
 /// `view.officeapps.live.com/op/view.aspx?src=<url>` (and `embed.aspx`) is not a
@@ -1812,6 +1863,35 @@ mod video_tests {
     #[test]
     fn recognises_the_video_hosts_we_support_and_no_others() {
         assert!(oembed_url("https://youtu.be/3zk1WjrxCSw").is_some());
+    }
+
+    #[test]
+    fn article_card_meta_reads_the_header_back() {
+        let html = r#"<!doctype html><html><head><title>Fences, not Sandboxes</title></head>
+<body><header><h1>Fences, not Sandboxes</h1><p class="standfirst">Why the walls we build for agents matter.</p>
+<p class="byline">By Steve Yegge · 7 min read · steve-yegge.medium.com</p></header>
+<p>Body.</p><footer><p class="source">Clipped from <a href="https://steve-yegge.medium.com/x">https://steve-yegge.medium.com/x</a></p></footer></body></html>"#;
+        let meta = article_card_meta(html).expect("a capture");
+        assert_eq!(meta.title.as_deref(), Some("Fences, not Sandboxes"));
+        assert_eq!(meta.excerpt.as_deref(), Some("Why the walls we build for agents matter."));
+        assert_eq!(meta.minutes, Some(7));
+        assert_eq!(meta.site.as_deref(), Some("steve-yegge.medium.com"));
+    }
+
+    #[test]
+    fn article_card_meta_tolerates_a_header_without_byline_or_standfirst() {
+        let html = r#"<html><head><title>T &amp; U</title></head><body><p class="byline">3 min read · x.com</p>
+<footer><p class="source">Clipped from <a href="https://x.com/a/status/1">https://x.com/a/status/1</a></p></footer></body></html>"#;
+        let meta = article_card_meta(html).unwrap();
+        assert_eq!(meta.title.as_deref(), Some("T & U"));
+        assert_eq!(meta.excerpt, None);
+        assert_eq!(meta.minutes, Some(3));
+        assert_eq!(meta.site.as_deref(), Some("x.com"));
+    }
+
+    #[test]
+    fn article_card_meta_is_none_for_a_document_that_is_not_ours() {
+        assert!(article_card_meta("<html><head><title>Report</title></head><body>hi</body></html>").is_none());
     }
 
     #[test]

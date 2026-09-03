@@ -63,6 +63,10 @@ final class ReportPresenter: NSObject {
   /// dispatching link taps back to the web layer. Never the other direction —
   /// nothing the report contains is ever evaluated against this.
   private weak var appWebView: WKWebView?
+  // Reading-progress observer state (#836) — see `observeScroll`.
+  private var scrollObservation: NSKeyValueObservation?
+  private var lastEmittedFraction: Double = -1
+  private var lastEmitAt: TimeInterval = 0
   /// Set while `loadHTMLString`'s own navigation is in flight, so the
   /// navigation policy handler can tell it apart from a link tap. Without it
   /// the initial load cancels itself and the report never appears.
@@ -132,6 +136,7 @@ final class ReportPresenter: NSObject {
 
     let view = WKWebView(frame: container.bounds, configuration: config)
     view.navigationDelegate = self
+    observeScroll(of: view)
     view.translatesAutoresizingMaskIntoConstraints = false
     // WebKit's own find-in-page (iOS 16+, and `Package.swift` pins `.iOS(.v16)`
     // — exactly this floor). Replaces the injected agent.
@@ -348,6 +353,27 @@ extension ReportPresenter: WKNavigationDelegate {
 
   private func emitCrashed() {
     dispatch("crashed", detail: "{}")
+  }
+
+  /// Reading progress (#836): how far down the report the user has scrolled,
+  /// 0…1, throttled — a list row shows "2 of 4 min left" from it. The report
+  /// cannot observe or trigger this; it is read off the scroll view we own.
+
+  func observeScroll(of webView: WKWebView) {
+    scrollObservation = webView.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
+      guard let self else { return }
+      let span = sv.contentSize.height - sv.bounds.height
+      guard span > 1 else { return }
+      let fraction = min(1, max(0, (sv.contentOffset.y + sv.adjustedContentInset.top) / span))
+      let now = Date().timeIntervalSince1970
+      // Coalesce: one message per ~300 ms unless the change is large. A scroll
+      // is hundreds of offsets a second and each dispatch is a JS evaluation
+      // on the app's web view.
+      if abs(fraction - self.lastEmittedFraction) < 0.02 && now - self.lastEmitAt < 0.3 { return }
+      self.lastEmittedFraction = fraction
+      self.lastEmitAt = now
+      self.dispatch("scroll", detail: "{ fraction: \(String(format: "%.3f", fraction)) }")
+    }
   }
 
   private func dispatch(_ type: String, detail: String) {

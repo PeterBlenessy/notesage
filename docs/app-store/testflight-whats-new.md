@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Sharing an Office web-viewer link (view.officeapps.live.com/…?src=…) now saves the document it points at — the FY27 KPIs deck lands in Inbox as the real .pptx, 4 MB, with its own thumbnail — instead of the viewer's loading spinner. Try the same link again.
+The Inbox list shows saved articles the way a read-later list should: title, source and reading time, a two-line excerpt, and the article's picture — and once you have opened one, how much is left ("2 of 4 min left"), which fills in as you scroll and never goes backwards. The … menu has a Condensed rows toggle for one line per article. Articles saved before the masthead existed (early August) show only title and picture; update one from source to get the rest.

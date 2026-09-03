@@ -69,6 +69,8 @@ export type GroupMode = "none" | "pinned" | "recent" | "date" | "type";
 
 /** List (single-column) vs. gallery (grid of preview cards) library layout (#633). */
 export type ViewMode = "list" | "gallery";
+/** How much each list row shows (#836): the full article row, or one line. */
+export type ListDensity = "comfortable" | "condensed";
 
 /**
  * Longest-edge cap for embedded images. `"original"` is offered but not the
@@ -191,6 +193,16 @@ interface MobileStore {
   speechVoices: Record<string, string>;
   rememberSpeechVoice: (language: string, voiceId: string) => void;
 
+  /** How far through each document the reader has scrolled, 0…1 (#836).
+   *  Persisted: it is what turns a file list into a read-later list —
+   *  "2 of 4 min left" — and it must survive relaunch to mean anything. */
+  readingProgress: Record<string, number>;
+  rememberReadingProgress: (relPath: string, fraction: number) => void;
+
+  /** Row density for the list view (#836). Persisted. */
+  listDensity: ListDensity;
+  setListDensity: (density: ListDensity) => void;
+
   /** Pin or unpin a root-relative path, writing the shared
    *  `.notesage/pins.json` the desktop reads. Re-reads the file first so a
    *  pin made on the desktop since the last load is not clobbered. */
@@ -208,6 +220,8 @@ interface MobileStore {
 /** How many articles keep a listening position. One small integer each; the
  *  cap exists so the map cannot grow without bound over years of use. */
 const MAX_SPEECH_POSITIONS = 200;
+/** Same cap and reasoning for reading progress. */
+const MAX_READING_PROGRESS = 500;
 
 export const useMobileStore = create<MobileStore>()(
   persist(
@@ -228,6 +242,8 @@ export const useMobileStore = create<MobileStore>()(
       scrollOffsets: {},
       speechPositions: {},
       speechVoices: {},
+      readingProgress: {},
+      listDensity: "comfortable",
 
       currentRelPath: () => {
         const stack = get().folderStack;
@@ -373,6 +389,23 @@ export const useMobileStore = create<MobileStore>()(
       rememberScroll: (relPath, offset) =>
         set((s) => ({ scrollOffsets: { ...s.scrollOffsets, [relPath]: offset } })),
 
+      rememberReadingProgress: (relPath, fraction) =>
+        set((s) => {
+          const clamped = Math.min(1, Math.max(0, fraction));
+          // Only ever forward on its own: scrolling back up to re-read a line
+          // must not un-read the article. Reset happens by finishing (≥ 0.97
+          // reads as done) or explicitly, never by a scroll.
+          const prev = s.readingProgress[relPath] ?? 0;
+          if (clamped <= prev) return {};
+          const next = { ...s.readingProgress, [relPath]: clamped };
+          const keys = Object.keys(next);
+          if (keys.length > MAX_READING_PROGRESS) {
+            for (const stale of keys.slice(0, keys.length - MAX_READING_PROGRESS)) delete next[stale];
+          }
+          return { readingProgress: next };
+        }),
+      setListDensity: (density) => set({ listDensity: density }),
+
       rememberSpeechVoice: (language, voiceId) =>
         set((s) => ({ speechVoices: { ...s.speechVoices, [language]: voiceId } })),
 
@@ -426,6 +459,9 @@ export const useMobileStore = create<MobileStore>()(
           speechPositions: Object.fromEntries(
             Object.entries(s.speechPositions).map(([k, v]) => [swap(k), v]),
           ),
+          readingProgress: Object.fromEntries(
+            Object.entries(s.readingProgress).map(([k, v]) => [swap(k), v]),
+          ),
           scrollOffsets: Object.fromEntries(
             Object.entries(s.scrollOffsets).map(([k, v]) => [swap(k), v]),
           ),
@@ -464,6 +500,8 @@ export const useMobileStore = create<MobileStore>()(
           scrollOffsets: {},
           speechPositions: {},
           speechVoices: {},
+          readingProgress: {},
+          listDensity: "comfortable",
             }),
     }),
     {
@@ -475,6 +513,8 @@ export const useMobileStore = create<MobileStore>()(
         recentlyRead: s.recentlyRead,
         speechPositions: s.speechPositions,
         speechVoices: s.speechVoices,
+        readingProgress: s.readingProgress,
+        listDensity: s.listDensity,
         sortMode: s.sortMode,
         groupMode: s.groupMode,
         viewMode: s.viewMode,

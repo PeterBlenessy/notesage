@@ -240,6 +240,7 @@ describe("sort toggle (#632)", () => {
     expect(captured.topRight?.menu?.map((m) => [m.title, m.selected])).toEqual([
       ["List", true],
       ["Gallery", false],
+      ["Condensed rows", false],
       ["Alphabetical", true],
       ["Date modified", false],
       ["No grouping", true],
@@ -269,15 +270,17 @@ describe("sort toggle (#632)", () => {
       expect(captured.topRight?.menu?.some((m) => m.id === "img-1600")).toBe(true),
     );
 
-    // Sort and group each open their own section.
-    expect(captured.topRight?.menu?.[2]?.sectionBreak).toBe(true);
-    expect(captured.topRight?.menu?.[4]?.sectionBreak).toBe(true);
+    // Sort and group each open their own section. The view section is three
+    // entries (list, gallery, condensed rows — #836), so the breaks sit after it.
+    expect(captured.topRight?.menu?.[3]?.sectionBreak).toBe(true);
+    expect(captured.topRight?.menu?.[5]?.sectionBreak).toBe(true);
 
     useMobileStore.getState().setSortMode("modified");
     await waitFor(() =>
       expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([
         // view(2) · sort(2) · group(5) · offline toggle + 4 size picks
-        true, false, false, true, true, false, false, false, false,
+        // list · gallery · condensed rows (#836) · then the sort and group picks
+        true, false, false, false, true, true, false, false, false, false,
         true, false, true, false, false,
       ]),
     );

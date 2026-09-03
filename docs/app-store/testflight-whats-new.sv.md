@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Att dela en Office-webbvisarlänk (view.officeapps.live.com/…?src=…) sparar nu dokumentet den pekar på — FY27 KPI-presentationen hamnar i inkorgen som riktig .pptx, 4 MB, med egen miniatyr — i stället för visarens laddningssnurra. Prova samma länk igen.
+Inkorgens lista visar sparade artiklar som en läs-senare-lista ska: titel, källa och lästid, två raders utdrag och artikelns bild — och när du öppnat en, hur mycket som är kvar ("2 av 4 min kvar"), som fylls i medan du bläddrar och aldrig går bakåt. …-menyn har ett val Kompakta rader för en rad per artikel. Artiklar sparade innan mastheadet fanns (tidigt i augusti) visar bara titel och bild; uppdatera en från källan för att få resten.
