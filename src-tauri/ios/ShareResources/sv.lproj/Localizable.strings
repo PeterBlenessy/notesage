@@ -8,6 +8,7 @@
 "share.formatArticle" = "Artikel (Markdown)";
 "share.formatLink" = "Länkanteckning";
 "share.formatHtml" = "Artikel (HTML)";
+"share.formatDocument" = "Dokument (behåll filen)";
 "share.savesToInbox" = "Sparas i Inbox i ditt Notesage-bibliotek.";
 "share.savesToInboxAs" = "Sparas i Inbox i ditt Notesage-bibliotek som\n%@";
 "share.savesToInboxAsOrLink" = "Sparas i Inbox som %@ — eller som en länkanteckning om sidan saknar artikel att extrahera.";

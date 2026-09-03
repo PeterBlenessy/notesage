@@ -530,6 +530,52 @@ pub fn sanitize_file_stem(input: &str) -> String {
 
 /// Extract the host portion of a URL without pulling in a URL-parsing crate.
 /// `https://x.com/user/status/1` → `x.com`. Falls back to the whole string.
+/// Name for a shared document whose provider carries no name of its own.
+///
+/// A PDF handed over as in-memory data — Safari's viewer, an in-app browser —
+/// has no `suggestedName`, and the temp file `loadFileRepresentation` writes
+/// is called after the TYPE ("PDF-dokument.pdf"), which is what such a share
+/// was stored as once the activation rule let it through (#843). The share
+/// sheet itself names the item from the URL; this does the same, preferring
+/// a real title when the host supplied one, and the host name when the URL
+/// has no path to name from.
+///
+/// `extension` is the type's preferred extension without the dot; a stem
+/// that already ends in it is used as is.
+pub fn document_fallback_name(url: Option<&str>, title: Option<&str>, extension: &str) -> String {
+    let ext = extension.trim().trim_start_matches('.');
+    let with_ext = |stem: String| -> String {
+        if ext.is_empty() || stem.to_lowercase().ends_with(&format!(".{}", ext.to_lowercase())) {
+            stem
+        } else {
+            format!("{stem}.{ext}")
+        }
+    };
+    if let Some(title) = title {
+        let stem = sanitize_file_stem(title);
+        if !stem.is_empty() {
+            return with_ext(stem);
+        }
+    }
+    if let Some(url) = url {
+        let path = url.split(['?', '#']).next().unwrap_or("");
+        let after_scheme = path.split_once("://").map_or(path, |(_, rest)| rest);
+        let trimmed = after_scheme.trim_end_matches('/');
+        if trimmed.contains('/') {
+            let last = trimmed.rsplit('/').next().unwrap_or("");
+            let stem = sanitize_file_stem(&percent_decode(last));
+            if !stem.is_empty() {
+                return with_ext(stem);
+            }
+        }
+        let host = sanitize_file_stem(&url_host(url));
+        if !host.is_empty() {
+            return with_ext(host);
+        }
+    }
+    with_ext("Shared document".to_string())
+}
+
 fn url_host(url: &str) -> String {
     let after_scheme = url.split_once("://").map(|(_, rest)| rest).unwrap_or(url);
     let host = after_scheme
@@ -1621,6 +1667,38 @@ than of the template.</p>";
     #[test]
     fn yaml_quote_escapes_quotes_and_backslashes() {
         assert_eq!(yaml_quote("a\"b\\c"), "\"a\\\"b\\\\c\"");
+    }
+
+    #[test]
+    fn document_fallback_name_prefers_title_then_url_then_host() {
+        // The UBS report (#843): no title, an opaque last segment, a query.
+        assert_eq!(
+            document_fallback_name(
+                Some("https://secure.ubs.com/public/api/v2/investment-content/documents/kFcVnC0GHB_ZVnO5mxL0dg?apikey=abc"),
+                None,
+                "pdf"
+            ),
+            "kFcVnC0GHB_ZVnO5mxL0dg.pdf"
+        );
+        assert_eq!(
+            document_fallback_name(Some("https://example.com/files/Report%202025.pdf"), None, "pdf"),
+            "Report 2025.pdf"
+        );
+        assert_eq!(
+            document_fallback_name(Some("https://e.com/x/report.PDF"), None, "pdf"),
+            "report.PDF"
+        );
+        assert_eq!(
+            document_fallback_name(Some("https://example.com/a"), Some("Artificial intelligence"), "pdf"),
+            "Artificial intelligence.pdf"
+        );
+        assert_eq!(
+            document_fallback_name(Some("https://example.com/"), None, "pdf"),
+            "example.com.pdf"
+        );
+        assert_eq!(document_fallback_name(Some("https://example.com"), Some("  "), "pdf"), "example.com.pdf");
+        assert_eq!(document_fallback_name(None, None, "pdf"), "Shared document.pdf");
+        assert_eq!(document_fallback_name(None, None, ""), "Shared document");
     }
 
     #[test]

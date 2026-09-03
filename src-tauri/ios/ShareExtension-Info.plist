@@ -60,33 +60,28 @@
             -->
             <key>NSExtensionJavaScriptPreprocessingFile</key>
             <string>share-preprocess</string>
+            <!--
+              A predicate, not the dictionary shorthand. The shorthand's
+              `File` key matches only attachments backed by a file URL — the
+              Files app, QuickLook — and never a document handed over as
+              in-memory data, which is how Safari's PDF viewer shares the
+              page it is showing (`com.adobe.pdf` + `public.url`, no
+              `public.file-url`). Measured in the simulator with a host that
+              presents every item shape: file-URL PDF listed Notesage, PDF
+              data did not (#843). No dictionary key can express "a PDF
+              attachment", so the rule is spelled out.
+
+              Match on ANY attachment conforming to a type the extension
+              handles. `com.apple.property-list` is Safari's preprocessing
+              payload (share-preprocess.js); `public.url` covers file URLs
+              too. `public.plain-text` rather than the shorthand's broader
+              `public.text`: the extension reads only plain text, so being
+              listed for rich text (RTF) meant "nothing to save" — narrower
+              on purpose. `public.data` is deliberately absent: a provider
+              that offers only bare data has no name and no type to save it as.
+            -->
             <key>NSExtensionActivationRule</key>
-            <dict>
-                <!--
-                  WebPage delivers the preprocessing payload. WebURL stays
-                  alongside it: Messages, Mail and in-app browsers hand over a
-                  bare URL with no page behind it, and those must still
-                  activate the extension.
-                -->
-                <key>NSExtensionActivationSupportsWebPageWithMaxCount</key>
-                <integer>1</integer>
-                <key>NSExtensionActivationSupportsWebURLWithMaxCount</key>
-                <integer>1</integer>
-                <key>NSExtensionActivationSupportsText</key>
-                <true/>
-                <!--
-                  Documents (Safari-viewed PDFs, Files shares, EPUBs…) — without
-                  this iOS never lists Notesage for files. Known not to be
-                  sufficient on its own for a PDF served as an attachment: see
-                  issue #843.
-                -->
-                <key>NSExtensionActivationSupportsFileWithMaxCount</key>
-                <integer>3</integer>
-                <key>NSExtensionActivationSupportsImageWithMaxCount</key>
-                <integer>10</integer>
-                <key>NSExtensionActivationSupportsMovieWithMaxCount</key>
-                <integer>3</integer>
-            </dict>
+            <string>SUBQUERY(extensionItems, $extensionItem, SUBQUERY($extensionItem.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.apple.property-list" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.url" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.plain-text" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "com.adobe.pdf" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "org.idpf.epub-container" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.image" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.movie" OR ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.audio").@count &gt;= 1).@count &gt;= 1</string>
         </dict>
     </dict>
 </dict>

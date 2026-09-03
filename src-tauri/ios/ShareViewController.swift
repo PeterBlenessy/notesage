@@ -66,6 +66,32 @@ final class CancelFlag {
     }
 }
 
+/// A `URLSession` delegate that reports the response headers and cancels the
+/// transfer before any of the body arrives. See `ShareViewController.probeDocument`.
+private final class HeaderProbe: NSObject, URLSessionDataDelegate {
+    private let onResponse: (URLResponse) -> Void
+    init(onResponse: @escaping (URLResponse) -> Void) { self.onResponse = onResponse }
+
+    func urlSession(
+        _ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse,
+        completionHandler: @escaping (URLSession.ResponseDisposition) -> Void
+    ) {
+        completionHandler(.cancel)
+        let http = response as? HTTPURLResponse
+        NSLog("[notesage-share] probe → status=%d type=%@", http?.statusCode ?? 0,
+              http?.value(forHTTPHeaderField: "Content-Type") ?? "-")
+        DispatchQueue.main.async { self.onResponse(response) }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        // `.cancel` above lands here as NSURLErrorCancelled; anything else is
+        // the network telling us the probe never saw headers.
+        if let error, (error as NSError).code != NSURLErrorCancelled {
+            NSLog("[notesage-share] probe failed: %@", String(describing: error))
+        }
+    }
+}
+
 final class ShareViewController: UIViewController {
     private static let appGroup = "group.com.notesage.app"
     private static let formatKey = "capture-format"
@@ -75,6 +101,11 @@ final class ShareViewController: UIViewController {
         case article
         case link
         case html
+        /// The URL serves a file (PDF, deck, EPUB…): store that file, under
+        /// its own name. Offered only once the probe below has seen the
+        /// response headers, never remembered as a default — the next share
+        /// is usually a page again.
+        case document
 
         var label: String {
             switch self {
@@ -82,6 +113,7 @@ final class ShareViewController: UIViewController {
             case .article: return L("share.formatArticle")
             case .link: return L("share.formatLink")
             case .html: return L("share.formatHtml")
+            case .document: return L("share.formatDocument")
             }
         }
 
@@ -95,11 +127,29 @@ final class ShareViewController: UIViewController {
     /// those two are hidden there and Video is offered instead — and only
     /// there, since it needs a provider oEmbed endpoint to describe.
     private var availableFormats: [CaptureFormat] {
+        // A URL known to serve a document offers the document and a link —
+        // Article (Markdown) and Article (HTML) for a PDF were a promise the
+        // save path never kept: it stored the PDF whatever the picker said
+        // (Peter, 2026-09-03).
+        if probedDocument != nil { return [.document, .link] }
         guard let url = sharedUrl, LibraryAccess.oembedEndpoint(for: url) != nil else {
-            return CaptureFormat.allCases.filter { $0 != .video }
+            return CaptureFormat.allCases.filter { $0 != .video && $0 != .document }
         }
         return [.video, .link]
     }
+
+    /// What the header probe learned about the shared URL: the file it serves
+    /// and the name it will be stored under. nil until the probe answers, and
+    /// forever for a page. See `probeDocument`.
+    private var probedDocument: (ext: String, name: String)?
+    /// Set when the user picks a format on THIS sheet. A probe landing later
+    /// keeps that choice only when it is still on offer — Link survives the
+    /// narrowing, Article and HTML cannot (the save path would store the
+    /// document regardless), so those two switch to Document.
+    private var userChoseFormat = false
+    /// The probe's session, held so its lifetime is explicit rather than
+    /// resting on URLSession's self-retention while a task is outstanding.
+    private var probeSession: URLSession?
 
     private var format: CaptureFormat =
         UserDefaults(suiteName: ShareViewController.appGroup)?
@@ -258,7 +308,13 @@ final class ShareViewController: UIViewController {
             UIAction(title: f.label, state: f == format ? .on : .off) { [weak self] _ in
                 guard let self else { return }
                 self.format = f
-                UserDefaults(suiteName: Self.appGroup)?.set(f.rawValue, forKey: Self.formatKey)
+                self.userChoseFormat = true
+                // `.document` only ever applies to a URL the probe has
+                // classified; remembering it would make the next page share
+                // open on a format it cannot offer.
+                if f != .document {
+                    UserDefaults(suiteName: Self.appGroup)?.set(f.rawValue, forKey: Self.formatKey)
+                }
                 self.updateFilenamePreview()
             }
         })
@@ -267,6 +323,10 @@ final class ShareViewController: UIViewController {
     private func updateFilenamePreview() {
         if !documentProviders.isEmpty {
             filenameLabel.text = L("share.savesToInboxKeepName")
+            return
+        }
+        if let probed = probedDocument, format == .document {
+            filenameLabel.text = L("share.savesToInboxAs", probed.name)
             return
         }
         // A viewer URL stores the document it names, under that document's
@@ -316,6 +376,15 @@ final class ShareViewController: UIViewController {
             return
         }
         sharedTitle = item.attributedContentText?.string
+        // What the host actually handed over. #843 was undiagnosable for
+        // three weeks because nothing recorded this: the sheet's verdict
+        // is private to sharingd, and the extension only ever logged what
+        // it chose to load, not what it was offered.
+        for (i, p) in attachments.enumerated() {
+            NSLog("[notesage-share] attachment %d: types=%@ name=%@", i,
+                  p.registeredTypeIdentifiers.joined(separator: ","),
+                  p.suggestedName ?? "-")
+        }
 
         // Media joined the accepted set on Peter's request (2026-08-12):
         // screenshots and other images, screen/voice recordings and videos
@@ -331,16 +400,30 @@ final class ShareViewController: UIViewController {
                 || p.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier)
         }
         if !documentProviders.isEmpty {
-            let count = documentProviders.count
             // NAME the files (#794). The sheet previously said only "1 file",
             // so it gave no confirmation of WHICH file was about to be saved —
             // which is how a share that silently wrote nothing still looked
-            // plausible. `suggestedName` is synchronous and free; the count
-            // string stays as the fallback for a provider that has none.
-            let names = documentProviders.compactMap { $0.suggestedName }
-            previewLabel.text = names.isEmpty
-                ? (count == 1 ? L("share.oneFile") : L("share.manyFiles", count))
-                : names.joined(separator: "\n")
+            // plausible.
+            //
+            // A document shared as DATA rather than as a file — Safari's PDF
+            // viewer, in-app browsers — arrives with no name at all (#843).
+            // The URL travelling beside it is the best source for one, so it
+            // is loaded before the preview settles; the preview draws once
+            // from what is known synchronously and again when the URL lands.
+            if let provider = attachments.first(where: {
+                $0.hasItemConformingToTypeIdentifier(UTType.url.identifier)
+            }) {
+                provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) {
+                    [weak self] data, _ in
+                    let url = (data as? URL)?.absoluteString ?? (data as? String)
+                    DispatchQueue.main.async {
+                        guard let self, let url, !url.isEmpty else { return }
+                        self.sharedUrl = url
+                        self.refreshDocumentPreview()
+                    }
+                }
+            }
+            refreshDocumentPreview()
             formatRow.isHidden = true
             saveButton?.isEnabled = true
             updateFilenamePreview()
@@ -396,6 +479,40 @@ final class ShareViewController: UIViewController {
         }
     }
 
+    /// Most specific conforming type first — the provider hands the richest
+    /// file representation for it (a screenshot shared as UIImage still
+    /// yields a PNG file via UTType.image).
+    private static let documentTypeCandidates = [
+        UTType.pdf.identifier,
+        "org.idpf.epub-container",
+        UTType.image.identifier,
+        UTType.movie.identifier,
+        UTType.audio.identifier,
+    ]
+
+    private static func documentType(of provider: NSItemProvider) -> String? {
+        documentTypeCandidates.first(where: provider.hasItemConformingToTypeIdentifier)
+    }
+
+    /// The names the documents will be stored under: the provider's own, or
+    /// one derived from the title / URL when it has none (#843). For an
+    /// unnamed FILE-backed provider the store step keeps the file's real
+    /// name instead, which is only known once the representation loads —
+    /// so for that rare shape this is a prediction, not the final name.
+    private func documentNames(for providers: [NSItemProvider]) -> [String] {
+        providers.map { provider in
+            provider.suggestedName
+                ?? LibraryAccess.documentFallbackName(
+                    url: sharedUrl, title: sharedTitle,
+                    ext: Self.documentType(of: provider)
+                        .flatMap { UTType($0)?.preferredFilenameExtension })
+        }
+    }
+
+    private func refreshDocumentPreview() {
+        previewLabel.text = documentNames(for: documentProviders).joined(separator: "\n")
+    }
+
     /// The pre-payload path: a bare URL, or text containing one.
     ///
     /// Extracted so the preprocessing branch can fall back INTO it. Every
@@ -435,9 +552,8 @@ final class ShareViewController: UIViewController {
         if let document = LibraryAccess.viewerDocumentURL(for: url) {
             let name = URL(string: document)?.lastPathComponent ?? document
             previewLabel.text = "\(name)\n\(document)"
-            formatRow.isHidden = true
+            offerDocument(ext: (name as NSString).pathExtension, name: name)
             saveButton?.isEnabled = true
-            updateFilenamePreview()
             return
         }
         // The remembered format may not apply to THIS url — a video page
@@ -452,6 +568,51 @@ final class ShareViewController: UIViewController {
         saveButton?.isEnabled = true
         updateFilenamePreview()
         loadRichPreview(url)
+        probeDocument(url)
+    }
+
+    /// Ask the server what the URL serves, so the sheet can offer the right
+    /// thing BEFORE Save. A GET cancelled at the headers — HEAD is not
+    /// reliable (the UBS document server answers it with 404) and the body
+    /// is not wanted yet. Costs one round trip, the same one Save makes.
+    ///
+    /// Racing Save is fine: the save path classifies the response itself and
+    /// stores a document whatever the picker showed; the probe only makes
+    /// the sheet honest about it.
+    private func probeDocument(_ urlString: String) {
+        guard let parsed = URL(string: urlString), parsed.scheme == "https" || parsed.scheme == "http" else { return }
+        var request = URLRequest(url: parsed)
+        request.timeoutInterval = 8
+        request.setValue(Self.safariUserAgent, forHTTPHeaderField: "User-Agent")
+        request.setValue("text/html,application/xhtml+xml,*/*;q=0.8", forHTTPHeaderField: "Accept")
+        let probe = HeaderProbe { [weak self] response in
+            guard let self, let http = response as? HTTPURLResponse,
+                  let ext = Self.linkedDocumentExtension(http.value(forHTTPHeaderField: "Content-Type") ?? "")
+            else { return }
+            let disposition = http.value(forHTTPHeaderField: "Content-Disposition") ?? ""
+            let suggested = Self.dispositionFilename(disposition)
+                ?? http.suggestedFilename
+                ?? "\(parsed.lastPathComponent).\(ext)"
+            let name = (suggested as NSString).pathExtension.isEmpty ? "\(suggested).\(ext)" : suggested
+            self.offerDocument(ext: ext, name: name)
+        }
+        let session = URLSession(configuration: .ephemeral, delegate: probe, delegateQueue: nil)
+        probeSession = session
+        session.dataTask(with: request).resume()
+        session.finishTasksAndInvalidate()
+    }
+
+    /// Switch the picker to Document / Link for a URL that serves a file.
+    private func offerDocument(ext: String, name: String) {
+        probedDocument = (ext, name)
+        formatRow.isHidden = false
+        // Default to Document unless the user already chose something the
+        // narrowed list still offers (only Link qualifies).
+        if !(userChoseFormat && availableFormats.contains(format)) {
+            format = .document
+        }
+        formatButton?.menu = makeFormatMenu()
+        updateFilenamePreview()
     }
 
     /// The rich link card with thumbnail (LinkPresentation — the same card
@@ -519,6 +680,13 @@ final class ShareViewController: UIViewController {
         switch format {
         case .link:
             saveLink(url: url)
+        case .document:
+            // `fetch` recognises the document from the response and stores it
+            // (`saveLinkedDocument`); the completion only runs when the
+            // server, against the probe's earlier answer, sent a page.
+            fetch(url: url) { [weak self] _ in
+                self?.saveLink(url: url)
+            }
         case .video:
             // Metadata only, from the provider's own public oEmbed endpoint —
             // see `oembed_url` in the capture crate for why we do not fetch
@@ -858,8 +1026,10 @@ final class ShareViewController: UIViewController {
         var request = URLRequest(url: parsed)
         request.timeoutInterval = 60
         request.setValue(Self.safariUserAgent, forHTTPHeaderField: "User-Agent")
-        URLSession(configuration: .ephemeral).downloadTask(with: request) { [weak self] temp, _, _ in
+        URLSession(configuration: .ephemeral).downloadTask(with: request) { [weak self] temp, _, error in
             guard let temp else {
+                NSLog("[notesage-share] document download failed for %@: %@", name,
+                      error.map { String(describing: $0) } ?? "no file")
                 DispatchQueue.main.async { completion(false) }
                 return
             }
@@ -869,7 +1039,15 @@ final class ShareViewController: UIViewController {
                 DispatchQueue.main.async { completion(false) }
                 return
             }
-            let ok = (try? LibraryAccess.writeDocument(from: temp, suggestedName: name)) != nil
+            // Not `try?`: a swallowed write error is a link note with no
+            // explanation — the shape #794 and #843 both took.
+            var ok = true
+            do {
+                _ = try LibraryAccess.writeDocument(from: temp, suggestedName: name)
+            } catch {
+                ok = false
+                NSLog("[notesage-share] document write failed for %@: %@", name, String(describing: error))
+            }
             DispatchQueue.main.async { completion(ok) }
         }.resume()
     }
@@ -890,10 +1068,15 @@ final class ShareViewController: UIViewController {
         // sending an HTML-only Accept invited a 406 for the very responses this
         // now handles.
         request.setValue("text/html,application/xhtml+xml,*/*;q=0.8", forHTTPHeaderField: "Accept")
-        URLSession(configuration: .ephemeral).dataTask(with: request) { [weak self] data, response, _ in
+        URLSession(configuration: .ephemeral).dataTask(with: request) { [weak self] data, response, error in
             let http = response as? HTTPURLResponse
             let contentType = http?.value(forHTTPHeaderField: "Content-Type") ?? ""
             let maxBytes = 5 * 1024 * 1024
+            // The verdict every save path branches on. Without it a link note
+            // where a document was expected has no explanation in the log.
+            NSLog("[notesage-share] fetch %@ → status=%d type=%@ bytes=%d error=%@",
+                  parsed.host ?? url, http?.statusCode ?? 0, contentType, data?.count ?? 0,
+                  error.map { String(describing: $0) } ?? "-")
 
             // The bytes ARE the document. A link to a PDF, EPUB, deck, image,
             // video or audio file used to fail the `text/html` check below and
@@ -1035,21 +1218,12 @@ final class ShareViewController: UIViewController {
         // both safe from any queue and independent of the controller's
         // lifetime. Nothing about cancellation ever needed `self`.
         let cancelled = self.cancelled
+        // Resolved on main, before the completions fan out: the fallback
+        // reads `sharedUrl` / `sharedTitle`, which nothing off-main may touch.
+        let names = documentNames(for: attempted)
 
-        for provider in attempted {
-            // Most specific conforming type first — the provider hands the
-            // richest file representation for it (a screenshot shared as
-            // UIImage still yields a PNG file via UTType.image).
-            let candidates = [
-                UTType.pdf.identifier,
-                "org.idpf.epub-container",
-                UTType.image.identifier,
-                UTType.movie.identifier,
-                UTType.audio.identifier,
-            ]
-            let typeId =
-                candidates.first(where: provider.hasItemConformingToTypeIdentifier)
-                ?? UTType.data.identifier
+        for (provider, plannedName) in zip(attempted, names) {
+            let typeId = Self.documentType(of: provider) ?? UTType.data.identifier
             group.enter()
             provider.loadFileRepresentation(forTypeIdentifier: typeId) { url, error in
                 defer { group.leave() }
@@ -1060,9 +1234,31 @@ final class ShareViewController: UIViewController {
                     recordFailure("could not load \(typeId): \(String(describing: error))")
                     return
                 }
+                // Which name to keep. A file-backed representation carries
+                // the file's real name, and that stays authoritative when the
+                // provider offered none — Photos and Files shares relied on
+                // it before #843. A DATA-backed one is invented by iOS from
+                // the type's localized description ("PDF-dokument.pdf"), and
+                // only that case takes the derived name.
+                //
+                // That equality is an observation, not a documented contract:
+                // measured on iOS 26 in a Swedish locale. If iOS changes how it
+                // names the temp file, the fallback simply stops applying and
+                // the invented name ships again — visible, never lossy. A real
+                // file that happens to be called "PDF Document.pdf" is
+                // misread as invented and renamed from the URL; `claimName`
+                // still makes any collision a suffix, never an overwrite.
+                let tempStem = url.deletingPathExtension().lastPathComponent
+                let invented = UTType(typeId)?.localizedDescription == tempStem
+                var finalName = provider.suggestedName
+                    ?? (invented ? plannedName : url.lastPathComponent)
+                // A provider's name can arrive without an extension; the
+                // representation's never does.
+                if (finalName as NSString).pathExtension.isEmpty, !url.pathExtension.isEmpty {
+                    finalName += "." + url.pathExtension
+                }
                 do {
-                    _ = try LibraryAccess.writeDocument(
-                        from: url, suggestedName: url.lastPathComponent)
+                    _ = try LibraryAccess.writeDocument(from: url, suggestedName: finalName)
                 } catch {
                     // NOT `try?`. Swallowing this is why a failed share looked
                     // identical to a successful one, and why there was nothing

@@ -179,10 +179,28 @@ links and documents. PRD:
   `ShareViewController.saveArticle`. The chain from builder to gallery card is
   regression-locked — see "The capture pipeline contract" below.
 
-  Documents (PDF/EPUB/file shares — the extension also declares
-  `NSExtensionActivationSupportsFileWithMaxCount`) skip the picker and store
-  immediately in `Inbox/` with their original names, streamed via
-  `loadFileRepresentation`. Extraction quality: #610.
+  In the list view every file row carries a 40pt thumbnail slot: images,
+  PDFs, documents, media and plain HTML files show the same picture the
+  gallery draws (`getThumbnail`, QuickLook first), notes and folders keep
+  their icon. The slot is fixed-size so a late thumbnail never reflows rows.
+
+  Documents (PDF/EPUB/file shares) skip the picker and store immediately in
+  `Inbox/` with their original names, streamed via `loadFileRepresentation`.
+  Extraction quality: #610.
+
+  The iOS activation rule is a **predicate**, not the dictionary shorthand
+  (`src-tauri/ios/ShareExtension-Info.plist`). The shorthand's `File` key
+  matches only attachments backed by a file URL (Files, QuickLook); Safari's
+  PDF viewer hands the document over as in-memory `com.adobe.pdf` data beside
+  the page URL, and with the shorthand iOS never listed Notesage for it
+  (#843). The predicate accepts any attachment conforming to a type the
+  extension handles — Safari's preprocessing payload, URLs, text, PDF, EPUB,
+  image, movie, audio — and deliberately not bare `public.data`. Measured
+  with a simulator host app presenting every item shape and read off
+  `sharingd`'s log (`activityType:com.notesage.app.ShareExtension`), which is
+  the only place the sheet's verdict is visible. Any change to the rule must be
+  verified in the built `.appex/Info.plist`: Xcode drops unrecognised
+  shorthand keys silently.
 - **Capture links via the share sheet.** "Share → Notesage" from Safari, the
   X/Twitter app, or anything that shares a URL writes a link-only
   `type: capture` note into `Inbox/`, which syncs back to the desktop where the

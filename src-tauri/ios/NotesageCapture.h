@@ -40,6 +40,10 @@ char *notesage_capture_oembed_url(const char *url);
 /// notesage_capture_string_free.
 char *notesage_capture_viewer_document_url(const char *url);
 
+/// Name for a shared document whose provider carries none (#843): title, else
+/// the URL's last path segment, else its host — with `extension`. Caller frees.
+char *notesage_capture_document_fallback_name(const char *url, const char *title, const char *extension);
+
 /// Relative path for a video capture note (named from the provider's title
 /// when the sharer gave us none). Caller frees.
 char *notesage_capture_video_rel_path(const char *url,

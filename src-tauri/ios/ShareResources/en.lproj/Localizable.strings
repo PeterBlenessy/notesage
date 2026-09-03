@@ -9,6 +9,7 @@
 "share.formatArticle" = "Article (Markdown)";
 "share.formatLink" = "Link note";
 "share.formatHtml" = "Article (HTML)";
+"share.formatDocument" = "Document (keep the file)";
 "share.savesToInbox" = "Saves to Inbox in your Notesage library.";
 "share.savesToInboxAs" = "Saves to Inbox in your Notesage library as\n%@";
 "share.savesToInboxAsOrLink" = "Saves to Inbox as %@ — or as a link note if the page has no article to extract.";

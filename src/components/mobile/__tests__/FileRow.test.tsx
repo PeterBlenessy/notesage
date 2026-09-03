@@ -1,8 +1,19 @@
 // @vitest-environment jsdom
 import "@/test/tauri-mock";
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { waitFor } from "@testing-library/react";
 import { renderWithProviders, screen } from "@/test/component-harness";
-import { FileRow, formatModified, classifyFile, iconFor } from "@/components/mobile/FileRow";
+import { FileRow, formatModified, classifyFile, iconFor, rowWantsThumbnail } from "@/components/mobile/FileRow";
+
+const getThumbnailMock = vi.fn();
+vi.mock("@/lib/mobile-thumbnails", () => ({
+  getThumbnail: (...args: unknown[]) => getThumbnailMock(...args),
+}));
+
+beforeEach(() => {
+  getThumbnailMock.mockReset();
+  getThumbnailMock.mockResolvedValue({ kind: "icon" });
+});
 
 /** Minimal long-press action context (#680) — these suites cover rendering
  *  and activation, not the menu; the menu has its own suite. */
@@ -152,5 +163,62 @@ describe("classifyFile — capture-pipeline coverage", () => {
     expect(classifyFile("memo.m4a")).toBe("media");
     expect(classifyFile("clip.mp4")).toBe("media");
     expect(iconFor(entry("memo.m4a"))).not.toBe(iconFor(entry("clip.mp4")));
+  });
+});
+
+describe("FileRow thumbnails (list rows, 2026-09-03)", () => {
+  const file = (name: string) => ({
+    name,
+    path: `Inbox/${name}`,
+    is_directory: false,
+    hidden: false,
+    modified: 1_700_000_000,
+  });
+
+  it("draws the pipeline's picture for an image row", async () => {
+    getThumbnailMock.mockResolvedValue({ kind: "image", url: "blob:thumb-1" });
+    renderWithProviders(<FileRow actionContext={noopActions} entry={file("shot.png")} onActivate={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId("row-thumbnail")).toBeTruthy());
+    expect(screen.getByTestId("row-thumbnail").getAttribute("src")).toBe("blob:thumb-1");
+    expect(getThumbnailMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("draws a PDF's first page — the pipeline reports it as its own kind", async () => {
+    getThumbnailMock.mockResolvedValue({ kind: "pdf", url: "data:image/png;base64,AAAA" });
+    renderWithProviders(<FileRow actionContext={noopActions} entry={file("scan.pdf")} onActivate={() => {}} />);
+    await waitFor(() => expect(screen.getByTestId("row-thumbnail")).toBeTruthy());
+    expect(screen.getByTestId("row-thumbnail").getAttribute("src")).toBe("data:image/png;base64,AAAA");
+  });
+
+  it("covers every kind the pipeline can picture, not just PNG", () => {
+    // The report was "PNGs have no thumbnail"; the gap was every non-HTML file.
+    for (const name of ["a.png", "a.jpeg", "a.heic", "a.pdf", "a.docx", "a.pptx", "a.epub", "a.mp4", "a.mov", "a.mp3", "page.html"]) {
+      expect(rowWantsThumbnail(file(name)), name).toBe(true);
+    }
+    for (const name of ["note.md", "data.csv", "readme.txt", "weird.bin"]) {
+      expect(rowWantsThumbnail(file(name)), name).toBe(false);
+    }
+    expect(rowWantsThumbnail({ ...file("Photos"), is_directory: true })).toBe(false);
+  });
+
+  it("keeps the icon, and never asks for a picture, for notes and folders", () => {
+    renderWithProviders(<FileRow actionContext={noopActions} entry={file("note.md")} onActivate={() => {}} />);
+    expect(screen.queryByTestId("row-thumbnail")).toBeNull();
+    expect(getThumbnailMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the icon when the pipeline comes back with one", async () => {
+    getThumbnailMock.mockResolvedValue({ kind: "icon" });
+    renderWithProviders(<FileRow actionContext={noopActions} entry={file("scan.pdf")} onActivate={() => {}} />);
+    await waitFor(() => expect(getThumbnailMock).toHaveBeenCalled());
+    expect(screen.queryByTestId("row-thumbnail")).toBeNull();
+  });
+
+  it("survives a cancelled job without an unhandled rejection", async () => {
+    getThumbnailMock.mockRejectedValue(new Error("cancelled"));
+    renderWithProviders(<FileRow actionContext={noopActions} entry={file("clip.mov")} onActivate={() => {}} />);
+    await waitFor(() => expect(getThumbnailMock).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    expect(screen.queryByTestId("row-thumbnail")).toBeNull();
   });
 });
