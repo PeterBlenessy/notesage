@@ -486,6 +486,8 @@ export function iosSpeechStart(options: {
   rate: number;
   /** The user's own voice picks, keyed by language subtag ("en" -> id). */
   voiceByLanguage: Record<string, string>;
+  /** The article's lead image, base64-encoded, for the lock-screen artwork. */
+  artworkBase64?: string | null;
 }): Promise<IosSpeechStarted> {
   return invoke<IosSpeechStarted>("ios_speech_start", {
     text: options.text,
@@ -493,6 +495,7 @@ export function iosSpeechStart(options: {
     startIndex: options.startIndex,
     rate: options.rate,
     voiceByLanguage: options.voiceByLanguage,
+    artworkBase64: options.artworkBase64 ?? null,
   });
 }
 

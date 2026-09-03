@@ -465,6 +465,7 @@ impl<R: Runtime> NotesageIos<R> {
     pub fn speech_start(
         &self, text: &str, title: &str, start_index: u32, rate: f32,
         voice_by_language: &std::collections::HashMap<String, String>,
+        artwork_base64: Option<&str>,
     ) -> Result<SpeechStarted> {
         self.call(
             "speechStart",
@@ -474,6 +475,7 @@ impl<R: Runtime> NotesageIos<R> {
                 "startIndex": start_index,
                 "rate": rate,
                 "voiceByLanguage": voice_by_language,
+                "artworkBase64": artwork_base64,
             }),
         )
     }
@@ -637,7 +639,7 @@ impl<R: Runtime> NotesageIos<R> {
     }
     pub fn speech_start(
         &self, _text: &str, _title: &str, _start: u32, _rate: f32,
-        _voices: &std::collections::HashMap<String, String>,
+        _voices: &std::collections::HashMap<String, String>, _artwork: Option<&str>,
     ) -> Result<SpeechStarted> {
         Err(Error::Unavailable)
     }

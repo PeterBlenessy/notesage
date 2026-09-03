@@ -755,6 +755,13 @@ alike), ✓ on the current one, remembered per language in
 English was read by premium **en-AU Karen** — the right tier, the wrong voice,
 which is what "sounds like the regular Siri voice" was.
 
+**The lock screen shows the article's picture.** `speech_start` carries the
+same lead-image thumbnail the gallery card uses (base64), and `SpeechPlayer`
+publishes it as `MPMediaItemPropertyArtwork` — the grey box Peter saw on the
+lock screen was the absence of one. It rejects for a document with no inline
+image, in which case the player simply has no artwork; the image is fetched
+before `start()` but never delays it, since either outcome starts playback.
+
 **Novelty voices are excluded everywhere.** Apple's classic joke set
 (`com.apple.speech.synthesis.voice.*` — Albert, Bad News, Bells, Zarvox…) and
 the Eloquence screen-reader family (`com.apple.eloquence.*`) are 19 of the 25
