@@ -213,6 +213,11 @@ const EXPORT_CALL_SITES: &[(&str, &str, MacExpectation)] = &[
         Err("iOS first (#839); macOS shares the crate and should follow, tracked in the issue"),
     ),
     (
+        "notesage_capture_viewer_document_url",
+        "LibraryCapture.swift",
+        Err("iOS first (#868); macOS has no URL-to-document probe yet, tracked in the issue"),
+    ),
+    (
         "notesage_capture_oembed_url",
         "LibraryCapture.swift",
         Err("macOS offers no Video format — its picker is Article (HTML) / Article (Markdown) / Link"),
