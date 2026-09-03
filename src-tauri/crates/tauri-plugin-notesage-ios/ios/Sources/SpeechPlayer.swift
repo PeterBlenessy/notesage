@@ -39,6 +39,9 @@ private let MAX_VOTING_PARAGRAPHS = 60
     /// Voice chosen for THIS article, from its own language.
     private var voice: AVSpeechSynthesisVoice?
     private var title = ""
+    /// The article's lead image, shown on the lock screen and in Control
+    /// Centre instead of the grey placeholder Peter saw (#833).
+    private var artwork: MPMediaItemArtwork?
 
     /// Called on every position change so the frontend can persist resume
     /// state and move its highlight. Set by the plugin.
@@ -81,8 +84,12 @@ private let MAX_VOTING_PARAGRAPHS = 60
     /// Listen is tapped, per review) and handed in here.
     @objc public func start(
         text: String, title: String, startIndex: Int, rate: Float,
-        voiceByLanguage: [String: String], language detected: String?
+        voiceByLanguage: [String: String], language detected: String?,
+        artwork image: UIImage?
     ) {
+        artwork = image.map { img in
+            MPMediaItemArtwork(boundsSize: img.size) { _ in img }
+        }
         // NOT `stop()`: that deactivates the audio session with
         // `.notifyOthersOnDeactivation`, so the very first Listen tap ducked
         // and un-ducked every other app's audio for no reason. Tearing down
@@ -459,6 +466,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
         // the number the user actually cares about.
         info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = Double(index)
         info[MPMediaItemPropertyPlaybackDuration] = Double(max(paragraphs.count, 1))
+        if let artwork { info[MPMediaItemPropertyArtwork] = artwork }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
     }
 

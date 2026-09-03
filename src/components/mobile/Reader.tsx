@@ -20,6 +20,7 @@ import {
   iosDismissReport,
   iosFindInReport,
   iosSpeechVoices,
+  iosArticleThumbnail,
 } from "@/lib/ios-api";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
@@ -701,8 +702,15 @@ export function Reader() {
     // Title is resolved here, not at render: it comes from content held in a
     // ref, so a render-time read is empty on the first pass and would put a
     // blank name on the lock screen.
-    speech.start(text, deriveNoteTitle(rawMarkdownRef.current ?? "") ?? name);
-  }, [speechSource, speech, name]);
+    const title = deriveNoteTitle(rawMarkdownRef.current ?? "") ?? name;
+    // The article's lead image becomes the lock-screen artwork — the same
+    // thumbnail the gallery card uses. It rejects for a document with no
+    // inline image, in which case the player simply has none; the image
+    // must never delay the first audio, hence start-on-either-outcome.
+    void iosArticleThumbnail(relPath)
+      .then((bytes) => speech.start(text, title, uint8ToBase64(bytes)))
+      .catch(() => speech.start(text, title));
+  }, [speechSource, speech, name, relPath]);
 
   useEffect(() => {
     setSourceUrl(null);
@@ -1601,6 +1609,16 @@ export function Reader() {
  * path-hostile characters replaced, capped at 60 chars. Null when the note
  * has no usable title (filename is left alone).
  */
+/** Base64 for a small binary (a thumbnail) — chunked so a large array cannot
+ *  blow the call stack through `String.fromCharCode(...bytes)`. */
+function uint8ToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  }
+  return btoa(binary);
+}
+
 export function deriveNoteTitle(md: string): string | null {
   let src = md;
   const fm = /^---\n[\s\S]*?\n---\n?/.exec(src);

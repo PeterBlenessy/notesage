@@ -842,14 +842,19 @@ pub async fn ios_speech_start(
     start_index: u32,
     rate: f32,
     voice_by_language: std::collections::HashMap<String, String>,
+    // The article's lead image (base64) for the lock-screen player's artwork.
+    artwork_base64: Option<String>,
 ) -> Result<SpeechStarted, String> {
     #[cfg(target_os = "ios")]
     {
-        ios_impl::speech_start(&app, &text, &title, start_index, rate, &voice_by_language).await
+        ios_impl::speech_start(
+            &app, &text, &title, start_index, rate, &voice_by_language, artwork_base64.as_deref(),
+        )
+        .await
     }
     #[cfg(not(target_os = "ios"))]
     {
-        let _ = (&app, &text, &title, start_index, rate, &voice_by_language);
+        let _ = (&app, &text, &title, start_index, rate, &voice_by_language, &artwork_base64);
         Err("ios_speech_start is only available on iOS".into())
     }
 }
@@ -1211,9 +1216,10 @@ mod ios_impl {
     pub async fn speech_start(
         app: &AppHandle, text: &str, title: &str, start_index: u32, rate: f32,
         voice_by_language: &std::collections::HashMap<String, String>,
+        artwork_base64: Option<&str>,
     ) -> Result<SpeechStarted, String> {
         app.notesage_ios()
-            .speech_start(text, title, start_index, rate, voice_by_language)
+            .speech_start(text, title, start_index, rate, voice_by_language, artwork_base64)
             .map(|s| SpeechStarted { language: s.language })
             .map_err(|e| e.to_string())
     }

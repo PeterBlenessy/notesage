@@ -116,7 +116,7 @@ export function useSpeechPlayer(relPath: string) {
    * a blank name on the lock screen.
    */
   const start = useCallback(
-    (text: string, title: string) => {
+    (text: string, title: string, artworkBase64?: string) => {
       if (!text.trim()) return;
       const startIndex = savedIndexFor(relPath);
       playingPathRef.current = relPath;
@@ -128,6 +128,7 @@ export function useSpeechPlayer(relPath: string) {
         rate: stateRef.current.rate * AV_DEFAULT_RATE,
         // The user's own picks win over every heuristic on the native side.
         voiceByLanguage: useMobileStore.getState().speechVoices,
+        artworkBase64,
       })
         .then(({ language }) => {
           // Only if this start is still the live one — a late resolve after

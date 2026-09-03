@@ -13,6 +13,8 @@ struct SpeechStartArgs: Decodable {
   let rate: Float
   /// The user's own voice picks, keyed by language subtag ("en" -> id).
   let voiceByLanguage: [String: String]
+  /// The article's lead image (JPEG/PNG, base64) for the lock-screen player.
+  let artworkBase64: String?
 }
 
 struct SpeechVoicesArgs: Decodable {
@@ -549,9 +551,16 @@ class NotesageIosPlugin: Plugin {
         SpeechPlayer.shared.onFinished = { [weak self] in
           self?.emitSpeech(["event": "finished"])
         }
+        // Decoded here, off the hot path's main-thread work: a thumbnail is
+        // small, but decoding is still not something to do between tap and
+        // first audio for no reason.
+        let artwork = args.artworkBase64
+          .flatMap { Data(base64Encoded: $0) }
+          .flatMap { UIImage(data: $0) }
         SpeechPlayer.shared.start(
           text: args.text, title: args.title, startIndex: args.startIndex,
-          rate: args.rate, voiceByLanguage: args.voiceByLanguage, language: language)
+          rate: args.rate, voiceByLanguage: args.voiceByLanguage, language: language,
+          artwork: artwork)
         // Resolved from INSIDE the dispatch: resolving before the work runs
         // meant a native failure could never reach the JS `.catch`. The
         // detected language comes back so the voice picker knows what to list.
