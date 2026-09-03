@@ -77,7 +77,16 @@ jobs:
         # clean 2026-07-05 (docs/audits/2026-07-05-dependencies.md); overrides
         # in package.json hold the prior fixes. High threshold so a new moderate
         # doesn't block merge before it's triaged.
-        run: pnpm audit --audit-level=high --prod
+        # The registry's audit endpoint times out now and then (ERR_SOCKET_TIMEOUT
+        # on 2026-09-03 blocked #877 with every test green). Three attempts,
+        # spaced out; a real finding still fails on every attempt.
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm audit --audit-level=high --prod; then exit 0; fi
+            code=$?
+            if [ "$attempt" -lt 3 ]; then echo "audit attempt $attempt failed (exit $code); retrying in 30s"; sleep 30; fi
+          done
+          exit 1
 
       - name: TypeScript type check
         run: pnpm typecheck
