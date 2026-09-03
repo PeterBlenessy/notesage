@@ -28,7 +28,7 @@ use crate::{
     build_card_html_document, build_video_note, extract_page_card,
     build_x_article_note, build_x_note, enrich_x_article, extract_article, extract_meta_title,
     filename_from_content_disposition, is_x_chrome_title, linked_document_for_content_type,
-    meaningful_title, oembed_url, parse_oembed, parse_x_post, timestamps,
+    meaningful_title, oembed_url, parse_oembed, parse_x_post, timestamps, viewer_document_url,
     x_syndication_url, Article, CaptureInput, XPost,
 };
 
@@ -131,6 +131,20 @@ pub unsafe extern "C" fn notesage_capture_rel_path_from_html(
 pub unsafe extern "C" fn notesage_capture_oembed_url(url: *const c_char) -> *mut c_char {
     catch_unwind(AssertUnwindSafe(|| match opt_str(url).and_then(|u| oembed_url(&u)) {
         Some(endpoint) => into_c_string(endpoint),
+        None => std::ptr::null_mut(),
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// The document behind an Office web-viewer URL (#868), or NULL.
+///
+/// # Safety
+/// `url` must be a NUL-terminated C string or NULL. The returned pointer is
+/// owned by the caller and must be freed with `notesage_capture_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn notesage_capture_viewer_document_url(url: *const c_char) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| match opt_str(url).and_then(|u| viewer_document_url(&u)) {
+        Some(target) => into_c_string(target),
         None => std::ptr::null_mut(),
     }))
     .unwrap_or(std::ptr::null_mut())

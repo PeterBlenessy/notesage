@@ -510,6 +510,26 @@ readable part of a video is what a note wants anyway. Transcribing a shared
 media FILE with the desktop's Whisper stack is the planned next step, and
 carries none of those problems.
 
+## Office web-viewer URLs are documents (#868)
+
+`view.officeapps.live.com/op/view.aspx?src=<url>` (and `embed.aspx`) is not a
+page; it is a JavaScript viewer that fetches the file named in `src` and renders
+it client-side. Both capture paths saw only its loading shell — *"Vi hämtar din
+fil…"* plus a spinner was saved as an article, with the spinner as its
+thumbnail. The page names the real document in its own URL, so
+`viewer_document_url` (capture crate, exported as
+`notesage_capture_viewer_document_url`) unwraps `src`, and the extension routes
+a viewer share through the existing linked-document probe (`fetch` →
+`saveLinkedDocument`) — deliberately skipping Safari's rendered-DOM payload,
+which for a viewer *is* the shell. The sheet presents it as a document (name +
+real URL, no format picker) and the file keeps its own name. Only `http(s)`
+targets are unwrapped; a `javascript:` or `file:` `src` is refused. If the
+document cannot be fetched the share falls back to a link note to the viewer,
+which is honest where the spinner article was not. Verified on the simulator:
+the shared viewer URL landed as `FY27ExternalKPIs.pptx`, 4,016,522 bytes — the
+server's exact Content-Length. macOS has no URL-to-document probe yet, so the
+contract row marks the export iOS-first.
+
 ## The capture pipeline contract
 
 `src-tauri/crates/notesage-capture/tests/pipeline_contract.rs` exists because

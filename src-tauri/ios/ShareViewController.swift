@@ -269,6 +269,13 @@ final class ShareViewController: UIViewController {
             filenameLabel.text = L("share.savesToInboxKeepName")
             return
         }
+        // A viewer URL stores the document it names, under that document's
+        // own name — promising `FY27ExternalKPIs.pptx.md` here was the
+        // article prediction leaking into a path that never writes one.
+        if let url = sharedUrl, LibraryAccess.viewerDocumentURL(for: url) != nil {
+            filenameLabel.text = L("share.savesToInboxKeepName")
+            return
+        }
         guard let url = sharedUrl else {
             filenameLabel.text = L("share.savesToInbox")
             return
@@ -421,6 +428,18 @@ final class ShareViewController: UIViewController {
             return
         }
         sharedUrl = url
+        // An Office web-viewer URL IS a document (#868): the page is a loading
+        // shell, and both capture paths saved that shell — spinner and all —
+        // as an article. Show the file that will actually be stored and hide
+        // the format picker, exactly as a shared PDF is presented.
+        if let document = LibraryAccess.viewerDocumentURL(for: url) {
+            let name = URL(string: document)?.lastPathComponent ?? document
+            previewLabel.text = "\(name)\n\(document)"
+            formatRow.isHidden = true
+            saveButton?.isEnabled = true
+            updateFilenamePreview()
+            return
+        }
         // The remembered format may not apply to THIS url — a video page
         // offers only Video and Link. Fall to the first available rather than
         // showing a selection the save path would not honour.
@@ -484,6 +503,19 @@ final class ShareViewController: UIViewController {
             return
         }
         guard let url = sharedUrl else { finish(); return }
+        // An Office web-viewer URL (#868): fetch the document it names. `fetch`
+        // already recognises a document content type and stores the file
+        // (`saveLinkedDocument`), then finishes. This deliberately skips
+        // Safari's rendered-DOM payload — for a viewer that payload IS the
+        // loading shell. If the document cannot be fetched, a link note to the
+        // viewer is still honest, where the spinner article was not.
+        if let document = LibraryAccess.viewerDocumentURL(for: url) {
+            fetch(url: document) { [weak self] _ in
+                // Only reached when the response was NOT a document.
+                self?.saveLink(url: url)
+            }
+            return
+        }
         switch format {
         case .link:
             saveLink(url: url)

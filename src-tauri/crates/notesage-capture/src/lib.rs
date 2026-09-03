@@ -135,6 +135,41 @@ pub fn oembed_url(url: &str) -> Option<String> {
     }
 }
 
+/// The document BEHIND an Office web-viewer URL, or `None` for anything else.
+///
+/// `view.officeapps.live.com/op/view.aspx?src=<url>` (and `embed.aspx`) is not a
+/// document; it is a JavaScript viewer that fetches the file named in `src` and
+/// renders it client-side. Both capture paths see only its loading shell —
+/// "Vi hämtar din fil…" plus a spinner was saved as an article, with the
+/// spinner as its thumbnail (#868). The page names the real document in its
+/// own URL, so the capture should take that and store it as a file, exactly as
+/// a shared PDF lands.
+///
+/// Only `http(s)` targets are returned: the viewer would refuse anything else
+/// too, and a `javascript:` or `file:` value must never reach a download.
+pub fn viewer_document_url(url: &str) -> Option<String> {
+    let (scheme_host, rest) = url.trim().split_once("://")?;
+    if !scheme_host.eq_ignore_ascii_case("https") && !scheme_host.eq_ignore_ascii_case("http") {
+        return None;
+    }
+    let (host, path_and_query) = rest.split_once('/').unwrap_or((rest, ""));
+    let host = host.trim_start_matches("www.").to_lowercase();
+    if host != "view.officeapps.live.com" {
+        return None;
+    }
+    let (path, query) = path_and_query.split_once('?')?;
+    let path = path.to_lowercase();
+    if path != "op/view.aspx" && path != "op/embed.aspx" {
+        return None;
+    }
+    let src = query
+        .split('&')
+        .find_map(|pair| pair.strip_prefix("src="))
+        .map(percent_decode)?;
+    let lower = src.to_lowercase();
+    (lower.starts_with("https://") || lower.starts_with("http://")).then_some(src)
+}
+
 /// Minimal percent-encoding for embedding a URL in a query string.
 fn percent_encode_url(url: &str) -> String {
     let mut out = String::with_capacity(url.len() + 16);
@@ -1777,6 +1812,35 @@ mod video_tests {
     #[test]
     fn recognises_the_video_hosts_we_support_and_no_others() {
         assert!(oembed_url("https://youtu.be/3zk1WjrxCSw").is_some());
+    }
+
+    #[test]
+    fn viewer_document_url_unwraps_the_office_viewer() {
+        // Peter's report (#868): the viewer's loading shell was saved as an
+        // article. The real .pptx is named in `src`.
+        let u = "https://view.officeapps.live.com/op/view.aspx?src=https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/FY27ExternalKPIs.pptx";
+        assert_eq!(
+            viewer_document_url(u).as_deref(),
+            Some("https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/FY27ExternalKPIs.pptx")
+        );
+        // Percent-encoded src, embed.aspx, mixed case, extra params.
+        assert_eq!(
+            viewer_document_url("https://VIEW.officeapps.live.com/op/Embed.aspx?wdAr=1.77&src=https%3A%2F%2Fexample.com%2Fdeck%20one.pptx").as_deref(),
+            Some("https://example.com/deck one.pptx")
+        );
+    }
+
+    #[test]
+    fn viewer_document_url_is_none_for_everything_else() {
+        assert!(viewer_document_url("https://example.com/op/view.aspx?src=https://x.com/a.pdf").is_none());
+        assert!(viewer_document_url("https://view.officeapps.live.com/op/other.aspx?src=https://x.com/a.pdf").is_none());
+        assert!(viewer_document_url("https://view.officeapps.live.com/op/view.aspx").is_none());
+        assert!(viewer_document_url("https://view.officeapps.live.com/op/view.aspx?other=1").is_none());
+        // A non-http target must never reach a download.
+        assert!(viewer_document_url("https://view.officeapps.live.com/op/view.aspx?src=javascript:alert(1)").is_none());
+        assert!(viewer_document_url("https://view.officeapps.live.com/op/view.aspx?src=file:///etc/passwd").is_none());
+        assert!(viewer_document_url("ftp://view.officeapps.live.com/op/view.aspx?src=https://x.com/a").is_none());
+        assert!(viewer_document_url("https://cdn-dynmedia-1.microsoft.com/is/content/microsoftcorp/FY27ExternalKPIs.pptx").is_none());
         assert!(oembed_url("https://www.youtube.com/watch?v=x").is_some());
         assert!(oembed_url("https://m.youtube.com/watch?v=x").is_some());
         assert!(oembed_url("https://vimeo.com/12345").is_some());

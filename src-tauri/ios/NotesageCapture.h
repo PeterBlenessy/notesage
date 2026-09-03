@@ -36,6 +36,10 @@ extern "C" {
 /// video builders below. Caller frees with notesage_capture_string_free().
 char *notesage_capture_oembed_url(const char *url);
 
+/// The document behind an Office web-viewer URL (#868), or NULL. Free with
+/// notesage_capture_string_free.
+char *notesage_capture_viewer_document_url(const char *url);
+
 /// Relative path for a video capture note (named from the provider's title
 /// when the sharer gave us none). Caller frees.
 char *notesage_capture_video_rel_path(const char *url,

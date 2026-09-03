@@ -243,6 +243,17 @@ extension LibraryAccess {
         }
     }
 
+    /// The document behind an Office web-viewer URL (#868), or nil for any
+    /// other URL. `view.officeapps.live.com/op/view.aspx?src=…` is a JavaScript
+    /// viewer whose page is only a loading shell — the real file is the `src`.
+    static func viewerDocumentURL(for url: String) -> String? {
+        url.withCString { u in
+            guard let raw = notesage_capture_viewer_document_url(u) else { return nil }
+            defer { notesage_capture_string_free(raw) }
+            return String(cString: raw)
+        }
+    }
+
     /// X's embed-data endpoint for `url`, or nil when the URL is not an X
     /// status. See `x_syndication_url` in the capture crate for why this is the
     /// metadata path and not the capture path.
