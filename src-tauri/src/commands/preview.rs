@@ -232,6 +232,15 @@ pub async fn article_source_url(content: String) -> Result<Option<String>, Strin
     Ok(notesage_capture::article_source_url(&content))
 }
 
+/// What a library list row shows for a saved article (#836), read back out of
+/// the capture's own header. `None` for a document that is not a capture.
+/// iOS-only, like `article_source_url`: the capture crate is an iOS dependency.
+#[cfg(target_os = "ios")]
+#[tauri::command]
+pub async fn article_card_meta(content: String) -> Result<Option<notesage_capture::CardMeta>, String> {
+    Ok(notesage_capture::article_card_meta(&content))
+}
+
 /// Add the masthead to an article saved before captures kept one (#829).
 ///
 /// Pure, and returns `None` for "change nothing" — not ours, already repaired,

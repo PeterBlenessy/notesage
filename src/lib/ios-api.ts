@@ -447,6 +447,30 @@ export interface IosChromePlayer {
   rate: string;
 }
 
+/** What a list row shows for a saved article (#836), from its own header. */
+export interface ArticleCardMeta {
+  title: string | null;
+  excerpt: string | null;
+  minutes: number | null;
+  site: string | null;
+}
+
+/**
+ * Read a list row's fields back out of a capture's own header. `null` for a
+ * document that is not a capture — the caller shows the plain file row.
+ */
+export function articleCardMeta(content: string): Promise<ArticleCardMeta | null> {
+  return invoke<ArticleCardMeta | null>("article_card_meta", { content });
+}
+
+/**
+ * The same, read and parsed natively from a library path — only the four
+ * strings cross the bridge, not the 200–800 KB capture they came from.
+ */
+export function iosArticleCardMeta(relPath: string): Promise<ArticleCardMeta | null> {
+  return invoke<ArticleCardMeta | null>("ios_article_card_meta", { relPath });
+}
+
 /** Where the native speech player currently is (#833). */
 export interface IosSpeechState {
   /** Paragraph index currently being spoken. */

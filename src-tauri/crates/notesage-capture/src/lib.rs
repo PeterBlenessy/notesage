@@ -135,6 +135,64 @@ pub fn oembed_url(url: &str) -> Option<String> {
     }
 }
 
+/// What a library list row shows for a saved article (#836): the pieces the
+/// capture header already carries, read back out of it.
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CardMeta {
+    pub title: Option<String>,
+    /// The standfirst — the excerpt under the title.
+    pub excerpt: Option<String>,
+    /// Estimated reading time, from the "N min read" the header carries.
+    pub minutes: Option<u32>,
+    /// The publisher's name or host, as the byline shows it.
+    pub site: Option<String>,
+}
+
+/// Read a list row's fields back out of a capture's own header (#836).
+///
+/// This parses markup the crate itself wrote (`build_article_header`), so the
+/// shapes are known: `<title>`, `<p class="standfirst">` and a
+/// `<p class="byline">` whose parts are ` · `-joined — "By X · N min read ·
+/// site". Returns `None` for a document that is not one of ours, which is the
+/// caller's cue to show the plain file row.
+pub fn article_card_meta(html: &str) -> Option<CardMeta> {
+    if article_source_url(html).is_none() {
+        return None;
+    }
+    let title = tag_text(html, "<title>", "</title>");
+    // The byline is emitted UNCONDITIONALLY by `build_article_header` (the
+    // "N min read" part is always there), so it is a reliable boundary for the
+    // header. The standfirst is only emitted when the page had one, and a body
+    // can carry its own `<p class="standfirst">` (The Guardian literally does),
+    // so it is searched only BEFORE the byline — never in the body.
+    let byline_at = html.find("<p class=\"byline\">");
+    let excerpt = byline_at.and_then(|at| tag_text(&html[..at], "<p class=\"standfirst\">", "</p>"));
+    let byline = tag_text(html, "<p class=\"byline\">", "</p>");
+    let mut minutes = None;
+    let mut site = None;
+    if let Some(byline) = byline.as_deref() {
+        // Builder order is fixed: [By X]? · [date]? · "N min read" · [site]?
+        // The site is the part AFTER the minutes, by position — not "the last
+        // part that is not something else", which mislabels a date as the site
+        // when the site is missing.
+        let parts: Vec<&str> = byline.split(" · ").map(str::trim).collect();
+        if let Some(i) = parts.iter().position(|p| p.ends_with(" min read")) {
+            minutes = parts[i].trim_end_matches(" min read").trim().parse::<u32>().ok();
+            site = parts.get(i + 1).filter(|s| !s.is_empty()).map(|s| s.to_string());
+        }
+    }
+    Some(CardMeta { title, excerpt, minutes, site })
+}
+
+/// Text between the first `open` and the following `close`, entities decoded.
+fn tag_text(html: &str, open: &str, close: &str) -> Option<String> {
+    let start = html.find(open)? + open.len();
+    let end = html[start..].find(close)? + start;
+    let text = decode_entities(html[start..end].trim());
+    (!text.is_empty()).then_some(text)
+}
+
 /// The document BEHIND an Office web-viewer URL, or `None` for anything else.
 ///
 /// `view.officeapps.live.com/op/view.aspx?src=<url>` (and `embed.aspx`) is not a
@@ -1812,6 +1870,64 @@ mod video_tests {
     #[test]
     fn recognises_the_video_hosts_we_support_and_no_others() {
         assert!(oembed_url("https://youtu.be/3zk1WjrxCSw").is_some());
+    }
+
+    #[test]
+    fn article_card_meta_reads_the_header_back() {
+        let html = r#"<!doctype html><html><head><title>Fences, not Sandboxes</title></head>
+<body><header><h1>Fences, not Sandboxes</h1><p class="standfirst">Why the walls we build for agents matter.</p>
+<p class="byline">By Steve Yegge · 7 min read · steve-yegge.medium.com</p></header>
+<p>Body.</p><footer><p class="source">Clipped from <a href="https://steve-yegge.medium.com/x">https://steve-yegge.medium.com/x</a></p></footer></body></html>"#;
+        let meta = article_card_meta(html).expect("a capture");
+        assert_eq!(meta.title.as_deref(), Some("Fences, not Sandboxes"));
+        assert_eq!(meta.excerpt.as_deref(), Some("Why the walls we build for agents matter."));
+        assert_eq!(meta.minutes, Some(7));
+        assert_eq!(meta.site.as_deref(), Some("steve-yegge.medium.com"));
+    }
+
+    #[test]
+    fn article_card_meta_tolerates_a_header_without_byline_or_standfirst() {
+        let html = r#"<html><head><title>T &amp; U</title></head><body><p class="byline">3 min read · x.com</p>
+<footer><p class="source">Clipped from <a href="https://x.com/a/status/1">https://x.com/a/status/1</a></p></footer></body></html>"#;
+        let meta = article_card_meta(html).unwrap();
+        assert_eq!(meta.title.as_deref(), Some("T & U"));
+        assert_eq!(meta.excerpt, None);
+        assert_eq!(meta.minutes, Some(3));
+        assert_eq!(meta.site.as_deref(), Some("x.com"));
+    }
+
+    #[test]
+    fn article_card_meta_never_takes_a_standfirst_from_the_body() {
+        // No standfirst in the header, but the body (a Guardian-style page)
+        // carries its own `<p class="standfirst">`. That must not become the
+        // row's excerpt.
+        let html = r#"<html><head><title>T</title></head><body>
+<p class="byline">By A · 5 min read · theguardian.com</p>
+<article><p class="standfirst">Body deck, not ours.</p><p>Text.</p></article>
+<footer><p class="source">Clipped from <a href="https://theguardian.com/x">https://theguardian.com/x</a></p></footer></body></html>"#;
+        let meta = article_card_meta(html).unwrap();
+        assert_eq!(meta.excerpt, None);
+        assert_eq!(meta.site.as_deref(), Some("theguardian.com"));
+    }
+
+    #[test]
+    fn article_card_meta_does_not_mistake_a_date_for_the_site() {
+        // Date present, site absent: the old "last other part" rule would have
+        // labelled the date as the site.
+        let html = r#"<html><head><title>T</title></head><body>
+<p class="byline">By A · 12 March 2026 · 6 min read</p>
+<footer><p class="source">Clipped from <a href="https://example.com/x">https://example.com/x</a></p></footer></body></html>"#;
+        let meta = article_card_meta(html).unwrap();
+        assert_eq!(meta.minutes, Some(6));
+        assert_eq!(meta.site, None);
+        // And with both present, the site is the part after the minutes.
+        let html2 = html.replace("6 min read</p>", "6 min read · example.com</p>");
+        assert_eq!(article_card_meta(&html2).unwrap().site.as_deref(), Some("example.com"));
+    }
+
+    #[test]
+    fn article_card_meta_is_none_for_a_document_that_is_not_ours() {
+        assert!(article_card_meta("<html><head><title>Report</title></head><body>hi</body></html>").is_none());
     }
 
     #[test]

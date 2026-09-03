@@ -134,7 +134,7 @@ export function formatModified(seconds: number, now: Date = new Date()): string 
   });
 }
 
-interface FileRowProps {
+export interface FileRowProps {
   entry: FileEntry;
   active?: boolean;
   onActivate: (entry: FileEntry) => void;

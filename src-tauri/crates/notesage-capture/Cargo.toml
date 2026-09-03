@@ -31,6 +31,7 @@ base64 = "0.22"
 # post body. serde_json was originally kept out to hold the Share Extension's
 # static library down; that argument no longer holds now the extension links
 # dom_smoothie for article extraction, which dwarfs it.
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dom_smoothie = "0.18"
 dom_query = "0.28"

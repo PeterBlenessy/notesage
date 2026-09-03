@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { useMobileStore } from "@/stores/mobile-store";
 import type { EntryActionContext } from "@/lib/mobile-entry-actions";
 import { FileRow, classifyFile } from "./FileRow";
+import { ArticleRow } from "./ArticleRow";
 import { GalleryView } from "./GalleryView";
 import { InboxCard } from "./InboxCard";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,8 @@ export function LibraryBrowser() {
   const loadPinnedPaths = useMobileStore((s) => s.loadPinnedPaths);
   const viewMode = useMobileStore((s) => s.viewMode);
   const setViewMode = useMobileStore((s) => s.setViewMode);
+  const listDensity = useMobileStore((s) => s.listDensity);
+  const setListDensity = useMobileStore((s) => s.setListDensity);
   const inlineImagesEnabled = useMobileStore((s) => s.inlineImagesEnabled);
   const setInlineImagesEnabled = useMobileStore((s) => s.setInlineImagesEnabled);
   const imageMaxPixel = useMobileStore((s) => s.imageMaxPixel);
@@ -458,6 +461,14 @@ export function LibraryBrowser() {
             icon: "square.grid.2x2",
             selected: viewMode === "gallery",
           },
+          // Row density (#836): one line per row for a library that has grown
+          // past browsing into scanning. A checkmark toggle, remembered.
+          {
+            id: "view-condensed",
+            title: t("menu.condensed"),
+            icon: "rectangle.compress.vertical",
+            selected: listDensity === "condensed",
+          },
           {
             id: "sort-name",
             title: t("menu.sortName"),
@@ -550,6 +561,8 @@ export function LibraryBrowser() {
       back: () => void goBack(),
       "view-list": () => setViewMode("list"),
       "view-gallery": () => setViewMode("gallery"),
+      "view-condensed": () =>
+        setListDensity(listDensity === "condensed" ? "comfortable" : "condensed"),
       "sort-name": () => setSortMode("name"),
       "sort-modified": () => setSortMode("modified"),
       "group-none": () => setGroupMode("none"),
@@ -743,12 +756,26 @@ export function LibraryBrowser() {
                     <ul>
                       {section.items.map((entry) => (
                         <li key={entry.path}>
-                          <FileRow
-                            entry={entry}
-                            onActivate={onActivate}
-                            onChanged={() => void load(true)}
-                            actionContext={actionContext}
-                          />
+                          {/* A saved article gets the read-later row (#836) —
+                              title, site · minutes left, excerpt, thumbnail.
+                              It falls back to the plain row by itself when
+                              the file is not a capture. */}
+                          {!entry.is_directory && /\.html?$/i.test(entry.name) ? (
+                            <ArticleRow
+                              entry={entry}
+                              onActivate={onActivate}
+                              onChanged={() => void load(true)}
+                              actionContext={actionContext}
+                              condensed={listDensity === "condensed"}
+                            />
+                          ) : (
+                            <FileRow
+                              entry={entry}
+                              onActivate={onActivate}
+                              onChanged={() => void load(true)}
+                              actionContext={actionContext}
+                            />
+                          )}
                         </li>
                       ))}
                     </ul>
