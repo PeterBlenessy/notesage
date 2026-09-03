@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { articleCardMeta, iosReadFile, type ArticleCardMeta } from "@/lib/ios-api";
+import type { ArticleCardMeta } from "@/lib/ios-api";
+import { articleMetaFor } from "@/lib/article-meta-cache";
 import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
 import { useMobileStore } from "@/stores/mobile-store";
 import { cn } from "@/lib/utils";
@@ -27,18 +28,15 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
 
   useEffect(() => {
     let cancelled = false;
-    void iosReadFile(entry.path)
-      .then((raw) => articleCardMeta(raw))
-      .then((m) => {
-        if (!cancelled) setMeta(m);
-      })
-      .catch(() => {
-        if (!cancelled) setMeta(null);
-      });
+    // Native read + session cache: a repeat visit to the folder renders every
+    // row instantly, and even a cold one moves four strings, not the file.
+    void articleMetaFor(entry.path, entry.modified).then((m) => {
+      if (!cancelled) setMeta(m);
+    });
     return () => {
       cancelled = true;
     };
-  }, [entry.path]);
+  }, [entry.path, entry.modified]);
 
   useEffect(() => {
     if (!meta) return;
@@ -54,13 +52,17 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
     };
   }, [meta, entry.path, entry.name]);
 
-  // Not a capture (or not yet known): the plain row, never a hole.
-  if (!meta) return <FileRow {...props} />;
+  // Known NOT to be a capture: the plain row.
+  if (meta === null) return <FileRow {...props} />;
 
-  const title = meta.title ?? entry.name;
+  // While the header is still on its way, render the article-shaped row with
+  // just the name, so the list does not jump from a one-line row to a tall
+  // one as each read lands (review finding). A `.html` in the Inbox is almost
+  // always a capture, so the placeholder is almost always the right shape.
+  const title = meta?.title ?? entry.name.replace(/\.html?$/i, "");
   const done = progress >= READ_THRESHOLD;
-  const minutesLine = readingLine(meta.minutes, progress);
-  const sub = [meta.site, minutesLine].filter(Boolean).join(" · ");
+  const minutesLine = meta ? readingLine(meta.minutes, progress) : null;
+  const sub = [meta?.site, minutesLine].filter(Boolean).join(" · ");
 
   return (
     <button
@@ -90,7 +92,7 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
             {sub}
           </div>
         )}
-        {!condensed && meta.excerpt && (
+        {!condensed && meta?.excerpt && (
           <div className="mt-1 line-clamp-2 text-[length:calc(0.9375rem*var(--ns-a11y-scale,1))] text-muted-foreground">
             {meta.excerpt}
           </div>

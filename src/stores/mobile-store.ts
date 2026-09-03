@@ -389,21 +389,23 @@ export const useMobileStore = create<MobileStore>()(
       rememberScroll: (relPath, offset) =>
         set((s) => ({ scrollOffsets: { ...s.scrollOffsets, [relPath]: offset } })),
 
-      rememberReadingProgress: (relPath, fraction) =>
+      rememberReadingProgress: (relPath, fraction) => {
+        const clamped = Math.min(1, Math.max(0, fraction));
+        // Only ever forward: scrolling back up to re-read a line must not
+        // un-read the article. Checked BEFORE `set` — returning `{}` from an
+        // updater still notifies every subscriber, and the persist middleware
+        // then serialises the whole slice to localStorage on each scroll frame
+        // (review finding). A no-op must be a true no-op.
+        if (clamped <= (get().readingProgress[relPath] ?? 0)) return;
         set((s) => {
-          const clamped = Math.min(1, Math.max(0, fraction));
-          // Only ever forward on its own: scrolling back up to re-read a line
-          // must not un-read the article. Reset happens by finishing (≥ 0.97
-          // reads as done) or explicitly, never by a scroll.
-          const prev = s.readingProgress[relPath] ?? 0;
-          if (clamped <= prev) return {};
           const next = { ...s.readingProgress, [relPath]: clamped };
           const keys = Object.keys(next);
           if (keys.length > MAX_READING_PROGRESS) {
             for (const stale of keys.slice(0, keys.length - MAX_READING_PROGRESS)) delete next[stale];
           }
           return { readingProgress: next };
-        }),
+        });
+      },
       setListDensity: (density) => set({ listDensity: density }),
 
       rememberSpeechVoice: (language, voiceId) =>

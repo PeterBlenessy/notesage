@@ -278,8 +278,7 @@ describe("sort toggle (#632)", () => {
     useMobileStore.getState().setSortMode("modified");
     await waitFor(() =>
       expect(captured.topRight?.menu?.map((m) => m.selected)).toEqual([
-        // view(2) · sort(2) · group(5) · offline toggle + 4 size picks
-        // list · gallery · condensed rows (#836) · then the sort and group picks
+        // view(3: list · gallery · condensed rows, #836) · sort(2) · group(5) · offline toggle + 4 size picks
         true, false, false, false, true, true, false, false, false, false,
         true, false, true, false, false,
       ]),

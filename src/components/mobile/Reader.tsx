@@ -181,6 +181,7 @@ export function Reader() {
   useLocale();
   const openDoc = useMobileStore((s) => s.openDoc);
   const rememberReadingProgress = useMobileStore((s) => s.rememberReadingProgress);
+  const progressSampledAtRef = useRef(0);
   const goBack = useMobileStore((s) => s.goBack);
   const openDocument = useMobileStore((s) => s.openDocument);
   const openLinkedDocument = useMobileStore((s) => s.openLinkedDocument);
@@ -1503,8 +1504,12 @@ export function Reader() {
         className="absolute inset-0 overflow-y-auto"
         style={CONTENT_INSETS}
         onScroll={(e) => {
-          // Reading progress (#836) for documents rendered here. Cheap: the
-          // store only writes when the fraction moves forward.
+          // Reading progress (#836) for documents rendered here, sampled at
+          // most every 250 ms: a scroll gesture fires this tens of times a
+          // second, and each forward step would otherwise persist the store.
+          const now = Date.now();
+          if (now - progressSampledAtRef.current < 250) return;
+          progressSampledAtRef.current = now;
           const el = e.currentTarget;
           const span = el.scrollHeight - el.clientHeight;
           if (span > 1) rememberReadingProgress(relPath, el.scrollTop / span);

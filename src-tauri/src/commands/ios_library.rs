@@ -204,6 +204,25 @@ pub async fn ios_read_file(app: tauri::AppHandle, rel_path: String) -> Result<St
     }
 }
 
+/// A list row's fields for a saved article (#836), read and parsed NATIVELY.
+///
+/// The whole file used to cross the bridge for this (`ios_read_file` then
+/// `article_card_meta` in JS): captures are 200–800 KB of inlined images and
+/// the header is in the first ~2 KB, so a 39-row Inbox marshalled ~15 MB of
+/// UTF-8 to pull four short strings out. Now only those strings cross.
+/// iOS-only in full (registered only in the iOS handler list): the capture
+/// crate is an iOS dependency, so its `CardMeta` cannot appear in a desktop
+/// signature — same rule as `article_card_meta` in `preview.rs`.
+#[cfg(target_os = "ios")]
+#[tauri::command]
+pub async fn ios_article_card_meta(
+    app: tauri::AppHandle, rel_path: String,
+) -> Result<Option<notesage_capture::CardMeta>, String> {
+    let rel = sanitize_rel_path(&rel_path)?;
+    let html = ios_impl::read_file(&app, &rel).await?;
+    Ok(notesage_capture::article_card_meta(&html))
+}
+
 /// Read a binary file (PDF/EPUB/DOCX/image) relative to the granted library
 /// root. Returns a RAW IPC response (`tauri::ipc::Response`), not JSON: a
 /// `Vec<u8>` serializes as a JSON number array, and even base64-in-JSON makes

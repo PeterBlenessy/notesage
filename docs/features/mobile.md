@@ -521,7 +521,15 @@ it a read-later list rather than a file list.
 Everything but progress is read back out of the capture's own header by
 `article_card_meta` (capture crate; iOS-only command like
 `article_source_url`): `<title>`, `<p class="standfirst">`, and the
-` · `-joined `<p class="byline">` — "By X · N min read · site". A document
+` · `-joined `<p class="byline">` — "By X · N min read · site". The read is
+**native** (`ios_article_card_meta`): only the four strings cross the bridge,
+not the 200–800 KB capture they sit in — the header is in the first ~2 KB, and
+reading whole files for a 39-row Inbox moved ~15 MB of UTF-8 for nothing
+(review finding). A session cache keyed by path *and* mtime
+(`article-meta-cache.ts`) makes a repeat visit render instantly and still
+misses when a file is rewritten in place. While the header is on its way the
+row keeps the article shape with just the name, so the list does not jump from
+one-line rows to tall ones as reads land. A document
 that is not a capture — or one saved before #828, which has no header — makes
 `ArticleRow` render the plain `FileRow`, so the list never has a hole; on the
 simulator a pre-#828 X capture shows title + thumbnail only, a post-#828 one

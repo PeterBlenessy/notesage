@@ -327,6 +327,7 @@ pub fn run() {
         repair_html_doctype,
         article_source_url,
         article_card_meta,
+        ios_article_card_meta,
         fetch_page_html,
         splice_article_header,
         html_preview_register,

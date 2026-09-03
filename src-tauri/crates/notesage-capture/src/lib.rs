@@ -161,18 +161,25 @@ pub fn article_card_meta(html: &str) -> Option<CardMeta> {
         return None;
     }
     let title = tag_text(html, "<title>", "</title>");
-    let excerpt = tag_text(html, "<p class=\"standfirst\">", "</p>");
+    // The byline is emitted UNCONDITIONALLY by `build_article_header` (the
+    // "N min read" part is always there), so it is a reliable boundary for the
+    // header. The standfirst is only emitted when the page had one, and a body
+    // can carry its own `<p class="standfirst">` (The Guardian literally does),
+    // so it is searched only BEFORE the byline — never in the body.
+    let byline_at = html.find("<p class=\"byline\">");
+    let excerpt = byline_at.and_then(|at| tag_text(&html[..at], "<p class=\"standfirst\">", "</p>"));
     let byline = tag_text(html, "<p class=\"byline\">", "</p>");
     let mut minutes = None;
     let mut site = None;
     if let Some(byline) = byline.as_deref() {
-        for part in byline.split(" · ").map(str::trim) {
-            if let Some(n) = part.strip_suffix(" min read") {
-                minutes = n.trim().parse::<u32>().ok();
-            } else if !part.starts_with("By ") && !part.is_empty() {
-                // The last non-byline, non-minutes part is the site.
-                site = Some(part.to_string());
-            }
+        // Builder order is fixed: [By X]? · [date]? · "N min read" · [site]?
+        // The site is the part AFTER the minutes, by position — not "the last
+        // part that is not something else", which mislabels a date as the site
+        // when the site is missing.
+        let parts: Vec<&str> = byline.split(" · ").map(str::trim).collect();
+        if let Some(i) = parts.iter().position(|p| p.ends_with(" min read")) {
+            minutes = parts[i].trim_end_matches(" min read").trim().parse::<u32>().ok();
+            site = parts.get(i + 1).filter(|s| !s.is_empty()).map(|s| s.to_string());
         }
     }
     Some(CardMeta { title, excerpt, minutes, site })
@@ -1887,6 +1894,35 @@ mod video_tests {
         assert_eq!(meta.excerpt, None);
         assert_eq!(meta.minutes, Some(3));
         assert_eq!(meta.site.as_deref(), Some("x.com"));
+    }
+
+    #[test]
+    fn article_card_meta_never_takes_a_standfirst_from_the_body() {
+        // No standfirst in the header, but the body (a Guardian-style page)
+        // carries its own `<p class="standfirst">`. That must not become the
+        // row's excerpt.
+        let html = r#"<html><head><title>T</title></head><body>
+<p class="byline">By A · 5 min read · theguardian.com</p>
+<article><p class="standfirst">Body deck, not ours.</p><p>Text.</p></article>
+<footer><p class="source">Clipped from <a href="https://theguardian.com/x">https://theguardian.com/x</a></p></footer></body></html>"#;
+        let meta = article_card_meta(html).unwrap();
+        assert_eq!(meta.excerpt, None);
+        assert_eq!(meta.site.as_deref(), Some("theguardian.com"));
+    }
+
+    #[test]
+    fn article_card_meta_does_not_mistake_a_date_for_the_site() {
+        // Date present, site absent: the old "last other part" rule would have
+        // labelled the date as the site.
+        let html = r#"<html><head><title>T</title></head><body>
+<p class="byline">By A · 12 March 2026 · 6 min read</p>
+<footer><p class="source">Clipped from <a href="https://example.com/x">https://example.com/x</a></p></footer></body></html>"#;
+        let meta = article_card_meta(html).unwrap();
+        assert_eq!(meta.minutes, Some(6));
+        assert_eq!(meta.site, None);
+        // And with both present, the site is the part after the minutes.
+        let html2 = html.replace("6 min read</p>", "6 min read · example.com</p>");
+        assert_eq!(article_card_meta(&html2).unwrap().site.as_deref(), Some("example.com"));
     }
 
     #[test]

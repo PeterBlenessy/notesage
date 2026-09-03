@@ -463,6 +463,14 @@ export function articleCardMeta(content: string): Promise<ArticleCardMeta | null
   return invoke<ArticleCardMeta | null>("article_card_meta", { content });
 }
 
+/**
+ * The same, read and parsed natively from a library path — only the four
+ * strings cross the bridge, not the 200–800 KB capture they came from.
+ */
+export function iosArticleCardMeta(relPath: string): Promise<ArticleCardMeta | null> {
+  return invoke<ArticleCardMeta | null>("ios_article_card_meta", { relPath });
+}
+
 /** Where the native speech player currently is (#833). */
 export interface IosSpeechState {
   /** Paragraph index currently being spoken. */

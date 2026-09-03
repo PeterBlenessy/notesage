@@ -216,6 +216,13 @@ final class ReportPresenter: NSObject {
 
   /// Tear the report down. Idempotent.
   func dismiss() {
+    // The KVO token retains the observed scroll view — and with it the whole
+    // dismissed web view and its document — until it is invalidated. Without
+    // this the last report stayed alive in the singleton for the rest of the
+    // session (review finding).
+    scrollObservation?.invalidate()
+    scrollObservation = nil
+    lastEmittedFraction = -1
     dispatchPrecondition(condition: .onQueue(.main))
     guard let view = reportView else { return }
     reportView = nil
@@ -362,9 +369,14 @@ extension ReportPresenter: WKNavigationDelegate {
   func observeScroll(of webView: WKWebView) {
     scrollObservation = webView.scrollView.observe(\.contentOffset, options: [.new]) { [weak self] sv, _ in
       guard let self else { return }
-      let span = sv.contentSize.height - sv.bounds.height
+      // The scrollable range runs from -insetTop to (contentHeight - bounds +
+      // insetBottom); both insets belong in the denominator or the fraction
+      // reaches 1.0 before the true bottom and marks an article read with
+      // content still on screen (review finding).
+      let insets = sv.adjustedContentInset
+      let span = sv.contentSize.height - sv.bounds.height + insets.top + insets.bottom
       guard span > 1 else { return }
-      let fraction = min(1, max(0, (sv.contentOffset.y + sv.adjustedContentInset.top) / span))
+      let fraction = min(1, max(0, (sv.contentOffset.y + insets.top) / span))
       let now = Date().timeIntervalSince1970
       // Coalesce: one message per ~300 ms unless the change is large. A scroll
       // is hundreds of offsets a second and each dispatch is a JS evaluation
