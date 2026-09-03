@@ -218,6 +218,12 @@ const EXPORT_CALL_SITES: &[(&str, &str, MacExpectation)] = &[
         Err("iOS first (#868); macOS has no URL-to-document probe yet, tracked in the issue"),
     ),
     (
+        "notesage_capture_document_fallback_name",
+        "LibraryCapture.swift",
+        Err("iOS only (#843): a document shared as data with no name is a share-sheet \
+             shape; the macOS Share menu receives file URLs, which carry their name"),
+    ),
+    (
         "notesage_capture_oembed_url",
         "LibraryCapture.swift",
         Err("macOS offers no Video format — its picker is Article (HTML) / Article (Markdown) / Link"),
@@ -319,6 +325,29 @@ fn every_ffi_export_is_called_from_swift_and_declared_in_the_header() {
                 "`{export}` is marked macOS-exempt with no reason. Say why, or wire it."
             ),
         }
+    }
+}
+
+#[test]
+fn a_document_url_offers_document_or_link_not_article_formats() {
+    // For a URL that serves a file the picker used to read "Article
+    // (Markdown) — saves as secure.ubs.com.md", then stored a PDF. The sheet
+    // now probes the response headers and offers Document / Link instead.
+    let swift = ios_src("ShareViewController.swift");
+    for needle in [
+        "case document",
+        "if probedDocument != nil { return [.document, .link] }",
+        "private func probeDocument(",
+        "completionHandler(.cancel)",
+        "case .document:",
+    ] {
+        assert!(swift.contains(needle), "ShareViewController lost `{needle}` — the document picker is gone");
+    }
+    // Never remembered: the next share is usually a page, which cannot offer it.
+    assert!(swift.contains("if f != .document {"), "`.document` is being persisted as the default format");
+    for lang in ["en", "sv"] {
+        let strings = ios_src(&format!("ShareResources/{lang}.lproj/Localizable.strings"));
+        assert!(strings.contains("\"share.formatDocument\""), "{lang} has no label for the Document format");
     }
 }
 
@@ -583,16 +612,22 @@ fn both_platforms_accept_shared_files_not_just_links() {
     // the activation rule is what decides whether Notesage even APPEARS in the
     // share sheet for one. macOS declared only WebURL, so a PDF could not be
     // shared to the Mac at all — the extension was not offered.
-    for (label, plist) in [
-        ("iOS", ios_src("ShareExtension-Info.plist")),
-        ("macOS", macos_src("ShareExtension-Info.plist")),
-    ] {
+    // iOS spells the rule out as a predicate; macOS still uses the
+    // dictionary shorthand. Each is checked for what it actually says.
+    let ios = ios_src("ShareExtension-Info.plist");
+    for term in ["\"com.adobe.pdf\"", "\"org.idpf.epub-container\"", "\"public.image\""] {
         assert!(
-            plist.contains("NSExtensionActivationSupportsFileWithMaxCount"),
-            "{label} does not declare file support, so the share sheet will not\n\
-             offer Notesage for a PDF, EPUB or image."
+            ios.contains(&format!("UTI-CONFORMS-TO {term}")),
+            "iOS predicate does not accept {term}, so the share sheet will not\n\
+             offer Notesage for that document type."
         );
     }
+    assert!(
+        macos_src("ShareExtension-Info.plist")
+            .contains("NSExtensionActivationSupportsFileWithMaxCount"),
+        "macOS does not declare file support, so the share sheet will not\n\
+         offer Notesage for a PDF, EPUB or image."
+    );
 
     // Declaring it and handling it are separate — an activation rule that
     // offers the extension for a file it then cannot store is worse than not
@@ -1821,9 +1856,15 @@ fn share_extension_plist_is_the_source_of_truth() {
     let plist = repo_file("src-tauri/ios/ShareExtension-Info.plist");
     for key in [
         "NSExtensionActivationRule",
-        "NSExtensionActivationSupportsWebPageWithMaxCount",
-        "NSExtensionActivationSupportsWebURLWithMaxCount",
-        "NSExtensionActivationSupportsFileWithMaxCount",
+        // The predicate's load-bearing terms: Safari's preprocessing payload,
+        // bare links, and the document type the shorthand could not match.
+        "UTI-CONFORMS-TO \"com.apple.property-list\"",
+        "UTI-CONFORMS-TO \"public.url\"",
+        // Plain text, deliberately: the extension reads nothing richer, so
+        // the shorthand's broader `public.text` only listed it for RTF it
+        // could not save.
+        "UTI-CONFORMS-TO \"public.plain-text\"",
+        "UTI-CONFORMS-TO \"com.adobe.pdf\"",
         "NSExtensionJavaScriptPreprocessingFile",
         // Without these the appex builds and fails to LOAD; xcodegen used to
         // supply them and no longer does.
@@ -1836,6 +1877,35 @@ fn share_extension_plist_is_the_source_of_truth() {
              the file that ships now, not a mirror"
         );
     }
+}
+
+#[test]
+fn ios_activation_rule_is_a_predicate_not_the_shorthand() {
+    // The dictionary shorthand's `File` key matches only attachments backed by
+    // a file URL. Safari's PDF viewer shares the document as in-memory
+    // `com.adobe.pdf` data next to the page URL, and with the shorthand iOS
+    // never listed Notesage for it (#843 — measured with a host app presenting
+    // every item shape). Only a predicate can say "a PDF attachment", so the
+    // shorthand must not come back, however tidy it looks.
+    let plist = repo_file("src-tauri/ios/ShareExtension-Info.plist");
+    for key in [
+        "NSExtensionActivationSupportsFileWithMaxCount",
+        "NSExtensionActivationSupportsWebURLWithMaxCount",
+        "NSExtensionActivationSupportsWebPageWithMaxCount",
+    ] {
+        assert!(
+            !plist.contains(key),
+            "{key} is back in the iOS plist — the shorthand cannot match a PDF \
+             shared as data (#843); extend the predicate instead"
+        );
+    }
+    // Bare `public.data` stays out on purpose: a provider offering only that
+    // has no name and no type to save the bytes as.
+    assert!(
+        !plist.contains("UTI-CONFORMS-TO \"public.data\""),
+        "the predicate accepts bare public.data — that lists Notesage for \
+         payloads it cannot name or type"
+    );
 }
 
 #[test]

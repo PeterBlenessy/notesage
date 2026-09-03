@@ -1620,7 +1620,8 @@ mod tests {
             "share.format",
             "share.savesToInbox",
             "share.nothingToSave",
-            "share.oneFile",
+            // The Document / Link picker for a URL that serves a file (#843).
+            "share.formatDocument",
         ] {
             assert!(
                 swift.contains(&format!("L(\"{key}\"")),

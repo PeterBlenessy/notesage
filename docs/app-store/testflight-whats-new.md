@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-The Inbox list shows saved articles the way a read-later list should: title, source and reading time, a two-line excerpt, and the article's picture — and once you have opened one, how much is left ("2 of 4 min left"), which fills in as you scroll and never goes backwards. The … menu has a Condensed rows toggle for one line per article. Articles saved before the masthead existed (early August) show only title and picture; update one from source to get the rest.
+Sharing a PDF from Safari's own viewer now offers Notesage — the sheet used to leave it out when the document arrived as data rather than a file. Links that turn out to be documents (PDF, deck, EPUB) now offer just "Document" or "Link note", naming the file that will be saved, instead of Article formats that never applied. The Inbox list shows thumbnails for every image, PDF, document and video, not only saved articles. Try: share the UBS report link from Safari; share a screenshot from Photos; share a PDF from Files.

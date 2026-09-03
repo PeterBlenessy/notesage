@@ -26,7 +26,8 @@ use std::panic::{catch_unwind, AssertUnwindSafe};
 use crate::{
     build_article_html_document, build_article_note, build_capture_note,
     build_card_html_document, build_video_note, extract_page_card,
-    build_x_article_note, build_x_note, enrich_x_article, extract_article, extract_meta_title,
+    build_x_article_note, build_x_note, document_fallback_name, enrich_x_article,
+    extract_article, extract_meta_title,
     filename_from_content_disposition, is_x_chrome_title, linked_document_for_content_type,
     meaningful_title, oembed_url, parse_oembed, parse_x_post, timestamps, viewer_document_url,
     x_syndication_url, Article, CaptureInput, XPost,
@@ -146,6 +147,29 @@ pub unsafe extern "C" fn notesage_capture_viewer_document_url(url: *const c_char
     catch_unwind(AssertUnwindSafe(|| match opt_str(url).and_then(|u| viewer_document_url(&u)) {
         Some(target) => into_c_string(target),
         None => std::ptr::null_mut(),
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// Name for a document share whose provider has no name of its own (#843):
+/// the title, else the URL's last path segment, else its host, with
+/// `extension`. Never NULL on a non-panicking path.
+///
+/// # Safety
+/// All arguments must be NUL-terminated C strings or NULL (an empty or NULL
+/// `extension` means no extension). The returned pointer is owned by the
+/// caller and must be freed with `notesage_capture_string_free`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn notesage_capture_document_fallback_name(
+    url: *const c_char,
+    title: *const c_char,
+    extension: *const c_char,
+) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        let url = opt_str(url);
+        let title = opt_str(title);
+        let extension = opt_str(extension).unwrap_or_default();
+        into_c_string(document_fallback_name(url.as_deref(), title.as_deref(), &extension))
     }))
     .unwrap_or(std::ptr::null_mut())
 }

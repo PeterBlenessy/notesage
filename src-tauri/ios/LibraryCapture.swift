@@ -254,6 +254,24 @@ extension LibraryAccess {
         }
     }
 
+    /// Name for a shared document whose provider has no `suggestedName` — a
+    /// PDF handed over as data rather than as a file, which is how Safari's
+    /// viewer shares one (#843). Title, else the URL's last path segment,
+    /// else its host, with `ext`.
+    static func documentFallbackName(url: String?, title: String?, ext: String?) -> String {
+        (url ?? "").withCString { u in
+            (title ?? "").withCString { t in
+                (ext ?? "").withCString { e in
+                    guard let raw = notesage_capture_document_fallback_name(u, t, e) else {
+                        return "Shared document"
+                    }
+                    defer { notesage_capture_string_free(raw) }
+                    return String(cString: raw)
+                }
+            }
+        }
+    }
+
     /// X's embed-data endpoint for `url`, or nil when the URL is not an X
     /// status. See `x_syndication_url` in the capture crate for why this is the
     /// metadata path and not the capture path.

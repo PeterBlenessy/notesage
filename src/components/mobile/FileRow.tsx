@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react";
 import { ChevronRight, Folder, FileText, FileImage, FileType, FileCode, File, FilePlay, FileAudio, Share, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
 import type { FileEntry } from "@/lib/tauri";
 import { iosShareFile, iosDeleteFile } from "@/lib/ios-api";
 import { cn } from "@/lib/utils";
@@ -87,6 +89,25 @@ export function classifyFile(
   return "other";
 }
 
+/** The kinds whose list row shows a real thumbnail instead of the icon.
+ *
+ *  These are exactly the kinds `mobile-thumbnails.ts` can turn into a picture
+ *  (QuickLook natively, the web pipeline as fallback). Markdown and text get a
+ *  source preview there, which reads as nothing at 40pt, so they keep the
+ *  icon; the article row (#836) already covers captured HTML, and a plain HTML
+ *  file falls back to this row and still gets its page render.
+ *
+ *  Until now only the article row carried a thumbnail: a PNG in the Inbox was
+ *  listed by name beside a generic glyph while the gallery drew the picture
+ *  from the same pipeline (Peter, 2026-09-03). */
+const THUMBNAIL_KINDS: ReadonlySet<ReturnType<typeof classifyFile>> = new Set([
+  "image", "pdf", "doc", "media", "html",
+]);
+
+export function rowWantsThumbnail(entry: FileEntry): boolean {
+  return !entry.is_directory && THUMBNAIL_KINDS.has(classifyFile(entry.name));
+}
+
 /** Icon for a file's classification — shared with the gallery view's card
  *  thumbnail fallback (#633), so list and gallery agree on iconography. */
 export function iconFor(entry: FileEntry) {
@@ -153,6 +174,30 @@ export interface FileRowProps {
  */
 export function FileRow({ entry, active, onActivate, onChanged, actionContext }: FileRowProps) {
   const Icon = iconFor(entry);
+  const wantsThumbnail = rowWantsThumbnail(entry);
+  const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(null);
+  useEffect(() => {
+    if (!wantsThumbnail) return;
+    let cancelled = false;
+    // Same theme rule as the gallery card and the article row: a rendered
+    // thumbnail is keyed on the theme in effect now.
+    const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+    void getThumbnail(entry, { theme })
+      .then((thumb) => {
+        if (!cancelled) setThumbnail(thumb);
+      })
+      // A folder left before the job finished rejects with the pipeline's
+      // cancellation; the icon already on screen is the right outcome.
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+    // Keyed on the fields that identify the file, not the entry object: a
+    // caller that maps or spreads its entries would otherwise refetch every
+    // thumbnail on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantsThumbnail, entry.path, entry.name, entry.modified]);
+  const picture = thumbnail && (thumbnail.kind === "image" || thumbnail.kind === "pdf") ? thumbnail.url : null;
   // Hold for the full menu — iOS itself offers both swipe AND hold on a list
   // row (Files, Notes), and hold is the only way to reach Rename/Pin here.
   const longPress = useLongPress((rect) => {
@@ -207,14 +252,28 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext }:
           active && "bg-muted",
         )}
       >
-        <Icon
-          strokeWidth={1.5}
-          className={cn(
-            "h-5 w-5 shrink-0",
-            active ? "text-[var(--color-accent-primary)]" : "text-muted-foreground",
-            entry.hidden && "opacity-50",
+        {/* A fixed 40pt slot for every row, thumbnail or icon, so the list
+            keeps one row height (Files does the same) and a picture landing
+            late never reflows the rows around it. */}
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center">
+          {picture ? (
+            <img
+              src={picture}
+              alt=""
+              data-testid="row-thumbnail"
+              className={cn("h-10 w-10 rounded-md bg-muted object-cover", entry.hidden && "opacity-50")}
+            />
+          ) : (
+            <Icon
+              strokeWidth={1.5}
+              className={cn(
+                "h-5 w-5 shrink-0",
+                active ? "text-[var(--color-accent-primary)]" : "text-muted-foreground",
+                entry.hidden && "opacity-50",
+              )}
+            />
           )}
-        />
+        </span>
         {/* One line, so the icon reads as aligned WITH the name rather than
             floating between two lines of unequal weight (#684). The modified
             date moved to the section headers — see `dateSection`. */}
