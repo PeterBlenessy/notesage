@@ -14,3 +14,6 @@
 export const COPY_PATH_EVENT = "notesage:copy-path";
 export const REVEAL_IN_FINDER_EVENT = "notesage:reveal-in-finder";
 export const CYCLE_RECENT_EVENT = "notesage:cycle-recent";
+
+/** ⌘↑ / ⌘↓ while an Inbox item is open: `detail.direction` is 1 or -1. */
+export const INBOX_STEP_EVENT = "notesage:inbox-step";

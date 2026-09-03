@@ -5,6 +5,15 @@ import type { AcpListResult, AcpSessionResult } from './ai/acp-utils';
 import type { AcpMcpServerInput } from './ai/acp-mcp';
 import type { AutomationFile, AutomationValidation } from './automations/types';
 
+/** What the Inbox row shows for a saved article — the capture's own header. */
+export interface InboxCardMeta {
+  title: string | null;
+  excerpt: string | null;
+  minutes: number | null;
+  site: string | null;
+  sourceUrl: string | null;
+}
+
 export interface FileEntry {
   name: string;
   path: string;
@@ -825,6 +834,26 @@ export const tauriApi = {
 
   async deletePath(path: string): Promise<void> {
     await invoke("delete_path", { path });
+  },
+
+  /** Move to the Trash — recoverable, where `deletePath` is not. */
+  async trashPath(path: string): Promise<void> {
+    await invoke("trash_path", { path });
+  },
+
+  /**
+   * A saved article's list-row header (title, excerpt, minutes, site, source
+   * URL), read natively so the multi-megabyte capture never crosses IPC.
+   * `null` for a file that is not a capture.
+   */
+  async inboxCardMeta(path: string): Promise<InboxCardMeta | null> {
+    return await invoke<InboxCardMeta | null>("inbox_card_meta", { path });
+  },
+
+  /** The capture's lead image as raw bytes; rejects when it has none. */
+  async articleLeadImage(path: string): Promise<Uint8Array> {
+    const buf = await invoke<ArrayBuffer>("article_lead_image", { path });
+    return new Uint8Array(buf);
   },
 
   async pathExists(path: string): Promise<boolean> {

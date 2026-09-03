@@ -16,6 +16,11 @@ import { useFocusMode } from "@/hooks/useFocusMode";
 import { useWindowFocus } from "@/hooks/useWindowFocus";
 import { FocusPill } from "@/components/editor/FocusPill";
 import { useQuietChrome } from "@/lib/quiet-chrome";
+import { InboxView } from "@/components/inbox/InboxView";
+import { InboxReaderControls } from "@/components/inbox/InboxReaderControls";
+import { PillLeadingContext } from "@/components/inbox/pill-leading-context";
+import { useInboxStore } from "@/stores/inbox-store";
+import { useEditorStore } from "@/stores/editor-store";
 import { cn } from "@/lib/utils";
 
 /**
@@ -74,6 +79,12 @@ export interface QuietLayoutProps {
 }
 
 export function QuietLayout(props: QuietLayoutProps) {
+  const inboxOpen = useInboxStore((s) => s.open);
+  const inboxActiveItemPath = useInboxStore((s) => s.activeItem);
+  // The reader controls belong to the Inbox item only while it is the ACTIVE
+  // document; opening anything else from the sidebar drops them.
+  const activeDocPath = useEditorStore((s) => s.openDocuments.find((d) => d.id === s.activeTabId)?.filePath ?? null);
+  const inboxActiveItem = inboxActiveItemPath && inboxActiveItemPath === activeDocPath ? inboxActiveItemPath : null;
   // Editor props — forwarded from App.tsx so the centre-column Editor
   // mount has the file-operation callbacks it needs (new note, new
   // project, open folder/project/file, export, etc.).
@@ -350,22 +361,40 @@ export function QuietLayout(props: QuietLayoutProps) {
               `.app.focus-mode [data-doc-area]`).
             */}
             <div data-doc-area className="flex-1 min-h-0">
-              <ErrorBoundary name="Editor">
-                <Editor
-                  onNewNote={onNewNote}
-                  onNewProject={onNewProject}
-                  onOpenFolder={onOpenFolder}
-                  onOpenProject={onOpenProject}
-                  onOpenFile={onOpenFile}
-                  exportOpen={exportOpen}
-                  onExportOpenChange={onExportOpenChange}
-                  focusMode={editorFocusMode}
-                  outlineOpen={outlineOpen}
-                  onOutlineOpenChange={onOutlineOpenChange}
-                  onShortcutsOpen={onShortcutsOpen}
-                  onOpenActions={onOpenActions}
-                />
-              </ErrorBoundary>
+              {/*
+                The Inbox is a MODE of this column, not a document: Quiet
+                Composer is a single-document shell, so the read-later list
+                cannot be a tab beside the article it opens. While an item
+                opened from the Inbox is the active document, its reader
+                controls lead the column's floating pill (`PillLeadingContext`,
+                consumed by the viewer pill and the editor's pill).
+              */}
+              {inboxOpen ? (
+                <ErrorBoundary name="Inbox">
+                  <InboxView />
+                </ErrorBoundary>
+              ) : (
+                <PillLeadingContext.Provider
+                  value={inboxActiveItem ? <InboxReaderControls path={inboxActiveItem} /> : null}
+                >
+                  <ErrorBoundary name="Editor">
+                    <Editor
+                      onNewNote={onNewNote}
+                      onNewProject={onNewProject}
+                      onOpenFolder={onOpenFolder}
+                      onOpenProject={onOpenProject}
+                      onOpenFile={onOpenFile}
+                      exportOpen={exportOpen}
+                      onExportOpenChange={onExportOpenChange}
+                      focusMode={editorFocusMode}
+                      outlineOpen={outlineOpen}
+                      onOutlineOpenChange={onOutlineOpenChange}
+                      onShortcutsOpen={onShortcutsOpen}
+                      onOpenActions={onOpenActions}
+                    />
+                  </ErrorBoundary>
+                </PillLeadingContext.Provider>
+              )}
             </div>
           </div>
         </div>

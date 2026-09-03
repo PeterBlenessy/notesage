@@ -41,6 +41,7 @@ import {
 import { ProjectRow } from "./ProjectRow";
 import { ChildRow } from "./ChildRow";
 import { useProjectInlineEdit } from "./useProjectInlineEdit";
+import { useInboxActions } from "@/components/inbox/useInboxActions";
 import { t } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
@@ -184,6 +185,9 @@ async function openFileEntry(entry: FileEntry): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
+  // Drop-to-file: an Inbox selection (or any sidebar file) dropped on a
+  // project row moves into that project, carrying its read-later state.
+  const { fileTo } = useInboxActions();
   const allProjects = useWorkspaceStore((s) => s.projects);
   const activeTabPath = useEditorStore((s) => {
     const id = s.activeTabId;
@@ -661,6 +665,7 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                           void commitProjectRename(project.path, value)
                         }
                         onCancelRename={cancelProjectRename}
+                        onDropFiles={(paths) => void fileTo(paths, project.path)}
                         registerRef={(el) =>
                           rowRefs.current.set(project.path, el)
                         }

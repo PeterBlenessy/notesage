@@ -30,6 +30,14 @@ import {
   REVEAL_IN_FINDER_EVENT,
   CYCLE_RECENT_EVENT,
 } from "@/lib/keyboard/shortcut-events";
+import { useInboxStore } from "@/stores/inbox-store";
+import { INBOX_STEP_EVENT } from "@/lib/keyboard/shortcut-events";
+
+/** Ask the mounted reader controls to open the neighbouring Inbox item. */
+function stepInbox(direction: 1 | -1) {
+  if (!useInboxStore.getState().activeItem) return;
+  window.dispatchEvent(new CustomEvent(INBOX_STEP_EVENT, { detail: { direction } }));
+}
 
 /** Callbacks supplied by App.tsx for chords that drive React-owned dialogs. */
 export interface ShortcutCallbacks {
@@ -162,6 +170,12 @@ export const shortcutActions: Record<string, ShortcutAction> = {
   "cycle-recent-previous": () => emitCycleRecent("previous"),
 
   // ── UI chrome ────────────────────────────────────────────────────────
+  // The Inbox (the Mac read-later list). ⌘↑ / ⌘↓ step between items while
+  // one is open; they are no-ops otherwise, so the chords stay free for the
+  // editor's own use when no Inbox item is active.
+  "open-inbox": () => useInboxStore.getState().toggleInbox(),
+  "inbox-next": () => stepInbox(1),
+  "inbox-previous": () => stepInbox(-1),
   "toggle-sidebar": () => {
     const settings = useSettingsStore.getState();
     settings.setSidebarPinned(!settings.sidebarPinned);

@@ -8,7 +8,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "k", "code": "KeyK", "mod": true, "shiftKey": false, "altKey": false }
+        {
+          "key": "k",
+          "code": "KeyK",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        }
       ]
     },
     {
@@ -18,8 +24,20 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "1", "code": "Digit1", "mod": true, "shiftKey": false, "altKey": false },
-        { "key": "!", "code": "Digit1", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "1",
+          "code": "Digit1",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        },
+        {
+          "key": "!",
+          "code": "Digit1",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -29,8 +47,20 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "2", "code": "Digit2", "mod": true, "shiftKey": false, "altKey": false },
-        { "key": "@", "code": "Digit2", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "2",
+          "code": "Digit2",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        },
+        {
+          "key": "@",
+          "code": "Digit2",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -40,8 +70,20 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "3", "code": "Digit3", "mod": true, "shiftKey": false, "altKey": false },
-        { "key": "#", "code": "Digit3", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "3",
+          "code": "Digit3",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        },
+        {
+          "key": "#",
+          "code": "Digit3",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -51,8 +93,20 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "4", "code": "Digit4", "mod": true, "shiftKey": false, "altKey": false },
-        { "key": "?", "code": "Digit4", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "4",
+          "code": "Digit4",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        },
+        {
+          "key": "?",
+          "code": "Digit4",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -62,7 +116,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "p", "code": "KeyP", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "p",
+          "code": "KeyP",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -72,7 +132,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "h", "code": "KeyH", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "h",
+          "code": "KeyH",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -82,7 +148,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "f", "code": "KeyF", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "f",
+          "code": "KeyF",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -92,7 +164,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "f", "code": "KeyF", "mod": true, "shiftKey": false, "altKey": false }
+        {
+          "key": "f",
+          "code": "KeyF",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        }
       ]
     },
     {
@@ -102,7 +180,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "w", "code": "KeyW", "mod": true, "shiftKey": false, "altKey": false }
+        {
+          "key": "w",
+          "code": "KeyW",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        }
       ]
     },
     {
@@ -113,7 +197,13 @@
       "phase": "capture",
       "firesWhileTyping": true,
       "chords": [
-        { "key": ".", "code": "Period", "mod": true, "shiftKey": false, "altKey": false }
+        {
+          "key": ".",
+          "code": "Period",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        }
       ]
     },
     {
@@ -123,7 +213,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "e", "code": "KeyE", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "e",
+          "code": "KeyE",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -133,7 +229,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "o", "code": "KeyO", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "o",
+          "code": "KeyO",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -143,7 +245,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "l", "code": "KeyL", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "l",
+          "code": "KeyL",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -153,7 +261,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "a", "code": "KeyA", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "a",
+          "code": "KeyA",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -163,7 +277,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "r", "code": "KeyR", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "r",
+          "code": "KeyR",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -173,7 +293,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "k", "code": "KeyK", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "k",
+          "code": "KeyK",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -183,7 +309,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": ",", "code": "Comma", "mod": true, "shiftKey": false, "altKey": false }
+        {
+          "key": ",",
+          "code": "Comma",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        }
       ]
     },
     {
@@ -193,7 +325,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "t", "code": "KeyT", "mod": true, "shiftKey": false, "altKey": false }
+        {
+          "key": "t",
+          "code": "KeyT",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        }
       ]
     },
     {
@@ -204,7 +342,13 @@
       "phase": "capture",
       "firesWhileTyping": false,
       "chords": [
-        { "key": "n", "code": "KeyN", "mod": true, "shiftKey": false, "altKey": false }
+        {
+          "key": "n",
+          "code": "KeyN",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        }
       ]
     },
     {
@@ -215,7 +359,13 @@
       "phase": "capture",
       "firesWhileTyping": false,
       "chords": [
-        { "key": "n", "code": "KeyN", "mod": true, "shiftKey": true, "altKey": false }
+        {
+          "key": "n",
+          "code": "KeyN",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -225,7 +375,13 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "o", "code": "KeyO", "mod": true, "shiftKey": false, "altKey": false }
+        {
+          "key": "o",
+          "code": "KeyO",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        }
       ]
     },
     {
@@ -235,7 +391,14 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "Tab", "code": "Tab", "ctrlKey": true, "metaKey": false, "shiftKey": false, "altKey": false }
+        {
+          "key": "Tab",
+          "code": "Tab",
+          "ctrlKey": true,
+          "metaKey": false,
+          "shiftKey": false,
+          "altKey": false
+        }
       ]
     },
     {
@@ -245,7 +408,14 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "Tab", "code": "Tab", "ctrlKey": true, "metaKey": false, "shiftKey": true, "altKey": false }
+        {
+          "key": "Tab",
+          "code": "Tab",
+          "ctrlKey": true,
+          "metaKey": false,
+          "shiftKey": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -255,7 +425,12 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "code": "KeyP", "mod": true, "altKey": true, "shiftKey": false }
+        {
+          "code": "KeyP",
+          "mod": true,
+          "altKey": true,
+          "shiftKey": false
+        }
       ]
     },
     {
@@ -265,7 +440,12 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "code": "KeyR", "mod": true, "altKey": true, "shiftKey": false }
+        {
+          "code": "KeyR",
+          "mod": true,
+          "altKey": true,
+          "shiftKey": false
+        }
       ]
     },
     {
@@ -275,8 +455,16 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "+", "mod": true, "altKey": false },
-        { "key": "=", "mod": true, "altKey": false }
+        {
+          "key": "+",
+          "mod": true,
+          "altKey": false
+        },
+        {
+          "key": "=",
+          "mod": true,
+          "altKey": false
+        }
       ]
     },
     {
@@ -286,7 +474,12 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "-", "mod": true, "shiftKey": false, "altKey": false }
+        {
+          "key": "-",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        }
       ]
     },
     {
@@ -296,7 +489,12 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "0", "mod": true, "shiftKey": false, "altKey": false }
+        {
+          "key": "0",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        }
       ]
     },
     {
@@ -307,7 +505,10 @@
       "phase": "capture",
       "firesWhileTyping": true,
       "chords": [
-        { "key": "Escape", "code": "Escape" }
+        {
+          "key": "Escape",
+          "code": "Escape"
+        }
       ]
     },
     {
@@ -317,7 +518,60 @@
       "scope": "global",
       "firesWhileTyping": true,
       "chords": [
-        { "code": "KeyI", "mod": true, "altKey": true, "shiftKey": false }
+        {
+          "code": "KeyI",
+          "mod": true,
+          "altKey": true,
+          "shiftKey": false
+        }
+      ]
+    },
+    {
+      "id": "open-inbox",
+      "label": "Open Inbox",
+      "display": "⌘⇧I",
+      "scope": "global",
+      "firesWhileTyping": false,
+      "chords": [
+        {
+          "key": "i",
+          "code": "KeyI",
+          "mod": true,
+          "shiftKey": true,
+          "altKey": false
+        }
+      ]
+    },
+    {
+      "id": "inbox-next",
+      "label": "Next Inbox item",
+      "display": "⌘↓",
+      "scope": "global",
+      "firesWhileTyping": false,
+      "chords": [
+        {
+          "key": "ArrowDown",
+          "code": "ArrowDown",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        }
+      ]
+    },
+    {
+      "id": "inbox-previous",
+      "label": "Previous Inbox item",
+      "display": "⌘↑",
+      "scope": "global",
+      "firesWhileTyping": false,
+      "chords": [
+        {
+          "key": "ArrowUp",
+          "code": "ArrowUp",
+          "mod": true,
+          "shiftKey": false,
+          "altKey": false
+        }
       ]
     }
   ]

@@ -106,6 +106,8 @@ Two independent ways to summon the FloatingCommandBar in Quiet Composer: `⌘K` 
 | Find files | `⌘⇧F` | `⌘⇧F` | Classic: opens command palette in file-search mode. Quiet Composer: focuses the command bar with the `:file ` verb prefix → FileMode (filename search backed by the SQLite document index). PRD `2026-04-28-cmd-bar-verb-prefixes`. |
 | Toggle sidebar | `⌘⇧L` | `⌘⇧L` | Toggle the sidebar pin (`settings.sidebarPinned`). Internally calls `setSidebarPinned`; user-facing label is "show/hide" |
 | Focus mode | `⌘.` | `⌘.` | Toggle distraction-free focus mode |
+| Open Inbox | `⌘⇧I` | `⌘⇧I` | Toggle the Inbox (read-later list) in the document column. Inside the list: `j`/`k` or ↓/↑ move, ⇧ extends, ⌘A selects all, ↩ opens, `e` files to the last-used project, `p` pins, ⌘⌫ moves to the Trash. See docs/features/inbox.md |
+| Next / previous Inbox item | `⌘↓` / `⌘↑` | `⌘↓` `⌘↑` | While an item opened from the Inbox is the active document; no-ops otherwise |
 | Open Tasks | `⌘1` / `⌘⇧1` | `⌘!` | Classic: opens Actions dashboard. Quiet Composer: focuses the command bar with `!` prefix → TaskMode |
 | References (was Mentions) | `⌘2` / `⌘⇧2` | `⌘@` | Classic: command palette in mentions mode. Quiet Composer: focuses the command bar with `@` prefix → ReferenceMode (files / people / comments) |
 | Tags | `⌘3` / `⌘⇧3` | `⌘#` | Classic: command palette in tags mode. Quiet Composer: focuses the command bar with `#` prefix → TagMode |

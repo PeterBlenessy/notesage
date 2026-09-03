@@ -239,6 +239,18 @@ interface SettingsStore {
    */
   sidebarRecentCap: number;
   /**
+   * The Inbox view's layout — the same list/gallery choice the phone keeps,
+   * remembered globally like it is there.
+   */
+  inboxLayout: "list" | "gallery";
+  /** Inbox list rows without the excerpt, one line per item. */
+  inboxCondensed: boolean;
+  /** Inbox gallery card size: six, four or three columns at a typical width. */
+  inboxGallerySize: "small" | "medium" | "large";
+  setInboxLayout: (layout: "list" | "gallery") => void;
+  setInboxCondensed: (condensed: boolean) => void;
+  setInboxGallerySize: (size: "small" | "medium" | "large") => void;
+  /**
    * Sidebar composition (ui-refresh #35). Maximum number of rows shown in
    * the quiet-composer sidebar Tags section. Clamped to [0, 15]. Default 5.
    * `0` hides the section entirely — the slider is the visibility control.
@@ -501,6 +513,9 @@ export const useSettingsStore = create<SettingsStore>()(
       showTitleBar: false,
       locale: null,
       sidebarRecentCap: 5,
+      inboxLayout: "list",
+      inboxCondensed: false,
+      inboxGallerySize: "medium",
       sidebarTagsCap: 5,
       sidebarMentionsCap: 5,
       showInTray: true,
@@ -880,6 +895,10 @@ export const useSettingsStore = create<SettingsStore>()(
         applyLocale(locale);
       },
 
+      setInboxLayout: (layout) => set({ inboxLayout: layout }),
+      setInboxCondensed: (condensed) => set({ inboxCondensed: condensed }),
+      setInboxGallerySize: (size) => set({ inboxGallerySize: size }),
+
       setSidebarRecentCap: (n: number) => {
         // Clamp to [3, 15] per PRD; round so the slider value stays integer.
         set({ sidebarRecentCap: Math.round(Math.max(3, Math.min(15, n))) });
@@ -955,7 +974,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 26,
+      version: 27,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -1234,6 +1253,13 @@ export const useSettingsStore = create<SettingsStore>()(
           // directly in the Rust `web_search` command). Drop the persisted key
           // so the name is free for future reuse.
           delete state.searchProvider;
+        }
+        if (version < 27) {
+          // The desktop Inbox (read-later list) arrives with three view
+          // preferences; existing installs open it in the list layout.
+          if (state.inboxLayout !== "list" && state.inboxLayout !== "gallery") state.inboxLayout = "list";
+          if (typeof state.inboxCondensed !== "boolean") state.inboxCondensed = false;
+          if (!["small", "medium", "large"].includes(state.inboxGallerySize as string)) state.inboxGallerySize = "medium";
         }
         if (version < 26) {
           // Also drop the key itself — the picker and the alpha update path

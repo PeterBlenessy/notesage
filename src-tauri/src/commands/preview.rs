@@ -149,12 +149,12 @@ pub async fn render_markdown_fragment(markdown: String, theme: String) -> Result
 /// Lives in the APP crate rather than in `notesage-capture` beside the builder
 /// whose output it repairs. Two reasons, and the second is the deciding one:
 /// the Share Extension never repairs anything (this is a reader concern, and
-/// the extension only writes), and `notesage-capture` is deliberately not
-/// linked into desktop builds — it carries a Readability stack, and "desktop
-/// builds link nothing new". Putting fifteen bytes of string handling there
-/// would have meant either that whole stack on desktop or a repair that only
-/// worked on one platform. It needs no dependencies, so it belongs here where
-/// both readers can reach it.
+/// the extension only writes), and at the time `notesage-capture` was not
+/// linked into desktop builds. That line has since moved: the desktop Inbox
+/// links the crate for its pure readers (`article_card_meta`,
+/// `article_lead_image`), accepting the Readability stack in the binary. The
+/// repair stays here regardless — it needs no dependencies, and both readers
+/// reach it.
 ///
 /// Files written before that fix are still on disk in quirks mode, and the
 /// image sweep will not touch them again — it returns early once no remote
@@ -234,11 +234,37 @@ pub async fn article_source_url(content: String) -> Result<Option<String>, Strin
 
 /// What a library list row shows for a saved article (#836), read back out of
 /// the capture's own header. `None` for a document that is not a capture.
-/// iOS-only, like `article_source_url`: the capture crate is an iOS dependency.
-#[cfg(target_os = "ios")]
+/// Both platforms: the desktop Inbox reads the same header.
 #[tauri::command]
 pub async fn article_card_meta(content: String) -> Result<Option<notesage_capture::CardMeta>, String> {
     Ok(notesage_capture::article_card_meta(&content))
+}
+
+/// The desktop Inbox's row header, by PATH. A capture is a multi-megabyte
+/// document once its images are inlined, and the list reads every row; reading
+/// the file here means four strings cross IPC instead of the document. Mirrors
+/// iOS's `ios_article_card_meta`. `None` for a file that is not a capture.
+#[tauri::command]
+pub async fn inbox_card_meta(path: String) -> Result<Option<notesage_capture::CardMeta>, String> {
+    let html = tokio::fs::read_to_string(&path)
+        .await
+        .map_err(|e| format!("Failed to read {path}: {e}"))?;
+    Ok(notesage_capture::article_card_meta(&html))
+}
+
+/// The article's lead image, raw bytes, for the desktop Inbox thumbnail —
+/// the same picture the phone's list shows (`ios_article_thumbnail`). A
+/// string scan, not a parse, so it is cheap even on a document that inlined a
+/// dozen photos. `Err` when the capture holds no inline image.
+#[tauri::command]
+pub async fn article_lead_image(path: String) -> Result<tauri::ipc::Response, String> {
+    let html = tokio::fs::read_to_string(&path)
+        .await
+        .map_err(|e| format!("Failed to read {path}: {e}"))?;
+    match notesage_capture::article_lead_image(&html) {
+        Some(bytes) => Ok(tauri::ipc::Response::new(bytes)),
+        None => Err("no inline image in this article".into()),
+    }
 }
 
 /// Add the masthead to an article saved before captures kept one (#829).

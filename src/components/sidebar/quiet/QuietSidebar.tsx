@@ -32,6 +32,7 @@ import { FoldersSection } from "./FoldersSection";
 import { RecentSection } from "./RecentSection";
 import { TagsSection } from "./TagsSection";
 import { MentionsSection } from "./MentionsSection";
+import { InboxSection } from "@/components/sidebar/quiet/InboxSection";
 import { t } from "@/lib/i18n";
 
 /**
@@ -240,7 +241,8 @@ export function QuietSidebar({
       {/* Scroll body — everything below the header scrolls; the header stays put. */}
       <div className="flex flex-col gap-4 min-h-0 flex-1 overflow-y-auto -mr-2 pr-2">
         {filter.length > 0 && <FilterBadge filter={filter} onClear={() => setFilter("")} />}
-        <PinnedSection filter={filter} />
+        <InboxSection filter={filter} />
+    <PinnedSection filter={filter} />
         <ProjectsSection filter={filter} onAdd={handleAddProject} />
         {/* Sidebar-simplification task #10 — Folders section sits
            between Projects and Recent. Self-hides when the user has no

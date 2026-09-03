@@ -49,6 +49,14 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "pr
 futures = "0.3"
 bytes = "1"
 dirs = "5"
+# Recoverable deletion for the Inbox (a read-later item is thrown away, not
+# destroyed): Finder's Trash on macOS, the platform equivalent elsewhere.
+trash = "5"
+# The capture crate's pure readers (card header, lead image) serve the desktop
+# Inbox list too. Only the readers are called from desktop code — see the
+# note on `splice_article_header` in commands/preview.rs for the line that is
+# still drawn around the Readability stack.
+notesage-capture = { path = "crates/notesage-capture" }
 tauri-plugin-window-state = "2.4.1"
 
 # PDF export (Phase 4)
@@ -163,7 +171,6 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 # `2026-06-28-ios-mobile-app.md` § Non-Goals) — there is nothing to lose.
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri-plugin-notesage-ios = { path = "crates/tauri-plugin-notesage-ios" }
-notesage-capture = { path = "crates/notesage-capture" }
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 tauri-plugin-aptabase = "1.0.0"

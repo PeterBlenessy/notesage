@@ -116,6 +116,7 @@ note-sage/
 │   ├── MobileApp.tsx       # iOS root — library reader + note editor (#586) + share capture (Onboarding / LibraryBrowser / Reader); no desktop hooks
 │   ├── components/
 │   │   ├── mobile/         # iOS shell — Onboarding.tsx, LibraryBrowser.tsx, FileRow.tsx, Reader.tsx, markdown-components.tsx
+│   │   ├── inbox/          # Desktop Inbox — InboxView.tsx, InboxRow.tsx, InboxCard.tsx, InboxItemMenu.tsx, InboxReaderControls.tsx, useInboxActions.ts (docs/features/inbox.md)
 │   │   ├── QuietLayout.tsx # Quiet Composer layout — the only desktop shell (Classic Layout removed in #325; PRD 2026-04-21-ui-refresh / 2026-05-22-classic-layout-removal)
 │   │   ├── ErrorBoundary.tsx # Reusable error boundary (wraps editor, chat, sidebar)
 │   │   ├── editor/         # Tiptap editor components
@@ -277,6 +278,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `message-queue-store` | Per-conversation FIFO of user messages sent while that conversation's run was in flight — sends no longer interrupt ongoing agent work; enqueued by `useAIOperations.sendChatMessage`, rendered as the command bar's queued strip, dispatched by `useMessageQueueDrain` (fresh thread) when the run finishes | None (deliberate — a queued follow-up to a run that died with the app must not auto-fire against stale context on next launch) |
 | `sidebar-status-slot-store` | DOM node of the QuietSidebar footer's status slot so the editor's `StatusBar` can portal itself there (`null` when the sidebar is hidden) | None |
 | `usage-store` | Per-connection `ProviderUsageSnapshot` (context used/size, cost, rate-limit state, per-turn tokens) with `source`/`confidence` provenance. Written through from the ACP `usage_update` / `acp-turn-usage` listeners (`source: 'acp'`) and the local estimation hook (`source: 'estimate'`). Read by the command-bar usage popover and the Settings connection-card detail | None (deliberate — usage is live state; stale persisted quota is worse than none) |
+| `inbox-store` | Desktop Inbox (docs/features/inbox.md): the document-column mode flag, the `Inbox/` listing, the shared `reading-progress.json` state, article headers, selection, and the file / trash actions | None (the folder and its sidecar are the truth; view preferences live in `settings-store`) |
 | `mobile-store` | iOS shell only: library `grantState` (`unknown`/`ungranted`/`granted`/`stale`), `libraryName`, folder breadcrumb (`folderStack`), `openDoc`, `recentlyRead`. The grant is authoritative on the backend (resolved via `refreshGrant` at mount) | Partial (`recentlyRead` only) |
 
 ### Styling

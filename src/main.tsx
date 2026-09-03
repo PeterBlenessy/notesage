@@ -13,6 +13,7 @@ import {
 } from "@/stores/settings-store";
 import { useLocalAIStore } from "@/stores/local-ai-store";
 import { useConnectionsStore } from "@/stores/connections-store";
+import { useInboxStore } from "@/stores/inbox-store";
 import { useFlagStore } from "@/stores/flag-store";
 
 // Point Excalidraw at the locally-bundled Latin font families (copied to
@@ -48,6 +49,7 @@ if (import.meta.env.DEV) {
 // Runs at module load time, guaranteed before any WebDriver session connects.
 if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__E2E_WORKSPACE_STORE__ = useWorkspaceStore;
+  (window as unknown as Record<string, unknown>).__E2E_INBOX_STORE__ = useInboxStore;
   (window as unknown as Record<string, unknown>).__E2E_EDITOR_STORE__ = useEditorStore;
   (window as unknown as Record<string, unknown>).__E2E_SETTINGS_STORE__ = useSettingsStore;
   (window as unknown as Record<string, unknown>).__E2E_LOCAL_AI_STORE__ = useLocalAIStore;
