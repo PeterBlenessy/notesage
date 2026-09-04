@@ -157,6 +157,12 @@ describe("mobile read-only browse → read flow", () => {
       constructor(...ranges: Range[]) {
         this.ranges = ranges;
       }
+      add(r: Range) {
+        this.ranges.push(r);
+      }
+      clear() {
+        this.ranges = [];
+      }
     }
     const highlights = new Map<string, FakeHighlight>();
     Object.defineProperty(window, "CSS", { value: { highlights }, configurable: true });
@@ -183,9 +189,42 @@ describe("mobile read-only browse → read flow", () => {
       expect(document.querySelectorAll("mark.ns-speech-para").length).toBe(0);
       // Another document takes over: the note is cleared.
       useMobileStore.setState({ speech: { relPath: "other.md", title: "O", playing: true, index: 0, total: 1, rate: 1, language: "en" } });
-      await waitFor(() => expect(highlights.size).toBe(0));
+      await waitFor(() => expect(text("ns-speech-para")).toBe(""));
     } finally {
       stop();
+      Object.defineProperty(window, "CSS", { value: undefined, configurable: true });
+      Object.defineProperty(window, "Highlight", { value: undefined, configurable: true });
+    }
+  });
+
+  it("highlights a plain-text note being read aloud too (#891)", async () => {
+    class FakeHighlight {
+      ranges: Range[] = [];
+      add(r: Range) {
+        this.ranges.push(r);
+      }
+      clear() {
+        this.ranges = [];
+      }
+    }
+    const highlights = new Map<string, FakeHighlight>();
+    Object.defineProperty(window, "CSS", { value: { highlights }, configurable: true });
+    Object.defineProperty(window, "Highlight", { value: FakeHighlight, configurable: true });
+    try {
+      setMockInvokeHandler("ios_list_directory", () => [
+        { name: "notes.txt", path: "notes.txt", is_directory: false, hidden: false },
+      ]);
+      setMockInvokeHandler("ios_stat_file", () => ({ sizeBytes: 40 }));
+      setMockInvokeHandler("ios_read_file", () => "First line here.\n\nSecond paragraph here.");
+      renderWithProviders(<Shell />);
+      fireEvent.click(await screen.findByText("notes.txt"));
+      await screen.findByText(/Second paragraph here/);
+      useMobileStore.setState({
+        speech: { relPath: "notes.txt", title: "notes", playing: true, index: 1, total: 2, rate: 1, language: "en" },
+      });
+      const text = (name: string) => highlights.get(name)?.ranges.map((r) => r.toString()).join("") ?? null;
+      await waitFor(() => expect(text("ns-speech-para")).toBe("Second paragraph here."));
+    } finally {
       Object.defineProperty(window, "CSS", { value: undefined, configurable: true });
       Object.defineProperty(window, "Highlight", { value: undefined, configurable: true });
     }

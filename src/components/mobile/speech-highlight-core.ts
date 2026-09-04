@@ -49,10 +49,25 @@ export function installSpeechHighlight(root: Node, options: SpeechHighlightOptio
   var built = false;
   var current = -1;
   var wraps: HTMLElement[] = [];
-  var cssNs = win && (win as unknown as { CSS?: { highlights?: unknown } }).CSS;
-  var HighlightCtor = win && (win as unknown as { Highlight?: new (...r: Range[]) => unknown }).Highlight;
+  interface HighlightLike { add(r: Range): void; clear(): void }
+  interface HighlightRegistry { set(n: string, h: HighlightLike): void; get(n: string): HighlightLike | undefined; delete(n: string): void }
+  var cssNs = win && (win as unknown as { CSS?: { highlights?: HighlightRegistry } }).CSS;
+  var HighlightCtor = win && (win as unknown as { Highlight?: new () => HighlightLike }).Highlight;
   var useHighlights = !!(cssNs && cssNs.highlights && typeof HighlightCtor === "function");
   var allowWrap = options.allowWrap !== false;
+  // One Highlight object per name, its ranges swapped in place: WebKit does
+  // not always repaint the old ranges when the registry entry is REPLACED,
+  // and the previous paragraph's last word stayed lit (seen on the
+  // simulator, 2026-09-04). Mutating the object it already tracks does.
+  function highlightNamed(name: string): HighlightLike {
+    var registry = (cssNs as { highlights: HighlightRegistry }).highlights;
+    var h = registry.get(name);
+    if (!h) {
+      h = new (HighlightCtor as new () => HighlightLike)();
+      registry.set(name, h);
+    }
+    return h;
+  }
 
   function style() {
     if (!options.injectStyle || doc.getElementById("ns-speech-style")) return;
@@ -132,9 +147,8 @@ export function installSpeechHighlight(root: Node, options: SpeechHighlightOptio
 
   function clearMarks() {
     if (useHighlights) {
-      var hs = (cssNs as { highlights: { delete(n: string): void } }).highlights;
-      hs.delete("ns-speech-para");
-      hs.delete("ns-speech-word");
+      highlightNamed("ns-speech-para").clear();
+      highlightNamed("ns-speech-word").clear();
       return;
     }
     for (var i = wraps.length - 1; i >= 0; i--) {
@@ -172,7 +186,9 @@ export function installSpeechHighlight(root: Node, options: SpeechHighlightOptio
   function paint(name: string, range: Range | null) {
     if (!range) return;
     if (useHighlights) {
-      (cssNs as { highlights: { set(n: string, h: unknown): void } }).highlights.set(name, new (HighlightCtor as new (...r: Range[]) => unknown)(range));
+      var h = highlightNamed(name);
+      h.clear();
+      h.add(range);
       return;
     }
     if (allowWrap) wrap(range, name);

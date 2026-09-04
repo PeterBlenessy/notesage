@@ -764,9 +764,15 @@ export function Reader() {
   // (React owns that DOM — no wrapping), scrolling the reader's own scroller.
   // Re-installed when the rendered article changes.
   const inAppHighlight = kind === "markdown" || kind === "text";
+  // Keyed on the CONTENT, not on `speechSource`'s identity (which follows
+  // every state change, theme flips included): the extraction is a regex
+  // pass over the whole note and must run only when the note changed.
+  const inAppSourceKey = state.status === "text" ? state.content : markdownHtml;
+  const speechSourceRef = useRef(speechSource);
+  speechSourceRef.current = speechSource;
   const inAppSource = useMemo(
-    () => (inAppHighlight && speechMine ? speechSource() : ""),
-    [inAppHighlight, speechMine, speechSource],
+    () => (inAppHighlight && speechMine && inAppSourceKey !== null ? speechSourceRef.current() : ""),
+    [inAppHighlight, speechMine, inAppSourceKey],
   );
   const highlightRef = useRef<SpeechHighlight | null>(null);
   const speechIndexRef = useRef(speechIndex);
@@ -782,8 +788,16 @@ export function Reader() {
         if (!scroller || typeof range.getBoundingClientRect !== "function") return;
         const rect = range.getBoundingClientRect();
         const srect = scroller.getBoundingClientRect();
-        if (rect.top >= srect.top + srect.height * 0.15 && rect.bottom <= srect.top + srect.height * 0.85) return;
-        scroller.scrollTo({ top: scroller.scrollTop + (rect.top - srect.top) - srect.height * 0.3, behavior: "smooth" });
+        // The scroller pads for the floating chrome (`CONTENT_INSETS`): the
+        // readable band is the box minus that padding, or a paragraph
+        // counts as "in view" while sitting under the player.
+        const cs = window.getComputedStyle(scroller);
+        const padTop = parseFloat(cs.paddingTop) || 0;
+        const padBottom = parseFloat(cs.paddingBottom) || 0;
+        const top = srect.top + padTop;
+        const height = Math.max(1, srect.height - padTop - padBottom);
+        if (rect.top >= top + height * 0.15 && rect.bottom <= top + height * 0.85) return;
+        scroller.scrollTo({ top: scroller.scrollTop + (rect.top - top) - height * 0.3, behavior: "smooth" });
       },
     });
     api.setParagraphs(splitSpeechParagraphs(inAppSource));
@@ -793,9 +807,10 @@ export function Reader() {
       api.clear();
       if (highlightRef.current === api) highlightRef.current = null;
     };
-    // `articleInnerHtml` and `state.status`: the DOM under `articleRef` was
-    // replaced, so the text index must be rebuilt on the new nodes.
-  }, [inAppHighlight, speechMine, inAppSource, articleInnerHtml, state.status]);
+    // `articleInnerHtml` / `inAppSourceKey`: the DOM under `articleRef` was
+    // replaced (a markdown re-render, new text content), so the text index
+    // must be rebuilt on the new nodes.
+  }, [inAppHighlight, speechMine, inAppSource, articleInnerHtml, inAppSourceKey]);
   useEffect(() => {
     highlightRef.current?.position(speechIndex);
   }, [speechIndex]);
