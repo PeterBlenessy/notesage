@@ -1523,3 +1523,13 @@ html[data-cmd-bar-resizing="true"] [data-cmd-bar] {
   overflow-x: auto;
   max-width: 100%;
 }
+
+/* iOS reader: the read-aloud highlight for markdown and plain-text notes
+   (#891) — the same colours the injected page agent uses for saved pages. */
+::highlight(ns-speech-para) {
+  background: rgba(255, 213, 79, 0.28);
+}
+::highlight(ns-speech-word) {
+  background: rgba(255, 152, 0, 0.9);
+  color: #000;
+}

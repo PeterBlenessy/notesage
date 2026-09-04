@@ -39,6 +39,7 @@ import { withFindAgent } from "./html-find-agent";
 import { withLinkAgent } from "./html-link-agent";
 import { withSpeechAgent } from "./html-speech-agent";
 import { onSpeechRange } from "@/lib/speech-controller";
+import { installSpeechHighlight, type SpeechHighlight } from "./speech-highlight-core";
 import { splitSpeechParagraphs } from "./speech-text";
 import { documentToSpeechText } from "./speech-text";
 import { SpeechPlayerBar } from "./SpeechPlayerBar";
@@ -757,6 +758,69 @@ export function Reader() {
       postToPage({ type: "position", index: range.index, location: range.location, length: range.length });
     });
   }, [kind, speechSurface, speechMine, relPath, postToPage]);
+
+  // The same highlight for markdown and plain text (#891), in the app's own
+  // DOM: `installSpeechHighlight` on the article element, Highlight API only
+  // (React owns that DOM — no wrapping), scrolling the reader's own scroller.
+  // Re-installed when the rendered article changes.
+  const inAppHighlight = kind === "markdown" || kind === "text";
+  // Keyed on the CONTENT, not on `speechSource`'s identity (which follows
+  // every state change, theme flips included): the extraction is a regex
+  // pass over the whole note and must run only when the note changed.
+  const inAppSourceKey = state.status === "text" ? state.content : markdownHtml;
+  const speechSourceRef = useRef(speechSource);
+  speechSourceRef.current = speechSource;
+  const inAppSource = useMemo(
+    () => (inAppHighlight && speechMine && inAppSourceKey !== null ? speechSourceRef.current() : ""),
+    [inAppHighlight, speechMine, inAppSourceKey],
+  );
+  const highlightRef = useRef<SpeechHighlight | null>(null);
+  const speechIndexRef = useRef(speechIndex);
+  speechIndexRef.current = speechIndex;
+  useEffect(() => {
+    if (!inAppHighlight || !speechMine || !inAppSource) return;
+    const root = articleRef.current;
+    if (!root) return;
+    const api = installSpeechHighlight(root, {
+      allowWrap: false,
+      reveal: (range) => {
+        const scroller = scrollerRef.current;
+        if (!scroller || typeof range.getBoundingClientRect !== "function") return;
+        const rect = range.getBoundingClientRect();
+        const srect = scroller.getBoundingClientRect();
+        // The scroller pads for the floating chrome (`CONTENT_INSETS`): the
+        // readable band is the box minus that padding, or a paragraph
+        // counts as "in view" while sitting under the player.
+        const cs = window.getComputedStyle(scroller);
+        const padTop = parseFloat(cs.paddingTop) || 0;
+        const padBottom = parseFloat(cs.paddingBottom) || 0;
+        const top = srect.top + padTop;
+        const height = Math.max(1, srect.height - padTop - padBottom);
+        if (rect.top >= top + height * 0.15 && rect.bottom <= top + height * 0.85) return;
+        scroller.scrollTo({ top: scroller.scrollTop + (rect.top - top) - height * 0.3, behavior: "smooth" });
+      },
+    });
+    api.setParagraphs(splitSpeechParagraphs(inAppSource));
+    api.position(speechIndexRef.current);
+    highlightRef.current = api;
+    return () => {
+      api.clear();
+      if (highlightRef.current === api) highlightRef.current = null;
+    };
+    // `articleInnerHtml` / `inAppSourceKey`: the DOM under `articleRef` was
+    // replaced (a markdown re-render, new text content), so the text index
+    // must be rebuilt on the new nodes.
+  }, [inAppHighlight, speechMine, inAppSource, articleInnerHtml, inAppSourceKey]);
+  useEffect(() => {
+    highlightRef.current?.position(speechIndex);
+  }, [speechIndex]);
+  useEffect(() => {
+    if (!inAppHighlight || !speechMine) return;
+    return onSpeechRange((range) => {
+      if (range.relPath !== relPath) return;
+      highlightRef.current?.position(range.index, range.location, range.length);
+    });
+  }, [inAppHighlight, speechMine, relPath]);
 
   const startListening = useCallback(() => {
     const text = speechSource();

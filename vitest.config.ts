@@ -51,6 +51,10 @@ export default defineConfig({
       all: true,
       include: ['src/**/*.{ts,tsx}'],
       exclude: [
+        // Serialised into saved pages with `Function.prototype.toString()`
+        // (html-speech-agent.ts): istanbul's counters would ride along and
+        // reference a scope that does not exist inside the page.
+        'src/components/mobile/speech-highlight-core.ts',
         'src/**/*.test.{ts,tsx}',
         'src/**/__tests__/**',
         'src/test/**',            // test-only infrastructure (mocks, harness)
