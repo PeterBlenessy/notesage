@@ -10,6 +10,7 @@ import {
   setMockInvokeHandler,
 } from "@/test/component-harness";
 import { useMobileStore } from "@/stores/mobile-store";
+import { clearArticleMetaCache } from "@/lib/article-meta-cache";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 import { Reader } from "@/components/mobile/Reader";
 import { Onboarding } from "@/components/mobile/Onboarding";
@@ -114,7 +115,11 @@ beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
   useMobileStore.getState().reset();
   invokeMock.mockClear();
-  useMobileStore.setState({ grantState: "granted", libraryName: "Notesage" });
+  useMobileStore.setState({ grantState: "granted", libraryName: "Notesage", speech: null, speechRate: 1.0 });
+  // Handlers persist across tests; a header mocked by one test would rename
+  // every article row in the next (the list-playback test does exactly that).
+  setMockInvokeHandler("ios_article_card_meta", () => null);
+  clearArticleMetaCache();
 });
 
 describe("mobile read-only browse → read flow", () => {
@@ -948,54 +953,42 @@ describe("HTML reports", () => {
     return await screen.findByTitle(fileName);
   };
 
-  it("opened with Listen, starts reading aloud once the text is in, once (2026-09-04)", async () => {
-    const started: unknown[] = [];
+  it("Listen on a row reads aloud in place; opening the article and going back keeps it playing", async () => {
+    const started: Array<{ text: string }> = [];
     setMockInvokeHandler("ios_speech_start", (args) => {
-      started.push(args);
+      started.push(args as { text: string });
       return { language: "en" };
+    });
+    const stops: number[] = [];
+    setMockInvokeHandler("ios_speech_stop", () => {
+      stops.push(1);
     });
     setMockInvokeHandler("ios_article_thumbnail", () => {
       throw new Error("no image");
     });
-    setMockInvokeHandler(
-      "ios_read_file",
-      () => "<html><body><h1>Q3</h1><p>Revenue grew.</p></body></html>",
-    );
+    setMockInvokeHandler("ios_article_card_meta", () => ({ title: "Q3 report", excerpt: null, minutes: 2, site: "x" }));
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "report.html", path: "report.html", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("ios_read_file", () => "<html><body><h1>Q3</h1><p>Revenue grew.</p></body></html>");
     setMockInvokeHandler("html_preview_register", () => {});
     setMockInvokeHandler("html_preview_unregister", () => {});
     setMockInvokeHandler("article_source_url", () => null);
-    useMobileStore.getState().openDocument({ relPath: "Inbox/story.html", name: "story.html", listen: true });
     renderWithProviders(<Shell />);
+    fireEvent.click(await screen.findByRole("button", { name: "Listen" }));
     await waitFor(() => expect(started).toHaveLength(1));
-    expect((started[0] as { text: string }).text).toContain("Revenue grew");
-    // Consumed: a re-render, or a later back/forward, must not replay.
-    expect(useMobileStore.getState().openDoc?.listen).toBeUndefined();
-    await new Promise((r) => setTimeout(r, 20));
+    expect(started[0].text).toContain("Revenue grew");
+    // Still the list — nothing opened.
+    expect(useMobileStore.getState().openDoc).toBeNull();
+    expect(await screen.findByRole("button", { name: "Pause" })).toBeTruthy();
+    // Open the article: the session is untouched; go back: still untouched.
+    useMobileStore.getState().openDocument({ relPath: "report.html", name: "report.html" });
+    await screen.findByTitle("report.html");
+    expect(useMobileStore.getState().speech?.relPath).toBe("report.html");
+    useMobileStore.getState().closeDocument();
+    expect(await screen.findByRole("button", { name: "Pause" })).toBeTruthy();
+    expect(stops).toHaveLength(0);
     expect(started).toHaveLength(1);
-  });
-
-  it("a link followed before Listen started does not carry the request into Back", () => {
-    useMobileStore.getState().openDocument({ relPath: "Inbox/story.html", name: "story.html", listen: true });
-    useMobileStore.getState().openLinkedDocument({ relPath: "Inbox/next.html", name: "next.html" });
-    expect(useMobileStore.getState().docStack[0]?.listen).toBeUndefined();
-  });
-
-  it("opened with Listen on a page that cannot be read, says so instead of staying silent", async () => {
-    const started: unknown[] = [];
-    setMockInvokeHandler("ios_speech_start", (args) => {
-      started.push(args);
-      return { language: "en" };
-    });
-    setMockInvokeHandler("ios_read_file", () => {
-      throw new Error("not downloaded");
-    });
-    setMockInvokeHandler("ios_ensure_downloaded", () => "failed");
-    useMobileStore.getState().openDocument({ relPath: "Inbox/story.html", name: "story.html", listen: true });
-    renderWithProviders(<Shell />);
-    const { toast } = await import("sonner");
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Nothing to read aloud in this document"));
-    expect(started).toHaveLength(0);
-    expect(useMobileStore.getState().openDoc?.listen).toBeUndefined();
   });
 
   it("renders an exported report instead of showing its markup as text", async () => {

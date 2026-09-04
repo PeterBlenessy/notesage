@@ -577,14 +577,20 @@ un-read the article. `≥ 0.97` shows as "Read".
 row, for a library that has grown past browsing into scanning. The same toggle
 packs the gallery four cards across instead of three, with a one-line caption.
 
-**Listen from the list** — every saved page's row carries a headphones
-control on the right, every saved page's gallery card a badge on its
-thumbnail, and the hold menu a "Listen" row. Each opens the article with
-`OpenDocRef.listen` set; the Reader starts playback as soon as the text is in
-(the HTML read it already does for the source URL) and clears the flag, so a
-later back/forward never replays. Rows and cards are `div[role=button]` for
-this reason: the control inside is a real button, and a button may not
-contain one.
+**Listen from the list** — playback belongs to the app, not to the open
+document. `src/lib/speech-controller.ts` owns it: one session in
+`mobile-store.speech` (`relPath`, playing, paragraph index/total, rate,
+language), fed by the native events subscribed once at the app root
+(`startSpeechEvents` in `MobileApp`). Every saved page's row carries a
+`ListenButton` at its right edge and every saved page's card one on its
+picture: headphones to start (the file is read and turned into prose there
+and then — nothing opens), then Pause / Play for the document playing, with a
+ring around the edge that fills as the paragraphs go by. No skip, speed or
+stop in the list; those stay in the Reader's transport, which is the same
+session seen from the article: open it mid-playback and the transport is
+already running, go back and the ring is mid-way. The hold menu's "Listen"
+row does the same as the button. `useSpeechPlayer(relPath)` is now a view
+onto the session for one document and no longer stops anything on unmount.
 
 ## Office web-viewer URLs are documents (#868)
 

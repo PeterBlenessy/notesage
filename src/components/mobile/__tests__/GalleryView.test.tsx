@@ -14,6 +14,11 @@ const noopActions = {
 };
 
 
+const toggle = vi.fn();
+vi.mock("@/lib/speech-controller", () => ({
+  toggleSpeech: (...args: unknown[]) => toggle(...args),
+}));
+
 const getThumbnailMock = vi.fn();
 vi.mock("@/lib/mobile-thumbnails", () => ({
   getThumbnail: (...args: unknown[]) => getThumbnailMock(...args),
@@ -57,6 +62,7 @@ function entry(overrides: Partial<FileEntry> & { name: string }): FileEntry {
 }
 
 beforeEach(() => {
+  toggle.mockReset();
   getThumbnailMock.mockReset();
   getThumbnailMock.mockResolvedValue({ kind: "icon" });
   FakeIntersectionObserver.instances = [];
@@ -108,9 +114,8 @@ describe("GalleryView (#633)", () => {
     expect(screen.queryByText(/Ideas/)).toBeNull();
   });
 
-  it("puts a Listen badge on saved pages only, and it does not open the card", () => {
+  it("puts a Listen badge on saved pages only; it starts playback in place, not the card", () => {
     const onActivate = vi.fn();
-    const onListen = vi.fn();
     renderWithProviders(
       <GalleryView
         actionContext={noopActions}
@@ -118,13 +123,12 @@ describe("GalleryView (#633)", () => {
         currentFolderName="Inbox"
         theme="light"
         onActivate={onActivate}
-        onListen={onListen}
       />,
     );
     const badges = screen.getAllByRole("button", { name: "Listen" });
     expect(badges).toHaveLength(1);
     fireEvent.click(badges[0]);
-    expect(onListen).toHaveBeenCalledWith(expect.objectContaining({ name: "story.html" }));
+    expect(toggle).toHaveBeenCalledWith(expect.objectContaining({ name: "story.html" }));
     expect(onActivate).not.toHaveBeenCalled();
   });
 

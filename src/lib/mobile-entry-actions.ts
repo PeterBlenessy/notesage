@@ -25,6 +25,7 @@ import {
   type IosEntryMenuItem,
 } from "@/lib/ios-api";
 import { t } from "@/lib/i18n";
+import { useMobileStore } from "@/stores/mobile-store";
 import { evictThumbnail, getThumbnail } from "@/lib/mobile-thumbnails";
 
 export interface EntryActionContext {
@@ -82,7 +83,17 @@ export function entryMenuItems(entry: FileEntry, ctx: EntryActionContext): IosEn
     inline: true,
   });
   if (ctx.onListen && !entry.is_directory && /\.html?$/i.test(entry.name)) {
-    items.push({ id: "listen", title: t("action.listen"), systemImage: "headphones" });
+    // The same gesture as the row's control, so the same label: Pause or
+    // Play for the article playing, Listen for any other.
+    const session = useMobileStore.getState().speech;
+    const mine = session?.relPath === entry.path ? session : null;
+    items.push(
+      mine
+        ? mine.playing
+          ? { id: "listen", title: t("reader.listenPause"), systemImage: "pause" }
+          : { id: "listen", title: t("reader.listenResume"), systemImage: "play" }
+        : { id: "listen", title: t("action.listen"), systemImage: "headphones" },
+    );
   }
   items.push({ id: "rename", title: t("action.rename"), systemImage: "pencil" });
   // Files only — the native command refuses directories, so offering the row
