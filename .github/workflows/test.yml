@@ -408,7 +408,9 @@ jobs:
       # The integration script edits the generated project.yml with PyYAML,
       # which the runner's python does not ship.
       - name: Install PyYAML
-        run: python3 -m pip install --quiet --user pyyaml
+        # PEP 668: the runner's python is Homebrew-managed and refuses plain
+        # installs; this is a throwaway runner.
+        run: python3 -m pip install --quiet --user --break-system-packages pyyaml
 
       - name: Integrate the Share Extension
         run: python3 src-tauri/ios/integrate-share-extension.py
