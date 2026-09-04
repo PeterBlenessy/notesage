@@ -67,8 +67,11 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
     };
   }, [meta, entry.path, entry.name]);
 
-  // Known NOT to be a capture: the plain row.
-  if (meta === null) return <FileRow {...props} />;
+  // Known NOT to be a capture: the plain row — at the SAME density. The
+  // flag is destructured off `props` above, so it has to be handed on by
+  // hand; without it every non-capture page in the Inbox (an exported
+  // report, a plain .html) kept a 72pt tile in a condensed list.
+  if (meta === null) return <FileRow {...props} condensed={condensed} />;
 
   // While the header is still on its way, render the article-shaped row with
   // just the name, so the list does not jump from a one-line row to a tall

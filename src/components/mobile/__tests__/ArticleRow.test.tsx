@@ -85,6 +85,15 @@ describe("ArticleRow layout (thumbnail left, 2026-09-04)", () => {
     renderWithProviders(<ArticleRow actionContext={noopActions} entry={capture} onActivate={() => {}} condensed={false} />);
     await waitFor(() => expect(screen.getByText("How to read.html")).toBeTruthy());
   });
+
+  it("the fallback row keeps the list's density (a plain .html stayed 72pt in a condensed list)", async () => {
+    metaMock.mockResolvedValue(null);
+    renderWithProviders(<ArticleRow actionContext={noopActions} entry={capture} onActivate={() => {}} condensed />);
+    await waitFor(() => expect(screen.getByText("How to read.html")).toBeTruthy());
+    const slot = screen.getByTestId("row-thumbnail-slot");
+    expect(slot.className).toMatch(/h-10/);
+    expect(slot.className).not.toMatch(/4\.5rem/);
+  });
 });
 
 describe("ArticleRow Listen control (2026-09-04)", () => {
