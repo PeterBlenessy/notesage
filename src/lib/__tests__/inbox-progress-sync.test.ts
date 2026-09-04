@@ -21,7 +21,7 @@ describe("inbox-progress-sync (the phone's write-through of the sidecar)", () =>
     resetInboxProgressSync();
     disk = {};
     ensured = [];
-    useMobileStore.setState({ readingProgress: {}, speechPositions: {}, openDoc: null, recentlyRead: [] });
+    useMobileStore.setState({ readingProgress: {}, speechPositions: {}, readingResets: {}, openDoc: null, recentlyRead: [] });
     setMockInvokeHandler("ios_read_file", (args) => {
       const a = args as { relPath: string };
       if (a.relPath in disk) return disk[a.relPath];
@@ -114,5 +114,55 @@ describe("inbox-progress-sync (the phone's write-through of the sidecar)", () =>
     const written = parseReadingProgress(disk[INBOX_SIDECAR_REL]);
     expect(written.items["a.html"].deleted).toBeUndefined();
     expect(written.items["a.html"].openedAt).not.toBeNull();
+  });
+
+  it("a Mac 'mark as unread' clears the phone's fraction and listen position, once (#876)", async () => {
+    useMobileStore.setState({ readingProgress: { "Inbox/a.html": 0.6 }, speechPositions: { "Inbox/a.html": 4 } });
+    const resetAt = "2026-09-04T10:00:00.000Z";
+    disk[INBOX_SIDECAR_REL] = JSON.stringify({
+      version: 2,
+      items: { "a.html": { fraction: 0, openedAt: null, updatedAt: resetAt, resetAt } },
+    });
+    startInboxProgressSync();
+    await pullInboxProgress();
+    let s = useMobileStore.getState();
+    expect(s.readingProgress["Inbox/a.html"]).toBeUndefined();
+    expect(s.speechPositions["Inbox/a.html"]).toBeUndefined();
+    expect(s.readingResets["Inbox/a.html"]).toBe(resetAt);
+    // The reset was not this device's change: nothing to push.
+    expect(localInboxProgress().items).toEqual({});
+    // Read again here (after the reset, before the next one), then pull the
+    // same file: the applied stamp is not re-applied.
+    vi.setSystemTime(new Date("2026-09-04T10:30:00.000Z"));
+    useMobileStore.getState().rememberReadingProgress("Inbox/a.html", 0.3);
+    await pullInboxProgress();
+    s = useMobileStore.getState();
+    expect(s.readingProgress["Inbox/a.html"]).toBe(0.3);
+    // A NEWER reset applies again.
+    const later = "2026-09-04T11:00:00.000Z";
+    disk[INBOX_SIDECAR_REL] = JSON.stringify({
+      version: 2,
+      items: { "a.html": { fraction: 0, openedAt: null, updatedAt: later, resetAt: later } },
+    });
+    await pullInboxProgress();
+    expect(useMobileStore.getState().readingProgress["Inbox/a.html"]).toBeUndefined();
+  });
+
+  it("a read made here after the Mac's reset is newer than the reset and stays", async () => {
+    const resetAt = "2026-09-04T10:00:00.000Z";
+    disk[INBOX_SIDECAR_REL] = JSON.stringify({
+      version: 2,
+      items: { "a.html": { fraction: 0, openedAt: null, updatedAt: resetAt, resetAt } },
+    });
+    startInboxProgressSync();
+    vi.setSystemTime(new Date("2026-09-04T12:00:00.000Z"));
+    useMobileStore.getState().rememberReadingProgress("Inbox/a.html", 0.5); // dirty, stamped now
+    await pullInboxProgress();
+    const s = useMobileStore.getState();
+    expect(s.readingProgress["Inbox/a.html"]).toBe(0.5);
+    expect(s.readingResets["Inbox/a.html"]).toBe(resetAt);
+    // …and the push carries this device's read over the reset.
+    await pushInboxProgress();
+    expect(parseReadingProgress(disk[INBOX_SIDECAR_REL]).items["a.html"].fraction).toBe(0.5);
   });
 });

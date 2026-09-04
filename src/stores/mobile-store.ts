@@ -227,6 +227,15 @@ interface MobileStore {
    *  "2 of 4 min left" — and it must survive relaunch to mean anything. */
   readingProgress: Record<string, number>;
   rememberReadingProgress: (relPath: string, fraction: number) => void;
+  /** A "mark as unread" made on another device (#876): drops this document's
+   *  local fraction and listen position — the one write that goes BACKWARDS
+   *  past the forward-only guard — and records the reset's stamp so the same
+   *  reset is applied once. Used by the Inbox sync only. */
+  applyReadingReset: (relPath: string, resetAt: string) => void;
+  /** Reset stamps already applied here, per document. Persisted: after a
+   *  relaunch the sidecar still carries the reset, and it must not wipe what
+   *  was read since. */
+  readingResets: Record<string, string>;
 
   /** Row density for the list view (#836). Persisted. */
   listDensity: ListDensity;
@@ -274,6 +283,7 @@ export const useMobileStore = create<MobileStore>()(
       speech: null,
       speechRate: 1.0,
       readingProgress: {},
+      readingResets: {},
       listDensity: "comfortable",
 
       currentRelPath: () => {
@@ -420,6 +430,15 @@ export const useMobileStore = create<MobileStore>()(
       rememberScroll: (relPath, offset) =>
         set((s) => ({ scrollOffsets: { ...s.scrollOffsets, [relPath]: offset } })),
 
+      applyReadingReset: (relPath, resetAt) =>
+        set((s) => {
+          const readingProgress = { ...s.readingProgress };
+          delete readingProgress[relPath];
+          const speechPositions = { ...s.speechPositions };
+          delete speechPositions[relPath];
+          return { readingProgress, speechPositions, readingResets: { ...s.readingResets, [relPath]: resetAt } };
+        }),
+
       rememberReadingProgress: (relPath, fraction) => {
         const clamped = Math.min(1, Math.max(0, fraction));
         // Only ever forward: scrolling back up to re-read a line must not
@@ -559,6 +578,7 @@ export const useMobileStore = create<MobileStore>()(
           speechPositions: {},
           speechVoices: {},
           readingProgress: {},
+          readingResets: {},
           listDensity: "comfortable",
             }),
     }),
@@ -573,6 +593,7 @@ export const useMobileStore = create<MobileStore>()(
         speechVoices: s.speechVoices,
         speechRate: s.speechRate,
         readingProgress: s.readingProgress,
+        readingResets: s.readingResets,
         listDensity: s.listDensity,
         sortMode: s.sortMode,
         groupMode: s.groupMode,

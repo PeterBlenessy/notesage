@@ -30,9 +30,12 @@ import {
  * or reset on disk therefore wins over the phone's silence, and the phone's
  * own changes win because they are newer.
  *
- * Limits: "mark as unread" on the Mac does not roll the phone's local
- * fraction back (that store is forward-only); the phone shows its own
- * progress until the item is read again on either side.
+ * A "mark as unread" on the Mac arrives as a `resetAt` stamp (#876). The
+ * pull applies each stamp ONCE — the store's ledger remembers which — by
+ * dropping the item's local fraction and listen position, the one write
+ * allowed backwards past the forward-only guard. A change made here after
+ * the reset (read on the phone before the next pull) is newer than the
+ * stamp and stays; the stamp is recorded so it is not applied later.
  */
 export const INBOX_SIDECAR_REL = `${INBOX_FOLDER_NAME}/.notesage/${READING_PROGRESS_FILE}`;
 const INBOX_PREFIX = `${INBOX_FOLDER_NAME}/`;
@@ -87,9 +90,21 @@ export async function pullInboxProgress(): Promise<void> {
   pulling = true;
   try {
     for (const [name, raw] of Object.entries(file.items)) {
+      const relPath = `${INBOX_PREFIX}${name}`;
+      if (raw.resetAt && s.readingResets[relPath] !== raw.resetAt) {
+        const changedHere = dirty.get(name);
+        if (changedHere && changedHere > raw.resetAt) {
+          // Read here after the Mac reset it: this device's progress is the
+          // newer fact. Record the stamp so it is never applied on top.
+          useMobileStore.setState((st) => ({ readingResets: { ...st.readingResets, [relPath]: raw.resetAt as string } }));
+        } else {
+          s.applyReadingReset(relPath, raw.resetAt);
+          openedHere.delete(name);
+          dirty.delete(name);
+        }
+      }
       const entry = liveEntry(raw);
       if (!entry) continue;
-      const relPath = `${INBOX_PREFIX}${name}`;
       if (entry.fraction > 0) s.rememberReadingProgress(relPath, entry.fraction);
       if (entry.speech && s.speechPositions[relPath] === undefined) s.rememberSpeechPosition(relPath, entry.speech.paragraph);
       if (entry.openedAt && !openedHere.has(name)) openedHere.set(name, entry.openedAt);

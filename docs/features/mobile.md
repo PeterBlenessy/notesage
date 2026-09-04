@@ -643,6 +643,15 @@ view time on both the native report and the iframe (for captures saved
 before), and `.mobile-article` in `globals.css` for markdown, whose scroller
 is `overflow-x-hidden`.
 
+**A Mac "mark as unread" reaches the phone (#876)** — the pull applies a
+sidecar entry's `resetAt` once: `mobile-store.applyReadingReset` drops the
+item's local fraction and listen position (the one write allowed backwards
+past the forward-only guard) and records the stamp in the persisted
+`readingResets` ledger, so a relaunch does not re-apply it over progress
+made since. A read made on the phone after the reset but before the next
+pull is dirty with a newer change time and stays; the stamp is recorded
+without wiping.
+
 ## Office web-viewer URLs are documents (#868)
 
 `view.officeapps.live.com/op/view.aspx?src=<url>` (and `embed.aspx`) is not a
