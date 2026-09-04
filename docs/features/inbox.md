@@ -136,8 +136,9 @@ dot-folders; Finder and Files hide them.
   progress, listen position or first open marks it dirty and schedules one
   write of the dirty items, stamped with their change time. Only what the
   phone changed is ever written — its timestamp-free local store may still
-  hold items the Mac trashed or reset. Limit: a Mac "mark as unread" does not
-  roll the phone's local fraction back (that store is forward-only).
+  hold items the Mac trashed or reset. A Mac "mark as unread" reaches the
+  phone as the entry's `resetAt`, applied once through a persisted ledger
+  (#876, docs/features/mobile.md).
 
 ## Verification
 

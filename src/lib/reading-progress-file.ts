@@ -80,7 +80,7 @@ function isoOrNull(value: unknown): string | null {
   return Number.isNaN(Date.parse(value)) ? null : value;
 }
 
-function time(iso: string | null | undefined): number {
+export function time(iso: string | null | undefined): number {
   return iso ? Date.parse(iso) : 0;
 }
 
