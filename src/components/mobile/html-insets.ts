@@ -78,3 +78,25 @@ export function withReaderInsets(raw: string, insets: { top: number; bottom: num
 </style>
 `;
 }
+
+/**
+ * Keep a saved page as wide as the screen (#wide-content, 2026-09-04).
+ *
+ * A table whose columns cannot shrink below the screen width — or a fixed
+ * width iframe, video, canvas — overflows the body, and iOS WebKit answers
+ * by widening the page's layout box to fit it: the whole article then lays
+ * out wider than the screen, paragraphs wrap past the right edge, the body
+ * centres itself in the wider box, and the page drags sideways. Captures
+ * made from now on carry these rules in their own stylesheet; this appends
+ * the same rules at view time for the ones saved before, on both the native
+ * report and the iframe fallback. Wide content scrolls inside itself.
+ */
+export function withWideContentGuard(raw: string): string {
+  return `${raw}
+<style>
+  table { display: block; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  video, iframe, canvas, embed, object, img, svg { max-width: 100%; }
+  pre { overflow-x: auto; max-width: 100%; }
+</style>
+`;
+}

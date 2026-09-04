@@ -630,6 +630,19 @@ session's interruptions (a call, Siri: began → pause, ended with
 should-resume → resume) and the synthesiser's own `didPause`/`didContinue`,
 so the app, the row's ring and the plate agree with what is audible.
 
+**Wide content never widens the page** — a table with several numeric
+columns has a minimum width past a phone screen, and iOS WebKit answers an
+overflowing body by widening the page's layout box to fit it: paragraphs
+then wrap past the right edge, the body centres itself in the wider box, and
+the whole article drags sideways (Peter, 2026-09-04, a Swedish finance
+article; markdown notes with tables did the same in the app's own reader).
+Three places carry the same rule — tables `display:block; overflow-x:auto;
+max-width:100%`, media `max-width:100%`: the capture stylesheet
+(`ARTICLE_HTML_STYLE`, for new captures), `withWideContentGuard` appended at
+view time on both the native report and the iframe (for captures saved
+before), and `.mobile-article` in `globals.css` for markdown, whose scroller
+is `overflow-x-hidden`.
+
 ## Office web-viewer URLs are documents (#868)
 
 `view.officeapps.live.com/op/view.aspx?src=<url>` (and `embed.aspx`) is not a

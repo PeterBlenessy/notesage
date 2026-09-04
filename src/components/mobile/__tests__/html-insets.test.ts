@@ -64,3 +64,13 @@ describe("measureReaderInsets", () => {
     expect(document.body.childElementCount).toBe(before);
   });
 });
+
+describe("withWideContentGuard (a wide table must not widen the page)", () => {
+  it("appends rules that make tables and media scroll inside themselves", async () => {
+    const { withWideContentGuard } = await import("@/components/mobile/html-insets");
+    const out = withWideContentGuard("<html><body><table><tr><td>x</td></tr></table></body></html>");
+    expect(out.startsWith("<html><body><table>")).toBe(true);
+    expect(out).toMatch(/table \{[^}]*display: block;[^}]*overflow-x: auto/);
+    expect(out).toMatch(/video, iframe, canvas, embed, object, img, svg \{ max-width: 100%; \}/);
+  });
+});
