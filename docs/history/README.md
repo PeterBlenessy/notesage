@@ -226,3 +226,4 @@ Chronological log of major implementation milestones and changes.
 | 220 | [Release v0.55.4](220-release-v0.55.4.md) | Saved articles keep their picture, author and date instead of arriving as the words alone. |
 | 221 | [Release v0.55.5](221-release-v0.55.5.md) | File a saved article into a folder, and update an older one from its source. |
 | 222 | [Release v0.55.6](222-release-v0.55.6.md) | Move and Update from source actually work, on a "…" button. |
+| 223 | [Release v0.56.0](223-release-v0.56.0.md) | The Inbox on the Mac: read-later list, filing, keyboard triage, progress shared with the phone. |
