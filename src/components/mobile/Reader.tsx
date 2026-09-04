@@ -21,6 +21,7 @@ import {
   iosFindInReport,
   iosSpeechVoices,
   iosArticleThumbnail,
+  iosPostToReport,
 } from "@/lib/ios-api";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
@@ -36,6 +37,9 @@ import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome } from "./useNativeChrome";
 import { withFindAgent } from "./html-find-agent";
 import { withLinkAgent } from "./html-link-agent";
+import { withSpeechAgent } from "./html-speech-agent";
+import { onSpeechRange } from "@/lib/speech-controller";
+import { splitSpeechParagraphs } from "./speech-text";
 import { documentToSpeechText } from "./speech-text";
 import { SpeechPlayerBar } from "./SpeechPlayerBar";
 import { useSpeechPlayer } from "@/hooks/useSpeechPlayer";
@@ -695,6 +699,65 @@ export function Reader() {
     if (chosen) speech.chooseVoice(chosen);
   }, [speech]);
 
+  const [rawTick, setRawTick] = useState(0);
+
+  // Read-aloud highlight (#833): tell the agent inside the page which
+  // paragraphs the player speaks, then where it is — the paragraph from the
+  // session, the word from the range events. Both surfaces the page can be
+  // on: the native report (posted through the presenter) and the iframe
+  // fallback (postMessage). Cleared when this document stops being the one
+  // read.
+  // The frame counts as a surface only once its document has loaded — a
+  // message posted into a frame still navigating goes to the wrong document.
+  // (The native presenter buffers until its own load finishes.)
+  const speechSurface = hasNativeReport ? "native" : isHtml && htmlShownUrl === htmlUrl ? "frame" : null;
+  const speechMine = speech.state.active;
+  const speechIndex = speech.state.index;
+  const postToPage = useCallback(
+    (msg: Record<string, unknown>) => {
+      if (speechSurface === "native") {
+        void iosPostToReport(msg).catch(() => {});
+      } else if (speechSurface === "frame") {
+        htmlFrameRef.current?.contentWindow?.postMessage({ ns: "notesage-speech", ...msg }, "*");
+      }
+    },
+    [speechSurface],
+  );
+  // Each presentation of the page is a fresh agent that knows nothing: a
+  // native report re-presented after its content process died (Try Again)
+  // is the same document and the same surface, so the count is what tells
+  // the send below apart (review finding).
+  const presentationRef = useRef(0);
+  useEffect(() => {
+    if (speechSurface) presentationRef.current += 1;
+  }, [speechSurface]);
+  const sentParagraphsRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (kind !== "html" || !speechSurface) return;
+    if (!speechMine) {
+      if (sentParagraphsRef.current) {
+        sentParagraphsRef.current = null;
+        postToPage({ type: "clear" });
+      }
+      return;
+    }
+    const raw = rawHtmlRef.current;
+    if (!raw) return;
+    const key = `${relPath}|${speechSurface}|${presentationRef.current}`;
+    if (sentParagraphsRef.current !== key) {
+      sentParagraphsRef.current = key;
+      postToPage({ type: "paragraphs", items: splitSpeechParagraphs(documentToSpeechText(raw, "html")) });
+    }
+    postToPage({ type: "position", index: speechIndex });
+  }, [kind, speechSurface, speechMine, speechIndex, rawTick, relPath, postToPage]);
+  useEffect(() => {
+    if (kind !== "html" || !speechSurface || !speechMine) return;
+    return onSpeechRange((range) => {
+      if (range.relPath !== relPath || !sentParagraphsRef.current) return;
+      postToPage({ type: "position", index: range.index, location: range.location, length: range.length });
+    });
+  }, [kind, speechSurface, speechMine, relPath, postToPage]);
+
   const startListening = useCallback(() => {
     const text = speechSource();
     if (!text) {
@@ -729,7 +792,12 @@ export function Reader() {
         // one: a capture is ~500 KB of inlined base64, and reading it twice
         // to say the same thing is the kind of cost that only shows up on a
         // phone.
-        if (!cancelled) rawHtmlRef.current = raw;
+        if (!cancelled) {
+          rawHtmlRef.current = raw;
+          // A ref does not re-render; the highlight effect below needs to
+          // know the text is in.
+          setRawTick((n) => n + 1);
+        }
         const url = await invoke<string | null>("article_source_url", { content: raw });
         if (!cancelled) setSourceUrl(url);
       } catch {
@@ -1049,7 +1117,10 @@ export function Reader() {
         // plumbing in the fallback below is needed on device.
         try {
           const insets = measureReaderInsets();
-          await iosPresentReport(raw, { top: insets.top, bottom: insets.bottom });
+          // The read-aloud agent rides inside the page (it can only draw
+          // there); it listens and never calls back, so the view stays
+          // bridge-less.
+          await iosPresentReport(withSpeechAgent(raw), { top: insets.top, bottom: insets.bottom });
           if (!isCurrent()) {
             // Superseded while presenting — take it back down, or the previous
             // document stays on screen over whatever the reader shows next.
@@ -1094,7 +1165,7 @@ export function Reader() {
         // web view it legitimately owns, instead of rewriting the report.
         await invoke("html_preview_register", {
           id,
-          content: withReaderInsets(withLinkAgent(withFindAgent(raw)), measureReaderInsets()),
+          content: withReaderInsets(withLinkAgent(withFindAgent(withSpeechAgent(raw))), measureReaderInsets()),
         });
         if (!isCurrent()) {
           // Superseded after registering — release the doc immediately or it

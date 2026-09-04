@@ -8,5 +8,4 @@ text är inte grundligare — den hoppas bara över.
 
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
--->
-Lyssna från listan utan att öppna: hörlurarna på en sparad sidas rad (eller dess kort i galleriet) börjar läsa direkt där, blir till Paus, och en ring runt knappen fylls medan artikeln läses. Öppna artikeln och spelaren är redan igång; gå tillbaka och ringen är där du lämnade den. Testa: starta från en rad, öppna artikeln, gå tillbaka, pausa via ringen, fortsätt från artikeln.
+-->\nMedan en artikel läses upp markeras stycket som läses i artikeln och, med de flesta röster, även ordet — och sidan håller stycket i bild. Testa: starta Lyssna från listan, öppna artikeln, se markeringen följa med; hoppa ett stycke med spelaren; byt röst i ⋯-menyn och se om ordmarkeringen fortfarande följer (vissa kompakta röster rapporterar bara stycken).\n

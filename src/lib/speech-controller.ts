@@ -44,12 +44,39 @@ const AV_DEFAULT_RATE = 0.5;
  * that is the point.
  */
 
+/** A word boundary from the player, for the highlight in the article view. */
+export interface SpeechRange {
+  relPath: string;
+  index: number;
+  location: number;
+  length: number;
+}
+
+const rangeListeners = new Set<(range: SpeechRange) => void>();
+
+/**
+ * Word boundaries as the player speaks them. Kept OUT of the store on
+ * purpose: several a second, and only the open article cares — a store
+ * write would re-render every row's ring for each word.
+ */
+export function onSpeechRange(listener: (range: SpeechRange) => void): () => void {
+  rangeListeners.add(listener);
+  return () => {
+    rangeListeners.delete(listener);
+  };
+}
+
 /** Wire native player events into the store. Mount ONCE, at the app root. */
 export function startSpeechEvents(): () => void {
   return onIosSpeechEvent((event) => {
     const store = useMobileStore.getState();
     const session = store.speech;
     if (!session) return;
+    if (event.event === "range") {
+      const range = { relPath: session.relPath, index: event.index, location: event.location, length: event.length };
+      for (const listener of rangeListeners) listener(range);
+      return;
+    }
     if (event.event === "progress") {
       store.setSpeech({ index: event.index, total: event.total });
       // Persist the position of whichever document is actually playing —

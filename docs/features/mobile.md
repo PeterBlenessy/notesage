@@ -592,6 +592,28 @@ already running, go back and the ring is mid-way. The hold menu's "Listen"
 row does the same as the button. `useSpeechPlayer(relPath)` is now a view
 onto the session for one document and no longer stops anything on unmount.
 
+**The highlight while listening** — the paragraph being read is marked in
+the article, and the word too when the voice reports word boundaries
+(premium and Siri voices do; some compact voices report nothing, and then the
+paragraph mark stands alone). The marks live INSIDE the page: natively the
+report is a bridge-less WKWebView and in the fallback a sandboxed iframe, so
+`html-speech-agent.ts` rides inside the document — appended to it like the
+find agent — and only listens. The Reader sends it the utterances once
+(`splitSpeechParagraphs(documentToSpeechText(raw))`, the native player's own
+split mirrored, so index `i` is utterance `i`) and then positions: the
+paragraph from the session, the word from `onSpeechRange` (word events stay
+out of the store — several a second). Natively the message goes through
+`ios_post_to_report` → `ReportPresenter.post`, the one thing ever evaluated in
+the report's context and a pure data drop; in the fallback it is a
+`postMessage`. The agent locates each utterance by a whitespace-normalised
+search through the page's text nodes in order (the utterances come from the
+raw HTML by regex, the page's text differs only in whitespace), draws with the
+CSS Custom Highlight API where it exists and wraps `<mark>`s otherwise, and
+scrolls a paragraph into view when it changes. Native side:
+`SpeechPlayer.onRange` from `willSpeakRangeOfSpeechString`, forwarded as the
+`range` speech event. Markdown and plain-text documents are read in the
+app's own DOM and are not highlighted yet.
+
 ## Office web-viewer URLs are documents (#868)
 
 `view.officeapps.live.com/op/view.aspx?src=<url>` (and `embed.aspx`) is not a

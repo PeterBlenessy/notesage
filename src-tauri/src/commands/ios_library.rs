@@ -995,6 +995,23 @@ pub async fn ios_speech_state(app: tauri::AppHandle) -> Result<SpeechState, Stri
 ///
 /// `false` means no report is on screen; the caller falls back to the web
 /// search island rather than leaving the user with a dead button.
+/// Hand a JSON message to the read-aloud agent inside the presented report
+/// (#833 highlight): the paragraph texts once, then positions as the player
+/// moves. `false` when no report is on screen (the iframe fallback posts to
+/// its frame directly instead).
+#[tauri::command]
+pub async fn ios_post_to_report(app: tauri::AppHandle, message: String) -> Result<bool, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::post_to_report(&app, &message).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, message);
+        Err("ios_post_to_report is only available on iOS".into())
+    }
+}
+
 #[tauri::command]
 pub async fn ios_find_in_report(app: tauri::AppHandle) -> Result<bool, String> {
     #[cfg(target_os = "ios")]
@@ -1291,6 +1308,10 @@ mod ios_impl {
 
     pub async fn find_in_report(app: &AppHandle) -> Result<bool, String> {
         app.notesage_ios().find_in_report().map_err(|e| e.to_string())
+    }
+
+    pub async fn post_to_report(app: &AppHandle, message: &str) -> Result<bool, String> {
+        app.notesage_ios().post_to_report(message).map_err(|e| e.to_string())
     }
 
     pub async fn share_file(app: &AppHandle, rel: &str) -> Result<(), String> {

@@ -61,6 +61,13 @@ private let MAX_VOTING_PARAGRAPHS = 60
     /// Pause forever after an article finished.
     @objc public var onFinished: (() -> Void)?
 
+    /// The word about to be spoken: paragraph index plus the UTF-16 range
+    /// within that paragraph's text (the utterance string is the paragraph
+    /// verbatim, so the range indexes straight into what the app split).
+    /// Premium and Siri voices report every word; some compact voices report
+    /// nothing, in which case the app highlights the paragraph only.
+    @objc public var onRange: ((Int, Int, Int) -> Void)?
+
     override private init() {
         super.init()
         synth.delegate = self
@@ -484,6 +491,18 @@ private let MAX_VOTING_PARAGRAPHS = 60
 }
 
 extension SpeechPlayer: AVSpeechSynthesizerDelegate {
+    public func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer,
+        willSpeakRangeOfSpeechString characterRange: NSRange,
+        utterance: AVSpeechUtterance
+    ) {
+        // Only for the paragraph the queue believes is current: a range from
+        // an utterance cancelled by skip() or setRate() must not paint a word
+        // in a paragraph that is no longer being read.
+        guard index < paragraphs.count, utterance.speechString == paragraphs[index] else { return }
+        onRange?(index, characterRange.location, characterRange.length)
+    }
+
     public func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance
     ) {
