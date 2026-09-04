@@ -371,6 +371,14 @@ describe("rewritePath (#754)", () => {
     expect(s.speechPositions["Inbox/a.html"]).toBeUndefined();
   });
 
+  it("carries the reset ledger with a filed item, and the ledger stays bounded", async () => {
+    useMobileStore.setState({ readingResets: { "Inbox/a.html": "2026-09-04T10:00:00.000Z" } });
+    await useMobileStore.getState().rewritePath("Inbox/a.html", "Archive/a.html");
+    expect(useMobileStore.getState().readingResets).toEqual({ "Archive/a.html": "2026-09-04T10:00:00.000Z" });
+    for (let i = 0; i < 520; i++) useMobileStore.getState().recordReadingReset(`Inbox/${i}.html`, "2026-09-04T11:00:00.000Z");
+    expect(Object.keys(useMobileStore.getState().readingResets).length).toBe(500);
+  });
+
   it("leaves everything alone when the path did not change", async () => {
     useMobileStore.setState({ recentlyRead: ["Inbox/a.md"] });
     await useMobileStore.getState().rewritePath("Inbox/a.md", "Inbox/a.md");

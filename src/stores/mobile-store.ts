@@ -227,6 +227,18 @@ interface MobileStore {
    *  "2 of 4 min left" — and it must survive relaunch to mean anything. */
   readingProgress: Record<string, number>;
   rememberReadingProgress: (relPath: string, fraction: number) => void;
+  /** A "mark as unread" made on another device (#876): drops this document's
+   *  local fraction and listen position — the one write that goes BACKWARDS
+   *  past the forward-only guard — and records the reset's stamp so the same
+   *  reset is applied once. Used by the Inbox sync only. */
+  applyReadingReset: (relPath: string, resetAt: string) => void;
+  /** Record a reset stamp WITHOUT wiping: this device read the item after
+   *  the reset, so its progress is the newer fact. Same ledger, same cap. */
+  recordReadingReset: (relPath: string, resetAt: string) => void;
+  /** Reset stamps already applied here, per document. Persisted: after a
+   *  relaunch the sidecar still carries the reset, and it must not wipe what
+   *  was read since. */
+  readingResets: Record<string, string>;
 
   /** Row density for the list view (#836). Persisted. */
   listDensity: ListDensity;
@@ -251,6 +263,18 @@ interface MobileStore {
 const MAX_SPEECH_POSITIONS = 200;
 /** Same cap and reasoning for reading progress. */
 const MAX_READING_PROGRESS = 500;
+/** The reset ledger is bounded like the progress map it guards; the oldest
+ *  entries go first — a stamp that old has long been absorbed. */
+const MAX_READING_RESETS = 500;
+
+function withReset(ledger: Record<string, string>, relPath: string, resetAt: string): Record<string, string> {
+  const next = { ...ledger, [relPath]: resetAt };
+  const keys = Object.keys(next);
+  if (keys.length > MAX_READING_RESETS) {
+    for (const stale of keys.slice(0, keys.length - MAX_READING_RESETS)) delete next[stale];
+  }
+  return next;
+}
 
 export const useMobileStore = create<MobileStore>()(
   persist(
@@ -274,6 +298,7 @@ export const useMobileStore = create<MobileStore>()(
       speech: null,
       speechRate: 1.0,
       readingProgress: {},
+      readingResets: {},
       listDensity: "comfortable",
 
       currentRelPath: () => {
@@ -420,6 +445,18 @@ export const useMobileStore = create<MobileStore>()(
       rememberScroll: (relPath, offset) =>
         set((s) => ({ scrollOffsets: { ...s.scrollOffsets, [relPath]: offset } })),
 
+      applyReadingReset: (relPath, resetAt) =>
+        set((s) => {
+          const readingProgress = { ...s.readingProgress };
+          delete readingProgress[relPath];
+          const speechPositions = { ...s.speechPositions };
+          delete speechPositions[relPath];
+          return { readingProgress, speechPositions, readingResets: withReset(s.readingResets, relPath, resetAt) };
+        }),
+
+      recordReadingReset: (relPath, resetAt) =>
+        set((s) => ({ readingResets: withReset(s.readingResets, relPath, resetAt) })),
+
       rememberReadingProgress: (relPath, fraction) => {
         const clamped = Math.min(1, Math.max(0, fraction));
         // Only ever forward: scrolling back up to re-read a line must not
@@ -516,6 +553,9 @@ export const useMobileStore = create<MobileStore>()(
           speechPositions: Object.fromEntries(
             Object.entries(s.speechPositions).map(([k, v]) => [swap(k), v]),
           ),
+          readingResets: Object.fromEntries(
+            Object.entries(s.readingResets).map(([k, v]) => [swap(k), v]),
+          ),
           speech: s.speech && s.speech.relPath === from ? { ...s.speech, relPath: to } : s.speech,
           readingProgress: Object.fromEntries(
             Object.entries(s.readingProgress).map(([k, v]) => [swap(k), v]),
@@ -559,6 +599,7 @@ export const useMobileStore = create<MobileStore>()(
           speechPositions: {},
           speechVoices: {},
           readingProgress: {},
+          readingResets: {},
           listDensity: "comfortable",
             }),
     }),
@@ -573,6 +614,7 @@ export const useMobileStore = create<MobileStore>()(
         speechVoices: s.speechVoices,
         speechRate: s.speechRate,
         readingProgress: s.readingProgress,
+        readingResets: s.readingResets,
         listDensity: s.listDensity,
         sortMode: s.sortMode,
         groupMode: s.groupMode,
