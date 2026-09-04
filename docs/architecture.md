@@ -316,6 +316,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 1. **Frontend tests:** typecheck → unit tests with coverage → performance benchmarks (`PERF_BUDGET_MULTIPLIER=5`, timing-advisory) → perf guard (fails if a benchmark crashed rather than overran) → coverage regression check (PR only) → post coverage summary to PR via `vitest-coverage-report-action`. **`typecheck` runs `tsc --noEmit` over the test files too and is the first gate — a type error in a `*.test.ts` (or an untyped mock) fails the whole job before any test executes. `vitest` does not typecheck, so always run `pnpm typecheck` after touching test files, not just `pnpm test`.**
 2. **Playwright E2E:** install Chromium → run E2E specs → upload report on failure
 3. **Rust backend:** install stable toolchain → `cargo test` in `src-tauri/`
+4. **iOS Simulator Build** (macOS, only when `src-tauri/**`, `package.json` or the lockfile changed): `tauri ios init --ci` → the Share Extension integration script → `tauri ios build --target aarch64-sim --debug`. The one check that compiles the app's Rust for an iOS target; a required check since #883 (a desktop-only crate broke TestFlight build 42 while every other job stayed green).
 
 All jobs must pass for merge. Perf benchmark results uploaded as CI artifacts (14-day retention).
 
