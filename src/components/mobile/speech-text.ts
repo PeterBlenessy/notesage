@@ -83,6 +83,19 @@ function normalise(text: string): string {
     .join("\n\n");
 }
 
+/**
+ * The paragraphs the native player will speak, one utterance each — the
+ * same split it applies (`SpeechPlayer.splitIntoParagraphs`: blank lines,
+ * trimmed, empties dropped), so index `i` here is utterance `i` there and a
+ * word range reported for utterance `i` indexes straight into `[i]`.
+ */
+export function splitSpeechParagraphs(text: string): string[] {
+  return text
+    .split("\n\n")
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+}
+
 /** Extract readable prose from a saved HTML document. */
 export function htmlToSpeechText(html: string): string {
   let text = html;

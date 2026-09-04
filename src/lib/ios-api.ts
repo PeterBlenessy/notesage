@@ -339,6 +339,17 @@ export async function iosTextPrompt(
  * into a resolved promise, or the fallback never runs and the reader shows an
  * empty pane.
  */
+/**
+ * Hand a message to the read-aloud agent inside the natively presented
+ * report (#833 highlight). Resolves `false` when no report is on screen —
+ * the iframe fallback posts to its frame directly instead.
+ */
+export function iosPostToReport(message: unknown): Promise<boolean> {
+  return invoke<{ delivered: boolean } | boolean>("ios_post_to_report", {
+    message: JSON.stringify(message),
+  }).then((r) => (typeof r === "boolean" ? r : r.delivered));
+}
+
 export function iosPresentReport(
   html: string,
   insets?: { top?: number; bottom?: number },
@@ -492,6 +503,9 @@ export interface IosSpeechState {
 export type IosSpeechEvent =
   | { event: "progress"; index: number; total: number }
   | { event: "playing"; playing: boolean }
+  /** The word about to be spoken: UTF-16 range within paragraph `index`'s
+   *  text. Not every voice reports these. */
+  | { event: "range"; index: number; location: number; length: number }
   | { event: "finished" };
 
 /**

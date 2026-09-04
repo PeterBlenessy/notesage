@@ -147,3 +147,12 @@ describe("documentToSpeechText", () => {
     );
   });
 });
+
+
+describe("splitSpeechParagraphs (the player's split, mirrored)", () => {
+  it("splits on blank lines, trims, drops empties — exactly what the native queue does", async () => {
+    const { splitSpeechParagraphs } = await import("@/components/mobile/speech-text");
+    expect(splitSpeechParagraphs("  one \n\n\n\n two\n\n   \n\nthree  ")).toEqual(["one", "two", "three"]);
+    expect(splitSpeechParagraphs("")).toEqual([]);
+  });
+});

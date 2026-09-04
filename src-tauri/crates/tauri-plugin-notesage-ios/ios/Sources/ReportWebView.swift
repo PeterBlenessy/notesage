@@ -71,6 +71,12 @@ final class ReportPresenter: NSObject {
   /// navigation policy handler can tell it apart from a link tap. Without it
   /// the initial load cancels itself and the report never appears.
   private var isLoadingInitialDocument = false
+  /// Messages for the read-aloud agent arrive from the app as soon as the
+  /// report is presented — before `loadHTMLString` has produced a document
+  /// for them to land in. Held until the navigation finishes, then flushed
+  /// in order; the agent is in the page by then.
+  private var documentReady = false
+  private var pendingPosts: [String] = []
 
   var isPresenting: Bool { reportView != nil }
 
@@ -170,6 +176,8 @@ final class ReportPresenter: NSObject {
     ChromeManager.shared.bringChromeToFront()
 
     isLoadingInitialDocument = true
+    documentReady = false
+    pendingPosts = []
     // Base the document on the page it was CLIPPED FROM.
     //
     // This was `baseURL: nil` — a unique opaque origin, chosen because reports
@@ -227,6 +235,8 @@ final class ReportPresenter: NSObject {
     guard let view = reportView else { return }
     reportView = nil
     isLoadingInitialDocument = false
+    documentReady = false
+    pendingPosts = []
     // Order matters: drop the delegate BEFORE stopping, or `stopLoading`
     // delivers a `didFail` into a presenter that has already moved on.
     view.navigationDelegate = nil
@@ -251,6 +261,36 @@ final class ReportPresenter: NSObject {
   func dismissFind() {
     dispatchPrecondition(condition: .onQueue(.main))
     reportView?.findInteraction?.dismissFindNavigator()
+  }
+
+  /// Deliver a JSON message INTO the report, as a `notesage:speech-agent`
+  /// event the read-aloud agent listens for. This is the one thing evaluated
+  /// in the report's context, and it only ever carries data the app produced
+  /// (paragraph texts and positions) — the document still has no channel
+  /// back, so the bridge-less claim in this file's header stands.
+  ///
+  /// `json` must be a JSON document: it is spliced in as a literal, and JSON
+  /// is a subset of a JS expression, so a title with quotes or a U+2028 in
+  /// an article cannot break out of it.
+  @discardableResult
+  func post(_ json: String) -> Bool {
+    dispatchPrecondition(condition: .onQueue(.main))
+    guard reportView != nil,
+      let data = json.data(using: .utf8),
+      (try? JSONSerialization.jsonObject(with: data)) != nil
+    else { return false }
+    if !documentReady {
+      pendingPosts.append(json)
+      return true
+    }
+    deliver(json)
+    return true
+  }
+
+  private func deliver(_ json: String) {
+    reportView?.evaluateJavaScript(
+      "window.dispatchEvent(new CustomEvent('notesage:speech-agent',{detail:\(json)}))",
+      completionHandler: nil)
   }
 }
 
@@ -328,6 +368,7 @@ extension ReportPresenter: WKNavigationDelegate {
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
     isLoadingInitialDocument = false
     UIView.animate(withDuration: 0.15) { webView.alpha = 1 }
+    flushPosts()
   }
 
   func webView(
@@ -337,6 +378,15 @@ extension ReportPresenter: WKNavigationDelegate {
     // failure modes here are sub-resource errors on a document that is already
     // self-contained.
     webView.alpha = 1
+    flushPosts()
+  }
+
+  /// The document is on screen: deliver what the app sent while it loaded.
+  private func flushPosts() {
+    documentReady = true
+    let queued = pendingPosts
+    pendingPosts = []
+    for json in queued { deliver(json) }
   }
 
   /// A report is untrusted content in its own process, so it can be killed

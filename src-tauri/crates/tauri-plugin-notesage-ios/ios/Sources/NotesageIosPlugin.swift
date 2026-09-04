@@ -64,6 +64,12 @@ struct ThumbnailArgs: Decodable {
 /// already read and size-checked the file, and handing the native layer a path
 /// would give the report webview a reason to touch the library — which is
 /// exactly the reach this change removes.
+/// A JSON message for the agent inside the presented report (read-aloud
+/// highlight). Serialised by the app; forwarded verbatim as an event.
+struct PostToReportArgs: Decodable {
+  let message: String
+}
+
 struct PresentReportArgs: Decodable {
   let html: String
   /// The reader's measured safe-area padding, in points. Applied as a scroll
@@ -551,6 +557,13 @@ class NotesageIosPlugin: Plugin {
         SpeechPlayer.shared.onFinished = { [weak self] in
           self?.emitSpeech(["event": "finished"])
         }
+        // Word boundaries, for the highlight in the article view. A few per
+        // second at reading speed — the same bridge, the same JSON shape.
+        SpeechPlayer.shared.onRange = { [weak self] index, location, length in
+          self?.emitSpeech([
+            "event": "range", "index": index, "location": location, "length": length,
+          ])
+        }
         // Decoded here, off the hot path's main-thread work: a thumbnail is
         // small, but decoding is still not something to do between tap and
         // first audio for no reason.
@@ -988,6 +1001,20 @@ class NotesageIosPlugin: Plugin {
           // flash by a different route than the iframe's opaque backing did.
           backgroundColor: .systemBackground)
         invoke.resolve()
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Hand a message to the agent inside the presented report (#833 highlight).
+  ///
+  /// One direction only: nothing in the report can call back. Resolves
+  /// `{ delivered: false }` when no report is on screen (the iframe fallback
+  /// is in use, or the document is not HTML).
+  @objc public func postToReport(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(PostToReportArgs.self)
+      DispatchQueue.main.async {
+        invoke.resolve(["delivered": ReportPresenter.shared.post(args.message)])
       }
     } catch { invoke.reject(String(describing: error)) }
   }

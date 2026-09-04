@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { setMockInvokeHandler } from "@/test/tauri-mock";
 import { useMobileStore } from "@/stores/mobile-store";
 import {
+  onSpeechRange,
   pauseSpeech,
   resumeSpeech,
   startSpeech,
@@ -133,6 +134,20 @@ describe("speech-controller (read aloud belongs to the app)", () => {
     await flush();
     expect(useMobileStore.getState().speech?.relPath).toBe("Inbox/b.html");
     expect(useMobileStore.getState().speechPositions["Inbox/a.html"]).toBe(1);
+  });
+
+  it("word ranges reach listeners with the playing document, and never the store", async () => {
+    await startSpeech({ relPath: "Inbox/q3.html", name: "q3.html", text: "one two", title: "T" });
+    await flush();
+    const seen: unknown[] = [];
+    const off = onSpeechRange((r) => seen.push(r));
+    const before = useMobileStore.getState().speech;
+    emit({ event: "range", index: 0, location: 4, length: 3 });
+    expect(seen).toEqual([{ relPath: "Inbox/q3.html", index: 0, location: 4, length: 3 }]);
+    expect(useMobileStore.getState().speech).toBe(before);
+    off();
+    emit({ event: "range", index: 0, location: 0, length: 3 });
+    expect(seen).toHaveLength(1);
   });
 
   it("pause / resume / stop drive the native player and the session", async () => {

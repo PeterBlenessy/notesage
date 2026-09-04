@@ -11,6 +11,7 @@ import {
 } from "@/test/component-harness";
 import { useMobileStore } from "@/stores/mobile-store";
 import { clearArticleMetaCache } from "@/lib/article-meta-cache";
+import { startSpeechEvents } from "@/lib/speech-controller";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 import { Reader } from "@/components/mobile/Reader";
 import { Onboarding } from "@/components/mobile/Onboarding";
@@ -926,6 +927,11 @@ describe("onboarding", () => {
 
 describe("HTML reports", () => {
   const registered: Array<{ id: string; content: string }> = [];
+  let stopSpeechEvents = () => {};
+  beforeEach(() => {
+    stopSpeechEvents();
+    stopSpeechEvents = startSpeechEvents();
+  });
   /// Open a report and stop there.
   ///
   /// Split from `openHtml` because the NATIVE path (#606) renders no iframe at
@@ -989,6 +995,39 @@ describe("HTML reports", () => {
     expect(await screen.findByRole("button", { name: "Pause" })).toBeTruthy();
     expect(stops).toHaveLength(0);
     expect(started).toHaveLength(1);
+  });
+
+  it("while this article is read aloud, tells the page which paragraphs and where the player is", async () => {
+    setMockInvokeHandler("ios_article_thumbnail", () => {
+      throw new Error("no image");
+    });
+    setMockInvokeHandler("article_source_url", () => null);
+    setMockInvokeHandler("ios_speech_start", () => ({ language: "en" }));
+    // `openHtml` serves its own one-heading report ("Q3"), script included.
+    const frame = await openHtml();
+    const posted: Array<Record<string, unknown>> = [];
+    Object.defineProperty(frame, "contentWindow", { value: { postMessage: (m: Record<string, unknown>) => posted.push(m) } });
+    // Only a LOADED frame is a surface; jsdom never fires this on its own.
+    fireEvent.load(frame);
+    // The registered page carries the agent.
+    expect(registered[0].content).toContain("notesage-speech");
+    // Playback starts for this document (from anywhere — here the store).
+    useMobileStore.setState({
+      speech: { relPath: "report.html", title: "Q3", playing: true, index: 0, total: 1, rate: 1, language: "en" },
+    });
+    await waitFor(() => expect(posted.some((m) => m.type === "paragraphs")).toBe(true));
+    const paragraphs = posted.find((m) => m.type === "paragraphs") as { items: string[] };
+    // The script's body is not prose — the same extraction the player got.
+    expect(paragraphs.items).toEqual(["Q3"]);
+    expect(posted.filter((m) => m.type === "position").pop()).toMatchObject({ ns: "notesage-speech", index: 0 });
+    // A word range follows the paragraph.
+    window.dispatchEvent(new CustomEvent("notesage:speech", { detail: { event: "range", index: 0, location: 0, length: 2 } }));
+    expect(posted.filter((m) => m.type === "position").pop()).toMatchObject({ index: 0, location: 0, length: 2 });
+    // Another document takes over: this page is cleared.
+    useMobileStore.setState({
+      speech: { relPath: "other.html", title: "O", playing: true, index: 0, total: 1, rate: 1, language: "en" },
+    });
+    await waitFor(() => expect(posted.pop()).toMatchObject({ type: "clear" }));
   });
 
   it("renders an exported report instead of showing its markup as text", async () => {

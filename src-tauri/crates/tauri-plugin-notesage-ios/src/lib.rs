@@ -98,6 +98,12 @@ struct PresentedResponse {
     presented: bool,
 }
 
+/// Whether a message reached the agent inside the presented report.
+#[derive(Deserialize)]
+struct DeliveredResponse {
+    delivered: bool,
+}
+
 /// Where the speech player currently is. Public because it crosses back to
 /// the app crate as a command return — the frontend restores its progress bar
 /// and resume position from it after a reload.
@@ -522,6 +528,14 @@ impl<R: Runtime> NotesageIos<R> {
 
     /// Open WebKit's find bar over the presented report. `false` means no
     /// report is on screen — fall back to the web search island.
+    /// Hand a JSON message to the read-aloud agent inside the presented
+    /// report (#833 highlight). `false` when no report is on screen.
+    pub fn post_to_report(&self, message: &str) -> Result<bool> {
+        let r: DeliveredResponse =
+            self.call("postToReport", serde_json::json!({ "message": message }))?;
+        Ok(r.delivered)
+    }
+
     pub fn find_in_report(&self) -> Result<bool> {
         let r: PresentedResponse = self.call("findInReport", ())?;
         Ok(r.presented)
@@ -671,6 +685,9 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn find_in_report(&self) -> Result<bool> {
+        Err(Error::Unavailable)
+    }
+    pub fn post_to_report(&self, _message: &str) -> Result<bool> {
         Err(Error::Unavailable)
     }
     pub fn share_file(&self, _rel: &str) -> Result<()> {
