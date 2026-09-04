@@ -571,8 +571,14 @@ export function resetInboxCaches(): void {
 // `useFileOperations.openFile`, the path that covers re-opening the file
 // already active behind the list). Opening an Inbox item passes here too;
 // the Inbox was closing anyway.
-useEditorStore.subscribe((state, previous) => {
-  if (state.activeTabId === previous.activeTabId) return;
-  const inbox = useInboxStore.getState();
-  if (inbox.open) inbox.closeInbox();
-});
+//
+// Guarded because this runs at import: a suite that mocks the editor store
+// with a bare `getState` (agent-orb-toggle-composition) would otherwise fail
+// to load every module that reaches this one.
+if (typeof useEditorStore.subscribe === "function") {
+  useEditorStore.subscribe((state, previous) => {
+    if (state.activeTabId === previous.activeTabId) return;
+    const inbox = useInboxStore.getState();
+    if (inbox.open) inbox.closeInbox();
+  });
+}
