@@ -10,4 +10,5 @@ poke at; leave the rest to the changelog.
 
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
--->\nWhile an article is read aloud, the paragraph being read is highlighted in the article and, with most voices, the word too — and the page keeps the paragraph in view. Try: start Listen from the list, open the article, watch the highlight follow; skip a paragraph with the player; switch voice from the ⋯ menu and see whether word highlighting still follows (some compact voices only report paragraphs).\n
+-->
+Three small things from your screenshots: the Inbox row's icon lines up with the folder icons; the Listen button in the list sits under the ⋯ button, with the whole right-hand column tappable; and the lock-screen player now shows Play when the article is paused — it also pauses for a call or Siri and picks up again after. Try: pause from the row, lock the phone, check the plate; take a call mid-article.
