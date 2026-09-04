@@ -232,6 +232,9 @@ interface MobileStore {
    *  past the forward-only guard — and records the reset's stamp so the same
    *  reset is applied once. Used by the Inbox sync only. */
   applyReadingReset: (relPath: string, resetAt: string) => void;
+  /** Record a reset stamp WITHOUT wiping: this device read the item after
+   *  the reset, so its progress is the newer fact. Same ledger, same cap. */
+  recordReadingReset: (relPath: string, resetAt: string) => void;
   /** Reset stamps already applied here, per document. Persisted: after a
    *  relaunch the sidecar still carries the reset, and it must not wipe what
    *  was read since. */
@@ -260,6 +263,18 @@ interface MobileStore {
 const MAX_SPEECH_POSITIONS = 200;
 /** Same cap and reasoning for reading progress. */
 const MAX_READING_PROGRESS = 500;
+/** The reset ledger is bounded like the progress map it guards; the oldest
+ *  entries go first — a stamp that old has long been absorbed. */
+const MAX_READING_RESETS = 500;
+
+function withReset(ledger: Record<string, string>, relPath: string, resetAt: string): Record<string, string> {
+  const next = { ...ledger, [relPath]: resetAt };
+  const keys = Object.keys(next);
+  if (keys.length > MAX_READING_RESETS) {
+    for (const stale of keys.slice(0, keys.length - MAX_READING_RESETS)) delete next[stale];
+  }
+  return next;
+}
 
 export const useMobileStore = create<MobileStore>()(
   persist(
@@ -436,8 +451,11 @@ export const useMobileStore = create<MobileStore>()(
           delete readingProgress[relPath];
           const speechPositions = { ...s.speechPositions };
           delete speechPositions[relPath];
-          return { readingProgress, speechPositions, readingResets: { ...s.readingResets, [relPath]: resetAt } };
+          return { readingProgress, speechPositions, readingResets: withReset(s.readingResets, relPath, resetAt) };
         }),
+
+      recordReadingReset: (relPath, resetAt) =>
+        set((s) => ({ readingResets: withReset(s.readingResets, relPath, resetAt) })),
 
       rememberReadingProgress: (relPath, fraction) => {
         const clamped = Math.min(1, Math.max(0, fraction));
@@ -534,6 +552,9 @@ export const useMobileStore = create<MobileStore>()(
           // the wrong position and never be collected.
           speechPositions: Object.fromEntries(
             Object.entries(s.speechPositions).map(([k, v]) => [swap(k), v]),
+          ),
+          readingResets: Object.fromEntries(
+            Object.entries(s.readingResets).map(([k, v]) => [swap(k), v]),
           ),
           speech: s.speech && s.speech.relPath === from ? { ...s.speech, relPath: to } : s.speech,
           readingProgress: Object.fromEntries(

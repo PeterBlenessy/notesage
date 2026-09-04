@@ -165,4 +165,17 @@ describe("inbox-progress-sync (the phone's write-through of the sidecar)", () =>
     await pushInboxProgress();
     expect(parseReadingProgress(disk[INBOX_SIDECAR_REL]).items["a.html"].fraction).toBe(0.5);
   });
+
+  it("compares stamps as times, so a reset written without milliseconds still loses to a later read", async () => {
+    const resetAt = "2026-09-04T10:00:00Z"; // hand-edited: no milliseconds
+    disk[INBOX_SIDECAR_REL] = JSON.stringify({
+      version: 2,
+      items: { "a.html": { fraction: 0, openedAt: null, updatedAt: resetAt, resetAt } },
+    });
+    startInboxProgressSync();
+    vi.setSystemTime(new Date("2026-09-04T10:00:00.500Z")); // later, but sorts before as a string
+    useMobileStore.getState().rememberReadingProgress("Inbox/a.html", 0.4);
+    await pullInboxProgress();
+    expect(useMobileStore.getState().readingProgress["Inbox/a.html"]).toBe(0.4);
+  });
 });

@@ -7,6 +7,7 @@ import {
   mergeReadingProgress,
   parseReadingProgress,
   serializeReadingProgress,
+  time,
   READING_PROGRESS_FILE,
   type ReadingProgressFile,
 } from "@/lib/reading-progress-file";
@@ -93,10 +94,12 @@ export async function pullInboxProgress(): Promise<void> {
       const relPath = `${INBOX_PREFIX}${name}`;
       if (raw.resetAt && s.readingResets[relPath] !== raw.resetAt) {
         const changedHere = dirty.get(name);
-        if (changedHere && changedHere > raw.resetAt) {
+        // Parsed, not compared as strings: a hand-edited stamp without
+        // milliseconds sorts after one with them (review finding).
+        if (changedHere && time(changedHere) > time(raw.resetAt)) {
           // Read here after the Mac reset it: this device's progress is the
           // newer fact. Record the stamp so it is never applied on top.
-          useMobileStore.setState((st) => ({ readingResets: { ...st.readingResets, [relPath]: raw.resetAt as string } }));
+          s.recordReadingReset(relPath, raw.resetAt);
         } else {
           s.applyReadingReset(relPath, raw.resetAt);
           openedHere.delete(name);
