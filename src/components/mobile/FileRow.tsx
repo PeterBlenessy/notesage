@@ -104,6 +104,13 @@ const THUMBNAIL_KINDS: ReadonlySet<ReturnType<typeof classifyFile>> = new Set([
   "image", "pdf", "doc", "media", "html",
 ]);
 
+/** The two thumbnail-slot sizes, shared with `ArticleRow` so a saved article
+ *  and the PDF under it can never drift apart: 72pt at rest, 40pt condensed. */
+export const THUMBNAIL_SLOT = {
+  large: "h-[4.5rem] w-[4.5rem]",
+  small: "h-10 w-10",
+} as const;
+
 export function rowWantsThumbnail(entry: FileEntry): boolean {
   return !entry.is_directory && THUMBNAIL_KINDS.has(classifyFile(entry.name));
 }
@@ -165,6 +172,14 @@ export interface FileRowProps {
   /** Long-press actions (#680) — the same set the gallery offers, so the two
    *  layouts expose identical capabilities. */
   actionContext: EntryActionContext;
+  /** Row density (`listDensity`). A file's thumbnail tile is 72pt at rest
+   *  and 40pt condensed — the same two sizes the article row uses, so a PNG
+   *  and the saved article above it are the same shape (build 41 shipped
+   *  them at 40pt in both densities beside 72pt article rows). A file with
+   *  no picture (a note, an unknown format) still gets the painted tile with
+   *  its small icon centred, so the column reads as one run of thumbnails
+   *  (Peter, 2026-09-04). Folders keep the plain icon row. */
+  condensed?: boolean;
 }
 
 /**
@@ -172,9 +187,11 @@ export interface FileRowProps {
  * row actions (Share today; #619 adds Delete to this same array, without
  * touching the gesture in `SwipeRevealRow`).
  */
-export function FileRow({ entry, active, onActivate, onChanged, actionContext }: FileRowProps) {
+export function FileRow({ entry, active, onActivate, onChanged, actionContext, condensed = false }: FileRowProps) {
   const Icon = iconFor(entry);
   const wantsThumbnail = rowWantsThumbnail(entry);
+  const tile = !entry.is_directory;
+  const large = tile && !condensed;
   const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(null);
   useEffect(() => {
     if (!wantsThumbnail) return;
@@ -246,22 +263,32 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext }:
         {...longPress}
         aria-current={active ? "page" : undefined}
         className={cn(
-          "ios-press-row flex w-full items-center gap-3 px-4 py-2 text-left",
+          "ios-press-row flex w-full items-center gap-3 px-4 text-left",
+          large ? "py-3" : "py-2",
           "border-b border-border last:border-b-0",
           "hover:bg-muted/50",
           active && "bg-muted",
         )}
       >
-        {/* A fixed 40pt slot for every row, thumbnail or icon, so the list
-            keeps one row height (Files does the same) and a picture landing
-            late never reflows the rows around it. */}
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center">
+        {/* A fixed slot per row — 72pt for a file at rest, 40pt condensed or
+            for a folder — so a picture landing late never reflows the rows
+            around it. A file's slot is painted as a tile whether or not a
+            picture arrives. */}
+        <span
+          data-testid="row-thumbnail-slot"
+          className={cn(
+            "flex shrink-0 items-center justify-center",
+            large ? THUMBNAIL_SLOT.large : THUMBNAIL_SLOT.small,
+            tile && "rounded-md bg-muted",
+            tile && entry.hidden && "opacity-50",
+          )}
+        >
           {picture ? (
             <img
               src={picture}
               alt=""
               data-testid="row-thumbnail"
-              className={cn("h-10 w-10 rounded-md bg-muted object-cover", entry.hidden && "opacity-50")}
+              className={cn("rounded-md object-cover", large ? THUMBNAIL_SLOT.large : THUMBNAIL_SLOT.small)}
             />
           ) : (
             <Icon
@@ -269,7 +296,7 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext }:
               className={cn(
                 "h-5 w-5 shrink-0",
                 active ? "text-[var(--color-accent-primary)]" : "text-muted-foreground",
-                entry.hidden && "opacity-50",
+                !tile && entry.hidden && "opacity-50",
               )}
             />
           )}

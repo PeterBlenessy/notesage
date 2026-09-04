@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Sharing a PDF from Safari's own viewer now offers Notesage — the sheet used to leave it out when the document arrived as data rather than a file. Links that turn out to be documents (PDF, deck, EPUB) now offer just "Document" or "Link note", naming the file that will be saved, instead of Article formats that never applied. The Inbox list shows thumbnails for every image, PDF, document and video, not only saved articles. Try: share the UBS report link from Safari; share a screenshot from Photos; share a PDF from Files.
+The Inbox list is one shape again: every thumbnail sits on the left, and a screenshot or PDF gets the same size picture as a saved article. Condensed now means smaller everywhere — 40pt rows in the list, four cards across in the gallery. Try: toggle Condensed in the view menu in both List and Gallery; check that a PNG, a PDF, a deck and an article all show a picture in both.

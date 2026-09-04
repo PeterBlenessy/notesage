@@ -201,6 +201,48 @@ describe("FileRow thumbnails (list rows, 2026-09-03)", () => {
     expect(rowWantsThumbnail({ ...file("Photos"), is_directory: true })).toBe(false);
   });
 
+  it("sizes the picture by density — 72pt at rest, 40pt condensed, like the article row", async () => {
+    getThumbnailMock.mockResolvedValue({ kind: "image", url: "blob:thumb-2" });
+    const { unmount } = renderWithProviders(
+      <FileRow actionContext={noopActions} entry={file("shot.png")} onActivate={() => {}} />,
+    );
+    await waitFor(() => expect(screen.getByTestId("row-thumbnail")).toBeTruthy());
+    expect(screen.getByTestId("row-thumbnail-slot").className).toMatch(/h-\[4\.5rem\]/);
+    expect(screen.getByTestId("row-thumbnail").className).toMatch(/h-\[4\.5rem\]/);
+    unmount();
+    renderWithProviders(
+      <FileRow actionContext={noopActions} entry={file("shot.png")} onActivate={() => {}} condensed />,
+    );
+    await waitFor(() => expect(screen.getByTestId("row-thumbnail")).toBeTruthy());
+    expect(screen.getByTestId("row-thumbnail-slot").className).toMatch(/h-10/);
+    expect(screen.getByTestId("row-thumbnail").className).toMatch(/h-10/);
+    expect(screen.getByTestId("row-thumbnail").className).not.toMatch(/4\.5rem/);
+  });
+
+  it("paints a tile with the small icon for a file without a picture, at the same two sizes", () => {
+    const { unmount } = renderWithProviders(
+      <FileRow actionContext={noopActions} entry={file("note.md")} onActivate={() => {}} />,
+    );
+    let slot = screen.getByTestId("row-thumbnail-slot");
+    expect(slot.className).toMatch(/h-\[4\.5rem\]/);
+    expect(slot.className).toMatch(/bg-muted/);
+    expect(slot.querySelector("svg")?.getAttribute("class")).toMatch(/h-5 w-5/);
+    unmount();
+    renderWithProviders(<FileRow actionContext={noopActions} entry={file("note.md")} onActivate={() => {}} condensed />);
+    slot = screen.getByTestId("row-thumbnail-slot");
+    expect(slot.className).toMatch(/h-10/);
+    expect(slot.className).toMatch(/bg-muted/);
+  });
+
+  it("leaves a folder as a plain 40pt icon row — it is navigation, not content", () => {
+    renderWithProviders(
+      <FileRow actionContext={noopActions} entry={{ ...file("Photos"), is_directory: true }} onActivate={() => {}} />,
+    );
+    const slot = screen.getByTestId("row-thumbnail-slot");
+    expect(slot.className).toMatch(/h-10/);
+    expect(slot.className).not.toMatch(/bg-muted/);
+  });
+
   it("keeps the icon, and never asks for a picture, for notes and folders", () => {
     renderWithProviders(<FileRow actionContext={noopActions} entry={file("note.md")} onActivate={() => {}} />);
     expect(screen.queryByTestId("row-thumbnail")).toBeNull();

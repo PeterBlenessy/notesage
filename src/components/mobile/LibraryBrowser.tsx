@@ -465,8 +465,8 @@ export function LibraryBrowser() {
             icon: "square.grid.2x2",
             selected: viewMode === "gallery",
           },
-          // Row density (#836): one line per row for a library that has grown
-          // past browsing into scanning. A checkmark toggle, remembered.
+          // Density (#836): one line per row in the list, four cards across
+          // in the gallery. A checkmark toggle, remembered, shared by both.
           {
             id: "view-condensed",
             title: t("menu.condensed"),
@@ -513,7 +513,7 @@ export function LibraryBrowser() {
           },
           {
             id: "group-type",
-            title: "Group by type",
+            title: t("menu.groupType"),
             icon: "doc.on.doc",
             selected: groupMode === "type",
           },
@@ -740,6 +740,7 @@ export function LibraryBrowser() {
                   theme={theme}
                   onActivate={onActivate}
                   actionContext={actionContext}
+                  condensed={listDensity === "condensed"}
                 />
                 </>
               );
@@ -778,6 +779,7 @@ export function LibraryBrowser() {
                               onActivate={onActivate}
                               onChanged={() => void load(true)}
                               actionContext={actionContext}
+                              condensed={listDensity === "condensed"}
                             />
                           )}
                         </li>

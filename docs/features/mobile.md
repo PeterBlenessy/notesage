@@ -184,10 +184,14 @@ links and documents. PRD:
   store is a write-through cache of it (`src/lib/inbox-progress-sync.ts`;
   format and merge rules in docs/features/inbox.md).
 
-  In the list view every file row carries a 40pt thumbnail slot: images,
-  PDFs, documents, media and plain HTML files show the same picture the
-  gallery draws (`getThumbnail`, QuickLook first), notes and folders keep
-  their icon. The slot is fixed-size so a late thumbnail never reflows rows.
+  In the list view every file row carries a thumbnail slot on the left:
+  images, PDFs, documents, media and plain HTML files show the same picture
+  the gallery draws (`getThumbnail`, QuickLook first); a file with no
+  picture (a note, an unknown format) gets the same painted tile with its
+  small icon centred, so the column reads as one run of thumbnails. Folders
+  keep the plain icon row. The tile is 72pt at rest and 40pt condensed — the
+  same two sizes as the article row, so a screenshot and the saved article
+  above it are one shape — and fixed, so a late thumbnail never reflows rows.
 
   Documents (PDF/EPUB/file shares) skip the picker and store immediately in
   `Inbox/` with their original names, streamed via `loadFileRepresentation`.
@@ -568,9 +572,10 @@ view's `contentOffset`, coalesced to one message per ~300 ms. The store only
 ever moves progress FORWARD: scrolling back up to re-read a line must not
 un-read the article. `≥ 0.97` shows as "Read".
 
-**Condensed rows** — "Kompakta rader" in the view menu, a checkmark toggle
-persisted as `listDensity` — drops the excerpt and shrinks the thumbnail to one
-line per row, for a library that has grown past browsing into scanning.
+**Condensed** — "Kompakt" in the view menu, a checkmark toggle persisted as
+`listDensity` — drops the excerpt and shrinks every thumbnail to one line per
+row, for a library that has grown past browsing into scanning. The same toggle
+packs the gallery four cards across instead of three, with a one-line caption.
 
 ## Office web-viewer URLs are documents (#868)
 

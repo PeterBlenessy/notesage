@@ -87,6 +87,27 @@ describe("GalleryView (#633)", () => {
     expect(screen.getByText(/Ideas/)).toBeTruthy();
   });
 
+  it("condensed packs four cards across with a one-line caption (2026-09-04)", () => {
+    renderWithProviders(
+      <GalleryView
+        actionContext={noopActions}
+        entries={[
+          entry({ name: "note.md", modified: new Date(2026, 0, 5, 10, 0).getTime() / 1000 }),
+        ]}
+        currentFolderName="Ideas"
+        theme="light"
+        onActivate={() => {}}
+        condensed
+      />,
+    );
+    const grid = screen.getByRole("list", { name: "Notes gallery" });
+    expect(grid.className).toMatch(/grid-cols-4/);
+    expect(grid.className).not.toMatch(/grid-cols-3/);
+    expect(screen.getByText("note.md")).toBeTruthy();
+    // The date · folder line is what would wrap at a quarter of the width.
+    expect(screen.queryByText(/Ideas/)).toBeNull();
+  });
+
   it("renders directory cards without a modified/folder line", () => {
     renderWithProviders(
       <GalleryView
