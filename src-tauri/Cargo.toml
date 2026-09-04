@@ -49,9 +49,6 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "io-util", "pr
 futures = "0.3"
 bytes = "1"
 dirs = "5"
-# Recoverable deletion for the Inbox (a read-later item is thrown away, not
-# destroyed): Finder's Trash on macOS, the platform equivalent elsewhere.
-trash = "5"
 # The capture crate's pure readers (card header, lead image) serve the desktop
 # Inbox list too. Only the readers are called from desktop code — see the
 # note on `splice_article_header` in commands/preview.rs for the line that is
@@ -174,6 +171,12 @@ tauri-plugin-notesage-ios = { path = "crates/tauri-plugin-notesage-ios" }
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
 tauri-plugin-aptabase = "1.0.0"
+# Recoverable deletion for the Inbox (a read-later item is thrown away, not
+# destroyed): Finder's Trash on macOS, the platform equivalent elsewhere.
+# Desktop-only: the crate has no iOS backend and does not compile for the
+# aarch64-apple-ios target (TestFlight build 42 failed on it); the phone
+# never registers `trash_path` anyway.
+trash = "5"
 # Telemetry — crash/error reporting (Sentry, DSN-swappable to GlitchTip).
 # Desktop-only, like aptabase above: the iOS binary must not even LINK the
 # telemetry SDKs — that absence is what backs the App Store privacy label
