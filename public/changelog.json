@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.56.2",
+      "date": "2026-09-04",
+      "previousVersion": "0.56.1",
+      "sections": {
+        "improvements": [
+          "**The Inbox lists faster.** Each row's title and picture come from one read of the saved page instead of two, and a page that has not changed is not read again when the list refreshes — noticeable on a large Inbox in iCloud."
+        ],
+        "fixes": [
+          "**\"Mark as unread\" on the Mac now shows on the phone too.** The phone used to keep its own \"2 of 4 min left\" until the item was read again."
+        ]
+      }
+    },
+    {
       "version": "0.56.1",
       "date": "2026-09-04",
       "previousVersion": "0.56.0",

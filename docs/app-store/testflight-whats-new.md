@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Articles and notes no longer drag sideways: a wide table (or a wide chart, video or embed) now scrolls inside itself instead of stretching the whole page — saved pages old and new, and markdown notes. Try: open "Globalfonder i riskzonen" and a note with a wide table; drag left and right on the text, then on the table.
+Listening highlights now follow along in markdown and text notes too, not only saved pages. A "mark as unread" made on the Mac shows on the phone. Exported reports and plain pages keep the small tile in a condensed list. Try: read a markdown note aloud and watch the paragraph and word marks; mark an Inbox item unread on the Mac, then open the Inbox here.
