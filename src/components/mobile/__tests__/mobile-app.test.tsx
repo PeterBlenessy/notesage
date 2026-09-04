@@ -149,6 +149,48 @@ describe("mobile read-only browse → read flow", () => {
     expect(screen.queryByText(/title: T/)).toBeNull();
   });
 
+  it("highlights the paragraph and word being read aloud in a markdown note (#891)", async () => {
+    // The Highlight API, stubbed the way the agent tests do; installed before
+    // the reader mounts since the core decides its path once.
+    class FakeHighlight {
+      ranges: Range[];
+      constructor(...ranges: Range[]) {
+        this.ranges = ranges;
+      }
+    }
+    const highlights = new Map<string, FakeHighlight>();
+    Object.defineProperty(window, "CSS", { value: { highlights }, configurable: true });
+    Object.defineProperty(window, "Highlight", { value: FakeHighlight, configurable: true });
+    const stop = startSpeechEvents();
+    try {
+      setMockInvokeHandler("ios_list_directory", () => [
+        { name: "note.md", path: "note.md", is_directory: false, hidden: false },
+      ]);
+      setMockInvokeHandler("ios_read_file", () => "# Hello Mobile\n\nBody text here.");
+      setMockInvokeHandler("render_markdown_fragment", () => "<h1>Hello Mobile</h1>\n<p>Body <em>text</em> here.</p>");
+      renderWithProviders(<Shell />);
+      fireEvent.click(await screen.findByText("note.md"));
+      expect(await screen.findByText("Hello Mobile")).toBeTruthy();
+      useMobileStore.setState({
+        speech: { relPath: "note.md", title: "Hello Mobile", playing: true, index: 1, total: 2, rate: 1, language: "en" },
+      });
+      const text = (name: string) => highlights.get(name)?.ranges.map((r) => r.toString()).join("") ?? null;
+      await waitFor(() => expect(text("ns-speech-para")).toBe("Body text here."));
+      // A word range follows.
+      window.dispatchEvent(new CustomEvent("notesage:speech", { detail: { event: "range", index: 1, location: 5, length: 4 } }));
+      await waitFor(() => expect(text("ns-speech-word")).toBe("text"));
+      // React's DOM is untouched — no marks were wrapped in.
+      expect(document.querySelectorAll("mark.ns-speech-para").length).toBe(0);
+      // Another document takes over: the note is cleared.
+      useMobileStore.setState({ speech: { relPath: "other.md", title: "O", playing: true, index: 0, total: 1, rate: 1, language: "en" } });
+      await waitFor(() => expect(highlights.size).toBe(0));
+    } finally {
+      stop();
+      Object.defineProperty(window, "CSS", { value: undefined, configurable: true });
+      Object.defineProperty(window, "Highlight", { value: undefined, configurable: true });
+    }
+  });
+
   it("only invokes allowed read commands — never a write/AI command", async () => {
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "note.md", path: "note.md", is_directory: false, hidden: false },

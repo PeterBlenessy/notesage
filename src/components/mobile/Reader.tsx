@@ -39,6 +39,7 @@ import { withFindAgent } from "./html-find-agent";
 import { withLinkAgent } from "./html-link-agent";
 import { withSpeechAgent } from "./html-speech-agent";
 import { onSpeechRange } from "@/lib/speech-controller";
+import { installSpeechHighlight, type SpeechHighlight } from "./speech-highlight-core";
 import { splitSpeechParagraphs } from "./speech-text";
 import { documentToSpeechText } from "./speech-text";
 import { SpeechPlayerBar } from "./SpeechPlayerBar";
@@ -757,6 +758,54 @@ export function Reader() {
       postToPage({ type: "position", index: range.index, location: range.location, length: range.length });
     });
   }, [kind, speechSurface, speechMine, relPath, postToPage]);
+
+  // The same highlight for markdown and plain text (#891), in the app's own
+  // DOM: `installSpeechHighlight` on the article element, Highlight API only
+  // (React owns that DOM — no wrapping), scrolling the reader's own scroller.
+  // Re-installed when the rendered article changes.
+  const inAppHighlight = kind === "markdown" || kind === "text";
+  const inAppSource = useMemo(
+    () => (inAppHighlight && speechMine ? speechSource() : ""),
+    [inAppHighlight, speechMine, speechSource],
+  );
+  const highlightRef = useRef<SpeechHighlight | null>(null);
+  const speechIndexRef = useRef(speechIndex);
+  speechIndexRef.current = speechIndex;
+  useEffect(() => {
+    if (!inAppHighlight || !speechMine || !inAppSource) return;
+    const root = articleRef.current;
+    if (!root) return;
+    const api = installSpeechHighlight(root, {
+      allowWrap: false,
+      reveal: (range) => {
+        const scroller = scrollerRef.current;
+        if (!scroller || typeof range.getBoundingClientRect !== "function") return;
+        const rect = range.getBoundingClientRect();
+        const srect = scroller.getBoundingClientRect();
+        if (rect.top >= srect.top + srect.height * 0.15 && rect.bottom <= srect.top + srect.height * 0.85) return;
+        scroller.scrollTo({ top: scroller.scrollTop + (rect.top - srect.top) - srect.height * 0.3, behavior: "smooth" });
+      },
+    });
+    api.setParagraphs(splitSpeechParagraphs(inAppSource));
+    api.position(speechIndexRef.current);
+    highlightRef.current = api;
+    return () => {
+      api.clear();
+      if (highlightRef.current === api) highlightRef.current = null;
+    };
+    // `articleInnerHtml` and `state.status`: the DOM under `articleRef` was
+    // replaced, so the text index must be rebuilt on the new nodes.
+  }, [inAppHighlight, speechMine, inAppSource, articleInnerHtml, state.status]);
+  useEffect(() => {
+    highlightRef.current?.position(speechIndex);
+  }, [speechIndex]);
+  useEffect(() => {
+    if (!inAppHighlight || !speechMine) return;
+    return onSpeechRange((range) => {
+      if (range.relPath !== relPath) return;
+      highlightRef.current?.position(range.index, range.location, range.length);
+    });
+  }, [inAppHighlight, speechMine, relPath]);
 
   const startListening = useCallback(() => {
     const text = speechSource();

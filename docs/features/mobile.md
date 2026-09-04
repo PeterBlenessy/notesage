@@ -611,8 +611,12 @@ raw HTML by regex, the page's text differs only in whitespace), draws with the
 CSS Custom Highlight API where it exists and wraps `<mark>`s otherwise, and
 scrolls a paragraph into view when it changes. Native side:
 `SpeechPlayer.onRange` from `willSpeakRangeOfSpeechString`, forwarded as the
-`range` speech event. Markdown and plain-text documents are read in the
-app's own DOM and are not highlighted yet.
+`range` speech event. Markdown and plain-text notes get the same marks in
+the app's own DOM (#891): the core lives in `speech-highlight-core.ts` as one
+self-contained function — the page agent is that function serialised with
+`toString()`, the Reader calls it directly on the article element with the
+Highlight API only (React owns that DOM, so no `<mark>` wrapping) and its
+own scroller for keeping the paragraph in view.
 
 **Switching articles** — `SpeechPlayer.resetQueue` un-pauses before it
 stops: `stopSpeaking` is a no-op on a paused synthesiser, so starting B
