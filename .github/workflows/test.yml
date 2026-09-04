@@ -83,6 +83,7 @@ jobs:
         # three attempts, a NETWORK failure becomes a warning and the job goes
         # on; a genuine high finding still fails the job.
         run: |
+          set -o pipefail
           for attempt in 1 2 3; do
             if pnpm audit --audit-level=high --prod 2>&1 | tee audit.log; then exit 0; fi
             if grep -qE 'ERR_SOCKET_TIMEOUT|ENOTFOUND|ECONNRESET|ECONNREFUSED|ETIMEDOUT|FetchError|socket hang up' audit.log; then
