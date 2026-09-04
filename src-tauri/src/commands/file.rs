@@ -260,7 +260,8 @@ pub async fn rename_path(old_path: String, new_path: String) -> Result<(), Strin
 
 /// Move a file or folder to the Trash — recoverable, where `delete_path` is
 /// not. The Inbox uses this: throwing away a read-later item should be as
-/// safe as it is in Mail.
+/// safe as it is in Mail. Desktop-only, like the `trash` crate behind it.
+#[cfg(not(target_os = "ios"))]
 #[tauri::command]
 pub async fn trash_path(path: String) -> Result<(), String> {
     // Finder does the work on macOS, and the Inbox usually sits on an iCloud
