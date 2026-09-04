@@ -108,6 +108,26 @@ describe("GalleryView (#633)", () => {
     expect(screen.queryByText(/Ideas/)).toBeNull();
   });
 
+  it("puts a Listen badge on saved pages only, and it does not open the card", () => {
+    const onActivate = vi.fn();
+    const onListen = vi.fn();
+    renderWithProviders(
+      <GalleryView
+        actionContext={noopActions}
+        entries={[entry({ name: "story.html" }), entry({ name: "note.md" })]}
+        currentFolderName="Inbox"
+        theme="light"
+        onActivate={onActivate}
+        onListen={onListen}
+      />,
+    );
+    const badges = screen.getAllByRole("button", { name: "Listen" });
+    expect(badges).toHaveLength(1);
+    fireEvent.click(badges[0]);
+    expect(onListen).toHaveBeenCalledWith(expect.objectContaining({ name: "story.html" }));
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
   it("renders directory cards without a modified/folder line", () => {
     renderWithProviders(
       <GalleryView
@@ -149,7 +169,7 @@ describe("GalleryView (#633)", () => {
     // Each card owns its own observer instance (lazy per-card, not a single
     // shared one) — find the instance watching the "a.md" card specifically.
     expect(FakeIntersectionObserver.instances).toHaveLength(2);
-    const aCardEl = screen.getByText("a.md").closest("button")!;
+    const aCardEl = screen.getByText("a.md").closest("[data-testid=\"gallery-card\"]")!;
     const observerForA = FakeIntersectionObserver.instances.find((o) =>
       o.observed.includes(aCardEl),
     )!;

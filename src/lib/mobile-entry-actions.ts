@@ -39,6 +39,9 @@ export interface EntryActionContext {
    *  pinned entries hold PATHS, so a move leaves both aiming at a file that no
    *  longer exists — the same problem `useFileRenameSync` solves on desktop. */
   onPathMoved?: (from: string, to: string) => void;
+  /** Open a saved page and start reading it aloud. Offered for HTML
+   *  entries only — the kind the Reader can turn into speech from a list. */
+  onListen?: (entry: FileEntry) => void;
 }
 
 /**
@@ -78,6 +81,9 @@ export function entryMenuItems(entry: FileEntry, ctx: EntryActionContext): IosEn
     destructive: true,
     inline: true,
   });
+  if (ctx.onListen && !entry.is_directory && /\.html?$/i.test(entry.name)) {
+    items.push({ id: "listen", title: t("action.listen"), systemImage: "headphones" });
+  }
   items.push({ id: "rename", title: t("action.rename"), systemImage: "pencil" });
   // Files only — the native command refuses directories, so offering the row
   // for a folder would be a menu entry whose only outcome is an error toast.
@@ -164,6 +170,9 @@ export async function runEntryAction(
   ctx: EntryActionContext,
 ): Promise<void> {
   switch (id) {
+    case "listen":
+      ctx.onListen?.(entry);
+      return;
     case "share":
       await iosShareFile(entry.path).catch((err) =>
         toast.error(t("action.shareFailed", { error: String(err) })),

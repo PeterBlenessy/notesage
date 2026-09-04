@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-The Inbox list is one shape again: every thumbnail sits on the left, and a screenshot or PDF gets the same size picture as a saved article. Condensed now means smaller everywhere — 40pt rows in the list, four cards across in the gallery. Try: toggle Condensed in the view menu in both List and Gallery; check that a PNG, a PDF, a deck and an article all show a picture in both.
+Listen without opening first: every saved page in the list has a headphones button on the right, every card in the gallery a badge on its picture, and holding a row offers Listen too. Playback starts as soon as the article opens. Try: tap the headphones on an Inbox article in List and in Gallery; hold an article row and choose Listen; check the player resumes where you left it.
