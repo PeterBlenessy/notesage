@@ -5,6 +5,7 @@ import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory, iosCreateDirectory, iosTextPrompt, iosQuickLook } from "@/lib/ios-api";
 import { toast } from "sonner";
 import { useMobileStore } from "@/stores/mobile-store";
+import { toggleSpeech } from "@/lib/speech-controller";
 import type { EntryActionContext } from "@/lib/mobile-entry-actions";
 import { FileRow, classifyFile } from "./FileRow";
 import { ArticleRow } from "./ArticleRow";
@@ -348,11 +349,9 @@ export function LibraryBrowser() {
     openDocument({ relPath: entry.path, name: entry.name });
   };
 
-  // Listen from the list or gallery: open the article with playback
-  // requested; the Reader starts as soon as the text is in.
-  const onListen = (entry: FileEntry) => {
-    openDocument({ relPath: entry.path, name: entry.name, listen: true });
-  };
+  // Listen from the hold menu: start reading in place, like the row's own
+  // control — the list stays, the audio runs (#833).
+  const onListen = (entry: FileEntry) => toggleSpeech(entry);
 
   // --- Create flow (#586): "+" bottom-right. At the library root only
   // folders may be created (notes live inside project folders — Peter's
@@ -748,7 +747,6 @@ export function LibraryBrowser() {
                   onActivate={onActivate}
                   actionContext={actionContext}
                   condensed={listDensity === "condensed"}
-                  onListen={onListen}
                 />
                 </>
               );
@@ -780,7 +778,6 @@ export function LibraryBrowser() {
                               onChanged={() => void load(true)}
                               actionContext={actionContext}
                               condensed={listDensity === "condensed"}
-                              onListen={onListen}
                             />
                           ) : (
                             <FileRow

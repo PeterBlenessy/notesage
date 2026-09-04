@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Listen without opening first: every saved page in the list has a headphones button on the right, every card in the gallery a badge on its picture, and holding a row offers Listen too. Playback starts as soon as the article opens. Try: tap the headphones on an Inbox article in List and in Gallery; hold an article row and choose Listen; check the player resumes where you left it.
+Listen from the list, without opening: the headphones on a saved page's row (or its card in the gallery) start reading right there, turn into Pause, and a ring around the button fills as the article goes by. Open the article and the player is already running; go back and the ring is where you left it. Try: start from a row, open the article, go back, pause from the ring, resume from the article.

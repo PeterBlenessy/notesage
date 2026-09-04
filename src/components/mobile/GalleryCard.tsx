@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Folder, Headphones } from "lucide-react";
-import { t } from "@/lib/i18n";
+import { Folder } from "lucide-react";
+import { ListenButton } from "./ListenButton";
 import { cn } from "@/lib/utils";
 import type { FileEntry } from "@/lib/tauri";
 import { presentEntryMenu, type EntryActionContext } from "@/lib/mobile-entry-actions";
@@ -22,9 +22,6 @@ interface GalleryCardProps {
   /** Four-across density: a smaller title and no date line, so the caption
    *  fits the narrower card in one line. */
   condensed?: boolean;
-  /** Start reading an article aloud from its card (a Listen badge on the
-   *  thumbnail of every saved page). */
-  onListen?: (entry: FileEntry) => void;
 }
 
 /**
@@ -42,7 +39,6 @@ export function GalleryCard({
   onActivate,
   actionContext,
   condensed = false,
-  onListen,
 }: GalleryCardProps) {
   const longPress = useLongPress((rect) => {
     void presentEntryMenu(entry, rect, actionContext);
@@ -98,7 +94,9 @@ export function GalleryCard({
   }, [entry.path, entry.is_directory, theme]);
 
   const Icon = iconFor(entry);
-  const listenable = onListen && !entry.is_directory && classifyFile(entry.name) === "html";
+  // Read aloud without opening (#833): every saved page's card carries the
+  // control on its picture.
+  const listenable = !entry.is_directory && classifyFile(entry.name) === "html";
 
   return (
     // The card button and the Listen badge are SIBLINGS (a button may not
@@ -167,15 +165,7 @@ export function GalleryCard({
     </button>
       {listenable && (
         <span className="pointer-events-none absolute inset-x-0 top-0 aspect-square">
-          <button
-            type="button"
-            aria-label={t("action.listen")}
-            data-testid="card-listen"
-            onClick={() => onListen(entry)}
-            className="pointer-events-auto absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-background/85 text-foreground shadow-sm backdrop-blur"
-          >
-            <Headphones className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-          </button>
+          <ListenButton entry={entry} size="card" className="pointer-events-auto absolute bottom-1.5 right-1.5" />
         </span>
       )}
     </div>

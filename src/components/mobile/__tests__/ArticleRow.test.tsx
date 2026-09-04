@@ -2,6 +2,7 @@
 import "@/test/tauri-mock";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { waitFor } from "@testing-library/react";
+import { fireEvent } from "@testing-library/react";
 import { renderWithProviders, screen } from "@/test/component-harness";
 import { ArticleRow } from "@/components/mobile/ArticleRow";
 import { useMobileStore } from "@/stores/mobile-store";
@@ -9,6 +10,11 @@ import { useMobileStore } from "@/stores/mobile-store";
 const getThumbnailMock = vi.fn();
 vi.mock("@/lib/mobile-thumbnails", () => ({
   getThumbnail: (...args: unknown[]) => getThumbnailMock(...args),
+}));
+
+const toggle = vi.fn();
+vi.mock("@/lib/speech-controller", () => ({
+  toggleSpeech: (...args: unknown[]) => toggle(...args),
 }));
 
 const metaMock = vi.fn();
@@ -34,7 +40,8 @@ beforeEach(() => {
   metaMock.mockReset();
   metaMock.mockResolvedValue({ title: "How to read", excerpt: "Slowly.", minutes: 4, site: "example.com" });
   getThumbnailMock.mockResolvedValue({ kind: "image", url: "blob:lead" });
-  useMobileStore.setState({ readingProgress: {} });
+  useMobileStore.setState({ readingProgress: {}, speech: null, openDoc: null });
+  toggle.mockReset();
 });
 
 describe("ArticleRow layout (thumbnail left, 2026-09-04)", () => {
@@ -81,29 +88,24 @@ describe("ArticleRow layout (thumbnail left, 2026-09-04)", () => {
 });
 
 describe("ArticleRow Listen control (2026-09-04)", () => {
-  it("offers Listen when the browser provides it, and it does not open the row", async () => {
-    const onActivate = vi.fn();
-    const onListen = vi.fn();
-    renderWithProviders(
-      <ArticleRow actionContext={noopActions} entry={capture} onActivate={onActivate} onListen={onListen} condensed={false} />,
-    );
-    await waitFor(() => expect(screen.getByText("How to read")).toBeTruthy());
-    const listen = screen.getByRole("button", { name: "Listen" });
-    listen.click();
-    expect(onListen).toHaveBeenCalledWith(expect.objectContaining({ path: capture.path }));
-    expect(onActivate).not.toHaveBeenCalled();
-  });
-
-  it("hides the control when playback is not offered; the row itself is a real button", async () => {
+  it("every article row has one; it starts playback in place and does not open the row", async () => {
     const onActivate = vi.fn();
     renderWithProviders(<ArticleRow actionContext={noopActions} entry={capture} onActivate={onActivate} condensed={false} />);
     await waitFor(() => expect(screen.getByText("How to read")).toBeTruthy());
-    expect(screen.queryByTestId("row-listen")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Listen" }));
+    expect(toggle).toHaveBeenCalledWith(expect.objectContaining({ path: capture.path }));
+    expect(onActivate).not.toHaveBeenCalled();
+    expect(useMobileStore.getState().openDoc).toBeNull();
+  });
+
+  it("the row itself is a real button whose name does not pick up the control's", async () => {
+    const onActivate = vi.fn();
+    renderWithProviders(<ArticleRow actionContext={noopActions} entry={capture} onActivate={onActivate} condensed={false} />);
+    await waitFor(() => expect(screen.getByText("How to read")).toBeTruthy());
     const row = screen.getByRole("button", { name: /How to read/ });
     expect(row.tagName).toBe("BUTTON");
-    // Not nested: the row's accessible name must not pick up "Listen".
     expect(row.textContent).not.toContain("Listen");
-    row.click();
+    fireEvent.click(row);
     expect(onActivate).toHaveBeenCalledTimes(1);
   });
 });

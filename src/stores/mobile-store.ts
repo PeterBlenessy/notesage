@@ -48,10 +48,27 @@ export interface OpenDocRef {
    *  (#586 follow-up, Notes semantics). `relPath` is the intended location;
    *  the real path is chosen at creation (title-derived, deduped). */
   isNew?: boolean;
-  /** Open AND start reading aloud as soon as the text is in: the Listen
-   *  control on a list row or gallery card. The Reader clears it once
-   *  playback has started, so a later back/forward never replays. */
-  listen?: boolean;
+}
+
+/** What is being read aloud right now, app-wide (#833, list playback).
+ *
+ *  Playback belongs to the APP, not to the open document: it starts from a
+ *  list row, a gallery card or the Reader, keeps going while the user moves
+ *  between them, and every surface renders this one session. Held here
+ *  rather than in a hook so the row that started it, the card for the same
+ *  article and the Reader's transport all agree. Not persisted — the native
+ *  player does not survive a relaunch, so a stale session would be a lie. */
+export interface SpeechSession {
+  relPath: string;
+  title: string;
+  playing: boolean;
+  /** Paragraph index currently being spoken. */
+  index: number;
+  /** Total paragraphs, or 0 before the first progress event. */
+  total: number;
+  rate: number;
+  /** Language subtag the article is being read in ("en"), once known. */
+  language: string | null;
 }
 
 const RECENT_CAP = 20;
@@ -197,6 +214,14 @@ interface MobileStore {
   speechVoices: Record<string, string>;
   rememberSpeechVoice: (language: string, voiceId: string) => void;
 
+  /** The one thing being read aloud, or null. Written by `speech-controller`. */
+  speech: SpeechSession | null;
+  setSpeech: (patch: Partial<SpeechSession> | null) => void;
+  /** The reading speed the user settled on, as a multiplier. Persisted: a
+   *  speed is a preference, not a property of one article. */
+  speechRate: number;
+  setSpeechRate: (rate: number) => void;
+
   /** How far through each document the reader has scrolled, 0…1 (#836).
    *  Persisted: it is what turns a file list into a read-later list —
    *  "2 of 4 min left" — and it must survive relaunch to mean anything. */
@@ -246,6 +271,8 @@ export const useMobileStore = create<MobileStore>()(
       scrollOffsets: {},
       speechPositions: {},
       speechVoices: {},
+      speech: null,
+      speechRate: 1.0,
       readingProgress: {},
       listDensity: "comfortable",
 
@@ -329,11 +356,9 @@ export const useMobileStore = create<MobileStore>()(
           openDoc: ref,
           // A link to the page you are already on is not a step — pushing it
           // would make Back appear to do nothing.
-          // `listen` is a one-shot request for the document it was opened
-          // with; Back must return to the page, not restart its playback.
           docStack:
             s.openDoc && s.openDoc.relPath !== ref.relPath
-              ? [...s.docStack, { ...s.openDoc, listen: undefined }].slice(-DOC_STACK_CAP)
+              ? [...s.docStack, s.openDoc].slice(-DOC_STACK_CAP)
               : s.docStack,
           recentlyRead: [
             ref.relPath,
@@ -417,6 +442,30 @@ export const useMobileStore = create<MobileStore>()(
       rememberSpeechVoice: (language, voiceId) =>
         set((s) => ({ speechVoices: { ...s.speechVoices, [language]: voiceId } })),
 
+      setSpeechRate: (rate) => set((s) => ({ speechRate: rate, speech: s.speech ? { ...s.speech, rate } : s.speech })),
+
+      setSpeech: (patch) =>
+        set((s) => {
+          if (patch === null) return { speech: null };
+          if (!s.speech) {
+            // A fresh session must name its document; a stray patch with no
+            // session to apply to is dropped rather than inventing one.
+            if (!patch.relPath) return {};
+            return {
+              speech: {
+                relPath: patch.relPath,
+                title: patch.title ?? "",
+                playing: patch.playing ?? false,
+                index: patch.index ?? 0,
+                total: patch.total ?? 0,
+                rate: patch.rate ?? 1.0,
+                language: patch.language ?? null,
+              },
+            };
+          }
+          return { speech: { ...s.speech, ...patch } };
+        }),
+
       rememberSpeechPosition: (relPath, index) =>
         set((s) => {
           const next = { ...s.speechPositions, [relPath]: index };
@@ -467,6 +516,7 @@ export const useMobileStore = create<MobileStore>()(
           speechPositions: Object.fromEntries(
             Object.entries(s.speechPositions).map(([k, v]) => [swap(k), v]),
           ),
+          speech: s.speech && s.speech.relPath === from ? { ...s.speech, relPath: to } : s.speech,
           readingProgress: Object.fromEntries(
             Object.entries(s.readingProgress).map(([k, v]) => [swap(k), v]),
           ),
@@ -521,6 +571,7 @@ export const useMobileStore = create<MobileStore>()(
         recentlyRead: s.recentlyRead,
         speechPositions: s.speechPositions,
         speechVoices: s.speechVoices,
+        speechRate: s.speechRate,
         readingProgress: s.readingProgress,
         listDensity: s.listDensity,
         sortMode: s.sortMode,

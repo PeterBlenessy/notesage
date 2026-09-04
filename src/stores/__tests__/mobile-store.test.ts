@@ -358,6 +358,19 @@ describe("rewritePath (#754)", () => {
     expect(s.scrollOffsets["Inbox/a.md"]).toBeUndefined();
   });
 
+  it("follows the article being read aloud, so the ring and the transport stay with it", async () => {
+    useMobileStore.setState({
+      speech: { relPath: "Inbox/a.html", title: "A", playing: true, index: 2, total: 9, rate: 1, language: "en" },
+      speechPositions: { "Inbox/a.html": 2 },
+    });
+    await useMobileStore.getState().rewritePath("Inbox/a.html", "Archive/a.html");
+    const s = useMobileStore.getState();
+    expect(s.speech?.relPath).toBe("Archive/a.html");
+    expect(s.speech?.index).toBe(2);
+    expect(s.speechPositions["Archive/a.html"]).toBe(2);
+    expect(s.speechPositions["Inbox/a.html"]).toBeUndefined();
+  });
+
   it("leaves everything alone when the path did not change", async () => {
     useMobileStore.setState({ recentlyRead: ["Inbox/a.md"] });
     await useMobileStore.getState().rewritePath("Inbox/a.md", "Inbox/a.md");

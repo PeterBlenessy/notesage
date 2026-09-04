@@ -16,8 +16,6 @@ interface GalleryViewProps {
    *  menu's one Condensed entry means "smaller" everywhere (it used to
    *  change nothing here — Peter, 2026-09-04). */
   condensed?: boolean;
-  /** Listen badge on article cards; absent where playback is not offered. */
-  onListen?: (entry: FileEntry) => void;
 }
 
 /**
@@ -32,7 +30,6 @@ export function GalleryView({
   onActivate,
   actionContext,
   condensed = false,
-  onListen,
 }: GalleryViewProps) {
   // Leaving the gallery (back-out, folder change — the browser remounts this
   // per folder — or a switch to list view) drops every queued thumbnail job
@@ -54,7 +51,6 @@ export function GalleryView({
           onActivate={onActivate}
           actionContext={actionContext}
           condensed={condensed}
-          onListen={onListen}
         />
       ))}
     </div>

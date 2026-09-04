@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
-import { Headphones } from "lucide-react";
 import type { ArticleCardMeta } from "@/lib/ios-api";
-import type { FileEntry } from "@/lib/tauri";
 import { articleMetaFor } from "@/lib/article-meta-cache";
 import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
 import { useMobileStore } from "@/stores/mobile-store";
@@ -9,7 +7,7 @@ import { cn } from "@/lib/utils";
 import { FileRow, iconFor, THUMBNAIL_SLOT, type FileRowProps } from "./FileRow";
 import { useLongPress } from "./useLongPress";
 import { presentEntryMenu } from "@/lib/mobile-entry-actions";
-import { t } from "@/lib/i18n";
+import { ListenButton } from "./ListenButton";
 import { readingLine, READ_THRESHOLD } from "./reading-progress";
 
 /**
@@ -32,16 +30,7 @@ import { readingLine, READ_THRESHOLD } from "./reading-progress";
  * `condensed` drops the excerpt and shrinks the thumbnail: one line per row,
  * for a library that has grown past browsing into scanning.
  */
-export function ArticleRow({
-  condensed,
-  onListen,
-  ...props
-}: FileRowProps & {
-  condensed: boolean;
-  /** Start reading this article aloud — the headphones control at the
-   *  row's right edge. Absent where playback is not offered. */
-  onListen?: (entry: FileEntry) => void;
-}) {
+export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: boolean }) {
   const { entry } = props;
   // Hold for the full menu, as on the plain row — Pin, Rename, Move and
   // Listen were unreachable from an article row before.
@@ -113,8 +102,7 @@ export function ArticleRow({
         // Centred like the plain row: the slot is fixed-height, and a
         // title-only row (header not yet read, or no excerpt) would otherwise
         // sit top-heavy beside an empty 72pt box.
-        "ios-press-row flex min-w-0 flex-1 items-center gap-3 pl-4 text-left",
-        onListen ? "pr-2" : "pr-4",
+        "ios-press-row flex min-w-0 flex-1 items-center gap-3 pl-4 pr-2 text-left",
         condensed ? "py-2" : "py-3",
         "hover:bg-muted/50",
       )}
@@ -157,19 +145,10 @@ export function ArticleRow({
         )}
       </div>
     </button>
-      {onListen && (
-        <button
-          type="button"
-          aria-label={t("action.listen")}
-          data-testid="row-listen"
-          onClick={() => onListen(entry)}
-          className="ios-press-row flex w-12 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground"
-        >
-          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-muted">
-            <Headphones className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-          </span>
-        </button>
-      )}
+      {/* Read aloud without opening: the row's one control (#833). */}
+      <span className="flex w-12 shrink-0 items-center justify-center">
+        <ListenButton entry={entry} size="row" />
+      </span>
     </div>
   );
 }

@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "@/components/ui/sonner";
 import { useMobileStore } from "@/stores/mobile-store";
 import { startInboxProgressSync } from "@/lib/inbox-progress-sync";
+import { startSpeechEvents } from "@/lib/speech-controller";
 import { Onboarding } from "@/components/mobile/Onboarding";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 import { Reader } from "@/components/mobile/Reader";
@@ -37,6 +38,9 @@ export function MobileApp() {
   // inbox-progress-sync.ts. Subscribed at the root: reading is exactly when
   // progress changes, and the listing has unmounted by then.
   useEffect(() => startInboxProgressSync(), []);
+  // Read-aloud events feed the app-wide session (#833). At the root for the
+  // same reason: playback outlives both the list and the article.
+  useEffect(() => startSpeechEvents(), []);
 
   useEffect(() => {
     void refreshGrant();

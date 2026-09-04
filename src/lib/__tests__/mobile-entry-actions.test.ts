@@ -1,6 +1,8 @@
 // @vitest-environment jsdom
+import "@/test/local-storage";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { FileEntry } from "@/lib/tauri";
+import { useMobileStore } from "@/stores/mobile-store";
 
 vi.mock("@/lib/mobile-thumbnails", () => ({
   getThumbnail: vi.fn(async () => ({ kind: "markdown", html: "<p>rendered</p>" })),
@@ -75,6 +77,18 @@ describe("entryMenuItems", () => {
     expect(entryMenuItems(page, ctx()).map((i) => i.id)).not.toContain("listen");
     await runEntryAction("listen", page, ctx({ onListen }));
     expect(onListen).toHaveBeenCalledWith(page);
+  });
+
+  it("labels the Listen row by the session: Pause while playing, Play while paused", () => {
+    const page: FileEntry = { ...file, name: "story.html", path: "Inbox/story.html" };
+    const session = { relPath: page.path, title: "S", playing: true, index: 0, total: 3, rate: 1, language: null };
+    useMobileStore.setState({ speech: session });
+    expect(entryMenuItems(page, ctx({ onListen: vi.fn() })).find((i) => i.id === "listen")?.title).toBe("Pause");
+    useMobileStore.setState({ speech: { ...session, playing: false } });
+    expect(entryMenuItems(page, ctx({ onListen: vi.fn() })).find((i) => i.id === "listen")?.title).toBe("Play");
+    useMobileStore.setState({ speech: { ...session, relPath: "Inbox/other.html" } });
+    expect(entryMenuItems(page, ctx({ onListen: vi.fn() })).find((i) => i.id === "listen")?.title).toBe("Listen");
+    useMobileStore.setState({ speech: null });
   });
 
   it("omits share for a folder — ios_share_file copies a single file", () => {

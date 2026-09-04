@@ -695,8 +695,6 @@ export function Reader() {
     if (chosen) speech.chooseVoice(chosen);
   }, [speech]);
 
-  const [sourceTick, setSourceTick] = useState(0);
-  const [sourceFailed, setSourceFailed] = useState(false);
   const startListening = useCallback(() => {
     const text = speechSource();
     if (!text) {
@@ -716,65 +714,22 @@ export function Reader() {
       .catch(() => speech.start(text, title));
   }, [speechSource, speech, name, relPath]);
 
-  // Listen from the list or gallery: the row opened this document with
-  // `listen` set, so start as soon as there is text to read — the HTML read
-  // above, or the markdown/text state landing — and only once.
-  const listenRequested = openDoc?.listen === true;
-  const listenConsumedRef = useRef(false);
-  useEffect(() => {
-    if (!listenRequested || listenConsumedRef.current) return;
-    const consume = () => {
-      listenConsumedRef.current = true;
-      useMobileStore.setState((s) => (s.openDoc ? { openDoc: { ...s.openDoc, listen: undefined } } : {}));
-    };
-    // Nothing will ever come: say so rather than leave the player silent.
-    const unreadable =
-      sourceFailed ||
-      state.status === "error" ||
-      state.status === "unsupported" ||
-      state.status === "too-large" ||
-      state.status === "image" ||
-      state.status === "pdf";
-    if (unreadable) {
-      consume();
-      toast.error(t("reader.listenNothing"));
-      return;
-    }
-    if (!speechSource()) return;
-    consume();
-    startListening();
-  }, [listenRequested, state, sourceTick, sourceFailed, speechSource, startListening]);
-
   useEffect(() => {
     setSourceUrl(null);
     rawHtmlRef.current = null;
-    setSourceFailed(false);
     // `kind`, not the extension: `classifyFile` counts `.htm` as html too, and
     // an extension check here would leave those with no source for Listen —
     // the menu entry would appear and then report nothing to read.
     if (kind !== "html") return;
     let cancelled = false;
     void (async () => {
-      let raw: string;
       try {
-        raw = await iosReadFile(relPath);
-      } catch {
-        // Unreadable: no source, and — the part that must not stay silent —
-        // a Listen-on-open has nothing to start from (review finding).
-        if (!cancelled) setSourceFailed(true);
-        return;
-      }
-      // Reuse this read for the speech player rather than adding a third
-      // one: a capture is ~500 KB of inlined base64, and reading it twice
-      // to say the same thing is the kind of cost that only shows up on a
-      // phone.
-      if (!cancelled) {
-        rawHtmlRef.current = raw;
-        // A ref does not re-render; the Listen-on-open effect below needs
-        // to know the text has arrived.
-        setSourceTick((n) => n + 1);
-      }
-      try {
+        const raw = await iosReadFile(relPath);
+        // Reuse this read for the speech player rather than adding a third
+        // one: a capture is ~500 KB of inlined base64, and reading it twice
+        // to say the same thing is the kind of cost that only shows up on a
+        // phone.
+        if (!cancelled) rawHtmlRef.current = raw;
         const url = await invoke<string | null>("article_source_url", { content: raw });
         if (!cancelled) setSourceUrl(url);
       } catch {
