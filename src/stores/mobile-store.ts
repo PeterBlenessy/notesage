@@ -48,6 +48,10 @@ export interface OpenDocRef {
    *  (#586 follow-up, Notes semantics). `relPath` is the intended location;
    *  the real path is chosen at creation (title-derived, deduped). */
   isNew?: boolean;
+  /** Open AND start reading aloud as soon as the text is in: the Listen
+   *  control on a list row or gallery card. The Reader clears it once
+   *  playback has started, so a later back/forward never replays. */
+  listen?: boolean;
 }
 
 const RECENT_CAP = 20;
@@ -325,9 +329,11 @@ export const useMobileStore = create<MobileStore>()(
           openDoc: ref,
           // A link to the page you are already on is not a step — pushing it
           // would make Back appear to do nothing.
+          // `listen` is a one-shot request for the document it was opened
+          // with; Back must return to the page, not restart its playback.
           docStack:
             s.openDoc && s.openDoc.relPath !== ref.relPath
-              ? [...s.docStack, s.openDoc].slice(-DOC_STACK_CAP)
+              ? [...s.docStack, { ...s.openDoc, listen: undefined }].slice(-DOC_STACK_CAP)
               : s.docStack,
           recentlyRead: [
             ref.relPath,

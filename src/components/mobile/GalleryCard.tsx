@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Folder } from "lucide-react";
+import { Folder, Headphones } from "lucide-react";
+import { t } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
 import type { FileEntry } from "@/lib/tauri";
 import { presentEntryMenu, type EntryActionContext } from "@/lib/mobile-entry-actions";
 import { useLongPress } from "./useLongPress";
-import { formatModified, iconFor } from "./FileRow";
+import { classifyFile, formatModified, iconFor } from "./FileRow";
 import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
 
 interface GalleryCardProps {
@@ -21,6 +22,9 @@ interface GalleryCardProps {
   /** Four-across density: a smaller title and no date line, so the caption
    *  fits the narrower card in one line. */
   condensed?: boolean;
+  /** Start reading an article aloud from its card (a Listen badge on the
+   *  thumbnail of every saved page). */
+  onListen?: (entry: FileEntry) => void;
 }
 
 /**
@@ -38,11 +42,12 @@ export function GalleryCard({
   onActivate,
   actionContext,
   condensed = false,
+  onListen,
 }: GalleryCardProps) {
   const longPress = useLongPress((rect) => {
     void presentEntryMenu(entry, rect, actionContext);
   });
-  const rootRef = useRef<HTMLButtonElement | null>(null);
+  const rootRef = useRef<HTMLDivElement | null>(null);
   const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(
     entry.is_directory ? { kind: "icon" } : null,
   );
@@ -93,14 +98,18 @@ export function GalleryCard({
   }, [entry.path, entry.is_directory, theme]);
 
   const Icon = iconFor(entry);
+  const listenable = onListen && !entry.is_directory && classifyFile(entry.name) === "html";
 
   return (
+    // The card button and the Listen badge are SIBLINGS (a button may not
+    // contain another). The badge sits in a square the size of the thumbnail
+    // so it anchors to the picture's corner whatever the caption's height.
+    <div ref={rootRef} data-testid="gallery-card" className="relative">
     <button
-      ref={rootRef}
       type="button"
       onClick={() => onActivate(entry)}
       {...longPress}
-      className="ios-press-row flex flex-col items-start gap-1.5 rounded-lg text-left"
+      className="ios-press-row flex w-full flex-col items-start gap-1.5 rounded-lg text-left"
     >
       <span className="relative aspect-square w-full overflow-hidden rounded-lg bg-muted">
         {entry.is_directory ? (
@@ -156,5 +165,19 @@ export function GalleryCard({
         )}
       </span>
     </button>
+      {listenable && (
+        <span className="pointer-events-none absolute inset-x-0 top-0 aspect-square">
+          <button
+            type="button"
+            aria-label={t("action.listen")}
+            data-testid="card-listen"
+            onClick={() => onListen(entry)}
+            className="pointer-events-auto absolute bottom-1.5 right-1.5 flex h-7 w-7 items-center justify-center rounded-full bg-background/85 text-foreground shadow-sm backdrop-blur"
+          >
+            <Headphones className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
+          </button>
+        </span>
+      )}
+    </div>
   );
 }

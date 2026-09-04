@@ -67,6 +67,16 @@ describe("entryMenuItems", () => {
     expect(items.every((i) => i.systemImage.length > 0)).toBe(true);
   });
 
+  it("offers Listen for a saved page when the browser can start playback", async () => {
+    const onListen = vi.fn();
+    const page: FileEntry = { ...file, name: "story.html", path: "Inbox/story.html" };
+    expect(entryMenuItems(page, ctx({ onListen })).map((i) => i.id)).toContain("listen");
+    expect(entryMenuItems(file, ctx({ onListen })).map((i) => i.id)).not.toContain("listen");
+    expect(entryMenuItems(page, ctx()).map((i) => i.id)).not.toContain("listen");
+    await runEntryAction("listen", page, ctx({ onListen }));
+    expect(onListen).toHaveBeenCalledWith(page);
+  });
+
   it("omits share for a folder — ios_share_file copies a single file", () => {
     // Move is absent too: the native command is files-only.
     expect(entryMenuItems(folder, ctx()).map((i) => i.id)).toEqual(["pin", "delete", "rename"]);

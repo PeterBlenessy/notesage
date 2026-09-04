@@ -348,6 +348,12 @@ export function LibraryBrowser() {
     openDocument({ relPath: entry.path, name: entry.name });
   };
 
+  // Listen from the list or gallery: open the article with playback
+  // requested; the Reader starts as soon as the text is in.
+  const onListen = (entry: FileEntry) => {
+    openDocument({ relPath: entry.path, name: entry.name, listen: true });
+  };
+
   // --- Create flow (#586): "+" bottom-right. At the library root only
   // folders may be created (notes live inside project folders — Peter's
   // design), so the tap prompts for a folder name. Inside a folder the tap
@@ -359,6 +365,7 @@ export function LibraryBrowser() {
   // One action set for both layouts (#680) — built here so the pin state and
   // the listing reload are wired once rather than per row.
   const actionContext: EntryActionContext = {
+    onListen,
     isPinned: (relPath) => pinnedPaths.includes(relPath),
     togglePin,
     onChanged: () => void load(true),
@@ -741,6 +748,7 @@ export function LibraryBrowser() {
                   onActivate={onActivate}
                   actionContext={actionContext}
                   condensed={listDensity === "condensed"}
+                  onListen={onListen}
                 />
                 </>
               );
@@ -772,6 +780,7 @@ export function LibraryBrowser() {
                               onChanged={() => void load(true)}
                               actionContext={actionContext}
                               condensed={listDensity === "condensed"}
+                              onListen={onListen}
                             />
                           ) : (
                             <FileRow

@@ -79,3 +79,31 @@ describe("ArticleRow layout (thumbnail left, 2026-09-04)", () => {
     await waitFor(() => expect(screen.getByText("How to read.html")).toBeTruthy());
   });
 });
+
+describe("ArticleRow Listen control (2026-09-04)", () => {
+  it("offers Listen when the browser provides it, and it does not open the row", async () => {
+    const onActivate = vi.fn();
+    const onListen = vi.fn();
+    renderWithProviders(
+      <ArticleRow actionContext={noopActions} entry={capture} onActivate={onActivate} onListen={onListen} condensed={false} />,
+    );
+    await waitFor(() => expect(screen.getByText("How to read")).toBeTruthy());
+    const listen = screen.getByRole("button", { name: "Listen" });
+    listen.click();
+    expect(onListen).toHaveBeenCalledWith(expect.objectContaining({ path: capture.path }));
+    expect(onActivate).not.toHaveBeenCalled();
+  });
+
+  it("hides the control when playback is not offered; the row itself is a real button", async () => {
+    const onActivate = vi.fn();
+    renderWithProviders(<ArticleRow actionContext={noopActions} entry={capture} onActivate={onActivate} condensed={false} />);
+    await waitFor(() => expect(screen.getByText("How to read")).toBeTruthy());
+    expect(screen.queryByTestId("row-listen")).toBeNull();
+    const row = screen.getByRole("button", { name: /How to read/ });
+    expect(row.tagName).toBe("BUTTON");
+    // Not nested: the row's accessible name must not pick up "Listen".
+    expect(row.textContent).not.toContain("Listen");
+    row.click();
+    expect(onActivate).toHaveBeenCalledTimes(1);
+  });
+});

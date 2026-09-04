@@ -577,6 +577,15 @@ un-read the article. `≥ 0.97` shows as "Read".
 row, for a library that has grown past browsing into scanning. The same toggle
 packs the gallery four cards across instead of three, with a one-line caption.
 
+**Listen from the list** — every saved page's row carries a headphones
+control on the right, every saved page's gallery card a badge on its
+thumbnail, and the hold menu a "Listen" row. Each opens the article with
+`OpenDocRef.listen` set; the Reader starts playback as soon as the text is in
+(the HTML read it already does for the source URL) and clears the flag, so a
+later back/forward never replays. Rows and cards are `div[role=button]` for
+this reason: the control inside is a real button, and a button may not
+contain one.
+
 ## Office web-viewer URLs are documents (#868)
 
 `view.officeapps.live.com/op/view.aspx?src=<url>` (and `embed.aspx`) is not a

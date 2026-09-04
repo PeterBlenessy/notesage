@@ -948,6 +948,56 @@ describe("HTML reports", () => {
     return await screen.findByTitle(fileName);
   };
 
+  it("opened with Listen, starts reading aloud once the text is in, once (2026-09-04)", async () => {
+    const started: unknown[] = [];
+    setMockInvokeHandler("ios_speech_start", (args) => {
+      started.push(args);
+      return { language: "en" };
+    });
+    setMockInvokeHandler("ios_article_thumbnail", () => {
+      throw new Error("no image");
+    });
+    setMockInvokeHandler(
+      "ios_read_file",
+      () => "<html><body><h1>Q3</h1><p>Revenue grew.</p></body></html>",
+    );
+    setMockInvokeHandler("html_preview_register", () => {});
+    setMockInvokeHandler("html_preview_unregister", () => {});
+    setMockInvokeHandler("article_source_url", () => null);
+    useMobileStore.getState().openDocument({ relPath: "Inbox/story.html", name: "story.html", listen: true });
+    renderWithProviders(<Shell />);
+    await waitFor(() => expect(started).toHaveLength(1));
+    expect((started[0] as { text: string }).text).toContain("Revenue grew");
+    // Consumed: a re-render, or a later back/forward, must not replay.
+    expect(useMobileStore.getState().openDoc?.listen).toBeUndefined();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(started).toHaveLength(1);
+  });
+
+  it("a link followed before Listen started does not carry the request into Back", () => {
+    useMobileStore.getState().openDocument({ relPath: "Inbox/story.html", name: "story.html", listen: true });
+    useMobileStore.getState().openLinkedDocument({ relPath: "Inbox/next.html", name: "next.html" });
+    expect(useMobileStore.getState().docStack[0]?.listen).toBeUndefined();
+  });
+
+  it("opened with Listen on a page that cannot be read, says so instead of staying silent", async () => {
+    const started: unknown[] = [];
+    setMockInvokeHandler("ios_speech_start", (args) => {
+      started.push(args);
+      return { language: "en" };
+    });
+    setMockInvokeHandler("ios_read_file", () => {
+      throw new Error("not downloaded");
+    });
+    setMockInvokeHandler("ios_ensure_downloaded", () => "failed");
+    useMobileStore.getState().openDocument({ relPath: "Inbox/story.html", name: "story.html", listen: true });
+    renderWithProviders(<Shell />);
+    const { toast } = await import("sonner");
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Nothing to read aloud in this document"));
+    expect(started).toHaveLength(0);
+    expect(useMobileStore.getState().openDoc?.listen).toBeUndefined();
+  });
+
   it("renders an exported report instead of showing its markup as text", async () => {
     // The gap this closes: iOS Files shows a .html report as source with
     // scripts disabled, so a report with inline charts is unreadable on phone.
