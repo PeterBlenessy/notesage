@@ -614,6 +614,14 @@ scrolls a paragraph into view when it changes. Native side:
 `range` speech event. Markdown and plain-text documents are read in the
 app's own DOM and are not highlighted yet.
 
+**The lock screen's plate** — `SpeechPlayer.updateNowPlaying` publishes
+`MPNowPlayingInfoCenter.playbackState` as well as the rate: the rate alone
+left iOS showing Pause for a paused article (the session stays active while
+paused, which is what keeps the plate up). The player also follows the audio
+session's interruptions (a call, Siri: began → pause, ended with
+should-resume → resume) and the synthesiser's own `didPause`/`didContinue`,
+so the app, the row's ring and the plate agree with what is audible.
+
 ## Office web-viewer URLs are documents (#868)
 
 `view.officeapps.live.com/op/view.aspx?src=<url>` (and `embed.aspx`) is not a

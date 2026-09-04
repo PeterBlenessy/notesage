@@ -8,4 +8,5 @@ text är inte grundligare — den hoppas bara över.
 
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
--->\nMedan en artikel läses upp markeras stycket som läses i artikeln och, med de flesta röster, även ordet — och sidan håller stycket i bild. Testa: starta Lyssna från listan, öppna artikeln, se markeringen följa med; hoppa ett stycke med spelaren; byt röst i ⋯-menyn och se om ordmarkeringen fortfarande följer (vissa kompakta röster rapporterar bara stycken).\n
+-->
+Tre små saker från dina skärmbilder: Inbox-radens ikon ligger i linje med mappikonerna; Lyssna-knappen i listan sitter under ⋯-knappen, med hela högerkolumnen tryckbar; och låsskärmens spelare visar nu Spela när artikeln är pausad — den pausar också vid ett samtal eller Siri och fortsätter efteråt. Testa: pausa från raden, lås telefonen, kontrollera spelaren; ta ett samtal mitt i en artikel.

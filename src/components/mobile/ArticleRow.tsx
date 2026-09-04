@@ -146,9 +146,7 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
       </div>
     </button>
       {/* Read aloud without opening: the row's one control (#833). */}
-      <span className="flex w-12 shrink-0 items-center justify-center">
-        <ListenButton entry={entry} size="row" />
-      </span>
+      <ListenButton entry={entry} size="row" />
     </div>
   );
 }

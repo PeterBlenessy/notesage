@@ -33,7 +33,12 @@ export function InboxCard({ count, onOpen }: { count?: number; onOpen: () => voi
         onClick={onOpen}
         className="ios-press-row flex w-full items-center gap-3 rounded-xl bg-muted/60 px-2 py-2 text-left"
       >
-        <Inbox strokeWidth={1.5} className="h-5 w-5 shrink-0 text-[var(--color-accent-primary)]" />
+        {/* The same 40pt slot every file row centres its icon in, so the
+            Inbox icon lines up with the folder icons beneath it (Peter,
+            2026-09-04: it sat a slot's half-width to the left). */}
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center">
+          <Inbox strokeWidth={1.5} className="h-5 w-5 shrink-0 text-[var(--color-accent-primary)]" />
+        </span>
         <span
           className="min-w-0 flex-1 truncate text-[length:calc(1.0625rem*var(--ns-a11y-scale,1))] text-foreground"
           style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
