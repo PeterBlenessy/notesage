@@ -240,29 +240,138 @@ pub async fn article_card_meta(content: String) -> Result<Option<notesage_captur
     Ok(notesage_capture::article_card_meta(&content))
 }
 
+/// One read serving both of the desktop Inbox's per-row readers (#875).
+///
+/// The row header (`inbox_card_meta`) and the thumbnail (`article_lead_image`)
+/// each used to read the whole capture — a multi-megabyte document once its
+/// images are inlined — for every row: the same bytes scanned twice, over
+/// iCloud. Both now come out of one read, kept here keyed by the file's
+/// version so a re-listing costs a `stat` per row and a changed file (a
+/// repair, an update from source) is read again.
+///
+/// The version is (mtime, ctime, size) rather than a content hash: a hash
+/// needs the read this exists to avoid. On APFS the stamps carry nanoseconds
+/// and `ctime` moves on every inode write, so a same-size edit inside one
+/// stamp tick is the only blind spot, and it is not one a capture's own
+/// repair paths can hit. Bounded two ways: a card whose lead image is over
+/// `INBOX_CARD_IMAGE_CAP` is served but not retained (a dozen full-size
+/// photos would otherwise sit in memory for the session), and at the entry
+/// cap the whole map is dropped rather than tracking recency — an Inbox is
+/// dozens of rows, not thousands, and a full miss is one read per row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileVersion {
+    modified: Option<std::time::SystemTime>,
+    changed: (i64, i64),
+    len: u64,
+}
+
+impl FileVersion {
+    fn of(stat: &fs::Metadata) -> Self {
+        #[cfg(unix)]
+        let changed = {
+            use std::os::unix::fs::MetadataExt;
+            (stat.ctime(), stat.ctime_nsec())
+        };
+        #[cfg(not(unix))]
+        let changed = (0, 0);
+        Self { modified: stat.modified().ok(), changed, len: stat.len() }
+    }
+}
+
+#[derive(Debug)]
+struct InboxCard {
+    version: FileVersion,
+    meta: Option<notesage_capture::CardMeta>,
+    lead_image: Option<Vec<u8>>,
+}
+
+const INBOX_CARD_CACHE_CAP: usize = 512;
+/// Lead images above this are served but not kept.
+const INBOX_CARD_IMAGE_CAP: usize = 1024 * 1024;
+
+type CardMap = std::collections::HashMap<std::path::PathBuf, std::sync::Arc<InboxCard>>;
+static INBOX_CARDS: parking_lot::Mutex<Option<CardMap>> = parking_lot::Mutex::new(None);
+/// One reader per path at a time: the header and the thumbnail of one row
+/// are requested together, and the second must find the first's read in
+/// the cache rather than read the file again — the point of the change.
+static INBOX_CARD_READS: parking_lot::Mutex<
+    Option<std::collections::HashMap<std::path::PathBuf, std::sync::Arc<parking_lot::Mutex<()>>>>,
+> = parking_lot::Mutex::new(None);
+
+fn cached_card(path: &std::path::Path, version: FileVersion) -> Option<std::sync::Arc<InboxCard>> {
+    let guard = INBOX_CARDS.lock();
+    let card = guard.as_ref()?.get(path)?;
+    (card.version == version).then(|| std::sync::Arc::clone(card))
+}
+
+/// The card for `path`, from the cache when the file is unchanged. Blocking:
+/// call from `spawn_blocking`.
+fn inbox_card(path: &std::path::Path) -> Result<std::sync::Arc<InboxCard>, String> {
+    let stat = fs::metadata(path).map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let version = FileVersion::of(&stat);
+    if let Some(card) = cached_card(path, version) {
+        return Ok(card);
+    }
+    // Serialise readers of this path; the map of locks is itself bounded by
+    // the same cap so it cannot grow without end.
+    let per_path = {
+        let mut guard = INBOX_CARD_READS.lock();
+        let reads = guard.get_or_insert_with(std::collections::HashMap::new);
+        if reads.len() >= INBOX_CARD_CACHE_CAP {
+            reads.clear();
+        }
+        std::sync::Arc::clone(
+            reads.entry(path.to_path_buf()).or_insert_with(|| std::sync::Arc::new(parking_lot::Mutex::new(()))),
+        )
+    };
+    let _reading = per_path.lock();
+    // A concurrent reader may have filled the cache while we waited.
+    if let Some(card) = cached_card(path, version) {
+        return Ok(card);
+    }
+    let html = fs::read_to_string(path).map_err(|e| format!("Failed to read {}: {e}", path.display()))?;
+    let card = std::sync::Arc::new(InboxCard {
+        version,
+        meta: notesage_capture::article_card_meta(&html),
+        lead_image: notesage_capture::article_lead_image(&html),
+    });
+    let retain = card.lead_image.as_ref().map_or(true, |bytes| bytes.len() <= INBOX_CARD_IMAGE_CAP);
+    if retain {
+        let mut guard = INBOX_CARDS.lock();
+        let cards = guard.get_or_insert_with(std::collections::HashMap::new);
+        if cards.len() >= INBOX_CARD_CACHE_CAP {
+            cards.clear();
+        }
+        cards.insert(path.to_path_buf(), std::sync::Arc::clone(&card));
+    }
+    Ok(card)
+}
+
 /// The desktop Inbox's row header, by PATH. A capture is a multi-megabyte
 /// document once its images are inlined, and the list reads every row; reading
 /// the file here means four strings cross IPC instead of the document. Mirrors
 /// iOS's `ios_article_card_meta`. `None` for a file that is not a capture.
+/// Shares its read with `article_lead_image` (#875).
 #[tauri::command]
 pub async fn inbox_card_meta(path: String) -> Result<Option<notesage_capture::CardMeta>, String> {
-    let html = tokio::fs::read_to_string(&path)
+    let card = tokio::task::spawn_blocking(move || inbox_card(std::path::Path::new(&path)))
         .await
-        .map_err(|e| format!("Failed to read {path}: {e}"))?;
-    Ok(notesage_capture::article_card_meta(&html))
+        .map_err(|e| format!("Inbox card task failed: {e}"))??;
+    Ok(card.meta.clone())
 }
 
 /// The article's lead image, raw bytes, for the desktop Inbox thumbnail —
 /// the same picture the phone's list shows (`ios_article_thumbnail`). A
 /// string scan, not a parse, so it is cheap even on a document that inlined a
-/// dozen photos. `Err` when the capture holds no inline image.
+/// dozen photos. `Err` when the capture holds no inline image. Shares its
+/// read with `inbox_card_meta` (#875).
 #[tauri::command]
 pub async fn article_lead_image(path: String) -> Result<tauri::ipc::Response, String> {
-    let html = tokio::fs::read_to_string(&path)
+    let card = tokio::task::spawn_blocking(move || inbox_card(std::path::Path::new(&path)))
         .await
-        .map_err(|e| format!("Failed to read {path}: {e}"))?;
-    match notesage_capture::article_lead_image(&html) {
-        Some(bytes) => Ok(tauri::ipc::Response::new(bytes)),
+        .map_err(|e| format!("Inbox card task failed: {e}"))??;
+    match &card.lead_image {
+        Some(bytes) => Ok(tauri::ipc::Response::new(bytes.clone())),
         None => Err("no inline image in this article".into()),
     }
 }
@@ -315,6 +424,37 @@ pub async fn repair_html_doctype(content: String) -> Result<Option<String>, Stri
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn inbox_card_reads_once_per_file_version() {
+        // Two rows' worth of readers (header, then thumbnail) share one read,
+        // and a changed file is read again — the cache follows mtime + size.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("a.html");
+        std::fs::write(&path, "<html><body><p>one</p></body></html>").unwrap();
+        let first = super::inbox_card(&path).unwrap();
+        let again = super::inbox_card(&path).unwrap();
+        assert!(std::sync::Arc::ptr_eq(&first, &again), "an unchanged file must come from the cache");
+        // A different size is enough to invalidate even within mtime granularity.
+        std::fs::write(&path, "<html><body><p>one more paragraph</p></body></html>").unwrap();
+        let changed = super::inbox_card(&path).unwrap();
+        assert!(!std::sync::Arc::ptr_eq(&first, &changed), "a changed file must be read again");
+        assert!(super::inbox_card(dir.path().join("missing.html").as_path()).is_err());
+    }
+
+    #[test]
+    fn inbox_card_does_not_retain_a_large_lead_image() {
+        // A capture with a full-size photo inlined is served but not kept:
+        // the next call reads again rather than pinning megabytes per row.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("photo.html");
+        let big = "A".repeat(super::INBOX_CARD_IMAGE_CAP * 2);
+        std::fs::write(&path, format!("<html><body><img src=\"data:image/jpeg;base64,{big}\"><p>x</p></body></html>")).unwrap();
+        let first = super::inbox_card(&path).unwrap();
+        assert!(first.lead_image.as_ref().is_some_and(|b| b.len() > super::INBOX_CARD_IMAGE_CAP));
+        let again = super::inbox_card(&path).unwrap();
+        assert!(!std::sync::Arc::ptr_eq(&first, &again), "an oversized image must not be retained");
+    }
+
     use super::*;
 
     /// The exact shape #805 left on disk: `<html>` with no doctype, because
