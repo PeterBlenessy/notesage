@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Folder } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { FileEntry } from "@/lib/tauri";
 import { presentEntryMenu, type EntryActionContext } from "@/lib/mobile-entry-actions";
 import { useLongPress } from "./useLongPress";
@@ -17,6 +18,9 @@ interface GalleryCardProps {
    *  the grid scrolls and a horizontal drag on a card is ambiguous — so
    *  hold-to-act is the only route to Share / Rename / Pin / Delete here. */
   actionContext: EntryActionContext;
+  /** Four-across density: a smaller title and no date line, so the caption
+   *  fits the narrower card in one line. */
+  condensed?: boolean;
 }
 
 /**
@@ -33,6 +37,7 @@ export function GalleryCard({
   theme,
   onActivate,
   actionContext,
+  condensed = false,
 }: GalleryCardProps) {
   const longPress = useLongPress((rect) => {
     void presentEntryMenu(entry, rect, actionContext);
@@ -141,8 +146,10 @@ export function GalleryCard({
         )}
       </span>
       <span className="w-full min-w-0">
-        <span className="block truncate text-xs font-medium text-foreground">{entry.name}</span>
-        {!entry.is_directory && entry.modified !== undefined && (
+        <span className={cn("block truncate font-medium text-foreground", condensed ? "text-[11px]" : "text-xs")}>
+          {entry.name}
+        </span>
+        {!condensed && !entry.is_directory && entry.modified !== undefined && (
           <span className="block truncate text-[11px] text-muted-foreground">
             {formatModified(entry.modified)} · {currentFolderName}
           </span>

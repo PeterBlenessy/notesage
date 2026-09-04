@@ -240,7 +240,7 @@ describe("sort toggle (#632)", () => {
     expect(captured.topRight?.menu?.map((m) => [m.title, m.selected])).toEqual([
       ["List", true],
       ["Gallery", false],
-      ["Condensed rows", false],
+      ["Condensed", false],
       ["Alphabetical", true],
       ["Date modified", false],
       ["No grouping", true],

@@ -4,14 +4,21 @@ import { articleMetaFor } from "@/lib/article-meta-cache";
 import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
 import { useMobileStore } from "@/stores/mobile-store";
 import { cn } from "@/lib/utils";
-import { FileRow, type FileRowProps } from "./FileRow";
+import { FileRow, iconFor, THUMBNAIL_SLOT, type FileRowProps } from "./FileRow";
 import { readingLine, READ_THRESHOLD } from "./reading-progress";
 
 /**
  * A read-later list row for a saved article (#836) — Instapaper's shape:
- * title, `site · 2 of 4 min left`, a two-line excerpt, a square thumbnail on
- * the right, a hairline separator. The reading-progress line is what makes it
- * a read-later list rather than a file list.
+ * a square thumbnail on the left, title, `site · 2 of 4 min left`, a two-line
+ * excerpt, a hairline separator. The reading-progress line is what makes it a
+ * read-later list rather than a file list.
+ *
+ * The thumbnail sits on the LEFT, in the same slot the plain `FileRow` uses,
+ * so an Inbox mixing saved articles with PDFs and screenshots reads as one
+ * list (build 41 had articles on the right and files on the left — Peter,
+ * 2026-09-04; the Mac Inbox mockup settled on left). The slot is fixed-size
+ * and holds the file icon until the picture lands, so a late thumbnail never
+ * pushes the title sideways.
  *
  * Everything but progress comes from the capture's own header, read back by
  * `article_card_meta`. A document that is not a capture (or whose header has
@@ -63,6 +70,9 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
   const done = progress >= READ_THRESHOLD;
   const minutesLine = meta ? readingLine(meta.minutes, progress) : null;
   const sub = [meta?.site, minutesLine].filter(Boolean).join(" · ");
+  const picture = thumbnail && (thumbnail.kind === "image" || thumbnail.kind === "pdf") ? thumbnail.url : null;
+  const Icon = iconFor(entry);
+  const slot = condensed ? THUMBNAIL_SLOT.small : THUMBNAIL_SLOT.large;
 
   return (
     <button
@@ -70,12 +80,30 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
       onClick={() => props.onActivate(entry)}
       aria-current={props.active ? "page" : undefined}
       className={cn(
-        "ios-press-row flex w-full items-start gap-3 px-4 text-left",
+        // Centred like the plain row: the slot is fixed-height, and a
+        // title-only row (header not yet read, or no excerpt) would otherwise
+        // sit top-heavy beside an empty 72pt box (review finding).
+        "ios-press-row flex w-full items-center gap-3 px-4 text-left",
         condensed ? "py-2" : "py-3",
         "border-b border-border last:border-b-0 hover:bg-muted/50",
         props.active && "bg-muted",
       )}
     >
+      <span
+        data-testid="row-thumbnail-slot"
+        className={cn("flex shrink-0 items-center justify-center rounded-md bg-muted", slot)}
+      >
+        {picture ? (
+          <img
+            src={picture}
+            alt=""
+            data-testid="row-thumbnail"
+            className={cn("rounded-md object-cover", slot)}
+          />
+        ) : (
+          <Icon strokeWidth={1.5} className="h-5 w-5 shrink-0 text-muted-foreground" />
+        )}
+      </span>
       <div className="min-w-0 flex-1">
         <div
           className={cn(
@@ -98,16 +126,6 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
           </div>
         )}
       </div>
-      {thumbnail && (thumbnail.kind === "image" || thumbnail.kind === "pdf") && (
-        <img
-          src={thumbnail.url}
-          alt=""
-          className={cn(
-            "shrink-0 rounded-md object-cover bg-muted",
-            condensed ? "h-10 w-10" : "h-[4.5rem] w-[4.5rem]",
-          )}
-        />
-      )}
     </button>
   );
 }

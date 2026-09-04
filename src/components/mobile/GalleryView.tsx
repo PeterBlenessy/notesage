@@ -11,11 +11,16 @@ interface GalleryViewProps {
   onActivate: (entry: FileEntry) => void;
   /** Long-press action set, shared verbatim with the list rows (#680). */
   actionContext: EntryActionContext;
+  /** The same `listDensity` toggle the list honours: condensed packs four
+   *  cards across instead of three, with a one-line caption, so the view
+   *  menu's one Condensed entry means "smaller" everywhere (it used to
+   *  change nothing here — Peter, 2026-09-04). */
+  condensed?: boolean;
 }
 
 /**
  * Notes-style gallery grid (#633) — the alternative to `LibraryBrowser`'s
- * single-column list. Fixed at 3 columns across, per the source screenshot;
+ * single-column list. Three columns across at rest, four condensed;
  * responsive/landscape reflow is left to a future pass.
  */
 export function GalleryView({
@@ -24,6 +29,7 @@ export function GalleryView({
   theme,
   onActivate,
   actionContext,
+  condensed = false,
 }: GalleryViewProps) {
   // Leaving the gallery (back-out, folder change — the browser remounts this
   // per folder — or a switch to list view) drops every queued thumbnail job
@@ -31,7 +37,11 @@ export function GalleryView({
   useEffect(() => () => cancelPendingThumbnails(), []);
 
   return (
-    <div className="grid grid-cols-3 gap-x-3 gap-y-5 px-3 pb-4" role="list" aria-label="Notes gallery">
+    <div
+      className={condensed ? "grid grid-cols-4 gap-x-2 gap-y-3 px-3 pb-4" : "grid grid-cols-3 gap-x-3 gap-y-5 px-3 pb-4"}
+      role="list"
+      aria-label="Notes gallery"
+    >
       {entries.map((entry) => (
         <GalleryCard
           key={entry.path}
@@ -40,6 +50,7 @@ export function GalleryView({
           theme={theme}
           onActivate={onActivate}
           actionContext={actionContext}
+          condensed={condensed}
         />
       ))}
     </div>
