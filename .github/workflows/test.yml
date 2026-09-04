@@ -405,6 +405,11 @@ jobs:
       - name: Generate the Xcode project
         run: pnpm tauri ios init --ci --skip-targets-install
 
+      # The integration script edits the generated project.yml with PyYAML,
+      # which the runner's python does not ship.
+      - name: Install PyYAML
+        run: python3 -m pip install --quiet --user pyyaml
+
       - name: Integrate the Share Extension
         run: python3 src-tauri/ios/integrate-share-extension.py
 
