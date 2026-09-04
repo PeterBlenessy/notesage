@@ -1502,3 +1502,24 @@ html[data-cmd-bar-resizing="true"] [data-cmd-bar] {
     animation: none;
   }
 }
+
+/* iOS reader: wide content scrolls inside itself, never the page. A markdown
+   table with several numeric columns has a minimum width past a phone
+   screen; without this the note dragged sideways (2026-09-04). Un-layered
+   like editor.css, so it wins over `.ProseMirror table` by order. */
+.mobile-article table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.mobile-article img,
+.mobile-article video,
+.mobile-article iframe,
+.mobile-article svg {
+  max-width: 100%;
+}
+.mobile-article pre {
+  overflow-x: auto;
+  max-width: 100%;
+}
