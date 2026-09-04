@@ -614,6 +614,14 @@ scrolls a paragraph into view when it changes. Native side:
 `range` speech event. Markdown and plain-text documents are read in the
 app's own DOM and are not highlighted yet.
 
+**Switching articles** — `SpeechPlayer.resetQueue` un-pauses before it
+stops: `stopSpeaking` is a no-op on a paused synthesiser, so starting B
+while A sat paused left A's utterance queued with B's behind it, and the next
+Play continued A (heard as "B read in A's language"). The synthesiser's
+`didPause`/`didContinue` are honoured only for the current paragraph, so the
+continue that un-pausing reports for the old article cannot flip the new
+one to Playing.
+
 **The lock screen's plate** — `SpeechPlayer.updateNowPlaying` publishes
 `MPNowPlayingInfoCenter.playbackState` as well as the rate: the rate alone
 left iOS showing Pause for a paused article (the session stays active while

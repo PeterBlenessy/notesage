@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Three small things from your screenshots: the Inbox row's icon lines up with the folder icons; the Listen button in the list sits under the ⋯ button, with the whole right-hand column tappable; and the lock-screen player now shows Play when the article is paused — it also pauses for a call or Siri and picks up again after. Try: pause from the row, lock the phone, check the plate; take a call mid-article.
+Two fixes for listening: starting another article while one is paused now plays the new one (the old one used to carry on, in its own language); and pressing Listen in the list lights up only the round button, not the whole row end. Try: pause an article, start a different one in another language from the list; press and hold a Listen button.

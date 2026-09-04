@@ -51,18 +51,22 @@ export function ListenButton({
       data-state={session ? (playing ? "playing" : "paused") : "idle"}
       onClick={() => toggleSpeech(entry)}
       className={cn(
-        "flex shrink-0 items-center justify-center",
-        size === "row" ? "ios-press-row w-18 self-stretch" : "rounded-full",
+        // The column is the hit area; the DISC is what presses (Peter,
+        // 2026-09-04: the whole block lit up). No `ios-press-row` here — its
+        // :active fill is the block flash — only its no-select/no-callout
+        // half, and the press state handed to the disc through `group`.
+        "group flex shrink-0 select-none items-center justify-center [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none]",
+        size === "row" ? "w-18 self-stretch" : "rounded-full",
         className,
       )}
       style={size === "card" ? { width: px, height: px } : undefined}
     >
     <span
       className={cn(
-        "relative flex items-center justify-center rounded-full",
+        "relative flex items-center justify-center rounded-full transition-colors duration-150",
         size === "row"
-          ? "bg-muted text-muted-foreground"
-          : "bg-background/85 text-foreground shadow-sm backdrop-blur",
+          ? "bg-muted text-muted-foreground group-active:bg-foreground/20"
+          : "bg-background/85 text-foreground shadow-sm backdrop-blur group-active:bg-foreground/20",
         session && "text-foreground",
       )}
       style={{ width: px, height: px }}

@@ -157,6 +157,12 @@ private let MAX_VOTING_PARAGRAPHS = 60
     /// Tear down the utterance queue and the lock-screen entry, WITHOUT
     /// touching the audio session — a restart needs this much and no more.
     private func resetQueue() {
+        // `stopSpeaking` is a no-op on a PAUSED synthesiser: the paused
+        // utterance stays queued, the next article queues behind it, and the
+        // next Play continues the OLD one — the second article "read in the
+        // first one's language" (Peter, 2026-09-04). Un-pause first; the
+        // stop that follows in the same turn keeps it silent.
+        if synth.isPaused { synth.continueSpeaking() }
         synth.stopSpeaking(at: .immediate)
         paragraphs = []
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
@@ -535,6 +541,7 @@ extension SpeechPlayer: AVSpeechSynthesizerDelegate {
     public func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer, didPause utterance: AVSpeechUtterance
     ) {
+        guard isCurrent(utterance) else { return }
         updateNowPlaying(playing: false)
         onPlayingChanged?(false)
     }
@@ -542,8 +549,16 @@ extension SpeechPlayer: AVSpeechSynthesizerDelegate {
     public func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer, didContinue utterance: AVSpeechUtterance
     ) {
+        guard isCurrent(utterance) else { return }
         updateNowPlaying(playing: true)
         onPlayingChanged?(true)
+    }
+
+    /// Only the paragraph the queue believes is current may drive state: the
+    /// un-pause-then-stop in `resetQueue` reports a continue for the OLD
+    /// article's utterance, which must not flip the new one to Playing.
+    private func isCurrent(_ utterance: AVSpeechUtterance) -> Bool {
+        index < paragraphs.count && utterance.speechString == paragraphs[index]
     }
 
     public func speechSynthesizer(
