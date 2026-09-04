@@ -91,7 +91,9 @@ export function InboxSection({ filter = "" }: { filter?: string }) {
         onClick={openInbox}
         onKeyDown={onKeyDown}
         className={cn(
-          "h-7 px-2 flex items-center gap-2 rounded-sm text-[13px] transition-colors duration-150",
+          // `cursor-default`: a div with text shows the I-beam; a sidebar row
+          // is a control, and on the Mac a control wears the arrow.
+          "h-7 px-2 flex items-center gap-2 rounded-sm text-[13px] transition-colors duration-150 cursor-default",
           "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
           open
             ? "bg-muted text-foreground font-medium"

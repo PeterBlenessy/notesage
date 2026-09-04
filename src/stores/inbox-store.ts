@@ -565,3 +565,14 @@ export function resetInboxCaches(): void {
     writeTimer = null;
   }
 }
+
+// Any document becoming active takes the column: the recent-document cycle,
+// the command bar, a wikilink — not only the sidebar (which also goes through
+// `useFileOperations.openFile`, the path that covers re-opening the file
+// already active behind the list). Opening an Inbox item passes here too;
+// the Inbox was closing anyway.
+useEditorStore.subscribe((state, previous) => {
+  if (state.activeTabId === previous.activeTabId) return;
+  const inbox = useInboxStore.getState();
+  if (inbox.open) inbox.closeInbox();
+});

@@ -59,6 +59,17 @@ describe("inbox-store", () => {
     vi.useFakeTimers();
   });
 
+  it("closes when any document becomes active — the recent cycle, the command bar, not only the sidebar", () => {
+    useEditorStore.setState({ activeTabId: null });
+    useInboxStore.getState().openInbox();
+    useEditorStore.setState({ activeTabId: "tab-1" });
+    expect(useInboxStore.getState().open).toBe(false);
+    // Reopening over the same active document is not a change; the list stays.
+    useInboxStore.getState().openInbox();
+    useEditorStore.setState({ activeTabId: "tab-1" });
+    expect(useInboxStore.getState().open).toBe(true);
+  });
+
   it("lists the Inbox, merges the sidecar, and reads article headers", async () => {
     files[`${INBOX}/.notesage/reading-progress.json`] = JSON.stringify({
       version: 1,

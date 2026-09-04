@@ -8,6 +8,7 @@ import { useFileOperations } from '@/hooks/useFileOperations';
 import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useInboxStore } from '@/stores/inbox-store';
 
 // Mock modules that useFileOperations imports but that aren't relevant to unit tests
 vi.mock('@/lib/refresh-notes-tree', () => ({
@@ -471,5 +472,38 @@ describe('useFileOperations', () => {
         }),
       ).rejects.toThrow('Cannot create directory');
     });
+  });
+});
+
+describe('openFile leaves the Inbox (the Inbox is a mode of the document column)', () => {
+  beforeEach(() => {
+    resetStores();
+    setMockInvokeHandler('read_file', () => '# Note');
+  });
+
+  it('closes the Inbox when a document is opened from the sidebar', async () => {
+    useInboxStore.setState({ open: true });
+    const { result } = renderHook(() => useFileOperations());
+    await act(async () => {
+      await result.current.openFile('/project/note.md', 'note.md');
+    });
+    expect(useInboxStore.getState().open).toBe(false);
+    expect(useEditorStore.getState().activeTabId).not.toBeNull();
+  });
+
+  it('closes it even when the file was already the active document behind the list', async () => {
+    // The v0.56.0 bug: opening the Inbox over a document, then clicking that
+    // same document again, changed no store state — the list stayed.
+    const { result } = renderHook(() => useFileOperations());
+    await act(async () => {
+      await result.current.openFile('/project/note.md', 'note.md');
+    });
+    const before = useEditorStore.getState().activeTabId;
+    useInboxStore.setState({ open: true });
+    await act(async () => {
+      await result.current.openFile('/project/note.md', 'note.md');
+    });
+    expect(useEditorStore.getState().activeTabId).toBe(before);
+    expect(useInboxStore.getState().open).toBe(false);
   });
 });

@@ -488,7 +488,7 @@ export function FolderPeek({
                             // text (`text-[12.5px]`), 10 px gap. Matches
                             // the mockup's `.peek-item` exactly.
                             className={cn(
-                              "h-6 px-2 flex items-center gap-2.5 rounded-md cursor-pointer text-[12.5px] w-full",
+                              "h-6 px-2 flex items-center gap-2.5 rounded-md cursor-default text-[12.5px] w-full",
                               "text-foreground/90 text-left truncate",
                               "hover:bg-muted/50 transition-colors duration-150",
                               "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
@@ -562,7 +562,7 @@ export function FolderPeek({
                             // text (`text-[12.5px]`), 10 px gap. Matches
                             // the mockup's `.peek-item` exactly.
                             className={cn(
-                              "h-6 px-2 flex items-center gap-2.5 rounded-md cursor-pointer text-[12.5px] w-full",
+                              "h-6 px-2 flex items-center gap-2.5 rounded-md cursor-default text-[12.5px] w-full",
                               "text-foreground/90 text-left truncate",
                               "hover:bg-muted/50 transition-colors duration-150",
                               "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",

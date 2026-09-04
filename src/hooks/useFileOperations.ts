@@ -1,6 +1,7 @@
 import { useCallback } from "react";
 import { tauriApi, type FileEntry } from "@/lib/tauri";
 import { useEditorStore, type ScrollToTag } from "@/stores/editor-store";
+import { useInboxStore } from "@/stores/inbox-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { useGitStore } from "@/stores/git-store";
@@ -219,6 +220,14 @@ export function useFileOperations() {
     console.log('[perf:tree] refresh', { sections, totalFiles, ms });
   }, []);
 
+  // The Inbox is a mode of the document column, so showing a document means
+  // leaving it — including re-opening the file that was already active
+  // behind the list, which changes no store state the Inbox could watch.
+  const leaveInbox = () => {
+    const inbox = useInboxStore.getState();
+    if (inbox.open) inbox.closeInbox();
+  };
+
   const openFile = useCallback(
     async (filePath: string, fileName: string, scrollToTag?: ScrollToTag, scrollToText?: string) => {
       try {
@@ -226,6 +235,7 @@ export function useFileOperations() {
 
         if (fileType === "image") {
           openTab(filePath, fileName, "", null, fileType, scrollToTag, scrollToText);
+          leaveInbox();
           return;
         }
 
@@ -233,6 +243,7 @@ export function useFileOperations() {
           const bytes = await tauriApi.readBinaryFile(filePath);
           setBinaryData(filePath, new Uint8Array(bytes));
           openTab(filePath, fileName, "", null, fileType, scrollToTag, scrollToText);
+          leaveInbox();
           return;
         }
 
@@ -244,6 +255,7 @@ export function useFileOperations() {
         } else {
           openTab(filePath, fileName, raw, null, fileType, scrollToTag, scrollToText);
         }
+        leaveInbox();
       } catch (error) {
         console.error("Failed to read file:", error);
         throw error;

@@ -152,7 +152,7 @@ export function ChildRow({
       className={cn(
         "h-7 px-2 flex items-center gap-2 rounded-sm text-[13px]",
         "text-foreground/90 transition-colors duration-150",
-        !isRenaming && "hover:bg-muted/50 cursor-pointer",
+        !isRenaming && "hover:bg-muted/50 cursor-default",
         // Active document — name goes solid/medium, icon gets the accent below.
         isActive && "text-foreground font-medium",
         "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",

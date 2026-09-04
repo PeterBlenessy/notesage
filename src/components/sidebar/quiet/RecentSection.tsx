@@ -224,7 +224,7 @@ function RecentRow({
           className={cn(
             "relative h-7 px-2 flex items-center gap-2 rounded-sm text-[13px]",
             "transition-colors duration-150",
-            !isRenaming && "cursor-pointer",
+            !isRenaming && "cursor-default",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
             isActive
               ? "bg-muted text-foreground font-medium"
