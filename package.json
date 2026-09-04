@@ -70,7 +70,7 @@
     "@tauri-apps/plugin-opener": "^2.5.4",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
-    "@tiptap/core": "^3.27.3",
+    "@tiptap/core": "^3.30.4",
     "@tiptap/extension-code-block-lowlight": "^3.27.3",
     "@tiptap/extension-color": "^3.27.3",
     "@tiptap/extension-focus": "^3.27.3",
