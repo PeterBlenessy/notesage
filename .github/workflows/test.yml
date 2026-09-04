@@ -77,16 +77,24 @@ jobs:
         # clean 2026-07-05 (docs/audits/2026-07-05-dependencies.md); overrides
         # in package.json hold the prior fixes. High threshold so a new moderate
         # doesn't block merge before it's triaged.
-        # The registry's audit endpoint times out now and then (ERR_SOCKET_TIMEOUT
-        # on 2026-09-03 blocked #877 with every test green). Three attempts,
-        # spaced out; a real finding still fails on every attempt.
+        # The registry's audit endpoint goes away now and then (an hour-long
+        # ERR_SOCKET_TIMEOUT outage on 2026-09-03/04 blocked #877 with every
+        # test green). An unreachable registry is not a vulnerability: after
+        # three attempts, a NETWORK failure becomes a warning and the job goes
+        # on; a genuine high finding still fails the job.
         run: |
+          set -o pipefail
           for attempt in 1 2 3; do
-            if pnpm audit --audit-level=high --prod; then exit 0; fi
-            code=$?
-            if [ "$attempt" -lt 3 ]; then echo "audit attempt $attempt failed (exit $code); retrying in 30s"; sleep 30; fi
+            if pnpm audit --audit-level=high --prod 2>&1 | tee audit.log; then exit 0; fi
+            if grep -qE 'ERR_SOCKET_TIMEOUT|ENOTFOUND|ECONNRESET|ECONNREFUSED|ETIMEDOUT|FetchError|socket hang up' audit.log; then
+              echo "audit attempt $attempt: registry unreachable"
+              if [ "$attempt" -lt 3 ]; then sleep 30; continue; fi
+              echo "::warning title=Dependency audit skipped::npm registry unreachable after 3 attempts; audit not performed"
+              exit 0
+            fi
+            echo "::error title=Dependency audit::high-severity finding, see log"
+            exit 1
           done
-          exit 1
 
       - name: TypeScript type check
         run: pnpm typecheck
