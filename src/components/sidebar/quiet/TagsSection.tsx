@@ -197,7 +197,7 @@ export function TagsSection({
                 onKeyDown={(e) => handleRowKeyDown(e, tag.name)}
                 className={cn(
                   "relative h-7 px-2 flex items-center gap-2 rounded-sm",
-                  "text-[13px] text-foreground cursor-pointer",
+                  "text-[13px] text-foreground cursor-default",
                   "hover:bg-muted/50 transition-colors",
                   "focus-visible:outline-none focus-visible:bg-muted/50",
                   "focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",

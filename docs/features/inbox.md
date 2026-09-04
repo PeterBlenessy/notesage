@@ -15,8 +15,12 @@ adds selection, keyboard, and drag-to-project.
 - **A mode, not a document.** Quiet Composer is a single-document shell, so
   the list cannot be a tab beside the article it opens. `inbox-store.open`
   swaps the document column between `InboxView` and the editor
-  (`QuietLayout.tsx`). Opening an item leaves the mode; the reader pill's
-  "‹ Inbox" (or ⌘⇧I) returns to it.
+  (`QuietLayout.tsx`). Opening an item leaves the mode; so does any other
+  document becoming active (the store watches `activeTabId`), and so does
+  re-opening the file already active behind the list (`openFile` closes the
+  Inbox itself, since that changes nothing the store could watch — v0.56.0
+  left the list up in that case). The reader pill's "‹ Inbox" (or ⌘⇧I)
+  returns to it.
 - **The sidebar row.** `InboxSection` sits above Pinned, shown once the root
   is known and the folder has ever received something. Its badge is the
   unread count.
