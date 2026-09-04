@@ -38,6 +38,10 @@ export function ListenButton({
   const r = (px - stroke) / 2;
   const circumference = 2 * Math.PI * r;
 
+  // The row's hit area is the whole 72pt column, row-height: the disc is
+  // small, and it is pressed from the thumb. 72 also centres the disc 36pt
+  // from the edge — under the "…" button of the native chrome (12pt inset,
+  // 48pt wide), so the eye finds it on the same line (Peter, 2026-09-04).
   return (
     <button
       type="button"
@@ -47,12 +51,19 @@ export function ListenButton({
       data-state={session ? (playing ? "playing" : "paused") : "idle"}
       onClick={() => toggleSpeech(entry)}
       className={cn(
-        "relative flex shrink-0 items-center justify-center rounded-full",
+        "flex shrink-0 items-center justify-center",
+        size === "row" ? "ios-press-row w-18 self-stretch" : "rounded-full",
+        className,
+      )}
+      style={size === "card" ? { width: px, height: px } : undefined}
+    >
+    <span
+      className={cn(
+        "relative flex items-center justify-center rounded-full",
         size === "row"
-          ? "bg-muted text-muted-foreground hover:text-foreground"
+          ? "bg-muted text-muted-foreground"
           : "bg-background/85 text-foreground shadow-sm backdrop-blur",
         session && "text-foreground",
-        className,
       )}
       style={{ width: px, height: px }}
     >
@@ -86,6 +97,7 @@ export function ListenButton({
         fill={session ? "currentColor" : "none"}
         aria-hidden="true"
       />
+    </span>
     </button>
   );
 }
