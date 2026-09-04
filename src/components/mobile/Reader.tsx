@@ -43,7 +43,7 @@ import { splitSpeechParagraphs } from "./speech-text";
 import { documentToSpeechText } from "./speech-text";
 import { SpeechPlayerBar } from "./SpeechPlayerBar";
 import { useSpeechPlayer } from "@/hooks/useSpeechPlayer";
-import { measureReaderInsets, withReaderInsets } from "./html-insets";
+import { measureReaderInsets, withReaderInsets, withWideContentGuard } from "./html-insets";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
 
 // Lazy-loaded — pdf.js is heavy (and pulls in browser-only globals like
@@ -1120,7 +1120,7 @@ export function Reader() {
           // The read-aloud agent rides inside the page (it can only draw
           // there); it listens and never calls back, so the view stays
           // bridge-less.
-          await iosPresentReport(withSpeechAgent(raw), { top: insets.top, bottom: insets.bottom });
+          await iosPresentReport(withSpeechAgent(withWideContentGuard(raw)), { top: insets.top, bottom: insets.bottom });
           if (!isCurrent()) {
             // Superseded while presenting — take it back down, or the previous
             // document stays on screen over whatever the reader shows next.
@@ -1165,7 +1165,7 @@ export function Reader() {
         // web view it legitimately owns, instead of rewriting the report.
         await invoke("html_preview_register", {
           id,
-          content: withReaderInsets(withLinkAgent(withFindAgent(withSpeechAgent(raw))), measureReaderInsets()),
+          content: withReaderInsets(withLinkAgent(withFindAgent(withSpeechAgent(withWideContentGuard(raw)))), measureReaderInsets()),
         });
         if (!isCurrent()) {
           // Superseded after registering — release the doc immediately or it
@@ -1572,7 +1572,9 @@ export function Reader() {
       ) : (
       <div
         ref={scrollerRef}
-        className="absolute inset-0 overflow-y-auto"
+        // `overflow-x-hidden`: a wide markdown table used to drag the whole
+        // note sideways; it scrolls inside itself now (`.mobile-article`).
+        className="absolute inset-0 overflow-y-auto overflow-x-hidden"
         style={CONTENT_INSETS}
         onScroll={(e) => {
           // Reading progress (#836) for documents rendered here, sampled at
@@ -1677,7 +1679,7 @@ export function Reader() {
             // Tailwind v4 utilities live in `@layer utilities`, so the
             // utility class loses to `.ProseMirror` no matter the order.
             // <pre> code blocks keep their own UA white-space and are unaffected.
-            className="ProseMirror pb-[max(2rem,env(safe-area-inset-bottom))]"
+            className="ProseMirror mobile-article pb-[max(2rem,env(safe-area-inset-bottom))]"
             style={
               {
                 whiteSpace: "normal",

@@ -9,4 +9,4 @@ text är inte grundligare — den hoppas bara över.
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Två rättningar för lyssning: att starta en annan artikel medan en är pausad spelar nu den nya (den gamla brukade fortsätta, på sitt eget språk); och att trycka på Lyssna i listan lyser bara upp den runda knappen, inte hela radänden. Testa: pausa en artikel, starta en annan på ett annat språk från listan; håll in en Lyssna-knapp.
+Artiklar och anteckningar drar sig inte längre i sidled: en bred tabell (eller ett brett diagram, video eller inbäddning) rullar nu inuti sig själv i stället för att tänja hela sidan — sparade sidor gamla som nya, och markdown-anteckningar. Testa: öppna "Globalfonder i riskzonen" och en anteckning med en bred tabell; dra åt vänster och höger på texten och sedan på tabellen.

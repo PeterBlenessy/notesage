@@ -11,4 +11,4 @@ poke at; leave the rest to the changelog.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Two fixes for listening: starting another article while one is paused now plays the new one (the old one used to carry on, in its own language); and pressing Listen in the list lights up only the round button, not the whole row end. Try: pause an article, start a different one in another language from the list; press and hold a Listen button.
+Articles and notes no longer drag sideways: a wide table (or a wide chart, video or embed) now scrolls inside itself instead of stretching the whole page — saved pages old and new, and markdown notes. Try: open "Globalfonder i riskzonen" and a note with a wide table; drag left and right on the text, then on the table.

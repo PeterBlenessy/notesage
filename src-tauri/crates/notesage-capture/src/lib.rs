@@ -915,6 +915,9 @@ figure{margin:1.5rem 0}figcaption{font-size:.875rem;color:#666;text-align:center
 img.hero{margin:0 0 1.75rem;width:100%}\
 blockquote{margin:1.5rem 0;padding-left:1rem;border-left:3px solid #ddd;color:#444}\
 pre{overflow-x:auto;padding:1rem;background:#f5f5f5;border-radius:6px}\
+table{display:block;max-width:100%;overflow-x:auto;border-collapse:collapse;-webkit-overflow-scrolling:touch}\
+th,td{padding:.25rem .5rem;text-align:left;vertical-align:top}\
+video,iframe,canvas,embed,object{max-width:100%}\
 code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.9375em}\
 a{color:#3d6b9e}hr{border:0;border-top:1px solid #e5e5e5;margin:2.5rem 0}\
 @media(prefers-color-scheme:dark){\
@@ -3650,6 +3653,12 @@ mod linked_document_tests {
         assert!(
             style.contains("svg{max-width:100%"),
             "inline SVG must be width-capped like img, or a wide graphic overflows the measure"
+        );
+        // A table wider than a phone screen would otherwise widen the whole
+        // page's layout box (iOS WebKit) and drag the article sideways.
+        assert!(
+            style.contains("table{display:block;max-width:100%;overflow-x:auto"),
+            "tables must scroll inside themselves, never widen the page"
         );
         assert!(
             style.contains("svg:not([width]):not([height])"),
