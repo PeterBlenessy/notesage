@@ -18,6 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      native: ${{ steps.filter.outputs.native }}
     steps:
       - uses: actions/checkout@v6
       - uses: dorny/paths-filter@v3.0.3
@@ -41,6 +42,15 @@ jobs:
               - 'playwright.config.ts'
               - 'wdio.conf.ts'
               - 'index.html'
+            # What can break the PHONE build without touching the phone's
+            # own sources: a Rust dependency, a Cargo feature, the plugin.
+            # The simulator build below is a macOS job worth ~15 minutes, so
+            # it runs only when one of these moved.
+            native:
+              - 'src-tauri/**'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/test.yml'
 
   frontend-tests:
     name: Frontend Tests & Coverage
@@ -342,6 +352,64 @@ jobs:
               || { echo "declared in NotesageCapture.h but NOT exported by the staticlib: $name"; exit 1; }
           done
           echo "All capture C ABI symbols exported."
+
+  ios-build:
+    name: iOS Simulator Build
+    # The one check that compiles the app's Rust for an iOS target (#883).
+    # `cargo check --target aarch64-apple-ios` cannot stand in: the plugin's
+    # build script (swift-rs) fails under plain cargo without running swift
+    # at all, while the same package builds under Xcode — so this is the
+    # real thing, the same command the local harness uses before every
+    # TestFlight cut. Build 42 failed on a desktop-only crate (`trash`)
+    # that every job here had waved through.
+    #
+    # macOS minutes are dear (10x on private repos), so it runs only when
+    # something that can break the phone build changed (`native` filter),
+    # and never for a frontend-only PR.
+    runs-on: macos-latest
+    needs: check-changes
+    if: needs.check-changes.outputs.native == 'true' || github.event_name != 'pull_request'
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v5
+        with:
+          version: 10
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install Rust stable with the simulator target
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios-sim
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: ios-sim
+
+      # The Xcode project is generated, not committed (`src-tauri/gen/apple`
+      # is ignored): initialise it, wire the Share Extension in the way the
+      # release script does, then build for the simulator — no signing.
+      - name: Generate the Xcode project
+        run: pnpm tauri ios init --ci --skip-targets-install
+
+      - name: Integrate the Share Extension
+        run: python3 src-tauri/ios/integrate-share-extension.py
+
+      - name: Build for the simulator
+        run: pnpm tauri ios build --target aarch64-sim --debug
 
   rust-tests:
     name: Rust Backend Tests
