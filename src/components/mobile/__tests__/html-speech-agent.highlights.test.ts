@@ -14,6 +14,12 @@ class FakeHighlight {
   constructor(...ranges: Range[]) {
     this.ranges = ranges;
   }
+  add(r: Range) {
+    this.ranges.push(r);
+  }
+  clear() {
+    this.ranges = [];
+  }
 }
 const highlights = new Map<string, FakeHighlight>();
 
@@ -49,8 +55,10 @@ describe("html-speech-agent with the Highlight API", () => {
     send({ type: "position", index: 1, location: 0, length: 7 });
     send({ type: "position", index: 2 });
     expect(text("ns-speech-para")).toBe("Costs fell.");
-    expect(highlights.has("ns-speech-word")).toBe(false);
+    // The word entry stays registered but empty — the object is reused.
+    expect(text("ns-speech-word")).toBe("");
     send({ type: "clear" });
-    expect(highlights.size).toBe(0);
+    expect(text("ns-speech-para")).toBe("");
+    expect(text("ns-speech-word")).toBe("");
   });
 });
