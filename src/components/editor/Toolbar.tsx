@@ -66,6 +66,7 @@ import {
   CalloutPicker,
 } from "./toolbar/index";
 import { t } from "@/lib/i18n";
+import { usePillLeading } from "@/components/inbox/pill-leading-context";
 import { useLocale } from "@/lib/useLocale";
 
 interface ToolbarProps {
@@ -168,6 +169,10 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
   // Pill (quiet-composer) variant: self-contained floating chrome — rounded,
   // bordered, backdrop-blurred, subtle shadow. Inner row keeps the scroll
   // fallback for narrow widths but the pill itself sits at its natural size.
+  // An Inbox item open in the editor (a link note): its reader controls lead
+  // the pill. See `pill-leading-context.tsx`.
+  const pillLeading = usePillLeading();
+
   const wrapperClassName = isPill
     ? cn(
         "inline-flex items-center gap-0.5 px-1.5 py-1 min-w-0",
@@ -197,6 +202,12 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           data-quiet-toolbar=""
           className={wrapperClassName}
         >
+          {pillLeading ? (
+            <>
+              {pillLeading}
+              <span className="w-px h-3.5 bg-border/60 mx-0.5" aria-hidden="true" />
+            </>
+          ) : null}
           {!isSource && editor && (
             <>
               {/* Heading */}

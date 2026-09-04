@@ -71,6 +71,7 @@ Reversible + cheap → act, then report. Otherwise → ask first.
 | Projects, file tree, iCloud, git, external changes | @docs/features/workspace.md |
 | Automations (triggers, steps, agent-step provider & permissions, builder) | docs/features/automations.md |
 | iOS mobile app (read-only reader + share capture) | docs/features/mobile.md |
+| Inbox on the desktop (read-later list, filing, the shared reading-progress sidecar) | docs/features/inbox.md |
 
 ## Development Lifecycle
 

@@ -1440,7 +1440,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(26);
+    expect(parsed.version).toBe(27);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -2500,7 +2500,7 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(26);
+    expect(parsed.version).toBe(27);
   });
 
   it('v22 migration backfills linkPreviewRemoteImages=false (privacy by default)', async () => {
@@ -2662,5 +2662,36 @@ describe('relationsPanelHeight (OKF wiki-navigation)', () => {
     expect(useSettingsStore.getState().relationsPanelHeight).toBe(
       RELATIONS_PANEL_MAX_HEIGHT,
     );
+  });
+});
+
+describe('Inbox view preferences (v27)', () => {
+  function migrate(persisted: Record<string, unknown>, from: number) {
+    const opts = (useSettingsStore as unknown as {
+      persist: { getOptions: () => { migrate?: (s: unknown, v: number) => unknown } };
+    }).persist.getOptions();
+    return opts.migrate!(persisted, from) as Record<string, unknown>;
+  }
+
+  it('defaults the three Inbox preferences for a blob that predates them', () => {
+    const out = migrate({}, 26);
+    expect(out.inboxLayout).toBe('list');
+    expect(out.inboxCondensed).toBe(false);
+    expect(out.inboxGallerySize).toBe('medium');
+  });
+
+  it('keeps valid values and repairs invalid ones', () => {
+    const out = migrate({ inboxLayout: 'gallery', inboxCondensed: true, inboxGallerySize: 'huge' }, 26);
+    expect(out.inboxLayout).toBe('gallery');
+    expect(out.inboxCondensed).toBe(true);
+    expect(out.inboxGallerySize).toBe('medium');
+  });
+
+  it('setters persist the choice', () => {
+    useSettingsStore.getState().setInboxLayout('gallery');
+    useSettingsStore.getState().setInboxGallerySize('small');
+    useSettingsStore.getState().setInboxCondensed(true);
+    const s = useSettingsStore.getState();
+    expect([s.inboxLayout, s.inboxGallerySize, s.inboxCondensed]).toEqual(['gallery', 'small', true]);
   });
 });

@@ -179,6 +179,11 @@ links and documents. PRD:
   `ShareViewController.saveArticle`. The chain from builder to gallery card is
   regression-locked — see "The capture pipeline contract" below.
 
+  Reading progress and listen positions for Inbox items are shared with the
+  Mac through `Inbox/.notesage/reading-progress.json` — the phone's local
+  store is a write-through cache of it (`src/lib/inbox-progress-sync.ts`;
+  format and merge rules in docs/features/inbox.md).
+
   In the list view every file row carries a 40pt thumbnail slot: images,
   PDFs, documents, media and plain HTML files show the same picture the
   gallery draws (`getThumbnail`, QuickLook first), notes and folders keep

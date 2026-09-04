@@ -734,6 +734,7 @@ export function HtmlViewer({
             3. Default — DOMPurify sanitised inline div. */}
         <div
           ref={scrollContainerRef}
+          data-doc-scroll=""
           className="flex-1 overflow-auto relative"
         >
           {unsafeMode ? (

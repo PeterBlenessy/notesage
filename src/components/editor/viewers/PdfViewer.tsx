@@ -1077,7 +1077,7 @@ export function PdfViewer({
           onReplaceExpandedChange={() => {}}
         />
         )}
-        <div
+        <div data-doc-scroll=""
           ref={scrollContainerRef}
           className={cn(
             "h-full overflow-auto bg-muted/50",

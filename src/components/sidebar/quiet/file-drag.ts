@@ -14,6 +14,39 @@ import type { DragEvent as ReactDragEvent } from "react";
  * `notesage-file` makes the purpose obvious in devtools.
  */
 export const FILE_DRAG_MIME = "application/x-notesage-file";
+/** A multi-file selection (the Inbox drags its whole selection) — JSON array of paths. */
+export const FILE_DRAG_PATHS_MIME = "application/x-notesage-inbox-paths";
+
+/**
+ * Is this a drag of Inbox items (the selection payload)? Project rows accept
+ * only these: a Recent or Pinned row carries the single-file payload alone,
+ * and dropping one of those on a project would silently MOVE a file that
+ * already lives somewhere else.
+ */
+export function hasInboxDrag(event: { dataTransfer: DataTransfer }): boolean {
+  return event.dataTransfer.types.includes(FILE_DRAG_PATHS_MIME);
+}
+
+/**
+ * Every path a drop carries: the selection payload when present, else the
+ * single-file payload. Always at least the single file, so a drop target
+ * written against `FILE_DRAG_MIME` keeps working.
+ */
+export function droppedFilePaths(event: { dataTransfer: DataTransfer }): string[] {
+  const single = event.dataTransfer.getData(FILE_DRAG_MIME);
+  const many = event.dataTransfer.getData(FILE_DRAG_PATHS_MIME);
+  if (many) {
+    try {
+      const parsed: unknown = JSON.parse(many);
+      if (Array.isArray(parsed) && parsed.every((p) => typeof p === "string") && parsed.length > 0) {
+        return parsed as string[];
+      }
+    } catch {
+      // fall through to the single payload
+    }
+  }
+  return single ? [single] : [];
+}
 
 /**
  * Stamps the drag event with the file path under `FILE_DRAG_MIME` and sets

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useReducedMotion } from "@/hooks/useReducedMotion";
+import { usePillLeading } from "@/components/inbox/pill-leading-context";
 
 /**
  * `ViewerToolbarPill` — shared floating pill primitive for viewer toolbars
@@ -126,6 +127,9 @@ export function ViewerToolbarPill({
   };
 
   const faded = !reducedMotion && scrolling;
+  // The Inbox reader's controls, when an Inbox item is open — rendered in
+  // THIS pill rather than a second one. See `pill-leading-context.tsx`.
+  const leading = usePillLeading();
 
   return (
     <div
@@ -148,6 +152,12 @@ export function ViewerToolbarPill({
         className,
       )}
     >
+      {leading ? (
+        <>
+          {leading}
+          <span className="w-px h-3.5 bg-border/60 mx-0.5" aria-hidden="true" />
+        </>
+      ) : null}
       {children}
     </div>
   );

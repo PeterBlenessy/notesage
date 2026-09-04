@@ -1,4 +1,5 @@
-import { useMemo, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useMemo, useState, type DragEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { droppedFilePaths, hasInboxDrag } from "@/components/sidebar/quiet/file-drag";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
@@ -35,6 +36,11 @@ export interface ProjectRowProps {
   onCommitRename: (value: string) => void;
   onCancelRename: () => void;
   registerRef: (el: HTMLDivElement | null) => void;
+  /**
+   * Inbox items dropped on the row: the caller files them into the project.
+   * Only the Inbox's selection payload is accepted. Absent = not a target.
+   */
+  onDropFiles?: (paths: string[]) => void;
 }
 
 export function ProjectRow({
@@ -52,7 +58,28 @@ export function ProjectRow({
   onCommitRename,
   onCancelRename,
   registerRef,
+  onDropFiles,
 }: ProjectRowProps) {
+  const [dropActive, setDropActive] = useState(false);
+  // Inbox items only (`hasInboxDrag`): filing is the gesture, not moving
+  // arbitrary sidebar files between projects.
+  const dragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!onDropFiles || !hasInboxDrag(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    setDropActive(true);
+  };
+  const dragLeave = (event: DragEvent<HTMLDivElement>) => {
+    const next = event.relatedTarget as Node | null;
+    if (next && event.currentTarget.contains(next)) return;
+    setDropActive(false);
+  };
+  const drop = (event: DragEvent<HTMLDivElement>) => {
+    if (!onDropFiles || !hasInboxDrag(event)) return;
+    event.preventDefault();
+    setDropActive(false);
+    onDropFiles(droppedFilePaths(event));
+  };
   const name = useMemo(() => projectBasename(project.path), [project.path]);
   const hasTree = project.fileTree.length > 0;
   const fileCount = useMemo(
@@ -108,12 +135,17 @@ export function ProjectRow({
       onClick={isRenaming ? undefined : handleRowClick}
       onKeyDown={isRenaming ? undefined : onKeyDown}
       onFocus={onFocus}
+      onDragOver={dragOver}
+      onDragLeave={dragLeave}
+      onDrop={drop}
+      data-drop-active={dropActive ? "true" : undefined}
       className={cn(
         "group/row h-7 px-2 flex items-center gap-2 rounded-sm text-[13px]",
         "text-foreground/90 transition-colors duration-150",
         !isRenaming && "hover:bg-muted/50 cursor-pointer",
         "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
         isActive && !isRenaming && "bg-muted text-foreground font-medium",
+        dropActive && "bg-muted/60 outline outline-1 outline-dashed outline-muted-foreground",
       )}
     >
       {/*

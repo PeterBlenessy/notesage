@@ -4,6 +4,7 @@ import { iosContentReady } from "@/lib/ios-api";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "@/components/ui/sonner";
 import { useMobileStore } from "@/stores/mobile-store";
+import { startInboxProgressSync } from "@/lib/inbox-progress-sync";
 import { Onboarding } from "@/components/mobile/Onboarding";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 import { Reader } from "@/components/mobile/Reader";
@@ -31,6 +32,12 @@ export function MobileApp() {
   const { progress: sweepProgress } = useInlineSweep();
 
   // Resolve the native grant once on mount — never trust a persisted flag.
+  // The phone's read-later state is a write-through cache of the Inbox's
+  // shared sidecar (`Inbox/.notesage/reading-progress.json`) — see
+  // inbox-progress-sync.ts. Subscribed at the root: reading is exactly when
+  // progress changes, and the listing has unmounted by then.
+  useEffect(() => startInboxProgressSync(), []);
+
   useEffect(() => {
     void refreshGrant();
   }, [refreshGrant]);

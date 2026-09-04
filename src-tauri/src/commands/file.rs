@@ -11,8 +11,9 @@ pub struct FileEntry {
     pub is_directory: bool,
     pub children: Option<Vec<FileEntry>>,
     pub hidden: bool,
-    /// Files-app-style row metadata (seconds since 1970). Populated only by
-    /// the iOS library listing (#588); absent on every desktop path.
+    /// Files-app-style row metadata (seconds since 1970). Populated by the
+    /// iOS library listing (#588) and by the desktop's shallow listing (the
+    /// Inbox groups by it); absent on the recursive desktop listing.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modified: Option<f64>,
     /// Number of visible children, for DIRECTORIES only. Populated by the iOS
@@ -173,7 +174,17 @@ pub async fn list_files_shallow(path: String, show_hidden: Option<bool>) -> Resu
             is_directory: false,
             hidden: is_hidden,
             children: None,
-            modified: None,
+            // The desktop Inbox groups its rows by date (Today · Yesterday · …)
+            // and keys its header cache on the mtime, so the shallow listing
+            // carries it. One `stat` per entry; the recursive listing still
+            // leaves it out — a tree of thousands of files would pay for a
+            // field nothing there reads.
+            modified: entry
+                .metadata()
+                .ok()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as f64),
             child_count: None,
         });
     }
@@ -245,6 +256,20 @@ pub async fn rename_path(old_path: String, new_path: String) -> Result<(), Strin
         }
         Err(e) => Err(format!("Failed to rename {} to {}: {}", old_path, new_path, e)),
     }
+}
+
+/// Move a file or folder to the Trash — recoverable, where `delete_path` is
+/// not. The Inbox uses this: throwing away a read-later item should be as
+/// safe as it is in Mail.
+#[tauri::command]
+pub async fn trash_path(path: String) -> Result<(), String> {
+    // Finder does the work on macOS, and the Inbox usually sits on an iCloud
+    // volume — off the async runtime, like the other slow file paths.
+    tokio::task::spawn_blocking(move || {
+        trash::delete(&path).map_err(|e| format!("Failed to move {path} to the Trash: {e}"))
+    })
+    .await
+    .map_err(|e| format!("Trash task failed: {e}"))?
 }
 
 #[tauri::command]

@@ -147,6 +147,10 @@ pub struct CardMeta {
     pub minutes: Option<u32>,
     /// The publisher's name or host, as the byline shows it.
     pub site: Option<String>,
+    /// The page the article was clipped from — what "Open original" opens.
+    /// Always present: a document without a source footer is not a capture
+    /// and yields no `CardMeta` at all.
+    pub source_url: Option<String>,
 }
 
 /// Read a list row's fields back out of a capture's own header (#836).
@@ -157,9 +161,7 @@ pub struct CardMeta {
 /// site". Returns `None` for a document that is not one of ours, which is the
 /// caller's cue to show the plain file row.
 pub fn article_card_meta(html: &str) -> Option<CardMeta> {
-    if article_source_url(html).is_none() {
-        return None;
-    }
+    let source_url = article_source_url(html)?;
     let title = tag_text(html, "<title>", "</title>");
     // The byline is emitted UNCONDITIONALLY by `build_article_header` (the
     // "N min read" part is always there), so it is a reliable boundary for the
@@ -182,7 +184,7 @@ pub fn article_card_meta(html: &str) -> Option<CardMeta> {
             site = parts.get(i + 1).filter(|s| !s.is_empty()).map(|s| s.to_string());
         }
     }
-    Some(CardMeta { title, excerpt, minutes, site })
+    Some(CardMeta { title, excerpt, minutes, site, source_url: Some(source_url) })
 }
 
 /// Text between the first `open` and the following `close`, entities decoded.
@@ -1961,6 +1963,8 @@ mod video_tests {
         assert_eq!(meta.excerpt.as_deref(), Some("Why the walls we build for agents matter."));
         assert_eq!(meta.minutes, Some(7));
         assert_eq!(meta.site.as_deref(), Some("steve-yegge.medium.com"));
+        // The desktop Inbox's "Open original" — the footer's URL, decoded.
+        assert_eq!(meta.source_url.as_deref(), Some("https://steve-yegge.medium.com/x"));
     }
 
     #[test]

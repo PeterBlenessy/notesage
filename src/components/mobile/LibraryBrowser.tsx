@@ -16,6 +16,7 @@ import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome"
 import { INLINE_SWEEP_EVENT } from "./useInlineSweep";
 import { t, getFormatLocale } from "@/lib/i18n";
 import { INBOX_FOLDER_NAME } from "@/lib/inbox";
+import { pullInboxProgress } from "@/lib/inbox-progress-sync";
 import { useLocale } from "@/lib/useLocale";
 
 /** The share extension's landing folder — see `@/lib/inbox` for why this is
@@ -87,6 +88,9 @@ export function LibraryBrowser() {
       // must not be one tap away in the browser.
       const visible = entries.filter((e) => !e.hidden && !e.name.startsWith("."));
       setState({ status: "ready", entries: visible });
+      // What the Mac read (or listened to) shows here: merge the shared
+      // sidecar into the local store whenever the Inbox is listed.
+      if (currentRelPath === INBOX_NAME) void pullInboxProgress();
     } catch (err) {
       if (loadIdRef.current !== loadId) return;
       setState({ status: "error", message: String(err) });

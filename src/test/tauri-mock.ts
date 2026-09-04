@@ -66,6 +66,9 @@ export function clearMockInvokeHandlers(): void {
 // ---------------------------------------------------------------------------
 
 vi.mock('@tauri-apps/api/core', () => ({
+  // The asset protocol's URL mapper — a pure string transform in production
+  // too, so the mock keeps the shape callers can assert on.
+  convertFileSrc: (filePath: string, protocol = 'asset') => `${protocol}://localhost/${encodeURIComponent(filePath)}`,
   invoke: vi.fn(async (command: string, args?: Record<string, unknown>) => {
     const handler = invokeHandlers.get(command);
     if (handler) {
