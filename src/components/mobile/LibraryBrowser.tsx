@@ -760,7 +760,7 @@ export function LibraryBrowser() {
                 {groupEntries(listed).map((section) => (
                   <section key={section.key}>
                     {section.title && (
-                      <h2 className="ios-press-row sticky top-0 z-10 bg-background/85 px-4 py-1.5 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
+                      <h2 className="select-none [-webkit-touch-callout:none] sticky top-0 z-10 bg-background/85 px-4 py-1.5 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
                         {section.title}
                       </h2>
                     )}
