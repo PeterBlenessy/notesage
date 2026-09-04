@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.56.1",
+      "date": "2026-09-04",
+      "previousVersion": "0.56.0",
+      "sections": {
+        "fixes": [
+          "**Opening a file closes the Inbox.** With the Inbox list showing, choosing a document in the sidebar left the list in place — only opening something from the list itself would dismiss it. Any document you open now takes the column, including the one that was already open behind the list.",
+          "**The sidebar uses the arrow pointer.** Hovering the Inbox row showed the text cursor, and the other rows showed a hand. Every row in the sidebar now shows the arrow, as controls do on the Mac."
+        ]
+      }
+    },
+    {
       "version": "0.56.0",
       "date": "2026-09-04",
       "previousVersion": "0.55.6",
