@@ -111,6 +111,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
         index = min(max(0, startIndex), paragraphs.count - 1)
         activateSession()
         registerRemoteCommands()
+        observeInterruptions()
         speakCurrent()
     }
 
@@ -159,6 +160,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
         synth.stopSpeaking(at: .immediate)
         paragraphs = []
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        MPNowPlayingInfoCenter.default().playbackState = .stopped
     }
 
     /// Move `delta` paragraphs. Skipping past the end stops; before the start
@@ -464,6 +466,11 @@ private let MAX_VOTING_PARAGRAPHS = 60
     }
 
     private func updateNowPlaying(playing: Bool) {
+        // The rate alone does not drive the lock screen's play/pause toggle:
+        // with the audio session still active (it is, while paused — that is
+        // what keeps the plate on screen), iOS kept showing Pause for a
+        // paused article until the state was published explicitly.
+        MPNowPlayingInfoCenter.default().playbackState = playing ? .playing : .paused
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
             MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
@@ -478,6 +485,37 @@ private let MAX_VOTING_PARAGRAPHS = 60
     }
 
     private var remoteCommandsRegistered = false
+    private var interruptionsObserved = false
+
+    /// A call, Siri, or another app taking the output stops the speech
+    /// without a word to this player: the article fell silent while the app,
+    /// the row's ring and the lock screen all still said Playing. Follow the
+    /// session: an interruption is a pause, and iOS's "should resume" at its
+    /// end is a resume.
+    private func observeInterruptions() {
+        guard !interruptionsObserved else { return }
+        interruptionsObserved = true
+        NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(), queue: .main
+        ) { [weak self] note in
+            guard let self,
+                let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+                let type = AVAudioSession.InterruptionType(rawValue: raw)
+            else { return }
+            switch type {
+            case .began:
+                self.pause()
+            case .ended:
+                let raw = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                if AVAudioSession.InterruptionOptions(rawValue: raw).contains(.shouldResume) {
+                    self.resume()
+                }
+            @unknown default:
+                break
+            }
+        }
+    }
 
     private func registerRemoteCommands() {
         guard !remoteCommandsRegistered else { return }
@@ -491,6 +529,23 @@ private let MAX_VOTING_PARAGRAPHS = 60
 }
 
 extension SpeechPlayer: AVSpeechSynthesizerDelegate {
+    // The synthesiser's own word on pausing and continuing — these fire for
+    // pauses this player did not make too, so the lock screen and the app
+    // follow what is actually audible. Idempotent with pause()/resume().
+    public func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer, didPause utterance: AVSpeechUtterance
+    ) {
+        updateNowPlaying(playing: false)
+        onPlayingChanged?(false)
+    }
+
+    public func speechSynthesizer(
+        _ synthesizer: AVSpeechSynthesizer, didContinue utterance: AVSpeechUtterance
+    ) {
+        updateNowPlaying(playing: true)
+        onPlayingChanged?(true)
+    }
+
     public func speechSynthesizer(
         _ synthesizer: AVSpeechSynthesizer,
         willSpeakRangeOfSpeechString characterRange: NSRange,
