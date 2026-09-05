@@ -17,7 +17,12 @@ import {
   iosReadFile,
   iosWriteFile,
   iosEnsureDirectory,
+  iosInboxUnreadCount,
+  iosNotificationRequest,
+  iosNotificationSetPrefs,
+  type IosNotificationStatus,
 } from "@/lib/ios-api";
+import { t } from "@/lib/i18n";
 import {
   PINS_FILE_REL_PATH,
   parsePinsFileContent,
@@ -298,6 +303,28 @@ interface MobileStore {
    *  shared file, compacting entries that no longer name a folder in
    *  `rootEntries`. Rethrows so the caller can say so. */
   setOnHome: (relPath: string, shown: boolean, rootEntries: FileEntry[]) => Promise<void>;
+  /**
+   * Notifications (badge and banners) as the native side reports them, or
+   * `null` where there is no native side (desktop dev, tests). The phone can
+   * only announce what it observes itself: the badge is the unread Inbox
+   * count read from disk, the banner comes from a best-effort background
+   * refresh — never a delivery guarantee.
+   */
+  notifications: IosNotificationStatus | null;
+  /** Unread Inbox items, as last counted natively — the icon badge's number. */
+  unreadInbox: number;
+  /** "Not now" on the Inbox's pre-prompt card is permanent (persisted). */
+  notificationPrePromptDismissed: boolean;
+  /** Re-read the status, handing over the localised banner strings so the
+   *  background task and the extension post in the user's language. */
+  refreshNotificationStatus: () => Promise<void>;
+  /** The one system prompt; on a grant both preferences turn on. */
+  requestNotifications: () => Promise<void>;
+  setNotificationPref: (patch: { badge?: boolean; newItems?: boolean }) => Promise<void>;
+  /** Recount the unread Inbox natively (refreshes the badge, marks the
+   *  current Inbox seen). Tolerates having no native side. */
+  refreshUnread: () => Promise<void>;
+  dismissNotificationPrePrompt: () => void;
   /** Whether the Edit Home screen is showing (session only). */
   homeEditorOpen: boolean;
   openHomeEditor: () => void;
@@ -336,6 +363,17 @@ const MAX_READING_PROGRESS = 500;
 const MAX_READING_RESETS = 500;
 /** Folders that remember a view of their own; the oldest forgotten first. */
 const MAX_FOLDER_VIEWS = 200;
+
+/** The banner strings the native side posts with, in the user's language —
+ *  the frontend owns the translation table, so it hands them over. */
+export function notificationTemplates(): Record<string, string> {
+  return {
+    title: t("notify.title"),
+    one: t("notify.one"),
+    many: t("notify.many"),
+    more: t("notify.more"),
+  };
+}
 
 /**
  * The view a screen shows: its own choices over the app-wide fallback. Home
@@ -410,6 +448,9 @@ export const useMobileStore = create<MobileStore>()(
       homeFolders: null,
       homeEditorOpen: false,
       homeHintDismissed: false,
+      notifications: null,
+      unreadInbox: 0,
+      notificationPrePromptDismissed: false,
 
       currentRelPath: () => {
         const stack = get().folderStack;
@@ -583,6 +624,53 @@ export const useMobileStore = create<MobileStore>()(
         await iosWriteFile(HOME_FILE_REL_PATH, serializeHomeFileContent(next));
         set({ homeFolders: next });
       },
+
+      refreshNotificationStatus: async () => {
+        try {
+          set({ notifications: await iosNotificationSetPrefs({ templates: notificationTemplates() }) });
+        } catch {
+          set({ notifications: null });
+        }
+      },
+
+      requestNotifications: async () => {
+        try {
+          const status = await iosNotificationRequest();
+          if (status.authorization === "authorized") {
+            set({
+              notifications: await iosNotificationSetPrefs({
+                badge: true,
+                newItems: true,
+                templates: notificationTemplates(),
+              }),
+            });
+            void get().refreshUnread();
+          } else {
+            set({ notifications: status });
+          }
+        } catch {
+          // No native side: nothing to ask.
+        }
+      },
+
+      setNotificationPref: async (patch) => {
+        try {
+          set({ notifications: await iosNotificationSetPrefs({ ...patch, templates: notificationTemplates() }) });
+          if (patch.badge) void get().refreshUnread();
+        } catch {
+          // No native side.
+        }
+      },
+
+      refreshUnread: async () => {
+        try {
+          set({ unreadInbox: await iosInboxUnreadCount() });
+        } catch {
+          // No native side (desktop dev, tests): the count stays as it was.
+        }
+      },
+
+      dismissNotificationPrePrompt: () => set({ notificationPrePromptDismissed: true }),
 
       openHomeEditor: () => set({ homeEditorOpen: true }),
       closeHomeEditor: () => set({ homeEditorOpen: false }),
@@ -825,6 +913,9 @@ export const useMobileStore = create<MobileStore>()(
           homeFolders: null,
           homeEditorOpen: false,
           homeHintDismissed: false,
+          notifications: null,
+          unreadInbox: 0,
+          notificationPrePromptDismissed: false,
             }),
     }),
     {
@@ -850,6 +941,7 @@ export const useMobileStore = create<MobileStore>()(
         readingResets: s.readingResets,
         listDensity: s.listDensity,
         homeHintDismissed: s.homeHintDismissed,
+        notificationPrePromptDismissed: s.notificationPrePromptDismissed,
         sortMode: s.sortMode,
         groupMode: s.groupMode,
         viewMode: s.viewMode,

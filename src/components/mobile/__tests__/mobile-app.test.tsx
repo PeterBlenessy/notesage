@@ -14,6 +14,7 @@ import { clearArticleMetaCache } from "@/lib/article-meta-cache";
 import { startSpeechEvents } from "@/lib/speech-controller";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 import { Reader } from "@/components/mobile/Reader";
+import { useNotificationRoute } from "@/components/mobile/useNotificationRoute";
 import { HomeFolders } from "@/components/mobile/HomeFolders";
 import { Onboarding } from "@/components/mobile/Onboarding";
 
@@ -2191,5 +2192,27 @@ describe("Edit Home is a screen of its own", () => {
     expect(screen.queryByText("All Folders")).toBeNull();
     expect(useMobileStore.getState().goBack()).toBe(true);
     await screen.findByText("All Folders");
+  });
+});
+
+describe("a notification tap lands on the Inbox", () => {
+  function Probe({ grant }: { grant: "unknown" | "granted" }) {
+    useNotificationRoute(grant);
+    return null;
+  }
+  it("cold: the launch route is consumed once the grant is in; warm: the event does the same", async () => {
+    let consumed = 0;
+    setMockInvokeHandler("ios_consume_launch_route", () => {
+      consumed += 1;
+      return consumed === 1 ? "inbox" : null;
+    });
+    const { rerender } = renderWithProviders(<Probe grant="unknown" />);
+    await new Promise((r) => setTimeout(r, 10));
+    expect(consumed).toBe(0); // not before there is a library to land in
+    rerender(<Probe grant="granted" />);
+    await waitFor(() => expect(useMobileStore.getState().folderStack).toEqual([{ relPath: "Inbox", name: "Inbox" }]));
+    useMobileStore.getState().goToDepth(0);
+    window.dispatchEvent(new CustomEvent("notesage:notification", { detail: { route: "inbox" } }));
+    await waitFor(() => expect(useMobileStore.getState().folderStack).toEqual([{ relPath: "Inbox", name: "Inbox" }]));
   });
 });

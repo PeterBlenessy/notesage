@@ -317,3 +317,129 @@ describe("Home — only the folders you chose", () => {
     expect(screen.getByText("All Folders")).toBeTruthy();
   });
 });
+
+describe("notifications on the phone", () => {
+  const status = (over: Partial<{ authorization: "notDetermined" | "denied" | "authorized"; backgroundRefresh: "available" | "denied" | "restricted"; badge: boolean; newItems: boolean }> = {}) => ({
+    authorization: "notDetermined" as const,
+    backgroundRefresh: "available" as const,
+    badge: false,
+    newItems: false,
+    ...over,
+  });
+  const inboxListing = () => [
+    { name: "article.html", path: "Inbox/article.html", is_directory: false, hidden: false, modified: 100 },
+  ];
+  beforeEach(() => {
+    setMockInvokeHandler("ios_read_file", () => {
+      throw new Error("not found");
+    });
+    setMockInvokeHandler("ios_notification_set_prefs", () => status());
+  });
+
+  it("asks from a card on the Inbox once it holds an item — never on an empty Inbox, never once answered", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    useMobileStore.setState({ folderStack: [{ relPath: "Inbox", name: "Inbox" }] });
+    const { unmount } = renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(useMobileStore.getState().notifications).not.toBeNull());
+    expect(screen.queryByText("Know when new items arrive")).toBeNull();
+    unmount();
+
+    setMockInvokeHandler("ios_list_directory", inboxListing);
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Know when new items arrive");
+    fireEvent.click(screen.getByRole("button", { name: "Not now" }));
+    await waitFor(() => expect(screen.queryByText("Know when new items arrive")).toBeNull());
+    expect(useMobileStore.getState().notificationPrePromptDismissed).toBe(true);
+  });
+
+  it("Turn on spends the one system prompt", async () => {
+    setMockInvokeHandler("ios_list_directory", inboxListing);
+    let asked = 0;
+    setMockInvokeHandler("ios_notification_request", () => {
+      asked += 1;
+      return status({ authorization: "authorized" });
+    });
+    setMockInvokeHandler("ios_notification_set_prefs", (args) => {
+      const a = args as { badge?: boolean; newItems?: boolean };
+      return status({ authorization: a.badge === undefined ? "notDetermined" : "authorized", badge: !!a.badge, newItems: !!a.newItems });
+    });
+    setMockInvokeHandler("ios_inbox_unread_count", () => 1);
+    useMobileStore.setState({ folderStack: [{ relPath: "Inbox", name: "Inbox" }] });
+    renderWithProviders(<LibraryBrowser />);
+    fireEvent.click(await screen.findByRole("button", { name: "Turn on" }));
+    await waitFor(() => expect(useMobileStore.getState().notifications?.authorization).toBe("authorized"));
+    expect(asked).toBe(1);
+    await waitFor(() => expect(screen.queryByText("Know when new items arrive")).toBeNull());
+  });
+
+  it("shows no card when notifications were already decided", async () => {
+    setMockInvokeHandler("ios_list_directory", inboxListing);
+    setMockInvokeHandler("ios_notification_set_prefs", () => status({ authorization: "denied" }));
+    useMobileStore.setState({ folderStack: [{ relPath: "Inbox", name: "Inbox" }] });
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("article.html");
+    await waitFor(() => expect(useMobileStore.getState().notifications?.authorization).toBe("denied"));
+    expect(screen.queryByText("Know when new items arrive")).toBeNull();
+  });
+
+  it("the … menu carries the two preferences, the Settings row when denied, and the refresh row when off", async () => {
+    let captured: CapturedChromeSpec = {};
+    setMockInvokeHandler("ios_set_chrome", (args) => {
+      captured = (args as { spec: CapturedChromeSpec }).spec;
+      return null;
+    });
+    setMockInvokeHandler("ios_list_directory", () => []);
+    const rows = () => captured.topRight?.menu?.filter((m) => m.id.startsWith("notify-")).map((m) => [m.id, m.selected]) ?? [];
+    setMockInvokeHandler("ios_notification_set_prefs", () => status({ authorization: "authorized", badge: true, newItems: false }));
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(rows()).toEqual([["notify-badge", true], ["notify-new", false]]));
+
+    useMobileStore.setState({ notifications: status({ authorization: "denied" }) });
+    await waitFor(() => expect(rows()).toEqual([["notify-settings", undefined]]));
+
+    useMobileStore.setState({ notifications: status({ authorization: "authorized", backgroundRefresh: "denied" }) });
+    await waitFor(() => expect(rows().map((r) => r[0])).toEqual(["notify-badge", "notify-new", "notify-refresh"]));
+
+    useMobileStore.setState({ notifications: null });
+    await waitFor(() => expect(rows()).toEqual([]));
+  });
+
+  it("a menu row toggles a preference, or asks first while iOS has not been asked", async () => {
+    setMockInvokeHandler("ios_list_directory", () => []);
+    setMockInvokeHandler("ios_set_chrome", () => null);
+    const prefCalls: Array<Record<string, unknown>> = [];
+    setMockInvokeHandler("ios_notification_set_prefs", (args) => {
+      prefCalls.push(args as Record<string, unknown>);
+      const a = args as { newItems?: boolean };
+      return status({ authorization: "authorized", newItems: a.newItems ?? false });
+    });
+    let asked = 0;
+    setMockInvokeHandler("ios_notification_request", () => {
+      asked += 1;
+      return status({ authorization: "denied" });
+    });
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(useMobileStore.getState().notifications?.authorization).toBe("authorized"));
+    window.dispatchEvent(new CustomEvent("notesage:chrome", { detail: { id: "notify-new" } }));
+    await waitFor(() => expect(useMobileStore.getState().notifications?.newItems).toBe(true));
+    expect(prefCalls[prefCalls.length - 1]).toMatchObject({ newItems: true });
+
+    useMobileStore.setState({ notifications: status({ authorization: "notDetermined" }) });
+    // The action map follows the render; give React the turn to re-render.
+    await new Promise((r) => setTimeout(r, 20));
+    window.dispatchEvent(new CustomEvent("notesage:chrome", { detail: { id: "notify-badge" } }));
+    await waitFor(() => expect(asked).toBe(1));
+  });
+
+  it("the Inbox card shows the unread count in the accent, the total otherwise", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 5 },
+    ]);
+    setMockInvokeHandler("ios_inbox_unread_count", () => 2);
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(screen.getByTestId("inbox-unread").textContent).toBe("2"));
+    useMobileStore.setState({ unreadInbox: 0 });
+    await waitFor(() => expect(screen.queryByTestId("inbox-unread")).toBeNull());
+    expect(screen.getByText("5")).toBeTruthy();
+  });
+});

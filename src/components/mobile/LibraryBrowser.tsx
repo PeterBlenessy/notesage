@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, FolderOpen, Plus, FolderPlus, ArrowDownAZ, Clock, LayoutGrid, List, SlidersHorizontal } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
-import { iosListDirectory, iosCreateDirectory, iosTextPrompt, iosQuickLook } from "@/lib/ios-api";
+import { iosListDirectory, iosCreateDirectory, iosTextPrompt, iosQuickLook, iosOpenSettings } from "@/lib/ios-api";
 import { toast } from "sonner";
 import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-store";
 import { stopSpeech, toggleSpeech } from "@/lib/speech-controller";
@@ -13,6 +13,7 @@ import { GalleryView } from "./GalleryView";
 import { InboxCard } from "./InboxCard";
 import { AllFoldersRow } from "./AllFoldersRow";
 import { HomeHint } from "./HomeHint";
+import { NotificationPrePrompt } from "./NotificationPrePrompt";
 import { BrowserSkeleton, BrowserError } from "./BrowserStates";
 import { defaultHomeFolders } from "@/lib/home-file";
 import { Button } from "@/components/ui/button";
@@ -62,6 +63,14 @@ export function LibraryBrowser() {
   const homeHintDismissed = useMobileStore((s) => s.homeHintDismissed);
   const dismissHomeHint = useMobileStore((s) => s.dismissHomeHint);
   const openHomeEditor = useMobileStore((s) => s.openHomeEditor);
+  const notifications = useMobileStore((s) => s.notifications);
+  const refreshNotificationStatus = useMobileStore((s) => s.refreshNotificationStatus);
+  const requestNotifications = useMobileStore((s) => s.requestNotifications);
+  const setNotificationPref = useMobileStore((s) => s.setNotificationPref);
+  const refreshUnread = useMobileStore((s) => s.refreshUnread);
+  const unreadInbox = useMobileStore((s) => s.unreadInbox);
+  const prePromptDismissed = useMobileStore((s) => s.notificationPrePromptDismissed);
+  const dismissNotificationPrePrompt = useMobileStore((s) => s.dismissNotificationPrePrompt);
   const inlineImagesEnabled = useMobileStore((s) => s.inlineImagesEnabled);
   const setInlineImagesEnabled = useMobileStore((s) => s.setInlineImagesEnabled);
   const imageMaxPixel = useMobileStore((s) => s.imageMaxPixel);
@@ -117,11 +126,26 @@ export function LibraryBrowser() {
       // The chosen Home follows the root listing: one small read, so a
       // change made on the iPad shows on the next refresh here.
       if (currentRelPath === "") void loadHomeFolders();
+      // The badge is the unread Inbox count: recount whenever the Inbox or
+      // the root (its card) is listed — and, on the Inbox itself, mark what
+      // is on screen as seen.
+      if (currentRelPath === "" || currentRelPath === INBOX_NAME) void refreshUnread();
     } catch (err) {
       if (loadIdRef.current !== loadId) return;
       setState({ status: "error", message: String(err) });
     }
-  }, [currentRelPath, loadHomeFolders]);
+  }, [currentRelPath, loadHomeFolders, refreshUnread]);
+
+  // Notification status on mount and on every return to the foreground —
+  // the user may have just come back from the Settings app.
+  useEffect(() => {
+    void refreshNotificationStatus();
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refreshNotificationStatus();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [refreshNotificationStatus]);
 
   useEffect(() => {
     void load();
@@ -470,6 +494,30 @@ export function LibraryBrowser() {
     }
   }, [currentRelPath, promptName, load, enterFolder]);
 
+  // The menu's notification section, by what iOS says. A checkmark row while
+  // authorization is undecided asks first (this is the "from Settings" route
+  // to the one system prompt); a denial shows the way to the Settings app
+  // rather than a second attempt iOS would never show.
+  const notificationRows = !notifications
+    ? []
+    : notifications.authorization === "denied"
+      ? [{ id: "notify-settings", title: t("menu.notifySettings"), icon: "gear", sectionBreak: true }]
+      : [
+          { id: "notify-badge", title: t("menu.notifyBadge"), icon: "app.badge", selected: notifications.badge, sectionBreak: true },
+          { id: "notify-new", title: t("menu.notifyNew"), icon: "bell", selected: notifications.newItems },
+          ...(notifications.backgroundRefresh !== "available"
+            ? [{ id: "notify-refresh", title: t("menu.notifyRefresh"), icon: "arrow.clockwise" }]
+            : []),
+        ];
+  const toggleNotification = async (pref: "badge" | "newItems") => {
+    if (!notifications) return;
+    if (notifications.authorization === "notDetermined") {
+      await requestNotifications();
+      return;
+    }
+    await setNotificationPref({ [pref]: !notifications[pref] });
+  };
+
   // Native Liquid Glass chrome when the build has it; the web islands below
   // stay as the fallback (desktop dev, tests, older builds).
   // Ancestors for the native back button's long-press UIMenu (Files
@@ -614,6 +662,9 @@ export function LibraryBrowser() {
                 { id: "img-original", title: t("menu.imageSizeOriginal"), icon: "photo.badge.arrow.down", selected: imageMaxPixel === "original" },
               ] as const)
             : []),
+          // Notifications: the two preferences, or the way to the Settings
+          // app when iOS has them off. Only where there is a native side.
+          ...notificationRows,
           // Edit Home (a switch per root folder) is a screen, not a menu —
           // thirty folders in a UIMenu is the wrong tool. Home only.
           ...(atHome
@@ -659,6 +710,10 @@ export function LibraryBrowser() {
       "img-original": () => setImageMaxPixel("original"),
       "goto-inbox": () => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME }),
       "edit-home": () => openHomeEditor(),
+      "notify-badge": () => void toggleNotification("badge"),
+      "notify-new": () => void toggleNotification("newItems"),
+      "notify-settings": () => void iosOpenSettings().catch(() => {}),
+      "notify-refresh": () => void iosOpenSettings().catch(() => {}),
       "create-note": () => createNote(),
       "create-folder": () => void createFolder(),
       "search-query": (value?: string) => setQuery(value ?? ""),
@@ -799,6 +854,7 @@ export function LibraryBrowser() {
               // The count rides along on the listing (#684) — no extra read.
               <InboxCard
                 count={inboxEntry.child_count}
+                unread={unreadInbox}
                 onOpen={() => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME })}
               />
             ) : null;
@@ -815,6 +871,18 @@ export function LibraryBrowser() {
                 <AllFoldersRow onOpen={() => enterFolder({ relPath: "", name: t("home.allFolders") })} />
               </>
             ) : null;
+            // Asked when it means something: on the Inbox, once it holds an
+            // item, while iOS has not been asked, unless "Not now" was said.
+            const prePrompt =
+              currentRelPath === INBOX_NAME &&
+              state.entries.length > 0 &&
+              notifications?.authorization === "notDetermined" &&
+              !prePromptDismissed ? (
+                <NotificationPrePrompt
+                  onTurnOn={() => void requestNotifications()}
+                  onNotNow={dismissNotificationPrePrompt}
+                />
+              ) : null;
             if (state.entries.length === 0) return <EmptyFolder />;
             if (curated && !inboxCard && listed.length === 0)
               return (
@@ -836,6 +904,7 @@ export function LibraryBrowser() {
               return (
                 <>
                   {inboxCard}
+                  {prePrompt}
                 <GalleryView
                   entries={listed}
                   currentFolderName={isRootListing ? libraryName || "Notesage" : currentName}
@@ -854,6 +923,7 @@ export function LibraryBrowser() {
             return (
               <>
                 {inboxCard}
+                {prePrompt}
                 {groupEntries(listed).map((section) => (
                   <section key={section.key}>
                     {section.title && (

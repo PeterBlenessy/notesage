@@ -1038,11 +1038,15 @@ pub async fn ios_notification_set_prefs(
     new_items: Option<bool>,
     templates: Option<std::collections::HashMap<String, String>>,
 ) -> Result<NotificationStatus, String> {
-    ios_only!(
-        "ios_notification_set_prefs",
-        app,
+    #[cfg(target_os = "ios")]
+    {
         ios_impl::notification_set_prefs(&app, badge, new_items, templates.as_ref()).await
-    )
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, badge, new_items, templates);
+        Err("ios_notification_set_prefs is only available on iOS".into())
+    }
 }
 
 /// Recount the unread Inbox from disk, refresh the icon badge, and record

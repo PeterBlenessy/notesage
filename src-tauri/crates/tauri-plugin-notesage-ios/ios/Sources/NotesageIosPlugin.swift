@@ -33,12 +33,12 @@ struct SpeechRateArgs: Decodable {
   let rate: Float
 }
 
-struct RelPathArgs: Decodable {
 struct NotificationPrefsArgs: Decodable {
   let badge: Bool?
   let newItems: Bool?
   let templates: [String: String]?
 }
+struct RelPathArgs: Decodable {
   let relPath: String
 }
 
