@@ -47,13 +47,26 @@ on a measurement, not on a date.
 
 ## Phase 0 — Resolve the load-bearing unknowns
 
-### #1 — Spike: background recording + local-then-move on a device
+### #1 ✅ — Spike: background recording + local-then-move on a device
 
 **Complexity:** L · **Category:** native · **Depends on:** — · **Files:** throw-away branch; findings recorded at the top of this file
 
 A minimal `AVAudioRecorder` in the plugin, started from a debug menu entry, with `.playAndRecord` / `[.allowBluetooth, .defaultToSpeaker]` and the existing `audio` background mode. Lock the phone for 30 minutes; decline a call; answer one; pull an AirPod. Then copy the resulting file into the granted library folder via `NSFileCoordinator` `.forReplacing` and confirm it appears on the Mac whole (size stable, decodable). Record: whether the process survived, what the interruption sequence looked like, copy time for ~15 MB, and the exact `AVAudioRecorder` settings that produced ~64 kbps mono. Acceptance: a written answer to risks 1 and 2 above, and a 2-second `.m4a` cut from the spike for #2.
 
-### #2 — Regression fixture: an iPhone-recorded `.m4a` decodes on the Mac
+**Findings (2026-09-05).** The simulator cannot answer risk 1: `AVAudioRecorder.record()`
+deadlocks inside AudioToolbox's mix engine on this Mac's simulator (a
+`DevLock` wait under `prepareToRecordQueue`, with `.playAndRecord` and with
+plain `.record` alike), so no simulator recording ever starts. Two things
+came out of it: the recorder's start now runs on a worker queue with an
+8-second watchdog, so a start that never returns is reported and the UI
+stays alive instead of freezing the main thread (which is exactly what the
+first cut did); and risk 2 was exercised the other way round — a real AAC
+file seeded as an orphan, kept through the recovery sheet, landed in
+`Recordings/Recording <stamp>/` under coordination with its manifest and
+the staging folder cleared. Background survival, the interruption
+sequence and the encoder's real output are #11's device pass.
+
+### #2 ✅ — Regression fixture: an iPhone-recorded `.m4a` decodes on the Mac
 
 **Complexity:** S · **Category:** backend · **Depends on:** #1 · **Files:** `src-tauri/src/commands/audio_decode.rs` (tests), `tests/fixtures/audio/iphone-aac-2s.m4a`
 
@@ -63,55 +76,55 @@ Add the fixture and a `cargo test` that calls `decode_audio_f32` on it, asserts 
 
 ## Phase 1 — Capture on the phone
 
-### #3 — `Recorder.swift`: the native recorder
+### #3 ✅ — `Recorder.swift`: the native recorder
 
 **Complexity:** L · **Category:** native · **Depends on:** #1 · **Files:** `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/Recorder.swift` (new)
 
 Singleton modelled on `SpeechPlayer.swift`. `AVAudioRecorder` (AAC-LC, 48 kHz, mono, 64 kbps, metering on) writing to `<Application Support>/Recordings/<uuid>/audio.m4a`. `requestRecordPermission` on first start with a distinct `microphoneDenied` error. Observers: `interruptionNotification` (pause; resume only on `.shouldResume`, else mark `interrupted`), `routeChangeNotification` (`.oldDeviceUnavailable` → keep recording, emit `route`), `mediaServicesWereResetNotification` (stop + finalize what exists). 1 Hz tick with pause-aware `currentTime` and metered level. Free-space check (< 200 MB → refuse). Public surface: `start(language:)`, `pause()`, `resume()`, `stop() -> StagedRecording { url, durationSecs, startedAt, bytes }`, `state`, plus `onEvent` callbacks. Swift unit tests for the settings dictionary and the stamp formatter (`Recording yyyy-MM-dd HH-mm-ss`, local time, matching `transcription.rs:730`).
 
-### #4 — Audio-session arbiter
+### #4 ✅ — Audio-session arbiter
 
 **Complexity:** M · **Category:** native · **Depends on:** #3 · **Files:** `…/ios/Sources/AudioOwner.swift` (new), `SpeechPlayer.swift`, `Recorder.swift`
 
 One `AudioOwner` (`none | speech | recording | player`) that owns `setCategory` / `setActive`. Starting an owner stops the previous one explicitly; `SpeechPlayer.stop()` stops calling `setActive(false)` itself (today it deactivates unconditionally, which would end a recording). `speechStart` while recording returns `Err("recording-in-progress")`; `recordingStart` while speaking stops speech first. Tests: the state machine is a pure enum transition table — unit-test it.
 
-### #5 — `LibraryAccess.finalizeRecording` + manifest write
+### #5 ✅ — `LibraryAccess.finalizeRecording` + manifest write
 
 **Complexity:** M · **Category:** native · **Depends on:** #3 · **Files:** `…/ios/Sources/LibraryAccess.swift`, `…/ios/Sources/RecordingManifest.swift` (new), `tests/fixtures/recording-manifest.v1.json` (shared with #12)
 
 Inside the security scope: `createDirectory("Recordings/Recording <stamp>")` with the existing `deduped(_:under:)`; coordinated `.forReplacing` copy of `audio.m4a` from the staging folder; write `recording.json` (`RecordingManifest: Codable`, `transcription: null`, `createdBy.device` = the label the reading-progress sidecar uses, `audio.bytes` from the file on disk *after* the copy); delete the staging folder only after both writes succeed. Returns the final rel path + manifest. Swift test decodes and re-encodes the shared fixture byte-for-byte (key order fixed) so #12's TS parser and this cannot drift.
 
-### #6 — Rust bridge: `ios_recording_*` commands
+### #6 ✅ — Rust bridge: `ios_recording_*` commands
 
 **Complexity:** M · **Category:** backend · **Depends on:** #3, #5 · **Files:** `src-tauri/crates/tauri-plugin-notesage-ios/src/lib.rs`, `…/ios/Sources/NotesageIosPlugin.swift`, `src-tauri/src/commands/ios_library.rs`, `src-tauri/src/lib.rs` (both `generate_handler!` lists), `docs/tauri-commands.md`
 
 `ios_recording_start { language? }`, `_pause`, `_resume`, `_stop -> { relPath, manifest }`, `_state`, `_recover { action }`. Same shape as the `ios_speech_*` set: Rust command → `self.call("recordingStart", …)` → Swift method. Desktop list registers the same names returning the platform error (the existing `transcription_stub.rs` idiom). Events pushed as `notesage:recording` `CustomEvent`s via `evaluateJavaScript`, the way `emitSpeech` does. Rust unit test: the non-iOS stubs return `Err`.
 
-### #7 — `ios-api.ts` + `mobile-store.recording` + event subscriber
+### #7 ✅ — `ios-api.ts` + `mobile-store.recording` + event subscriber
 
 **Complexity:** M · **Category:** frontend · **Depends on:** #6 · **Files:** `src/lib/ios-api.ts`, `src/stores/mobile-store.ts`, `src/lib/recording-controller.ts` (new, sibling of `speech-controller.ts`), `src/MobileApp.tsx`
 
 Wrappers for the six commands; the non-persisted `recording` slice (`status`, `startedAt`, `elapsedSecs`, `level`, `interrupted`, `micPermission`); `startRecordingEvents()` mounted beside `startSpeechEvents()`; `startRecording()` / `pauseRecording()` / `resumeRecording()` / `stopRecording()` that map the `microphone-denied` and `recording-in-progress` errors to the store. `stopRecording` under 5 s asks to discard (calls `ios_recording_recover { discard }` on the staged file — same primitive as #9). Vitest with the Tauri mock: state transitions for every event, the < 5 s discard path, the denied path.
 
-### #8 — Chrome: the entry points and the recording island
+### #8 ✅ — Chrome: the entry points and the recording island
 
 **Complexity:** L · **Category:** both · **Depends on:** #7 · **Files:** `src/components/mobile/LibraryBrowser.tsx`, `src/components/mobile/Reader.tsx`, `src/components/mobile/Chrome.tsx`, `src/components/mobile/useNativeChrome.ts`, `…/ios/Sources/ChromeOverlay.swift`, `src/i18n/*`
 
 "+" long-press menu gains `create-recording` (`waveform.badge.plus`) at root and in folders; inside `Recordings/` the primary "+" action becomes record and the menu offers New Note / New Folder. New `IosChromeRecorder` `bottomCenter` spec (`{ elapsedSecs, paused, level, interrupted }`, ids `rec-toggle`, `rec-stop`) rendered natively next to `IosChromePlayer`, with the `Chrome.tsx` web fallback; shown in browser *and* Reader while `recording.status !== "idle"`. Interrupted-and-not-resumed renders `Paused — call ended · Resume`. `ListenButton` disabled with a reason while recording. Reduced motion: no level animation. Component tests for the menu composition per folder and the island's four states; a design review against ADR 0009's island style.
 
-### #9 — Orphan recovery at launch
+### #9 ✅ — Orphan recovery at launch
 
 **Complexity:** M · **Category:** both · **Depends on:** #5, #6, #7 · **Files:** `Recorder.swift`, `LibraryAccess.swift`, `src/MobileApp.tsx`, `src/components/mobile/RecoverRecordingSheet.tsx` (new)
 
 On launch, the plugin reports any staging folder left behind (`ios_recording_state` returns `orphan: { durationSecs?, readable }` — readable = `AVAudioFile` opens it). The sheet offers *Recover* (→ #5 finalize, with the duration read from the file) or *Discard*. Never auto-decides. Test: a fabricated staging folder with a readable file recovers into the library; an unreadable one is discardable and the UI says why.
 
-### #10 — Microphone permission: declare it on purpose
+### #10 ✅ — Microphone permission: declare it on purpose
 
 **Complexity:** S · **Category:** both · **Depends on:** — · **Files:** `src-tauri/gen/apple/project.yml`, `src-tauri/ios/integrate-share-extension.py`, `src-tauri/Info.plist`
 
 `NSMicrophoneUsageDescription` declared in `project.yml` with phone copy ("Notesage records meetings and voice notes you start yourself. Recordings stay in your library."). Today the key arrives only by accident from the macOS-oriented `src-tauri/Info.plist`. Extend the integrate script's `UIBackgroundModes: audio` comment to say it covers recording. Acceptance: a regenerated Xcode project (`tauri ios init --ci`) still carries both keys — add the check to the existing iOS CI job's post-init assertions if it has them, else a `grep` step.
 
-### #11 — Phase 1 verification on device + *What to Test*
+### #11 🚧 — Phase 1 verification on device + *What to Test*
 
 **Complexity:** M · **Category:** docs · **Depends on:** #3–#10 · **Files:** `docs/history/<n>-ios-build-<m>.md`
 

@@ -24,17 +24,14 @@ sektion som är tom. Ungefär 600 tecken ryms på en skärm; skriptet varnar
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Hem visar bara mapparna du valt, och varje mapp minns sin egen vy.
+Hem visar bara mapparna du valt; ikonen räknar olästa i Inbox; inspelning startar på telefonen.
 
 NYTT
-• Hem: Inbox och mapparna du lagt där; allt annat under Alla mappar. Håll in en mapp för Visa på Hem, eller använd … › Redigera Hem.
-• Varje mapp minns lista eller galleri, ordning, gruppering och Kompakt för sig.
-• Mappar visar ikonen och färgen du gav dem på Macen, i listan och som gallerikort.
-• Logotypen växer medan appen startar.
-
-FIXAT
-• Kompakt erbjuds inte längre där det inte ändrade något.
+• Hem: Inbox och mapparna du lagt där. Håll in en mapp för Visa på Hem, eller … › Redigera Hem.
+• Varje mapp minns sin egen vy, ordning och gruppering.
+• Appikonen visar antalet olästa i Inbox (slå på från Inbox).
+• Ny inspelning (håll in +): din Mac transkriberar när det synkats in.
 
 TESTA
-• Öppna Alla mappar, håll in en mapp, välj Visa på Hem, gå tillbaka.
-• Sätt en mapp till galleri och en annan till lista, växla sedan mellan dem.
+• Öppna Inbox, tryck Slå på, tillåt, titta sedan på ikonen.
+• Håll in +, Ny inspelning, prata en minut, stoppa, öppna Inspelningar.
