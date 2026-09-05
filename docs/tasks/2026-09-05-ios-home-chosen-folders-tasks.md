@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-09-05 |
-| **Status** | Not started |
+| **Status** | ✅ Done (2026-09-05) |
 | **PRD** | [ios-home-chosen-folders](../prds/2026-09-05-ios-home-chosen-folders.md) |
 | **Total** | 12 tasks: 4S, 6M, 2L |
 | **Suggested order** | Format + store (#1–#3) → Actions (#4) → Home screen (#5–#8) → Edit Home (#9–#10) → Docs + device pass (#11–#12) |
@@ -33,7 +33,7 @@ that already carry `.notesage/pins.json`.
 
 ---
 
-### #1 `home-file.ts` — format, defaults, compaction (pure)
+### #1 ✅ `home-file.ts` — format, defaults, compaction (pure)
 
 Create `src/lib/home-file.ts` in the image of `src/lib/pins-file.ts`:
 framework-free, no Tauri imports.
@@ -60,7 +60,7 @@ idempotent; `isHomeCandidate` false for files and nested dirs.
 - **Dependencies:** —
 - **Files:** `src/lib/home-file.ts`, `src/lib/__tests__/home-file.test.ts`
 
-### #2 Store: `homeFolders`, load, set, rename-rewrite, editor flag, hint
+### #2 ✅ Store: `homeFolders`, load, set, rename-rewrite, editor flag, hint
 
 Extend `src/stores/mobile-store.ts`:
 
@@ -89,7 +89,7 @@ on Home; `goBack` closes the editor first; hint flag persists.
 - **Dependencies:** #1
 - **Files:** `src/stores/mobile-store.ts`, `src/stores/__tests__/mobile-store.test.ts`
 
-### #3 i18n keys (en + sv)
+### #3 ✅ i18n keys (en + sv)
 
 Add to `src/lib/i18n.ts` in both dictionaries: `home.allFolders`,
 `home.editTitle`, `menu.editHome`, `action.showOnHome`,
@@ -102,7 +102,7 @@ the untranslated on-disk name (`@/lib/inbox`).
 - **Dependencies:** —
 - **Files:** `src/lib/i18n.ts`
 
-### #4 Hold menu: *Show on Home* / *Hide from Home*
+### #4 ✅ Hold menu: *Show on Home* / *Hide from Home*
 
 In `src/lib/mobile-entry-actions.ts`:
 
@@ -126,7 +126,7 @@ folder calls `setOnHome(false)`.
 - **Dependencies:** #1, #3
 - **Files:** `src/lib/mobile-entry-actions.ts`, `src/lib/__tests__/mobile-entry-actions.test.ts`
 
-### #5 `AllFoldersRow` + `HomeHint` components
+### #5 ✅ `AllFoldersRow` + `HomeHint` components
 
 - `src/components/mobile/AllFoldersRow.tsx` — copies `InboxCard`'s geometry
   (40pt icon slot, `1.0625rem` scaled text, chevron, the split 8+8 inset)
@@ -144,7 +144,7 @@ surface (no `useA11yPrefs` of their own).
 - **Dependencies:** #3
 - **Files:** `src/components/mobile/AllFoldersRow.tsx`, `src/components/mobile/HomeHint.tsx`
 
-### #6 LibraryBrowser: Home derivation, All Folders level, screen key
+### #6 ✅ LibraryBrowser: Home derivation, All Folders level, screen key
 
 In `src/components/mobile/LibraryBrowser.tsx`:
 
@@ -187,7 +187,7 @@ hint disappears after a *Show on Home* and after `×`.
 - **Dependencies:** #1, #2, #3, #4, #5
 - **Files:** `src/components/mobile/LibraryBrowser.tsx`, `src/components/mobile/__tests__/LibraryBrowser.test.tsx`
 
-### #7 Empty Home state
+### #7 ✅ Empty Home state
 
 In `LibraryBrowser.tsx`: when the root listing is non-empty but Home resolves
 to no Inbox card, no folder rows and no root files, render `HomeEmpty` —
@@ -205,7 +205,7 @@ library shows `EmptyFolder` instead.
 - **Dependencies:** #6
 - **Files:** `src/components/mobile/LibraryBrowser.tsx`, `src/components/mobile/__tests__/LibraryBrowser.test.tsx`
 
-### #8 "…" menu: *Edit Home…* row (root only)
+### #8 ✅ "…" menu: *Edit Home…* row (root only)
 
 In the `topRight` menu builder in `LibraryBrowser.tsx`, at root only
 (`folderStack.length === 0`), append an **action** row (no `selected`)
@@ -226,7 +226,7 @@ sets `homeEditorOpen`.
 - **Dependencies:** #2, #3, #6
 - **Files:** `src/components/mobile/LibraryBrowser.tsx`, `src/components/mobile/__tests__/LibraryBrowser.test.tsx`
 
-### #9 `HomeFolders` — the Edit Home screen
+### #9 ✅ `HomeFolders` — the Edit Home screen
 
 Create `src/components/mobile/HomeFolders.tsx`:
 
@@ -257,7 +257,7 @@ content; a rejected write reverts and toasts; back closes.
 - **Dependencies:** #1, #2, #3
 - **Files:** `src/components/mobile/HomeFolders.tsx`, `src/components/mobile/__tests__/HomeFolders.test.tsx`
 
-### #10 Route the editor in `MobileApp`
+### #10 ✅ Route the editor in `MobileApp`
 
 In `src/MobileApp.tsx`, when `grantState === "granted"`: `homeEditorOpen` →
 `<HomeFolders />`; else the existing `openDoc ? <Reader/> : <LibraryBrowser/>`.
@@ -272,7 +272,7 @@ swaps the screen and Back restores the browser.
 - **Dependencies:** #2, #9
 - **Files:** `src/MobileApp.tsx`, `src/components/mobile/__tests__/mobile-app.test.tsx`
 
-### #11 Docs: `docs/features/mobile.md`
+### #11 ✅ Docs: `docs/features/mobile.md`
 
 Add a **"Home: only the folders you chose"** section after "Reaching the
 Inbox (#683)": what Home lists, the defaults rule (missing file = Inbox only;
@@ -289,7 +289,7 @@ this (PRDs are historical).
 - **Dependencies:** #6, #9
 - **Files:** `docs/features/mobile.md`
 
-### #12 Simulator + device pass, every state
+### #12 ✅ Simulator + device pass, every state
 
 Per `feedback_ios_verify_every_state` and `feedback_verify_ios_in_simulator_first`:
 seed a library with `Inbox/` (a few captures), six root folders (two with a

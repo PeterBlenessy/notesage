@@ -135,6 +135,32 @@ describe("runEntryAction", () => {
     expect(iosRenameFile).toHaveBeenCalledTimes(1);
   });
 
+  it("a rename tells the browser the new path, so recents, pins and a folder's remembered view follow it", async () => {
+    vi.mocked(iosTextPrompt).mockResolvedValueOnce("New");
+    vi.mocked(iosRenameFile).mockResolvedValueOnce("New");
+    const onPathMoved = vi.fn();
+    const onChanged = vi.fn();
+    const folder: FileEntry = { name: "Old", path: "Old", is_directory: true, hidden: false };
+    await runEntryAction("rename", folder, {
+      isPinned: () => false,
+      togglePin: vi.fn(async () => {}),
+      onPathMoved,
+      onChanged,
+    });
+    expect(iosRenameFile).toHaveBeenCalledWith("Old", "New");
+    expect(onPathMoved).toHaveBeenCalledWith("Old", "New");
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("a delete tells the browser the path is gone, so what was remembered about it is dropped", async () => {
+    vi.mocked(iosContextMenu).mockResolvedValueOnce("delete");
+    const onPathRemoved = vi.fn();
+    const folder: FileEntry = { name: "Gone", path: "Gone", is_directory: true, hidden: false };
+    await runEntryAction("delete", folder, { isPinned: () => false, togglePin: vi.fn(async () => {}), onPathRemoved });
+    expect(iosDeleteFile).toHaveBeenCalledWith("Gone");
+    expect(onPathRemoved).toHaveBeenCalledWith("Gone");
+  });
+
   it("shares and toggles pins", async () => {
     await runEntryAction("share", file, ctx());
     expect(iosShareFile).toHaveBeenCalledWith("Ideas/note.md");
@@ -295,5 +321,38 @@ describe("Move to… (#754)", () => {
 
     expect(onPathMoved).not.toHaveBeenCalled();
     expect(evictThumbnail).not.toHaveBeenCalled();
+  });
+});
+
+describe("Home rows in the hold menu", () => {
+  const base = { isPinned: () => false, togglePin: vi.fn(async () => {}) };
+  const dir = (path: string): FileEntry => ({ name: path.split("/").pop()!, path, is_directory: true, hidden: false });
+
+  it("offers Show on Home / Hide from Home for a root folder only, labelled by its state", () => {
+    const ctx = { ...base, isOnHome: (p: string) => p === "Reading", setOnHome: vi.fn(async () => {}) };
+    expect(entryMenuItems(dir("Reading"), ctx).find((i) => i.id === "home-hide")?.title).toBe("Hide from Home");
+    expect(entryMenuItems(dir("Writing"), ctx).find((i) => i.id === "home-show")?.title).toBe("Show on Home");
+    expect(entryMenuItems(dir("Reading/2024"), ctx).some((i) => i.id.startsWith("home-"))).toBe(false);
+    const file: FileEntry = { name: "note.md", path: "note.md", is_directory: false, hidden: false };
+    expect(entryMenuItems(file, ctx).some((i) => i.id.startsWith("home-"))).toBe(false);
+    // A browser that has no Home (nothing wired) gets no row at all.
+    expect(entryMenuItems(dir("Reading"), base).some((i) => i.id.startsWith("home-"))).toBe(false);
+  });
+
+  it("runs the rows through setOnHome", async () => {
+    const setOnHome = vi.fn(async () => {});
+    const ctx = { ...base, isOnHome: () => false, setOnHome };
+    await runEntryAction("home-show", dir("Reading"), ctx);
+    expect(setOnHome).toHaveBeenCalledWith("Reading", true);
+    await runEntryAction("home-hide", dir("Reading"), ctx);
+    expect(setOnHome).toHaveBeenCalledWith("Reading", false);
+  });
+
+  it("deleting a folder that is on Home takes it off Home", async () => {
+    vi.mocked(iosContextMenu).mockResolvedValueOnce("delete");
+    const setOnHome = vi.fn(async () => {});
+    await runEntryAction("delete", dir("Reading"), { ...base, isOnHome: () => true, setOnHome });
+    expect(iosDeleteFile).toHaveBeenCalledWith("Reading");
+    expect(setOnHome).toHaveBeenCalledWith("Reading", false);
   });
 });

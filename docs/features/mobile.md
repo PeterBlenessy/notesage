@@ -14,8 +14,10 @@ links and documents. PRD:
 
 ## What it does
 
-- **Read the library on iPhone/iPad.** Browse projects/folders/notes from the
-  iCloud-synced Notesage folder and read them rendered: markdown (via the
+- **Read the library on iPhone/iPad.** Open to Home — the Inbox and the
+  folders chosen for it, everything else under All Folders — and browse
+  projects/folders/notes from the iCloud-synced Notesage folder, reading
+  them rendered: markdown (via the
   **same Rust comrak pipeline as the desktop** — `render_markdown_fragment`,
   so a note looks identical on both, callouts and all), plain text/code,
   images, and **PDFs** (the desktop `PdfViewer` — pdf.js canvas with
@@ -572,10 +574,33 @@ view's `contentOffset`, coalesced to one message per ~300 ms. The store only
 ever moves progress FORWARD: scrolling back up to re-read a line must not
 un-read the article. `≥ 0.97` shows as "Read".
 
-**Condensed** — "Kompakt" in the view menu, a checkmark toggle persisted as
-`listDensity` — drops the excerpt and shrinks every thumbnail to one line per
-row, for a library that has grown past browsing into scanning. The same toggle
-packs the gallery four cards across instead of three, with a one-line caption.
+**Condensed** — "Kompakt" in the view menu, a checkmark toggle — drops the
+excerpt and shrinks every thumbnail to one line per row, for a library that
+has grown past browsing into scanning. The same toggle packs the gallery four
+cards across instead of three, with a one-line caption. The entry is left out
+of a list of folders alone, where it would change nothing: an option that
+does nothing reads as a bug.
+
+**Views are remembered per folder**, the way Finder and Files do it. Layout,
+density, order and grouping are one `FolderView` per folder in
+`mobile-store.folderViews`, keyed by root-relative path (`""` = root),
+persisted and bounded to 200 folders (least recently set forgotten first); a
+rename carries a folder's view and its subfolders' with it (`rewritePath`,
+which now follows everything under a renamed folder — recents, progress,
+offsets, pins — not only the folder itself, with the renamed entry winning
+over any stale entry already at the new name; the Reader's title-becomes-
+filename rename and its Move to folder go through the same path), and a
+delete forgets them
+(`forgetPath`: views, offsets, progress, listening positions, reset stamps,
+recents, pins — for the path and everything under it) so a later entry of the
+same name starts fresh. Every view setter
+(`setViewMode`, `setListDensity`, `setSortMode`, `setGroupMode`) writes the
+folder being viewed. `resolveFolderView(state, relPath)` fills in what a
+folder has not chosen from the app-wide `viewMode` / `listDensity` /
+`sortMode` / `groupMode` — the values an upgraded install carries over, so
+the Inbox keeps looking as it did — except that the root is a list unless
+made a gallery on purpose: a root of folders rendered as a wall of identical
+cards was the complaint that made views per-folder.
 
 **Listen from the list** — playback belongs to the app, not to the open
 document. `src/lib/speech-controller.ts` owns it: one session in
@@ -663,6 +688,51 @@ with the desktop's own `resolveFolderIcon`, so "Star, teal" is the same on
 both. In the gallery a folder's name is centred under its icon; at rest the
 caption adds its item count and last change, condensed keeps the name
 alone. iCloud sync state is not shown — the listing does not carry it.
+
+## Home: only the folders you chose
+
+The root screen is **Home**, not the raw root listing: the Inbox card, the
+folders chosen for it, and the root's own files (a Quick Note the Mac made
+has no folder to hide behind). Everything else waits one tap away under
+**All Folders**, the last row, which pushes the full root listing as a level
+of its own — Back returns to Home, Inbox is an ordinary row there, and the
+"+" still creates a folder (the root rule: `atRoot` is about the *listing*,
+`currentRelPath === ""`, not the top of the stack). A search at Home looks
+through the whole root, so a hidden folder is one query away.
+
+Peter: *"Maybe I don't want to displayable folders in Notesage, just the ones
+that I have selected to display, maybe just the inbox."*
+
+**Choosing.** Hold a root-level folder → *Show on Home* / *Hide from Home*
+(`entryMenuItems`, offered only when the browser wires `isOnHome` and
+`setOnHome`, and only for `isHomeCandidate` entries: directories with no
+`/` in their path). The whole set is one screen: **… → Edit Home…** at Home
+(`HomeFolders`, a switch per root folder with the Mac's icon and colour,
+Inbox first; a toggle writes at once, a failed write reverts and toasts).
+An empty Home offers *Choose folders…*; a not-yet-curated library shows a
+one-line hint under the list until it is dismissed or a folder is put on
+Home (`homeHintDismissed`, persisted — it is about this screen having
+changed).
+
+**The file.** `.notesage/home.json` beside `pins.json`:
+`{ "version": 1, "folders": ["Inbox", "Reading"] }`, root-relative paths.
+Missing = the defaults (the Inbox alone, when there is one). Present = the
+whole truth, including "the Inbox is not listed, so the card is hidden".
+It is a property of the library, so an iPad opens to the same Home;
+`loadHomeFolders` re-reads it with every root listing (mount, pull, foreground
+return) and never writes on a read. `setOnHome` is a read-modify-write
+against the file (`togglePin`'s discipline), and the only place stale
+entries are compacted — a folder renamed on the Mac simply drops out of
+Home on the next listing (Home is the set ∩ the live root listing) and out of
+the file on the next toggle; a rename on the phone rewrites the entry through
+`rewritePath`, and deleting a Home folder takes it off Home. It is neither
+the Mac's project list (nearly every iCloud folder, for a Mac user) nor
+`pins.json` (which would rearrange the Mac sidebar from a phone preference);
+the Mac does not read it yet.
+
+**Screen key.** Home and All Folders both list `""`, so scroll offsets and
+the remembered view are keyed by `HOME_KEY` (`"/home"`, which no relative
+path can be) at Home and by the folder path elsewhere.
 
 ## Office web-viewer URLs are documents (#868)
 
@@ -987,6 +1057,11 @@ bad voice" and falls back — selection is verifiable, audible output is not.
 | `src/lib/platform.ts` | `isIos()` / `isMobile()` root-shell selection |
 | `src/MobileApp.tsx` | iOS root — grant-gated screen switch |
 | `src/components/mobile/Onboarding.tsx` | One-time permission / re-grant screen |
+| `src/lib/home-file.ts` | `.notesage/home.json`: the folders Home shows (format, defaults, compaction, `HOME_KEY`) |
+| `src/components/mobile/HomeFolders.tsx` | Edit Home — a switch per root folder |
+| `src/components/mobile/AllFoldersRow.tsx` | The last row on Home: pushes the full root listing as a level |
+| `src/components/mobile/HomeHint.tsx` | The one-time line under a not-yet-curated Home |
+| `src/components/mobile/BrowserStates.tsx` | The listing's skeleton and error states, shared by the browser and Edit Home |
 | `src/components/mobile/LibraryBrowser.tsx` | Push-navigation folder browser |
 | `src/components/mobile/Reader.tsx` | Markdown / HTML / mermaid / text / image / PDF reader + iCloud download + theme re-render |
 | `src/components/mobile/ArticleRow.tsx` | Read-later list row: title, `site · min left`, excerpt, thumbnail; falls back to `FileRow` |
