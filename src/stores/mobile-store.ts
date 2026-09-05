@@ -49,7 +49,12 @@ import type { FileEntry } from "@/lib/tauri";
  * - `provisioning`      — the iCloud container is being resolved (first
  *                         launch can take seconds); a spinner with a line of
  *                         copy, nothing to tap
- * - `ungranted`         — no grant; show onboarding's welcome copy
+ * - `ungranted`         — no grant and nothing to fall back on. Kept for the
+ *                         pre-container persisted state; `applyGrant` no
+ *                         longer produces it, because an app with its own
+ *                         container always has a library when iCloud is
+ *                         available. First run goes provisioning → granted
+ *                         with no folder to choose, which is the point.
  * - `icloud-unavailable`— no iCloud for this app, no folder chosen; show
  *                         onboarding's picker-fallback copy
  * - `granted`           — usable root; show the library
