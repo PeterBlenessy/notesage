@@ -8,6 +8,7 @@ import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 import { SwipeRevealRow, type SwipeRevealAction } from "./SwipeRevealRow";
 import { useLongPress } from "./useLongPress";
+import { useFolderAppearance } from "./useFolderAppearance";
 import {
   confirmDelete,
   presentEntryMenu,
@@ -188,7 +189,9 @@ export interface FileRowProps {
  * touching the gesture in `SwipeRevealRow`).
  */
 export function FileRow({ entry, active, onActivate, onChanged, actionContext, condensed = false }: FileRowProps) {
-  const Icon = iconFor(entry);
+  // A folder wears the icon and colour it was given on the Mac (#140).
+  const folder = useFolderAppearance(entry);
+  const Icon = entry.is_directory ? folder.Icon : iconFor(entry);
   const wantsThumbnail = rowWantsThumbnail(entry);
   const tile = !entry.is_directory;
   const large = tile && !condensed;
@@ -298,6 +301,8 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext, c
                 active ? "text-[var(--color-accent-primary)]" : "text-muted-foreground",
                 !tile && entry.hidden && "opacity-50",
               )}
+              style={entry.is_directory && folder.color && !active ? { color: folder.color } : undefined}
+              data-testid={entry.is_directory ? "folder-row-icon" : undefined}
             />
           )}
         </span>

@@ -1,8 +1,10 @@
 // @vitest-environment jsdom
 import "@/test/tauri-mock";
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import { fireEvent } from "@testing-library/react";
+import { fireEvent, waitFor } from "@testing-library/react";
 import { renderWithProviders, screen } from "@/test/component-harness";
+import { setMockInvokeHandler } from "@/test/tauri-mock";
+import { clearFolderAppearanceCache } from "@/lib/folder-appearance-cache";
 import type { FileEntry } from "@/lib/tauri";
 import { GalleryView } from "@/components/mobile/GalleryView";
 
@@ -62,6 +64,7 @@ function entry(overrides: Partial<FileEntry> & { name: string }): FileEntry {
 }
 
 beforeEach(() => {
+  clearFolderAppearanceCache();
   toggle.mockReset();
   getThumbnailMock.mockReset();
   getThumbnailMock.mockResolvedValue({ kind: "icon" });
@@ -132,7 +135,7 @@ describe("GalleryView (#633)", () => {
     expect(onActivate).not.toHaveBeenCalled();
   });
 
-  it("renders directory cards without a modified/folder line", () => {
+  it("renders directory cards without the containing-folder line", () => {
     renderWithProviders(
       <GalleryView
         actionContext={noopActions}
@@ -144,6 +147,57 @@ describe("GalleryView (#633)", () => {
     );
     expect(screen.getByText("Sub")).toBeTruthy();
     expect(screen.queryByText(/Notesage/)).toBeNull();
+  });
+
+  it("a folder card: centred name; count and last change at rest, name alone condensed", () => {
+    const modified = new Date(2026, 0, 5, 10, 0).getTime() / 1000;
+    const { unmount } = renderWithProviders(
+      <GalleryView
+        actionContext={noopActions}
+        entries={[entry({ name: "Ideas", path: "Ideas", is_directory: true, child_count: 7, modified })]}
+        currentFolderName="Notesage"
+        theme="light"
+        onActivate={() => {}}
+      />,
+    );
+    expect(screen.getByText("Ideas").parentElement?.className).toMatch(/text-center/);
+    expect(screen.getByTestId("folder-card-meta").textContent).toMatch(/7 items · /);
+    unmount();
+    renderWithProviders(
+      <GalleryView
+        actionContext={noopActions}
+        entries={[entry({ name: "Ideas", path: "Ideas", is_directory: true, child_count: 7, modified })]}
+        currentFolderName="Notesage"
+        theme="light"
+        onActivate={() => {}}
+        condensed
+      />,
+    );
+    expect(screen.queryByTestId("folder-card-meta")).toBeNull();
+  });
+
+  it("a folder card wears the icon and colour chosen on the Mac", async () => {
+    setMockInvokeHandler("ios_read_file", (args) => {
+      const rel = (args as { relPath: string }).relPath;
+      if (rel === "Ideas/.notesage/project.json") return JSON.stringify({ appearance: { iconName: "Star", colorIndex: 5 } });
+      throw new Error("not found");
+    });
+    renderWithProviders(
+      <GalleryView
+        actionContext={noopActions}
+        entries={[entry({ name: "Ideas", path: "Ideas", is_directory: true }), entry({ name: "Plain", path: "Plain", is_directory: true })]}
+        currentFolderName="Notesage"
+        theme="light"
+        onActivate={() => {}}
+      />,
+    );
+    // Queried fresh: the icon is a different component once the read lands,
+    // so the first render's element is replaced, not restyled.
+    const icons = () => screen.getAllByTestId("folder-card-icon");
+    await waitFor(() => expect(icons()[0].getAttribute("style")).toContain("--color-folder-tag-6"));
+    expect(icons()[0].getAttribute("class")).toContain("lucide-star");
+    expect(icons()[1].getAttribute("style")).toBeNull();
+    expect(icons()[1].getAttribute("class")).toContain("lucide-folder");
   });
 
   it("does not request a thumbnail for a card that has not become visible", () => {
