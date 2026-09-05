@@ -374,6 +374,41 @@ else
   exit 1
 fi
 
+# An entitlement the app declares but the SIGNATURE does not carry produces a
+# build that installs, launches, and then cannot see its own library —
+# `url(forUbiquityContainerIdentifier:)` returns nil in an unentitled process,
+# so the app silently falls back to the folder picker and the whole feature
+# looks like it was never built. That is the same failure shape
+# `docs/ios-testflight.md` records for the App Group, and it is invisible
+# until someone installs the build.
+#
+# The expectation comes from the entitlements the BUILD used, not from the
+# reference file in `src-tauri/ios/` — that one has listed a container since
+# before anything wrote it into the generated project, so keying off it would
+# demand a container from every build that never asked for one.
+GEN_ENT="src-tauri/gen/apple/notesage_iOS/notesage_iOS.entitlements"
+WANT_CONTAINER=""
+if [ -f "$GEN_ENT" ]; then
+  WANT_CONTAINER=$(/usr/libexec/PlistBuddy -c "Print :com.apple.developer.ubiquity-container-identifiers:0" "$GEN_ENT" 2>/dev/null || true)
+fi
+if [ -n "$WANT_CONTAINER" ]; then
+  EXT_BUNDLE=$(find "$WORK/Payload" -name '*.appex' -maxdepth 3 | head -1)
+  for bundle in "$APP" "$EXT_BUNDLE"; do
+    [ -n "$bundle" ] || continue
+    signed=$(codesign -d --entitlements :- "$bundle" 2>/dev/null | tr -d '\0' || true)
+    case "$signed" in
+      *"$WANT_CONTAINER"*) ;;
+      *)
+        echo "$(basename "$bundle") is signed WITHOUT ${WANT_CONTAINER}."
+        echo "The App ID needs the iCloud capability with that container assigned,"
+        echo "or the build installs and then cannot find its library. Not uploading."
+        exit 1
+        ;;
+    esac
+  done
+  echo "    iCloud container ${WANT_CONTAINER} present on both bundles"
+fi
+
 # --- 5. upload ----------------------------------------------------------------
 echo
 echo "Ready: ${GOT_SHORT} (${GOT_BUILD})"

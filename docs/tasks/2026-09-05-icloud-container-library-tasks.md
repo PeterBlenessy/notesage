@@ -240,7 +240,7 @@ line saying the container is Apple's. `docs/architecture.md`: the
   `docs/features/mobile.md`, `src-tauri/ios/README.md`,
   `docs/tauri-commands.md`, `docs/app-store/*.md`, `docs/architecture.md`
 
-### #10 — TestFlight script refuses an unentitled build
+### #10 ✅ — TestFlight script refuses an unentitled build
 
 In `scripts/ios-testflight.sh`'s verification step (beside the version and
 authority checks on the unzipped `.ipa`): `codesign -d --entitlements :-`
