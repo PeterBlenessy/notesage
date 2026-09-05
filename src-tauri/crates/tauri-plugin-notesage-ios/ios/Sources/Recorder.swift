@@ -344,6 +344,14 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
     /// `isLiveStream` is the honest shape: a recording has an elapsed time
     /// and no duration, so the system draws a running counter rather than a
     /// scrubber for a length nobody knows yet.
+    /// Published on TRANSITIONS only — start, pause, resume — the way
+    /// `SpeechPlayer` does it, and the way the system expects: given a rate
+    /// and an elapsed-time anchor, the lock screen counts on its own. This
+    /// used to run on the 1 Hz tick as well, on the theory that a pause-aware
+    /// recorder drifts from wall clock; it does not, because the anchor is
+    /// `recorder.currentTime`, which is itself pause-aware. That was a
+    /// dictionary rewritten to the system's now-playing daemon every second
+    /// of a meeting for nothing.
     private func updateNowPlaying() {
         let live = state == .recording
         MPNowPlayingInfoCenter.default().playbackState = live ? .playing : .paused
@@ -406,10 +414,6 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
         tick = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self, let recorder = self.recorder, self.state == .recording else { return }
             self.emit(["event": "tick", "elapsedSecs": recorder.currentTime, "level": self.currentLevel()])
-            // The lock screen counts on its own once given a rate and an
-            // anchor, but a pause-aware recorder drifts from wall clock, so
-            // the anchor is re-published rather than left to run.
-            self.updateNowPlaying()
         }
     }
 

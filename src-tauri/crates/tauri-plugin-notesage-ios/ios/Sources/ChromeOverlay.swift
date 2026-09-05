@@ -1024,15 +1024,19 @@ struct GlassRecorder: View {
 /// asleep with the screen locked while the recorder is still running.
 struct RecordingWave: View {
   let paused: Bool
-  /// How many bars fit the strip. Older samples fall off the left.
-  private static let capacity = 32
   private static let height: CGFloat = 22
-  @State private var samples: [CGFloat] = []
-  private let tick = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+  // `@StateObject`, so the meter and its timer belong to the VIEW'S LIFETIME
+  // rather than to each `init`. The island's hosting controller has its
+  // `rootView` reassigned on every chrome push — which is at least once a
+  // second while recording, because the elapsed time is part of the spec —
+  // and a timer stored as a plain `let` would be rebuilt every one of those,
+  // with the old subscription's teardown left to chance. Stacked timers would
+  // show as a trace that speeds up the longer you record.
+  @StateObject private var meter = WaveMeter()
 
   var body: some View {
     HStack(alignment: .center, spacing: 2) {
-      ForEach(Array(samples.enumerated()), id: \.offset) { _, level in
+      ForEach(Array(meter.samples.enumerated()), id: \.offset) { _, level in
         Capsule()
           .fill(Color.primary.opacity(paused ? 0.25 : 0.6))
           // A floor of 2pt so silence is a row of dots rather than a gap:
@@ -1043,14 +1047,41 @@ struct RecordingWave: View {
     // Trailing, so a half-filled history hugs the right edge and the newest
     // sample is always in the same place.
     .frame(width: 104, height: Self.height, alignment: .trailing)
-    .onReceive(tick) { _ in
-      guard !paused else { return }
-      samples.append(CGFloat(Recorder.shared.currentLevel()))
-      if samples.count > Self.capacity {
-        samples.removeFirst(samples.count - Self.capacity)
+    // Keyed on `paused`: SwiftUI cancels and restarts this when it changes,
+    // so a paused recording stops sampling entirely instead of waking twenty
+    // times a second to do nothing.
+    .task(id: paused) { paused ? meter.stop() : meter.start() }
+    .onDisappear { meter.stop() }
+  }
+}
+
+/// Owns the trace's samples and the timer that fills them.
+///
+/// A class, held by `@StateObject`, because the thing that must survive the
+/// island being reconstructed is the TIMER, not just the samples.
+final class WaveMeter: ObservableObject {
+  /// How many bars fit the strip. Older samples fall off the left.
+  private static let capacity = 32
+  @Published private(set) var samples: [CGFloat] = []
+  private var timer: Timer?
+
+  func start() {
+    guard timer == nil else { return }
+    timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+      guard let self else { return }
+      self.samples.append(CGFloat(Recorder.shared.currentLevel()))
+      if self.samples.count > Self.capacity {
+        self.samples.removeFirst(self.samples.count - Self.capacity)
       }
     }
   }
+
+  func stop() {
+    timer?.invalidate()
+    timer = nil
+  }
+
+  deinit { timer?.invalidate() }
 }
 
 /// The player island's surface: real Liquid Glass on iOS 26 — the same
