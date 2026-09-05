@@ -16,7 +16,6 @@ import { HomeHint } from "./HomeHint";
 import { NotificationPrePrompt } from "./NotificationPrePrompt";
 import { RecordingBar } from "./RecordingBar";
 import { formatElapsed, pauseRecording, resumeRecording, startRecording, stopRecording } from "@/lib/recording-controller";
-import { iosContextMenu } from "@/lib/ios-api";
 import { BrowserSkeleton, BrowserError } from "./BrowserStates";
 import { defaultHomeFolders } from "@/lib/home-file";
 import { Button } from "@/components/ui/button";
@@ -504,22 +503,6 @@ export function LibraryBrowser() {
     }
   }, [currentRelPath, promptName, load, enterFolder]);
 
-  // Under five seconds is a slip of the finger: ask before keeping nothing.
-  const confirmDiscard = useCallback(async () => {
-    try {
-      const chosen = await iosContextMenu({
-        title: t("recording.discardTitle"),
-        items: [
-          { id: "discard", title: t("recording.discard"), destructive: true },
-          { id: "keep", title: t("recording.keep") },
-        ],
-      });
-      return chosen === "discard";
-    } catch {
-      return window.confirm(t("recording.discardTitle"));
-    }
-  }, []);
-
   // The menu's notification section, by what iOS says. A checkmark row while
   // authorization is undecided asks first (this is the "from Settings" route
   // to the one system prompt); a denial shows the way to the Settings app
@@ -778,7 +761,7 @@ export function LibraryBrowser() {
       "create-folder": () => void createFolder(),
       "create-recording": () => void startRecording(),
       "rec-toggle": () => (recordingStatus === "recording" ? pauseRecording() : resumeRecording()),
-      "rec-stop": () => void stopRecording({ confirmDiscard }),
+      "rec-stop": () => void stopRecording(),
       "search-query": (value?: string) => setQuery(value ?? ""),
       "search-close": () => setQuery(""),
       ...Object.fromEntries(
@@ -1104,7 +1087,7 @@ export function LibraryBrowser() {
 
       {/* Button islands (iOS 26 / Notes layout): nav top-left, actions
           top-right, passive status bottom-center. */}
-      {!nativeChrome && <RecordingBar onStop={() => void stopRecording({ confirmDiscard })} />}
+      {!nativeChrome && <RecordingBar onStop={() => void stopRecording()} />}
       {!nativeChrome && (
         <Island corner="top-right">
           <ChromeButton

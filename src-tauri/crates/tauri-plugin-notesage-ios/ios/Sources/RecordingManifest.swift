@@ -38,9 +38,17 @@ struct RecordingManifest: Codable {
 
     static let fileName = "recording.json"
 
+    /// The contract's stamp: internet date-time with fractional seconds and
+    /// the LOCAL UTC offset, matching what the Mac writes (`isoWithOffset` in
+    /// `manifest.ts`). Left at the formatter's default this emitted `…Z`, so
+    /// the same field carried two conventions depending on which device
+    /// recorded the bundle — harmless to the tolerant parser, but the offset
+    /// form is what the contract documents, and a recording's stamp reads
+    /// better in the wall-clock time it was made in.
     static func iso8601(_ date: Date) -> String {
         let f = ISO8601DateFormatter()
         f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        f.timeZone = TimeZone.current
         return f.string(from: date)
     }
 

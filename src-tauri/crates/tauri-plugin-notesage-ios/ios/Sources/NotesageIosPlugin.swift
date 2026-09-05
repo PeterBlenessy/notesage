@@ -610,16 +610,20 @@ class NotesageIosPlugin: Plugin {
         let staged = try Recorder.shared.stop()
         if discard {
           try? FileManager.default.removeItem(at: staged.dir)
+          Recorder.endFinalizing(staged.dir)
           invoke.resolve(["relPath": NSNull(), "manifest": NSNull()])
           return
         }
         DispatchQueue.global(qos: .userInitiated).async {
           do {
             let (rel, manifest) = try LibraryAccess.finalizeRecording(staged)
+            Recorder.endFinalizing(staged.dir)
             invoke.resolve(["relPath": rel, "manifest": manifest])
           } catch {
             // The audio is safe in the staging folder: the next launch offers
-            // to recover it.
+            // to recover it, so the claim is dropped and it becomes an orphan
+            // again — which is exactly what it now is.
+            Recorder.endFinalizing(staged.dir)
             invoke.reject(String(describing: error))
           }
         }
@@ -694,10 +698,19 @@ class NotesageIosPlugin: Plugin {
         let artwork = args.artworkBase64
           .flatMap { Data(base64Encoded: $0) }
           .flatMap { UIImage(data: $0) }
-        SpeechPlayer.shared.start(
+        let started = SpeechPlayer.shared.start(
           text: args.text, title: args.title, startIndex: args.startIndex,
           rate: args.rate, voiceByLanguage: args.voiceByLanguage, language: language,
           artwork: artwork)
+        // The check at the top of this method is an EARLY out, not the gate:
+        // the language detection above is asynchronous, so a recording can
+        // begin between the two. The player refusing the audio session is the
+        // real gate, and a refusal has to reach the caller.
+        guard started else {
+          invoke.reject(
+            Recorder.shared.state == .idle ? "nothing-to-read" : "recording-in-progress")
+          return
+        }
         // Resolved from INSIDE the dispatch: resolving before the work runs
         // meant a native failure could never reach the JS `.catch`. The
         // detected language comes back so the voice picker knows what to list.

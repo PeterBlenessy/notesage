@@ -93,7 +93,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
         text: String, title: String, startIndex: Int, rate: Float,
         voiceByLanguage: [String: String], language detected: String?,
         artwork image: UIImage?
-    ) {
+    ) -> Bool {
         artwork = image.map { img in
             MPMediaItemArtwork(boundsSize: img.size) { _ in img }
         }
@@ -105,14 +105,22 @@ private let MAX_VOTING_PARAGRAPHS = 60
         self.title = title
         self.rate = rate > 0 ? rate : AVSpeechUtteranceDefaultSpeechRate
         paragraphs = SpeechPlayer.splitIntoParagraphs(text)
-        guard !paragraphs.isEmpty else { return }
+        guard !paragraphs.isEmpty else { return false }
         language = detected
         voice = SpeechPlayer.voice(forLanguage: language, chosen: voiceByLanguage)
         index = min(max(0, startIndex), paragraphs.count - 1)
-        activateSession()
+        // The session is the gate, not the plugin's earlier state check: a
+        // recording can begin during the language detection that runs between
+        // the two. Refused means say nothing and leave no half-started
+        // article behind.
+        guard activateSession() else {
+            resetQueue()
+            return false
+        }
         registerRemoteCommands()
         observeInterruptions()
         speakCurrent()
+        return true
     }
 
     @objc public func pause() {
@@ -133,8 +141,9 @@ private let MAX_VOTING_PARAGRAPHS = 60
             synth.continueSpeaking()
         } else if !synth.isSpeaking && !paragraphs.isEmpty {
             // Paused across a process death: nothing is queued any more, so
-            // re-speak from the remembered paragraph.
-            activateSession()
+            // re-speak from the remembered paragraph — unless a recording has
+            // taken the session since.
+            guard activateSession() else { return }
             speakCurrent()
         } else if paragraphs.isEmpty {
             // Finished or never started — nothing to resume.
@@ -464,12 +473,27 @@ private let MAX_VOTING_PARAGRAPHS = 60
         }
     }
 
-    private func activateSession() {
+    /// Claim the session for speech; `false` means a recording holds it and
+    /// the caller must NOT speak.
+    ///
+    /// This was `try?` with the result dropped, so the one refusal the arbiter
+    /// can raise was swallowed and playback continued regardless — the
+    /// "recording beats listening" rule had no working enforcement path at
+    /// all, since the plugin's own pre-check happens before an async language
+    /// detection during which a recording can start.
+    private func activateSession() -> Bool {
         // `.spokenAudio` tells iOS this is speech, so it ducks correctly
-        // against navigation prompts instead of fighting them. Refused while
-        // a recording holds the session — the plugin's `speechStart` checks
-        // first and rejects, so this is only the last line of defence.
-        try? AudioSessionArbiter.shared.claim(.speech, category: .playback, mode: .spokenAudio, options: [])
+        // against navigation prompts instead of fighting them.
+        do {
+            try AudioSessionArbiter.shared.claim(
+                .speech, category: .playback, mode: .spokenAudio, options: [])
+            return true
+        } catch {
+            os_log(
+                "speech refused the session: %{public}@", log: SpeechPlayer.logger, type: .info,
+                String(describing: error))
+            return false
+        }
     }
 
     private func updateNowPlaying(playing: Bool) {

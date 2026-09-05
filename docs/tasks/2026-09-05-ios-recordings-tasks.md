@@ -31,9 +31,17 @@ on a measurement, not on a date.
    with CoreAudio as fallback. The phone's specific encoder output is not
    fixture-tested yet; #2 locks it.
 4. **`UIDevice.name`** returns a generic "iPhone" on iOS 16+ without the
-   user-assigned-device-name entitlement. Use the same device label the Inbox
-   reading-progress sidecar already writes (`"device": "Peter's iPhone"`), and
-   fall back to the model name — do not add the entitlement for a caption.
+   user-assigned-device-name entitlement. ~~Use the same device label the
+   Inbox reading-progress sidecar already writes.~~ **Resolved 2026-09-05, and
+   not the way this said.** The sidecar's format has a `device` field, but
+   nothing on the phone has ever written it, so there was no label to borrow —
+   the mitigation named a mechanism that does not exist. The entitlement stays
+   off (a caption is not a use case Apple accepts), so `DeviceLabel.current`
+   in `RecordingLibrary.swift` returns `UIDevice.current.name` with the model
+   name as its fallback, and the Mac's caption degrades to *from iPhone*.
+   That still carries the part that matters: the recording arrived from the
+   phone rather than being made on this Mac. One accessor, so a real name
+   (an entitlement, or one the user types in) is a single edit later.
 5. **Two Macs.** If two desktops watch the same library, both may claim a
    bundle. The `running` claim in the manifest plus the "skip if running
    elsewhere within the hour" rule reduces this to a race of seconds; the
@@ -80,25 +88,25 @@ Add the fixture and a `cargo test` that calls `decode_audio_f32` on it, asserts 
 
 **Complexity:** L · **Category:** native · **Depends on:** #1 · **Files:** `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/Recorder.swift` (new)
 
-Singleton modelled on `SpeechPlayer.swift`. `AVAudioRecorder` (AAC-LC, 48 kHz, mono, 64 kbps, metering on) writing to `<Application Support>/Recordings/<uuid>/audio.m4a`. `requestRecordPermission` on first start with a distinct `microphoneDenied` error. Observers: `interruptionNotification` (pause; resume only on `.shouldResume`, else mark `interrupted`), `routeChangeNotification` (`.oldDeviceUnavailable` → keep recording, emit `route`), `mediaServicesWereResetNotification` (stop + finalize what exists). 1 Hz tick with pause-aware `currentTime` and metered level. Free-space check (< 200 MB → refuse). Public surface: `start(language:)`, `pause()`, `resume()`, `stop() -> StagedRecording { url, durationSecs, startedAt, bytes }`, `state`, plus `onEvent` callbacks. Swift unit tests for the settings dictionary and the stamp formatter (`Recording yyyy-MM-dd HH-mm-ss`, local time, matching `transcription.rs:730`).
+Singleton modelled on `SpeechPlayer.swift`. `AVAudioRecorder` (AAC-LC, 48 kHz, mono, 64 kbps, metering on) writing to `<Application Support>/Recordings/<uuid>/audio.m4a`. `requestRecordPermission` on first start with a distinct `microphoneDenied` error. Observers: `interruptionNotification` (pause; resume only on `.shouldResume`, else mark `interrupted`), `routeChangeNotification` (`.oldDeviceUnavailable` → keep recording, emit `route`), `mediaServicesWereResetNotification` (stop + finalize what exists). 1 Hz tick with pause-aware `currentTime` and metered level. Free-space check (< 200 MB → refuse). Public surface: `start(language:)`, `pause()`, `resume()`, `stop() -> StagedRecording { url, durationSecs, startedAt, bytes }`, `state`, plus `onEvent` callbacks. ~~Swift unit tests for the settings dictionary and the stamp formatter~~ — **not written.** The repo has no XCTest target (`ios/Package.swift` declares a library and nothing else, the same gap #590 recorded), so "Swift unit test" was not a thing this task could deliver and the tick was wrong. What guards this code instead is the source-shape idiom already used for the share extension's strings: three Rust tests in `ios_library.rs` assert the recording commands are all `ios_only!`, that the arbiter's `claim` never touches `SpeechPlayer`, and that `SpeechPlayer` no longer swallows a refused session.
 
 ### #4 ✅ — Audio-session arbiter
 
 **Complexity:** M · **Category:** native · **Depends on:** #3 · **Files:** `…/ios/Sources/AudioOwner.swift` (new), `SpeechPlayer.swift`, `Recorder.swift`
 
-One `AudioOwner` (`none | speech | recording | player`) that owns `setCategory` / `setActive`. Starting an owner stops the previous one explicitly; `SpeechPlayer.stop()` stops calling `setActive(false)` itself (today it deactivates unconditionally, which would end a recording). `speechStart` while recording returns `Err("recording-in-progress")`; `recordingStart` while speaking stops speech first. Tests: the state machine is a pure enum transition table — unit-test it.
+One `AudioOwner` (`none | speech | recording | player`) that owns `setCategory` / `setActive`. Starting an owner stops the previous one explicitly; `SpeechPlayer.stop()` stops calling `setActive(false)` itself (today it deactivates unconditionally, which would end a recording). `speechStart` while recording returns `Err("recording-in-progress")`; `recordingStart` while speaking stops speech first. ~~Tests: unit-test the transition table.~~ **Not written** — no XCTest target; see #3. Covered instead by `the_audio_arbiter_never_stops_speech_off_the_main_thread` and `a_refused_audio_session_actually_stops_speech` in `ios_library.rs`.
 
 ### #5 ✅ — `LibraryAccess.finalizeRecording` + manifest write
 
 **Complexity:** M · **Category:** native · **Depends on:** #3 · **Files:** `…/ios/Sources/LibraryAccess.swift`, `…/ios/Sources/RecordingManifest.swift` (new), `tests/fixtures/recording-manifest.v1.json` (shared with #12)
 
-Inside the security scope: `createDirectory("Recordings/Recording <stamp>")` with the existing `deduped(_:under:)`; coordinated `.forReplacing` copy of `audio.m4a` from the staging folder; write `recording.json` (`RecordingManifest: Codable`, `transcription: null`, `createdBy.device` = the label the reading-progress sidecar uses, `audio.bytes` from the file on disk *after* the copy); delete the staging folder only after both writes succeed. Returns the final rel path + manifest. Swift test decodes and re-encodes the shared fixture byte-for-byte (key order fixed) so #12's TS parser and this cannot drift.
+Inside the security scope: `createDirectory("Recordings/Recording <stamp>")` with the existing `deduped(_:under:)`; coordinated `.forReplacing` copy of `audio.m4a` from the staging folder; write `recording.json` (`RecordingManifest: Codable`, `transcription: null`, `createdBy.device` = the label the reading-progress sidecar uses, `audio.bytes` from the file on disk *after* the copy); delete the staging folder only after both writes succeed. Returns the final rel path + manifest. ~~Swift test decodes and re-encodes the shared fixture byte-for-byte~~ — **not written** (no XCTest target; see #3). The fixture is still shared and #12's TypeScript side does round-trip it, so one half of the contract is locked and the other is not. Closing this properly means adding a test target, which is its own task.
 
 ### #6 ✅ — Rust bridge: `ios_recording_*` commands
 
 **Complexity:** M · **Category:** backend · **Depends on:** #3, #5 · **Files:** `src-tauri/crates/tauri-plugin-notesage-ios/src/lib.rs`, `…/ios/Sources/NotesageIosPlugin.swift`, `src-tauri/src/commands/ios_library.rs`, `src-tauri/src/lib.rs` (both `generate_handler!` lists), `docs/tauri-commands.md`
 
-`ios_recording_start { language? }`, `_pause`, `_resume`, `_stop -> { relPath, manifest }`, `_state`, `_recover { action }`. Same shape as the `ios_speech_*` set: Rust command → `self.call("recordingStart", …)` → Swift method. Desktop list registers the same names returning the platform error (the existing `transcription_stub.rs` idiom). Events pushed as `notesage:recording` `CustomEvent`s via `evaluateJavaScript`, the way `emitSpeech` does. Rust unit test: the non-iOS stubs return `Err`.
+`ios_recording_start { language? }`, `_pause`, `_resume`, `_stop -> { relPath, manifest }`, `_state`, `_recover { action }`. Same shape as the `ios_speech_*` set: Rust command → `self.call("recordingStart", …)` → Swift method. Desktop list registers the same names returning the platform error (the existing `transcription_stub.rs` idiom). Events pushed as `notesage:recording` `CustomEvent`s via `evaluateJavaScript`, the way `emitSpeech` does. Rust test: `the_recording_commands_are_all_ios_only` asserts every `ios_recording_*` body routes through `ios_only!`, whose non-iOS arm returns `Err`. (Calling the commands directly would need a mock `AppHandle`; the source-shape assertion catches the real risk, which is a new command written without the guard.)
 
 ### #7 ✅ — `ios-api.ts` + `mobile-store.recording` + event subscriber
 
@@ -181,6 +189,61 @@ With the Tauri mock: startup scan finds two pending, one done, one Mac WAV bundl
 Run the *Handoff* gates: Mac open and synced; Mac asleep through three recordings; airplane mode right after stop (partial upload); a deliberately corrupt `audio.m4a`; a pre-existing Mac WAV bundle; Move to project; same-second collision from two devices. Results in the history entry.
 
 ---
+
+## Review findings (2026-09-05) — fixed before the PR
+
+A `code-reviewer` pass over Phase 1 + 2 raised two Critical, one High and
+four smaller items. All are addressed on this branch.
+
+**Critical — the recorder's worker queue tore down speech.** `Recorder.start`
+runs `prepare()` on a worker (`AVAudioRecorder.record()` can deadlock inside
+AudioToolbox, so it must never hold the main thread), and `prepare()` called
+`AudioSessionArbiter.claim`, which called `SpeechPlayer.shared.stop()` inline.
+That stopped the synthesizer, mutated its paragraph array and rewrote the
+now-playing entry from a background thread while the main thread could be
+reading the same state — introduced by Phase 0's own "move `prepare()` off
+main" fix, which moved the call without checking what it could reach. The
+hand-over is now an explicit main-thread step (`yieldSpeechForRecording`) done
+before the worker is dispatched, the arbiter's ownership sits behind a lock
+held across the transition, and `claim` no longer names `SpeechPlayer` at all.
+
+**Critical — "recording beats listening" was never enforced.** The plugin's
+`speechStart` checked the recorder state once, then ran up to 60 recogniser
+passes of language detection asynchronously before starting playback, so a
+recording could begin inside that window. The only remaining guard,
+`activateSession()`, was `try?` with the result dropped: the arbiter's refusal
+was swallowed and the article spoke over the microphone anyway. `start()` and
+`resume()` now honour the refusal, `start()` reports whether it started, and
+`speechStart` rejects with `recording-in-progress` instead of resolving.
+
+**High — the provenance caption.** See risk 4 above: the PRD's mitigation
+named a mechanism that does not exist. Resolved with one honest accessor.
+
+**Medium — stopping from the Reader always saved.** The discard question was
+built at one call site: the browser passed it, the Reader did not, and since
+the recorder keeps running while an article is open, stopping there saved
+every accidental two-second recording with no way to throw it away. The
+confirmation moved into `stopRecording` itself, so no caller can forget it.
+
+**Medium — two conventions for one stamp.** The Swift formatter emitted UTC
+(`…Z`) while the Mac wrote the local offset the contract documents. The phone
+now sets `TimeZone.current` too.
+
+**Medium — an in-flight bundle could be offered as an orphan.** `stop()`
+clears `stagingDir` before the finalize runs on another queue, so a state
+query in that window would list the bundle being copied as recoverable, and
+accepting Recover would start a second finalize over it. Not reachable through
+today's UI, which asks only at launch, but every other status here re-syncs on
+foreground. A claim (`beginFinalizing` / `endFinalizing`) closes it.
+
+**Low — the wrong label on the stop button.** The recording island's stop
+button borrowed `reader.listenStop`, so a screen-reader user heard "Stop
+listening" on a control that stops a recording. It has its own string now.
+
+**Also corrected: the test claims.** Tasks #3, #4 and #5 were ticked with
+Swift unit tests that do not exist — the repo has no XCTest target at all.
+Each entry now says so, and three Rust source-shape tests lock the two
+Critical fixes and the `ios_only!` guard in `ios_library.rs`.
 
 ## Phase 3 — Playback and the recording screen on the phone
 

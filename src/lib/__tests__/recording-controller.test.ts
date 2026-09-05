@@ -95,6 +95,46 @@ describe("recording-controller — the recorder belongs to the app", () => {
     expect(stops).toEqual([true, false]);
   });
 
+  it("asks before discarding even when the caller passes nothing (the Reader's stop)", async () => {
+    // The Reader stops with no options at all. When the confirmation lived at
+    // the call site, only the browser passed one, so stopping from inside an
+    // article silently saved every stray recording. The prompt is the
+    // controller's default now, and this is what proves it.
+    const stops: boolean[] = [];
+    setMockInvokeHandler("ios_recording_stop", (args) => {
+      const discard = (args as { discard: boolean }).discard;
+      stops.push(discard);
+      return { relPath: discard ? null : "Recordings/Recording 2026-09-05 14-02-11", manifest: discard ? null : "{}" };
+    });
+    let asked = 0;
+    setMockInvokeHandler("ios_context_menu", () => {
+      asked += 1;
+      return "discard";
+    });
+    useMobileStore.getState().setRecording({ status: "recording", elapsedSecs: DISCARD_UNDER_SECS - 1 });
+    expect(await stopRecording()).toBeNull();
+    expect(asked).toBe(1);
+    expect(stops).toEqual([true]);
+
+    // Over the threshold nothing is asked, and the recording is kept.
+    useMobileStore.getState().setRecording({ status: "recording", elapsedSecs: 90 });
+    expect(await stopRecording()).toBe("Recordings/Recording 2026-09-05 14-02-11");
+    expect(asked).toBe(1);
+    expect(stops).toEqual([true, false]);
+  });
+
+  it("keeps the recording when the discard question is answered with Keep", async () => {
+    const stops: boolean[] = [];
+    setMockInvokeHandler("ios_recording_stop", (args) => {
+      stops.push((args as { discard: boolean }).discard);
+      return { relPath: "Recordings/Recording 2026-09-05 14-02-11", manifest: "{}" };
+    });
+    setMockInvokeHandler("ios_context_menu", () => "keep");
+    useMobileStore.getState().setRecording({ status: "recording", elapsedSecs: 1 });
+    expect(await stopRecording()).toBe("Recordings/Recording 2026-09-05 14-02-11");
+    expect(stops).toEqual([false]);
+  });
+
   it("asks the native recorder where things stand, including an orphan a force-quit left", async () => {
     setMockInvokeHandler("ios_recording_state", () => ({
       status: "idle",

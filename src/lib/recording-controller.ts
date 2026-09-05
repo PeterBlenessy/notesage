@@ -1,6 +1,7 @@
 import { toast } from "sonner";
 import { log } from "@/lib/logger";
 import {
+  iosContextMenu,
   iosOpenSettings,
   iosRecordingPause,
   iosRecordingRecover,
@@ -109,12 +110,36 @@ export function resumeRecording(): void {
 /** Under five seconds is a slip of the finger: ask before keeping nothing. */
 export const DISCARD_UNDER_SECS = 5;
 
+/**
+ * The discard question, asked natively.
+ *
+ * It lives HERE rather than at the call site because it used to live at one
+ * call site only: the browser passed it, the Reader did not, and since the
+ * recorder deliberately keeps running while an article is open, stopping from
+ * the Reader silently saved every accidental two-second recording instead of
+ * offering to throw it away. A default no caller can forget is the fix.
+ */
+async function askWhetherToDiscard(): Promise<boolean> {
+  try {
+    const chosen = await iosContextMenu({
+      title: t("recording.discardTitle"),
+      items: [
+        { id: "discard", title: t("recording.discard"), destructive: true },
+        { id: "keep", title: t("recording.keep") },
+      ],
+    });
+    return chosen === "discard";
+  } catch {
+    return window.confirm(t("recording.discardTitle"));
+  }
+}
+
 export async function stopRecording(options: { confirmDiscard?: () => Promise<boolean> } = {}): Promise<string | null> {
   const store = useMobileStore.getState();
   if (store.recording.status === "idle") return null;
   let discard = false;
-  if (store.recording.elapsedSecs < DISCARD_UNDER_SECS && options.confirmDiscard) {
-    discard = await options.confirmDiscard();
+  if (store.recording.elapsedSecs < DISCARD_UNDER_SECS) {
+    discard = await (options.confirmDiscard ?? askWhetherToDiscard)();
   }
   store.setRecording({ status: "finalizing" });
   try {

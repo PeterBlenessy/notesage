@@ -109,21 +109,29 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
                 AudioSessionArbiter.shared.release(.recording)
                 answer(.failure(RecorderError.ioError("the recorder did not start")))
             }
-            Recorder.work.async {
-                do {
-                    let (rec, dir) = try self.prepare()
-                    DispatchQueue.main.async {
-                        // A timed-out start that returns late is thrown away.
-                        guard !answered else {
-                            rec.stop()
-                            try? FileManager.default.removeItem(at: dir)
-                            return
+            // Hand the session over from a running article HERE, on the main
+            // thread, BEFORE the worker starts. Stopping speech tears down the
+            // synthesizer, its paragraph array and the now-playing entry —
+            // all main-thread state that the recorder's worker queue must not
+            // touch. The arbiter's `claim` below therefore only arbitrates.
+            DispatchQueue.main.async {
+                AudioSessionArbiter.shared.yieldSpeechForRecording()
+                Recorder.work.async {
+                    do {
+                        let (rec, dir) = try self.prepare()
+                        DispatchQueue.main.async {
+                            // A timed-out start that returns late is thrown away.
+                            guard !answered else {
+                                rec.stop()
+                                try? FileManager.default.removeItem(at: dir)
+                                return
+                            }
+                            self.adopt(rec, dir: dir, language: language)
+                            answer(.success(()))
                         }
-                        self.adopt(rec, dir: dir, language: language)
-                        answer(.success(()))
+                    } catch {
+                        answer(.failure(error))
                     }
-                } catch {
-                    answer(.failure(error))
                 }
             }
         }
@@ -213,6 +221,8 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
         stagingDir = nil
         self.startedAt = nil
         state = .idle
+        // Claimed until the caller has finished with it — see `inFlight`.
+        Recorder.beginFinalizing(dir)
         os_log("stopped after %.1fs, %d bytes", log: Recorder.logger, type: .info, duration, bytes)
         return Staged(dir: dir, audio: url, startedAt: startedAt, durationSecs: duration, bytes: bytes, language: language)
     }
@@ -236,6 +246,38 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
     /// Staging folders left behind, with whether their audio still opens.
     /// `AVAudioRecorder` writes the MP4 `moov` atom at stop, so an
     /// unrecoverable orphan after a force-quit is a real outcome.
+    /// Staging folders handed out by `stop()` and not yet dealt with.
+    ///
+    /// `stop()` clears `stagingDir` and returns to idle BEFORE the finalize
+    /// runs, which happens on another queue. Without this claim, a state query
+    /// landing in that window would report the bundle currently being copied
+    /// as an orphan, and accepting "Recover" on it would start a SECOND
+    /// finalize over the directory the first one is still reading from.
+    /// Unreachable through today's UI, which asks for the recorder state only
+    /// at launch — but every other status in this app re-syncs on foreground,
+    /// and the day this one does too the window becomes real.
+    private static let inFlightLock = NSLock()
+    private static var inFlight: Set<String> = []
+
+    static func beginFinalizing(_ dir: URL) {
+        inFlightLock.lock()
+        defer { inFlightLock.unlock() }
+        inFlight.insert(dir.lastPathComponent)
+    }
+
+    /// Called once the bundle has been copied into the library, or discarded.
+    static func endFinalizing(_ dir: URL) {
+        inFlightLock.lock()
+        defer { inFlightLock.unlock() }
+        inFlight.remove(dir.lastPathComponent)
+    }
+
+    static func isFinalizing(_ name: String) -> Bool {
+        inFlightLock.lock()
+        defer { inFlightLock.unlock() }
+        return inFlight.contains(name)
+    }
+
     static func orphans() -> [[String: Any]] {
         guard let dirs = try? FileManager.default.contentsOfDirectory(
             at: stagingRoot, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
@@ -243,8 +285,10 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
         return dirs.compactMap { dir in
             let audio = dir.appendingPathComponent("audio.m4a")
             guard FileManager.default.fileExists(atPath: audio.path) else { return nil }
-            // The one still being written is not an orphan.
+            // The one still being written is not an orphan — nor is one that
+            // has been stopped and is on its way into the library.
             if dir == Recorder.shared.stagingDir { return nil }
+            if Recorder.isFinalizing(dir.lastPathComponent) { return nil }
             var info: [String: Any] = ["dir": dir.lastPathComponent, "readable": false]
             if let file = try? AVAudioFile(forReading: audio) {
                 info["readable"] = true

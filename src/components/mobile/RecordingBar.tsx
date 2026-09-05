@@ -31,7 +31,10 @@ export function RecordingBar({ onStop }: { onStop: () => void }) {
         <button
           type="button"
           className="ios-press-row flex h-10 w-10 items-center justify-center rounded-full"
-          aria-label={t("reader.listenStop")}
+          // Its own string: this button stops a RECORDING. Borrowing the
+          // reader's "Stop listening" told a screen-reader user the opposite
+          // of what the control does.
+          aria-label={t("recording.stop")}
           onClick={onStop}
         >
           <Square strokeWidth={1.5} className="h-4 w-4" />

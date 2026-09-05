@@ -1654,6 +1654,73 @@ mod tests {
     }
 
     #[test]
+    fn the_recording_commands_are_all_ios_only() {
+        // Every recording command must route through `ios_only!`, whose
+        // non-iOS arm returns `Err`. A new one written without it would
+        // compile on the desktop and then do nothing at runtime with no error
+        // — the failure mode this whole seam exists to prevent. Source-shape,
+        // because the bodies are iOS-only and there is no `AppHandle` to call
+        // them with in a unit test.
+        let src = include_str!("ios_library.rs");
+        for cmd in [
+            "ios_recording_start", "ios_recording_pause", "ios_recording_resume",
+            "ios_recording_stop", "ios_recording_state", "ios_recording_recover",
+        ] {
+            let at = src
+                .find(&format!("pub async fn {cmd}("))
+                .unwrap_or_else(|| panic!("{cmd} not found"));
+            let body = &src[at..at + 600];
+            assert!(
+                body.contains("ios_only!"),
+                "{cmd} does not go through ios_only!, so the desktop build would silently no-op"
+            );
+        }
+    }
+
+    #[test]
+    fn the_audio_arbiter_never_stops_speech_off_the_main_thread() {
+        // The recorder's `prepare()` runs on a worker queue, so anything
+        // `claim` calls runs there too. It used to call
+        // `SpeechPlayer.shared.stop()` inline, which tore down the
+        // synthesizer, its paragraph array and the now-playing entry from a
+        // background thread while the main thread could be reading the same
+        // state. Handing the session over is a main-thread step now, and this
+        // keeps it that way. Source-shape: the repo has no XCTest harness.
+        let src = include_str!(
+            "../../crates/tauri-plugin-notesage-ios/ios/Sources/AudioOwner.swift"
+        );
+        let claim = &src[src.find("func claim(").expect("claim not found")..];
+        let claim = &claim[..claim.find("\n    }").expect("claim body not closed")];
+        assert!(
+            !claim.contains("SpeechPlayer"),
+            "AudioSessionArbiter.claim touches SpeechPlayer again; it runs on the recorder's worker queue"
+        );
+        assert!(
+            src.contains("dispatchPrecondition(condition: .onQueue(.main))"),
+            "the speech hand-over no longer asserts it is on the main thread"
+        );
+    }
+
+    #[test]
+    fn a_refused_audio_session_actually_stops_speech() {
+        // `activateSession()` used to be `try?` with the result discarded, so
+        // the arbiter's one refusal was swallowed and the synthesizer spoke
+        // over a running recording anyway. The plugin's pre-check is not the
+        // gate: an async language detection sits between it and playback.
+        let src = include_str!(
+            "../../crates/tauri-plugin-notesage-ios/ios/Sources/SpeechPlayer.swift"
+        );
+        assert!(
+            !src.contains("try? AudioSessionArbiter"),
+            "SpeechPlayer swallows the session refusal again"
+        );
+        assert!(
+            src.contains("guard activateSession() else"),
+            "SpeechPlayer no longer refuses to speak when the session is denied"
+        );
+    }
+
+    #[test]
     fn the_macos_share_extension_is_localized_too() {
         // The test above reads only the iOS file, so the macOS extension
         // shipped with EVERY string hardcoded English — 17 `L()` calls on

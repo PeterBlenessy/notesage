@@ -42,7 +42,7 @@ extension LibraryAccess {
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         let manifest = RecordingManifest(
             version: 1,
-            createdBy: .init(device: UIDevice.current.name, app: "notesage-ios", appVersion: version),
+            createdBy: .init(device: DeviceLabel.current, app: "notesage-ios", appVersion: version),
             startedAt: RecordingManifest.iso8601(staged.startedAt),
             durationSecs: (staged.durationSecs * 10).rounded() / 10,
             source: "microphone",
@@ -59,5 +59,29 @@ extension LibraryAccess {
         if let writeError { throw writeError }
         try? FileManager.default.removeItem(at: staged.dir)
         return (rel, String(decoding: json, as: UTF8.self))
+    }
+}
+
+/// What this phone calls itself, for a manifest's `createdBy.device` and the
+/// Mac's "from Peter's iPhone" caption on the transcription card.
+///
+/// `UIDevice.current.name` is the only source there is, and since iOS 16 it
+/// returns the MODEL name ("iPhone") rather than the user-assigned one unless
+/// the app carries the user-assigned-device-name entitlement — which needs a
+/// use case Apple accepts, and a nicer caption is not one.
+///
+/// The plan was to borrow the label the Inbox reading-progress sidecar
+/// writes. The sidecar's format has the field, but nothing on the phone has
+/// ever populated it, so there was nothing to borrow. The caption therefore
+/// degrades to "from iPhone" — which still carries the part that matters:
+/// this recording arrived from the phone, it was not made on this Mac.
+///
+/// One accessor so the day a real name becomes available (an entitlement, or
+/// a name the user types into the app), it is one edit and both surfaces
+/// follow.
+enum DeviceLabel {
+    static var current: String {
+        let name = UIDevice.current.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return name.isEmpty ? UIDevice.current.model : name
     }
 }

@@ -807,14 +807,28 @@ call pauses it, and it resumes only when iOS says it should (otherwise the
 island says *Paused — call ended · Resume*); an AirPod taken out keeps
 recording on the built-in mic. `AudioSessionArbiter` gives the session one
 owner: starting a recording stops read-aloud, and Listen is refused (and
-its buttons disabled) while a recording runs. On stop,
+its buttons disabled) while a recording runs. Two rules make that hold
+rather than merely look true. The hand-over from speech happens on the
+**main thread**, before the recorder's worker queue starts, because stopping
+speech is main-thread work and `prepare()` deliberately is not; the arbiter
+itself only arbitrates, behind a lock, and never names `SpeechPlayer`. And
+the refusal is the **gate**, not the pre-check: `speechStart` looks at the
+recorder before it runs language detection, which is asynchronous and long
+enough for a recording to begin inside it, so the thing that actually stops
+playback is `activateSession()` returning false, which `start()` and
+`resume()` honour and the plugin reports as `recording-in-progress`. Both
+were regressions found in review (2026-09-05) and are locked by source-shape
+tests in `ios_library.rs`. On stop,
 `LibraryAccess.finalizeRecording` (`RecordingLibrary.swift`, the app target
 only — the Share Extension compiles `LibraryAccess.swift` too) copies the
 audio under coordination into `Recordings/Recording <stamp>/audio.m4a`
 (the Mac's stamp format, deduped) and writes `recording.json` — device,
 start, duration, bytes, codec, language, `transcription: null` — then
 removes the staging folder. Under five seconds is a slip of the finger and
-asks to discard. A force-quit leaves a staging folder; the next launch
+asks to discard — the question lives in `stopRecording` itself, not at the
+call site, because when it lived at the call site only one of the two
+surfaces asked it and stopping from the Reader silently saved every stray
+recording. A force-quit leaves a staging folder; the next launch
 offers to keep (finalise) or discard it (`RecoverRecordingSheet`), never
 deciding alone.
 
