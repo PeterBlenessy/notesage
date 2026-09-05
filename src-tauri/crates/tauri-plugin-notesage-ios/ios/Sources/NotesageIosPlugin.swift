@@ -33,6 +33,15 @@ struct SpeechRateArgs: Decodable {
   let rate: Float
 }
 
+struct ThumbCacheGetArgs: Decodable {
+  let key: String
+}
+
+struct ThumbCachePutArgs: Decodable {
+  let key: String
+  let base64: String
+}
+
 struct RecordingStartArgs: Decodable {
   let language: String?
   /// The lock screen's words, localized on the JS side.
@@ -841,6 +850,36 @@ class NotesageIosPlugin: Plugin {
   /// that the user has the Inbox's items in front of them — only the Inbox
   /// listing says so; Home shows a count, not the items, and a return to the
   /// foreground says nothing about what is on screen.
+  @objc public func thumbCacheGet(_ invoke: Invoke) {
+    DispatchQueue.global(qos: .userInitiated).async {
+      do {
+        let args = try invoke.parseArgs(ThumbCacheGetArgs.self)
+        // `NSNull` rather than a rejection: a miss is the normal case on a
+        // first look at a folder, and a rejected promise per row would make
+        // the frontend's happy path an exception handler.
+        if let data = ThumbnailCache.get(args.key) {
+          invoke.resolve(["hit": true, "base64": data.base64EncodedString()])
+        } else {
+          invoke.resolve(["hit": false, "base64": NSNull()])
+        }
+      } catch { invoke.reject(String(describing: error)) }
+    }
+  }
+
+  @objc public func thumbCachePut(_ invoke: Invoke) {
+    DispatchQueue.global(qos: .utility).async {
+      do {
+        let args = try invoke.parseArgs(ThumbCachePutArgs.self)
+        guard let data = Data(base64Encoded: args.base64) else {
+          invoke.reject("not base64")
+          return
+        }
+        ThumbnailCache.put(args.key, data)
+        invoke.resolve()
+      } catch { invoke.reject(String(describing: error)) }
+    }
+  }
+
   @objc public func inboxUnreadCount(_ invoke: Invoke) {
     let markSeen = (try? invoke.parseArgs(UnreadCountArgs.self))?.markSeen ?? false
     DispatchQueue.global(qos: .userInitiated).async {

@@ -622,6 +622,20 @@ export type IosRecordingEvent =
 /** `title`/`subtitle` are the lock screen's words. They are passed in rather
  *  than written natively because this app's translations live here — the
  *  native side has no string bundle of its own outside the Share Extension. */
+/** A thumbnail rendered on an earlier launch, or `null` for a miss.
+ *  Raw bytes, so a hit costs no JSON parse on the WebView's main thread. */
+export async function iosThumbCacheGet(key: string): Promise<Uint8Array | null> {
+  const bytes = await invoke<ArrayBuffer>("ios_thumb_cache_get", { key });
+  const out = new Uint8Array(bytes);
+  return out.byteLength > 0 ? out : null;
+}
+
+/** Keep a rendered thumbnail for the next launch. Best effort: the caller
+ *  already has the picture, so a failed write costs a rebuild later. */
+export function iosThumbCachePut(key: string, base64: string): Promise<void> {
+  return invoke("ios_thumb_cache_put", { key, base64 });
+}
+
 export function iosRecordingStart(
   language?: string | null,
   labels?: { title?: string; subtitle?: string },

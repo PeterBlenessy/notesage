@@ -19,7 +19,14 @@
  * never re-fetches. Callers (GalleryCard) are additionally expected to only
  * call `getThumbnail` once a card is actually visible.
  */
-import { iosReadFile, iosReadBinary, iosThumbnail, iosArticleThumbnail } from "@/lib/ios-api";
+import {
+  iosReadFile,
+  iosReadBinary,
+  iosThumbnail,
+  iosArticleThumbnail,
+  iosThumbCacheGet,
+  iosThumbCachePut,
+} from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
 import { classifyFile, isOpenDocument } from "@/components/mobile/FileRow";
 import type { FileEntry } from "@/lib/tauri";
@@ -358,6 +365,69 @@ export function cancelPendingThumbnails(): void {
  *  scrolling get a frame between generations. */
 const yieldToUi = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+
+/**
+ * The persistent half of the cache (#920 follow-up; Peter, device, builds 50
+ * and 51: "the thumbnails still load like they are not cached").
+ *
+ * The `Map` above is per process, so it answered a second visit to a folder
+ * and nothing at all on the next launch — every cold start rebuilt every
+ * thumbnail, and a saved article's means reading a 200-800 KB capture to
+ * find its lead image. These two functions put the finished picture on disk,
+ * natively, and read it back before any of that work is considered.
+ *
+ * The key is a digest of the path, its modification time and the theme, so a
+ * file that changes asks under a new name and its old entry simply ages out
+ * of the cache's budget. No invalidation to get wrong.
+ */
+async function diskKey(entry: FileEntry, theme: "light" | "dark"): Promise<string | null> {
+  const subtle = globalThis.crypto?.subtle;
+  // No digest (jsdom, an old WebView) means no disk cache, not a weaker key:
+  // a collision would serve one document's picture for another.
+  if (!subtle) return null;
+  const material = `v1|${entry.path}|${entry.modified ?? 0}|${theme}|${THUMBNAIL_MAX_EDGE}`;
+  const digest = await subtle.digest("SHA-256", new TextEncoder().encode(material));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function diskCached(
+  entry: FileEntry,
+  theme: "light" | "dark",
+): Promise<ThumbnailResult | null> {
+  try {
+    const key = await diskKey(entry, theme);
+    if (!key) return null;
+    const bytes = await iosThumbCacheGet(key);
+    if (!bytes) return null;
+    return { kind: "image", url: URL.createObjectURL(new Blob([bytes.slice().buffer])) };
+  } catch {
+    // No native side, or an unreadable entry: rebuild, which is always safe.
+    return null;
+  }
+}
+
+async function rememberOnDisk(
+  entry: FileEntry,
+  theme: "light" | "dark",
+  result: ThumbnailResult,
+): Promise<void> {
+  // Only pictures. A markdown thumbnail is an HTML fragment rendered from ten
+  // lines of source — already cheap, and not bytes.
+  if (result.kind !== "image" && result.kind !== "pdf") return;
+  try {
+    const key = await diskKey(entry, theme);
+    if (!key) return;
+    const blob = await (await fetch(result.url)).blob();
+    const buf = new Uint8Array(await blob.arrayBuffer());
+    let binary = "";
+    for (const b of buf) binary += String.fromCharCode(b);
+    await iosThumbCachePut(key, btoa(binary));
+  } catch {
+    // Best effort by design: the picture is already on screen, so a failed
+    // write costs a rebuild next launch and nothing now.
+  }
+}
+
 /**
  * The single entry point cards use. Runs the actual generation through the
  * shared concurrency limiter and caches the in-flight/resolved promise by
@@ -372,12 +442,21 @@ export function getThumbnail(
   if (cached) return cached;
   const myEpoch = epoch;
   const isStale = () => myEpoch !== epoch;
-  const promise = thumbnailLimiter(async () => {
-    if (isStale()) throw new ThumbnailCancelled();
-    await yieldToUi();
-    if (isStale()) throw new ThumbnailCancelled();
-    return buildThumbnail(entry, opts, isStale);
-  }).catch((err) => {
+  const promise = (async () => {
+    // Disk FIRST, and outside the limiter: a hit is one small read and no
+    // render at all, so queueing it behind two live generations is exactly
+    // the delay this cache exists to remove. Only a miss pays for a slot.
+    const hit = await diskCached(entry, opts.theme);
+    if (hit) return hit;
+    return thumbnailLimiter(async () => {
+      if (isStale()) throw new ThumbnailCancelled();
+      await yieldToUi();
+      if (isStale()) throw new ThumbnailCancelled();
+      const built = await buildThumbnail(entry, opts, isStale);
+      void rememberOnDisk(entry, opts.theme, built);
+      return built;
+    });
+  })().catch((err) => {
     if (err instanceof ThumbnailCancelled) {
       void releaseEntry(cache.get(key));
       cache.delete(key);
