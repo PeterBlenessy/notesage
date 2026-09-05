@@ -54,3 +54,8 @@ apply** — nothing is tracked across apps or websites.
 
 There is none on iOS. The dependency tree is compiled Rust and Swift the app
 ships itself; no SDK phones home.
+
+**Local notifications (badge, "new in Inbox").** Nothing changes: they are
+posted by the app and its Share Extension on the device, from what the app
+reads in the user's own library. No push entitlement, no server, no data
+leaves the device. "Data Not Collected" stands.

@@ -1,7 +1,5 @@
-import { useEffect, useRef, type KeyboardEvent } from "react";
+import { useEffect, type KeyboardEvent } from "react";
 import { Inbox } from "lucide-react";
-import { listen } from "@tauri-apps/api/event";
-import { tauriApi } from "@/lib/tauri";
 import { useInboxStore } from "@/stores/inbox-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { INBOX_FOLDER_NAME } from "@/lib/inbox";
@@ -20,7 +18,7 @@ import { cn } from "@/lib/utils";
  */
 export function InboxSection({ filter = "" }: { filter?: string }) {
   const open = useInboxStore((s) => s.open);
-  const items = useInboxStore((s) => s.items);
+  const hasItems = useInboxStore((s) => s.items.length > 0);
   const dir = useInboxStore((s) => s.dir);
   const unread = useInboxStore((s) => s.unreadCount());
   const load = useInboxStore((s) => s.load);
@@ -30,47 +28,16 @@ export function InboxSection({ filter = "" }: { filter?: string }) {
   const icloudNotesagePath = useSettingsStore((s) => s.icloudNotesagePath);
 
   // First listing once the root resolves, so the badge is right before the
-  // Inbox is ever opened. Later reloads come from the view and the watcher.
+  // Inbox is ever opened. Later reloads come from the view and from the
+  // folder watcher — which lives in the always-mounted `useInboxArrivals`
+  // (App.tsx), not here: this row unmounts with the sidebar on ⌘⇧L, and a
+  // share landing while the sidebar is hidden must still be seen.
   useEffect(() => {
     if (homeDir || icloudNotesagePath) void load();
   }, [homeDir, notesRootPath, icloudNotesagePath, load]);
 
-  // Live: a share from the phone lands while the Mac is open. Watch the
-  // folder once its path is known and reload on any change under it — the
-  // sidecar's own writes are self-marked and filtered out by the watcher.
-  const watchedRef = useRef<string | null>(null);
-  const hasItems = items.length > 0;
-  useEffect(() => {
-    if (!dir || watchedRef.current === dir) return;
-    watchedRef.current = dir;
-    void tauriApi.watchDirectory(dir).catch(() => {
-      // No folder yet. The effect re-runs when the first listing finds
-      // something (`hasItems` flips), which is when the folder exists.
-      watchedRef.current = null;
-    });
-  }, [dir, hasItems]);
-  useEffect(() => {
-    let timer: number | null = null;
-    const unlisten = listen<Array<{ path: string; kind: string }>>("file-changed-batch", (event) => {
-      const root = useInboxStore.getState().dir;
-      if (!root) return;
-      const prefix = `${root}/`;
-      const touched = event.payload.some((c) => c.path.startsWith(prefix) && !c.path.startsWith(`${prefix}.notesage/`));
-      if (!touched) return;
-      if (timer !== null) window.clearTimeout(timer);
-      timer = window.setTimeout(() => {
-        timer = null;
-        void useInboxStore.getState().load();
-      }, 300);
-    });
-    return () => {
-      if (timer !== null) window.clearTimeout(timer);
-      void unlisten.then((fn) => fn());
-    };
-  }, []);
-
   if (!dir) return null;
-  if (items.length === 0 && !open) return null;
+  if (!hasItems && !open) return null;
   if (filter && !INBOX_FOLDER_NAME.toLowerCase().includes(filter.toLowerCase())) return null;
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {

@@ -37,6 +37,8 @@ import yaml
 REPO = Path(__file__).resolve().parent.parent.parent
 GEN = REPO / "src-tauri" / "gen" / "apple"
 PROJECT_YML = GEN / "project.yml"
+# Mirrors `BackgroundRefresh.identifier` in the plugin's Swift.
+BG_REFRESH_IDENTIFIER = "com.notesage.app.inbox-refresh"
 SHARE_INFO_PLIST = GEN / "NotesageShare/Info.plist"
 APP_ENTITLEMENTS = GEN / "notesage_iOS" / "notesage_iOS.entitlements"
 
@@ -66,6 +68,9 @@ SHARE_TARGET = {
         {"path": "../../ios/LibraryCapture.swift"},
         {"path": "../../ios/PageRenderer.swift"},
         {"path": "../../crates/tauri-plugin-notesage-ios/ios/Sources/LibraryAccess.swift"},
+        # The Inbox's disk truth (badge count, seen set) — the extension
+        # updates the badge after a capture with the same rule the app uses.
+        {"path": "../../crates/tauri-plugin-notesage-ios/ios/Sources/InboxState.swift"},
         # Localizations (#653). The .lproj folders must land as RESOURCES of
         # the extension bundle — `buildPhase: resources` — or NSLocalizedString
         # falls back to the key at runtime. Also drives the "Languages" list
@@ -188,6 +193,14 @@ def patch_project_yml() -> None:
     modes = app_info.setdefault("UIBackgroundModes", [])
     if "audio" not in modes:
         modes.append("audio")
+    # Background App Refresh (notifications PRD): the refresh task must be
+    # both a permitted identifier and a declared background mode, or iOS
+    # silently never schedules it — there is no runtime error to see.
+    if "fetch" not in modes:
+        modes.append("fetch")
+    permitted = app_info.setdefault("BGTaskSchedulerPermittedIdentifiers", [])
+    if BG_REFRESH_IDENTIFIER not in permitted:
+        permitted.append(BG_REFRESH_IDENTIFIER)
     app.setdefault("info", {}).setdefault("properties", app_info)
     # The extension's copy of this answer lives in the tracked plist.
 
@@ -347,6 +360,15 @@ def main() -> None:
     ent = plistlib.loads(APP_ENTITLEMENTS.read_bytes())
     assert APP_GROUP in ent.get("com.apple.security.application-groups", []), (
         "app entitlements missing the App Group after generation"
+    )
+    # The app's Info.plist is written at BUILD time by Tauri from project.yml's
+    # `info.properties`, so assert on the yml: an absent key fails silently at
+    # runtime (no refresh ever runs). Check the built .app with
+    # `plutil -p Notesage.app/Info.plist` when verifying on a device.
+    app_props = yaml.safe_load(PROJECT_YML.read_text())["targets"]["notesage_iOS"]["info"]["properties"]
+    assert "fetch" in app_props.get("UIBackgroundModes", []), "UIBackgroundModes lacks fetch"
+    assert BG_REFRESH_IDENTIFIER in app_props.get("BGTaskSchedulerPermittedIdentifiers", []), (
+        "BGTaskSchedulerPermittedIdentifiers lacks the refresh task"
     )
     print("xcodegen regenerated the project — NotesageShare is wired")
 

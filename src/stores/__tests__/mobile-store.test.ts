@@ -663,3 +663,86 @@ describe("Home — the folders the root screen shows (home.json)", () => {
     expect(store().homeHintDismissed).toBe(false);
   });
 });
+
+describe("notifications — badge, banners, the one prompt", () => {
+  const status = (over: Partial<{ authorization: string; backgroundRefresh: string; badge: boolean; newItems: boolean }> = {}) => ({
+    authorization: "notDetermined",
+    backgroundRefresh: "available",
+    badge: false,
+    newItems: false,
+    ...over,
+  });
+
+  it("refreshNotificationStatus reads the status; on mount it also hands the localised banner strings over", async () => {
+    let handed: Record<string, string> | undefined;
+    let reads = 0;
+    setMockInvokeHandler("ios_notification_status", () => {
+      reads += 1;
+      return status({ authorization: "authorized", badge: true });
+    });
+    setMockInvokeHandler("ios_notification_set_prefs", (args) => {
+      handed = (args as { templates?: Record<string, string> }).templates;
+      return status({ authorization: "authorized", badge: true });
+    });
+    await store().refreshNotificationStatus();
+    expect(reads).toBe(1);
+    expect(handed).toBeUndefined();
+    expect(store().notifications).toMatchObject({ authorization: "authorized", badge: true });
+    await store().refreshNotificationStatus(true);
+    expect(handed).toEqual({ title: "New in Inbox", one: "{title}", many: "{count} new in Inbox", more: "{list} and {count} more" });
+  });
+
+  it("is null where there is no native side", async () => {
+    setMockInvokeHandler("ios_notification_status", () => {
+      throw new Error("only available on iOS");
+    });
+    await store().refreshNotificationStatus();
+    expect(store().notifications).toBeNull();
+  });
+
+  it("a granted request turns both preferences on and recounts the badge; a denial just records it", async () => {
+    setMockInvokeHandler("ios_notification_request", () => status({ authorization: "authorized" }));
+    let prefs: Record<string, unknown> | undefined;
+    setMockInvokeHandler("ios_notification_set_prefs", (args) => {
+      prefs = args as Record<string, unknown>;
+      return status({ authorization: "authorized", badge: true, newItems: true });
+    });
+    setMockInvokeHandler("ios_inbox_unread_count", () => 3);
+    await store().requestNotifications();
+    expect(prefs).toMatchObject({ badge: true, newItems: true });
+    expect(store().notifications).toMatchObject({ badge: true, newItems: true });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(store().unreadInbox).toBe(3);
+
+    setMockInvokeHandler("ios_notification_request", () => status({ authorization: "denied" }));
+    prefs = undefined;
+    await store().requestNotifications();
+    expect(prefs).toBeUndefined();
+    expect(store().notifications?.authorization).toBe("denied");
+  });
+
+  it("refreshUnread stores the native count, marks seen only when asked, and tolerates having no native side", async () => {
+    const seen: boolean[] = [];
+    setMockInvokeHandler("ios_inbox_unread_count", (args) => {
+      seen.push((args as { markSeen: boolean }).markSeen);
+      return 7;
+    });
+    await store().refreshUnread();
+    await store().refreshUnread(true);
+    expect(seen).toEqual([false, true]);
+    expect(store().unreadInbox).toBe(7);
+    setMockInvokeHandler("ios_inbox_unread_count", () => {
+      throw new Error("only available on iOS");
+    });
+    await store().refreshUnread();
+    expect(store().unreadInbox).toBe(7);
+  });
+
+  it("Not now is remembered across relaunches", () => {
+    store().dismissNotificationPrePrompt();
+    const persistApi = (useMobileStore as unknown as { persist: { getOptions: () => { partialize?: (s: unknown) => unknown } } }).persist;
+    const persisted = persistApi.getOptions().partialize!(store()) as { notificationPrePromptDismissed?: boolean; notifications?: unknown };
+    expect(persisted.notificationPrePromptDismissed).toBe(true);
+    expect(persisted.notifications).toBeUndefined(); // iOS is the truth for the status
+  });
+});

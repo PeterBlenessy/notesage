@@ -94,6 +94,19 @@ describe("inbox-progress-sync (the phone's write-through of the sidecar)", () =>
     expect(ensured).toEqual([]);
   });
 
+  it("a push recounts the badge, since the sidecar just changed what unread means", async () => {
+    let counted = 0;
+    setMockInvokeHandler("ios_inbox_unread_count", () => {
+      counted += 1;
+      return 4;
+    });
+    startInboxProgressSync();
+    useMobileStore.getState().rememberReadingProgress("Inbox/a.html", 0.5);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(counted).toBe(1);
+    expect(useMobileStore.getState().unreadInbox).toBe(4);
+  });
+
   it("a first open here clears the unread state on disk, once", async () => {
     startInboxProgressSync();
     useMobileStore.getState().openDocument({ relPath: "Inbox/a.html", name: "a.html" });

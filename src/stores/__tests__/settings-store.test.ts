@@ -608,6 +608,33 @@ describe('setNotifyPermissionRequest (task #8)', () => {
   });
 });
 
+describe('notifyInboxCaptures (Inbox arrivals, PRD 2026-09-05-ios-notifications)', () => {
+  function migrate(persisted: Record<string, unknown>, from: number) {
+    const opts = (useSettingsStore as unknown as {
+      persist: { getOptions: () => { migrate?: (s: unknown, v: number) => unknown } };
+    }).persist.getOptions();
+    return opts.migrate!(persisted, from) as Record<string, unknown>;
+  }
+
+  it('defaults to true and toggles', () => {
+    expect(useSettingsStore.getState().notifyInboxCaptures).toBe(true);
+    useSettingsStore.getState().setNotifyInboxCaptures(false);
+    expect(useSettingsStore.getState().notifyInboxCaptures).toBe(false);
+  });
+
+  it('rehydrates an older blob without the key to ON (v27 → v28)', () => {
+    expect(migrate({}, 27).notifyInboxCaptures).toBe(true);
+  });
+
+  it('keeps an explicit false through the migration', () => {
+    expect(migrate({ notifyInboxCaptures: false }, 27).notifyInboxCaptures).toBe(false);
+  });
+
+  it('is version-gated — a blob already at v28 is left alone', () => {
+    expect(migrate({}, 28).notifyInboxCaptures).toBeUndefined();
+  });
+});
+
 describe('setSidebarWidth clamping', () => {
   it('sets width within valid range', () => {
     useSettingsStore.getState().setSidebarWidth(300);
@@ -1440,7 +1467,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(27);
+    expect(parsed.version).toBe(28);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -2500,7 +2527,7 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(27);
+    expect(parsed.version).toBe(28);
   });
 
   it('v22 migration backfills linkPreviewRemoteImages=false (privacy by default)', async () => {

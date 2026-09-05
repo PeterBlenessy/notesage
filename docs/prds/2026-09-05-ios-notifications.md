@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-09-05 |
-| **Status** | Draft |
+| **Status** | ✅ Implemented (2026-09-05); device verification pending |
 | **Priority** | Medium |
 | **Impact** | The phone's app icon carries the unread Inbox count and, best effort, announces items that arrived from the Mac; the Mac announces captures that arrived from the phone. |
 | **Tasks** | [ios-notifications-tasks](../tasks/2026-09-05-ios-notifications-tasks.md) |
