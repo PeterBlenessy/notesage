@@ -19,7 +19,14 @@
  * never re-fetches. Callers (GalleryCard) are additionally expected to only
  * call `getThumbnail` once a card is actually visible.
  */
-import { iosReadFile, iosReadBinary, iosThumbnail, iosArticleThumbnail } from "@/lib/ios-api";
+import {
+  iosReadFile,
+  iosReadBinary,
+  iosThumbnail,
+  iosArticleThumbnail,
+  iosThumbCacheGet,
+  iosThumbCachePut,
+} from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
 import { classifyFile, isOpenDocument } from "@/components/mobile/FileRow";
 import type { FileEntry } from "@/lib/tauri";
@@ -129,9 +136,24 @@ const thumbnailLimiter = createLimiter(THUMBNAIL_CONCURRENCY);
 
 export type ThumbnailResult =
   | { kind: "markdown"; html: string }
-  | { kind: "image"; url: string }
-  | { kind: "pdf"; url: string }
+  // `bytes` is the picture itself, kept alongside the object URL purely so
+  // the disk cache can write it. Reading it back OUT of a `blob:` URL is not
+  // an option: the app's CSP has no `blob:` in `connect-src`, so `fetch` on
+  // one is refused — silently, if the caller is catching (it was).
+  | { kind: "image"; url: string; bytes?: Uint8Array }
+  | { kind: "pdf"; url: string; bytes?: Uint8Array }
   | { kind: "icon" };
+
+/** A picture result that also carries its bytes, for the disk cache. */
+async function pictureFrom(blob: Blob, kind: "image" | "pdf" = "image"): Promise<ThumbnailResult> {
+  let bytes: Uint8Array | undefined;
+  try {
+    bytes = new Uint8Array(await blob.arrayBuffer());
+  } catch {
+    // Without bytes the picture still shows; it just will not be cached.
+  }
+  return { kind, url: URL.createObjectURL(blob), bytes };
+}
 
 function imageMimeFor(name: string): string {
   const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
@@ -202,7 +224,7 @@ async function buildThumbnail(
         if (isStale()) throw new ThumbnailCancelled();
         const blob = await shrinkForCard(bytes, "image/jpeg");
         if (isStale()) throw new ThumbnailCancelled();
-        return { kind: "image", url: URL.createObjectURL(blob) };
+        return await pictureFrom(blob);
       } catch (err) {
         if (err instanceof ThumbnailCancelled) throw err;
       }
@@ -233,7 +255,7 @@ async function buildThumbnail(
         if (isStale()) throw new ThumbnailCancelled();
         // Already generated at 480 by the OS, so no shrink needed.
         const blob = new Blob([png.slice().buffer], { type: "image/png" });
-        return { kind: "image", url: URL.createObjectURL(blob) };
+        return await pictureFrom(blob);
       } catch (err) {
         if (err instanceof ThumbnailCancelled) throw err;
         // Fall through to the web pipeline (desktop dev, tests).
@@ -264,7 +286,7 @@ async function buildThumbnail(
           if (isStale()) throw new ThumbnailCancelled();
           const blob = await shrinkForCard(png, "image/png");
           if (isStale()) throw new ThumbnailCancelled();
-          return { kind: "image", url: URL.createObjectURL(blob) };
+          return await pictureFrom(blob);
         }
       } catch (err) {
         if (err instanceof ThumbnailCancelled) throw err;
@@ -277,7 +299,7 @@ async function buildThumbnail(
       // A library photo can be many megapixels; a card is 120pt.
       const blob = await shrinkForCard(bytes, imageMimeFor(entry.name));
       if (isStale()) throw new ThumbnailCancelled();
-      return { kind: "image", url: URL.createObjectURL(blob) };
+      return await pictureFrom(blob);
     }
     if (kind === "pdf") {
       const bytes = await iosReadBinary(entry.path);
@@ -358,6 +380,73 @@ export function cancelPendingThumbnails(): void {
  *  scrolling get a frame between generations. */
 const yieldToUi = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+
+/**
+ * The persistent half of the cache (#920 follow-up; Peter, device, builds 50
+ * and 51: "the thumbnails still load like they are not cached").
+ *
+ * The `Map` above is per process, so it answered a second visit to a folder
+ * and nothing at all on the next launch — every cold start rebuilt every
+ * thumbnail, and a saved article's means reading a 200-800 KB capture to
+ * find its lead image. These two functions put the finished picture on disk,
+ * natively, and read it back before any of that work is considered.
+ *
+ * The key is a digest of the path, its modification time and the theme, so a
+ * file that changes asks under a new name and its old entry simply ages out
+ * of the cache's budget. No invalidation to get wrong.
+ */
+async function diskKey(entry: FileEntry, theme: "light" | "dark"): Promise<string | null> {
+  const subtle = globalThis.crypto?.subtle;
+  // No digest (jsdom, an old WebView) means no disk cache, not a weaker key:
+  // a collision would serve one document's picture for another.
+  if (!subtle) return null;
+  const material = `v1|${entry.path}|${entry.modified ?? 0}|${theme}|${THUMBNAIL_MAX_EDGE}`;
+  const digest = await subtle.digest("SHA-256", new TextEncoder().encode(material));
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function diskCached(
+  entry: FileEntry,
+  theme: "light" | "dark",
+): Promise<ThumbnailResult | null> {
+  try {
+    const key = await diskKey(entry, theme);
+    if (!key) return null;
+    const bytes = await iosThumbCacheGet(key);
+    if (!bytes) return null;
+    return { kind: "image", url: URL.createObjectURL(new Blob([bytes.slice().buffer])), bytes };
+  } catch {
+    // No native side, or an unreadable entry: rebuild, which is always safe.
+    return null;
+  }
+}
+
+async function rememberOnDisk(
+  entry: FileEntry,
+  theme: "light" | "dark",
+  result: ThumbnailResult,
+): Promise<void> {
+  // Only pictures. A markdown thumbnail is an HTML fragment rendered from ten
+  // lines of source — already cheap, and not bytes.
+  if (result.kind !== "image" && result.kind !== "pdf") return;
+  try {
+    const key = await diskKey(entry, theme);
+    if (!key) return;
+    const buf = result.bytes;
+    // No bytes means the picture came from somewhere that could not give
+    // them up. Skip rather than reach for the object URL: `fetch` on a
+    // `blob:` is blocked by this app's CSP, which is exactly how this cache
+    // came to write nothing at all on its first outing.
+    if (!buf) return;
+    let binary = "";
+    for (const b of buf) binary += String.fromCharCode(b);
+    await iosThumbCachePut(key, btoa(binary));
+  } catch {
+    // Best effort by design: the picture is already on screen, so a failed
+    // write costs a rebuild next launch and nothing now.
+  }
+}
+
 /**
  * The single entry point cards use. Runs the actual generation through the
  * shared concurrency limiter and caches the in-flight/resolved promise by
@@ -372,12 +461,21 @@ export function getThumbnail(
   if (cached) return cached;
   const myEpoch = epoch;
   const isStale = () => myEpoch !== epoch;
-  const promise = thumbnailLimiter(async () => {
-    if (isStale()) throw new ThumbnailCancelled();
-    await yieldToUi();
-    if (isStale()) throw new ThumbnailCancelled();
-    return buildThumbnail(entry, opts, isStale);
-  }).catch((err) => {
+  const promise = (async () => {
+    // Disk FIRST, and outside the limiter: a hit is one small read and no
+    // render at all, so queueing it behind two live generations is exactly
+    // the delay this cache exists to remove. Only a miss pays for a slot.
+    const hit = await diskCached(entry, opts.theme);
+    if (hit) return hit;
+    return thumbnailLimiter(async () => {
+      if (isStale()) throw new ThumbnailCancelled();
+      await yieldToUi();
+      if (isStale()) throw new ThumbnailCancelled();
+      const built = await buildThumbnail(entry, opts, isStale);
+      void rememberOnDisk(entry, opts.theme, built);
+      return built;
+    });
+  })().catch((err) => {
     if (err instanceof ThumbnailCancelled) {
       void releaseEntry(cache.get(key));
       cache.delete(key);
