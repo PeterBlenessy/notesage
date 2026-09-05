@@ -129,9 +129,13 @@ export function SwipeRevealRow({
   // pointerup must not also activate the row. Mirrors the suppressClick
   // idiom already used for the sidebar's long-press ancestor menu.
   const suppressClickRef = useRef(false);
-  // The pointer of a drag the watchdog gave up on, if that finger might
-  // still be down. See `endDrag` for why the suppression waits for the lift.
-  const abandonedRef = useRef<number | null>(null);
+  // Every pointer whose drag the watchdog gave up on and which might still
+  // be down. A SET, not one slot: once a drag is abandoned the touchdown
+  // guard stops refusing second fingers, so a row can abandon two in a row —
+  // and with one slot the second overwrote the first, leaving the first
+  // finger's real lift unsuppressed and opening the document. See `endDrag`
+  // for why the suppression waits for the lift.
+  const abandonedRef = useRef<Set<number>>(new Set());
 
   // A row is unmounted by any listing refresh, which a finger being down does
   // nothing to prevent.
@@ -161,7 +165,7 @@ export function SwipeRevealRow({
       // armed for ever in the case this whole mechanism exists for, where
       // the touch really was stolen and no lift and no click ever arrive.
       // It would then swallow the user's next, unrelated tap on this row.
-      abandonedRef.current = drag.pointerId;
+      abandonedRef.current.add(drag.pointerId);
     }, STALE_MS);
   };
 
@@ -179,6 +183,9 @@ export function SwipeRevealRow({
     // never locked has taken no capture and moved nothing, so replacing it
     // costs nothing; a locked one is recovered by `onLostPointerCapture`.
     if (dragRef.current?.isDrag) return;
+    // Pointer ids are reused once released. A fresh press under an id we
+    // were still waiting on is a new finger, not the old one coming back.
+    abandonedRef.current.delete(e.pointerId);
     dragRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
@@ -226,12 +233,16 @@ export function SwipeRevealRow({
     staleRef.current = null;
     dragRef.current = null;
     if (!drag) {
-      // The lift of a drag the watchdog already gave up on. Nothing left to
-      // settle, but the browser's trailing click is now imminent and the
-      // user was swiping, not tapping — so this is the moment to suppress
-      // it, and only if that finger really did come back.
-      if (e && abandonedRef.current === e.pointerId) {
-        abandonedRef.current = null;
+      // News of a drag the watchdog already gave up on. Nothing left to
+      // settle, and the pointer is accounted for either way — but ONLY a
+      // pointerup is followed by a native click. `pointercancel` never is,
+      // by spec, and `lostpointercapture` is not a termination at all; both
+      // are in fact the likely shape of a genuinely stolen touch, which is
+      // the case this whole mechanism is about. Arming on those would set a
+      // flag no click ever consumes, and the next thing it swallowed would
+      // be the user's next unrelated tap — the very bug this branch exists
+      // to avoid, walked back in through a different door.
+      if (e && abandonedRef.current.delete(e.pointerId) && e.type === "pointerup") {
         suppressClickRef.current = true;
       }
       return;

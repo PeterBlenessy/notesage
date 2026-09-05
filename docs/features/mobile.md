@@ -385,7 +385,14 @@ contract, or it will drop gestures:
    when the watchdog fires: arming it early would leave it armed for ever in
    the case the watchdog exists for, where the touch really was stolen and
    no lift and no click ever arrive, and it would then swallow the user's
-   next unrelated tap on that row.
+   next unrelated tap on that row. Two details follow from that. Only a
+   `pointerup` arms it — `pointercancel` is never followed by a click, by
+   spec, and `lostpointercapture` is not a termination at all, yet both are
+   the likely shape of a genuinely stolen touch, so arming on either would
+   set the same flag nothing consumes. And the abandoned pointers are a SET:
+   abandoning one drag is exactly what stops the touchdown guard refusing a
+   second finger, so a row can abandon two, and a single slot lost the first
+   one's lift.
 
 ## Swipe in from the left edge to leave a document
 

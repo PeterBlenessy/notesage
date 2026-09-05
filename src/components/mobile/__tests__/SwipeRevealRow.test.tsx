@@ -121,6 +121,61 @@ describe("SwipeRevealRow: whose finger is this? (2026-09-06)", () => {
     }
   });
 
+  it.each([
+    ["pointercancel", (el: HTMLElement) => fireEvent.pointerCancel(el, { pointerId: 1, clientX: 100, clientY: 0 })],
+    ["lostpointercapture", (el: HTMLElement) => fireEvent.lostPointerCapture(el, { pointerId: 1, clientX: 100, clientY: 0 })],
+  ])("a late %s does not arm a suppression no click will consume", (_name, terminate) => {
+    // Only a pointerup is followed by a native click. `pointercancel` never
+    // is, by spec, and `lostpointercapture` is not a termination at all —
+    // and both are the LIKELY shape of a genuinely stolen touch, which is
+    // the case this mechanism exists for. Arming on either sets a flag
+    // nothing consumes, and the next thing it swallows is the user's next
+    // unrelated tap: the same bug, in through a different door.
+    vi.useFakeTimers();
+    try {
+      const onRowClick = vi.fn();
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={onRowClick} />);
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000));
+      terminate(content);
+      // A later, separate tap must still open the document.
+      fireEvent.pointerDown(content, { pointerId: 2, clientX: 150, clientY: 0 });
+      fireEvent.pointerUp(content, { pointerId: 2, clientX: 150, clientY: 0 });
+      fireEvent.click(content);
+      expect(onRowClick).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("remembers both fingers when a row abandons two drags in a row", () => {
+    // Abandoning the first drag is exactly what stops the touchdown guard
+    // refusing a second finger, so two abandonments on one row is a path the
+    // code opens itself. With a single slot the second overwrote the first,
+    // and when the first finger finally lifted its trailing click opened the
+    // document — the original bug, reached the long way round.
+    vi.useFakeTimers();
+    try {
+      const onRowClick = vi.fn();
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={onRowClick} />);
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000));
+      fireEvent.pointerDown(content, { pointerId: 3, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 3, clientX: 100, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000));
+      // The FIRST finger comes back.
+      fireEvent.pointerUp(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      fireEvent.click(content);
+      expect(onRowClick).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("still closes an open row when a resting finger finally lifts", () => {
     // The watchdog deliberately ignores a press that never became a drag:
     // it strands nothing, and dropping it would cost the tap-to-close that
