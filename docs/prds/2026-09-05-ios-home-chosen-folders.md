@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-09-05 |
-| **Status** | Draft |
+| **Status** | ✅ Implemented (2026-09-05) |
 | **Priority** | High |
 | **Impact** | The phone's root screen shows the Inbox and the folders the user asked for — not every folder in the library |
 | **Tasks** | [ios-home-chosen-folders-tasks](../tasks/2026-09-05-ios-home-chosen-folders-tasks.md) |

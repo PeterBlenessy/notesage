@@ -582,7 +582,11 @@ export function Reader() {
       const title = deriveNoteTitle(draft);
       const stem = name.replace(/\.[^.]+$/, "");
       if (title && title !== stem) {
-        return await iosRenameFile(relPath, `${title}.md`);
+        const renamed = await iosRenameFile(relPath, `${title}.md`);
+        // Progress, pins, recents and a running read-aloud follow the file
+        // under its new name, as they do for a rename from the list.
+        await useMobileStore.getState().rewritePath(relPath, renamed);
+        return renamed;
       }
     }
     return relPath;
@@ -953,6 +957,10 @@ export function Reader() {
       if (dest === null) return; // Cancelled.
 
       const landed = await iosMoveFile(relPath, dest);
+      // Everything keyed by the old path — progress, pins, recents, the
+      // read-aloud session — follows the file, as it does for a move from
+      // the list.
+      await useMobileStore.getState().rewritePath(relPath, landed);
       // The open document must follow the file, or every later action —
       // save, share, update-from-source — targets a path that no longer
       // exists. `landed` is authoritative: the name may have been deduped.

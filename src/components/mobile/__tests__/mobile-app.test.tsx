@@ -9,11 +9,12 @@ import {
   fireEvent,
   setMockInvokeHandler,
 } from "@/test/component-harness";
-import { useMobileStore } from "@/stores/mobile-store";
+import { useMobileStore, resolveFolderView } from "@/stores/mobile-store";
 import { clearArticleMetaCache } from "@/lib/article-meta-cache";
 import { startSpeechEvents } from "@/lib/speech-controller";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 import { Reader } from "@/components/mobile/Reader";
+import { HomeFolders } from "@/components/mobile/HomeFolders";
 import { Onboarding } from "@/components/mobile/Onboarding";
 
 // pdf.js needs browser globals (DOMMatrix) absent in jsdom; the Reader
@@ -31,7 +32,8 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 /** Mirrors MobileApp's screen switch without ThemeProvider (avoids matchMedia). */
 function Shell() {
   const openDoc = useMobileStore((s) => s.openDoc);
-  return openDoc ? <Reader /> : <LibraryBrowser />;
+  const homeEditorOpen = useMobileStore((s) => s.homeEditorOpen);
+  return homeEditorOpen ? <HomeFolders /> : openDoc ? <Reader /> : <LibraryBrowser />;
 }
 
 const invokeMock = vi.mocked(invoke);
@@ -285,6 +287,7 @@ interface CapturedChromeSpec {
 
 describe("sort toggle (#632)", () => {
   it("toggles between alphabetical (folders first) and modified-newest, persisted", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "beta.md", path: "beta.md", is_directory: false, hidden: false, modified: 300 },
       { name: "Alpha", path: "Alpha", is_directory: true, hidden: false, modified: 100 },
@@ -307,7 +310,7 @@ describe("sort toggle (#632)", () => {
     expect(rowNames()[1]).toContain("zulu.md");
     expect(rowNames()[2]).toContain("Alpha");
     // The choice persists in the store.
-    expect(useMobileStore.getState().sortMode).toBe("modified");
+    expect(resolveFolderView(useMobileStore.getState(), "").sortMode).toBe("modified");
   });
 
   it("declares the Files-style view-options menu: view section, then labeled sort picks", async () => {
@@ -316,7 +319,11 @@ describe("sort toggle (#632)", () => {
       captured = (args as { spec: CapturedChromeSpec }).spec;
       return null;
     });
-    setMockInvokeHandler("ios_list_directory", () => []);
+    // One document, so the density row is offered (it is left out of a
+    // listing with nothing to condense).
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false, modified: 100 },
+    ]);
 
     renderWithProviders(<LibraryBrowser />);
     await waitFor(() => expect(captured.topRight?.id).toBe("view-options"));
@@ -342,6 +349,8 @@ describe("sort toggle (#632)", () => {
       ["Standard images", true],
       ["Larger images", false],
       ["Original images", false],
+      // Home only: the screen that curates it.
+      ["Edit Home…", undefined],
     ]);
     // The size picks are conditional: four rows offering to choose a
     // resolution for work that is switched OFF is the kind of dead control
@@ -368,6 +377,8 @@ describe("sort toggle (#632)", () => {
         // view(3: list · gallery · condensed rows, #836) · sort(2) · group(5) · offline toggle + 4 size picks
         true, false, false, false, true, true, false, false, false, false,
         true, false, true, false, false,
+        // …and the Edit Home action row, which is not a pick.
+        undefined,
       ]),
     );
   });
@@ -446,6 +457,7 @@ describe("foreground refresh (#650)", () => {
 
 describe("group by (#652)", () => {
   it("groups files under Recent / All Notes with folders in their own section", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Sub", path: "Sub", is_directory: true, hidden: false },
       { name: "seen.md", path: "seen.md", is_directory: false, hidden: false },
@@ -591,6 +603,7 @@ describe("swipe delete (#618)", () => {
   });
 
   it("directories expose no swipe actions (folder deletion stays off the surface)", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Folder", path: "Folder", is_directory: true, hidden: false },
     ]);
@@ -603,6 +616,7 @@ describe("swipe delete (#618)", () => {
 
 describe("gallery view toggle (#633)", () => {
   it("starts in list layout and switches to the gallery grid on toggle, back on toggle again", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Sub", path: "Sub", is_directory: true, hidden: false },
     ]);
@@ -613,14 +627,15 @@ describe("gallery view toggle (#633)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Switch to gallery view" }));
     expect(await screen.findByRole("list", { name: "Notes gallery" })).toBeTruthy();
-    expect(useMobileStore.getState().viewMode).toBe("gallery");
+    expect(resolveFolderView(useMobileStore.getState(), "").viewMode).toBe("gallery");
 
     fireEvent.click(screen.getByRole("button", { name: "Switch to list view" }));
     await waitFor(() => expect(screen.queryByRole("list", { name: "Notes gallery" })).toBeNull());
-    expect(useMobileStore.getState().viewMode).toBe("list");
+    expect(resolveFolderView(useMobileStore.getState(), "").viewMode).toBe("list");
   });
 
   it("only invokes allowed read commands while browsing in gallery mode", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Sub", path: "Sub", is_directory: true, hidden: false },
     ]);
@@ -735,8 +750,12 @@ describe("create flow (#586)", () => {
 });
 
 describe("edit flow (#586)", () => {
-  it("an empty new note auto-enters edit mode; Save writes and renames to the doc title", async () => {
-    useMobileStore.setState({ openDoc: { relPath: "Sub/Untitled.md", name: "Untitled.md" } });
+  it("an empty new note auto-enters edit mode; Save writes and renames to the doc title, and what was remembered follows", async () => {
+    useMobileStore.setState({
+      openDoc: { relPath: "Sub/Untitled.md", name: "Untitled.md" },
+      recentlyRead: ["Sub/Untitled.md"],
+      readingProgress: { "Sub/Untitled.md": 0.5 },
+    });
     setMockInvokeHandler("ios_read_file", () => "");
     setMockInvokeHandler("render_markdown_fragment", () => "");
     setMockInvokeHandler("ios_write_file", (args) => {
@@ -761,6 +780,49 @@ describe("edit flow (#586)", () => {
       expect(useMobileStore.getState().openDoc?.relPath).toBe("Sub/Shopping List.md"),
     );
     expect(calledCommands()).toContain("ios_write_file");
+    // The title rename is a rename like any other: recents and progress
+    // follow the file under its new name instead of pointing at nothing.
+    expect(useMobileStore.getState().recentlyRead).toContain("Sub/Shopping List.md");
+    expect(useMobileStore.getState().recentlyRead).not.toContain("Sub/Untitled.md");
+    expect(useMobileStore.getState().readingProgress).toEqual({ "Sub/Shopping List.md": 0.5 });
+  });
+
+  it("Move to folder from the Reader takes progress, recents and pins along under the new path", async () => {
+    useMobileStore.setState({
+      openDoc: { relPath: "Sub/hello.md", name: "hello.md" },
+      recentlyRead: ["Sub/hello.md"],
+      readingProgress: { "Sub/hello.md": 0.4 },
+    });
+    let pins = JSON.stringify({ paths: ["Sub/hello.md"] });
+    setMockInvokeHandler("ios_read_file", (args) => {
+      const a = args as { relPath: string };
+      return a.relPath === ".notesage/pins.json" ? pins : "# hello\n\nworld";
+    });
+    setMockInvokeHandler("render_markdown_fragment", () => "<h1>hello</h1><p>world</p>");
+    setMockInvokeHandler("ios_list_directory", (args) =>
+      (args as { relPath: string }).relPath === ""
+        ? [
+            { name: "Archive", path: "Archive", is_directory: true, hidden: false },
+            { name: "Sub", path: "Sub", is_directory: true, hidden: false },
+          ]
+        : [],
+    );
+    setMockInvokeHandler("ios_context_menu", () => "Archive");
+    setMockInvokeHandler("ios_move_file", () => "Archive/hello.md");
+    setMockInvokeHandler("ios_ensure_directory", () => undefined);
+    setMockInvokeHandler("ios_write_file", (args) => {
+      pins = (args as { content: string }).content;
+    });
+
+    renderWithProviders(<Reader />);
+    await screen.findByText("hello");
+    window.dispatchEvent(new CustomEvent("notesage:chrome", { detail: { id: "move" } }));
+
+    await waitFor(() => expect(useMobileStore.getState().openDoc).toEqual({ relPath: "Archive/hello.md", name: "hello.md" }));
+    const s = useMobileStore.getState();
+    expect(s.readingProgress).toEqual({ "Archive/hello.md": 0.4 });
+    expect(s.recentlyRead).toEqual(["Archive/hello.md"]);
+    expect(JSON.parse(pins).paths).toEqual(["Archive/hello.md"]);
   });
 
   it("editing an existing note whose title matches the filename saves without renaming", async () => {
@@ -1619,6 +1681,7 @@ describe("folder view row swipe actions (issue #618)", () => {
   });
 
   it("does not reveal a Share action when a directory row is swiped", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Sub", path: "Sub", is_directory: true, hidden: false },
     ]);
@@ -1997,6 +2060,7 @@ describe("library re-pick", () => {
 
 describe("pinning a folder (#685)", () => {
   it("puts a pinned FOLDER in the Pinned section, not stranded under Folders", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Kept", path: "Kept", is_directory: true, hidden: false, child_count: 2 },
       { name: "Loose", path: "Loose", is_directory: true, hidden: false, child_count: 1 },
@@ -2018,6 +2082,7 @@ describe("pinning a folder (#685)", () => {
   });
 
   it("drops the Folders header when every folder is pinned", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Kept", path: "Kept", is_directory: true, hidden: false, child_count: 2 },
       { name: "note.md", path: "note.md", is_directory: false, hidden: false },
@@ -2032,6 +2097,7 @@ describe("pinning a folder (#685)", () => {
   });
 
   it("keeps folders in their own leading section in every other mode", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Kept", path: "Kept", is_directory: true, hidden: false, child_count: 1 },
       { name: "note.md", path: "note.md", is_directory: false, hidden: false, modified: Date.now() / 1000 },
@@ -2049,6 +2115,13 @@ describe("pinning a folder (#685)", () => {
 
 describe("Inbox shortcut (#683)", () => {
   it("pins Inbox above the root listing and omits it from the list below", async () => {
+    setMockInvokeHandler("ios_read_file", (args) =>
+      (args as { relPath: string }).relPath === ".notesage/home.json"
+        ? JSON.stringify({ version: 1, folders: ["Inbox", "Zebra", "Apple"] })
+        : (() => {
+            throw new Error("not found");
+          })(),
+    );
     // The count rides along on the listing itself (#684) — no second read.
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 2 },
@@ -2078,11 +2151,36 @@ describe("Inbox shortcut (#683)", () => {
   });
 
   it("shows no card when nothing has ever been shared", async () => {
+    setMockInvokeHandler("ios_read_file", (args) =>
+      (args as { relPath: string }).relPath === ".notesage/home.json"
+        ? JSON.stringify({ version: 1, folders: ["Ideas"] })
+        : (() => {
+            throw new Error("not found");
+          })(),
+    );
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Ideas", path: "Ideas", is_directory: true, hidden: false },
     ]);
     renderWithProviders(<LibraryBrowser />);
     await screen.findByText("Ideas");
     expect(screen.queryByText("Inbox")).toBeNull();
+  });
+});
+
+describe("Edit Home is a screen of its own", () => {
+  it("opens over the browser and Back returns to it", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Inbox", path: "Inbox", is_directory: true, hidden: false },
+    ]);
+    setMockInvokeHandler("ios_read_file", () => {
+      throw new Error("not found");
+    });
+    renderWithProviders(<Shell />);
+    await screen.findByText("All Folders");
+    useMobileStore.getState().openHomeEditor();
+    await screen.findByRole("switch", { name: "Inbox" });
+    expect(screen.queryByText("All Folders")).toBeNull();
+    expect(useMobileStore.getState().goBack()).toBe(true);
+    await screen.findByText("All Folders");
   });
 });

@@ -251,7 +251,11 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext, c
             void confirmDelete(entry).then((ok) => {
               if (!ok) return;
               return iosDeleteFile(entry.path)
-                .then(() => onChanged?.())
+                .then(() => {
+                  // The same forgetting the hold menu's Delete does.
+                  actionContext.onPathRemoved?.(entry.path);
+                  onChanged?.();
+                })
                 .catch((err) => toast.error(t("action.deleteFailed", { error: String(err) })));
             });
           },
