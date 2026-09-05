@@ -45,6 +45,7 @@ import { useTrayEvents } from "@/hooks/useTrayEvents";
 import { useTraySync } from "@/hooks/useTraySync";
 import { useApprovalMigrationToast } from "@/hooks/useApprovalMigrationToast";
 import { useFileRenameSync } from "@/hooks/useFileRenameSync";
+import { useInboxArrivals } from "@/hooks/useInboxArrivals";
 import { useRecentDocumentCycle } from "@/hooks/useRecentDocumentCycle";
 import { useTranscriptionJob } from "@/hooks/useTranscriptionJob";
 import { useModelFitCapture } from "@/hooks/useModelFitCapture";
@@ -188,6 +189,11 @@ function App() {
   // ============================================================
   useProjectMetadata();
   useStartWatchers();
+  // Inbox folder watch + "New in Inbox" notification (PRD
+  // 2026-09-05-ios-notifications, the Mac's side). Lives here, not in the
+  // sidebar row: the sidebar unmounts on ⌘⇧L and a share from the phone must
+  // still be noticed.
+  useInboxArrivals();
   useFileRenameSync();
   useSkillDiscovery();
   // #105 — keep the OS window title in sync with the active tab

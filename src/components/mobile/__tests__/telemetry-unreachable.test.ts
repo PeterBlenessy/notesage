@@ -50,6 +50,27 @@ function importsOf(file: string): string[] {
   return specs;
 }
 
+describe("iOS shell never imports Tauri's notification plugin", () => {
+  // The plugin is not registered on iOS (its delegate would crash on any
+  // notification it did not schedule itself); a frontend import of its JS
+  // binding would invoke a command that does not exist there.
+  it("no file reachable from MobileApp.tsx mentions @tauri-apps/plugin-notification", () => {
+    const start = resolve(SRC, "MobileApp.tsx");
+    const seen = new Set<string>();
+    const stack = [start];
+    while (stack.length) {
+      const file = stack.pop()!;
+      if (seen.has(file)) continue;
+      seen.add(file);
+      expect(readFileSync(file, "utf8"), file).not.toContain("@tauri-apps/plugin-notification");
+      for (const spec of importsOf(file)) {
+        const target = resolveImport(file, spec);
+        if (target) stack.push(target);
+      }
+    }
+  });
+});
+
 describe("iOS shell telemetry reachability (#587)", () => {
   it("MobileApp's transitive import graph never reaches lib/telemetry.ts", () => {
     const start = resolve(SRC, "MobileApp.tsx");

@@ -14,7 +14,7 @@ import { INBOX_FOLDER_NAME } from "@/lib/inbox";
  * Rendered ONLY at the library root — one level down it is noise, and the
  * breadcrumb island's permanent "Inbox" entry covers reaching it from depth.
  */
-export function InboxCard({ count, onOpen }: { count?: number; onOpen: () => void }) {
+export function InboxCard({ count, unread, onOpen }: { count?: number; unread?: number; onOpen: () => void }) {
   return (
     <div className="px-2 pb-3">
       {/* Geometry is deliberately IDENTICAL to FileRow — same icon size, gap,
@@ -45,10 +45,22 @@ export function InboxCard({ count, onOpen }: { count?: number; onOpen: () => voi
         >
           {INBOX_FOLDER_NAME}
         </span>
-        {count !== undefined && (
-          <span className="shrink-0 text-[length:calc(1.0625rem*var(--ns-a11y-scale,1))] tabular-nums text-muted-foreground">
-            {count}
+        {/* The unread count — the same number as the icon badge, from the
+            same native count — in the accent when there is something to
+            read; otherwise the total, muted, as before. */}
+        {unread !== undefined && unread > 0 ? (
+          <span
+            className="shrink-0 text-[length:calc(1.0625rem*var(--ns-a11y-scale,1))] tabular-nums text-[var(--color-accent-primary)]"
+            data-testid="inbox-unread"
+          >
+            {unread}
           </span>
+        ) : (
+          count !== undefined && (
+            <span className="shrink-0 text-[length:calc(1.0625rem*var(--ns-a11y-scale,1))] tabular-nums text-muted-foreground">
+              {count}
+            </span>
+          )
         )}
         <ChevronRight strokeWidth={1.5} className="h-4 w-4 shrink-0 text-muted-foreground" />
       </button>

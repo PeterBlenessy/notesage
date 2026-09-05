@@ -586,6 +586,61 @@ export function iosSpeechState(): Promise<IosSpeechState> {
   return invoke<IosSpeechState>("ios_speech_state");
 }
 
+// --- Notifications: badge, banners, background refresh ---------------------
+
+export interface IosNotificationStatus {
+  authorization: "notDetermined" | "denied" | "authorized";
+  backgroundRefresh: "available" | "denied" | "restricted";
+  badge: boolean;
+  newItems: boolean;
+}
+
+export function iosNotificationStatus(): Promise<IosNotificationStatus> {
+  return invoke<IosNotificationStatus>("ios_notification_status");
+}
+
+/** The one system prompt (badge and alert, no sound). */
+export function iosNotificationRequest(): Promise<IosNotificationStatus> {
+  return invoke<IosNotificationStatus>("ios_notification_request");
+}
+
+/** Badge and banner preferences, and the localised banner strings the
+ *  native side posts with (`title`, `one` with `{title}`, `many` with
+ *  `{count}`, `more` with `{list}` and `{count}`). */
+export function iosNotificationSetPrefs(patch: {
+  badge?: boolean;
+  newItems?: boolean;
+  templates?: Record<string, string>;
+}): Promise<IosNotificationStatus> {
+  return invoke<IosNotificationStatus>("ios_notification_set_prefs", patch);
+}
+
+/** Recount the unread Inbox from disk and refresh the icon badge; with
+ *  `markSeen` (only when the Inbox's items are on screen) record them as
+ *  seen, so the next background refresh announces only what comes after. */
+export function iosInboxUnreadCount(markSeen = false): Promise<number> {
+  return invoke<number>("ios_inbox_unread_count", { markSeen });
+}
+
+/** Where a notification tap wants the app to land, once. */
+export function iosConsumeLaunchRoute(): Promise<string | null> {
+  return invoke<string | null>("ios_consume_launch_route");
+}
+
+export function iosOpenSettings(): Promise<void> {
+  return invoke("ios_open_settings");
+}
+
+/** A warm notification tap: the native delegate dispatches `notesage:notification`. */
+export function onIosNotificationRoute(handler: (route: string) => void): () => void {
+  const listener = (event: Event) => {
+    const detail = (event as CustomEvent).detail as { route?: string } | undefined;
+    if (detail?.route) handler(detail.route);
+  };
+  window.addEventListener("notesage:notification", listener);
+  return () => window.removeEventListener("notesage:notification", listener);
+}
+
 /**
  * Subscribe to native player events.
  *
