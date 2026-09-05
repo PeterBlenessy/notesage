@@ -277,6 +277,11 @@ interface SettingsStore {
    *  (task #15). Default on — the notification is the time-sensitive signal for
    *  an unwatched session. */
   notifyPermissionRequest: boolean;
+  /** Desktop notification when new items land in the Inbox — a share from the
+   *  phone (or the Mac's own Share Extension) while the app is open (PRD
+   *  2026-09-05-ios-notifications, "The Mac's side"). Default on: arrivals
+   *  are rare and wanted, unlike external-change chatter. */
+  notifyInboxCaptures: boolean;
   /** Max concurrent live AI sessions before further sends queue (task #5).
    *  Clamped to [3, 5]; default 4. Protects RAM / agent process count and, for
    *  `local_bundled`, the single llama-server that serializes requests. */
@@ -377,6 +382,7 @@ interface SettingsStore {
   setNotifyAgentCompletion: (notify: boolean) => void;
   setNotifyExternalChanges: (notify: boolean) => void;
   setNotifyPermissionRequest: (notify: boolean) => void;
+  setNotifyInboxCaptures: (notify: boolean) => void;
   setMaxConcurrentSessions: (n: number) => void;
   /**
    * When true, the HTML viewer bypasses DOMPurify and renders content in an
@@ -526,6 +532,7 @@ export const useSettingsStore = create<SettingsStore>()(
       notifyExternalChanges: false,
       notifyAutomationFailure: true,
       notifyPermissionRequest: true,
+      notifyInboxCaptures: true,
       maxConcurrentSessions: 4,
       homeDir: null,
       skillsReady: false,
@@ -950,6 +957,10 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ notifyPermissionRequest: notify });
       },
 
+      setNotifyInboxCaptures: (notify: boolean) => {
+        set({ notifyInboxCaptures: notify });
+      },
+
       setMaxConcurrentSessions: (n: number) => {
         set({ maxConcurrentSessions: Math.round(Math.max(3, Math.min(5, n))) });
       },
@@ -974,7 +985,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: "notesage-settings",
-      version: 27,
+      version: 28,
 
       migrate: (persisted: unknown, version: number) => {
         const state = persisted as Record<string, unknown>;
@@ -1274,6 +1285,14 @@ export const useSettingsStore = create<SettingsStore>()(
           // the users who are on the alpha channel. One-way and idempotent —
           // there is no longer anything to switch back to.
           delete state.releaseChannel;
+        }
+        if (version < 28) {
+          // Inbox arrivals (PRD 2026-09-05-ios-notifications, the Mac's side):
+          // the "New Inbox items" notification toggle. Default ON — same
+          // shape as the v23 `notifyPermissionRequest` default.
+          if (typeof state.notifyInboxCaptures !== 'boolean') {
+            state.notifyInboxCaptures = true;
+          }
         }
         return state;
       },

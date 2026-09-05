@@ -139,8 +139,18 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_notification::init());
+        .plugin(tauri_plugin_http::init());
+
+    // Notifications: Tauri's plugin on desktop only. Its iOS delegate
+    // force-unwraps a map of the notifications it scheduled itself, so any
+    // notification ours posts (badge refresh, Share Extension, a tap after a
+    // relaunch) would crash the app in it. iOS owns the layer in the native
+    // plugin (`Notifier.swift`); the Cargo dependency stays so the
+    // capability file keeps validating.
+    #[cfg(not(target_os = "ios"))]
+    {
+        builder = builder.plugin(tauri_plugin_notification::init());
+    }
 
     // iOS native bridge (security-scoped library access). A plugin crate with
     // its own Swift Package — see crates/tauri-plugin-notesage-ios — because
@@ -324,6 +334,12 @@ pub fn run() {
             ios_speech_state,
             ios_speech_voices,
             ios_speech_set_voice,
+            ios_notification_status,
+            ios_notification_request,
+            ios_notification_set_prefs,
+            ios_inbox_unread_count,
+            ios_consume_launch_route,
+            ios_open_settings,
         render_markdown_fragment,
         repair_html_doctype,
         article_source_url,
@@ -410,6 +426,12 @@ pub fn run() {
             ios_speech_state,
             ios_speech_voices,
             ios_speech_set_voice,
+            ios_notification_status,
+            ios_notification_request,
+            ios_notification_set_prefs,
+            ios_inbox_unread_count,
+            ios_consume_launch_route,
+            ios_open_settings,
             open_folder_dialog,
             open_file_dialog,
             run_in_terminal,

@@ -68,6 +68,7 @@ extension LibraryAccess {
         }
         if let coordError { throw coordError }
         if let writeError { throw writeError }
+        InboxState.didWriteCapture(root: root, name: name)
         return "Inbox/\(name)"
     }
 
@@ -115,6 +116,7 @@ extension LibraryAccess {
         }
         if let coordError { throw coordError }
         if let writeError { throw writeError }
+        InboxState.didWriteCapture(root: root, name: name)
         return "Inbox/\(name)"
     }
 
@@ -174,6 +176,7 @@ extension LibraryAccess {
         }
         if let coordError { throw coordError }
         if let writeError { throw writeError }
+        InboxState.didWriteCapture(root: root, name: name)
         return "Inbox/\(name)"
     }
 
@@ -232,6 +235,7 @@ extension LibraryAccess {
         }
         if let coordError { throw coordError }
         if let writeError { throw writeError }
+        InboxState.didWriteCapture(root: root, name: name)
         return "Inbox/\(name)"
     }
 
@@ -382,6 +386,7 @@ extension LibraryAccess {
         }
         if let coordError { throw coordError }
         if let writeError { throw writeError }
+        InboxState.didWriteCapture(root: root, name: name)
         return "Inbox/\(name)"
     }
 
@@ -446,6 +451,7 @@ extension LibraryAccess {
         }
         if let coordError { throw coordError }
         if let writeError { throw writeError }
+        InboxState.didWriteCapture(root: root, name: name)
         return "Inbox/\(name)"
     }
 
@@ -548,6 +554,7 @@ extension LibraryAccess {
         }
         if let coordError { throw coordError }
         if let copyError { throw copyError }
+        InboxState.didWriteCapture(root: root, name: landed.lastPathComponent)
         return "Inbox/\(landed.lastPathComponent)"
     }
 

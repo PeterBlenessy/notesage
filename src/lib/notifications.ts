@@ -10,20 +10,33 @@ type NotificationType =
   | "agent_completion"
   | "agent_error"
   | "external_change"
-  | "automation_failure";
+  | "automation_failure"
+  | "inbox_capture";
+
+/**
+ * Opaque payload carried on the notification and handed back to `onAction`
+ * handlers when it is clicked (e.g. `{ inbox: true }` so `useInboxArrivals`
+ * can open the Inbox). Never shown to the user.
+ */
+export type NotificationExtra = Record<string, unknown>;
 
 const TYPE_TO_SETTING: Record<NotificationType, keyof Pick<
   ReturnType<typeof useSettingsStore.getState>,
-  "notifyAgentCompletion" | "notifyExternalChanges" | "notifyAutomationFailure"
+  "notifyAgentCompletion" | "notifyExternalChanges" | "notifyAutomationFailure" | "notifyInboxCaptures"
 >> = {
   agent_completion: "notifyAgentCompletion",
   agent_error: "notifyAgentCompletion",
   external_change: "notifyExternalChanges",
   automation_failure: "notifyAutomationFailure",
+  inbox_capture: "notifyInboxCaptures",
 };
 
 /** Permission check + send, with silent degradation. Setting-agnostic. */
-async function deliverNotification(title: string, body: string): Promise<void> {
+async function deliverNotification(
+  title: string,
+  body: string,
+  extra?: NotificationExtra,
+): Promise<void> {
   try {
     let granted = await isPermissionGranted();
     if (!granted) {
@@ -32,7 +45,7 @@ async function deliverNotification(title: string, body: string): Promise<void> {
     }
     if (!granted) return;
 
-    sendNotification({ title, body });
+    sendNotification(extra ? { title, body, extra } : { title, body });
   } catch {
     // Notification not supported or permission denied — silent degradation
   }
@@ -40,16 +53,18 @@ async function deliverNotification(title: string, body: string): Promise<void> {
 
 /**
  * Send a desktop notification if the corresponding setting is enabled.
- * Handles permission checking/requesting silently.
+ * Handles permission checking/requesting silently. `extra` rides along on
+ * the notification for the click handler (`onAction`), never for display.
  */
 export async function notify(
   type: NotificationType,
   title: string,
-  body: string
+  body: string,
+  extra?: NotificationExtra,
 ): Promise<void> {
   const settingKey = TYPE_TO_SETTING[type];
   if (!useSettingsStore.getState()[settingKey]) return;
-  await deliverNotification(title, body);
+  await deliverNotification(title, body, extra);
 }
 
 /**

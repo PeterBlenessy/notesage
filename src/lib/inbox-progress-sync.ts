@@ -128,6 +128,8 @@ export async function pushInboxProgress(): Promise<void> {
     if (text !== serializeReadingProgress(onDisk)) {
       await iosEnsureDirectory(`${INBOX_FOLDER_NAME}/.notesage`);
       await iosWriteFile(INBOX_SIDECAR_REL, text);
+      // The sidecar just changed what "unread" means: recount the badge.
+      void useMobileStore.getState().refreshUnread();
     }
     for (const name of Object.keys(local.items)) dirty.delete(name);
   } catch (err) {

@@ -8,6 +8,7 @@ import { startInboxProgressSync } from "@/lib/inbox-progress-sync";
 import { startSpeechEvents } from "@/lib/speech-controller";
 import { Onboarding } from "@/components/mobile/Onboarding";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
+import { useNotificationRoute } from "@/components/mobile/useNotificationRoute";
 import { Reader } from "@/components/mobile/Reader";
 import { HomeFolders } from "@/components/mobile/HomeFolders";
 import { useInlineSweep } from "@/components/mobile/useInlineSweep";
@@ -43,6 +44,17 @@ export function MobileApp() {
   // Read-aloud events feed the app-wide session (#833). At the root for the
   // same reason: playback outlives both the list and the article.
   useEffect(() => startSpeechEvents(), []);
+
+  useNotificationRoute(grantState);
+  // The badge is recounted on every return to the foreground: reading is
+  // where the number changes, and the listing has unmounted by then.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void useMobileStore.getState().refreshUnread();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, []);
 
   useEffect(() => {
     void refreshGrant();
