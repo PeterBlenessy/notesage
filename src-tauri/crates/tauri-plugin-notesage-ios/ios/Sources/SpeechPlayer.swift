@@ -156,6 +156,11 @@ private let MAX_VOTING_PARAGRAPHS = 60
     @objc public func stop() {
         let wasLive = !paragraphs.isEmpty
         resetQueue()
+        // Hand the lock screen back. Targets accumulate on the shared command
+        // centre, so leaving these registered meant a Play tap during a
+        // RECORDING reached this player too — refused by the arbiter, but it
+        // is the recorder's transport now and only one owner should answer.
+        removeRemoteCommands()
         // Through the arbiter: a late stop must not deactivate a session a
         // recording has since taken over.
         AudioSessionArbiter.shared.release(.speech)
@@ -556,6 +561,16 @@ private let MAX_VOTING_PARAGRAPHS = 60
         centre.pauseCommand.addTarget { [weak self] _ in self?.pause(); return .success }
         centre.nextTrackCommand.addTarget { [weak self] _ in self?.skip(1); return .success }
         centre.previousTrackCommand.addTarget { [weak self] _ in self?.skip(-1); return .success }
+    }
+
+    private func removeRemoteCommands() {
+        guard remoteCommandsRegistered else { return }
+        remoteCommandsRegistered = false
+        let centre = MPRemoteCommandCenter.shared()
+        centre.playCommand.removeTarget(nil)
+        centre.pauseCommand.removeTarget(nil)
+        centre.nextTrackCommand.removeTarget(nil)
+        centre.previousTrackCommand.removeTarget(nil)
     }
 }
 
