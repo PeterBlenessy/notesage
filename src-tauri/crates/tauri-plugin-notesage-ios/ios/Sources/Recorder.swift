@@ -419,7 +419,12 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
     }
 
     /// Metered peak power mapped 0…1 (−60 dB and below is silence).
-    private func currentLevel() -> Double {
+    ///
+    /// Internal, not private: the island's live trace samples this ~20 times a
+    /// second, which is far too often to push across the JS bridge — and the
+    /// bridge is asleep with the screen locked anyway, while the recorder is
+    /// not.
+    func currentLevel() -> Double {
         guard let recorder, state == .recording else { return 0 }
         recorder.updateMeters()
         let db = Double(recorder.averagePower(forChannel: 0))
