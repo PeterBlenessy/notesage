@@ -1105,6 +1105,10 @@ export function LibraryBrowser() {
             `stroke` set directly. Nothing to override, and the arc reads at
             any size. */}
         <svg
+          // Named, not found by shape. Its test located it as the first
+          // `svg.h-5.w-5` in the tree, which any icon added above it in the
+          // DOM silently steals — as the pinned Recordings card's mic did.
+          data-testid="pull-refresh-indicator"
           viewBox="0 0 20 20"
           className={pullBusy ? "h-5 w-5 animate-spin" : "h-5 w-5"}
           style={

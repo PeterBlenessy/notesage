@@ -1828,7 +1828,11 @@ describe("web pull-to-refresh indicator (2026-08-20)", () => {
   function scrollerAndIndicator(container: HTMLElement) {
     return {
       scrollers: Array.from(container.querySelectorAll(".overflow-y-auto")),
-      indicator: container.querySelector<HTMLElement>("svg.h-5.w-5"),
+      // By test id, NOT by `svg.h-5.w-5`: that matched the first icon of
+      // that size anywhere in the tree, so adding any icon above the
+      // indicator quietly redirected every assertion below at the wrong
+      // element (the pinned Recordings card's mic did exactly that).
+      indicator: container.querySelector<HTMLElement>('[data-testid="pull-refresh-indicator"]'),
     };
   }
 
