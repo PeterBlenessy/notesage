@@ -182,10 +182,12 @@ export function SwipeRevealRow({
     // set for ever and every later touch on this row is refused. A drag that
     // never locked has taken no capture and moved nothing, so replacing it
     // costs nothing; a locked one is recovered by `onLostPointerCapture`.
-    if (dragRef.current?.isDrag) return;
     // Pointer ids are reused once released. A fresh press under an id we
-    // were still waiting on is a new finger, not the old one coming back.
+    // were still waiting on is a new finger, not the old one coming back —
+    // and this runs BEFORE the guard below, or an id pressed again while
+    // some other finger holds a locked drag would never be swept.
     abandonedRef.current.delete(e.pointerId);
+    if (dragRef.current?.isDrag) return;
     dragRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
@@ -242,8 +244,25 @@ export function SwipeRevealRow({
       // flag no click ever consumes, and the next thing it swallowed would
       // be the user's next unrelated tap — the very bug this branch exists
       // to avoid, walked back in through a different door.
-      if (e && abandonedRef.current.delete(e.pointerId) && e.type === "pointerup") {
-        suppressClickRef.current = true;
+      // Each event type is answered on its own terms. `delete` is a call,
+      // not a boolean read, so folding it into the condition would drop the
+      // pointer whatever the type turned out to be — and dropping it on
+      // capture loss is exactly wrong, because capture loss is not a
+      // termination and the lift may still be coming. The next arrival would
+      // then find nothing tracked and let the click through: the original
+      // bug, in through the door this branch was built to shut.
+      if (e && abandonedRef.current.has(e.pointerId)) {
+        if (e.type === "pointerup") {
+          // The one event a native click follows.
+          abandonedRef.current.delete(e.pointerId);
+          suppressClickRef.current = true;
+        } else if (e.type === "pointercancel") {
+          // A cancel really does end that pointer: no lift, and so no click,
+          // can follow it without a fresh press first.
+          abandonedRef.current.delete(e.pointerId);
+        }
+        // `lostpointercapture`: keep waiting. Nothing is armed, because no
+        // click is due yet, and nothing is forgotten either.
       }
       return;
     }

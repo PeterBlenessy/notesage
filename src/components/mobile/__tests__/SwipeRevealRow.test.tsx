@@ -150,6 +150,52 @@ describe("SwipeRevealRow: whose finger is this? (2026-09-06)", () => {
     }
   });
 
+  it("keeps waiting after capture loss, and still suppresses the real lift", () => {
+    // The interleaving the id-swapping tests above cannot see. Capture loss
+    // is not a termination — that is the whole reason it is treated
+    // separately — so the SAME finger may still lift afterwards, and its
+    // trailing click still has to be suppressed. Forgetting the pointer on
+    // capture loss lets that click open the document.
+    vi.useFakeTimers();
+    try {
+      const onRowClick = vi.fn();
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={onRowClick} />);
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000));
+      fireEvent.lostPointerCapture(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      // Same finger, later.
+      fireEvent.pointerUp(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      fireEvent.click(content);
+      expect(onRowClick).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a cancelled pointer is forgotten, so a reused id does not eat a tap", () => {
+    // The other half: a cancel really does end that pointer, so there is
+    // nothing left to wait for and keeping it would be the leak.
+    vi.useFakeTimers();
+    try {
+      const onRowClick = vi.fn();
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={onRowClick} />);
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000));
+      fireEvent.pointerCancel(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      // The browser hands id 1 to the next touch, which is a plain tap.
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 150, clientY: 0 });
+      fireEvent.pointerUp(content, { pointerId: 1, clientX: 150, clientY: 0 });
+      fireEvent.click(content);
+      expect(onRowClick).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("remembers both fingers when a row abandons two drags in a row", () => {
     // Abandoning the first drag is exactly what stops the touchdown guard
     // refusing a second finger, so two abandonments on one row is a path the
