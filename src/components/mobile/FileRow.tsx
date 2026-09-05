@@ -163,6 +163,60 @@ export function formatModified(seconds: number, now: Date = new Date()): string 
   });
 }
 
+/**
+ * The swipe-to-reveal actions for one library row (#618, #619).
+ *
+ * Shared with `ArticleRow` rather than built inside `FileRow`, because for a
+ * long time it was NOT: a saved article had no swipe at all, so the same
+ * gesture that deleted the PDF above it did nothing on the article — and the
+ * only rows that DID swipe were the ones without a Listen button, which made
+ * the two look like alternatives (Peter, 2026-09-05). They are not: every
+ * file swipes, and a capture additionally reads aloud.
+ *
+ * Folders get an empty array (no share concept — `ios_share_file` copies a
+ * single file), which `SwipeRevealRow` treats as "no gesture".
+ *
+ * Delete is EDGE-MOST (last) — the full-swipe gesture commits the last
+ * action, and in iOS that is always the destructive one.
+ */
+export function entrySwipeActions(
+  entry: FileEntry,
+  actionContext: EntryActionContext,
+  onChanged?: () => void,
+): SwipeRevealAction[] {
+  if (entry.is_directory) return [];
+  return [
+    {
+      id: "share",
+      label: t("action.share"),
+      icon: Share,
+      onSelect: () => {
+        void iosShareFile(entry.path).catch((err) => toast.error(t("action.shareFailed", { error: String(err) })));
+      },
+    },
+    {
+      id: "delete",
+      label: t("action.delete"),
+      icon: Trash2,
+      tone: "destructive",
+      onSelect: () => {
+        // Confirm first (#680): a full swipe commits this action outright,
+        // which is easy to trigger by accident.
+        void confirmDelete(entry).then((ok) => {
+          if (!ok) return;
+          return iosDeleteFile(entry.path)
+            .then(() => {
+              // The same forgetting the hold menu's Delete does.
+              actionContext.onPathRemoved?.(entry.path);
+              onChanged?.();
+            })
+            .catch((err) => toast.error(t("action.deleteFailed", { error: String(err) })));
+        });
+      },
+    },
+  ];
+}
+
 export interface FileRowProps {
   entry: FileEntry;
   active?: boolean;
@@ -223,44 +277,7 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext, c
   const longPress = useLongPress((rect) => {
     void presentEntryMenu(entry, rect, actionContext);
   });
-  // Directories have no share concept in Notesage today — `ios_share_file`
-  // copies a single file to a temp location for the share sheet, mirroring
-  // its only other consumer (the Reader, which only ever shares a document).
-  // Delete is EDGE-MOST (last) — the full-swipe gesture commits the last
-  // action, and in iOS that is always the destructive one. No confirm:
-  // iCloud's "Recently Deleted" gives 30-day recovery (#618).
-  const actions: SwipeRevealAction[] = entry.is_directory
-    ? []
-    : [
-        {
-          id: "share",
-          label: t("action.share"),
-          icon: Share,
-          onSelect: () => {
-            void iosShareFile(entry.path).catch((err) => toast.error(t("action.shareFailed", { error: String(err) })));
-          },
-        },
-        {
-          id: "delete",
-          label: t("action.delete"),
-          icon: Trash2,
-          tone: "destructive",
-          onSelect: () => {
-            // Confirm first (#680): a full swipe commits this action outright,
-            // which is easy to trigger by accident.
-            void confirmDelete(entry).then((ok) => {
-              if (!ok) return;
-              return iosDeleteFile(entry.path)
-                .then(() => {
-                  // The same forgetting the hold menu's Delete does.
-                  actionContext.onPathRemoved?.(entry.path);
-                  onChanged?.();
-                })
-                .catch((err) => toast.error(t("action.deleteFailed", { error: String(err) })));
-            });
-          },
-        },
-      ];
+  const actions = entrySwipeActions(entry, actionContext, onChanged);
 
   return (
     <SwipeRevealRow actions={actions}>

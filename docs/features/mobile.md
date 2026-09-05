@@ -354,6 +354,16 @@ contract, or it will drop gestures:
 3. **`setPointerCapture`** on lock, so a finger that drifts onto the
    neighbouring row keeps feeding the gesture instead of silently ending it.
 
+**Every list row swipes, whatever it looks like.** The action set is built
+once, by `entrySwipeActions` in `FileRow.tsx`, and used by both list rows —
+the plain one and the article one. It did not used to be: `ArticleRow` was
+its own markup and simply never wrapped itself in `SwipeRevealRow`, so a
+saved article had no swipe. Because the article row is also the only row with
+a Listen button, the two looked causally linked — the rows that swiped were
+exactly the rows without headphones, which is how a missing wrapper reads as
+a rule (Peter, 2026-09-05). Folders still get an empty action array (there is
+no folder share), which the gesture treats as "no swipe".
+
 Long-press (below) covers the same actions, so a user who cannot land a swipe
 — or a layout with no swipe at all, like the gallery — is never stuck.
 
@@ -608,7 +618,15 @@ document. `src/lib/speech-controller.ts` owns it: one session in
 language), fed by the native events subscribed once at the app root
 (`startSpeechEvents` in `MobileApp`). Every saved page's row carries a
 `ListenButton` at its right edge and every saved page's card one on its
-picture: headphones to start (the file is read and turned into prose there
+picture — *saved page* meaning a Notesage **capture**, and nothing else: the
+row is `ArticleRow`, which the browser picks for any `.html`/`.htm` entry,
+and which keeps the article shape only while `ios_article_card_meta` returns
+a header. That header is read out of the file's own capture footer
+(`article_source_url`: `Clipped from <a href="http…">`), so a `.html` we did
+not clip — an exported report, a page saved from elsewhere — has no header,
+falls back to `FileRow`, and gets no headphone. Nothing else can be read
+aloud today: a PDF, a note or an image has no prose extraction on the phone.
+The control itself: headphones to start (the file is read and turned into prose there
 and then — nothing opens), then Pause / Play for the document playing, with a
 ring around the edge that fills as the paragraphs go by. No skip, speed or
 stop in the list; those stay in the Reader's transport, which is the same

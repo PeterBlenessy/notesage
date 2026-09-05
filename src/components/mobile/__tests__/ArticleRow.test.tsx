@@ -118,3 +118,49 @@ describe("ArticleRow Listen control (2026-09-04)", () => {
     expect(onActivate).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("ArticleRow swipe actions (2026-09-05)", () => {
+  it("a saved article swipes to Share and Delete, exactly like the plain row", async () => {
+    const { setMockInvokeHandler } = await import("@/test/component-harness");
+    setMockInvokeHandler("ios_context_menu", () => "delete");
+    let deleted: string | null = null;
+    setMockInvokeHandler("ios_delete_file", (args) => {
+      deleted = (args as { relPath: string }).relPath;
+      return null;
+    });
+    const onPathRemoved = vi.fn();
+    const onChanged = vi.fn();
+    renderWithProviders(
+      <ArticleRow
+        actionContext={{ ...noopActions, onPathRemoved }}
+        entry={capture}
+        onActivate={() => {}}
+        onChanged={onChanged}
+        condensed={false}
+      />,
+    );
+    await waitFor(() => expect(screen.getByText("How to read")).toBeTruthy());
+    const row = screen.getByRole("button", { name: /How to read/ });
+    fireEvent.pointerDown(row, { clientX: 300, clientY: 0 });
+    fireEvent.pointerMove(row, { clientX: 100, clientY: 0 });
+    fireEvent.pointerUp(row, { clientX: 100, clientY: 0 });
+    // Both actions, in the plain row's order — Delete edge-most.
+    expect(screen.getByRole("button", { name: "Share" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(onPathRemoved).toHaveBeenCalledWith(capture.path));
+    expect(deleted).toBe(capture.path);
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("keeps its Listen control while the actions are revealed", async () => {
+    renderWithProviders(
+      <ArticleRow actionContext={noopActions} entry={capture} onActivate={() => {}} condensed={false} />,
+    );
+    await waitFor(() => expect(screen.getByText("How to read")).toBeTruthy());
+    const row = screen.getByRole("button", { name: /How to read/ });
+    fireEvent.pointerDown(row, { clientX: 300, clientY: 0 });
+    fireEvent.pointerMove(row, { clientX: 100, clientY: 0 });
+    fireEvent.pointerUp(row, { clientX: 100, clientY: 0 });
+    expect(screen.getByTestId("row-listen")).toBeTruthy();
+  });
+});
