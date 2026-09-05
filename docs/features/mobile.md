@@ -412,6 +412,13 @@ document. It commits on 96 pt of travel OR on a fast flick, timed from the
 AXIS LOCK rather than from touchdown, so a finger that rests on the edge
 while reading and then throws is not counted as slow.
 
+**Only a lift finishes it.** A cancel is an interruption by definition, and
+capture loss arrives without the lift that normally precedes it, which is the
+same thing — and this strip is precisely where the OS's own interactive-pop
+gesture lives, so having the touch taken away mid-swipe is the expected case
+here rather than a corner one. Committing on either would close the document
+on a gesture nobody finished. Same rule as a list row's edge action.
+
 **A captured report needs its own strip.** An HTML document renders in a
 sandboxed iframe on an opaque origin, and a finger that lands on it produces
 no pointer events out in the app — the handlers on the reader root never

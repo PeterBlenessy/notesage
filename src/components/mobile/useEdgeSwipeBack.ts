@@ -117,6 +117,14 @@ export function useEdgeSwipeBack(onBack: () => void): {
     setDragging(false);
     setOffset(0);
     if (!d || d.axis !== "swipe") return;
+    // Only a lift FINISHES a gesture. A cancel is an interruption by
+    // definition, and capture loss arrives here only without the lift that
+    // normally precedes it, which is the same thing — and this strip is
+    // precisely where the OS's own interactive-pop lives, so having the
+    // touch taken away mid-swipe is the expected case, not a corner one.
+    // Committing on either closes the document on a gesture nobody
+    // finished. Same rule as `SwipeRevealRow`'s edge action.
+    if (e && e.type !== "pointerup") return;
     if (commitsBack(d.dx, Date.now() - d.swipeAt)) onBack();
   };
 

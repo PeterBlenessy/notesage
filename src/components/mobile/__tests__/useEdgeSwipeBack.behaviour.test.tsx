@@ -93,6 +93,24 @@ describe("edge-swipe-back: whose finger is this? (2026-09-06)", () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    ["pointercancel", (el: HTMLElement) => fireEvent.pointerCancel(el, { pointerId: 1, clientX: 200, clientY: 0 })],
+    ["lostpointercapture", (el: HTMLElement) => fireEvent.lostPointerCapture(el, { pointerId: 1, clientX: 200, clientY: 0 })],
+  ])("does not close the document on a swipe ended by %s", (_name, interrupt) => {
+    // Only a lift finishes a gesture. This strip is exactly where the OS's
+    // own interactive-pop gesture lives, so having the touch taken away
+    // mid-swipe is the expected case here — and past the commit distance it
+    // would otherwise close the document on a gesture nobody finished.
+    const onBack = vi.fn();
+    renderWithProviders(<Subject onBack={onBack} />);
+    const el = page();
+    fireEvent.pointerDown(el, { pointerId: 1, clientX: 4, clientY: 0 });
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: 200, clientY: 0 }); // well past COMMIT_DISTANCE
+    interrupt(el);
+    expect(onBack).not.toHaveBeenCalled();
+    expect(el.style.transform).toBe("translateX(0px)");
+  });
+
   it("gives up on a drag that goes silent, without committing it", () => {
     // The recovery that depends on NO event arriving. `lostpointercapture`
     // is fired by the spec as a consequence of the very pointerup or
