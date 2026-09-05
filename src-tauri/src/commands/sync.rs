@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+use super::ios_library::DownloadState;
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -46,6 +48,82 @@ pub async fn get_icloud_path() -> Result<Option<String>, String> {
     {
         Ok(None)
     }
+}
+
+/// The name iCloud Drive gives an evicted file's placeholder: `<dir>/.<name>.icloud`
+/// beside the missing `<dir>/<name>`. `None` when the path has no file name.
+pub fn icloud_placeholder_path(path: &Path) -> Option<PathBuf> {
+    let name = path.file_name()?.to_str()?;
+    Some(path.with_file_name(format!(".{name}.icloud")))
+}
+
+/// Pure classification behind `icloud_ensure_downloaded`, so the state table
+/// is testable without a live iCloud container: the file itself on disk is
+/// `Ready`; only a placeholder means a download can be asked for; neither
+/// means there is nothing to download from.
+pub fn classify_icloud_item(file_exists: bool, placeholder_exists: bool) -> DownloadState {
+    if file_exists {
+        DownloadState::Ready
+    } else if placeholder_exists {
+        DownloadState::Downloading
+    } else {
+        DownloadState::Failed
+    }
+}
+
+/// Make sure an iCloud Drive file is materialized on disk.
+///
+/// The recordings scanner (PRD `2026-09-05-ios-recordings`) meets evicted
+/// audio: iCloud keeps `.audio.m4a.icloud` and no `audio.m4a`, and a
+/// `file_size` on the real name fails. This asks iCloud to download the
+/// item and reports `downloading`; the scanner then waits for the watcher
+/// event the arriving file produces rather than polling. `ready` when the
+/// file is already there, `failed` when there is no placeholder to download
+/// from or the download request itself is refused.
+///
+/// macOS drives `NSFileManager.startDownloadingUbiquitousItem(at:)`; on any
+/// other platform there is no iCloud, so the answer is `ready` when the
+/// file exists and `failed` otherwise.
+#[tauri::command]
+pub async fn icloud_ensure_downloaded(path: String) -> Result<DownloadState, String> {
+    let item = PathBuf::from(&path);
+    let placeholder_exists = icloud_placeholder_path(&item)
+        .map(|p| p.exists())
+        .unwrap_or(false);
+    let state = classify_icloud_item(item.exists(), placeholder_exists);
+    if state != DownloadState::Downloading {
+        return Ok(state);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        // The download request goes through Foundation; keep it off the IPC thread.
+        let outcome = tokio::task::spawn_blocking(move || start_ubiquitous_download(&item))
+            .await
+            .map_err(|e| format!("iCloud download task failed: {e}"))?;
+        Ok(match outcome {
+            Ok(()) => DownloadState::Downloading,
+            Err(err) => {
+                log::warn!("icloud_ensure_downloaded({path}): {err}");
+                DownloadState::Failed
+            }
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        // A placeholder without iCloud to download it from is not going to fill in.
+        Ok(DownloadState::Failed)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn start_ubiquitous_download(item: &Path) -> Result<(), String> {
+    use objc2_foundation::{NSFileManager, NSString, NSURL};
+    let path = NSString::from_str(&item.to_string_lossy());
+    let url = NSURL::fileURLWithPath(&path);
+    NSFileManager::defaultManager()
+        .startDownloadingUbiquitousItemAtURL_error(&url)
+        .map_err(|e| e.localizedDescription().to_string())
 }
 
 /// Read sync settings from {notesage_path}/.notesage/sync-settings.json.
@@ -308,4 +386,51 @@ fn count_files(path: &Path) -> Result<usize, std::io::Error> {
         }
     }
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn placeholder_path_is_dot_name_dot_icloud_beside_the_item() {
+        let p = icloud_placeholder_path(Path::new("/lib/Recordings/Recording 2026-09-05 14-02-11/audio.m4a"));
+        assert_eq!(
+            p,
+            Some(PathBuf::from("/lib/Recordings/Recording 2026-09-05 14-02-11/.audio.m4a.icloud"))
+        );
+        assert_eq!(icloud_placeholder_path(Path::new("/")), None);
+    }
+
+    #[test]
+    fn classification_prefers_the_real_file_over_a_placeholder() {
+        assert_eq!(classify_icloud_item(true, true), DownloadState::Ready);
+        assert_eq!(classify_icloud_item(true, false), DownloadState::Ready);
+        assert_eq!(classify_icloud_item(false, true), DownloadState::Downloading);
+        assert_eq!(classify_icloud_item(false, false), DownloadState::Failed);
+    }
+
+    #[tokio::test]
+    async fn ensure_downloaded_is_ready_for_a_file_on_disk_and_failed_with_nothing_to_download() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let audio = dir.path().join("audio.m4a");
+        std::fs::write(&audio, b"aac").unwrap();
+        let s = audio.to_string_lossy().to_string();
+        assert_eq!(icloud_ensure_downloaded(s).await.unwrap(), DownloadState::Ready);
+
+        let missing = dir.path().join("missing.m4a").to_string_lossy().to_string();
+        assert_eq!(icloud_ensure_downloaded(missing).await.unwrap(), DownloadState::Failed);
+    }
+
+    #[tokio::test]
+    async fn ensure_downloaded_sees_a_placeholder_and_never_reports_ready_for_it() {
+        // A placeholder outside any iCloud container: macOS refuses the
+        // download request (→ failed); elsewhere there is no iCloud (→ failed).
+        // Either way it must not claim the audio is ready to read.
+        let dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(dir.path().join(".audio.m4a.icloud"), b"plist").unwrap();
+        let path = dir.path().join("audio.m4a").to_string_lossy().to_string();
+        let state = icloud_ensure_downloaded(path).await.unwrap();
+        assert_ne!(state, DownloadState::Ready);
+    }
 }

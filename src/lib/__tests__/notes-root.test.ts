@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { inboxDir, inboxMetaDir, resolveNotesRoot } from "@/lib/notes-root";
+import { inboxDir, inboxMetaDir, recordingsDir, resolveNotesRoot } from "@/lib/notes-root";
 
 describe("resolveNotesRoot", () => {
   it("expands a leading tilde against the home directory, and only that", () => {
@@ -18,5 +18,12 @@ describe("resolveNotesRoot", () => {
   it("names the Inbox and its metadata folder under the root", () => {
     expect(inboxDir("/Users/peter/Notesage")).toBe("/Users/peter/Notesage/Inbox");
     expect(inboxMetaDir("/Users/peter/Notesage/")).toBe("/Users/peter/Notesage/Inbox/.notesage");
+  });
+
+  it("names the Recordings folder under the same root the Inbox uses", () => {
+    expect(recordingsDir("/Users/peter/Notesage")).toBe("/Users/peter/Notesage/Recordings");
+    expect(recordingsDir("/Users/peter/Library/Mobile Documents/com~apple~CloudDocs/Notesage/")).toBe(
+      "/Users/peter/Library/Mobile Documents/com~apple~CloudDocs/Notesage/Recordings",
+    );
   });
 });

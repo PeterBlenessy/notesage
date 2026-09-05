@@ -16,6 +16,7 @@ vi.mock('@/hooks/useTranscriptionJob', () => ({
 }));
 
 import { startTranscription } from '@/hooks/useTranscriptionJob';
+import { parseRecordingManifest, serializeRecordingManifest } from '@/lib/transcription/manifest';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -29,6 +30,9 @@ const MOCK_AUDIO_INFO = {
   rms: 0.05,
   peak: 0.3,
 };
+
+/** Every `write_file` the hook issued, in order. */
+const written: Array<{ path: string; content: string }> = [];
 
 function resetStores() {
   useRecordingStore.setState({
@@ -55,8 +59,66 @@ describe('useMeetingRecording', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     resetStores();
+    written.length = 0;
     setMockInvokeHandler('start_recording', () => undefined);
     setMockInvokeHandler('stop_recording', () => MOCK_AUDIO_INFO);
+    setMockInvokeHandler('file_size', () => 166_444);
+    setMockInvokeHandler('get_device_name', () => "Peter's Mac");
+    setMockInvokeHandler('write_file', (args) => {
+      written.push({ path: String(args?.path), content: String(args?.content) });
+    });
+  });
+
+  // PRD 2026-09-05-ios-recordings, task #13: the Mac's own bundle gets the
+  // same recording.json the phone writes, so the scanner has one rule.
+  describe('recording.json for the Mac\'s own bundle', () => {
+    it('writes the manifest into the bundle BEFORE dispatching the transcription', async () => {
+      const { result, rerender } = renderHook(() => useMeetingRecording());
+      await act(async () => { await result.current.toggleRecording(); });
+      const startedAt = useRecordingStore.getState().recordingStartTime!;
+      rerender();
+      await act(async () => { await result.current.toggleRecording(); });
+
+      expect(written).toHaveLength(1);
+      expect(written[0].path).toBe('/tmp/recordings/meeting/recording.json');
+      const manifest = parseRecordingManifest(written[0].content)!;
+      expect(manifest).toMatchObject({
+        version: 1,
+        createdBy: { device: "Peter's Mac", app: 'notesage-macos' },
+        durationSecs: 5.2,
+        source: 'microphone',
+        audio: { file: 'audio.wav', bytes: 166_444, codec: 'pcm', sampleRate: 16000, channels: 1 },
+        transcription: null,
+      });
+      // The contract stamps whole seconds with the local offset.
+      expect(Date.parse(manifest.startedAt)).toBe(Math.floor(startedAt / 1000) * 1000);
+      expect(manifest.language).toBeUndefined();
+      // Canonical form on disk: what serialize produces, byte for byte.
+      expect(written[0].content).toBe(serializeRecordingManifest(manifest));
+      // Written first; the dispatch came after.
+      expect(startTranscription).toHaveBeenCalledTimes(1);
+      expect(vi.mocked(startTranscription).mock.invocationCallOrder[0]).toBeGreaterThan(0);
+    });
+
+    it('carries the per-recording language override into the manifest', async () => {
+      const { result, rerender } = renderHook(() => useMeetingRecording());
+      await act(async () => { await result.current.toggleRecording(); });
+      const item = recordingItems()[0];
+      useActivityStore.getState().setRecordingLanguage(item.id, 'sv');
+      rerender();
+      await act(async () => { await result.current.toggleRecording(); });
+      expect(parseRecordingManifest(written[0].content)?.language).toBe('sv');
+    });
+
+    it('still dispatches the transcription when the manifest cannot be written', async () => {
+      setMockInvokeHandler('file_size', () => { throw new Error('stat failed'); });
+      const { result, rerender } = renderHook(() => useMeetingRecording());
+      await act(async () => { await result.current.toggleRecording(); });
+      rerender();
+      await act(async () => { await result.current.toggleRecording(); });
+      expect(written).toHaveLength(0);
+      expect(startTranscription).toHaveBeenCalledWith(expect.objectContaining({ audioPath: MOCK_AUDIO_INFO.path }));
+    });
   });
 
   it('start adds a recording activity item; stop removes it and fires transcription', async () => {

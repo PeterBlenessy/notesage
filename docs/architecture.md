@@ -25,7 +25,7 @@ note-sage/
 │   │   ├── lib.rs          # Tauri builder + RunEvent::Exit cleanup hook
 │   │   ├── commands/       # Tauri IPC commands
 │   │   │   ├── mod.rs
-│   │   │   ├── file.rs     # File read/write/list/copy operations
+│   │   │   ├── file.rs     # File read/write/list/copy operations, `file_size`, `get_device_name`
 │   │   │   ├── ios_library.rs # iOS-only: security-scoped library reads, allowlisted note-editing writes (#586) + share capture (cfg-gated)
 │   │   │   ├── dialog.rs   # Native file/folder dialogs
 │   │   │   ├── ai.rs       # AI provider commands (direct API)
@@ -54,7 +54,7 @@ note-sage/
 │   │   │   ├── logging.rs  # Debug logging control
 │   │   │   ├── telemetry.rs # Telemetry consent file + Sentry runtime live-disable + before_send PII scrubber (`telemetry_apply_consent`)
 │   │   │   ├── store.rs    # Key-value store operations
-│   │   │   ├── sync.rs     # iCloud sync settings
+│   │   │   ├── sync.rs     # iCloud sync settings + `icloud_ensure_downloaded` (evicted-placeholder download trigger)
 │   │   │   ├── shell_path.rs # Shell PATH resolution
 │   │   │   ├── transcription.rs # Mic capture-to-WAV (single stream owner, awaited teardown), whole-file Whisper transcription (transcribe_file → segments), Whisper model management (no live dictation)
 │   │   │   ├── local_inference.rs # Bundled llama-server lifecycle, model catalog, download, FIM completions
@@ -142,7 +142,7 @@ note-sage/
 │   │   ├── activity/       # ActivityTaskCard.tsx, AgentOrb.tsx, AgentPanel.tsx
 │   │   ├── editor/viewers/ # EpubViewer, PdfViewer, DocxViewer, PlainTextViewer, CodeEditor, PptxViewer (+ PptxSlideRenderer, PptxChartRenderer, PptxSearchBar, PptxZoomControls)
 │   │   └── ui/             # shadcn/ui components (auto-generated)
-│   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, useTrayEvents, useTraySync, useFadeOnType, useFocusMode, useWindowFocus, useReducedMotion, useGlobalShortcuts (absorbed useCommandBarShortcuts + useDoubleTapCmd), useRecentDocumentCycle, etc.)
+│   ├── hooks/              # React hooks (useEditor, useAIOperations, useAcpLifecycle, useAppLifecycle, useScrollPersistence, useEditorResize, useTrayEvents, useTraySync, useFadeOnType, useFocusMode, useWindowFocus, useReducedMotion, useGlobalShortcuts (absorbed useCommandBarShortcuts + useDoubleTapCmd), useRecentDocumentCycle, useTranscriptionJob + useRecordingsInbox (the recording → transcript pipeline and the `<library root>/Recordings` scanner for phone bundles — docs/features/ai-workflows.md § Meeting Recording), etc.)
 │   ├── stores/             # Zustand stores (editor, workspace, ai, chat, skill, folder-appearance, quiet-sidebar, etc.)
 │   ├── lib/                # Utilities (markdown + markdown-html-converters, tauri, ai/{context,errors,vision}, dom-search, chat-tree, conversationOps, segmentOps, image-compress, cmd-bar-events, contrast-math, quiet-chrome, quiet-chrome-presets, accent, saved-ago, tray-recents, telemetry, etc.)
 │   └── styles/             # globals.css, editor.css (+ __tests__/reduced-motion-sweep.test.ts, __tests__/accent.test.ts)
@@ -256,7 +256,7 @@ All state stores use Zustand with the persist middleware for localStorage:
 | `mcp-store` | MCP server registry (`{ global, byProject }` with `projectRoot` per entry); scope-gated `getActiveServers` / `getActiveTools` | Partial (enabled overrides) |
 | `epub-store` | EPUB view mode + bookmarks | Full |
 | ~~`tag-store`~~ | ~~Workspace tag index~~ | Removed — replaced by SQLite document index |
-| `activity-store` | Agent / transcription / recording task registry, discriminated by `kind` (`agent \| transcription \| recording`) | Full |
+| `activity-store` | Agent / transcription / recording task registry, discriminated by `kind` (`agent \| transcription \| recording`). Transcription tasks carry `audioPath` (the scanner's "already tracked" key), `sourceDevice` (the phone's label from `recording.json`, captioned on the card) and `errorMessage` (written back into the manifest on failure) | Full |
 | `recording-store` | Meeting-recording state, Whisper models + downloads, transcription model + recording language | Partial (`speechLanguage`, `defaultModel`) |
 | `external-change-store` | Pending external changes with hunks | None |
 | `local-ai-store` | Local AI server state, models; Local Agent preset setup state machine (`localAgentSetup` — `idle→detecting→downloading→configuring→verifying→ready\|failed`), dialog-open flag | Partial (`activeModelId`, `localAgentSetup.{stage,modelId}` — never the transient setup error, etc.) |
