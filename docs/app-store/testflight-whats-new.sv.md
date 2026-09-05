@@ -24,15 +24,17 @@ sektion som är tom. Ungefär 600 tecken ryms på en skärm; skriptet varnar
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Uppläsningen följer med i anteckningar också, och Macens "markera som oläst" når telefonen.
+Hem visar bara mapparna du valt, och varje mapp minns sin egen vy.
 
 NYTT
-• Uppläsningen markerar stycke och ord i markdown- och textanteckningar, inte bara i sparade sidor.
+• Hem: Inbox och mapparna du lagt där; allt annat under Alla mappar. Håll in en mapp för Visa på Hem, eller använd … › Redigera Hem.
+• Varje mapp minns lista eller galleri, ordning, gruppering och Kompakt för sig.
+• Mappar visar ikonen och färgen du gav dem på Macen, i listan och som gallerikort.
+• Logotypen växer medan appen startar.
 
 FIXAT
-• Ett Inbox-objekt som markeras som oläst på Macen syns nu på telefonen.
-• Exporterade rapporter och vanliga sidor behåller den lilla rutan i en kompakt lista.
+• Kompakt erbjuds inte längre där det inte ändrade något.
 
 TESTA
-• Läs upp en markdown-anteckning och se stycke- och ordmarkeringen.
-• Markera ett Inbox-objekt som oläst på Macen och öppna sedan Inbox här.
+• Öppna Alla mappar, håll in en mapp, välj Visa på Hem, gå tillbaka.
+• Sätt en mapp till galleri och en annan till lista, växla sedan mellan dem.

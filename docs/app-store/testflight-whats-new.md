@@ -25,15 +25,17 @@ screen; the sender warns past that.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Read-aloud follows along in notes too, and the Mac's "mark as unread" reaches the phone.
+Home shows only the folders you chose, and every folder remembers its own view.
 
 NEW
-• Listening highlights the paragraph and word in markdown and text notes, not only saved pages.
+• Home: the Inbox and the folders you put there; everything else under All Folders. Hold a folder for Show on Home, or use … › Edit Home.
+• Each folder remembers list or gallery, order, grouping and Condensed on its own.
+• Folders show the icon and colour you gave them on the Mac, in the list and as gallery cards.
+• The launch logo grows while the app starts.
 
 FIXED
-• Marking an Inbox item unread on the Mac now shows on the phone.
-• Exported reports and plain pages keep the small tile in a condensed list.
+• Condensed is no longer offered where it changed nothing.
 
 TRY
-• Read a markdown note aloud and watch the paragraph and word marks.
-• Mark an Inbox item unread on the Mac, then open the Inbox here.
+• Open All Folders, hold a folder, choose Show on Home, go back.
+• Set one folder to gallery and another to list, then switch between them.
