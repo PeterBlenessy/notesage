@@ -4,7 +4,8 @@ import { articleMetaFor } from "@/lib/article-meta-cache";
 import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
 import { useMobileStore } from "@/stores/mobile-store";
 import { cn } from "@/lib/utils";
-import { FileRow, iconFor, THUMBNAIL_SLOT, type FileRowProps } from "./FileRow";
+import { FileRow, entrySwipeActions, iconFor, THUMBNAIL_SLOT, type FileRowProps } from "./FileRow";
+import { SwipeRevealRow } from "./SwipeRevealRow";
 import { useLongPress } from "./useLongPress";
 import { presentEntryMenu } from "@/lib/mobile-entry-actions";
 import { ListenButton } from "./ListenButton";
@@ -29,6 +30,11 @@ import { readingLine, READ_THRESHOLD } from "./reading-progress";
  *
  * `condensed` drops the excerpt and shrinks the thumbnail: one line per row,
  * for a library that has grown past browsing into scanning.
+ *
+ * Swipe (Share, Delete) is the SAME set the plain row offers — see
+ * `entrySwipeActions`. It was missing here until 2026-09-05, which read as
+ * "rows with a headphone cannot be swiped": the only rows that swiped were
+ * the ones that had fallen back to `FileRow` for want of a capture header.
  */
 export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: boolean }) {
   const { entry } = props;
@@ -86,9 +92,10 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
   const slot = condensed ? THUMBNAIL_SLOT.small : THUMBNAIL_SLOT.large;
 
   return (
-    // The row button and the Listen button are SIBLINGS: a button may not
-    // contain another, and a `div[role=button]` around a real button is the
-    // nested-interactive pattern assistive tech handles inconsistently.
+    <SwipeRevealRow actions={entrySwipeActions(entry, props.actionContext, props.onChanged)}>
+    {/* The row button and the Listen button are SIBLINGS: a button may not
+        contain another, and a `div[role=button]` around a real button is the
+        nested-interactive pattern assistive tech handles inconsistently. */}
     <div
       className={cn(
         "flex items-stretch",
@@ -151,5 +158,6 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
       {/* Read aloud without opening: the row's one control (#833). */}
       <ListenButton entry={entry} size="row" />
     </div>
+    </SwipeRevealRow>
   );
 }
