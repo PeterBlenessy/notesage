@@ -207,9 +207,9 @@ function MoveToProjectMenu({ task }: { task: AgentTask }) {
 /**
  * t("activity.rerunTranscription") action shown on a finished (done or errored)
  * transcription job — an icon-only, hover-revealed control listing every
- * downloaded Whisper model. Picking one re-transcribes the retained
- * `audio.wav` and replaces the displayed transcript — the fix for "wrong
- * model, bad result."
+ * downloaded Whisper model. Picking one re-transcribes the retained audio
+ * (`audio.wav`, or the phone's `audio.m4a`) and replaces the displayed
+ * transcript — the fix for "wrong model, bad result."
  *
  * The language can be changed here too. A wrong language is the more common
  * failure and the more destructive one: the model hears the words correctly
@@ -357,7 +357,7 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
         ? task.detectedLanguage
         : task.language
       : undefined;
-  // The bundle folder holding audio.wav + transcript.md — "where did my
+  // The bundle folder holding the audio + transcript.md — "where did my
   // recording go" should never be a question (#698).
   const bundlePath = revealTarget ? dirname(revealTarget) : undefined;
 
@@ -411,6 +411,13 @@ export function TranscriptionCard({ task, onRemove }: { task: AgentTask; onRemov
           </p>
           {summary && (
             <p className="text-[11px] text-muted-foreground/80 tabular-nums">{summary}</p>
+          )}
+          {/* Provenance — a bundle the phone recorded says so, so three cards
+              after a Mac wakes up are not a mystery. */}
+          {task.sourceDevice && (
+            <p className="text-[11px] text-muted-foreground/80" data-testid="transcription-source-device">
+              {t("activity.fromDevice", { device: task.sourceDevice })}
+            </p>
           )}
           {languageUsed && (
             <p className="text-[11px] text-muted-foreground/80">

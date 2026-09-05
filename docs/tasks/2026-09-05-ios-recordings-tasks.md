@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-09-05 |
-| **Status** | Not started |
+| **Status** | Phase 2 desktop side (#12–#18) implemented; Phase 0/1/3/4 and the device passes (#11, #19) not started |
 | **PRD** | [ios-recordings](../prds/2026-09-05-ios-recordings.md) |
 | **Total** | 29 tasks: 8S, 13M, 8L |
 | **Suggested order** | Phase 0 spike (#1–#2) → Phase 1 capture (#3–#11) → Phase 2 Mac handoff (#12–#19) → Phase 3 playback (#20–#25) → docs + build (#26–#27) → Phase 4 optional on-device (#28–#29) |
@@ -121,43 +121,43 @@ Run every *Capture* gate in the PRD on a device (lock, decline, answer, AirPod, 
 
 ## Phase 2 — The Mac picks it up
 
-### #12 — `manifest.ts`: the `recording.json` contract in TypeScript
+### ✅ #12 — `manifest.ts`: the `recording.json` contract in TypeScript
 
 **Complexity:** S · **Category:** frontend · **Depends on:** — (fixture shared with #5) · **Files:** `src/lib/transcription/manifest.ts` (new), `src/lib/transcription/__tests__/manifest.test.ts`, `tests/fixtures/recording-manifest.v1.json`
 
 `RECORDING_MANIFEST`, `RecordingManifest`, `TranscriptionStatus`, `parseRecordingManifest` (tolerant: unknown fields preserved, wrong `version` → `null`), `serializeRecordingManifest` (stable key order), `isPendingTranscription(manifest, transcriptExists)`, `withTranscriptionStatus(manifest, status)`. Tests round-trip the shared fixture and cover every rejection.
 
-### #13 — `recordingsDir(root)` + the Mac's own bundles get a manifest
+### ✅ #13 — `recordingsDir(root)` + the Mac's own bundles get a manifest
 
 **Complexity:** S · **Category:** frontend · **Depends on:** #12 · **Files:** `src/lib/notes-root.ts`, `src/lib/transcription/bundle.ts`, `src/hooks/useMeetingRecording.ts`
 
 `recordingsDir(root)` beside `inboxDir`. After `stop_recording` on the Mac, `useMeetingRecording` writes a `recording.json` (`createdBy.app: "notesage-macos"`, `codec: "pcm"`, bytes from the `RecordingResult`) into the bundle before dispatching `startTranscription` — so the format is bilateral and the scanner treats Mac and phone bundles by one rule. Also fix the `Meeting <stamp>` comment drift in `bundle.ts:9`. Tests: the manifest is written with the expected fields.
 
-### #14 — Desktop commands: `file_size` and `icloud_ensure_downloaded`
+### ✅ #14 — Desktop commands: `file_size` and `icloud_ensure_downloaded`
 
 **Complexity:** M · **Category:** backend · **Depends on:** — · **Files:** `src-tauri/src/commands/file.rs`, `src-tauri/src/commands/sync.rs`, `src-tauri/src/lib.rs`, `src/lib/tauri.ts`, `docs/tauri-commands.md`
 
 `file_size(path) -> u64` — verified: the desktop surface has only `path_exists`; there is no stat/size command to reuse. `icloud_ensure_downloaded(path) -> "ready" | "downloading" | "failed"` on macOS: detect the `.<name>.icloud` placeholder, call `NSFileManager.startDownloadingUbiquitousItem(at:)` via `objc2-foundation` (already a dependency), report state; non-macOS returns `"ready"` when the file exists. Rust tests for placeholder-name detection; the download call itself is verified in #19's device pass.
 
-### #15 — `useRecordingsInbox`: scan, watch, gate, queue, claim
+### ✅ #15 — `useRecordingsInbox`: scan, watch, gate, queue, claim
 
 **Complexity:** L · **Category:** frontend · **Depends on:** #12, #13, #14 · **Files:** `src/hooks/useRecordingsInbox.ts` (new), `src/App.tsx` (mount it — a hook that is not mounted never runs), `src/hooks/useFileWatcher.ts` (no change expected; verify the events reach the new hook)
 
 On `startupReady`: list `recordingsDir(root)` (`icloudNotesagePath ?? resolveNotesRoot(...)`), evaluate every `Recording *` directory. Subscribe to `file-changed-batch`; re-evaluate any bundle a `create`/`modify` under `Recordings/` touches (debounced per bundle, 2 s). Eligibility: manifest parses · no `transcript.md` · `transcription.status` not `running` on another device within 60 min · not `done` · not `failed` · not already tracked in `activity-store` by `audioPath` · `file_size(audio) === manifest.audio.bytes` (placeholder → `icloud_ensure_downloaded`, then wait for the next event). Eligible bundles enter a FIFO; one `startTranscription({ audioPath, recordingStartedAt: Date.parse(startedAt), recordingDurationSecs, language })` at a time, the next dispatched when the activity item leaves `running`. Claim = write `running` (with the Mac's device name) before dispatch; `done` / `failed` written from the activity transition. Pure helpers (`evaluateBundle`, `nextEligible`) exported for tests.
 
-### #16 — Scanner tests
+### ✅ #16 — Scanner tests
 
 **Complexity:** M · **Category:** frontend · **Depends on:** #15 · **Files:** `src/hooks/__tests__/useRecordingsInbox.test.ts`
 
 With the Tauri mock: startup scan finds two pending, one done, one Mac WAV bundle without a manifest (ignored — until #13 writes one; assert both before/after) → exactly two jobs, in stamp order, never concurrently; size mismatch defers and a later `modify` event with a matching size dispatches; `running` elsewhere < 60 min skips, > 60 min reclaims; `failed` is skipped on rescan; the manifest's `transcription` field is written at claim, done and failure with the device name; hook unmount clears listeners.
 
-### #17 — `TranscriptionCard`: provenance caption + container-agnostic paths
+### ✅ #17 — `TranscriptionCard`: provenance caption + container-agnostic paths
 
 **Complexity:** S · **Category:** frontend · **Depends on:** #15 · **Files:** `src/components/activity/cards/TranscriptionCard.tsx`, `src/stores/activity-store.ts`, `src/lib/transcription/bundle.ts`
 
 `AgentTask` gains optional `sourceDevice`; the card shows `from Peter's iPhone`. Audit `transcriptPathForAudio` / `moveBundleToProject` / the card's `movedAudio` reconstruction for `audio.m4a` (they take `dirname` / `basename`, so they should already work — the test proves it). "Move to project" moves `recording.json` along with the rest (it does, being folder-level — assert it).
 
-### #18 — Docs for the desktop side
+### ✅ #18 — Docs for the desktop side
 
 **Complexity:** S · **Category:** docs · **Depends on:** #15 · **Files:** `docs/features/ai-workflows.md` (Meeting Recording section: the manifest, the pending rule, discovery), `docs/features/inbox.md` (a sentence: `Recordings/` follows the same root rule), `docs/architecture.md` (hook + store field), `docs/tauri-commands.md`
 

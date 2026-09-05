@@ -11,7 +11,10 @@ adds selection, keyboard, and drag-to-project.
   is the synced iCloud library (`settings.icloudNotesagePath`, the same root
   the pins file uses) when sync is on, else `settings.notesRootPath` expanded
   by `resolveNotesRoot` (`src/lib/notes-root.ts`), the one place its `~` is
-  handled.
+  handled. `Recordings/` follows the same root rule (`recordingsDir`, same
+  file) — the phone's recording bundles land beside the Inbox and the Mac's
+  `useRecordingsInbox` scans them there (docs/features/ai-workflows.md
+  § Meeting Recording).
 - **A mode, not a document.** Quiet Composer is a single-document shell, so
   the list cannot be a tab beside the article it opens. `inbox-store.open`
   swaps the document column between `InboxView` and the editor

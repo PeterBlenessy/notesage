@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "createdBy": {
+    "device": "Peter's iPhone",
+    "app": "notesage-ios",
+    "appVersion": "0.57.0"
+  },
+  "startedAt": "2026-09-05T14:02:11+02:00",
+  "durationSecs": 1834.2,
+  "source": "microphone",
+  "language": "sv",
+  "audio": {
+    "file": "audio.m4a",
+    "bytes": 14703112,
+    "codec": "aac",
+    "sampleRate": 48000,
+    "channels": 1,
+    "bitrate": 64000
+  },
+  "transcription": null
+}

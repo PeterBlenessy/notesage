@@ -590,6 +590,9 @@ export interface RecordingResult {
   peak: number;
 }
 
+/** Mirrors the Rust `DownloadState` (`rename_all = "lowercase"`). */
+export type ICloudDownloadState = "ready" | "downloading" | "failed";
+
 export interface WhisperModelInfo {
   name: string;
   size_bytes: number;
@@ -860,6 +863,15 @@ export const tauriApi = {
     return await invoke<boolean>("path_exists", { path });
   },
 
+  /**
+   * On-disk size of a file in bytes without reading it. Rejects for a
+   * missing file — including an evicted iCloud placeholder, which is the cue
+   * to call `icloudEnsureDownloaded`.
+   */
+  async fileSize(path: string): Promise<number> {
+    return await invoke<number>("file_size", { path });
+  },
+
   async openFolderDialog(): Promise<string | null> {
     return await invoke<string | null>("open_folder_dialog");
   },
@@ -876,6 +888,14 @@ export const tauriApi = {
 
   async getHomeDir(): Promise<string> {
     return await invoke<string>("get_home_dir");
+  },
+
+  /**
+   * This machine's user-facing name ("Peter's MacBook Pro") — the device
+   * label written into a recording manifest's `transcription` block.
+   */
+  async getDeviceName(): Promise<string> {
+    return await invoke<string>("get_device_name");
   },
 
   async revealInFinder(path: string): Promise<void> {
@@ -1059,6 +1079,16 @@ export const tauriApi = {
   // iCloud sync operations
   async getICloudPath(): Promise<string | null> {
     return await invoke<string | null>("get_icloud_path");
+  },
+
+  /**
+   * Ask iCloud Drive to materialize an evicted file (`.<name>.icloud` beside
+   * a missing `<name>`). `ready` when it is already on disk, `downloading`
+   * once the request is accepted (wait for the watcher's create event, do
+   * not poll), `failed` when there is nothing to download from.
+   */
+  async icloudEnsureDownloaded(path: string): Promise<ICloudDownloadState> {
+    return await invoke<ICloudDownloadState>("icloud_ensure_downloaded", { path });
   },
 
   async readSyncSettings(notesagePath: string): Promise<SyncSettings | null> {
