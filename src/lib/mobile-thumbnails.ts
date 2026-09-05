@@ -136,9 +136,24 @@ const thumbnailLimiter = createLimiter(THUMBNAIL_CONCURRENCY);
 
 export type ThumbnailResult =
   | { kind: "markdown"; html: string }
-  | { kind: "image"; url: string }
-  | { kind: "pdf"; url: string }
+  // `bytes` is the picture itself, kept alongside the object URL purely so
+  // the disk cache can write it. Reading it back OUT of a `blob:` URL is not
+  // an option: the app's CSP has no `blob:` in `connect-src`, so `fetch` on
+  // one is refused — silently, if the caller is catching (it was).
+  | { kind: "image"; url: string; bytes?: Uint8Array }
+  | { kind: "pdf"; url: string; bytes?: Uint8Array }
   | { kind: "icon" };
+
+/** A picture result that also carries its bytes, for the disk cache. */
+async function pictureFrom(blob: Blob, kind: "image" | "pdf" = "image"): Promise<ThumbnailResult> {
+  let bytes: Uint8Array | undefined;
+  try {
+    bytes = new Uint8Array(await blob.arrayBuffer());
+  } catch {
+    // Without bytes the picture still shows; it just will not be cached.
+  }
+  return { kind, url: URL.createObjectURL(blob), bytes };
+}
 
 function imageMimeFor(name: string): string {
   const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
@@ -209,7 +224,7 @@ async function buildThumbnail(
         if (isStale()) throw new ThumbnailCancelled();
         const blob = await shrinkForCard(bytes, "image/jpeg");
         if (isStale()) throw new ThumbnailCancelled();
-        return { kind: "image", url: URL.createObjectURL(blob) };
+        return await pictureFrom(blob);
       } catch (err) {
         if (err instanceof ThumbnailCancelled) throw err;
       }
@@ -240,7 +255,7 @@ async function buildThumbnail(
         if (isStale()) throw new ThumbnailCancelled();
         // Already generated at 480 by the OS, so no shrink needed.
         const blob = new Blob([png.slice().buffer], { type: "image/png" });
-        return { kind: "image", url: URL.createObjectURL(blob) };
+        return await pictureFrom(blob);
       } catch (err) {
         if (err instanceof ThumbnailCancelled) throw err;
         // Fall through to the web pipeline (desktop dev, tests).
@@ -271,7 +286,7 @@ async function buildThumbnail(
           if (isStale()) throw new ThumbnailCancelled();
           const blob = await shrinkForCard(png, "image/png");
           if (isStale()) throw new ThumbnailCancelled();
-          return { kind: "image", url: URL.createObjectURL(blob) };
+          return await pictureFrom(blob);
         }
       } catch (err) {
         if (err instanceof ThumbnailCancelled) throw err;
@@ -284,7 +299,7 @@ async function buildThumbnail(
       // A library photo can be many megapixels; a card is 120pt.
       const blob = await shrinkForCard(bytes, imageMimeFor(entry.name));
       if (isStale()) throw new ThumbnailCancelled();
-      return { kind: "image", url: URL.createObjectURL(blob) };
+      return await pictureFrom(blob);
     }
     if (kind === "pdf") {
       const bytes = await iosReadBinary(entry.path);
@@ -399,7 +414,7 @@ async function diskCached(
     if (!key) return null;
     const bytes = await iosThumbCacheGet(key);
     if (!bytes) return null;
-    return { kind: "image", url: URL.createObjectURL(new Blob([bytes.slice().buffer])) };
+    return { kind: "image", url: URL.createObjectURL(new Blob([bytes.slice().buffer])), bytes };
   } catch {
     // No native side, or an unreadable entry: rebuild, which is always safe.
     return null;
@@ -417,8 +432,12 @@ async function rememberOnDisk(
   try {
     const key = await diskKey(entry, theme);
     if (!key) return;
-    const blob = await (await fetch(result.url)).blob();
-    const buf = new Uint8Array(await blob.arrayBuffer());
+    const buf = result.bytes;
+    // No bytes means the picture came from somewhere that could not give
+    // them up. Skip rather than reach for the object URL: `fetch` on a
+    // `blob:` is blocked by this app's CSP, which is exactly how this cache
+    // came to write nothing at all on its first outing.
+    if (!buf) return;
     let binary = "";
     for (const b of buf) binary += String.fromCharCode(b);
     await iosThumbCachePut(key, btoa(binary));
