@@ -1297,8 +1297,8 @@ pub async fn ios_stat_file(app: tauri::AppHandle, rel_path: String) -> Result<Fi
 #[cfg(target_os = "ios")]
 mod ios_impl {
     use super::{
-        DownloadState, FileEntry, FileStat, LibraryGrant, NotificationStatus, RecordingStopped, SpeechStarted, SpeechState,
-        SpeechVoice,
+        DownloadState, FileEntry, FileStat, LibraryGrant, LibraryKind, NotificationStatus, RecordingStopped,
+        SpeechStarted, SpeechState, SpeechVoice,
     };
     use tauri::AppHandle;
     use tauri_plugin_notesage_ios::NotesageIosExt;
