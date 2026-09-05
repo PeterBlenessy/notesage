@@ -9,7 +9,7 @@ import {
   fireEvent,
   setMockInvokeHandler,
 } from "@/test/component-harness";
-import { useMobileStore } from "@/stores/mobile-store";
+import { useMobileStore, resolveFolderView } from "@/stores/mobile-store";
 import { clearArticleMetaCache } from "@/lib/article-meta-cache";
 import { startSpeechEvents } from "@/lib/speech-controller";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
@@ -307,7 +307,7 @@ describe("sort toggle (#632)", () => {
     expect(rowNames()[1]).toContain("zulu.md");
     expect(rowNames()[2]).toContain("Alpha");
     // The choice persists in the store.
-    expect(useMobileStore.getState().sortMode).toBe("modified");
+    expect(resolveFolderView(useMobileStore.getState(), "").sortMode).toBe("modified");
   });
 
   it("declares the Files-style view-options menu: view section, then labeled sort picks", async () => {
@@ -316,7 +316,11 @@ describe("sort toggle (#632)", () => {
       captured = (args as { spec: CapturedChromeSpec }).spec;
       return null;
     });
-    setMockInvokeHandler("ios_list_directory", () => []);
+    // One document, so the density row is offered (it is left out of a
+    // listing with nothing to condense).
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false, modified: 100 },
+    ]);
 
     renderWithProviders(<LibraryBrowser />);
     await waitFor(() => expect(captured.topRight?.id).toBe("view-options"));
@@ -613,11 +617,11 @@ describe("gallery view toggle (#633)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Switch to gallery view" }));
     expect(await screen.findByRole("list", { name: "Notes gallery" })).toBeTruthy();
-    expect(useMobileStore.getState().viewMode).toBe("gallery");
+    expect(resolveFolderView(useMobileStore.getState(), "").viewMode).toBe("gallery");
 
     fireEvent.click(screen.getByRole("button", { name: "Switch to list view" }));
     await waitFor(() => expect(screen.queryByRole("list", { name: "Notes gallery" })).toBeNull());
-    expect(useMobileStore.getState().viewMode).toBe("list");
+    expect(resolveFolderView(useMobileStore.getState(), "").viewMode).toBe("list");
   });
 
   it("only invokes allowed read commands while browsing in gallery mode", async () => {
@@ -735,8 +739,12 @@ describe("create flow (#586)", () => {
 });
 
 describe("edit flow (#586)", () => {
-  it("an empty new note auto-enters edit mode; Save writes and renames to the doc title", async () => {
-    useMobileStore.setState({ openDoc: { relPath: "Sub/Untitled.md", name: "Untitled.md" } });
+  it("an empty new note auto-enters edit mode; Save writes and renames to the doc title, and what was remembered follows", async () => {
+    useMobileStore.setState({
+      openDoc: { relPath: "Sub/Untitled.md", name: "Untitled.md" },
+      recentlyRead: ["Sub/Untitled.md"],
+      readingProgress: { "Sub/Untitled.md": 0.5 },
+    });
     setMockInvokeHandler("ios_read_file", () => "");
     setMockInvokeHandler("render_markdown_fragment", () => "");
     setMockInvokeHandler("ios_write_file", (args) => {
@@ -761,6 +769,49 @@ describe("edit flow (#586)", () => {
       expect(useMobileStore.getState().openDoc?.relPath).toBe("Sub/Shopping List.md"),
     );
     expect(calledCommands()).toContain("ios_write_file");
+    // The title rename is a rename like any other: recents and progress
+    // follow the file under its new name instead of pointing at nothing.
+    expect(useMobileStore.getState().recentlyRead).toContain("Sub/Shopping List.md");
+    expect(useMobileStore.getState().recentlyRead).not.toContain("Sub/Untitled.md");
+    expect(useMobileStore.getState().readingProgress).toEqual({ "Sub/Shopping List.md": 0.5 });
+  });
+
+  it("Move to folder from the Reader takes progress, recents and pins along under the new path", async () => {
+    useMobileStore.setState({
+      openDoc: { relPath: "Sub/hello.md", name: "hello.md" },
+      recentlyRead: ["Sub/hello.md"],
+      readingProgress: { "Sub/hello.md": 0.4 },
+    });
+    let pins = JSON.stringify({ paths: ["Sub/hello.md"] });
+    setMockInvokeHandler("ios_read_file", (args) => {
+      const a = args as { relPath: string };
+      return a.relPath === ".notesage/pins.json" ? pins : "# hello\n\nworld";
+    });
+    setMockInvokeHandler("render_markdown_fragment", () => "<h1>hello</h1><p>world</p>");
+    setMockInvokeHandler("ios_list_directory", (args) =>
+      (args as { relPath: string }).relPath === ""
+        ? [
+            { name: "Archive", path: "Archive", is_directory: true, hidden: false },
+            { name: "Sub", path: "Sub", is_directory: true, hidden: false },
+          ]
+        : [],
+    );
+    setMockInvokeHandler("ios_context_menu", () => "Archive");
+    setMockInvokeHandler("ios_move_file", () => "Archive/hello.md");
+    setMockInvokeHandler("ios_ensure_directory", () => undefined);
+    setMockInvokeHandler("ios_write_file", (args) => {
+      pins = (args as { content: string }).content;
+    });
+
+    renderWithProviders(<Reader />);
+    await screen.findByText("hello");
+    window.dispatchEvent(new CustomEvent("notesage:chrome", { detail: { id: "move" } }));
+
+    await waitFor(() => expect(useMobileStore.getState().openDoc).toEqual({ relPath: "Archive/hello.md", name: "hello.md" }));
+    const s = useMobileStore.getState();
+    expect(s.readingProgress).toEqual({ "Archive/hello.md": 0.4 });
+    expect(s.recentlyRead).toEqual(["Archive/hello.md"]);
+    expect(JSON.parse(pins).paths).toEqual(["Archive/hello.md"]);
   });
 
   it("editing an existing note whose title matches the filename saves without renaming", async () => {

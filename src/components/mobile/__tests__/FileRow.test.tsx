@@ -264,3 +264,33 @@ describe("FileRow thumbnails (list rows, 2026-09-03)", () => {
     expect(screen.queryByTestId("row-thumbnail")).toBeNull();
   });
 });
+
+describe("swipe-to-delete forgets the path like the hold menu's Delete does", () => {
+  it("calls onPathRemoved after the confirmed delete", async () => {
+    const { fireEvent, setMockInvokeHandler } = await import("@/test/component-harness");
+    let deleted: string | null = null;
+    setMockInvokeHandler("ios_context_menu", () => "delete");
+    setMockInvokeHandler("ios_delete_file", (args) => {
+      deleted = (args as { relPath: string }).relPath;
+      return null;
+    });
+    const onPathRemoved = vi.fn();
+    const onChanged = vi.fn();
+    renderWithProviders(
+      <FileRow
+        entry={{ name: "gone.md", path: "Notes/gone.md", is_directory: false, hidden: false }}
+        onActivate={() => {}}
+        onChanged={onChanged}
+        actionContext={{ ...noopActions, onPathRemoved }}
+      />,
+    );
+    const row = screen.getByRole("button", { name: /gone\.md/ });
+    fireEvent.pointerDown(row, { clientX: 300, clientY: 0 });
+    fireEvent.pointerMove(row, { clientX: 100, clientY: 0 });
+    fireEvent.pointerUp(row, { clientX: 100, clientY: 0 });
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(onPathRemoved).toHaveBeenCalledWith("Notes/gone.md"));
+    expect(deleted).toBe("Notes/gone.md");
+    expect(onChanged).toHaveBeenCalled();
+  });
+});

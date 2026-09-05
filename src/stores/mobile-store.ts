@@ -94,6 +94,28 @@ export type ViewMode = "list" | "gallery";
 export type ListDensity = "comfortable" | "condensed";
 
 /**
+ * How one folder's listing looks: layout, density, order and grouping.
+ * Remembered per folder, the way Finder and Files do it — the root is a
+ * short list of folders, the Inbox a gallery of pictures, a project a list
+ * by date — instead of one setting that every screen follows.
+ */
+export interface FolderView {
+  viewMode: ViewMode;
+  listDensity: ListDensity;
+  sortMode: SortMode;
+  groupMode: GroupMode;
+}
+
+/** One folder's remembered view. A list rather than a map keyed by path
+ *  because the eviction order must be the order of setting, and a JS object
+ *  enumerates a key like `"2024"` first whatever the insertion order — a
+ *  year-named folder would always be the one forgotten. */
+export interface FolderViewEntry {
+  relPath: string;
+  view: Partial<FolderView>;
+}
+
+/**
  * Longest-edge cap for embedded images. `"original"` is offered but not the
  * default: it is the honest option for someone who wants archival fidelity and
  * accepts the iCloud cost, not something to hand people by accident.
@@ -113,9 +135,18 @@ interface MobileStore {
   sortMode: SortMode;
   /** Listing grouping for the library browser (persisted). */
   groupMode: GroupMode;
-  /** List vs. gallery layout for the library listing; global (not per-folder),
-   *  persists across app relaunches. */
+  /** List vs. gallery layout. Together with `listDensity`, `sortMode` and
+   *  `groupMode` this is the FALLBACK for a folder that has no view of its
+   *  own (see `folderViews`): what the app looked like before views were
+   *  remembered per folder, so an upgrade changes nothing a user set. */
   viewMode: ViewMode;
+  /**
+   * Each folder's own view by root-relative path (`""` = root), least
+   * recently set first, persisted; `resolveFolderView` fills in what a
+   * folder has not chosen. Bounded so years of browsing cannot grow it
+   * without end.
+   */
+  folderViews: FolderViewEntry[];
   /**
    * Longest edge, in pixels, for images embedded by the background sweep —
    * or `"original"` to embed them untouched.
@@ -173,7 +204,8 @@ interface MobileStore {
   goBack: () => boolean;
   /** Jump to a breadcrumb depth (0 = root). */
   goToDepth: (depth: number) => void;
-  /** Switch between list and gallery layouts. */
+  /** Switch the folder being viewed between list and gallery. Every view
+   *  setter writes the CURRENT folder's entry in `folderViews`. */
   setViewMode: (mode: ViewMode) => void;
   setImageMaxPixel: (v: ImageMaxPixel) => void;
   setImageQuality: (v: number) => void;
@@ -253,6 +285,11 @@ interface MobileStore {
    *  Recents, the open document, the back trail and the pins file all hold
    *  PATHS, so a move leaves them aiming at a file that no longer exists. */
   rewritePath: (from: string, to: string) => Promise<void>;
+  /** Drop what is remembered about a deleted path and everything under it
+   *  — views, scroll offsets, reading progress, listening positions, reset
+   *  stamps, recents, and its pins in the shared file — so a later entry of
+   *  the same name starts fresh instead of inheriting a dead one's memory. */
+  forgetPath: (relPath: string) => Promise<void>;
 
   /** Test/reset helper. */
   reset: () => void;
@@ -266,6 +303,34 @@ const MAX_READING_PROGRESS = 500;
 /** The reset ledger is bounded like the progress map it guards; the oldest
  *  entries go first — a stamp that old has long been absorbed. */
 const MAX_READING_RESETS = 500;
+/** Folders that remember a view of their own; the oldest forgotten first. */
+const MAX_FOLDER_VIEWS = 200;
+
+/**
+ * The view a folder shows: its own choices over the app-wide fallback. The
+ * root is the exception — a list by default whatever the fallback says,
+ * because a root of folders rendered as a wall of identical cards was the
+ * complaint that made views per-folder in the first place.
+ */
+export function resolveFolderView(
+  s: Pick<MobileStore, "folderViews" | "viewMode" | "listDensity" | "sortMode" | "groupMode">,
+  relPath: string,
+): FolderView {
+  const own = s.folderViews.find((e) => e.relPath === relPath)?.view ?? {};
+  return {
+    viewMode: own.viewMode ?? (relPath === "" ? "list" : s.viewMode),
+    listDensity: own.listDensity ?? s.listDensity,
+    sortMode: own.sortMode ?? s.sortMode,
+    groupMode: own.groupMode ?? s.groupMode,
+  };
+}
+
+function withFolderView(views: FolderViewEntry[], relPath: string, patch: Partial<FolderView>): FolderViewEntry[] {
+  // Moved to the end: the folder just set is the newest for eviction.
+  const previous = views.find((e) => e.relPath === relPath)?.view ?? {};
+  const next = [...views.filter((e) => e.relPath !== relPath), { relPath, view: { ...previous, ...patch } }];
+  return next.length > MAX_FOLDER_VIEWS ? next.slice(next.length - MAX_FOLDER_VIEWS) : next;
+}
 
 function withReset(ledger: Record<string, string>, relPath: string, resetAt: string): Record<string, string> {
   const next = { ...ledger, [relPath]: resetAt };
@@ -288,6 +353,7 @@ export const useMobileStore = create<MobileStore>()(
       sortMode: "name",
       groupMode: "none",
       viewMode: "list",
+      folderViews: [],
       imageMaxPixel: 1600,
       imageQuality: 0.8,
       inlineImagesEnabled: true,
@@ -413,8 +479,10 @@ export const useMobileStore = create<MobileStore>()(
         return false;
       },
 
-      setSortMode: (mode) => set({ sortMode: mode }),
-      setGroupMode: (mode) => set({ groupMode: mode }),
+      setSortMode: (mode) =>
+        set((s) => ({ folderViews: withFolderView(s.folderViews, s.currentRelPath(), { sortMode: mode }) })),
+      setGroupMode: (mode) =>
+        set((s) => ({ folderViews: withFolderView(s.folderViews, s.currentRelPath(), { groupMode: mode }) })),
 
       goToDepth: (depth) =>
         set((s) => ({
@@ -423,7 +491,8 @@ export const useMobileStore = create<MobileStore>()(
           docStack: [],
         })),
 
-      setViewMode: (mode) => set({ viewMode: mode }),
+      setViewMode: (mode) =>
+        set((s) => ({ folderViews: withFolderView(s.folderViews, s.currentRelPath(), { viewMode: mode }) })),
       setImageMaxPixel: (v) => set({ imageMaxPixel: v }),
       // Clamped rather than trusted: a value outside 0-1 is not a preference,
       // it is a bug, and it would reach CGImageDestination as one.
@@ -474,7 +543,8 @@ export const useMobileStore = create<MobileStore>()(
           return { readingProgress: next };
         });
       },
-      setListDensity: (density) => set({ listDensity: density }),
+      setListDensity: (density) =>
+        set((s) => ({ folderViews: withFolderView(s.folderViews, s.currentRelPath(), { listDensity: density }) })),
 
       rememberSpeechVoice: (language, voiceId) =>
         set((s) => ({ speechVoices: { ...s.speechVoices, [language]: voiceId } })),
@@ -542,28 +612,48 @@ export const useMobileStore = create<MobileStore>()(
 
       rewritePath: async (from, to) => {
         if (from === to) return;
-        const swap = (p: string) => (p === from ? to : p);
+        // The path itself, and — when it is a folder — everything under it:
+        // a renamed folder takes its notes' progress, recents, pins and
+        // views with it. The `/` boundary keeps "Old" from touching "Older".
+        const under = (p: string) => p === from || p.startsWith(`${from}/`);
+        const swap = (p: string) => (under(p) ? `${to}${p.slice(from.length)}` : p);
+        // A moved entry replaces whatever already sits at its new key (a
+        // deleted document's stale memory): the document that was just
+        // renamed is the live one, never the other way round.
+        const moveRef = <R extends { relPath: string; name: string }>(ref: R): R => {
+          const relPath = swap(ref.relPath);
+          return { ...ref, relPath, name: relPath.slice(relPath.lastIndexOf("/") + 1) };
+        };
+        const swapKeys = <V,>(map: Record<string, V>): Record<string, V> => {
+          const moved = Object.entries(map).filter(([k]) => under(k)).map(([k, v]) => [swap(k), v] as const);
+          const taken = new Set(moved.map(([k]) => k));
+          const kept = Object.entries(map).filter(([k]) => !under(k) && !taken.has(k));
+          return Object.fromEntries([...kept, ...moved]);
+        };
 
-        set((s) => ({
-          recentlyRead: s.recentlyRead.map(swap),
-          openDoc: s.openDoc?.relPath === from ? { ...s.openDoc, relPath: to } : s.openDoc,
-          docStack: s.docStack.map((d) => (d.relPath === from ? { ...d, relPath: to } : d)),
-          // Scroll offsets are keyed by path too; a stale key would restore
-          // the wrong position and never be collected.
-          speechPositions: Object.fromEntries(
-            Object.entries(s.speechPositions).map(([k, v]) => [swap(k), v]),
-          ),
-          readingResets: Object.fromEntries(
-            Object.entries(s.readingResets).map(([k, v]) => [swap(k), v]),
-          ),
-          speech: s.speech && s.speech.relPath === from ? { ...s.speech, relPath: to } : s.speech,
-          readingProgress: Object.fromEntries(
-            Object.entries(s.readingProgress).map(([k, v]) => [swap(k), v]),
-          ),
-          scrollOffsets: Object.fromEntries(
-            Object.entries(s.scrollOffsets).map(([k, v]) => [swap(k), v]),
-          ),
-        }));
+        set((s) => {
+          // A renamed entry replaces any entry already at the new name (a
+          // deleted folder's stale memory), and counts as the newest.
+          const moved = s.folderViews.filter((e) => under(e.relPath)).map((e) => ({ ...e, relPath: swap(e.relPath) }));
+          const taken = new Set(moved.map((e) => e.relPath));
+          const kept = s.folderViews.filter((e) => !under(e.relPath) && !taken.has(e.relPath));
+          return {
+            folderViews: [...kept, ...moved],
+            recentlyRead: [...new Set(s.recentlyRead.map(swap))],
+            // A document reference carries its name too; a rename moves both
+            // in one update, so a Reader keyed by the path never remounts
+            // showing the old title over the new path.
+            openDoc: s.openDoc && under(s.openDoc.relPath) ? moveRef(s.openDoc) : s.openDoc,
+            docStack: s.docStack.map((d) => (under(d.relPath) ? moveRef(d) : d)),
+            speechPositions: swapKeys(s.speechPositions),
+            readingResets: swapKeys(s.readingResets),
+            speech: s.speech && under(s.speech.relPath) ? { ...s.speech, relPath: swap(s.speech.relPath) } : s.speech,
+            readingProgress: swapKeys(s.readingProgress),
+            // Scroll offsets are keyed by path too; a stale key would restore
+            // the wrong position and never be collected.
+            scrollOffsets: swapKeys(s.scrollOffsets),
+          };
+        });
 
         // The pins FILE is the source of truth and is shared with the
         // desktop — updating only the cached array would drop the pin the
@@ -576,11 +666,50 @@ export const useMobileStore = create<MobileStore>()(
         } catch {
           return;
         }
-        if (!current.includes(from)) return;
+        if (!current.some(under)) return;
         const next = current.map(swap);
-        await iosEnsureDirectory(".notesage");
-        await iosWriteFile(PINS_FILE_REL_PATH, serializePinsFileContent(next));
-        set({ pinnedPaths: next });
+        // The rename or move on disk has already happened; a pins file that
+        // cannot be written must not turn it into a failure. The next
+        // read-modify-write of the file catches up.
+        try {
+          await iosEnsureDirectory(".notesage");
+          await iosWriteFile(PINS_FILE_REL_PATH, serializePinsFileContent(next));
+          set({ pinnedPaths: next });
+        } catch {
+          // Reported nowhere on purpose: see above.
+        }
+      },
+
+      forgetPath: async (relPath) => {
+        const under = (p: string) => p === relPath || p.startsWith(`${relPath}/`);
+        const dropKeys = <V,>(map: Record<string, V>): Record<string, V> =>
+          Object.fromEntries(Object.entries(map).filter(([k]) => !under(k)));
+        set((s) => ({
+          folderViews: s.folderViews.filter((e) => !under(e.relPath)),
+          scrollOffsets: dropKeys(s.scrollOffsets),
+          readingProgress: dropKeys(s.readingProgress),
+          speechPositions: dropKeys(s.speechPositions),
+          readingResets: dropKeys(s.readingResets),
+          recentlyRead: s.recentlyRead.filter((p) => !under(p)),
+          docStack: s.docStack.filter((d) => !under(d.relPath)),
+        }));
+        // The shared pins file too, only when something under the path is
+        // pinned — the same read-modify-write as `togglePin`.
+        let current: string[] = [];
+        try {
+          current = parsePinsFileContent(await iosReadFile(PINS_FILE_REL_PATH));
+        } catch {
+          return;
+        }
+        if (!current.some(under)) return;
+        const next = current.filter((p) => !under(p));
+        try {
+          await iosWriteFile(PINS_FILE_REL_PATH, serializePinsFileContent(next));
+          set({ pinnedPaths: next });
+        } catch {
+          // The delete has already happened; the pins file catches up on
+          // the next read-modify-write.
+        }
       },
 
       reset: () =>
@@ -594,6 +723,7 @@ export const useMobileStore = create<MobileStore>()(
           sortMode: "name",
           groupMode: "none",
           viewMode: "list",
+          folderViews: [],
           pinnedPaths: [],
           scrollOffsets: {},
           speechPositions: {},
@@ -619,6 +749,7 @@ export const useMobileStore = create<MobileStore>()(
         sortMode: s.sortMode,
         groupMode: s.groupMode,
         viewMode: s.viewMode,
+        folderViews: s.folderViews,
         imageMaxPixel: s.imageMaxPixel,
         imageQuality: s.imageQuality,
         inlineImagesEnabled: s.inlineImagesEnabled,

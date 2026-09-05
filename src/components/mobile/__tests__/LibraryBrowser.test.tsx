@@ -8,7 +8,7 @@ import {
   fireEvent,
   setMockInvokeHandler,
 } from "@/test/component-harness";
-import { useMobileStore } from "@/stores/mobile-store";
+import { useMobileStore, resolveFolderView } from "@/stores/mobile-store";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 
 interface CapturedChromeSpec {
@@ -129,9 +129,84 @@ describe("Group by — Pinned (#652)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Sort by modified date" }));
     await waitFor(() => expect(rowNames()[0]).toContain("beta.md"));
-    expect(useMobileStore.getState().sortMode).toBe("modified");
+    expect(resolveFolderView(useMobileStore.getState(), "").sortMode).toBe("modified");
 
     fireEvent.click(screen.getByRole("button", { name: "Switch to gallery view" }));
-    await waitFor(() => expect(useMobileStore.getState().viewMode).toBe("gallery"));
+    await waitFor(() => expect(resolveFolderView(useMobileStore.getState(), "").viewMode).toBe("gallery"));
+  });
+});
+
+describe("the view menu offers Condensed only where it changes something", () => {
+  const menuIds = (spec: CapturedChromeSpec) => spec.topRight?.menu?.map((m) => m.id) ?? [];
+
+  it("leaves Condensed out of a list of folders alone, and brings it back for files or the gallery", async () => {
+    let captured: CapturedChromeSpec = {};
+    setMockInvokeHandler("ios_set_chrome", (args) => {
+      captured = (args as { spec: CapturedChromeSpec }).spec;
+      return null;
+    });
+    setMockInvokeHandler("ios_read_file", () => {
+      throw new Error("not found");
+    });
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Ideas", path: "Ideas", is_directory: true, hidden: false, modified: 100 },
+      { name: "Projects", path: "Projects", is_directory: true, hidden: false, modified: 100 },
+    ]);
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Ideas");
+    await waitFor(() => expect(menuIds(captured)).toContain("view-list"));
+    expect(menuIds(captured)).not.toContain("view-condensed");
+
+    // The gallery packs folder cards tighter, so there it does something.
+    useMobileStore.getState().setViewMode("gallery");
+    await waitFor(() => expect(menuIds(captured)).toContain("view-condensed"));
+    useMobileStore.getState().setViewMode("list");
+    await waitFor(() => expect(menuIds(captured)).not.toContain("view-condensed"));
+  });
+
+  it("offers Condensed in a list that has documents to condense", async () => {
+    let captured: CapturedChromeSpec = {};
+    setMockInvokeHandler("ios_set_chrome", (args) => {
+      captured = (args as { spec: CapturedChromeSpec }).spec;
+      return null;
+    });
+    setMockInvokeHandler("ios_read_file", () => {
+      throw new Error("not found");
+    });
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Ideas", path: "Ideas", is_directory: true, hidden: false, modified: 100 },
+      { name: "note.md", path: "note.md", is_directory: false, hidden: false, modified: 100 },
+    ]);
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("note.md");
+    await waitFor(() => expect(menuIds(captured)).toContain("view-condensed"));
+  });
+});
+
+describe("deleting what is playing", () => {
+  it("stops the article being read aloud when its file is deleted, before forgetting the path", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "keynote.md", path: "keynote.md", is_directory: false, hidden: false, modified: 100 },
+    ]);
+    setMockInvokeHandler("ios_read_file", () => {
+      throw new Error("not found");
+    });
+    setMockInvokeHandler("ios_context_menu", () => "delete");
+    setMockInvokeHandler("ios_delete_file", () => null);
+    setMockInvokeHandler("ios_speech_stop", () => null);
+    useMobileStore.setState({
+      speech: { relPath: "keynote.md", title: "Keynote", playing: true, index: 3, total: 10, rate: 1, language: "en" },
+      speechPositions: { "keynote.md": 3 },
+    });
+    renderWithProviders(<LibraryBrowser />);
+    const row = await screen.findByRole("button", { name: /keynote\.md/ });
+    fireEvent.pointerDown(row, { clientX: 300, clientY: 0 });
+    fireEvent.pointerMove(row, { clientX: 100, clientY: 0 });
+    fireEvent.pointerUp(row, { clientX: 100, clientY: 0 });
+    fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
+    await waitFor(() => expect(useMobileStore.getState().speech).toBeNull());
+    await waitFor(() => expect(useMobileStore.getState().speechPositions).toEqual({}));
   });
 });

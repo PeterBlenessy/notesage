@@ -135,6 +135,32 @@ describe("runEntryAction", () => {
     expect(iosRenameFile).toHaveBeenCalledTimes(1);
   });
 
+  it("a rename tells the browser the new path, so recents, pins and a folder's remembered view follow it", async () => {
+    vi.mocked(iosTextPrompt).mockResolvedValueOnce("New");
+    vi.mocked(iosRenameFile).mockResolvedValueOnce("New");
+    const onPathMoved = vi.fn();
+    const onChanged = vi.fn();
+    const folder: FileEntry = { name: "Old", path: "Old", is_directory: true, hidden: false };
+    await runEntryAction("rename", folder, {
+      isPinned: () => false,
+      togglePin: vi.fn(async () => {}),
+      onPathMoved,
+      onChanged,
+    });
+    expect(iosRenameFile).toHaveBeenCalledWith("Old", "New");
+    expect(onPathMoved).toHaveBeenCalledWith("Old", "New");
+    expect(onChanged).toHaveBeenCalled();
+  });
+
+  it("a delete tells the browser the path is gone, so what was remembered about it is dropped", async () => {
+    vi.mocked(iosContextMenu).mockResolvedValueOnce("delete");
+    const onPathRemoved = vi.fn();
+    const folder: FileEntry = { name: "Gone", path: "Gone", is_directory: true, hidden: false };
+    await runEntryAction("delete", folder, { isPinned: () => false, togglePin: vi.fn(async () => {}), onPathRemoved });
+    expect(iosDeleteFile).toHaveBeenCalledWith("Gone");
+    expect(onPathRemoved).toHaveBeenCalledWith("Gone");
+  });
+
   it("shares and toggles pins", async () => {
     await runEntryAction("share", file, ctx());
     expect(iosShareFile).toHaveBeenCalledWith("Ideas/note.md");

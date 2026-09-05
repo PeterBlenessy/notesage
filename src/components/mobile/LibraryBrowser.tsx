@@ -4,8 +4,8 @@ import { ChevronLeft, FolderOpen, AlertCircle, Plus, FolderPlus, ArrowDownAZ, Cl
 import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory, iosCreateDirectory, iosTextPrompt, iosQuickLook } from "@/lib/ios-api";
 import { toast } from "sonner";
-import { useMobileStore } from "@/stores/mobile-store";
-import { toggleSpeech } from "@/lib/speech-controller";
+import { useMobileStore, resolveFolderView } from "@/stores/mobile-store";
+import { stopSpeech, toggleSpeech } from "@/lib/speech-controller";
 import type { EntryActionContext } from "@/lib/mobile-entry-actions";
 import { FileRow, classifyFile } from "./FileRow";
 import { ArticleRow } from "./ArticleRow";
@@ -42,18 +42,15 @@ export function LibraryBrowser() {
   const goBack = useMobileStore((s) => s.goBack);
   const goToDepth = useMobileStore((s) => s.goToDepth);
   const pickFolder = useMobileStore((s) => s.pickFolder);
-  const sortMode = useMobileStore((s) => s.sortMode);
   const setSortMode = useMobileStore((s) => s.setSortMode);
-  const groupMode = useMobileStore((s) => s.groupMode);
   const setGroupMode = useMobileStore((s) => s.setGroupMode);
   const recentlyRead = useMobileStore((s) => s.recentlyRead);
   const pinnedPaths = useMobileStore((s) => s.pinnedPaths);
   const togglePin = useMobileStore((s) => s.togglePin);
   const rewritePath = useMobileStore((s) => s.rewritePath);
+  const forgetPath = useMobileStore((s) => s.forgetPath);
   const loadPinnedPaths = useMobileStore((s) => s.loadPinnedPaths);
-  const viewMode = useMobileStore((s) => s.viewMode);
   const setViewMode = useMobileStore((s) => s.setViewMode);
-  const listDensity = useMobileStore((s) => s.listDensity);
   const setListDensity = useMobileStore((s) => s.setListDensity);
   const inlineImagesEnabled = useMobileStore((s) => s.inlineImagesEnabled);
   const setInlineImagesEnabled = useMobileStore((s) => s.setInlineImagesEnabled);
@@ -65,6 +62,13 @@ export function LibraryBrowser() {
 
   const currentRelPath = folderStack.length === 0 ? "" : folderStack[folderStack.length - 1].relPath;
   const currentName = folderStack.length === 0 ? libraryName || "Notesage" : folderStack[folderStack.length - 1].name;
+  // This folder's own view (layout, density, order, grouping), remembered
+  // per folder like Finder's — one primitive selector each so a change to
+  // another folder's view does not re-render this listing.
+  const viewMode = useMobileStore((s) => resolveFolderView(s, currentRelPath).viewMode);
+  const listDensity = useMobileStore((s) => resolveFolderView(s, currentRelPath).listDensity);
+  const sortMode = useMobileStore((s) => resolveFolderView(s, currentRelPath).sortMode);
+  const groupMode = useMobileStore((s) => resolveFolderView(s, currentRelPath).groupMode);
 
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [query, setQuery] = useState("");
@@ -360,6 +364,13 @@ export function LibraryBrowser() {
   // note's title will become the filename once editing lands) and
   // long-press offers New Folder via the native UIMenu.
   const atRoot = folderStack.length === 0;
+  // Whether the rows on screen (after the search filter) include a document
+  // — what the density toggle would act on.
+  const listedHasDocuments =
+    state.status === "ready" &&
+    state.entries.some(
+      (e) => !e.is_directory && (!query || e.name.toLowerCase().includes(query.toLowerCase())),
+    );
 
   // One action set for both layouts (#680) — built here so the pin state and
   // the listing reload are wired once rather than per row.
@@ -369,6 +380,13 @@ export function LibraryBrowser() {
     togglePin,
     onChanged: () => void load(true),
     onPathMoved: (from, to) => void rewritePath(from, to),
+    onPathRemoved: (relPath) => {
+      // An article still playing from under the deleted path would keep
+      // writing its position back; stop it before forgetting.
+      const playing = useMobileStore.getState().speech?.relPath;
+      if (playing && (playing === relPath || playing.startsWith(`${relPath}/`))) stopSpeech();
+      void forgetPath(relPath);
+    },
   };
 
   const promptName = useCallback(async (title: string): Promise<string | null> => {
@@ -472,13 +490,19 @@ export function LibraryBrowser() {
             selected: viewMode === "gallery",
           },
           // Density (#836): one line per row in the list, four cards across
-          // in the gallery. A checkmark toggle, remembered, shared by both.
-          {
-            id: "view-condensed",
-            title: t("menu.condensed"),
-            icon: "rectangle.compress.vertical",
-            selected: listDensity === "condensed",
-          },
+          // in the gallery. A checkmark toggle, remembered per folder. Left
+          // out of a list of folders alone, where it would change nothing:
+          // an option that does nothing reads as a bug.
+          ...(viewMode === "gallery" || listedHasDocuments
+            ? [
+                {
+                  id: "view-condensed",
+                  title: t("menu.condensed"),
+                  icon: "rectangle.compress.vertical",
+                  selected: listDensity === "condensed",
+                },
+              ]
+            : []),
           {
             id: "sort-name",
             title: t("menu.sortName"),

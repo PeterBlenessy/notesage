@@ -572,10 +572,33 @@ view's `contentOffset`, coalesced to one message per ~300 ms. The store only
 ever moves progress FORWARD: scrolling back up to re-read a line must not
 un-read the article. `≥ 0.97` shows as "Read".
 
-**Condensed** — "Kompakt" in the view menu, a checkmark toggle persisted as
-`listDensity` — drops the excerpt and shrinks every thumbnail to one line per
-row, for a library that has grown past browsing into scanning. The same toggle
-packs the gallery four cards across instead of three, with a one-line caption.
+**Condensed** — "Kompakt" in the view menu, a checkmark toggle — drops the
+excerpt and shrinks every thumbnail to one line per row, for a library that
+has grown past browsing into scanning. The same toggle packs the gallery four
+cards across instead of three, with a one-line caption. The entry is left out
+of a list of folders alone, where it would change nothing: an option that
+does nothing reads as a bug.
+
+**Views are remembered per folder**, the way Finder and Files do it. Layout,
+density, order and grouping are one `FolderView` per folder in
+`mobile-store.folderViews`, keyed by root-relative path (`""` = root),
+persisted and bounded to 200 folders (least recently set forgotten first); a
+rename carries a folder's view and its subfolders' with it (`rewritePath`,
+which now follows everything under a renamed folder — recents, progress,
+offsets, pins — not only the folder itself, with the renamed entry winning
+over any stale entry already at the new name; the Reader's title-becomes-
+filename rename and its Move to folder go through the same path), and a
+delete forgets them
+(`forgetPath`: views, offsets, progress, listening positions, reset stamps,
+recents, pins — for the path and everything under it) so a later entry of the
+same name starts fresh. Every view setter
+(`setViewMode`, `setListDensity`, `setSortMode`, `setGroupMode`) writes the
+folder being viewed. `resolveFolderView(state, relPath)` fills in what a
+folder has not chosen from the app-wide `viewMode` / `listDensity` /
+`sortMode` / `groupMode` — the values an upgraded install carries over, so
+the Inbox keeps looking as it did — except that the root is a list unless
+made a gallery on purpose: a root of folders rendered as a wall of identical
+cards was the complaint that made views per-folder.
 
 **Listen from the list** — playback belongs to the app, not to the open
 document. `src/lib/speech-controller.ts` owns it: one session in

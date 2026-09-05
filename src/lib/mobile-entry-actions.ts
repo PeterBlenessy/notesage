@@ -40,6 +40,10 @@ export interface EntryActionContext {
    *  pinned entries hold PATHS, so a move leaves both aiming at a file that no
    *  longer exists — the same problem `useFileRenameSync` solves on desktop. */
   onPathMoved?: (from: string, to: string) => void;
+  /** Forget what was remembered about a deleted path (and, for a folder,
+   *  everything under it): views, progress, positions, recents, pins — so a
+   *  later entry of the same name starts fresh. */
+  onPathRemoved?: (relPath: string) => void;
   /** Open a saved page and start reading it aloud. Offered for HTML
    *  entries only — the kind the Reader can turn into speech from a list. */
   onListen?: (entry: FileEntry) => void;
@@ -202,7 +206,13 @@ export async function runEntryAction(
       ).catch(() => null);
       if (!name || name === entry.name) return;
       await iosRenameFile(entry.path, name)
-        .then(() => ctx.onChanged?.())
+        .then((finalRel) => {
+          // The stored references (recent, pins, progress, a folder's
+          // remembered view and its subfolders') follow the new name, as
+          // they follow a move.
+          ctx.onPathMoved?.(entry.path, finalRel);
+          ctx.onChanged?.();
+        })
         .catch((err) => toast.error(t("action.renameFailed", { error: String(err) })));
       return;
     }
@@ -214,7 +224,10 @@ export async function runEntryAction(
     case "delete": {
       if (!(await confirmDelete(entry))) return;
       await iosDeleteFile(entry.path)
-        .then(() => ctx.onChanged?.())
+        .then(() => {
+          ctx.onPathRemoved?.(entry.path);
+          ctx.onChanged?.();
+        })
         .catch((err) => toast.error(t("action.deleteFailed", { error: String(err) })));
       return;
     }
