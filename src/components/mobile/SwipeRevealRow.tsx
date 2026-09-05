@@ -85,6 +85,11 @@ export function resolveDragAxis(dx: number, dy: number): DragAxis {
 }
 
 interface DragState {
+  /** Which finger owns this drag. A second touch anywhere on the row
+   *  otherwise feeds ITS coordinates into the same drag: the row jumps to
+   *  wherever the new finger landed, and letting go of either finger can
+   *  commit the full-swipe Delete the user never made. */
+  pointerId: number;
   startX: number;
   startY: number;
   axis: DragAxis;
@@ -122,7 +127,11 @@ export function SwipeRevealRow({
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (actions.length === 0) return;
+    // A drag already owned by another finger keeps it. Second touches are
+    // ignored outright rather than stealing the gesture mid-flight.
+    if (dragRef.current) return;
     dragRef.current = {
+      pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
       axis: "undecided",
@@ -134,7 +143,7 @@ export function SwipeRevealRow({
 
   const onPointerMove = (e: React.PointerEvent) => {
     const drag = dragRef.current;
-    if (!drag || drag.axis === "scroll") return;
+    if (!drag || drag.pointerId !== e.pointerId || drag.axis === "scroll") return;
     const delta = e.clientX - drag.startX;
     if (drag.axis === "undecided") {
       drag.axis = resolveDragAxis(delta, e.clientY - drag.startY);
@@ -158,8 +167,10 @@ export function SwipeRevealRow({
     setDragOffset(next);
   };
 
-  const endDrag = () => {
+  const endDrag = (e?: React.PointerEvent) => {
     const drag = dragRef.current;
+    // Lifting the OTHER finger must not end a drag it never owned.
+    if (drag && e && drag.pointerId !== e.pointerId) return;
     dragRef.current = null;
     if (!drag) return;
     setDragOffset(null);

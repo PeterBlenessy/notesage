@@ -43,6 +43,39 @@ function swipe(el: HTMLElement, from: number, to: number, dy = 0) {
   fireEvent.pointerUp(el, { clientX: to, clientY: dy });
 }
 
+describe("SwipeRevealRow: whose finger is this? (2026-09-06)", () => {
+  it("ignores a second finger instead of letting it drive the row", () => {
+    const onSelect = vi.fn();
+    renderWithProviders(
+      <Row actions={[makeAction(), makeAction({ id: "delete", label: "Delete", onSelect })]} onRowClick={vi.fn()} />,
+    );
+    const content = screen.getByText("row content");
+    fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+    fireEvent.pointerMove(content, { pointerId: 1, clientX: 190, clientY: 0 });
+    // A steadying thumb near the left edge. Measured from the first finger's
+    // start that is -200px: past the two 72px actions plus the 96px overshoot,
+    // which is the full-swipe that fires Delete outright.
+    fireEvent.pointerMove(content, { pointerId: 2, clientX: 0, clientY: 0 });
+    fireEvent.pointerUp(content, { pointerId: 2, clientX: 0, clientY: 0 });
+    expect(onSelect).not.toHaveBeenCalled();
+    // …and the first finger's own drag survived it: 10px is under half of one
+    // action width, so the row snaps closed rather than opening.
+    fireEvent.pointerUp(content, { pointerId: 1, clientX: 190, clientY: 0 });
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("does not let a second touchdown restart the drag", () => {
+    renderWithProviders(<Row actions={[makeAction()]} onRowClick={vi.fn()} />);
+    const content = screen.getByText("row content");
+    fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+    fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+    fireEvent.pointerDown(content, { pointerId: 2, clientX: 100, clientY: 0 });
+    fireEvent.pointerUp(content, { pointerId: 1, clientX: 100, clientY: 0 });
+    // Still the first finger's 100px drag, so the action is revealed.
+    expect(screen.getByRole("button", { name: "Share" })).toBeTruthy();
+  });
+});
+
 describe("SwipeRevealRow (issue #618)", () => {
   it("hides the action until the row is swiped", () => {
     renderWithProviders(<Row actions={[makeAction()]} onRowClick={vi.fn()} />);

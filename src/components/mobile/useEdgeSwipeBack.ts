@@ -44,9 +44,16 @@ export function commitsBack(dx: number, elapsedMs: number): boolean {
 }
 
 interface Drag {
+  /** Which finger owns this drag. Without it a second touch anywhere in the
+   *  reader feeds its own coordinates into the same drag — a tap near the
+   *  right edge reads as a 300 px rightward throw and closes the document. */
+  pointerId: number;
   startX: number;
   startY: number;
-  startedAt: number;
+  /** When the gesture became a swipe, NOT when the finger landed. Velocity
+   *  measured from touchdown counts a pause before the flick as travel time,
+   *  so a finger that rests on the edge and then throws reads as slow. */
+  swipeAt: number;
   axis: EdgeAxis;
   dx: number;
 }
@@ -71,13 +78,16 @@ export function useEdgeSwipeBack(onBack: () => void): {
   const [offset, setOffset] = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  const end = () => {
+  const end = (e?: ReactPointerEvent) => {
     const d = drag.current;
+    // Lifting the other finger must not end — or commit — a drag it never
+    // owned.
+    if (d && e && d.pointerId !== e.pointerId) return;
     drag.current = null;
     setDragging(false);
     setOffset(0);
     if (!d || d.axis !== "swipe") return;
-    if (commitsBack(d.dx, Date.now() - d.startedAt)) onBack();
+    if (commitsBack(d.dx, Date.now() - d.swipeAt)) onBack();
   };
 
   return {
@@ -88,23 +98,27 @@ export function useEdgeSwipeBack(onBack: () => void): {
         // Only from the edge, and only from a real touch or pen: a mouse in
         // the simulator would otherwise pick this up on every click near the
         // left margin.
+        // A drag already owned by another finger keeps it.
+        if (drag.current) return;
         const rect = e.currentTarget.getBoundingClientRect();
         if (e.clientX - rect.left > EDGE_WIDTH) return;
         drag.current = {
+          pointerId: e.pointerId,
           startX: e.clientX,
           startY: e.clientY,
-          startedAt: Date.now(),
+          swipeAt: Date.now(),
           axis: "undecided",
           dx: 0,
         };
       },
       onPointerMove: (e) => {
         const d = drag.current;
-        if (!d || d.axis === "scroll") return;
+        if (!d || d.pointerId !== e.pointerId || d.axis === "scroll") return;
         const dx = e.clientX - d.startX;
         if (d.axis === "undecided") {
           d.axis = resolveEdgeAxis(dx, e.clientY - d.startY);
           if (d.axis !== "swipe") return;
+          d.swipeAt = Date.now();
           setDragging(true);
           try {
             (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);

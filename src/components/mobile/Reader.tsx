@@ -44,7 +44,7 @@ import { splitSpeechParagraphs } from "./speech-text";
 import { documentToSpeechText } from "./speech-text";
 import { SpeechPlayerBar } from "./SpeechPlayerBar";
 import { RecordingBar } from "./RecordingBar";
-import { useEdgeSwipeBack } from "./useEdgeSwipeBack";
+import { EDGE_WIDTH, useEdgeSwipeBack } from "./useEdgeSwipeBack";
 import { formatElapsed, pauseRecording, resumeRecording, stopRecording } from "@/lib/recording-controller";
 import { useSpeechPlayer } from "@/hooks/useSpeechPlayer";
 import { measureReaderInsets, withReaderInsets, withWideContentGuard } from "./html-insets";
@@ -1679,6 +1679,33 @@ export function Reader() {
             onLoad={() => setHtmlShownUrl(state.url)}
             className="h-full w-full border-0 transition-opacity duration-150"
             style={{ opacity: htmlShownUrl === state.url ? 1 : 0 }}
+          />
+          {/* The swipe-back handlers on the reader root never see a finger
+              that lands on a captured report: the iframe is a separate
+              document on an opaque origin, and its pointer events do not
+              cross back out. Reports are exactly the documents people read
+              longest, so the gesture cannot be the one that stops working
+              there. This transparent strip sits over the frame's leading
+              edge and carries the same handlers.
+
+              It captures on pointerDOWN rather than at the axis lock: once
+              the finger moves right it is over the frame, and a move the
+              strip does not receive is a gesture that dies halfway with the
+              page left mid-slide. Below the islands (z-40), above the
+              frame. */}
+          <div
+            data-testid="reader-edge-swipe-strip"
+            className="absolute inset-y-0 left-0 z-30"
+            style={{ width: EDGE_WIDTH }}
+            {...swipeBack.handlers}
+            onPointerDown={(e) => {
+              try {
+                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+              } catch {
+                // jsdom, and any view without capture.
+              }
+              swipeBack.handlers.onPointerDown(e);
+            }}
           />
         </div>
       ) : (
