@@ -35,6 +35,9 @@ struct SpeechRateArgs: Decodable {
 
 struct RecordingStartArgs: Decodable {
   let language: String?
+  /// The lock screen's words, localized on the JS side.
+  let title: String?
+  let subtitle: String?
 }
 
 struct RecordingStopArgs: Decodable {
@@ -580,9 +583,11 @@ class NotesageIosPlugin: Plugin {
   // MARK: - Recording
 
   @objc public func recordingStart(_ invoke: Invoke) {
-    let language = (try? invoke.parseArgs(RecordingStartArgs.self))?.language
+    let args = try? invoke.parseArgs(RecordingStartArgs.self)
     DispatchQueue.main.async {
-      Recorder.shared.start(language: language) { result in
+      Recorder.shared.start(
+        language: args?.language, title: args?.title, subtitle: args?.subtitle
+      ) { result in
         switch result {
         case .success: invoke.resolve()
         case .failure(let error):

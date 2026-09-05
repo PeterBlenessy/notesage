@@ -288,6 +288,15 @@ interface MobileStore {
    *  relaunch the sidecar still carries the reset, and it must not wipe what
    *  was read since. */
   readingResets: Record<string, string>;
+  /** Inbox items this device knows have been OPENED, by rel path.
+   *
+   *  Progress alone cannot answer "have I read this": an item opened and
+   *  closed at the first paragraph has a fraction of 0, exactly like one
+   *  never touched. The sidecar's `openedAt` is the real rule (`isUnread`),
+   *  and `inbox-progress-sync` writes it here — from a local open and from
+   *  what the Mac already recorded — so a row can render it. */
+  inboxOpened: Record<string, true>;
+  markInboxOpened: (relPath: string) => void;
 
   /** Row density for the list view (#836). Persisted. */
   listDensity: ListDensity;
@@ -480,6 +489,7 @@ export const useMobileStore = create<MobileStore>()(
       speechRate: 1.0,
       readingProgress: {},
       readingResets: {},
+      inboxOpened: {},
       listDensity: "comfortable",
       homeFolders: null,
       homeEditorOpen: false,
@@ -729,9 +739,13 @@ export const useMobileStore = create<MobileStore>()(
           delete readingProgress[relPath];
           const speechPositions = { ...s.speechPositions };
           delete speechPositions[relPath];
-          return { readingProgress, speechPositions, readingResets: withReset(s.readingResets, relPath, resetAt) };
+          const inboxOpened = { ...s.inboxOpened };
+          delete inboxOpened[relPath];
+          return { readingProgress, speechPositions, inboxOpened, readingResets: withReset(s.readingResets, relPath, resetAt) };
         }),
 
+      markInboxOpened: (relPath) =>
+        set((s) => (s.inboxOpened[relPath] ? {} : { inboxOpened: { ...s.inboxOpened, [relPath]: true as const } })),
       recordReadingReset: (relPath, resetAt) =>
         set((s) => ({ readingResets: withReset(s.readingResets, relPath, resetAt) })),
 
@@ -858,6 +872,7 @@ export const useMobileStore = create<MobileStore>()(
             readingResets: swapKeys(s.readingResets),
             speech: s.speech && under(s.speech.relPath) ? { ...s.speech, relPath: swap(s.speech.relPath) } : s.speech,
             readingProgress: swapKeys(s.readingProgress),
+            inboxOpened: swapKeys(s.inboxOpened),
             // Scroll offsets are keyed by path too; a stale key would restore
             // the wrong position and never be collected.
             scrollOffsets: swapKeys(s.scrollOffsets),
@@ -910,6 +925,7 @@ export const useMobileStore = create<MobileStore>()(
           folderViews: s.folderViews.filter((e) => !under(e.relPath)),
           scrollOffsets: dropKeys(s.scrollOffsets),
           readingProgress: dropKeys(s.readingProgress),
+          inboxOpened: dropKeys(s.inboxOpened),
           speechPositions: dropKeys(s.speechPositions),
           readingResets: dropKeys(s.readingResets),
           recentlyRead: s.recentlyRead.filter((p) => !under(p)),
@@ -951,6 +967,7 @@ export const useMobileStore = create<MobileStore>()(
           speechPositions: {},
           speechVoices: {},
           readingProgress: {},
+        inboxOpened: {},
           readingResets: {},
           listDensity: "comfortable",
           homeFolders: null,
@@ -982,6 +999,7 @@ export const useMobileStore = create<MobileStore>()(
         speechVoices: s.speechVoices,
         speechRate: s.speechRate,
         readingProgress: s.readingProgress,
+        inboxOpened: s.inboxOpened,
         readingResets: s.readingResets,
         listDensity: s.listDensity,
         homeHintDismissed: s.homeHintDismissed,

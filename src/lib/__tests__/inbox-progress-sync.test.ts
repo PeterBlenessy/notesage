@@ -21,7 +21,7 @@ describe("inbox-progress-sync (the phone's write-through of the sidecar)", () =>
     resetInboxProgressSync();
     disk = {};
     ensured = [];
-    useMobileStore.setState({ readingProgress: {}, speechPositions: {}, readingResets: {}, openDoc: null, recentlyRead: [] });
+    useMobileStore.setState({ readingProgress: {}, speechPositions: {}, readingResets: {}, inboxOpened: {}, openDoc: null, recentlyRead: [] });
     setMockInvokeHandler("ios_read_file", (args) => {
       const a = args as { relPath: string };
       if (a.relPath in disk) return disk[a.relPath];
@@ -92,6 +92,38 @@ describe("inbox-progress-sync (the phone's write-through of the sidecar)", () =>
     ensured.length = 0;
     await pushInboxProgress();
     expect(ensured).toEqual([]);
+  });
+
+  it("opening an Inbox item marks it read for the list, not just for the sidecar", async () => {
+    // The row's unread weight reads `inboxOpened`, and the only thing that
+    // sets it on a local open is this subscriber — so the wiring is worth a
+    // test rather than a squint at a screenshot.
+    startInboxProgressSync();
+    useMobileStore.getState().openDocument({ relPath: "Inbox/a.html", name: "a.html" });
+    await Promise.resolve();
+    expect(useMobileStore.getState().inboxOpened["Inbox/a.html"]).toBe(true);
+  });
+
+  it("adopts the Mac's opens too, so a doc read there is not bold here", async () => {
+    disk[INBOX_SIDECAR_REL] = JSON.stringify({
+      version: 2,
+      items: { "b.html": { fraction: 0, openedAt: "2026-09-03T00:00:00Z" } },
+    });
+    startInboxProgressSync();
+    await pullInboxProgress();
+    expect(useMobileStore.getState().inboxOpened["Inbox/b.html"]).toBe(true);
+  });
+
+  it("a Mac 'mark as unread' makes it bold again", async () => {
+    useMobileStore.setState({ inboxOpened: { "Inbox/c.html": true } });
+    const resetAt = "2026-09-04T10:00:00.000Z";
+    disk[INBOX_SIDECAR_REL] = JSON.stringify({
+      version: 2,
+      items: { "c.html": { fraction: 0, openedAt: null, updatedAt: resetAt, resetAt } },
+    });
+    startInboxProgressSync();
+    await pullInboxProgress();
+    expect(useMobileStore.getState().inboxOpened["Inbox/c.html"]).toBeUndefined();
   });
 
   it("a push recounts the badge, since the sidecar just changed what unread means", async () => {
