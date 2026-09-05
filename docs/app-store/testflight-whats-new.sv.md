@@ -31,6 +31,7 @@ NYTT
 • Varje mapp minns sin egen vy, ordning och gruppering.
 • Appikonen visar antalet olästa i Inbox (slå på från Inbox).
 • Ny inspelning (håll in +): din Mac transkriberar när det synkats in.
+• Sparade artiklar går nu att svepa för Dela och Radera.
 
 TESTA
 • Öppna Inbox, tryck Slå på, tillåt, titta sedan på ikonen.

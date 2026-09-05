@@ -32,6 +32,7 @@ NEW
 • Each folder remembers its own view, order and grouping.
 • The app icon shows your unread Inbox count (turn it on from the Inbox).
 • New Recording (hold +): your Mac transcribes it when it syncs in.
+• Saved articles now swipe to Share and Delete.
 
 TRY
 • Open the Inbox, tap Turn on, allow, then look at the icon.
