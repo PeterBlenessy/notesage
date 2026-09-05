@@ -324,6 +324,17 @@ class NotesageIosPlugin: Plugin {
         view.heightAnchor.constraint(equalToConstant: 120),
       ])
       launchCoverLogo = view
+      // The icon grows to twice its launch-screen size while the app loads
+      // (Peter: "animated and grow from small to twice the current size") —
+      // a spring so it settles rather than stops, and one gesture that
+      // continues into the fade below. `layoutIfNeeded` first, so the
+      // constraints have placed it before the transform animates from the
+      // storyboard's 120pt rather than from the origin.
+      cover.layoutIfNeeded()
+      UIView.animate(
+        withDuration: 0.9, delay: 0, usingSpringWithDamping: 0.78, initialSpringVelocity: 0.4,
+        options: [.allowUserInteraction],
+        animations: { view.transform = CGAffineTransform(scaleX: 2, y: 2) })
     }
     window.addSubview(cover)
     launchCover = cover
@@ -336,11 +347,13 @@ class NotesageIosPlugin: Plugin {
 
   /// Fade the cover out once content is on screen. Idempotent.
   ///
-  /// The icon scales up a touch as it fades, which reads as the app icon
+  /// The icon keeps growing a touch as it fades, which reads as the app icon
   /// opening INTO the UI rather than a plate being yanked off it — the same
-  /// gesture iOS itself uses when an app launches from the Home Screen. The
-  /// cover fades slightly faster than the icon so the loaded UI is already
-  /// there behind the last frames of the icon.
+  /// gesture iOS itself uses when an app launches from the Home Screen. It
+  /// continues from wherever the launch growth has got to
+  /// (`beginFromCurrentState`), so a fast start does not snap the icon to
+  /// its final size before fading it. The cover fades slightly faster than
+  /// the icon so the loaded UI is already there behind its last frames.
   func removeLaunchCover() {
     launchCoverRemoved = true
     guard let cover = launchCover else { return }
@@ -348,9 +361,9 @@ class NotesageIosPlugin: Plugin {
     let logo = launchCoverLogo
     launchCoverLogo = nil
     UIView.animate(
-      withDuration: 0.34, delay: 0, options: [.curveEaseOut],
+      withDuration: 0.34, delay: 0, options: [.curveEaseOut, .beginFromCurrentState],
       animations: {
-        logo?.transform = CGAffineTransform(scaleX: 1.35, y: 1.35)
+        logo?.transform = CGAffineTransform(scaleX: 2.3, y: 2.3)
         logo?.alpha = 0
       })
     UIView.animate(
