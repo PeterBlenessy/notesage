@@ -524,10 +524,8 @@ describe("Recordings is pinned under the Inbox (2026-09-05)", () => {
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 0 },
     ]);
-    setMockInvokeHandler("ios_create_directory", (args) => {
-      const rel = (args as { relPath: string }).relPath;
-      created.push(rel);
-      return rel;
+    setMockInvokeHandler("ios_ensure_directory", (args) => {
+      created.push((args as { relPath: string }).relPath);
     });
     renderWithProviders(<LibraryBrowser />);
     await waitFor(() => expect(screen.getByText("Recordings")).toBeTruthy());
@@ -540,15 +538,34 @@ describe("Recordings is pinned under the Inbox (2026-09-05)", () => {
     );
   });
 
-  it("does not create it when it is already there", async () => {
+  it("is there in gallery view too, where it used to vanish", async () => {
+    // The card was only spliced into the grouped-list branch, and the folder
+    // is filtered OUT of the listing in every view — so switching to gallery
+    // made Recordings disappear from Home completely.
+    useMobileStore.getState().setViewMode("gallery");
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 1 },
+      { name: "Recordings", path: "Recordings", is_directory: true, hidden: false, child_count: 2 },
+    ]);
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(screen.getByText("Recordings")).toBeTruthy());
+  });
+
+  it("is there when the library is completely empty", async () => {
+    // Where "where do my recordings go?" is hardest to answer.
+    setMockInvokeHandler("ios_list_directory", () => []);
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(screen.getByText("Recordings")).toBeTruthy());
+  });
+
+  it("ensures rather than creates, so a second tap is harmless", async () => {
     const created: string[] = [];
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 0 },
       { name: "Recordings", path: "Recordings", is_directory: true, hidden: false, child_count: 3 },
     ]);
-    setMockInvokeHandler("ios_create_directory", (args) => {
+    setMockInvokeHandler("ios_ensure_directory", (args) => {
       created.push((args as { relPath: string }).relPath);
-      return "Recordings";
     });
     renderWithProviders(<LibraryBrowser />);
     await waitFor(() => expect(screen.getByText("Recordings")).toBeTruthy());
@@ -558,6 +575,9 @@ describe("Recordings is pinned under the Inbox (2026-09-05)", () => {
         useMobileStore.getState().folderStack[useMobileStore.getState().folderStack.length - 1]?.relPath,
       ).toBe("Recordings"),
     );
-    expect(created).toEqual([]);
+    // Ensure is idempotent: asking for a folder that exists is a no-op, which
+    // is why the opener no longer has to decide whether to create. Creating
+    // would have DEDUPED here and made "Recordings-1".
+    expect(created).toEqual(["Recordings"]);
   });
 });

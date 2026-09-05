@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, FolderOpen, Plus, FolderPlus, ArrowDownAZ, Clock, LayoutGrid, List, SlidersHorizontal } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
-import { iosListDirectory, iosCreateDirectory, iosTextPrompt, iosQuickLook, iosOpenSettings } from "@/lib/ios-api";
+import { iosListDirectory, iosCreateDirectory, iosEnsureDirectory, iosTextPrompt, iosQuickLook, iosOpenSettings } from "@/lib/ios-api";
 import { toast } from "sonner";
 import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-store";
 import { stopSpeech, toggleSpeech } from "@/lib/speech-controller";
@@ -54,20 +54,22 @@ export function LibraryBrowser() {
    * recording exists — an always-visible row that says "not found" would be
    * worse than no row at all.
    */
-  const openRecordings = useCallback(
-    async (exists: boolean) => {
-      if (!exists) {
-        try {
-          await iosCreateDirectory(RECORDINGS_FOLDER_NAME);
-        } catch (err) {
-          toast.error(t("action.createFolderFailed", { error: String(err) }));
-          return;
-        }
-      }
-      jumpToFolder({ relPath: RECORDINGS_FOLDER_NAME, name: RECORDINGS_FOLDER_NAME });
-    },
-    [jumpToFolder],
-  );
+  const openRecordings = useCallback(async () => {
+    // `ensureDirectory`, NOT `createDirectory`: the latter DEDUPES, so a
+    // second tap — or a root that already holds a *file* called Recordings —
+    // would quietly make "Recordings-1" and then navigate to the name that
+    // was never created. Ensure is idempotent, needs no "does it exist?"
+    // argument read from a render closure that a double tap makes stale, and
+    // refuses honestly when the name is taken by something that is not a
+    // folder.
+    try {
+      await iosEnsureDirectory(RECORDINGS_FOLDER_NAME);
+    } catch (err) {
+      toast.error(t("action.createFolderFailed", { error: String(err) }));
+      return;
+    }
+    jumpToFolder({ relPath: RECORDINGS_FOLDER_NAME, name: RECORDINGS_FOLDER_NAME });
+  }, [jumpToFolder]);
   const openDocument = useMobileStore((s) => s.openDocument);
   const goBack = useMobileStore((s) => s.goBack);
   const goToDepth = useMobileStore((s) => s.goToDepth);
@@ -938,7 +940,7 @@ export function LibraryBrowser() {
             const recordingsCard = curated ? (
               <RecordingsCard
                 count={recordingsEntry?.child_count}
-                onOpen={() => void openRecordings(recordingsEntry !== undefined)}
+                onOpen={() => void openRecordings()}
               />
             ) : null;
             const listed = curated
@@ -972,10 +974,20 @@ export function LibraryBrowser() {
                   onNotNow={dismissNotificationPrePrompt}
                 />
               ) : null;
-            if (state.entries.length === 0) return <EmptyFolder />;
+            if (state.entries.length === 0)
+              // Even here: an empty library is exactly where "where do
+              // recordings go?" is hardest to answer, and the card is the
+              // answer — tapping it makes the folder.
+              return (
+                <>
+                  {recordingsCard}
+                  <EmptyFolder />
+                </>
+              );
             if (curated && !inboxCard && listed.length === 0)
               return (
                 <>
+                  {recordingsCard}
                   <HomeEmpty onChoose={openHomeEditor} />
                   {homeTail}
                 </>
@@ -993,6 +1005,7 @@ export function LibraryBrowser() {
               return (
                 <>
                   {inboxCard}
+                  {recordingsCard}
                   {prePrompt}
                 <GalleryView
                   entries={listed}
