@@ -58,8 +58,26 @@ enum InboxState {
         //
         // The app's own writes go through `NSFileCoordinator`; this is the
         // reader catching up with them.
-        if !FileManager.default.fileExists(atPath: url.path) {
-            try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+        //
+        // The gate is the DOWNLOADING STATUS, not whether the path exists.
+        // Since iOS 11 an evicted item keeps its real name in the directory
+        // listing and hides the `.name.icloud` placeholder, so `fileExists`
+        // answers true for a file with nothing behind it — the exact case
+        // this read has to handle. `.current` is the only status that means
+        // the bytes are here; `.downloaded` means they are stale, and
+        // `.notDownloaded` that there are none. A file that is not
+        // ubiquitous at all reports no status, and then existence is the
+        // only question worth asking.
+        let fm = FileManager.default
+        var needsDownload = !fm.fileExists(atPath: url.path)
+        if !needsDownload,
+            let status = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
+                .ubiquitousItemDownloadingStatus
+        {
+            needsDownload = status != .current
+        }
+        if needsDownload {
+            try? fm.startDownloadingUbiquitousItem(at: url)
         }
         var data: Data?
         var coordError: NSError?
