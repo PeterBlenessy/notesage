@@ -353,6 +353,37 @@ contract, or it will drop gestures:
    rather than gradually turning the drag back into a scroll.
 3. **`setPointerCapture`** on lock, so a finger that drifts onto the
    neighbouring row keeps feeding the gesture instead of silently ending it.
+4. **One drag, one finger.** Every drag records the `pointerId` that started
+   it; moves and lifts from any other pointer are ignored, as is a second
+   touchdown while a drag is in flight. Without that guard a drag reads
+   `clientX` off whatever pointer arrives, so a thumb landing anywhere else
+   to steady the phone feeds ITS coordinates into the gesture already
+   running: measured from the first finger's start that is a throw of a few
+   hundred pixels, which is a commit. The row fires its edge Delete, the
+   reader closes the document, and letting go of either finger seals it.
+
+## Swipe in from the left edge to leave a document
+
+The gesture iOS gives every navigation stack, which a web view has to supply
+for itself (`useEdgeSwipeBack`; Peter, 2026-09-05: *"I want right swipe in a
+document to close it and go back to inbox"*). It starts ONLY within 24 pt of
+the leading edge, which is what keeps it out of the way of everything else
+the reader does horizontally — a wide table scrolling inside itself, text
+selection, the speech highlight. Rightward only: a leftward drag from the
+edge is someone reaching for something else and must never close their
+document. It commits on 96 pt of travel OR on a fast flick, timed from the
+AXIS LOCK rather than from touchdown, so a finger that rests on the edge
+while reading and then throws is not counted as slow.
+
+**A captured report needs its own strip.** An HTML document renders in a
+sandboxed iframe on an opaque origin, and a finger that lands on it produces
+no pointer events out in the app — the handlers on the reader root never
+fire, on exactly the documents people read longest. A transparent 24 pt strip
+over the frame's leading edge carries the same handlers, below the islands
+(z-40) and above the frame. It captures the pointer on POINTERDOWN, not at
+the axis lock: once the finger moves right it is over the frame, and a move
+the strip does not receive is a gesture that dies halfway with the page left
+mid-slide.
 
 **Every list row swipes, whatever it looks like.** The action set is built
 once, by `entrySwipeActions` in `FileRow.tsx`, and used by both list rows —
