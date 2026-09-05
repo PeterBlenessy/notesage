@@ -21,8 +21,10 @@ export function ListenButton({
   className,
 }: {
   entry: Pick<FileEntry, "path" | "name">;
-  /** `row`: a 32pt muted disc at the row's edge. `card`: a 28pt badge on
-   *  the thumbnail. */
+  /** `row`: a 36pt glass disc FLOATING over the row's right edge — it
+   *  reserves no column, so the title and excerpt keep the full width and
+   *  simply pass behind it, blurred (Peter, 2026-09-05). `card`: a 28pt
+   *  badge on a gallery thumbnail. */
   size: "row" | "card";
   className?: string;
 }) {
@@ -35,15 +37,24 @@ export function ListenButton({
   const fraction = session && session.total > 0 ? Math.min(1, (session.index + 1) / session.total) : 0;
   const label = session ? (playing ? t("reader.listenPause") : t("reader.listenResume")) : t("action.listen");
   const Icon = session ? (playing ? Pause : Play) : Headphones;
-  const px = size === "row" ? 32 : 28;
+  const px = size === "row" ? 36 : 28;
   const stroke = 2;
   const r = (px - stroke) / 2;
   const circumference = 2 * Math.PI * r;
 
-  // The row's hit area is the whole 72pt column, row-height: the disc is
-  // small, and it is pressed from the thumb. 72 also centres the disc 36pt
-  // from the edge — under the "…" button of the native chrome (12pt inset,
-  // 48pt wide), so the eye finds it on the same line (Peter, 2026-09-04).
+  // The row's control FLOATS: it is positioned by the row, over the content,
+  // and takes no width from it.
+  //
+  // It used to be a 72pt column, which is a third of the text's width on a
+  // 393pt screen — so titles that had fitted on one line wrapped onto two,
+  // and rows grew to 107-136pt against a 72pt thumbnail (Peter, device,
+  // build 50; measured off the screenshot). Reserving nothing gives the
+  // title and excerpt that width back. What the disc covers, it covers as
+  // glass: translucent over a backdrop blur, so the words behind it stay
+  // visibly words rather than disappearing under a plate.
+  //
+  // The hit area stays a thumb's worth — 44pt, Apple's minimum — around a
+  // 36pt disc, through padding rather than through layout.
   return (
     <button
       type="button"
@@ -59,7 +70,7 @@ export function ListenButton({
         // :active fill is the block flash — only its no-select/no-callout
         // half, and the press state handed to the disc through `group`.
         "group flex shrink-0 select-none items-center justify-center [-webkit-tap-highlight-color:transparent] [-webkit-touch-callout:none]",
-        size === "row" ? "w-18 self-stretch" : "rounded-full",
+        size === "row" ? "h-11 w-11 rounded-full" : "rounded-full",
         className,
       )}
       style={size === "card" ? { width: px, height: px } : undefined}
@@ -68,7 +79,8 @@ export function ListenButton({
       className={cn(
         "relative flex items-center justify-center rounded-full transition-colors duration-150",
         size === "row"
-          ? "bg-muted text-muted-foreground group-active:bg-foreground/20"
+          // Glass, not a plate: what passes behind stays legible as words.
+          ? "bg-background/55 text-foreground shadow-sm backdrop-blur-md group-active:bg-foreground/20"
           : "bg-background/85 text-foreground shadow-sm backdrop-blur group-active:bg-foreground/20",
         session && "text-foreground",
       )}
@@ -99,7 +111,7 @@ export function ListenButton({
         </svg>
       )}
       <Icon
-        className={size === "row" ? "h-4 w-4" : "h-3.5 w-3.5"}
+        className={size === "row" ? "h-[18px] w-[18px]" : "h-3.5 w-3.5"}
         strokeWidth={1.5}
         fill={session ? "currentColor" : "none"}
         aria-hidden="true"

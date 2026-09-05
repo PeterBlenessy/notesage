@@ -646,7 +646,14 @@ document. `src/lib/speech-controller.ts` owns it: one session in
 `mobile-store.speech` (`relPath`, playing, paragraph index/total, rate,
 language), fed by the native events subscribed once at the app root
 (`startSpeechEvents` in `MobileApp`). Every saved page's row carries a
-`ListenButton` at its right edge and every saved page's card one on its
+`ListenButton` FLOATING over its right edge — glass over a backdrop blur,
+reserving no width, so the title and excerpt keep the whole row and simply
+pass behind it. It was a 72pt column, which is a third of the text's width on
+a 393pt screen: titles that had fitted on one line wrapped onto two and rows
+ran 107-136pt against a 72pt thumbnail (Peter, device, build 50). Floating
+took them to 96-116pt and left the reach where it was, on the right, which is
+where a right hand holds the phone. What remains above the thumbnail's height
+is the excerpt and the source line, not the control and every saved page's card one on its
 picture — *saved page* meaning a Notesage **capture**, and nothing else: the
 row is `ArticleRow`, which the browser picks for any `.html`/`.htm` entry,
 and which keeps the article shape only while `ios_article_card_meta` returns

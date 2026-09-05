@@ -105,7 +105,10 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
         nested-interactive pattern assistive tech handles inconsistently. */}
     <div
       className={cn(
-        "flex items-stretch",
+        // `relative`, because the Listen control floats over this row rather
+        // than sitting beside it — see `ListenButton`. The row keeps its full
+        // width for the title and the excerpt.
+        "relative flex items-stretch",
         "border-b border-border last:border-b-0",
         props.active && "bg-muted",
       )}
@@ -119,7 +122,7 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
         // Centred like the plain row: the slot is fixed-height, and a
         // title-only row (header not yet read, or no excerpt) would otherwise
         // sit top-heavy beside an empty 72pt box.
-        "ios-press-row flex min-w-0 flex-1 items-center gap-3 pl-4 pr-2 text-left",
+        "ios-press-row flex min-w-0 flex-1 items-center gap-3 px-4 text-left",
         condensed ? "py-2" : "py-3",
         "hover:bg-muted/50",
       )}
@@ -166,8 +169,14 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
         )}
       </div>
     </button>
-      {/* Read aloud without opening: the row's one control (#833). */}
-      <ListenButton entry={entry} size="row" />
+      {/* Read aloud without opening: the row's one control (#833), floating
+          over the right edge so it costs the text nothing. Centred on the
+          row, where it has always been, so the reach does not change. */}
+      <ListenButton
+        entry={entry}
+        size="row"
+        className="absolute right-2 top-1/2 -translate-y-1/2"
+      />
     </div>
     </SwipeRevealRow>
   );
