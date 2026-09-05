@@ -506,3 +506,58 @@ describe("recording from the library", () => {
     await waitFor(() => expect(useMobileStore.getState().recording.status).toBe("idle"));
   });
 });
+
+describe("Recordings is pinned under the Inbox (2026-09-05)", () => {
+  it("shows the card at Home even when the folder does not exist yet", async () => {
+    // Always visible is the point: somewhere to look beats a card that
+    // appears only once you have guessed where your recordings went.
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 2 },
+      { name: "Writing", path: "Writing", is_directory: true, hidden: false, child_count: 1 },
+    ]);
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(screen.getByText("Recordings")).toBeTruthy());
+  });
+
+  it("creates the folder on first open, then enters it", async () => {
+    const created: string[] = [];
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 0 },
+    ]);
+    setMockInvokeHandler("ios_create_directory", (args) => {
+      const rel = (args as { relPath: string }).relPath;
+      created.push(rel);
+      return rel;
+    });
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(screen.getByText("Recordings")).toBeTruthy());
+    fireEvent.click(screen.getByText("Recordings"));
+    await waitFor(() => expect(created).toEqual(["Recordings"]));
+    await waitFor(() =>
+      expect(
+        useMobileStore.getState().folderStack[useMobileStore.getState().folderStack.length - 1]?.relPath,
+      ).toBe("Recordings"),
+    );
+  });
+
+  it("does not create it when it is already there", async () => {
+    const created: string[] = [];
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 0 },
+      { name: "Recordings", path: "Recordings", is_directory: true, hidden: false, child_count: 3 },
+    ]);
+    setMockInvokeHandler("ios_create_directory", (args) => {
+      created.push((args as { relPath: string }).relPath);
+      return "Recordings";
+    });
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(screen.getByText("Recordings")).toBeTruthy());
+    fireEvent.click(screen.getByText("Recordings"));
+    await waitFor(() =>
+      expect(
+        useMobileStore.getState().folderStack[useMobileStore.getState().folderStack.length - 1]?.relPath,
+      ).toBe("Recordings"),
+    );
+    expect(created).toEqual([]);
+  });
+});

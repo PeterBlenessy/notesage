@@ -10,7 +10,7 @@ import type { EntryActionContext } from "@/lib/mobile-entry-actions";
 import { FileRow, classifyFile } from "./FileRow";
 import { ArticleRow } from "./ArticleRow";
 import { GalleryView } from "./GalleryView";
-import { InboxCard } from "./InboxCard";
+import { InboxCard, RecordingsCard } from "./InboxCard";
 import { AllFoldersRow } from "./AllFoldersRow";
 import { HomeHint } from "./HomeHint";
 import { NotificationPrePrompt } from "./NotificationPrePrompt";
@@ -18,6 +18,7 @@ import { RecordingBar } from "./RecordingBar";
 import { formatElapsed, pauseRecording, resumeRecording, startRecording, stopRecording } from "@/lib/recording-controller";
 import { BrowserSkeleton, BrowserError } from "./BrowserStates";
 import { defaultHomeFolders } from "@/lib/home-file";
+import { RECORDINGS_FOLDER_NAME } from "@/lib/notes-root";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
@@ -45,6 +46,28 @@ export function LibraryBrowser() {
   const folderStack = useMobileStore((s) => s.folderStack);
   const enterFolder = useMobileStore((s) => s.enterFolder);
   const jumpToFolder = useMobileStore((s) => s.jumpToFolder);
+
+  /**
+   * Open Recordings, creating the folder when nothing has made one yet.
+   *
+   * The card is always on screen, so it has to work before the first
+   * recording exists — an always-visible row that says "not found" would be
+   * worse than no row at all.
+   */
+  const openRecordings = useCallback(
+    async (exists: boolean) => {
+      if (!exists) {
+        try {
+          await iosCreateDirectory(RECORDINGS_FOLDER_NAME);
+        } catch (err) {
+          toast.error(t("action.createFolderFailed", { error: String(err) }));
+          return;
+        }
+      }
+      jumpToFolder({ relPath: RECORDINGS_FOLDER_NAME, name: RECORDINGS_FOLDER_NAME });
+    },
+    [jumpToFolder],
+  );
   const openDocument = useMobileStore((s) => s.openDocument);
   const goBack = useMobileStore((s) => s.goBack);
   const goToDepth = useMobileStore((s) => s.goToDepth);
@@ -904,8 +927,28 @@ export function LibraryBrowser() {
                 onOpen={() => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME })}
               />
             ) : null;
+            // Recordings sits directly under the Inbox and is ALWAYS there,
+            // whether or not the folder exists yet: somewhere to look is
+            // more use than a card that appears only once you have guessed
+            // where your recordings went. Opening it creates the folder when
+            // the first recording has not already.
+            const recordingsEntry = state.entries.find(
+              (e) => e.is_directory && e.name === RECORDINGS_FOLDER_NAME,
+            );
+            const recordingsCard = curated ? (
+              <RecordingsCard
+                count={recordingsEntry?.child_count}
+                onOpen={() => void openRecordings(recordingsEntry !== undefined)}
+              />
+            ) : null;
             const listed = curated
-              ? visible.filter((e) => !e.is_directory || (homeSet.has(e.path) && e.name !== INBOX_NAME))
+              ? visible.filter(
+                  (e) =>
+                    !e.is_directory ||
+                    (homeSet.has(e.path) &&
+                      e.name !== INBOX_NAME &&
+                      e.name !== RECORDINGS_FOLDER_NAME),
+                )
               : visible;
             const homeTail = curated ? (
               <>
@@ -969,6 +1012,7 @@ export function LibraryBrowser() {
             return (
               <>
                 {inboxCard}
+                {recordingsCard}
                 {prePrompt}
                 {groupEntries(listed).map((section) => (
                   <section key={section.key}>

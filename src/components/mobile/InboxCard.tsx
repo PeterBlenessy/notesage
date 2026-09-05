@@ -1,5 +1,6 @@
-import { ChevronRight, Inbox } from "lucide-react";
+import { ChevronRight, Inbox, Mic, type LucideIcon } from "lucide-react";
 import { INBOX_FOLDER_NAME } from "@/lib/inbox";
+import { RECORDINGS_FOLDER_NAME } from "@/lib/notes-root";
 
 /**
  * The Inbox, pinned above the root listing (#683).
@@ -15,6 +16,42 @@ import { INBOX_FOLDER_NAME } from "@/lib/inbox";
  * breadcrumb island's permanent "Inbox" entry covers reaching it from depth.
  */
 export function InboxCard({ count, unread, onOpen }: { count?: number; unread?: number; onOpen: () => void }) {
+  return <PinnedFolderCard icon={Inbox} name={INBOX_FOLDER_NAME} count={count} badge={unread} onOpen={onOpen} />;
+}
+
+/**
+ * Recordings, pinned directly under the Inbox (Peter, 2026-09-05:
+ * "Recordings must be a folder like Inbox, displayed below it with same
+ * style, above other folders, always visible").
+ *
+ * ALWAYS shown, even before the folder exists — which is the whole point:
+ * somewhere to find them is more useful than a card that appears only once
+ * you have guessed where they went. Opening it creates the folder if the
+ * first recording has not yet made one.
+ */
+export function RecordingsCard({ count, onOpen }: { count?: number; onOpen: () => void }) {
+  return <PinnedFolderCard icon={Mic} name={RECORDINGS_FOLDER_NAME} count={count} onOpen={onOpen} />;
+}
+
+/**
+ * The pinned-row shape both cards wear, so they cannot drift apart. Geometry
+ * is deliberately IDENTICAL to `FileRow` — see the comment inside.
+ */
+function PinnedFolderCard({
+  icon: Icon,
+  name,
+  count,
+  badge,
+  onOpen,
+}: {
+  icon: LucideIcon;
+  name: string;
+  count?: number;
+  /** Shown in the accent instead of the count when non-zero — the Inbox's
+   *  unread number. Recordings has nothing equivalent. */
+  badge?: number;
+  onOpen: () => void;
+}) {
   return (
     <div className="px-2 pb-3">
       {/* Geometry is deliberately IDENTICAL to FileRow — same icon size, gap,
@@ -37,23 +74,23 @@ export function InboxCard({ count, unread, onOpen }: { count?: number; unread?: 
             Inbox icon lines up with the folder icons beneath it (Peter,
             2026-09-04: it sat a slot's half-width to the left). */}
         <span className="flex h-10 w-10 shrink-0 items-center justify-center">
-          <Inbox strokeWidth={1.5} className="h-5 w-5 shrink-0 text-[var(--color-accent-primary)]" />
+          <Icon strokeWidth={1.5} className="h-5 w-5 shrink-0 text-[var(--color-accent-primary)]" />
         </span>
         <span
           className="min-w-0 flex-1 truncate text-[length:calc(1.0625rem*var(--ns-a11y-scale,1))] text-foreground"
           style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
         >
-          {INBOX_FOLDER_NAME}
+          {name}
         </span>
         {/* The unread count — the same number as the icon badge, from the
             same native count — in the accent when there is something to
             read; otherwise the total, muted, as before. */}
-        {unread !== undefined && unread > 0 ? (
+        {badge !== undefined && badge > 0 ? (
           <span
             className="shrink-0 text-[length:calc(1.0625rem*var(--ns-a11y-scale,1))] tabular-nums text-[var(--color-accent-primary)]"
             data-testid="inbox-unread"
           >
-            {unread}
+            {badge}
           </span>
         ) : (
           count !== undefined && (
