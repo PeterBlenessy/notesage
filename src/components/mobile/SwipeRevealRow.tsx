@@ -127,9 +127,15 @@ export function SwipeRevealRow({
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (actions.length === 0) return;
-    // A drag already owned by another finger keeps it. Second touches are
-    // ignored outright rather than stealing the gesture mid-flight.
-    if (dragRef.current) return;
+    // A drag already owned by another finger keeps it — but ONLY while it is
+    // a real swipe. Refusing every second touchdown outright trades a
+    // corrupted gesture for a stranded one: if the owning pointer's
+    // pointerup/pointercancel never arrives (WebKit does not reliably
+    // deliver one when the system steals a captured touch), the ref stays
+    // set for ever and every later touch on this row is refused. A drag that
+    // never locked has taken no capture and moved nothing, so replacing it
+    // costs nothing; a locked one is recovered by `onLostPointerCapture`.
+    if (dragRef.current?.isDrag) return;
     dragRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
@@ -267,6 +273,12 @@ export function SwipeRevealRow({
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
+        // The recovery signal for a captured drag. When the system takes the
+        // touch away, capture is released even where the pointer event that
+        // should follow it is not delivered — so this is the one
+        // notification that always arrives. Without it a stolen touch leaves
+        // the row stuck half-revealed with its swipe dead until it remounts.
+        onLostPointerCapture={endDrag}
         onClickCapture={onContentClickCapture}
         style={{
           // Tell WebKit we own horizontal panning and it owns vertical. This

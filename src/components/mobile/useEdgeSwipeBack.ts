@@ -70,6 +70,7 @@ export function useEdgeSwipeBack(onBack: () => void): {
     onPointerMove: (e: ReactPointerEvent) => void;
     onPointerUp: (e: ReactPointerEvent) => void;
     onPointerCancel: (e: ReactPointerEvent) => void;
+    onLostPointerCapture: (e: ReactPointerEvent) => void;
   };
   offset: number;
   dragging: boolean;
@@ -95,11 +96,20 @@ export function useEdgeSwipeBack(onBack: () => void): {
     dragging,
     handlers: {
       onPointerDown: (e) => {
-        // Only from the edge, and only from a real touch or pen: a mouse in
-        // the simulator would otherwise pick this up on every click near the
-        // left margin.
-        // A drag already owned by another finger keeps it.
-        if (drag.current) return;
+        // Only from the edge. (Not gated on `pointerType`: a mouse drag from
+        // the left margin in the simulator is a fine way to exercise this,
+        // and on device there is no mouse.)
+        // A drag already owned by another finger keeps it — but ONLY while it
+        // is a real swipe. Refusing every second touchdown outright trades a
+        // corrupted gesture for a stranded one: if the owning pointer's
+        // pointerup/pointercancel never arrives (WebKit does not reliably
+        // deliver one when the system steals a captured touch, and the OS's
+        // own interactive-pop lives in exactly this strip), the ref stays
+        // set for ever and every later touch is refused. An undecided drag
+        // has taken no capture and moved nothing on screen, so replacing it
+        // costs nothing and heals that case; a locked swipe is recovered by
+        // `onLostPointerCapture` below.
+        if (drag.current?.axis === "swipe") return;
         const rect = e.currentTarget.getBoundingClientRect();
         if (e.clientX - rect.left > EDGE_WIDTH) return;
         drag.current = {
@@ -134,6 +144,12 @@ export function useEdgeSwipeBack(onBack: () => void): {
       },
       onPointerUp: end,
       onPointerCancel: end,
+      // The recovery signal for a captured swipe. When the system takes the
+      // touch away, capture is released even where the pointer event that
+      // should follow it is not delivered — so this is the one notification
+      // that always arrives. Without it a stolen touch leaves the page
+      // frozen mid-slide with the gesture dead until the reader remounts.
+      onLostPointerCapture: end,
     },
   };
 }

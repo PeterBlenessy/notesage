@@ -362,6 +362,15 @@ contract, or it will drop gestures:
    hundred pixels, which is a commit. The row fires its edge Delete, the
    reader closes the document, and letting go of either finger seals it.
 
+   The guard applies only while the first drag is a REAL swipe. Refusing
+   every second touchdown outright trades a corrupted gesture for a stranded
+   one: WebKit does not reliably deliver `pointercancel` when the system
+   steals a captured touch, and a drag whose terminator never arrives would
+   then block the surface for ever. A drag that never locked has taken no
+   capture and moved nothing on screen, so it is simply replaced; a locked
+   one is freed by `lostpointercapture`, which is released even where the
+   pointer event that should follow it is not delivered.
+
 ## Swipe in from the left edge to leave a document
 
 The gesture iOS gives every navigation stack, which a web view has to supply

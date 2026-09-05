@@ -56,15 +56,55 @@ describe("edge-swipe-back: whose finger is this? (2026-09-06)", () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it("a second finger landing mid-drag does not restart the gesture", () => {
+  it("a second finger landing mid-drag does not take the gesture over", () => {
     const onBack = vi.fn();
     renderWithProviders(<Subject onBack={onBack} />);
     const el = page();
     fireEvent.pointerDown(el, { pointerId: 1, clientX: 4, clientY: 0 });
     fireEvent.pointerMove(el, { pointerId: 1, clientX: 60, clientY: 0 });
     fireEvent.pointerDown(el, { pointerId: 2, clientX: 2, clientY: 0 });
-    // Still the first finger's drag: 56px, not reset to 0.
+    // Carried through to a real lift, because the offset alone proves
+    // nothing: a plain ref overwrite does not move the page until the NEXT
+    // move event, so asserting the transform here passes either way. The
+    // first finger still owns the drag, so its own lift still commits.
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: 200, clientY: 0 });
+    fireEvent.pointerUp(el, { pointerId: 1, clientX: 200, clientY: 0 });
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("recovers when the system steals a captured swipe and sends no pointerup", () => {
+    // WebKit does not reliably deliver pointercancel when the OS takes a
+    // captured touch — and the OS's own interactive-pop gesture lives in
+    // exactly this strip. Capture IS released though, so that is the signal
+    // worth listening to. Without it the page stays frozen mid-slide and the
+    // gesture is dead until the reader remounts.
+    const onBack = vi.fn();
+    renderWithProviders(<Subject onBack={onBack} />);
+    const el = page();
+    fireEvent.pointerDown(el, { pointerId: 1, clientX: 4, clientY: 0 });
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: 60, clientY: 0 });
     expect(el.style.transform).toBe("translateX(56px)");
+    fireEvent.lostPointerCapture(el, { pointerId: 1, clientX: 60, clientY: 0 });
+    expect(el.style.transform).toBe("translateX(0px)");
+    // …and the next touch is not refused.
+    fireEvent.pointerDown(el, { pointerId: 2, clientX: 4, clientY: 0 });
+    fireEvent.pointerMove(el, { pointerId: 2, clientX: 200, clientY: 0 });
+    fireEvent.pointerUp(el, { pointerId: 2, clientX: 200, clientY: 0 });
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("a touch that never became a swipe is replaced, not left to block the strip", () => {
+    // The other half of the stranding problem: a drag that stalled before
+    // the axis lock took no capture, so nothing above can free it. It has
+    // moved nothing on screen either, which is what makes replacing it safe.
+    const onBack = vi.fn();
+    renderWithProviders(<Subject onBack={onBack} />);
+    const el = page();
+    fireEvent.pointerDown(el, { pointerId: 1, clientX: 4, clientY: 0 }); // never lifts
+    fireEvent.pointerDown(el, { pointerId: 2, clientX: 4, clientY: 0 });
+    fireEvent.pointerMove(el, { pointerId: 2, clientX: 200, clientY: 0 });
+    fireEvent.pointerUp(el, { pointerId: 2, clientX: 200, clientY: 0 });
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 
   it("times the flick from where it became a swipe, not from touchdown", () => {
