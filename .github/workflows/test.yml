@@ -294,9 +294,29 @@ jobs:
           swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios16.0 \
             -import-objc-header src-tauri/ios/NotesageCapture.h \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryAccess.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/InboxState.swift \
             src-tauri/ios/LibraryCapture.swift \
             src-tauri/ios/PageRenderer.swift \
             src-tauri/ios/ShareViewController.swift
+          # The audio group, together, because they are mutually dependent:
+          # `RecordingLibrary` extends `LibraryAccess` and reads
+          # `Recorder.Staged`, and the session arbiter names `SpeechPlayer`.
+          # None import Tauri, so this is a real compile check.
+          #
+          # Added after this job went red on `InboxState` above — a call the
+          # notifications work added to `LibraryCapture.swift` while this list
+          # stayed as it was. Same shape as #606: the newest native code is
+          # the least exercised, and a list of filenames only covers what
+          # someone remembered to add to it.
+          swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios16.0 \
+            -import-objc-header src-tauri/ios/NotesageCapture.h \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryAccess.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/InboxState.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/RecordingLibrary.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/Recorder.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/RecordingManifest.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/AudioOwner.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/SpeechPlayer.swift
           # The report web view and the chrome overlay import only UIKit /
           # WebKit / SwiftUI / Combine — no Tauri — so unlike the plugin they
           # can be genuinely type-checked here. Together, because
