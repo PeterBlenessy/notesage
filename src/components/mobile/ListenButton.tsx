@@ -27,6 +27,8 @@ export function ListenButton({
   className?: string;
 }) {
   const session = useMobileStore((s) => (s.speech?.relPath === entry.path ? s.speech : null));
+  // One owner of the audio session: no listening while a recording runs.
+  const recording = useMobileStore((s) => s.recording.status !== "idle");
   const playing = session?.playing ?? false;
   // Counts the paragraph being read, like the Reader's "4 / 12": both
   // surfaces show at once, so they must agree.
@@ -45,7 +47,8 @@ export function ListenButton({
   return (
     <button
       type="button"
-      aria-label={label}
+      aria-label={recording ? t("recording.inProgress") : label}
+      disabled={recording}
       aria-pressed={session ? playing : undefined}
       data-testid={size === "row" ? "row-listen" : "card-listen"}
       data-state={session ? (playing ? "playing" : "paused") : "idle"}

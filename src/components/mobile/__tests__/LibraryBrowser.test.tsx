@@ -459,3 +459,50 @@ describe("notifications on the phone", () => {
     expect(screen.getByText("5")).toBeTruthy();
   });
 });
+
+describe("recording from the library", () => {
+  const capture = () => {
+    let captured: CapturedChromeSpec & { bottomRight?: { id: string; menu?: Array<{ id: string }> }; bottomRecorder?: { elapsed: string; paused: boolean } } = {};
+    setMockInvokeHandler("ios_set_chrome", (args) => {
+      captured = (args as { spec: typeof captured }).spec;
+      return null;
+    });
+    return () => captured;
+  };
+  beforeEach(() => {
+    setMockInvokeHandler("ios_read_file", () => {
+      throw new Error("not found");
+    });
+    setMockInvokeHandler("ios_list_directory", () => []);
+  });
+
+  it("offers New Recording one hold away everywhere, and makes + record inside Recordings", async () => {
+    const spec = capture();
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(spec().bottomRight?.id).toBe("create-folder"));
+    expect(spec().bottomRight?.menu?.map((m) => m.id)).toEqual(["create-recording"]);
+    useMobileStore.getState().enterFolder({ relPath: "Writing", name: "Writing" });
+    await waitFor(() => expect(spec().bottomRight?.id).toBe("create-note"));
+    expect(spec().bottomRight?.menu?.map((m) => m.id)).toEqual(["create-folder", "create-recording"]);
+    useMobileStore.getState().jumpToFolder({ relPath: "Recordings", name: "Recordings" });
+    await waitFor(() => expect(spec().bottomRight?.id).toBe("create-recording"));
+    expect(spec().bottomRight?.menu?.map((m) => m.id)).toEqual(["create-note", "create-folder"]);
+  });
+
+  it("shows the island while recording, in place of the + button, and stops from it", async () => {
+    const spec = capture();
+    let stopped = 0;
+    setMockInvokeHandler("ios_recording_stop", () => {
+      stopped += 1;
+      return { relPath: "Recordings/Recording 2026-09-05 14-02-11", manifest: "{}" };
+    });
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(spec().bottomRight?.id).toBe("create-folder"));
+    useMobileStore.getState().setRecording({ status: "recording", elapsedSecs: 134, level: 0.3 });
+    await waitFor(() => expect(spec().bottomRecorder).toMatchObject({ elapsed: "02:14", paused: false }));
+    expect(spec().bottomRight).toBeUndefined();
+    window.dispatchEvent(new CustomEvent("notesage:chrome", { detail: { id: "rec-stop" } }));
+    await waitFor(() => expect(stopped).toBe(1));
+    await waitFor(() => expect(useMobileStore.getState().recording.status).toBe("idle"));
+  });
+});

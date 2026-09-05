@@ -219,7 +219,9 @@ objc2-app-kit = { version = "0.3", features = ["NSColor", "NSColorSpace"] }
 # and any AAC its decoder rejects that Apple accepts. Failure path only — it
 # never runs when symphonia succeeds.
 objc2-avf-audio = { version = "0.3", features = ["AVAudioFile", "AVAudioBuffer", "AVAudioFormat", "AVAudioTypes"] }
-objc2-foundation = { version = "0.3", features = ["NSURL", "NSString", "NSError"] }
+# NSFileManager: `icloud_ensure_downloaded` (startDownloadingUbiquitousItem) for
+# evicted recording bundles.
+objc2-foundation = { version = "0.3", features = ["NSURL", "NSString", "NSError", "NSFileManager"] }
 
 [features]
 default = []

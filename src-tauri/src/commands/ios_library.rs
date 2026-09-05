@@ -1016,6 +1016,75 @@ macro_rules! ios_only {
     }};
 }
 
+/// Where a stopped recording landed (`rel_path` `None` when discarded).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingStopped {
+    pub rel_path: Option<String>,
+    pub manifest: Option<String>,
+}
+
+/// Start recording from the microphone into the app's own container (the
+/// bundle reaches the library on stop). Errors: `microphone-denied`,
+/// `low-disk-space`, `recording-in-progress`.
+#[tauri::command]
+pub async fn ios_recording_start(app: tauri::AppHandle, language: Option<String>) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::recording_start(&app, language.as_deref()).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, language);
+        Err("ios_recording_start is only available on iOS".into())
+    }
+}
+
+#[tauri::command]
+pub async fn ios_recording_pause(app: tauri::AppHandle) -> Result<(), String> {
+    ios_only!("ios_recording_pause", app, ios_impl::recording_pause(&app).await)
+}
+
+#[tauri::command]
+pub async fn ios_recording_resume(app: tauri::AppHandle) -> Result<(), String> {
+    ios_only!("ios_recording_resume", app, ios_impl::recording_resume(&app).await)
+}
+
+/// Stop; finalise into `Recordings/Recording <stamp>/` with its manifest,
+/// or discard when the frontend says so (a tap under five seconds).
+#[tauri::command]
+pub async fn ios_recording_stop(app: tauri::AppHandle, discard: Option<bool>) -> Result<RecordingStopped, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::recording_stop(&app, discard.unwrap_or(false)).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, discard);
+        Err("ios_recording_stop is only available on iOS".into())
+    }
+}
+
+/// `{ status, elapsedSecs, level, interrupted, micPermission, orphan? }`.
+#[tauri::command]
+pub async fn ios_recording_state(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    ios_only!("ios_recording_state", app, ios_impl::recording_state(&app).await)
+}
+
+/// Keep or discard a staging folder a force-quit left behind.
+#[tauri::command]
+pub async fn ios_recording_recover(app: tauri::AppHandle, action: String, dir: String) -> Result<Option<String>, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::recording_recover(&app, &action, &dir).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, action, dir);
+        Err("ios_recording_recover is only available on iOS".into())
+    }
+}
+
 #[tauri::command]
 pub async fn ios_notification_status(app: tauri::AppHandle) -> Result<NotificationStatus, String> {
     ios_only!("ios_notification_status", app, ios_impl::notification_status(&app).await)
@@ -1177,7 +1246,8 @@ pub async fn ios_stat_file(app: tauri::AppHandle, rel_path: String) -> Result<Fi
 #[cfg(target_os = "ios")]
 mod ios_impl {
     use super::{
-        DownloadState, FileEntry, FileStat, LibraryGrant, NotificationStatus, SpeechStarted, SpeechState, SpeechVoice,
+        DownloadState, FileEntry, FileStat, LibraryGrant, NotificationStatus, RecordingStopped, SpeechStarted, SpeechState,
+        SpeechVoice,
     };
     use tauri::AppHandle;
     use tauri_plugin_notesage_ios::NotesageIosExt;
@@ -1399,6 +1469,33 @@ mod ios_impl {
         }
     }
 
+    pub async fn recording_start(app: &AppHandle, language: Option<&str>) -> Result<(), String> {
+        app.notesage_ios().recording_start(language).map_err(|e| e.to_string())
+    }
+
+    pub async fn recording_pause(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().recording_pause().map_err(|e| e.to_string())
+    }
+
+    pub async fn recording_resume(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().recording_resume().map_err(|e| e.to_string())
+    }
+
+    pub async fn recording_stop(app: &AppHandle, discard: bool) -> Result<RecordingStopped, String> {
+        app.notesage_ios()
+            .recording_stop(discard)
+            .map(|r| RecordingStopped { rel_path: r.rel_path, manifest: r.manifest })
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn recording_state(app: &AppHandle) -> Result<serde_json::Value, String> {
+        app.notesage_ios().recording_state().map_err(|e| e.to_string())
+    }
+
+    pub async fn recording_recover(app: &AppHandle, action: &str, dir: &str) -> Result<Option<String>, String> {
+        app.notesage_ios().recording_recover(action, dir).map(|r| r.rel_path).map_err(|e| e.to_string())
+    }
+
     pub async fn notification_status(app: &AppHandle) -> Result<NotificationStatus, String> {
         app.notesage_ios().notification_status().map(notification).map_err(|e| e.to_string())
     }
@@ -1554,6 +1651,73 @@ mod tests {
                 "{cmd} does not guard against the empty (library-root) path"
             );
         }
+    }
+
+    #[test]
+    fn the_recording_commands_are_all_ios_only() {
+        // Every recording command must route through `ios_only!`, whose
+        // non-iOS arm returns `Err`. A new one written without it would
+        // compile on the desktop and then do nothing at runtime with no error
+        // — the failure mode this whole seam exists to prevent. Source-shape,
+        // because the bodies are iOS-only and there is no `AppHandle` to call
+        // them with in a unit test.
+        let src = include_str!("ios_library.rs");
+        for cmd in [
+            "ios_recording_start", "ios_recording_pause", "ios_recording_resume",
+            "ios_recording_stop", "ios_recording_state", "ios_recording_recover",
+        ] {
+            let at = src
+                .find(&format!("pub async fn {cmd}("))
+                .unwrap_or_else(|| panic!("{cmd} not found"));
+            let body = &src[at..at + 600];
+            assert!(
+                body.contains("ios_only!"),
+                "{cmd} does not go through ios_only!, so the desktop build would silently no-op"
+            );
+        }
+    }
+
+    #[test]
+    fn the_audio_arbiter_never_stops_speech_off_the_main_thread() {
+        // The recorder's `prepare()` runs on a worker queue, so anything
+        // `claim` calls runs there too. It used to call
+        // `SpeechPlayer.shared.stop()` inline, which tore down the
+        // synthesizer, its paragraph array and the now-playing entry from a
+        // background thread while the main thread could be reading the same
+        // state. Handing the session over is a main-thread step now, and this
+        // keeps it that way. Source-shape: the repo has no XCTest harness.
+        let src = include_str!(
+            "../../crates/tauri-plugin-notesage-ios/ios/Sources/AudioOwner.swift"
+        );
+        let claim = &src[src.find("func claim(").expect("claim not found")..];
+        let claim = &claim[..claim.find("\n    }").expect("claim body not closed")];
+        assert!(
+            !claim.contains("SpeechPlayer"),
+            "AudioSessionArbiter.claim touches SpeechPlayer again; it runs on the recorder's worker queue"
+        );
+        assert!(
+            src.contains("dispatchPrecondition(condition: .onQueue(.main))"),
+            "the speech hand-over no longer asserts it is on the main thread"
+        );
+    }
+
+    #[test]
+    fn a_refused_audio_session_actually_stops_speech() {
+        // `activateSession()` used to be `try?` with the result discarded, so
+        // the arbiter's one refusal was swallowed and the synthesizer spoke
+        // over a running recording anyway. The plugin's pre-check is not the
+        // gate: an async language detection sits between it and playback.
+        let src = include_str!(
+            "../../crates/tauri-plugin-notesage-ios/ios/Sources/SpeechPlayer.swift"
+        );
+        assert!(
+            !src.contains("try? AudioSessionArbiter"),
+            "SpeechPlayer swallows the session refusal again"
+        );
+        assert!(
+            src.contains("guard activateSession() else"),
+            "SpeechPlayer no longer refuses to speak when the session is denied"
+        );
     }
 
     #[test]

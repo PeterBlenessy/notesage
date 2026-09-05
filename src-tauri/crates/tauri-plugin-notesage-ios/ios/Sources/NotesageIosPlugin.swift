@@ -33,6 +33,19 @@ struct SpeechRateArgs: Decodable {
   let rate: Float
 }
 
+struct RecordingStartArgs: Decodable {
+  let language: String?
+}
+
+struct RecordingStopArgs: Decodable {
+  let discard: Bool?
+}
+
+struct RecordingRecoverArgs: Decodable {
+  let action: String
+  let dir: String
+}
+
 struct UnreadCountArgs: Decodable {
   let markSeen: Bool?
 }
@@ -260,6 +273,7 @@ class NotesageIosPlugin: Plugin {
     // finishes launching, which is where plugin load sits.
     Notifier.shared.install()
     BackgroundRefresh.register()
+    Recorder.shared.onEvent = { [weak self] detail in self?.emit("notesage:recording", detail) }
     applyLaunchBackground(to: webview)
     DispatchQueue.main.async { [weak webview] in
       guard let webview else { return }
@@ -563,7 +577,106 @@ class NotesageIosPlugin: Plugin {
   // now-playing info centre are all process-wide, and a second synthesiser
   // would fight the first for the same audio route.
 
+  // MARK: - Recording
+
+  @objc public func recordingStart(_ invoke: Invoke) {
+    let language = (try? invoke.parseArgs(RecordingStartArgs.self))?.language
+    DispatchQueue.main.async {
+      Recorder.shared.start(language: language) { result in
+        switch result {
+        case .success: invoke.resolve()
+        case .failure(let error):
+          if case Recorder.RecorderError.microphoneDenied = error {
+            invoke.reject("microphone-denied")
+          } else if case Recorder.RecorderError.lowDiskSpace = error {
+            invoke.reject("low-disk-space")
+          } else if case AudioOwnerError.recordingInProgress = error {
+            invoke.reject("recording-in-progress")
+          } else {
+            invoke.reject(String(describing: error))
+          }
+        }
+      }
+    }
+  }
+
+  @objc public func recordingPause(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      Recorder.shared.pause()
+      invoke.resolve()
+    }
+  }
+
+  @objc public func recordingResume(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      Recorder.shared.resume()
+      invoke.resolve()
+    }
+  }
+
+  /// Stop, and either finalise into the library or discard (a slip of the
+  /// finger under five seconds — the frontend decides and says which).
+  @objc public func recordingStop(_ invoke: Invoke) {
+    let discard = (try? invoke.parseArgs(RecordingStopArgs.self))?.discard ?? false
+    DispatchQueue.main.async {
+      do {
+        let staged = try Recorder.shared.stop()
+        if discard {
+          try? FileManager.default.removeItem(at: staged.dir)
+          Recorder.endFinalizing(staged.dir)
+          invoke.resolve(["relPath": NSNull(), "manifest": NSNull()])
+          return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+          do {
+            let (rel, manifest) = try LibraryAccess.finalizeRecording(staged)
+            Recorder.endFinalizing(staged.dir)
+            invoke.resolve(["relPath": rel, "manifest": manifest])
+          } catch {
+            // The audio is safe in the staging folder: the next launch offers
+            // to recover it, so the claim is dropped and it becomes an orphan
+            // again — which is exactly what it now is.
+            Recorder.endFinalizing(staged.dir)
+            invoke.reject(String(describing: error))
+          }
+        }
+      } catch { invoke.reject(String(describing: error)) }
+    }
+  }
+
+  @objc public func recordingState(_ invoke: Invoke) {
+    DispatchQueue.main.async { invoke.resolve(Recorder.shared.stateDictionary()) }
+  }
+
+  /// An orphan left by a force-quit: keep it (finalise into the library) or
+  /// discard it. Never decided without the user.
+  @objc public func recordingRecover(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(RecordingRecoverArgs.self)
+      DispatchQueue.global(qos: .userInitiated).async {
+        if args.action == "discard" {
+          Recorder.discardOrphan(args.dir)
+          invoke.resolve(["relPath": NSNull()])
+          return
+        }
+        guard let staged = Recorder.stagedOrphan(args.dir) else {
+          invoke.reject("the recording could not be read")
+          return
+        }
+        do {
+          let (rel, _) = try LibraryAccess.finalizeRecording(staged)
+          invoke.resolve(["relPath": rel])
+        } catch { invoke.reject(String(describing: error)) }
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
   @objc public func speechStart(_ invoke: Invoke) {
+    // A meeting being recorded is worth more than an article being read.
+    if Recorder.shared.state != .idle {
+      invoke.reject("recording-in-progress")
+      return
+    }
     do {
       let args = try invoke.parseArgs(SpeechStartArgs.self)
       // Language detection is up to 60 recogniser passes on a long article —
@@ -598,10 +711,19 @@ class NotesageIosPlugin: Plugin {
         let artwork = args.artworkBase64
           .flatMap { Data(base64Encoded: $0) }
           .flatMap { UIImage(data: $0) }
-        SpeechPlayer.shared.start(
+        let started = SpeechPlayer.shared.start(
           text: args.text, title: args.title, startIndex: args.startIndex,
           rate: args.rate, voiceByLanguage: args.voiceByLanguage, language: language,
           artwork: artwork)
+        // The check at the top of this method is an EARLY out, not the gate:
+        // the language detection above is asynchronous, so a recording can
+        // begin between the two. The player refusing the audio session is the
+        // real gate, and a refusal has to reach the caller.
+        guard started else {
+          invoke.reject(
+            Recorder.shared.state == .idle ? "nothing-to-read" : "recording-in-progress")
+          return
+        }
         // Resolved from INSIDE the dispatch: resolving before the work runs
         // meant a native failure could never reach the JS `.catch`. The
         // detected language comes back so the voice picker knows what to list.
@@ -751,12 +873,18 @@ class NotesageIosPlugin: Plugin {
   /// Same bridge shape as the chrome overlay's `emit` — JSON-serialised so a
   /// title with quotes or emoji cannot break out of the JS string literal.
   private func emitSpeech(_ detail: [String: Any]) {
+    emit("notesage:speech", detail)
+  }
+
+  private func emit(_ name: String, _ detail: [String: Any]) {
     guard let data = try? JSONSerialization.data(withJSONObject: detail),
       let json = String(data: data, encoding: .utf8)
     else { return }
-    webViewRef?.evaluateJavaScript(
-      "window.dispatchEvent(new CustomEvent('notesage:speech',{detail:\(json)}))"
-    )
+    DispatchQueue.main.async { [weak self] in
+      self?.webViewRef?.evaluateJavaScript(
+        "window.dispatchEvent(new CustomEvent('\(name)',{detail:\(json)}))"
+      )
+    }
   }
 
   @objc public func listDirectory(_ invoke: Invoke) {

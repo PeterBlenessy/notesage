@@ -179,6 +179,13 @@ def patch_project_yml() -> None:
     # a separate binary and is asked separately.
     app_info.setdefault("ITSAppUsesNonExemptEncryption", False)
 
+    # The microphone (recordings PRD): declared here on purpose, with copy
+    # written for the phone, rather than arriving by accident from the
+    # macOS-oriented src-tauri/Info.plist that Tauri merges.
+    app_info["NSMicrophoneUsageDescription"] = (
+        "Notesage records meetings and voice notes you start yourself. Recordings stay in your library."
+    )
+
     # Background audio (#833) — WITHOUT this the read-aloud player is silently
     # broken in exactly the case it exists for.
     #
@@ -193,6 +200,9 @@ def patch_project_yml() -> None:
     modes = app_info.setdefault("UIBackgroundModes", [])
     if "audio" not in modes:
         modes.append("audio")
+    # `audio` covers playback (read-aloud) AND an in-progress recording:
+    # `.playAndRecord` with this mode is what keeps the recorder alive with
+    # the screen locked.
     # Background App Refresh (notifications PRD): the refresh task must be
     # both a permitted identifier and a declared background mode, or iOS
     # silently never schedules it — there is no runtime error to see.

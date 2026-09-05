@@ -34,3 +34,19 @@ export function inboxDir(notesRoot: string): string {
 export function inboxMetaDir(notesRoot: string): string {
   return `${inboxDir(notesRoot)}/.notesage`;
 }
+
+/**
+ * The folder whose name the desktop recorder and the phone agree on — a
+ * literal for the same reason the Inbox is one.
+ */
+export const RECORDINGS_FOLDER_NAME = "Recordings";
+
+/**
+ * Where recording bundles live: `<library root>/Recordings`. Follows the
+ * Inbox's root rule (`settings.icloudNotesagePath` when sync is on, else
+ * `resolveNotesRoot`), so on the phone `Recordings/` sits beside `Inbox/` and
+ * a bundle the phone finalizes there is what the Mac's scanner lists.
+ */
+export function recordingsDir(notesRoot: string): string {
+  return `${notesRoot.replace(/\/+$/, "")}/${RECORDINGS_FOLDER_NAME}`;
+}

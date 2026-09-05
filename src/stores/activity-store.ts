@@ -74,6 +74,21 @@ export interface AgentTask {
   language?: string;
 
   /**
+   * Where the recording came from when it was not this Mac — the phone's
+   * device label from the bundle's `recording.json` (`kind === 'transcription'`).
+   * The card captions it *from Peter's iPhone*; absent for the Mac's own
+   * recordings.
+   */
+  sourceDevice?: string;
+
+  /**
+   * Why the job failed, verbatim from the thrown error (`kind === 'transcription'`,
+   * `status === 'error'`). Written back into the bundle manifest so the phone
+   * can show it; the toast already shows it on the Mac.
+   */
+  errorMessage?: string;
+
+  /**
    * The language Whisper reports it actually decoded (`kind === 'transcription'`).
    *
    * Distinct from `language` above, which is what the run *asked* for. When
@@ -110,13 +125,15 @@ interface ActivityStore {
     recordingDurationSecs?: number;
     /** Whisper language code actually used for this run. */
     language?: string;
+    /** Device label of the recorder when it was not this Mac. */
+    sourceDevice?: string;
   }): void;
   /** Update a transcription job's progress (0–100). */
   setTranscriptionProgress(id: string, percent: number): void;
   /** Mark a transcription job done and record the output transcript path. */
   setTranscriptionDone(id: string, transcriptPath: string, detectedLanguage?: string): void;
-  /** Mark a transcription job as failed (re-runnable from the inbox). */
-  setTranscriptionError(id: string): void;
+  /** Mark a transcription job as failed (re-runnable from the inbox), keeping the error text. */
+  setTranscriptionError(id: string, errorMessage?: string): void;
   /**
    * Record that a completed transcription job's bundle has been moved into a
    * project. Sets `moved: true` (hides the "Move to project" action) and
@@ -211,6 +228,7 @@ export const useActivityStore = create<ActivityStore>()(
         recordingStoppedAt,
         recordingDurationSecs,
         language,
+        sourceDevice,
       }) => {
         const task: AgentTask = {
           id,
@@ -224,6 +242,7 @@ export const useActivityStore = create<ActivityStore>()(
           recordingStoppedAt,
           recordingDurationSecs,
           language,
+          sourceDevice,
           progress: 0,
           activities: [],
           startedAt: Date.now(),
@@ -267,11 +286,11 @@ export const useActivityStore = create<ActivityStore>()(
         }));
       },
 
-      setTranscriptionError: (id) => {
+      setTranscriptionError: (id, errorMessage) => {
         set((state) => ({
           tasks: state.tasks.map((t) =>
             t.id === id
-              ? { ...t, status: 'error' as const, completedAt: Date.now() }
+              ? { ...t, status: 'error' as const, completedAt: Date.now(), errorMessage }
               : t
           ),
         }));
@@ -296,7 +315,7 @@ export const useActivityStore = create<ActivityStore>()(
         set((state) => ({
           tasks: state.tasks.map((t) =>
             t.id === id && t.kind === 'transcription'
-              ? { ...t, status: 'running' as const, progress: 0, completedAt: undefined }
+              ? { ...t, status: 'running' as const, progress: 0, completedAt: undefined, errorMessage: undefined }
               : t
           ),
         }));
