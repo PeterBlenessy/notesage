@@ -14,6 +14,7 @@ import { clearArticleMetaCache } from "@/lib/article-meta-cache";
 import { startSpeechEvents } from "@/lib/speech-controller";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 import { Reader } from "@/components/mobile/Reader";
+import { HomeFolders } from "@/components/mobile/HomeFolders";
 import { Onboarding } from "@/components/mobile/Onboarding";
 
 // pdf.js needs browser globals (DOMMatrix) absent in jsdom; the Reader
@@ -31,7 +32,8 @@ vi.mock("@tauri-apps/plugin-opener", () => ({
 /** Mirrors MobileApp's screen switch without ThemeProvider (avoids matchMedia). */
 function Shell() {
   const openDoc = useMobileStore((s) => s.openDoc);
-  return openDoc ? <Reader /> : <LibraryBrowser />;
+  const homeEditorOpen = useMobileStore((s) => s.homeEditorOpen);
+  return homeEditorOpen ? <HomeFolders /> : openDoc ? <Reader /> : <LibraryBrowser />;
 }
 
 const invokeMock = vi.mocked(invoke);
@@ -285,6 +287,7 @@ interface CapturedChromeSpec {
 
 describe("sort toggle (#632)", () => {
   it("toggles between alphabetical (folders first) and modified-newest, persisted", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "beta.md", path: "beta.md", is_directory: false, hidden: false, modified: 300 },
       { name: "Alpha", path: "Alpha", is_directory: true, hidden: false, modified: 100 },
@@ -346,6 +349,8 @@ describe("sort toggle (#632)", () => {
       ["Standard images", true],
       ["Larger images", false],
       ["Original images", false],
+      // Home only: the screen that curates it.
+      ["Edit Home…", undefined],
     ]);
     // The size picks are conditional: four rows offering to choose a
     // resolution for work that is switched OFF is the kind of dead control
@@ -372,6 +377,8 @@ describe("sort toggle (#632)", () => {
         // view(3: list · gallery · condensed rows, #836) · sort(2) · group(5) · offline toggle + 4 size picks
         true, false, false, false, true, true, false, false, false, false,
         true, false, true, false, false,
+        // …and the Edit Home action row, which is not a pick.
+        undefined,
       ]),
     );
   });
@@ -450,6 +457,7 @@ describe("foreground refresh (#650)", () => {
 
 describe("group by (#652)", () => {
   it("groups files under Recent / All Notes with folders in their own section", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Sub", path: "Sub", is_directory: true, hidden: false },
       { name: "seen.md", path: "seen.md", is_directory: false, hidden: false },
@@ -595,6 +603,7 @@ describe("swipe delete (#618)", () => {
   });
 
   it("directories expose no swipe actions (folder deletion stays off the surface)", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Folder", path: "Folder", is_directory: true, hidden: false },
     ]);
@@ -607,6 +616,7 @@ describe("swipe delete (#618)", () => {
 
 describe("gallery view toggle (#633)", () => {
   it("starts in list layout and switches to the gallery grid on toggle, back on toggle again", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Sub", path: "Sub", is_directory: true, hidden: false },
     ]);
@@ -625,6 +635,7 @@ describe("gallery view toggle (#633)", () => {
   });
 
   it("only invokes allowed read commands while browsing in gallery mode", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Sub", path: "Sub", is_directory: true, hidden: false },
     ]);
@@ -1670,6 +1681,7 @@ describe("folder view row swipe actions (issue #618)", () => {
   });
 
   it("does not reveal a Share action when a directory row is swiped", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Sub", path: "Sub", is_directory: true, hidden: false },
     ]);
@@ -2048,6 +2060,7 @@ describe("library re-pick", () => {
 
 describe("pinning a folder (#685)", () => {
   it("puts a pinned FOLDER in the Pinned section, not stranded under Folders", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Kept", path: "Kept", is_directory: true, hidden: false, child_count: 2 },
       { name: "Loose", path: "Loose", is_directory: true, hidden: false, child_count: 1 },
@@ -2069,6 +2082,7 @@ describe("pinning a folder (#685)", () => {
   });
 
   it("drops the Folders header when every folder is pinned", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Kept", path: "Kept", is_directory: true, hidden: false, child_count: 2 },
       { name: "note.md", path: "note.md", is_directory: false, hidden: false },
@@ -2083,6 +2097,7 @@ describe("pinning a folder (#685)", () => {
   });
 
   it("keeps folders in their own leading section in every other mode", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Kept", path: "Kept", is_directory: true, hidden: false, child_count: 1 },
       { name: "note.md", path: "note.md", is_directory: false, hidden: false, modified: Date.now() / 1000 },
@@ -2100,6 +2115,13 @@ describe("pinning a folder (#685)", () => {
 
 describe("Inbox shortcut (#683)", () => {
   it("pins Inbox above the root listing and omits it from the list below", async () => {
+    setMockInvokeHandler("ios_read_file", (args) =>
+      (args as { relPath: string }).relPath === ".notesage/home.json"
+        ? JSON.stringify({ version: 1, folders: ["Inbox", "Zebra", "Apple"] })
+        : (() => {
+            throw new Error("not found");
+          })(),
+    );
     // The count rides along on the listing itself (#684) — no second read.
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 2 },
@@ -2129,11 +2151,36 @@ describe("Inbox shortcut (#683)", () => {
   });
 
   it("shows no card when nothing has ever been shared", async () => {
+    setMockInvokeHandler("ios_read_file", (args) =>
+      (args as { relPath: string }).relPath === ".notesage/home.json"
+        ? JSON.stringify({ version: 1, folders: ["Ideas"] })
+        : (() => {
+            throw new Error("not found");
+          })(),
+    );
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Ideas", path: "Ideas", is_directory: true, hidden: false },
     ]);
     renderWithProviders(<LibraryBrowser />);
     await screen.findByText("Ideas");
     expect(screen.queryByText("Inbox")).toBeNull();
+  });
+});
+
+describe("Edit Home is a screen of its own", () => {
+  it("opens over the browser and Back returns to it", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Inbox", path: "Inbox", is_directory: true, hidden: false },
+    ]);
+    setMockInvokeHandler("ios_read_file", () => {
+      throw new Error("not found");
+    });
+    renderWithProviders(<Shell />);
+    await screen.findByText("All Folders");
+    useMobileStore.getState().openHomeEditor();
+    await screen.findByRole("switch", { name: "Inbox" });
+    expect(screen.queryByText("All Folders")).toBeNull();
+    expect(useMobileStore.getState().goBack()).toBe(true);
+    await screen.findByText("All Folders");
   });
 });

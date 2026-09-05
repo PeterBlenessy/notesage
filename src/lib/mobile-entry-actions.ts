@@ -27,6 +27,7 @@ import {
 import { t } from "@/lib/i18n";
 import { useMobileStore } from "@/stores/mobile-store";
 import { evictThumbnail, getThumbnail } from "@/lib/mobile-thumbnails";
+import { isHomeCandidate } from "@/lib/home-file";
 
 export interface EntryActionContext {
   /** Whether a root-relative path is in the shared pins file. A predicate
@@ -47,6 +48,11 @@ export interface EntryActionContext {
   /** Open a saved page and start reading it aloud. Offered for HTML
    *  entries only — the kind the Reader can turn into speech from a list. */
   onListen?: (entry: FileEntry) => void;
+  /** Whether a root folder is on Home. With `setOnHome`, enables the
+   *  Show on Home / Hide from Home row for root-level folders. */
+  isOnHome?: (relPath: string) => boolean;
+  /** Put a root folder on Home or take it off; the caller reports failure. */
+  setOnHome?: (relPath: string, shown: boolean) => Promise<void>;
 }
 
 /**
@@ -86,6 +92,15 @@ export function entryMenuItems(entry: FileEntry, ctx: EntryActionContext): IosEn
     destructive: true,
     inline: true,
   });
+  // Home (a curated root): one row for root-level folders, after the icon
+  // row and before the rest, so the frequent gesture stays where it is.
+  if (ctx.isOnHome && ctx.setOnHome && isHomeCandidate(entry)) {
+    items.push(
+      ctx.isOnHome(entry.path)
+        ? { id: "home-hide", title: t("action.hideFromHome"), systemImage: "house.slash" }
+        : { id: "home-show", title: t("action.showOnHome"), systemImage: "house" },
+    );
+  }
   if (ctx.onListen && !entry.is_directory && /\.html?$/i.test(entry.name)) {
     // The same gesture as the row's control, so the same label: Pause or
     // Play for the article playing, Listen for any other.
@@ -188,6 +203,12 @@ export async function runEntryAction(
     case "listen":
       ctx.onListen?.(entry);
       return;
+    case "home-show":
+      await ctx.setOnHome?.(entry.path, true);
+      return;
+    case "home-hide":
+      await ctx.setOnHome?.(entry.path, false);
+      return;
     case "share":
       await iosShareFile(entry.path).catch((err) =>
         toast.error(t("action.shareFailed", { error: String(err) })),
@@ -224,7 +245,11 @@ export async function runEntryAction(
     case "delete": {
       if (!(await confirmDelete(entry))) return;
       await iosDeleteFile(entry.path)
-        .then(() => {
+        .then(async () => {
+          // A Home folder that is gone leaves no dead entry waiting for the
+          // next compaction — written before the listing reloads, so the
+          // reload's own re-read of home.json cannot land first.
+          if (entry.is_directory && ctx.isOnHome?.(entry.path)) await ctx.setOnHome?.(entry.path, false);
           ctx.onPathRemoved?.(entry.path);
           ctx.onChanged?.();
         })

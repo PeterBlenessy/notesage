@@ -23,6 +23,15 @@ import {
   parsePinsFileContent,
   serializePinsFileContent,
 } from "@/lib/pins-file";
+import {
+  HOME_FILE_REL_PATH,
+  HOME_KEY,
+  applyHomeChange,
+  defaultHomeFolders,
+  parseHomeFileContent,
+  serializeHomeFileContent,
+} from "@/lib/home-file";
+import type { FileEntry } from "@/lib/tauri";
 
 /**
  * - `unknown`  — not yet resolved (initial; show a neutral splash)
@@ -276,6 +285,28 @@ interface MobileStore {
   listDensity: ListDensity;
   setListDensity: (density: ListDensity) => void;
 
+  /**
+   * The folders Home shows, from `.notesage/home.json` — `null` when the
+   * library has no such file, in which case the defaults apply (the Inbox
+   * alone). Not persisted: the file is the truth, re-read with every root
+   * listing so a change made on another device shows on the next refresh.
+   */
+  homeFolders: string[] | null;
+  /** Read `home.json`; a missing or unreadable file is `null`, never a throw. */
+  loadHomeFolders: () => Promise<void>;
+  /** Put a root folder on Home or take it off: read-modify-write of the
+   *  shared file, compacting entries that no longer name a folder in
+   *  `rootEntries`. Rethrows so the caller can say so. */
+  setOnHome: (relPath: string, shown: boolean, rootEntries: FileEntry[]) => Promise<void>;
+  /** Whether the Edit Home screen is showing (session only). */
+  homeEditorOpen: boolean;
+  openHomeEditor: () => void;
+  closeHomeEditor: () => void;
+  /** The one-line hint under a not-yet-curated Home has been dismissed
+   *  (persisted: it is about this screen having changed). */
+  homeHintDismissed: boolean;
+  dismissHomeHint: () => void;
+
   /** Pin or unpin a root-relative path, writing the shared
    *  `.notesage/pins.json` the desktop reads. Re-reads the file first so a
    *  pin made on the desktop since the last load is not clobbered. */
@@ -307,10 +338,11 @@ const MAX_READING_RESETS = 500;
 const MAX_FOLDER_VIEWS = 200;
 
 /**
- * The view a folder shows: its own choices over the app-wide fallback. The
- * root is the exception — a list by default whatever the fallback says,
- * because a root of folders rendered as a wall of identical cards was the
- * complaint that made views per-folder in the first place.
+ * The view a screen shows: its own choices over the app-wide fallback. Home
+ * (`HOME_KEY`) is the exception — a list by default whatever the fallback
+ * says, because a root of folders rendered as a wall of identical cards was
+ * the complaint that made views per-folder in the first place. All Folders
+ * lists the same root under its own key and follows the fallback.
  */
 export function resolveFolderView(
   s: Pick<MobileStore, "folderViews" | "viewMode" | "listDensity" | "sortMode" | "groupMode">,
@@ -318,11 +350,20 @@ export function resolveFolderView(
 ): FolderView {
   const own = s.folderViews.find((e) => e.relPath === relPath)?.view ?? {};
   return {
-    viewMode: own.viewMode ?? (relPath === "" ? "list" : s.viewMode),
+    viewMode: own.viewMode ?? (relPath === HOME_KEY ? "list" : s.viewMode),
     listDensity: own.listDensity ?? s.listDensity,
     sortMode: own.sortMode ?? s.sortMode,
     groupMode: own.groupMode ?? s.groupMode,
   };
+}
+
+/**
+ * The key a screen remembers its view (and scroll offset) under: Home — the
+ * top of the stack — is `HOME_KEY`, every other screen its folder path.
+ * Home and "All Folders" both list the root and must not share a memory.
+ */
+export function screenKeyOf(folderStack: FolderRef[]): string {
+  return folderStack.length === 0 ? HOME_KEY : folderStack[folderStack.length - 1].relPath;
 }
 
 function withFolderView(views: FolderViewEntry[], relPath: string, patch: Partial<FolderView>): FolderViewEntry[] {
@@ -366,6 +407,9 @@ export const useMobileStore = create<MobileStore>()(
       readingProgress: {},
       readingResets: {},
       listDensity: "comfortable",
+      homeFolders: null,
+      homeEditorOpen: false,
+      homeHintDismissed: false,
 
       currentRelPath: () => {
         const stack = get().folderStack;
@@ -460,7 +504,11 @@ export const useMobileStore = create<MobileStore>()(
       closeDocument: () => set({ openDoc: null, docStack: [] }),
 
       goBack: () => {
-        const { openDoc, folderStack, docStack } = get();
+        const { openDoc, folderStack, docStack, homeEditorOpen } = get();
+        if (homeEditorOpen) {
+          set({ homeEditorOpen: false });
+          return true;
+        }
         // Walk the link trail before leaving the document. Following three
         // links and pressing Back should retrace them, not drop straight out
         // to the folder listing.
@@ -480,9 +528,9 @@ export const useMobileStore = create<MobileStore>()(
       },
 
       setSortMode: (mode) =>
-        set((s) => ({ folderViews: withFolderView(s.folderViews, s.currentRelPath(), { sortMode: mode }) })),
+        set((s) => ({ folderViews: withFolderView(s.folderViews, screenKeyOf(s.folderStack), { sortMode: mode }) })),
       setGroupMode: (mode) =>
-        set((s) => ({ folderViews: withFolderView(s.folderViews, s.currentRelPath(), { groupMode: mode }) })),
+        set((s) => ({ folderViews: withFolderView(s.folderViews, screenKeyOf(s.folderStack), { groupMode: mode }) })),
 
       goToDepth: (depth) =>
         set((s) => ({
@@ -492,7 +540,7 @@ export const useMobileStore = create<MobileStore>()(
         })),
 
       setViewMode: (mode) =>
-        set((s) => ({ folderViews: withFolderView(s.folderViews, s.currentRelPath(), { viewMode: mode }) })),
+        set((s) => ({ folderViews: withFolderView(s.folderViews, screenKeyOf(s.folderStack), { viewMode: mode }) })),
       setImageMaxPixel: (v) => set({ imageMaxPixel: v }),
       // Clamped rather than trusted: a value outside 0-1 is not a preference,
       // it is a bug, and it would reach CGImageDestination as one.
@@ -509,6 +557,36 @@ export const useMobileStore = create<MobileStore>()(
           set({ pinnedPaths: [] });
         }
       },
+
+      loadHomeFolders: async () => {
+        try {
+          set({ homeFolders: parseHomeFileContent(await iosReadFile(HOME_FILE_REL_PATH)) });
+        } catch {
+          set({ homeFolders: null });
+        }
+      },
+
+      setOnHome: async (relPath, shown, rootEntries) => {
+        // Read-modify-write against the FILE, as `togglePin` does: another
+        // device may have changed it since this one read it.
+        let current: string[] | null = null;
+        try {
+          current = parseHomeFileContent(await iosReadFile(HOME_FILE_REL_PATH));
+        } catch {
+          current = null;
+        }
+        // No file yet: start from what Home shows by default, so the first
+        // choice adds to the Inbox rather than replacing it.
+        const base = current ?? get().homeFolders ?? defaultHomeFolders(rootEntries);
+        const next = applyHomeChange(base, relPath, shown, rootEntries);
+        await iosEnsureDirectory(".notesage");
+        await iosWriteFile(HOME_FILE_REL_PATH, serializeHomeFileContent(next));
+        set({ homeFolders: next });
+      },
+
+      openHomeEditor: () => set({ homeEditorOpen: true }),
+      closeHomeEditor: () => set({ homeEditorOpen: false }),
+      dismissHomeHint: () => set({ homeHintDismissed: true }),
 
 
       rememberScroll: (relPath, offset) =>
@@ -544,7 +622,7 @@ export const useMobileStore = create<MobileStore>()(
         });
       },
       setListDensity: (density) =>
-        set((s) => ({ folderViews: withFolderView(s.folderViews, s.currentRelPath(), { listDensity: density }) })),
+        set((s) => ({ folderViews: withFolderView(s.folderViews, screenKeyOf(s.folderStack), { listDensity: density }) })),
 
       rememberSpeechVoice: (language, voiceId) =>
         set((s) => ({ speechVoices: { ...s.speechVoices, [language]: voiceId } })),
@@ -655,6 +733,19 @@ export const useMobileStore = create<MobileStore>()(
           };
         });
 
+        // A Home folder renamed here keeps its place on Home: the same
+        // read-modify-write, only when the old name is listed.
+        try {
+          const home = parseHomeFileContent(await iosReadFile(HOME_FILE_REL_PATH));
+          if (home?.includes(from)) {
+            const next = home.map(swap);
+            await iosWriteFile(HOME_FILE_REL_PATH, serializeHomeFileContent(next));
+            set({ homeFolders: next });
+          }
+        } catch {
+          // No home.json, or unreadable: nothing to carry over.
+        }
+
         // The pins FILE is the source of truth and is shared with the
         // desktop — updating only the cached array would drop the pin the
         // next time either side read the file. Read-modify-write, same as
@@ -731,10 +822,22 @@ export const useMobileStore = create<MobileStore>()(
           readingProgress: {},
           readingResets: {},
           listDensity: "comfortable",
+          homeFolders: null,
+          homeEditorOpen: false,
+          homeHintDismissed: false,
             }),
     }),
     {
       name: "mobile-store",
+      // Persisted state is whatever an earlier build wrote. A field whose
+      // shape changed (folderViews was briefly a map) must not take the
+      // whole app down at launch: drop what does not fit and start that
+      // field over.
+      merge: (persisted, current) => {
+        const p = { ...(persisted as Partial<MobileStore> | undefined) };
+        if (!Array.isArray(p.folderViews)) delete p.folderViews;
+        return { ...current, ...p };
+      },
       // The grant is authoritative on the backend; recents + sort persist.
       // The grant is authoritative on the backend; the durable preferences
       // are recents, the sort order, and the chosen view mode.
@@ -746,6 +849,7 @@ export const useMobileStore = create<MobileStore>()(
         readingProgress: s.readingProgress,
         readingResets: s.readingResets,
         listDensity: s.listDensity,
+        homeHintDismissed: s.homeHintDismissed,
         sortMode: s.sortMode,
         groupMode: s.groupMode,
         viewMode: s.viewMode,

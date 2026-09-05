@@ -1,16 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChevronLeft, FolderOpen, AlertCircle, Plus, FolderPlus, ArrowDownAZ, Clock, LayoutGrid, List } from "lucide-react";
+import { ChevronLeft, FolderOpen, Plus, FolderPlus, ArrowDownAZ, Clock, LayoutGrid, List, SlidersHorizontal } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory, iosCreateDirectory, iosTextPrompt, iosQuickLook } from "@/lib/ios-api";
 import { toast } from "sonner";
-import { useMobileStore, resolveFolderView } from "@/stores/mobile-store";
+import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-store";
 import { stopSpeech, toggleSpeech } from "@/lib/speech-controller";
 import type { EntryActionContext } from "@/lib/mobile-entry-actions";
 import { FileRow, classifyFile } from "./FileRow";
 import { ArticleRow } from "./ArticleRow";
 import { GalleryView } from "./GalleryView";
 import { InboxCard } from "./InboxCard";
+import { AllFoldersRow } from "./AllFoldersRow";
+import { HomeHint } from "./HomeHint";
+import { BrowserSkeleton, BrowserError } from "./BrowserStates";
+import { defaultHomeFolders } from "@/lib/home-file";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
@@ -52,6 +56,12 @@ export function LibraryBrowser() {
   const loadPinnedPaths = useMobileStore((s) => s.loadPinnedPaths);
   const setViewMode = useMobileStore((s) => s.setViewMode);
   const setListDensity = useMobileStore((s) => s.setListDensity);
+  const homeFolders = useMobileStore((s) => s.homeFolders);
+  const loadHomeFolders = useMobileStore((s) => s.loadHomeFolders);
+  const setOnHomeInFile = useMobileStore((s) => s.setOnHome);
+  const homeHintDismissed = useMobileStore((s) => s.homeHintDismissed);
+  const dismissHomeHint = useMobileStore((s) => s.dismissHomeHint);
+  const openHomeEditor = useMobileStore((s) => s.openHomeEditor);
   const inlineImagesEnabled = useMobileStore((s) => s.inlineImagesEnabled);
   const setInlineImagesEnabled = useMobileStore((s) => s.setInlineImagesEnabled);
   const imageMaxPixel = useMobileStore((s) => s.imageMaxPixel);
@@ -62,13 +72,21 @@ export function LibraryBrowser() {
 
   const currentRelPath = folderStack.length === 0 ? "" : folderStack[folderStack.length - 1].relPath;
   const currentName = folderStack.length === 0 ? libraryName || "Notesage" : folderStack[folderStack.length - 1].name;
-  // This folder's own view (layout, density, order, grouping), remembered
+  // Two screens list the root: Home (the top of the stack — the Inbox and
+  // the folders chosen for it) and All Folders (the root pushed as a level).
+  // "Root listing" and "top of the stack" are therefore two questions.
+  const atHome = folderStack.length === 0;
+  const isRootListing = currentRelPath === "";
+  // The key under which this SCREEN remembers its scroll offset and view:
+  // Home and All Folders must not share one.
+  const screenKey = screenKeyOf(folderStack);
+  // This screen's own view (layout, density, order, grouping), remembered
   // per folder like Finder's — one primitive selector each so a change to
   // another folder's view does not re-render this listing.
-  const viewMode = useMobileStore((s) => resolveFolderView(s, currentRelPath).viewMode);
-  const listDensity = useMobileStore((s) => resolveFolderView(s, currentRelPath).listDensity);
-  const sortMode = useMobileStore((s) => resolveFolderView(s, currentRelPath).sortMode);
-  const groupMode = useMobileStore((s) => resolveFolderView(s, currentRelPath).groupMode);
+  const viewMode = useMobileStore((s) => resolveFolderView(s, screenKey).viewMode);
+  const listDensity = useMobileStore((s) => resolveFolderView(s, screenKey).listDensity);
+  const sortMode = useMobileStore((s) => resolveFolderView(s, screenKey).sortMode);
+  const groupMode = useMobileStore((s) => resolveFolderView(s, screenKey).groupMode);
 
   const [state, setState] = useState<LoadState>({ status: "loading" });
   const [query, setQuery] = useState("");
@@ -96,11 +114,14 @@ export function LibraryBrowser() {
       // What the Mac read (or listened to) shows here: merge the shared
       // sidecar into the local store whenever the Inbox is listed.
       if (currentRelPath === INBOX_NAME) void pullInboxProgress();
+      // The chosen Home follows the root listing: one small read, so a
+      // change made on the iPad shows on the next refresh here.
+      if (currentRelPath === "") void loadHomeFolders();
     } catch (err) {
       if (loadIdRef.current !== loadId) return;
       setState({ status: "error", message: String(err) });
     }
-  }, [currentRelPath]);
+  }, [currentRelPath, loadHomeFolders]);
 
   useEffect(() => {
     void load();
@@ -147,11 +168,11 @@ export function LibraryBrowser() {
   useEffect(() => {
     const el = scrollerRef.current;
     if (!el || state.status !== "ready" || state.entries.length === 0) return;
-    if (restoredFor.current === currentRelPath) return;
-    restoredFor.current = currentRelPath;
-    const offset = useMobileStore.getState().scrollOffsets[currentRelPath] ?? 0;
+    if (restoredFor.current === screenKey) return;
+    restoredFor.current = screenKey;
+    const offset = useMobileStore.getState().scrollOffsets[screenKey] ?? 0;
     if (offset > 0) el.scrollTop = offset;
-  }, [state, currentRelPath]);
+  }, [state, screenKey]);
 
   // Record the offset as it changes, cheaply: rAF-coalesced, and written to
   // the store rather than React state so scrolling never re-renders the list.
@@ -161,7 +182,7 @@ export function LibraryBrowser() {
     scrollTick.current = requestAnimationFrame(() => {
       scrollTick.current = 0;
       const el = scrollerRef.current;
-      if (el) useMobileStore.getState().rememberScroll(currentRelPath, el.scrollTop);
+      if (el) useMobileStore.getState().rememberScroll(screenKey, el.scrollTop);
     });
   };
   useEffect(() => () => cancelAnimationFrame(scrollTick.current), []);
@@ -363,7 +384,7 @@ export function LibraryBrowser() {
   // creates an untitled note IMMEDIATELY (Notes-style — no prompt; the
   // note's title will become the filename once editing lands) and
   // long-press offers New Folder via the native UIMenu.
-  const atRoot = folderStack.length === 0;
+  const atRoot = isRootListing;
   // Whether the rows on screen (after the search filter) include a document
   // — what the density toggle would act on.
   const listedHasDocuments =
@@ -371,6 +392,19 @@ export function LibraryBrowser() {
     state.entries.some(
       (e) => !e.is_directory && (!query || e.name.toLowerCase().includes(query.toLowerCase())),
     );
+
+  // The folders Home shows: the file's list, or the defaults when the
+  // library has no file yet. Only meaningful over the root listing.
+  const rootEntries = isRootListing && state.status === "ready" ? state.entries : [];
+  const homeSet = new Set(homeFolders ?? defaultHomeFolders(rootEntries));
+  // What the status label counts: the rows on screen, which at Home is the
+  // curated set, not the whole root.
+  const shownCount =
+    state.status !== "ready"
+      ? 0
+      : atHome && !query
+        ? state.entries.filter((e) => !e.is_directory || homeSet.has(e.path)).length
+        : state.entries.length;
 
   // One action set for both layouts (#680) — built here so the pin state and
   // the listing reload are wired once rather than per row.
@@ -386,6 +420,15 @@ export function LibraryBrowser() {
       const playing = useMobileStore.getState().speech?.relPath;
       if (playing && (playing === relPath || playing.startsWith(`${relPath}/`))) stopSpeech();
       void forgetPath(relPath);
+    },
+    isOnHome: (relPath) => homeSet.has(relPath),
+    setOnHome: async (relPath, shown) => {
+      try {
+        await setOnHomeInFile(relPath, shown, rootEntries);
+        if (shown) dismissHomeHint();
+      } catch (err) {
+        toast.error(t("home.updateFailed", { error: String(err) }));
+      }
     },
   };
 
@@ -571,6 +614,11 @@ export function LibraryBrowser() {
                 { id: "img-original", title: t("menu.imageSizeOriginal"), icon: "photo.badge.arrow.down", selected: imageMaxPixel === "original" },
               ] as const)
             : []),
+          // Edit Home (a switch per root folder) is a screen, not a menu —
+          // thirty folders in a UIMenu is the wrong tool. Home only.
+          ...(atHome
+            ? [{ id: "edit-home", title: t("menu.editHome"), icon: "slider.horizontal.3", sectionBreak: true }]
+            : []),
         ],
       },
       bottomRight: atRoot
@@ -585,9 +633,9 @@ export function LibraryBrowser() {
         placeholder: t("library.searchFolder"),
         status:
           state.status === "ready"
-            ? state.entries.length === 1
+            ? shownCount === 1
               ? t("library.itemsOne")
-              : t("library.items", { count: state.entries.length })
+              : t("library.items", { count: shownCount })
             : undefined,
       },
     },
@@ -610,6 +658,7 @@ export function LibraryBrowser() {
       "img-2048": () => setImageMaxPixel(2048),
       "img-original": () => setImageMaxPixel("original"),
       "goto-inbox": () => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME }),
+      "edit-home": () => openHomeEditor(),
       "create-note": () => createNote(),
       "create-folder": () => void createFolder(),
       "search-query": (value?: string) => setQuery(value ?? ""),
@@ -670,7 +719,7 @@ export function LibraryBrowser() {
           pattern, issue #581). The large title lives IN the content, so it
           scrolls away like Notes' does. */}
       <div
-        key={currentRelPath}
+        key={screenKey}
         ref={scrollerRef}
         onScroll={onScroll}
         onTouchStart={onPullStart}
@@ -733,13 +782,19 @@ export function LibraryBrowser() {
                 ? state.entries.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()))
                 : state.entries,
             );
+            // Home is the root listing curated: the Inbox card (when the
+            // Inbox is on Home), the chosen folders, and the root's own
+            // files. Everything else waits under All Folders. A search
+            // looks through the whole root, so a hidden folder is one
+            // query away.
+            const curated = atHome && !query;
+            const inboxEntry =
+              curated && homeSet.has(INBOX_NAME)
+                ? state.entries.find((e) => e.is_directory && e.name === INBOX_NAME)
+                : undefined;
             // The Inbox card sits above whatever the listing shows, so no
             // sort or grouping choice can move it — and it is excluded from
             // the list below so the folder is not offered twice.
-            const inboxEntry =
-              folderStack.length === 0 && !query
-                ? state.entries.find((e) => e.is_directory && e.name === INBOX_NAME)
-                : undefined;
             const inboxCard = inboxEntry ? (
               // The count rides along on the listing (#684) — no extra read.
               <InboxCard
@@ -747,10 +802,27 @@ export function LibraryBrowser() {
                 onOpen={() => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME })}
               />
             ) : null;
-            const listed = inboxCard
-              ? visible.filter((e) => !(e.is_directory && e.name === INBOX_NAME))
+            const listed = curated
+              ? visible.filter((e) => !e.is_directory || (homeSet.has(e.path) && e.name !== INBOX_NAME))
               : visible;
+            const homeTail = curated ? (
+              <>
+                {homeFolders === null &&
+                  !homeHintDismissed &&
+                  state.entries.some((e) => e.is_directory && e.name !== INBOX_NAME) && (
+                    <HomeHint onDismiss={dismissHomeHint} />
+                  )}
+                <AllFoldersRow onOpen={() => enterFolder({ relPath: "", name: t("home.allFolders") })} />
+              </>
+            ) : null;
             if (state.entries.length === 0) return <EmptyFolder />;
+            if (curated && !inboxCard && listed.length === 0)
+              return (
+                <>
+                  <HomeEmpty onChoose={openHomeEditor} />
+                  {homeTail}
+                </>
+              );
             if (visible.length === 0)
               return (
                 <p
@@ -766,12 +838,13 @@ export function LibraryBrowser() {
                   {inboxCard}
                 <GalleryView
                   entries={listed}
-                  currentFolderName={currentName}
+                  currentFolderName={isRootListing ? libraryName || "Notesage" : currentName}
                   theme={theme}
                   onActivate={onActivate}
                   actionContext={actionContext}
                   condensed={listDensity === "condensed"}
                 />
+                  {homeTail}
                 </>
               );
             }
@@ -817,6 +890,7 @@ export function LibraryBrowser() {
                     </ul>
                   </section>
                 ))}
+                {homeTail}
               </>
             );
           })()}
@@ -919,6 +993,11 @@ export function LibraryBrowser() {
               <Clock strokeWidth={1.5} className="h-4 w-4" />
             )}
           </ChromeButton>
+          {atHome && (
+            <ChromeButton label={t("menu.editHome")} onClick={() => openHomeEditor()}>
+              <SlidersHorizontal strokeWidth={1.5} className="h-4 w-4" />
+            </ChromeButton>
+          )}
         </Island>
       )}
       {!nativeChrome && (
@@ -1077,26 +1156,13 @@ export function LibraryBrowser() {
           onQueryChange={setQuery}
           placeholder={t("library.searchFolder")}
           status={
-            state.entries.length === 1
+            shownCount === 1
               ? t("library.itemsOne")
-              : t("library.items", { count: state.entries.length })
+              : t("library.items", { count: shownCount })
           }
         />
       )}
     </div>
-  );
-}
-
-function BrowserSkeleton() {
-  return (
-    <ul className="animate-pulse" aria-hidden>
-      {Array.from({ length: 8 }).map((_, i) => (
-        <li key={i} className="flex items-center gap-3 border-b border-border px-4 py-3">
-          <div className="h-5 w-5 rounded bg-muted" />
-          <div className="h-3 flex-1 rounded bg-muted" style={{ maxWidth: `${50 + ((i * 7) % 40)}%` }} />
-        </li>
-      ))}
-    </ul>
   );
 }
 
@@ -1120,24 +1186,25 @@ function EmptyFolder() {
   );
 }
 
-function BrowserError({ message, onRetry }: { message: string; onRetry: () => void }) {
+/** Home with nothing on it: the way to choose, and All Folders beneath. */
+function HomeEmpty({ onChoose }: { onChoose: () => void }) {
   return (
-    <div className="flex h-full flex-col items-center justify-center px-8 py-16 text-center">
-      <AlertCircle strokeWidth={1.25} className="h-8 w-8 text-muted-foreground" />
+    <div className="flex flex-col items-center justify-center px-8 pb-6 pt-16 text-center">
+      <FolderOpen strokeWidth={1.25} className="h-8 w-8 text-muted-foreground" />
       <p
         className="mt-3 text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground"
         style={{ fontWeight: "max(500, var(--ns-a11y-weight, 400))" }}
       >
-        Couldn't open this folder
+        {t("home.emptyTitle")}
       </p>
       <p
-        className="mt-1 max-w-xs text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground break-words"
+        className="mt-1 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground"
         style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
       >
-        {message}
+        {t("home.emptyBody")}
       </p>
-      <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={onRetry}>
-        {t("library.tryAgain")}
+      <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={onChoose}>
+        {t("home.chooseFolders")}
       </Button>
     </div>
   );

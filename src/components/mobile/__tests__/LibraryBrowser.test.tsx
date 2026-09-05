@@ -10,6 +10,7 @@ import {
 } from "@/test/component-harness";
 import { useMobileStore, resolveFolderView } from "@/stores/mobile-store";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
+import type { FileEntry } from "@/lib/tauri";
 
 interface CapturedChromeSpec {
   topRight?: {
@@ -28,6 +29,7 @@ beforeEach(() => {
 
 describe("Group by — Pinned (#652)", () => {
   it("declares Group by pinned in the menu's grouping section, checkmarked when active", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     let captured: CapturedChromeSpec = {};
     setMockInvokeHandler("ios_set_chrome", (args) => {
       captured = (args as { spec: CapturedChromeSpec }).spec;
@@ -69,6 +71,7 @@ describe("Group by — Pinned (#652)", () => {
   });
 
   it("with Pinned selected, renders a labeled Pinned section above the remaining entries in sort order", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "alpha.md", path: "alpha.md", is_directory: false, hidden: false },
       { name: "beta.md", path: "beta.md", is_directory: false, hidden: false },
@@ -110,6 +113,7 @@ describe("Group by — Pinned (#652)", () => {
   });
 
   it("existing sort and view-mode behavior is unaffected when group-by is None", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "beta.md", path: "beta.md", is_directory: false, hidden: false, modified: 300 },
       { name: "Alpha", path: "Alpha", is_directory: true, hidden: false, modified: 100 },
@@ -140,6 +144,7 @@ describe("the view menu offers Condensed only where it changes something", () =>
   const menuIds = (spec: CapturedChromeSpec) => spec.topRight?.menu?.map((m) => m.id) ?? [];
 
   it("leaves Condensed out of a list of folders alone, and brings it back for files or the gallery", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     let captured: CapturedChromeSpec = {};
     setMockInvokeHandler("ios_set_chrome", (args) => {
       captured = (args as { spec: CapturedChromeSpec }).spec;
@@ -208,5 +213,107 @@ describe("deleting what is playing", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Delete" }));
     await waitFor(() => expect(useMobileStore.getState().speech).toBeNull());
     await waitFor(() => expect(useMobileStore.getState().speechPositions).toEqual({}));
+  });
+});
+
+describe("Home — only the folders you chose", () => {
+  const dir = (name: string, extra: Partial<FileEntry> = {}) => ({ name, path: name, is_directory: true, hidden: false, ...extra });
+  const file = (name: string) => ({ name, path: name, is_directory: false, hidden: false });
+  let disk: Record<string, string>;
+  beforeEach(() => {
+    disk = {};
+    setMockInvokeHandler("ios_read_file", (args) => {
+      const a = args as { relPath: string };
+      if (a.relPath in disk) return disk[a.relPath];
+      throw new Error("not found");
+    });
+    setMockInvokeHandler("ios_write_file", (args) => {
+      const a = args as { relPath: string; content: string };
+      disk[a.relPath] = a.content;
+    });
+    setMockInvokeHandler("ios_ensure_directory", () => undefined);
+    setMockInvokeHandler("ios_list_directory", () => [
+      dir("Inbox", { child_count: 3 }),
+      dir("Archive"),
+      dir("Reading"),
+      dir("Writing"),
+      file("quick.md"),
+    ]);
+  });
+  const rowNames = () => screen.getAllByRole("button").map((b) => b.textContent ?? "");
+
+  it("without a file, Home is the Inbox, the root's files, the hint and All Folders — no folder rows", async () => {
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("quick.md");
+    expect(screen.getByText("Inbox")).toBeTruthy();
+    expect(screen.getByText("All Folders")).toBeTruthy();
+    expect(screen.getByText(/Your folders are in All Folders/)).toBeTruthy();
+    expect(screen.queryByText("Reading")).toBeNull();
+    expect(screen.queryByText("Archive")).toBeNull();
+  });
+
+  it("with a file, Home shows exactly the chosen folders, alphabetical, and no hint", async () => {
+    disk[".notesage/home.json"] = JSON.stringify({ version: 1, folders: ["Writing", "Reading", "Gone"] });
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("Reading");
+    expect(screen.getByText("Writing")).toBeTruthy();
+    expect(screen.queryByText("Archive")).toBeNull();
+    expect(screen.queryByText("Gone")).toBeNull(); // renamed on the Mac: dropped, no error
+    expect(screen.queryByText(/Your folders are in All Folders/)).toBeNull();
+    // The Inbox is not listed in the file, so its card is off.
+    expect(screen.queryByText("Inbox")).toBeNull();
+    const names = rowNames();
+    expect(names.findIndex((n) => n.includes("Reading"))).toBeLessThan(names.findIndex((n) => n.includes("Writing")));
+  });
+
+  it("a search at Home looks through the whole root", async () => {
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("quick.md");
+    window.dispatchEvent(new CustomEvent("notesage:chrome", { detail: { id: "search-query", value: "arch" } }));
+    await screen.findByText("Archive");
+    window.dispatchEvent(new CustomEvent("notesage:chrome", { detail: { id: "search-close" } }));
+    await waitFor(() => expect(screen.queryByText("Archive")).toBeNull());
+  });
+
+  it("All Folders pushes the full root listing; Back returns to Home", async () => {
+    renderWithProviders(<LibraryBrowser />);
+    fireEvent.click(await screen.findByText("All Folders"));
+    await screen.findByText("Archive");
+    expect(screen.getByText("Reading")).toBeTruthy();
+    expect(useMobileStore.getState().folderStack).toEqual([{ relPath: "", name: "All Folders" }]);
+    expect(screen.queryByText("All Folders", { selector: "span" })).toBeNull();
+    useMobileStore.getState().goBack();
+    await waitFor(() => expect(screen.queryByText("Archive")).toBeNull());
+    expect(await screen.findByText("All Folders")).toBeTruthy();
+  });
+
+  it("the hint goes with its × and stays gone", async () => {
+    renderWithProviders(<LibraryBrowser />);
+    fireEvent.click(await screen.findByRole("button", { name: "Dismiss" }));
+    await waitFor(() => expect(screen.queryByText(/Your folders are in All Folders/)).toBeNull());
+    expect(useMobileStore.getState().homeHintDismissed).toBe(true);
+  });
+
+  it("offers Edit Home in the … menu at Home, not in All Folders; the row opens the editor", async () => {
+    let captured: CapturedChromeSpec = {};
+    setMockInvokeHandler("ios_set_chrome", (args) => {
+      captured = (args as { spec: CapturedChromeSpec }).spec;
+      return null;
+    });
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(captured.topRight?.menu?.some((m) => m.id === "edit-home")).toBe(true));
+    window.dispatchEvent(new CustomEvent("notesage:chrome", { detail: { id: "edit-home" } }));
+    expect(useMobileStore.getState().homeEditorOpen).toBe(true);
+    useMobileStore.getState().closeHomeEditor();
+    useMobileStore.getState().enterFolder({ relPath: "", name: "All Folders" });
+    await waitFor(() => expect(captured.topRight?.menu?.some((m) => m.id === "edit-home")).toBe(false));
+  });
+
+  it("an empty Home offers Choose folders…, still with All Folders beneath", async () => {
+    setMockInvokeHandler("ios_list_directory", () => [dir("Archive"), dir("Reading")]);
+    renderWithProviders(<LibraryBrowser />);
+    fireEvent.click(await screen.findByRole("button", { name: "Choose folders…" }));
+    expect(useMobileStore.getState().homeEditorOpen).toBe(true);
+    expect(screen.getByText("All Folders")).toBeTruthy();
   });
 });

@@ -3,6 +3,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import "@/test/tauri-mock";
 import { setMockInvokeHandler } from "@/test/tauri-mock";
 import { useMobileStore, resolveFolderView } from "@/stores/mobile-store";
+import { HOME_KEY } from "@/lib/home-file";
 
 const store = () => useMobileStore.getState();
 
@@ -225,11 +226,14 @@ describe("mobile-store view mode (#633 — gallery view), remembered per folder"
     // What an upgraded install carries over from before views were per folder.
     useMobileStore.setState({ viewMode: "gallery", listDensity: "condensed", sortMode: "modified" });
     expect(viewOf("Inbox")).toMatchObject({ viewMode: "gallery", listDensity: "condensed", sortMode: "modified" });
-    expect(viewOf("").viewMode).toBe("list");
-    expect(viewOf("").listDensity).toBe("condensed");
-    // The root can still be made a gallery on purpose.
-    store().setViewMode("gallery");
+    // Home (the top of the stack) is a list; All Folders (the root pushed
+    // as a level) follows the fallback like any folder.
+    expect(viewOf(HOME_KEY).viewMode).toBe("list");
+    expect(viewOf(HOME_KEY).listDensity).toBe("condensed");
     expect(viewOf("").viewMode).toBe("gallery");
+    // Home can still be made a gallery on purpose.
+    store().setViewMode("gallery");
+    expect(viewOf(HOME_KEY).viewMode).toBe("gallery");
   });
 
   it("a renamed folder takes its view, and its subfolders' views, with it", async () => {
@@ -386,6 +390,16 @@ describe("mobile-store view mode (#633 — gallery view), remembered per folder"
     expect(store().folderViews.map((e) => e.relPath)).toEqual(["Alpha", "Beta", "2024", "Gamma"]);
   });
 
+  it("a persisted folderViews of another shape is dropped at launch instead of crashing", () => {
+    const persistApi = (useMobileStore as unknown as { persist: { getOptions: () => { merge?: (persisted: unknown, current: unknown) => unknown } } }).persist;
+    const merge = persistApi.getOptions().merge!;
+    const merged = merge({ folderViews: { Inbox: { viewMode: "gallery" } }, speechRate: 1.25 }, store()) as { folderViews: unknown; speechRate: number };
+    expect(merged.folderViews).toEqual([]);
+    expect(merged.speechRate).toBe(1.25);
+    const kept = merge({ folderViews: [{ relPath: "Inbox", view: { viewMode: "gallery" } }] }, store()) as { folderViews: unknown };
+    expect(kept.folderViews).toEqual([{ relPath: "Inbox", view: { viewMode: "gallery" } }]);
+  });
+
   it("reset() forgets every folder's view", () => {
     store().setViewMode("gallery");
     store().reset();
@@ -494,18 +508,18 @@ describe("mobile-store pinned paths & group-by (#652)", () => {
     expect(resolveFolderView(store(), "").groupMode).toBe("none");
   });
 
-  it("setGroupMode switches the current folder to pinned and back", () => {
+  it("setGroupMode switches the current screen (Home here) to pinned and back", () => {
     store().setGroupMode("pinned");
-    expect(resolveFolderView(store(), "").groupMode).toBe("pinned");
+    expect(resolveFolderView(store(), HOME_KEY).groupMode).toBe("pinned");
     store().setGroupMode("none");
-    expect(resolveFolderView(store(), "").groupMode).toBe("none");
+    expect(resolveFolderView(store(), HOME_KEY).groupMode).toBe("none");
   });
 
   it("reset() returns groupMode to none and clears pinnedPaths", () => {
     store().setGroupMode("pinned");
     useMobileStore.setState({ pinnedPaths: ["a.md"] });
     store().reset();
-    expect(resolveFolderView(store(), "").groupMode).toBe("none");
+    expect(resolveFolderView(store(), HOME_KEY).groupMode).toBe("none");
     expect(store().pinnedPaths).toEqual([]);
   });
 
@@ -514,7 +528,7 @@ describe("mobile-store pinned paths & group-by (#652)", () => {
     const persistApi = (useMobileStore as unknown as { persist: { getOptions: () => { partialize?: (s: unknown) => unknown } } }).persist;
     const partialize = persistApi.getOptions().partialize;
     const persisted = partialize!(store()) as { folderViews?: Array<{ relPath: string; view: { groupMode?: string } }> };
-    expect(persisted.folderViews?.find((e) => e.relPath === "")?.view.groupMode).toBe("pinned");
+    expect(persisted.folderViews?.find((e) => e.relPath === HOME_KEY)?.view.groupMode).toBe("pinned");
   });
 });
 
@@ -565,5 +579,87 @@ describe("rewritePath (#754)", () => {
     useMobileStore.setState({ recentlyRead: ["Inbox/a.md"] });
     await useMobileStore.getState().rewritePath("Inbox/a.md", "Inbox/a.md");
     expect(useMobileStore.getState().recentlyRead).toEqual(["Inbox/a.md"]);
+  });
+});
+
+describe("Home — the folders the root screen shows (home.json)", () => {
+  const HOME = ".notesage/home.json";
+  let disk: Record<string, string>;
+  let writes: string[];
+  const dir = (name: string) => ({ name, path: name, is_directory: true, hidden: false });
+  beforeEach(() => {
+    disk = {};
+    writes = [];
+    setMockInvokeHandler("ios_read_file", (args) => {
+      const a = args as { relPath: string };
+      if (a.relPath in disk) return disk[a.relPath];
+      throw new Error("not found");
+    });
+    setMockInvokeHandler("ios_write_file", (args) => {
+      const a = args as { relPath: string; content: string };
+      disk[a.relPath] = a.content;
+      writes.push(a.relPath);
+    });
+    setMockInvokeHandler("ios_ensure_directory", () => undefined);
+  });
+
+  it("loads null for a library without the file, and the list when there is one", async () => {
+    await store().loadHomeFolders();
+    expect(store().homeFolders).toBeNull();
+    disk[HOME] = JSON.stringify({ version: 1, folders: ["Inbox", "Reading"] });
+    await store().loadHomeFolders();
+    expect(store().homeFolders).toEqual(["Inbox", "Reading"]);
+  });
+
+  it("setOnHome re-reads the file before writing, so another device's choice survives", async () => {
+    useMobileStore.setState({ homeFolders: ["Inbox"] }); // stale: the iPad added Reading since
+    disk[HOME] = JSON.stringify({ version: 1, folders: ["Inbox", "Reading"] });
+    await store().setOnHome("Writing", true, [dir("Inbox"), dir("Reading"), dir("Writing")]);
+    expect(JSON.parse(disk[HOME]).folders).toEqual(["Inbox", "Reading", "Writing"]);
+    expect(store().homeFolders).toEqual(["Inbox", "Reading", "Writing"]);
+  });
+
+  it("setOnHome compacts entries that no longer name a root folder, and never writes on a read", async () => {
+    disk[HOME] = JSON.stringify({ version: 1, folders: ["Inbox", "Gone"] });
+    await store().loadHomeFolders();
+    expect(writes).toEqual([]);
+    await store().setOnHome("Reading", true, [dir("Inbox"), dir("Reading")]);
+    expect(JSON.parse(disk[HOME]).folders).toEqual(["Inbox", "Reading"]);
+    await store().setOnHome("Inbox", false, [dir("Inbox"), dir("Reading")]);
+    expect(JSON.parse(disk[HOME]).folders).toEqual(["Reading"]);
+  });
+
+  it("starts from the defaults when there is no file yet — the first choice joins the Inbox", async () => {
+    await store().setOnHome("Reading", true, [dir("Inbox"), dir("Reading")]);
+    expect(JSON.parse(disk[HOME])).toEqual({ version: 1, folders: ["Inbox", "Reading"] });
+  });
+
+  it("a rename here keeps a Home folder on Home; a folder not on Home rewrites nothing", async () => {
+    disk[HOME] = JSON.stringify({ version: 1, folders: ["Inbox", "Old"] });
+    await store().rewritePath("Old", "New");
+    expect(JSON.parse(disk[HOME]).folders).toEqual(["Inbox", "New"]);
+    expect(store().homeFolders).toEqual(["Inbox", "New"]);
+    writes.length = 0;
+    await store().rewritePath("Other", "Renamed");
+    expect(writes).toEqual([]);
+  });
+
+  it("Back closes the Edit Home screen before it leaves a folder or a document", () => {
+    store().enterFolder({ relPath: "Reading", name: "Reading" });
+    store().openHomeEditor();
+    expect(store().homeEditorOpen).toBe(true);
+    expect(store().goBack()).toBe(true);
+    expect(store().homeEditorOpen).toBe(false);
+    expect(store().folderStack).toHaveLength(1);
+  });
+
+  it("remembers that the hint was dismissed, across relaunches", () => {
+    store().dismissHomeHint();
+    const persistApi = (useMobileStore as unknown as { persist: { getOptions: () => { partialize?: (s: unknown) => unknown } } }).persist;
+    const persisted = persistApi.getOptions().partialize!(store()) as { homeHintDismissed?: boolean; homeFolders?: unknown };
+    expect(persisted.homeHintDismissed).toBe(true);
+    expect(persisted.homeFolders).toBeUndefined(); // the file is the truth
+    store().reset();
+    expect(store().homeHintDismissed).toBe(false);
   });
 });

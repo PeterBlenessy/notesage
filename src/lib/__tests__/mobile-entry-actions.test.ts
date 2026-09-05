@@ -323,3 +323,36 @@ describe("Move to… (#754)", () => {
     expect(evictThumbnail).not.toHaveBeenCalled();
   });
 });
+
+describe("Home rows in the hold menu", () => {
+  const base = { isPinned: () => false, togglePin: vi.fn(async () => {}) };
+  const dir = (path: string): FileEntry => ({ name: path.split("/").pop()!, path, is_directory: true, hidden: false });
+
+  it("offers Show on Home / Hide from Home for a root folder only, labelled by its state", () => {
+    const ctx = { ...base, isOnHome: (p: string) => p === "Reading", setOnHome: vi.fn(async () => {}) };
+    expect(entryMenuItems(dir("Reading"), ctx).find((i) => i.id === "home-hide")?.title).toBe("Hide from Home");
+    expect(entryMenuItems(dir("Writing"), ctx).find((i) => i.id === "home-show")?.title).toBe("Show on Home");
+    expect(entryMenuItems(dir("Reading/2024"), ctx).some((i) => i.id.startsWith("home-"))).toBe(false);
+    const file: FileEntry = { name: "note.md", path: "note.md", is_directory: false, hidden: false };
+    expect(entryMenuItems(file, ctx).some((i) => i.id.startsWith("home-"))).toBe(false);
+    // A browser that has no Home (nothing wired) gets no row at all.
+    expect(entryMenuItems(dir("Reading"), base).some((i) => i.id.startsWith("home-"))).toBe(false);
+  });
+
+  it("runs the rows through setOnHome", async () => {
+    const setOnHome = vi.fn(async () => {});
+    const ctx = { ...base, isOnHome: () => false, setOnHome };
+    await runEntryAction("home-show", dir("Reading"), ctx);
+    expect(setOnHome).toHaveBeenCalledWith("Reading", true);
+    await runEntryAction("home-hide", dir("Reading"), ctx);
+    expect(setOnHome).toHaveBeenCalledWith("Reading", false);
+  });
+
+  it("deleting a folder that is on Home takes it off Home", async () => {
+    vi.mocked(iosContextMenu).mockResolvedValueOnce("delete");
+    const setOnHome = vi.fn(async () => {});
+    await runEntryAction("delete", dir("Reading"), { ...base, isOnHome: () => true, setOnHome });
+    expect(iosDeleteFile).toHaveBeenCalledWith("Reading");
+    expect(setOnHome).toHaveBeenCalledWith("Reading", false);
+  });
+});
