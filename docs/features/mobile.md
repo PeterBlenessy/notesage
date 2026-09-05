@@ -679,6 +679,14 @@ made since. A read made on the phone after the reset but before the next
 pull is dirty with a newer change time and stays; the stamp is recorded
 without wiping.
 
+**Folders in the list and the gallery** — a folder wears the icon and colour
+it was given on the Mac (#140, `.notesage/project.json` → `appearance`),
+read once per folder version by `folder-appearance-cache.ts` and resolved
+with the desktop's own `resolveFolderIcon`, so "Star, teal" is the same on
+both. In the gallery a folder's name is centred under its icon; at rest the
+caption adds its item count and last change, condensed keeps the name
+alone. iCloud sync state is not shown — the listing does not carry it.
+
 ## Office web-viewer URLs are documents (#868)
 
 `view.officeapps.live.com/op/view.aspx?src=<url>` (and `embed.aspx`) is not a
