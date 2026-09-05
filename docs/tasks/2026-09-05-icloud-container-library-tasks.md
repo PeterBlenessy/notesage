@@ -223,7 +223,7 @@ and the TestFlight cut.
 - **Complexity:** M · **Category:** qa · **Depends on:** #2–#7 · **Files:**
   this file (findings)
 
-### #9 — Phase 1 documentation
+### #9 ✅ — Phase 1 documentation
 
 `docs/features/mobile.md`: rewrite "Why a folder picker?" as "Where the
 library is" (container first, picker as fallback, the mode rule, the marker);

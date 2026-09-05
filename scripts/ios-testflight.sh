@@ -259,7 +259,43 @@ fi
 echo "==> Building ${MARKETING}"
 # The export method here is irrelevant — step 3 re-exports the archive
 # properly. `debugging` simply avoids a guaranteed failure at this stage.
-pnpm tauri ios build --export-method debugging
+#
+# Signing needs the developer account, and since Xcode 9.3 those credentials
+# live in the "local items" keychain, which NO command-line session can read
+# (Apple DTS, developer.apple.com/forums/thread/112606). So a build run from a
+# terminal reports "No Accounts: Add a new account in Accounts settings"
+# however thoroughly signed in Xcode's own window is. That stayed invisible
+# here for as long as a cached profile happened to satisfy the entitlements;
+# the day one had to be REGENERATED — adding the iCloud container did it — the
+# whole cut stopped dead.
+#
+# Apple's answer for exactly this is to hand xcodebuild an App Store Connect
+# key, which step 3 below already does. This step cannot pass one directly:
+# it goes through the Tauri CLI, which forwards `-allowProvisioningUpdates`
+# and silently drops every other argument. A wrapper first on PATH puts the
+# credentials back on the invocation Tauri makes.
+SHIM="$(mktemp -d)"
+cat > "$SHIM/xcodebuild" <<SHIM_EOF
+#!/bin/bash
+# Only real build invocations take the key; \`xcodebuild -version\` and friends
+# pass straight through.
+for arg in "\$@"; do
+  if [ "\$arg" = "-scheme" ]; then
+    exec /usr/bin/xcodebuild "\$@" \\
+      -authenticationKeyPath "${ASC_PRIVATE_KEY_PATH}" \\
+      -authenticationKeyID "${ASC_KEY_ID}" \\
+      -authenticationKeyIssuerID "${ASC_ISSUER_ID}"
+  fi
+done
+exec /usr/bin/xcodebuild "\$@"
+SHIM_EOF
+chmod +x "$SHIM/xcodebuild"
+# Removed whether the build succeeds or not; the later EXIT trap belongs to
+# the export step and would replace anything set here.
+build_status=0
+PATH="$SHIM:$PATH" pnpm tauri ios build --export-method debugging || build_status=$?
+rm -rf "$SHIM"
+[ "$build_status" -eq 0 ] || exit "$build_status"
 
 ARCHIVE=$(ls -dt src-tauri/gen/apple/build/*.xcarchive 2>/dev/null | head -1)
 [ -n "$ARCHIVE" ] || { echo "The build produced no archive."; exit 1; }

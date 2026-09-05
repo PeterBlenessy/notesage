@@ -273,7 +273,22 @@ verified basis for the App Store privacy label **"Data Not Collected"**:
   `MobileApp` on iOS, the desktop `App` otherwise. Branching at the root — not
   inside `App.tsx` — means the desktop lifecycle hooks (AI, ACP, watcher, git,
   editor, telemetry) are never *called* on iOS (Rules of Hooks).
-- **Why a folder picker?** The library lives at a fixed location
+- **The library is the app's own iCloud container** (PRD
+  `2026-09-05-icloud-container-library`). `iCloud.com.notesage.app`'s
+  `Documents/` folder IS the Notesage library, so a fresh install finds it
+  with nothing to grant and no picker at all, and the Share Extension resolves
+  the same container itself rather than borrowing a bookmark. The mode
+  (`container` | `picked`) is shared with the extension through the App Group;
+  switching to the container keeps any bookmark, so switching back stays
+  possible, and a marker file makes a library recognisable as one wherever it
+  sits. `url(forUbiquityContainerIdentifier:)` blocks for seconds on the first
+  call per process, so it runs off the main thread and is cached; `nil` means
+  iCloud is unavailable to this app and the picker below is the fallback.
+  **Both targets must be entitled** — an unentitled process gets `nil` and
+  silently falls back, which is why `scripts/ios-testflight.sh` reads the
+  container back out of the signed app AND extension before it will upload.
+- **Why a folder picker?** Still the fallback, and the whole story before the
+  container. The library lives at a fixed location
   (`iCloud Drive/Notesage`), but a sandboxed iOS app cannot open a hardcoded
   path in the generic iCloud Drive (`com~apple~CloudDocs`). Apple's only
   supported route is a one-time, security-scoped grant via the document picker —
