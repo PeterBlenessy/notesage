@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { log } from "@/lib/logger";
+import { t } from "@/lib/i18n";
 import { iosContentReady } from "@/lib/ios-api";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { Toaster } from "@/components/ui/sonner";
@@ -140,6 +141,8 @@ export function MobileApp() {
       <div className="mobile-shell fixed inset-0 overflow-hidden bg-background text-foreground">
         {grantState === "unknown" ? (
           <Splash />
+        ) : grantState === "provisioning" ? (
+          <Splash label={t("onboarding.provisioning")} />
         ) : grantState === "granted" ? (
           // Keyed by path: a document switch REMOUNTS the reader, so per-doc
           // state (find query, marks, refs) can never leak between documents.
@@ -157,10 +160,16 @@ export function MobileApp() {
   );
 }
 
-/** Neutral splash shown while the grant resolves (no flash of onboarding). */
-function Splash() {
+/**
+ * Neutral splash shown while the grant resolves (no flash of onboarding).
+ * With a `label` it is the `provisioning` state: the iCloud container is
+ * being initialised on a first launch, which can take seconds — one line of
+ * muted copy under the ring, no progress bar (there is no progress to
+ * report), nothing to tap.
+ */
+function Splash({ label }: { label?: string }) {
   return (
-    <div className="flex h-full w-full items-center justify-center">
+    <div className="flex h-full w-full flex-col items-center justify-center gap-4 px-8 text-center">
       {/* An SVG ring rather than a bordered div — see the matching comment in
           LibraryBrowser. A `border-t-*` tint on a 2px circle was reported as
           "just a circle" with no discernible motion; an explicit stroked arc
@@ -178,6 +187,11 @@ function Splash() {
           strokeDasharray="15.7 47.1"
         />
       </svg>
+      {label && (
+        <p role="status" className="max-w-sm text-sm leading-relaxed text-muted-foreground">
+          {label}
+        </p>
+      )}
     </div>
   );
 }

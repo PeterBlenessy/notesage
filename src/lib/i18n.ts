@@ -37,6 +37,15 @@ const en = {
   "onboarding.pickAgain": "Select your folder again",
   "onboarding.opening": "Opening…",
   "onboarding.noFolder": "No folder selected — tap again to choose your Notesage folder.",
+  // The library is the app's own iCloud container (PRD 2026-09-05); these
+  // are the first-launch states around that.
+  "onboarding.provisioning": "Setting up your Notesage library in iCloud…",
+  "onboarding.titleNoICloud": "iCloud isn't available",
+  "onboarding.introNoICloud":
+    "Notesage keeps its library in iCloud Drive, so your notes follow you between devices — it can use a folder of your choosing instead.",
+  "onboarding.chooseFolder": "Choose a folder",
+  "onboarding.howToTurnOnICloud": "How to turn on iCloud Drive",
+  "onboarding.useICloudInstead": "Use Notesage in iCloud instead",
   // Library browser
   "library.searchFolder": "Search this folder",
   "library.items": "{count} items",
@@ -58,6 +67,12 @@ const en = {
   "library.tryAgain": "Try again",
   "library.changeFolder": "Change library folder",
   "library.changeFolderFailed": "Couldn't change folder: {error}",
+  "library.switchToICloudFailed": "Couldn't switch to Notesage in iCloud: {error}",
+  // The "…" menu's Library section (root only).
+  "menu.libraryInICloud": "Notesage in iCloud",
+  "menu.libraryChosenFolder": "{name} (chosen folder)",
+  "menu.useDifferentFolder": "Use a different folder…",
+  "menu.switchToICloud": "Switch to Notesage in iCloud",
   // Chrome / menus
   "menu.list": "List",
   "menu.gallery": "Gallery",
@@ -1020,6 +1035,13 @@ const sv: Dict = {
   "onboarding.pickAgain": "Välj din mapp igen",
   "onboarding.opening": "Öppnar…",
   "onboarding.noFolder": "Ingen mapp vald — tryck igen för att välja din Notesage-mapp.",
+  "onboarding.provisioning": "Gör i ordning ditt Notesage-bibliotek i iCloud …",
+  "onboarding.titleNoICloud": "iCloud är inte tillgängligt",
+  "onboarding.introNoICloud":
+    "Notesage har sitt bibliotek i iCloud Drive så att dina anteckningar följer med mellan enheter — det kan använda en mapp du väljer själv i stället.",
+  "onboarding.chooseFolder": "Välj en mapp",
+  "onboarding.howToTurnOnICloud": "Så slår du på iCloud Drive",
+  "onboarding.useICloudInstead": "Använd Notesage i iCloud i stället",
   "library.searchFolder": "Sök i den här mappen",
   "library.items": "{count} objekt",
   "library.itemsOne": "1 objekt",
@@ -1037,6 +1059,11 @@ const sv: Dict = {
   "library.tryAgain": "Försök igen",
   "library.changeFolder": "Byt biblioteksmapp",
   "library.changeFolderFailed": "Kunde inte byta mapp: {error}",
+  "library.switchToICloudFailed": "Kunde inte byta till Notesage i iCloud: {error}",
+  "menu.libraryInICloud": "Notesage i iCloud",
+  "menu.libraryChosenFolder": "{name} (vald mapp)",
+  "menu.useDifferentFolder": "Använd en annan mapp …",
+  "menu.switchToICloud": "Byt till Notesage i iCloud",
   "menu.list": "Lista",
   "menu.gallery": "Galleri",
   "menu.sortName": "Alfabetiskt",

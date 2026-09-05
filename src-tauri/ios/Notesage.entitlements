@@ -1,14 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  App-target entitlements (reference). Merge into the generated
-  src-tauri/gen/apple app target's .entitlements during the Mac wiring step.
+  App-target entitlements (reference). `integrate-share-extension.py` writes
+  the same keys into the generated project through project.yml's
+  entitlements `properties`; this file is what that output must mirror.
 
-  - App Group: shares the security-scoped library bookmark with the Share
-    Extension (required).
-  - iCloud Documents: recommended so `startDownloadingUbiquitousItem` /
-    NSFileCoordinator behave for iCloud Drive items. (Security-scoped picker
-    access itself works without it, but downloads are smoother with it.)
-    Drop the iCloud keys if you choose not to enable the capability.
+  - App Group: shares the library MODE (container | picked) and, for a chosen
+    folder, the security-scoped bookmark with the Share Extension (required).
+  - iCloud Documents, container `iCloud.com.notesage.app`: the Notesage
+    library IS this container's `Documents/` folder (PRD
+    2026-09-05-icloud-container-library, Decision 1). Without these keys
+    `url(forUbiquityContainerIdentifier:)` returns nil and the app falls back
+    to the folder picker.
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">

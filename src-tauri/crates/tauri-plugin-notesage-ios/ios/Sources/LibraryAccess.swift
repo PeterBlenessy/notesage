@@ -1,22 +1,51 @@
 // LibraryAccess.swift — Notesage iOS library access.
 //
-// Security-scoped access to the user's `iCloud Drive/Notesage` folder, persisted
-// as a bookmark in the shared App Group so both the app and the Share Extension
-// resolve the same grant. iCloud-aware reads via NSFileCoordinator.
+// The library root, resolved one of two ways (PRD
+// docs/prds/2026-09-05-icloud-container-library.md, Decisions 1, 4, 5, 8):
+//
+//  - `container` — the app's own iCloud container, `iCloud.com.notesage.app`,
+//    whose `Documents/` folder IS the library. No grant, no picker: iCloud
+//    creates it on whichever device runs first, and the Files app shows it
+//    as "Notesage" under iCloud Drive.
+//  - `picked`    — a folder the user chose in the document picker, held as a
+//    security-scoped bookmark. The fallback when iCloud is unavailable, and a
+//    choice ("Use a different folder…") for anyone who wants it.
+//
+// The mode lives in the shared App Group defaults beside the bookmark, so
+// the app and the Share Extension resolve the same root, and it is
+// RECONCILED at the top of every `resolveRoot()` — a switch the app makes is
+// honoured by the extension without a relaunch, and vice versa.
+//
+// Every read and write is NSFileCoordinator-coordinated, in both modes.
 //
 // Compiled into BOTH targets: the app via this plugin crate's Swift package
 // (wired by `tauri ios init`), and the Share Extension as a direct source
 // (wired by `src-tauri/ios/integrate-share-extension.py`).
-// PRD: docs/prds/2026-06-28-ios-mobile-app.md (tasks #3, #4, #8).
+// PRDs: docs/prds/2026-06-28-ios-mobile-app.md (tasks #3, #4, #8),
+// docs/prds/2026-09-05-icloud-container-library.md (tasks #3, #4).
 
 import Foundation
 import QuickLookThumbnailing
 import UIKit
 import UniformTypeIdentifiers
 
-enum LibraryAccessError: Error { case noGrant, staleBookmark, notADirectory, ioError(String) }
+enum LibraryAccessError: Error {
+    case noGrant, staleBookmark, iCloudUnavailable, notADirectory, ioError(String)
+}
 
-struct LibraryGrant: Codable { let displayName: String; let granted: Bool }
+/// How the library root is resolved. Raw values are the wire strings the
+/// Rust `LibraryKind` enum and the frontend's `IosLibraryKind` use.
+enum LibraryKind: String, Codable { case container, picked }
+
+struct LibraryGrant: Codable {
+    let displayName: String
+    let granted: Bool
+    /// How the root was resolved. Nil when not granted.
+    let kind: LibraryKind?
+    /// Whether the iCloud container could be resolved at all — drives the
+    /// onboarding copy (picker fallback vs. "reconnect your folder").
+    let icloudAvailable: Bool
+}
 struct FileEntryDTO: Codable {
     let name: String
     let path: String          // relative to the library root
@@ -34,9 +63,204 @@ enum DownloadState: String, Codable { case ready, downloading, failed }
 enum LibraryAccess {
     /// Set to the real App Group id (must match the entitlement on both targets).
     static let APP_GROUP_ID = "group.com.notesage.app"
+    /// The app's own iCloud container (must match the iCloud entitlement on
+    /// both targets and `ICLOUD_CONTAINER` in integrate-share-extension.py).
+    static let CONTAINER_ID = "iCloud.com.notesage.app"
     private static let bookmarkKey = "notesage.library.bookmark"
+    private static let modeKey = "notesage.library.mode"
+    /// `<root>/.notesage/library.json` — mirrors `LIBRARY_MARKER_REL_PATH`
+    /// in `src/lib/library-marker.ts` and `src-tauri/src/library_marker.rs`.
+    private static let markerRelPath = ".notesage/library.json"
 
     private static var defaults: UserDefaults? { UserDefaults(suiteName: APP_GROUP_ID) }
+
+    // MARK: - The iCloud container
+
+    /// Per-process cache of the container's `Documents/` root. Outer nil =
+    /// not yet resolved; `.some(nil)` = resolved, iCloud unavailable.
+    private static var containerCache: URL?? = nil
+    private static let containerLock = NSLock()
+
+    /// The container's `Documents/` folder — the library root in `container`
+    /// mode — or nil when iCloud is unavailable for this app (no account,
+    /// iCloud Drive off for Notesage, an unentitled build).
+    ///
+    /// The FIRST call per process can block for seconds: it initialises the
+    /// container locally. Never call it on the main thread cold — the plugin
+    /// resolves it from `setupLibrary` on a background queue and the Share
+    /// Extension resolves before its first layout; after that the cached
+    /// answer is immediate. Callers that reach here through `resolveRoot()`
+    /// on the main thread are relying on that warm cache.
+    ///
+    /// Creates `Documents/` on first use and, only when it created it, writes
+    /// the library marker. A marker that already exists is never touched: the
+    /// Mac's migration extends it, and iCloud may be bringing one down from
+    /// another device.
+    static func containerRoot() -> URL? {
+        containerLock.lock()
+        defer { containerLock.unlock() }
+        if let cached = containerCache { return cached }
+        let resolved = resolveContainerRootUncached()
+        containerCache = .some(resolved)
+        return resolved
+    }
+
+    private static func resolveContainerRootUncached() -> URL? {
+        let fm = FileManager.default
+        guard let container = fm.url(forUbiquityContainerIdentifier: CONTAINER_ID) else {
+            return nil
+        }
+        let root = container.appendingPathComponent("Documents", isDirectory: true)
+        var isDir: ObjCBool = false
+        let existed = fm.fileExists(atPath: root.path, isDirectory: &isDir) && isDir.boolValue
+        if !existed {
+            do {
+                try fm.createDirectory(at: root, withIntermediateDirectories: true)
+            } catch {
+                // A container we cannot populate is as good as no container.
+                return nil
+            }
+            writeMarkerIfAbsent(at: root)
+        }
+        return root
+    }
+
+    // MARK: - The library marker (minimal writer + reader)
+
+    /// What `reconcile()` needs from the marker: whether one exists, and
+    /// whether it records a migration.
+    struct MarkerFacts {
+        let exists: Bool
+        let migratedFrom: String?
+    }
+
+    /// Read `<root>/.notesage/library.json`. An undownloaded iCloud
+    /// placeholder (`.notesage/.library.json.icloud`) counts as EXISTING —
+    /// the marker was written by some device — but says nothing about a
+    /// migration yet; the download is started so the next call can answer.
+    static func readMarker(at root: URL) -> MarkerFacts {
+        let fm = FileManager.default
+        let url = root.appendingPathComponent(markerRelPath)
+        if fm.fileExists(atPath: url.path) {
+            var coordError: NSError?
+            var text: String?
+            NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordError) { u in
+                text = try? String(contentsOf: u, encoding: .utf8)
+            }
+            guard let text, let data = text.data(using: .utf8),
+                  let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  (object["version"] as? Int) == 1,
+                  (object["kind"] as? String) == "container"
+            else { return MarkerFacts(exists: true, migratedFrom: nil) }
+            return MarkerFacts(exists: true, migratedFrom: object["migratedFrom"] as? String)
+        }
+        let placeholder = url.deletingLastPathComponent()
+            .appendingPathComponent(".\(url.lastPathComponent).icloud")
+        if fm.fileExists(atPath: placeholder.path) {
+            try? fm.startDownloadingUbiquitousItem(at: url)
+            return MarkerFacts(exists: true, migratedFrom: nil)
+        }
+        return MarkerFacts(exists: false, migratedFrom: nil)
+    }
+
+    /// `{ version: 1, kind: "container", createdBy: "ios", createdAt }` —
+    /// the same bytes `serializeLibraryMarker` produces in TS (two-space
+    /// indent, this key order, trailing newline), so the three writers agree.
+    /// Best-effort: a marker that cannot be written costs the "follow a
+    /// migration" shortcut, not the library.
+    private static func writeMarkerIfAbsent(at root: URL) {
+        let fm = FileManager.default
+        let url = root.appendingPathComponent(markerRelPath)
+        if fm.fileExists(atPath: url.path) { return }
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        let createdAt = formatter.string(from: Date())
+        let text = """
+        {
+          "version": 1,
+          "kind": "container",
+          "createdBy": "ios",
+          "createdAt": "\(createdAt)"
+        }
+
+        """
+        try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        var coordError: NSError?
+        NSFileCoordinator().coordinate(writingItemAt: url, options: [], error: &coordError) { u in
+            // `.withoutOverwriting` keeps the "never touch an existing marker"
+            // promise even if one arrived between the check and the write.
+            try? Data(text.utf8).write(to: u, options: .withoutOverwriting)
+        }
+    }
+
+    // MARK: - Library mode
+
+    /// The persisted mode, or nil before the first `reconcile()` on this
+    /// account (and after `clearLibraryGrant`).
+    static var libraryMode: LibraryKind? {
+        defaults?.string(forKey: modeKey).flatMap(LibraryKind.init(rawValue:))
+    }
+
+    private static func persistMode(_ mode: LibraryKind?) {
+        if let mode { defaults?.set(mode.rawValue, forKey: modeKey) }
+        else { defaults?.removeObject(forKey: modeKey) }
+    }
+
+    private static var hasBookmark: Bool { defaults?.data(forKey: bookmarkKey) != nil }
+
+    /// Settle the mode against what exists right now. Runs at the top of
+    /// EVERY `resolveRoot()` so the app and the extension always agree:
+    ///
+    ///   mode == nil        → picked if a bookmark exists, else container if
+    ///                        iCloud is available, else nil (no grant)
+    ///   picked → container when the container's marker says the Mac moved
+    ///                        the library (`migratedFrom`), or when the
+    ///                        bookmark no longer resolves while a marked
+    ///                        container exists (the same move, seen from the
+    ///                        other side). The bookmark is cleared then.
+    ///
+    /// Never the other way: a bookmarked install keeps its folder until the
+    /// Mac says otherwise (PRD Decision 5). Persisted only when it changed.
+    @discardableResult
+    static func reconcile() -> LibraryKind? {
+        let stored = libraryMode
+        var mode = stored
+        var dropBookmark = false
+        // Cached after the first call — cheap on every later resolve.
+        let container = containerRoot()
+
+        if mode == nil {
+            mode = hasBookmark ? .picked : (container != nil ? .container : nil)
+        }
+        if mode == .picked, let container {
+            let marker = readMarker(at: container)
+            if marker.migratedFrom != nil {
+                mode = .container
+                dropBookmark = true
+            } else if marker.exists, hasBookmark, (try? resolveBookmark()) == nil {
+                mode = .container
+                dropBookmark = true
+            }
+        }
+        if dropBookmark { defaults?.removeObject(forKey: bookmarkKey) }
+        if mode != stored { persistMode(mode) }
+        return mode
+    }
+
+    /// The settings action. Switching to `container` KEEPS the bookmark (so
+    /// "switch back" is possible) but stops using it; switching to `picked`
+    /// needs a bookmark to switch back to — the picker path
+    /// (`persistBookmark`) is how one gets there otherwise.
+    static func setLibraryMode(_ mode: LibraryKind) throws -> LibraryGrant {
+        switch mode {
+        case .container:
+            guard containerRoot() != nil else { throw LibraryAccessError.iCloudUnavailable }
+        case .picked:
+            guard hasBookmark else { throw LibraryAccessError.noGrant }
+        }
+        persistMode(mode)
+        return getLibraryGrant()
+    }
 
     // MARK: - Grant lifecycle
 
@@ -61,7 +285,9 @@ enum LibraryAccess {
             // selected" path. Rejecting here surfaced a raw NSError string
             // ("The operation couldn't be completed…") on a simple back-out.
             guard let url = urls.first else {
-                completion(.success(LibraryGrant(displayName: "", granted: false)))
+                completion(.success(LibraryGrant(
+                    displayName: "", granted: false, kind: nil,
+                    icloudAvailable: containerRoot() != nil)))
                 return
             }
             do {
@@ -74,25 +300,54 @@ enum LibraryAccess {
         presenter.present(picker, animated: true)
     }
 
+    /// Persist a chosen folder's bookmark AND switch to `picked` mode — a
+    /// pick is always a decision to use that folder, whatever the mode was.
     static func persistBookmark(for url: URL) throws -> LibraryGrant {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         let data = try url.bookmarkData(options: .minimalBookmark, includingResourceValuesForKeys: nil, relativeTo: nil)
         defaults?.set(data, forKey: bookmarkKey)
-        return LibraryGrant(displayName: url.lastPathComponent, granted: true)
+        persistMode(.picked)
+        return LibraryGrant(displayName: url.lastPathComponent, granted: true,
+                            kind: .picked, icloudAvailable: containerRoot() != nil)
     }
 
+    /// The grant as the frontend sees it. In `container` mode the display
+    /// name is the container's Files-app name, not `Documents`.
     static func getLibraryGrant() -> LibraryGrant {
+        let mode = reconcile()
+        let available = containerRoot() != nil
         guard let root = try? resolveRoot() else {
-            return LibraryGrant(displayName: "", granted: false)
+            return LibraryGrant(displayName: "", granted: false, kind: nil, icloudAvailable: available)
         }
-        return LibraryGrant(displayName: root.lastPathComponent, granted: true)
+        let name = mode == .container ? "Notesage" : root.lastPathComponent
+        return LibraryGrant(displayName: name, granted: true, kind: mode, icloudAvailable: available)
     }
 
-    static func clearLibraryGrant() { defaults?.removeObject(forKey: bookmarkKey) }
+    /// Forget BOTH the mode and the bookmark. The next `reconcile()` starts
+    /// from nothing — which, with iCloud available, lands in `container`.
+    static func clearLibraryGrant() {
+        defaults?.removeObject(forKey: bookmarkKey)
+        defaults?.removeObject(forKey: modeKey)
+    }
 
-    /// Resolve the bookmarked root URL. Throws on missing/stale bookmark.
+    /// The library root for the current mode. Every read and write starts
+    /// here, so the mode is reconciled on every call (see `reconcile()`).
     static func resolveRoot() throws -> URL {
+        switch reconcile() {
+        case .container:
+            guard let root = containerRoot() else { throw LibraryAccessError.iCloudUnavailable }
+            return root
+        case .picked:
+            return try resolveBookmark()
+        case nil:
+            throw LibraryAccessError.noGrant
+        }
+    }
+
+    /// Resolve the bookmarked root URL (`picked` mode). Throws on a missing
+    /// or stale bookmark.
+    private static func resolveBookmark() throws -> URL {
         guard let data = defaults?.data(forKey: bookmarkKey) else { throw LibraryAccessError.noGrant }
         var stale = false
         let url = try URL(resolvingBookmarkData: data, options: [], relativeTo: nil, bookmarkDataIsStale: &stale)

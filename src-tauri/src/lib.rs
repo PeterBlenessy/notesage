@@ -1,6 +1,7 @@
 mod commands;
 mod export;
 mod index;
+pub mod library_marker;
 mod tray;
 
 // Re-exports for integration tests under `tests/`. Kept narrow — only the
@@ -297,6 +298,8 @@ pub fn run() {
     let builder = builder.invoke_handler(tauri::generate_handler![
         ios_pick_library_folder,
         ios_get_library_grant,
+        ios_setup_library,
+        ios_set_library_mode,
         ios_clear_library_grant,
         ios_list_directory,
         ios_read_file,
@@ -387,6 +390,8 @@ pub fn run() {
             allow_asset_dir,
             ios_pick_library_folder,
             ios_get_library_grant,
+            ios_setup_library,
+            ios_set_library_mode,
             ios_clear_library_grant,
             ios_list_directory,
             ios_read_file,

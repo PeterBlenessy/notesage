@@ -361,6 +361,11 @@ describe("sort toggle (#632)", () => {
       ["Original images", false],
       // Home only: the screen that curates it.
       ["Edit Home…", undefined],
+      // Where the library lives, and the way out of it. Shown at Home
+      // because that is the screen the whole library hangs off; a checkmark
+      // on the row that is in use, so the choice reads as a choice.
+      ["Notesage (chosen folder)", true],
+      ["Use a different folder…", undefined],
     ]);
     // The size picks are conditional: four rows offering to choose a
     // resolution for work that is switched OFF is the kind of dead control
@@ -387,7 +392,10 @@ describe("sort toggle (#632)", () => {
         // view(3: list · gallery · condensed rows, #836) · sort(2) · group(5) · offline toggle + 4 size picks
         true, false, false, false, true, true, false, false, false, false,
         true, false, true, false, false,
-        // …and the Edit Home action row, which is not a pick.
+        // …the Edit Home action row, which is not a pick, then the library
+        // rows: the folder in use is checked, changing it is an action.
+        undefined,
+        true,
         undefined,
       ]),
     );

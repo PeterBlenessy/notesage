@@ -15,12 +15,18 @@ What it does:
      the right target triple, App Group entitlements, activation rule for
      web URLs + text).
   2. Adds the App Group entitlement to the MAIN app's entitlements — the app
-     writes the security-scoped library bookmark into the shared
-     `group.com.notesage.app` UserDefaults suite, which is what the extension
-     resolves to write captures.
-  3. Registers the extension as a dependency of the app target (xcodegen
+     writes the library mode (and, for a chosen folder, the security-scoped
+     bookmark) into the shared `group.com.notesage.app` UserDefaults suite,
+     which is what the extension resolves to write captures.
+  3. Adds the iCloud Documents entitlements for container
+     `iCloud.com.notesage.app` to BOTH targets, and the `NSUbiquitousContainers`
+     declaration to the app's Info.plist — the library IS that container's
+     `Documents/` folder (PRD 2026-09-05-icloud-container-library), and
+     `url(forUbiquityContainerIdentifier:)` returns nil in any process that is
+     not entitled for it, extension included.
+  4. Registers the extension as a dependency of the app target (xcodegen
      embeds app-extension dependencies into PlugIns/ automatically).
-  4. Re-runs `xcodegen generate`.
+  5. Re-runs `xcodegen generate`.
 
 Usage:  python3 src-tauri/ios/integrate-share-extension.py
 """
@@ -41,9 +47,37 @@ PROJECT_YML = GEN / "project.yml"
 BG_REFRESH_IDENTIFIER = "com.notesage.app.inbox-refresh"
 SHARE_INFO_PLIST = GEN / "NotesageShare/Info.plist"
 APP_ENTITLEMENTS = GEN / "notesage_iOS" / "notesage_iOS.entitlements"
+SHARE_ENTITLEMENTS = GEN / "NotesageShare" / "NotesageShare.entitlements"
 
 APP_GROUP = "group.com.notesage.app"
+# The app's own iCloud container. Its `Documents/` folder is the Notesage
+# library (PRD 2026-09-05-icloud-container-library, Decision 1). Mirrors
+# `LibraryAccess.CONTAINER_ID` in the plugin's Swift.
+ICLOUD_CONTAINER = "iCloud.com.notesage.app"
 TEAM_ID = "M39TDQ2D7L"
+
+# The three iCloud Documents entitlement keys, identical on both targets.
+# The extension needs them too: App Group alone does not make
+# `url(forUbiquityContainerIdentifier:)` return anything in its process, and
+# a share before the app has ever launched must still find `Inbox/`.
+ICLOUD_ENTITLEMENTS = {
+    "com.apple.developer.icloud-container-identifiers": [ICLOUD_CONTAINER],
+    "com.apple.developer.icloud-services": ["CloudDocuments"],
+    "com.apple.developer.ubiquity-container-identifiers": [ICLOUD_CONTAINER],
+}
+
+# What makes the container appear as "Notesage" under iCloud Drive in the
+# Files app and in Finder. Apple latches these keys at the container's first
+# use and only re-reads them with a HIGHER CFBundleVersion (PRD Decision 11)
+# — `ios-testflight.sh` stamps a fresh build number every run, which covers
+# it, but a local build that changes them needs its own bump.
+UBIQUITOUS_CONTAINERS = {
+    ICLOUD_CONTAINER: {
+        "NSUbiquitousContainerIsDocumentScopePublic": True,
+        "NSUbiquitousContainerName": "Notesage",
+        "NSUbiquitousContainerSupportedFolderLevels": "Any",
+    }
+}
 
 # Builds libnotesage_capture.a for the SDK being built. PLATFORM_NAME is
 # iphoneos on device, iphonesimulator on sim; Notesage only ships arm64.
@@ -96,9 +130,13 @@ SHARE_TARGET = {
     # INFOPLIST_FILE points at (see `settings` below). `copy_share_info_plist`
     # puts the tracked file there. One source of truth, and it is a plist.
     "entitlements": {
-        # Mirrors src-tauri/ios/ShareExtension.entitlements (App Group only).
+        # Mirrors src-tauri/ios/ShareExtension.entitlements (App Group + the
+        # iCloud container the library lives in).
         "path": "NotesageShare/NotesageShare.entitlements",
-        "properties": {"com.apple.security.application-groups": [APP_GROUP]},
+        "properties": {
+            "com.apple.security.application-groups": [APP_GROUP],
+            **ICLOUD_ENTITLEMENTS,
+        },
     },
     "settings": {
         "base": {
@@ -211,6 +249,11 @@ def patch_project_yml() -> None:
     permitted = app_info.setdefault("BGTaskSchedulerPermittedIdentifiers", [])
     if BG_REFRESH_IDENTIFIER not in permitted:
         permitted.append(BG_REFRESH_IDENTIFIER)
+    # The library is the app's own iCloud container; this is what shows it as
+    # "Notesage" under iCloud Drive in Files. Same seam as
+    # LSSupportsOpeningDocumentsInPlace: the app's Info.plist is written from
+    # these properties, never edited by hand in gen/.
+    app_info["NSUbiquitousContainers"] = UBIQUITOUS_CONTAINERS
     app.setdefault("info", {}).setdefault("properties", app_info)
     # The extension's copy of this answer lives in the tracked plist.
 
@@ -224,6 +267,11 @@ def patch_project_yml() -> None:
     groups = props.setdefault("com.apple.security.application-groups", [])
     if APP_GROUP not in groups:
         groups.append(APP_GROUP)
+    # The iCloud container, through the same seam and for the same reason. A
+    # build without these installs and launches — and then cannot see its
+    # library, which reads as a bug in the app rather than in provisioning.
+    for key, value in ICLOUD_ENTITLEMENTS.items():
+        props[key] = list(value)
 
     exclude_static_lib_from_bundle(data)
     declare_document_handling(data)
@@ -371,6 +419,17 @@ def main() -> None:
     assert APP_GROUP in ent.get("com.apple.security.application-groups", []), (
         "app entitlements missing the App Group after generation"
     )
+    # Both generated entitlements files must carry the container: the app
+    # creates the library there and the extension resolves it independently.
+    # `ios-testflight.sh` re-checks the same thing on the signed .ipa, but a
+    # failure here is a build earlier and a lot cheaper.
+    for label, path in (("app", APP_ENTITLEMENTS), ("extension", SHARE_ENTITLEMENTS)):
+        generated = plistlib.loads(path.read_bytes())
+        for key, expected in ICLOUD_ENTITLEMENTS.items():
+            assert generated.get(key) == expected, (
+                f"{label} entitlements missing {key} after generation "
+                f"({path.relative_to(REPO)}): got {generated.get(key)!r}"
+            )
     # The app's Info.plist is written at BUILD time by Tauri from project.yml's
     # `info.properties`, so assert on the yml: an absent key fails silently at
     # runtime (no refresh ever runs). Check the built .app with

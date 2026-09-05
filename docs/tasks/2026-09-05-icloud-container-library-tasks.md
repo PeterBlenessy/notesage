@@ -68,7 +68,7 @@ dependent task starts.
 
 ## Phase 1 — The phone owns the container
 
-### #2 — Entitle both iOS targets and declare the container
+### #2 ✅ — Entitle both iOS targets and declare the container
 
 Account side (documented, in `docs/ios-testflight.md`, as a new numbered
 section beside "Create the App Group FIRST"): enable the **iCloud**
@@ -95,7 +95,7 @@ capability required" — that comment is now wrong and must go).
   `src-tauri/ios/Notesage.entitlements`,
   `src-tauri/ios/ShareExtension.entitlements`, `docs/ios-testflight.md`
 
-### #3 — `LibraryAccess`: container root, library mode, reconcile
+### #3 ✅ — `LibraryAccess`: container root, library mode, reconcile
 
 Implement the PRD's `reconcile()` / `resolveRoot()` pseudo-code in
 `LibraryAccess.swift`: `containerRoot()` (background-queue resolution, cached
@@ -115,7 +115,7 @@ possible) and a `clearLibraryGrant()` that clears both mode and bookmark.
   **Files:**
   `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryAccess.swift`
 
-### #4 — The library marker file, shared format
+### #4 ✅ — The library marker file, shared format
 
 `.notesage/library.json` at the library root, shape per the PRD's Data Model.
 TS: `src/lib/library-marker.ts` — `parseLibraryMarker(text)` (tolerant of
@@ -133,7 +133,7 @@ agree byte-for-byte on a canonical example).
   `src-tauri/src/library_marker.rs`, `src-tauri/src/lib.rs` (mod),
   `tests/fixtures/library-marker.json`
 
-### #5 — Plugin methods, Rust commands, `ios-api.ts`
+### #5 ✅ — Plugin methods, Rust commands, `ios-api.ts`
 
 Plugin (Swift `@objc` + Rust wrapper): `setupLibrary` → runs `reconcile()`
 off-main, resolves the grant; `setLibraryMode(mode)`; `getLibraryGrant`
@@ -151,7 +151,7 @@ but leave the signatures here for it).
   `src-tauri/src/commands/ios_library.rs`, `src-tauri/src/lib.rs`,
   `src/lib/ios-api.ts`
 
-### #6 — Mobile store, onboarding without a picker, library settings row
+### #6 ✅ — Mobile store, onboarding without a picker, library settings row
 
 `mobile-store`: `grantState` gains `"provisioning"` and
 `"icloud-unavailable"`; `refreshGrant` calls `iosSetupLibrary` and maps
@@ -175,7 +175,7 @@ switches through the mocked commands.
   `src/components/mobile/LibraryBrowser.tsx`, `src/lib/i18n.ts`,
   `src/stores/__tests__/mobile-store.test.ts`
 
-### #7 — Share Extension resolves the container itself
+### #7 ✅ — Share Extension resolves the container itself
 
 `ShareViewController`: resolve the root on a background queue before the
 sheet's first layout (the container call can block — #1.6 has the number),
@@ -190,6 +190,24 @@ Strings in the extension's `L()` table, `en` + `sv`.
 - **Complexity:** M · **Category:** native · **Depends on:** #2, #3 ·
   **Files:** `src-tauri/ios/ShareViewController.swift`,
   `src-tauri/ios/LibraryCapture.swift`, `src-tauri/ios/ShareResources/*`
+
+**Blocked on the Apple Developer account, not on code.** #2's entitlements
+declare `iCloud.com.notesage.app`, and Xcode refuses to sign against a
+provisioning profile that does not carry them. So the moment this merges, the
+next TestFlight cut fails to sign unless the App ID has the iCloud capability
+enabled and that container exists in the portal, with the profiles
+regenerated. The runtime degrades gracefully — a nil container falls back to
+the picker — but signing does not degrade, it fails. This is why the PR is
+open without auto-merge.
+
+**Findings (2026-09-05).** `macro_rules! ios_only` sat two thirds of the way
+down `ios_library.rs`, beside the notification commands that first needed it.
+`macro_rules!` is only in scope AFTER its definition point, so the two new
+commands added higher in the file failed with "cannot find macro `ios_only`
+in this scope" — a confusing error for code textually identical to its
+working neighbours. Moved above every use, with a comment saying why it lives
+there. The view-options menu test also asserts the menu's exact shape, so the
+two new library rows had to be added to both of its expectations.
 
 ### #8 — Device verification matrix
 
