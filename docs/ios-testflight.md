@@ -140,7 +140,11 @@ Processing is usually minutes; ASC emails you when it is done.
    HTTPS/TLS only).
 3. Nothing to paste — the release script sends the **What to Test** notes for
    every locale, from `docs/app-store/testflight-whats-new*.md`. Rewrite those
-   files before a release rather than typing into the web form.
+   files before a release rather than typing into the web form. TestFlight
+   shows plain text (no bold, no Markdown), so the notes are structured with
+   what survives: a one-line tagline, upper-case headings (NEW / FIXED / TRY)
+   and "•" bullets — one screen, not a wall. `scripts/testflight-notes-format.mjs`
+   keeps those lines intact when it unwraps the source's soft line breaks.
 4. **Internal Testing → + →** create a group (e.g. `Internal`) → add testers.
    Testers must already exist under **Users and Access**; your own account is
    there by default.
