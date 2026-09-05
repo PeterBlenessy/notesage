@@ -40,3 +40,21 @@ describe("the unread rule is one rule on both sides", () => {
     expect(ts).toContain("reading-progress.json");
   });
 });
+
+describe("the badge counter can read a synced sidecar (2026-09-05)", () => {
+  const swift = readFileSync(
+    resolve(__dirname, "../../../src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/InboxState.swift"),
+    "utf8",
+  );
+
+  it("reads the sidecar through a file coordinator, not a bare Data(contentsOf:)", () => {
+    // In an iCloud library the sidecar can be an evicted placeholder, and an
+    // uncoordinated read of one fails in a way this file cannot tell apart
+    // from "nothing has ever been read". Every item then counts unread, so
+    // the badge equals the Inbox's file count and never moves again.
+    const body = swift.slice(swift.indexOf("static func progressItems"));
+    const fn = body.slice(0, body.indexOf("\n    }"));
+    expect(fn).toContain("NSFileCoordinator()");
+    expect(fn).toContain("startDownloadingUbiquitousItem");
+  });
+});

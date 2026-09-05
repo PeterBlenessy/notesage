@@ -52,7 +52,7 @@
         </scene>
     </scenes>
     <resources>
-        <image name="LaunchLogo" width="180" height="180"/>
+        <image name="LaunchLogo" width="280" height="280"/>
         <systemColor name="systemBackgroundColor">
             <color white="1" alpha="1" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
         </systemColor>

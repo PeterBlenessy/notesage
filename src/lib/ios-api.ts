@@ -652,8 +652,18 @@ export type IosRecordingEvent =
   | { event: "error"; message: string };
 
 /** Errors: `microphone-denied`, `low-disk-space`, `recording-in-progress`. */
-export function iosRecordingStart(language?: string | null): Promise<void> {
-  return invoke("ios_recording_start", { language: language ?? null });
+/** `title`/`subtitle` are the lock screen's words. They are passed in rather
+ *  than written natively because this app's translations live here — the
+ *  native side has no string bundle of its own outside the Share Extension. */
+export function iosRecordingStart(
+  language?: string | null,
+  labels?: { title?: string; subtitle?: string },
+): Promise<void> {
+  return invoke("ios_recording_start", {
+    language: language ?? null,
+    title: labels?.title ?? null,
+    subtitle: labels?.subtitle ?? null,
+  });
 }
 export function iosRecordingPause(): Promise<void> {
   return invoke("ios_recording_pause");

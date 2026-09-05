@@ -155,7 +155,15 @@ export function MobileApp() {
           Outside the shell div so it is never clipped by its overflow. */}
       <SweepIndicator progress={sweepProgress} />
       {grantState === "granted" && <RecoverRecordingSheet />}
-      <Toaster position="top-center" />
+      {/* Clear of the native chrome. The back button, breadcrumb and "…" are
+          UIKit hosts sitting ABOVE the web view, so a toast at the top of the
+          page renders underneath them — a recording error was invisible on
+          device (Peter, build 50). The islands occupy roughly 56pt below the
+          safe area; 76 leaves a margin without pushing toasts into the list. */}
+      <Toaster
+        position="top-center"
+        offset={{ top: "calc(env(safe-area-inset-top) + 76px)" }}
+      />
     </ThemeProvider>
   );
 }

@@ -164,3 +164,35 @@ describe("ArticleRow swipe actions (2026-09-05)", () => {
     expect(screen.getByTestId("row-listen")).toBeTruthy();
   });
 });
+
+describe("unread is legible without a badge (2026-09-05)", () => {
+  const inbox = { ...capture, path: "Inbox/How to read.html" };
+  const weight = () => (screen.getByText("How to read") as HTMLElement).style.fontWeight;
+
+  it("an unopened Inbox article carries the heavier title", async () => {
+    renderWithProviders(<ArticleRow actionContext={noopActions} entry={inbox} onActivate={() => {}} condensed={false} />);
+    await waitFor(() => expect(screen.getByText("How to read")).toBeTruthy());
+    expect(weight()).toContain("600");
+  });
+
+  it("opening it settles the title back to normal weight", async () => {
+    useMobileStore.setState({ inboxOpened: { [inbox.path]: true } });
+    renderWithProviders(<ArticleRow actionContext={noopActions} entry={inbox} onActivate={() => {}} condensed={false} />);
+    await waitFor(() => expect(screen.getByText("How to read")).toBeTruthy());
+    expect(weight()).toContain("400");
+    expect(weight()).not.toContain("600");
+  });
+
+  it("progress alone also counts as read, for state written before the flag existed", async () => {
+    useMobileStore.setState({ readingProgress: { [inbox.path]: 0.2 } });
+    renderWithProviders(<ArticleRow actionContext={noopActions} entry={inbox} onActivate={() => {}} condensed={false} />);
+    await waitFor(() => expect(screen.getByText("How to read")).toBeTruthy());
+    expect(weight()).not.toContain("600");
+  });
+
+  it("says nothing about documents outside the Inbox", async () => {
+    renderWithProviders(<ArticleRow actionContext={noopActions} entry={capture} onActivate={() => {}} condensed={false} />);
+    await waitFor(() => expect(screen.getByText("How to read")).toBeTruthy());
+    expect(weight()).not.toContain("600");
+  });
+});

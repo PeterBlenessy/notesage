@@ -24,15 +24,16 @@ sektion som är tom. Ungefär 600 tecken ryms på en skärm; skriptet varnar
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Hem visar bara mapparna du valt; ikonen räknar olästa i Inbox; inspelning startar på telefonen.
 
-NYTT
-• Hem: Inbox och mapparna du lagt där. Håll in en mapp för Visa på Hem, eller … › Redigera Hem.
-• Varje mapp minns sin egen vy, ordning och gruppering.
-• Appikonen visar antalet olästa i Inbox (slå på från Inbox).
-• Ny inspelning (håll in +): din Mac transkriberar när det synkats in.
-• Sparade artiklar går nu att svepa för Dela och Radera.
+Allt du hittade i telefonen är fixat — och en inspelning syns nu på låsskärmen.
+
+FIXAT
+• Stopp göms inte längre bakom sökrutan.
+• Fel visas i stället för att hamna under verktygsraden.
+• Olästa i Inbox är de fetare; öppnade tonas ner.
+• Ikonsiffran rör sig igen i ett synkat bibliotek.
+• Startlogotypen är skarp när den växer.
 
 TESTA
-• Öppna Inbox, tryck Slå på, tillåt, titta sedan på ikonen.
-• Håll in +, Ny inspelning, prata en minut, stoppa, öppna Inspelningar.
+• Spela in, lås telefonen, pausa och återuppta från låsskärmen, lås upp och stoppa.
+• Läs något i Inbox och se ikonsiffran minska.

@@ -627,12 +627,48 @@ the Inbox keeps looking as it did — except that the root is a list unless
 made a gallery on purpose: a root of folders rendered as a wall of identical
 cards was the complaint that made views per-folder.
 
+**Unread reads as weight, not as a badge.** An Inbox item whose title sits
+at 600 has not been opened; one at 400 has. A dot beside every thumbnail was
+tried first and was clutter (Peter, 2026-09-05) — emphasis is scannable
+without being decorative, which is the Mail convention minus the ornament.
+Plain rows carry it too, so a PDF and a saved page in the same Inbox behave
+alike, and only inside the Inbox, where a read-later contract exists.
+Progress cannot supply the rule: an article opened and closed at the first
+paragraph has a fraction of 0, exactly like one never touched. So it follows
+the sidecar's `openedAt` — the badge's rule, and the Mac's —
+mirrored into `mobile-store.inboxOpened` by `inbox-progress-sync` from a
+local open and from what the Mac recorded, and cleared again by a Mac "mark
+as unread". That mirror is written from a store subscriber, so it is
+deferred by a microtask; writing synchronously re-entered the subscriber
+before its `prev` had advanced and ran the stack away.
+
+**A recording is on the lock screen and in Control Center.** It outlives the
+app being on screen — that is the point of it — so `Recorder` publishes a
+now-playing entry with a running elapsed time and `isLiveStream`, which is
+the honest shape for something with an elapsed time and no duration. Play
+and Pause are wired; **Stop deliberately is not**, because stopping
+finalises the bundle into the library and the discard question for a
+slip-of-the-finger recording cannot be asked from a locked screen. A
+recording you mean to end is one unlock away; one ended from a pocket is not
+recoverable. `SpeechPlayer` hands its transport back when it stops: targets
+accumulate on the shared command centre, so leaving them registered meant a
+Play tap during a recording reached the speech player too. The lock screen's
+words come from the frontend, like the recording island's — this app's
+translations live there.
+
 **Listen from the list** — playback belongs to the app, not to the open
 document. `src/lib/speech-controller.ts` owns it: one session in
 `mobile-store.speech` (`relPath`, playing, paragraph index/total, rate,
 language), fed by the native events subscribed once at the app root
 (`startSpeechEvents` in `MobileApp`). Every saved page's row carries a
-`ListenButton` at its right edge and every saved page's card one on its
+`ListenButton` FLOATING over its right edge — glass over a backdrop blur,
+reserving no width, so the title and excerpt keep the whole row and simply
+pass behind it. It was a 72pt column, which is a third of the text's width on
+a 393pt screen: titles that had fitted on one line wrapped onto two and rows
+ran 107-136pt against a 72pt thumbnail (Peter, device, build 50). Floating
+took them to 96-116pt and left the reach where it was, on the right, which is
+where a right hand holds the phone. What remains above the thumbnail's height
+is the excerpt and the source line, not the control and every saved page's card one on its
 picture — *saved page* meaning a Notesage **capture**, and nothing else: the
 row is `ArticleRow`, which the browser picks for any `.html`/`.htm` entry,
 and which keeps the article shape only while `ios_article_card_meta` returns
@@ -774,7 +810,13 @@ for itself. Two things ship, both honest about their limits:
 
 - **The app icon badge is the unread Inbox count**, read from disk by one
   Swift helper (`InboxState.swift`, compiled into the app and the Share
-  Extension) with the same rule as `isUnread` in
+  Extension). Its sidecar read is **coordinated**, with a download requested
+  when only an iCloud placeholder is present: an uncoordinated read of an
+  evicted file simply fails, which that helper cannot tell apart from
+  "nothing has ever been read", so every item counted unread and the badge
+  froze at the Inbox's file count for ever — reading wrote a sidecar the
+  counter could not open (device, build 50). It uses the same rule as
+  `isUnread` in
   `src/lib/reading-progress-file.ts` — no entry, a tombstone, or
   `openedAt: null` — locked together by `inbox-unread-rule.test.ts`. It is
   refreshed wherever the truth can change: every root or Inbox listing

@@ -111,6 +111,9 @@ export async function pullInboxProgress(): Promise<void> {
       if (entry.fraction > 0) s.rememberReadingProgress(relPath, entry.fraction);
       if (entry.speech && s.speechPositions[relPath] === undefined) s.rememberSpeechPosition(relPath, entry.speech.paragraph);
       if (entry.openedAt && !openedHere.has(name)) openedHere.set(name, entry.openedAt);
+      // Reactive mirror: `openedHere` is module state, so a row cannot
+      // subscribe to it. The store field is what renders the unread title.
+      if (entry.openedAt) s.markInboxOpened(relPath);
     }
   } finally {
     pulling = false;
@@ -185,6 +188,14 @@ export function startInboxProgressSync(): () => void {
         openedHere.set(name, now);
         dirty.set(name, now);
         changed = true;
+        // Opening it here is what makes it read, whether or not any progress
+        // follows — closing at the first paragraph still counts.
+        //
+        // Deferred: this runs INSIDE a store subscriber, and writing to the
+        // store synchronously re-enters it before `prev` has been advanced,
+        // so the open looks new every time and the stack runs away.
+        const opened = next.openDoc.relPath;
+        queueMicrotask(() => useMobileStore.getState().markInboxOpened(opened));
       }
     }
     prev = next;

@@ -79,7 +79,11 @@ export async function startRecording(language?: string | null): Promise<void> {
   // One owner of the audio session: a running article stops first.
   if (store.speech) stopSpeech();
   try {
-    await iosRecordingStart(language);
+    // The lock screen and Control Center show this while the app is away.
+    await iosRecordingStart(language, {
+      title: t("recording.nowPlaying"),
+      subtitle: t("recording.nowPlayingHint"),
+    });
     // The `started` event follows; set the status now so the island shows
     // before the first tick.
     store.setRecording({ status: "recording", startedAt: Date.now(), elapsedSecs: 0, level: 0, interrupted: false, micPermission: "granted" });

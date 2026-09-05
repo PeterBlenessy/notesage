@@ -189,6 +189,14 @@ final class ChromeManager {
     setPlayer(spec.bottomRecorder == nil ? spec.bottomCenter : nil, over: webView)
     setRecorder(spec.bottomRecorder, over: webView)
     setSearch(spec.search, over: webView)
+    // The recorder and the search island are both bottom-centre, and search
+    // is deliberately raised above everything (`bringChromeToFront`), so on a
+    // screen that has both, search sat exactly on top of Pause and Stop:
+    // a recording could be started and then not stopped (Peter, device,
+    // build 50). The player already yields the slot to a recording; search
+    // cannot, because filtering a folder while recording is reasonable. So
+    // they stack — the recorder rides above the search pill.
+    recorderBottom?.constant = spec.search == nil ? -10 : -(10 + searchIslandHeight + 8)
   }
 
   /// Lift every chrome host back above whatever was just inserted over the
@@ -316,6 +324,11 @@ final class ChromeManager {
     playerHost = host
   }
 
+  /// Height of the collapsed search island, mirrored from its own constraint
+  /// below so the recorder can sit clear of it.
+  private static let searchIslandHeightValue: CGFloat = 50
+  private var searchIslandHeight: CGFloat { Self.searchIslandHeightValue }
+  private var recorderBottom: NSLayoutConstraint?
   private var recorderHost: UIHostingController<AnyView>?
 
   private func setRecorder(_ spec: ChromeRecorderSpec?, over webView: WKWebView) {
@@ -323,6 +336,7 @@ final class ChromeManager {
     guard let spec else {
       recorderHost?.view.removeFromSuperview()
       recorderHost = nil
+      recorderBottom = nil
       return
     }
     let view = AnyView(GlassRecorder(spec: spec) { [weak self] id in self?.emit(id, value: nil) })
@@ -336,9 +350,14 @@ final class ChromeManager {
     host.view.backgroundColor = .clear
     host.view.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(host.view)
+    // Against the keyboard guide, like the search island: it rests on the
+    // bottom safe area with the keyboard down, so nothing moves in the common
+    // case, and neither island ends up under a keyboard in the rare one.
+    let bottom = host.view.bottomAnchor.constraint(
+      equalTo: container.keyboardLayoutGuide.topAnchor, constant: -10)
+    recorderBottom = bottom
     NSLayoutConstraint.activate([
-      host.view.bottomAnchor.constraint(
-        equalTo: container.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+      bottom,
       host.view.centerXAnchor.constraint(equalTo: container.centerXAnchor),
       host.view.heightAnchor.constraint(equalToConstant: 66),
       host.view.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -24),
@@ -393,7 +412,7 @@ final class ChromeManager {
       // no JS bridge involved.
       host.view.bottomAnchor.constraint(
         equalTo: container.keyboardLayoutGuide.topAnchor, constant: -10),
-      host.view.heightAnchor.constraint(equalToConstant: 50),
+      host.view.heightAnchor.constraint(equalToConstant: Self.searchIslandHeightValue),
     ])
     searchCollapsedConstraints = [
       host.view.centerXAnchor.constraint(equalTo: container.centerXAnchor),
