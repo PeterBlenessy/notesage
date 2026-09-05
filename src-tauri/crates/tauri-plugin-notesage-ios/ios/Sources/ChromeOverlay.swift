@@ -1065,15 +1065,34 @@ final class WaveMeter: ObservableObject {
   @Published private(set) var samples: [CGFloat] = []
   private var timer: Timer?
 
+  /// The run loop is named, not inherited. `Timer.scheduledTimer` attaches
+  /// to whatever thread's run loop is current AT THE CALL SITE, and
+  /// SwiftUI's `.task` closure is `@Sendable () async -> Void` — its
+  /// execution context is not part of the type, so scheduling that way would
+  /// rest the timer's thread on an inference rather than on a rule. On a
+  /// cooperative-pool worker, whose run loop is not spinning, it would
+  /// simply never fire: no crash, no log, an empty `samples` array and a
+  /// flat trace — which is EXACTLY the symptom this view was written to fix
+  /// (Peter, build 51: "during recording I don't get the progress line
+  /// displayed"). Naming `RunLoop.main` also keeps `currentLevel()`, and so
+  /// `AVAudioRecorder.updateMeters()`, on the one thread the recorder's own
+  /// 1 Hz tick already calls it from.
+  ///
+  /// `.common` rather than `.default`: articles stay readable while
+  /// recording, and a default-mode timer stops dead for the whole of a
+  /// scroll gesture — the trace would freeze exactly while someone reads.
   func start() {
     guard timer == nil else { return }
-    timer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true) { [weak self] _ in
+    let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+      dispatchPrecondition(condition: .onQueue(.main))
       guard let self else { return }
       self.samples.append(CGFloat(Recorder.shared.currentLevel()))
       if self.samples.count > Self.capacity {
         self.samples.removeFirst(self.samples.count - Self.capacity)
       }
     }
+    RunLoop.main.add(t, forMode: .common)
+    timer = t
   }
 
   func stop() {
