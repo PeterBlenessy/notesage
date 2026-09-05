@@ -43,6 +43,8 @@ import { installSpeechHighlight, type SpeechHighlight } from "./speech-highlight
 import { splitSpeechParagraphs } from "./speech-text";
 import { documentToSpeechText } from "./speech-text";
 import { SpeechPlayerBar } from "./SpeechPlayerBar";
+import { RecordingBar } from "./RecordingBar";
+import { formatElapsed, pauseRecording, resumeRecording, stopRecording } from "@/lib/recording-controller";
 import { useSpeechPlayer } from "@/hooks/useSpeechPlayer";
 import { measureReaderInsets, withReaderInsets, withWideContentGuard } from "./html-insets";
 import { highlightDomMatches, clearDomHighlights } from "@/lib/dom-search";
@@ -185,6 +187,10 @@ const MAX_INLINE_TEXT_BYTES = 100 * 1024 * 1024;
 export function Reader() {
   useLocale();
   const openDoc = useMobileStore((s) => s.openDoc);
+  const recordingStatus = useMobileStore((s) => s.recording.status);
+  const recordingElapsed = useMobileStore((s) => s.recording.elapsedSecs);
+  const recordingLevel = useMobileStore((s) => s.recording.level);
+  const recordingInterrupted = useMobileStore((s) => s.recording.interrupted);
   const rememberReadingProgress = useMobileStore((s) => s.rememberReadingProgress);
   const progressSampledAtRef = useRef(0);
   const goBack = useMobileStore((s) => s.goBack);
@@ -1055,6 +1061,16 @@ export function Reader() {
       // Read-aloud transport (#833), rendered natively so it is visible over a
       // natively-presented report — which is exactly the document kind people
       // want to listen to.
+      bottomRecorder:
+        recordingStatus === "idle"
+          ? undefined
+          : {
+              elapsed: formatElapsed(recordingElapsed),
+              paused: recordingStatus !== "recording",
+              level: recordingLevel,
+              interrupted: recordingInterrupted,
+              interruptedLabel: t("recording.interrupted"),
+            },
       bottomCenter: speech.state.active
         ? {
             playing: speech.state.playing,
@@ -1105,6 +1121,8 @@ export function Reader() {
       listen: () => startListening(),
       voice: () => void pickVoice(),
       "player-toggle": () => (speech.state.playing ? speech.pause() : speech.resume()),
+      "rec-toggle": () => (recordingStatus === "recording" ? pauseRecording() : resumeRecording()),
+      "rec-stop": () => void stopRecording(),
       "player-back": () => speech.skip(-1),
       "player-forward": () => speech.skip(1),
       "player-rate": () => speech.cycleRate(),
@@ -1517,6 +1535,7 @@ export function Reader() {
           overlay instead — a React island portals to document.body and would
           sit BEHIND a natively-presented report, which is the document kind
           people most want to listen to. */}
+      {!nativeChrome && <RecordingBar onStop={() => void stopRecording()} />}
       {!nativeChrome && (
       <SpeechPlayerBar
         state={speech.state}
