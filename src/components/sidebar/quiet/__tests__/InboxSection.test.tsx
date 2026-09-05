@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import "@/test/tauri-mock";
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { fireEvent, renderWithProviders, screen, waitFor } from "@/test/component-harness";
-import { setMockInvokeHandler } from "@/test/tauri-mock";
+import { getListenerCount, setMockInvokeHandler } from "@/test/tauri-mock";
 import { InboxSection } from "@/components/sidebar/quiet/InboxSection";
 import { useInboxStore, resetInboxCaches } from "@/stores/inbox-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -52,6 +52,17 @@ describe("InboxSection (sidebar row)", () => {
     renderWithProviders(<InboxSection />);
     await waitFor(() => expect(useInboxStore.getState().dir).toBe(INBOX));
     expect(screen.queryByTestId("inbox-row")).toBeNull();
+  });
+
+  it("only lists — the folder watch and the change listener live in useInboxArrivals (App root)", async () => {
+    // The sidebar unmounts on ⌘⇧L; a listener here would die with it.
+    const watchDirectory = vi.fn();
+    setMockInvokeHandler("watch_directory", watchDirectory);
+    const before = getListenerCount("file-changed-batch");
+    renderWithProviders(<InboxSection />);
+    await screen.findByTestId("inbox-row");
+    expect(watchDirectory).not.toHaveBeenCalled();
+    expect(getListenerCount("file-changed-batch")).toBe(before);
   });
 
   it("drops the badge once everything has been opened", async () => {

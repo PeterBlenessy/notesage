@@ -143,6 +143,10 @@ export function SystemSettings({
   const setNotifyExternalChanges = useSettingsStore(
     (s) => s.setNotifyExternalChanges,
   );
+  const notifyInboxCaptures = useSettingsStore((s) => s.notifyInboxCaptures);
+  const setNotifyInboxCaptures = useSettingsStore(
+    (s) => s.setNotifyInboxCaptures,
+  );
 
   // HTML viewer
   const htmlViewerAllowScripts = useSettingsStore((s) => s.htmlViewerAllowScripts);
@@ -438,6 +442,18 @@ export function SystemSettings({
               id="notify-external"
               checked={notifyExternalChanges}
               onCheckedChange={setNotifyExternalChanges}
+            />
+          }
+        />
+        <SettingsRow
+          label={t("settings.inboxCaptures")}
+          description={t("settings.inboxCapturesDesc")}
+          htmlFor="notify-inbox"
+          control={
+            <Switch
+              id="notify-inbox"
+              checked={notifyInboxCaptures}
+              onCheckedChange={setNotifyInboxCaptures}
             />
           }
         />
