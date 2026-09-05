@@ -24,6 +24,14 @@ const toastMock = Object.assign(vi.fn(), {
 
 vi.mock('sonner', () => ({ toast: toastMock }));
 
+// The desktop-notification plugin — permission granted, delivery observed.
+const sendNotification = vi.fn();
+vi.mock('@tauri-apps/plugin-notification', () => ({
+  isPermissionGranted: vi.fn(async () => true),
+  requestPermission: vi.fn(async () => 'granted'),
+  sendNotification: (...args: unknown[]) => sendNotification(...args),
+}));
+
 // Dynamic import happens after the mock is in place.
 let toastExternalChange: typeof import('@/lib/notifications').toastExternalChange;
 let toastExternalReload: typeof import('@/lib/notifications').toastExternalReload;
@@ -175,5 +183,46 @@ describe('notifications — external-change helpers', () => {
       const [message] = toastMock.info.mock.calls[0];
       expect(message).toBe('readme.md reloaded from disk');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// notify() — the setting gate and the `extra` payload (Inbox arrivals, PRD
+// 2026-09-05-ios-notifications task #15)
+// ---------------------------------------------------------------------------
+
+describe('notify — inbox_capture', () => {
+  let notify: typeof import('@/lib/notifications').notify;
+  let useSettingsStore: typeof import('@/stores/settings-store').useSettingsStore;
+
+  beforeEach(async () => {
+    sendNotification.mockClear();
+    notify = (await import('@/lib/notifications')).notify;
+    useSettingsStore = (await import('@/stores/settings-store')).useSettingsStore;
+  });
+
+  it('gates on notifyInboxCaptures — off means nothing is sent', async () => {
+    useSettingsStore.setState({ notifyInboxCaptures: false });
+    await notify('inbox_capture', 'New in Inbox', 'Title', { inbox: true });
+    expect(sendNotification).not.toHaveBeenCalled();
+  });
+
+  it('sends when notifyInboxCaptures is on and forwards `extra` verbatim', async () => {
+    useSettingsStore.setState({ notifyInboxCaptures: true });
+    await notify('inbox_capture', 'New in Inbox', 'Title', { inbox: true });
+    expect(sendNotification).toHaveBeenCalledTimes(1);
+    expect(sendNotification).toHaveBeenCalledWith({ title: 'New in Inbox', body: 'Title', extra: { inbox: true } });
+  });
+
+  it('omits `extra` from the payload when none is given (existing callers unchanged)', async () => {
+    useSettingsStore.setState({ notifyAgentCompletion: true });
+    await notify('agent_completion', 'Done', 'A task finished.');
+    expect(sendNotification).toHaveBeenCalledWith({ title: 'Done', body: 'A task finished.' });
+  });
+
+  it('the notifyInboxCaptures gate is independent of the other notification flags', async () => {
+    useSettingsStore.setState({ notifyInboxCaptures: true, notifyAgentCompletion: false, notifyExternalChanges: false });
+    await notify('inbox_capture', 'New in Inbox', 'Title', { inbox: true });
+    expect(sendNotification).toHaveBeenCalledTimes(1);
   });
 });
