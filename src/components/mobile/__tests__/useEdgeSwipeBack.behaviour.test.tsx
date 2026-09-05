@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { fireEvent } from "@testing-library/react";
+import { act, fireEvent } from "@testing-library/react";
 import { renderWithProviders, screen } from "@/test/component-harness";
 import { useEdgeSwipeBack } from "@/components/mobile/useEdgeSwipeBack";
 
@@ -90,6 +90,43 @@ describe("edge-swipe-back: whose finger is this? (2026-09-06)", () => {
     fireEvent.pointerDown(el, { pointerId: 2, clientX: 4, clientY: 0 });
     fireEvent.pointerMove(el, { pointerId: 2, clientX: 200, clientY: 0 });
     fireEvent.pointerUp(el, { pointerId: 2, clientX: 200, clientY: 0 });
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("gives up on a drag that goes silent, without committing it", () => {
+    // The recovery that depends on NO event arriving. `lostpointercapture`
+    // is fired by the spec as a consequence of the very pointerup or
+    // pointercancel that goes missing when the system steals a touch, so it
+    // cannot be the only answer. A gesture nobody finished must spring back,
+    // and must not count as a request to close the document.
+    const onBack = vi.fn();
+    renderWithProviders(<Subject onBack={onBack} />);
+    const el = page();
+    fireEvent.pointerDown(el, { pointerId: 1, clientX: 4, clientY: 0 });
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: 200, clientY: 0 }); // past the commit distance
+    expect(el.style.transform).not.toBe("translateX(0px)");
+    // Wrapped: the watchdog sets React state from a timer, which does not
+    // reach the DOM outside act().
+    act(() => vi.advanceTimersByTime(4000));
+    expect(el.style.transform).toBe("translateX(0px)");
+    expect(onBack).not.toHaveBeenCalled();
+    // …and the strip works again straight away.
+    fireEvent.pointerDown(el, { pointerId: 2, clientX: 4, clientY: 0 });
+    fireEvent.pointerMove(el, { pointerId: 2, clientX: 200, clientY: 0 });
+    fireEvent.pointerUp(el, { pointerId: 2, clientX: 200, clientY: 0 });
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not give up on a drag that is still moving", () => {
+    const onBack = vi.fn();
+    renderWithProviders(<Subject onBack={onBack} />);
+    const el = page();
+    fireEvent.pointerDown(el, { pointerId: 1, clientX: 4, clientY: 0 });
+    for (const x of [40, 80, 120, 160, 200]) {
+      act(() => vi.advanceTimersByTime(3000)); // each under the limit, well over it in total
+      fireEvent.pointerMove(el, { pointerId: 1, clientX: x, clientY: 0 });
+    }
+    fireEvent.pointerUp(el, { pointerId: 1, clientX: 200, clientY: 0 });
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 

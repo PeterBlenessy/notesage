@@ -64,6 +64,50 @@ describe("SwipeRevealRow: whose finger is this? (2026-09-06)", () => {
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
+  it("gives up on a drag that goes silent, without firing its edge action", () => {
+    // Same recovery as the reader's, and for the same reason: the event that
+    // would tell us the touch is gone is exactly the one that goes missing.
+    // A row abandoned mid-swipe must return to where it was — and must never
+    // read as a Delete nobody asked for.
+    vi.useFakeTimers();
+    try {
+      const onSelect = vi.fn();
+      renderWithProviders(
+        <Row actions={[makeAction({ id: "delete", label: "Delete", onSelect })]} onRowClick={vi.fn()} />,
+      );
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 0, clientY: 0 }); // full swipe distance
+      vi.advanceTimersByTime(4000);
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("recovers a captured drag when capture is lost with no pointerup", () => {
+    const onSelect = vi.fn();
+    renderWithProviders(<Row actions={[makeAction({ onSelect })]} onRowClick={vi.fn()} />);
+    const content = screen.getByText("row content");
+    fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+    fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+    fireEvent.lostPointerCapture(content, { pointerId: 1, clientX: 100, clientY: 0 });
+    // Ended like any other lift: 100px is past half the action width, so the
+    // row settles open rather than freezing mid-drag.
+    expect(screen.getByRole("button", { name: "Share" })).toBeTruthy();
+  });
+
+  it("replaces a touch that never became a drag rather than being blocked by it", () => {
+    // The other half: a press that stalled before the axis lock took no
+    // capture and moved nothing, so nothing else can free it.
+    renderWithProviders(<Row actions={[makeAction()]} onRowClick={vi.fn()} />);
+    const content = screen.getByText("row content");
+    fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 }); // never lifts
+    swipe(content, 200, 100);
+    expect(screen.getByRole("button", { name: "Share" })).toBeTruthy();
+  });
+
   it("does not let a second touchdown restart the drag", () => {
     renderWithProviders(<Row actions={[makeAction()]} onRowClick={vi.fn()} />);
     const content = screen.getByText("row content");

@@ -368,8 +368,14 @@ contract, or it will drop gestures:
    steals a captured touch, and a drag whose terminator never arrives would
    then block the surface for ever. A drag that never locked has taken no
    capture and moved nothing on screen, so it is simply replaced; a locked
-   one is freed by `lostpointercapture`, which is released even where the
-   pointer event that should follow it is not delivered.
+   one is ended by an abandonment watchdog: a live drag that goes four
+   seconds with no move and no lift springs back without committing. That
+   timer is the recovery, because it depends on NO event arriving —
+   `lostpointercapture` is the obvious candidate and is handled too, but the
+   spec fires it as a consequence of the very pointerup or pointercancel
+   that goes missing, so it cannot be the answer on its own. Four seconds is
+   far longer than any swipe; the penalty if it ever cuts one off is that
+   the surface returns to where it was and the gesture can be made again.
 
 ## Swipe in from the left edge to leave a document
 

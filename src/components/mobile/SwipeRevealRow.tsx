@@ -1,4 +1,4 @@
-import { useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export interface SwipeRevealAction {
@@ -31,6 +31,13 @@ const RADIUS_REVEALED = 14;
 /** Trailing corner radius at maximum drag — near-circular on a ~60 px row,
  *  deliberately short of a true pill so the row still reads as a row. */
 const RADIUS_MAX = 26;
+/** A live drag that goes this long with no news at all is abandoned — the
+ *  one recovery that depends on no event arriving. See the matching constant
+ *  in `useEdgeSwipeBack` for why `lostpointercapture` alone is not enough:
+ *  the spec fires it as a consequence of the very terminator that goes
+ *  missing. The penalty if it ever cuts off a real drag is a row that snaps
+ *  back to where it was. */
+const STALE_MS = 4000;
 
 /**
  * How far action `index` of `count` has emerged, 0 → 1.
@@ -116,11 +123,30 @@ export function SwipeRevealRow({
   const [open, setOpen] = useState(false);
   const [dragOffset, setDragOffset] = useState<number | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const staleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Set when a real drag (or a tap-to-close on an already-open row) just
   // resolved the gesture — the trailing native `click` that follows a real
   // pointerup must not also activate the row. Mirrors the suppressClick
   // idiom already used for the sidebar's long-press ancestor menu.
   const suppressClickRef = useRef(false);
+
+  // A row is unmounted by any listing refresh, which a finger being down does
+  // nothing to prevent.
+  useEffect(() => () => {
+    if (staleRef.current) clearTimeout(staleRef.current);
+  }, []);
+
+  /** Restart the abandonment timer. Every sign of life postpones it. */
+  const arm = () => {
+    if (staleRef.current) clearTimeout(staleRef.current);
+    staleRef.current = setTimeout(() => {
+      staleRef.current = null;
+      // Abandoned, so it must not COMMIT: an unfinished drag is not a
+      // request to delete anything. The row returns to where it was.
+      dragRef.current = null;
+      setDragOffset(null);
+    }, STALE_MS);
+  };
 
   const offset = dragOffset ?? (open ? -revealWidth : 0);
   const animating = dragOffset === null;
@@ -145,11 +171,13 @@ export function SwipeRevealRow({
       isDrag: false,
       lastOffset: open ? -revealWidth : 0,
     };
+    arm();
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== e.pointerId || drag.axis === "scroll") return;
+    arm();
     const delta = e.clientX - drag.startX;
     if (drag.axis === "undecided") {
       drag.axis = resolveDragAxis(delta, e.clientY - drag.startY);
@@ -177,6 +205,8 @@ export function SwipeRevealRow({
     const drag = dragRef.current;
     // Lifting the OTHER finger must not end a drag it never owned.
     if (drag && e && drag.pointerId !== e.pointerId) return;
+    if (staleRef.current) clearTimeout(staleRef.current);
+    staleRef.current = null;
     dragRef.current = null;
     if (!drag) return;
     setDragOffset(null);

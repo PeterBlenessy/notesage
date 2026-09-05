@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 /**
  * Swipe in from the left edge to go back — the gesture iOS gives every
@@ -23,6 +23,22 @@ const HORIZONTAL_BIAS = 0.75;
 export const COMMIT_DISTANCE = 96;
 /** …or less travel, thrown fast. px per ms. */
 export const COMMIT_VELOCITY = 0.5;
+/**
+ * A live drag that goes this long with no news at all is abandoned.
+ *
+ * The recovery of last resort, and the only one that depends on no event
+ * arriving. `lostpointercapture` is the obvious candidate, but the spec fires
+ * it as a CONSEQUENCE of pointerup/pointercancel — so in the case worth
+ * recovering from, where WebKit delivers no terminator because the system
+ * took the touch, there is no reason to expect it either. Both are handled
+ * (they cost nothing when they do arrive); this is what makes the recovery
+ * unconditional.
+ *
+ * Four seconds is far longer than any swipe and long enough that a finger
+ * genuinely held mid-drag is not cut off in normal use. The penalty if it
+ * ever is: the page springs back and the swipe can be made again.
+ */
+const STALE_MS = 4000;
 
 export type EdgeAxis = "undecided" | "swipe" | "scroll";
 
@@ -76,19 +92,46 @@ export function useEdgeSwipeBack(onBack: () => void): {
   dragging: boolean;
 } {
   const drag = useRef<Drag | null>(null);
+  const stale = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [offset, setOffset] = useState(0);
   const [dragging, setDragging] = useState(false);
+
+  // A drag can outlive the reader (the document closes while a finger is
+  // down), and a timer firing into an unmounted component is a console
+  // warning at best.
+  useEffect(
+    () => () => {
+      if (stale.current) clearTimeout(stale.current);
+    },
+    [],
+  );
 
   const end = (e?: ReactPointerEvent) => {
     const d = drag.current;
     // Lifting the other finger must not end — or commit — a drag it never
     // owned.
     if (d && e && d.pointerId !== e.pointerId) return;
+    if (stale.current) clearTimeout(stale.current);
+    stale.current = null;
     drag.current = null;
     setDragging(false);
     setOffset(0);
     if (!d || d.axis !== "swipe") return;
     if (commitsBack(d.dx, Date.now() - d.swipeAt)) onBack();
+  };
+
+  /** Restart the abandonment timer. Every sign of life postpones it; only
+   *  silence lets it fire. */
+  const arm = () => {
+    if (stale.current) clearTimeout(stale.current);
+    stale.current = setTimeout(() => {
+      stale.current = null;
+      // Abandoned, so it must not COMMIT — a gesture nobody finished is not
+      // a request to close the document.
+      drag.current = null;
+      setDragging(false);
+      setOffset(0);
+    }, STALE_MS);
   };
 
   return {
@@ -120,10 +163,12 @@ export function useEdgeSwipeBack(onBack: () => void): {
           axis: "undecided",
           dx: 0,
         };
+        arm();
       },
       onPointerMove: (e) => {
         const d = drag.current;
         if (!d || d.pointerId !== e.pointerId || d.axis === "scroll") return;
+        arm();
         const dx = e.clientX - d.startX;
         if (d.axis === "undecided") {
           d.axis = resolveEdgeAxis(dx, e.clientY - d.startY);
