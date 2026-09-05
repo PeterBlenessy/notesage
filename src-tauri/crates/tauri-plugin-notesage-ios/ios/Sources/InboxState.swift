@@ -45,7 +45,28 @@ enum InboxState {
     /// same tolerance `parseReadingProgress` has.
     static func progressItems(root: URL) -> [String: [String: Any]] {
         let url = root.appendingPathComponent(sidecarRel)
-        guard let data = try? Data(contentsOf: url),
+        // COORDINATED, and materialised first.
+        //
+        // This was a plain `Data(contentsOf:)`, which is the one read in this
+        // file that cannot see an iCloud library. A synced sidecar can sit on
+        // disk as an evicted placeholder (`.reading-progress.json.icloud`),
+        // and an uncoordinated read of one simply fails — indistinguishable
+        // here from "no progress has ever been recorded". Every item then
+        // counts as unread, so the badge equals the number of files in the
+        // Inbox and never moves again, however much is read: reading writes
+        // the sidecar the counter cannot open.
+        //
+        // The app's own writes go through `NSFileCoordinator`; this is the
+        // reader catching up with them.
+        if !FileManager.default.fileExists(atPath: url.path) {
+            try? FileManager.default.startDownloadingUbiquitousItem(at: url)
+        }
+        var data: Data?
+        var coordError: NSError?
+        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordError) { u in
+            data = try? Data(contentsOf: u)
+        }
+        guard let data,
             let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
             let items = json["items"] as? [String: [String: Any]]
         else { return [:] }
