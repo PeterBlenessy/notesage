@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import MediaPlayer
 import UIKit
 import os.log
 
@@ -39,6 +40,9 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
     private var startedAt: Date?
     private var language: String?
     private var tick: Timer?
+    private var remoteCommandsRegistered = false
+    private var nowPlayingTitle: String?
+    private var nowPlayingSubtitle: String?
     private var observersInstalled = false
     /// Native → JS: `notesage:recording` events.
     var onEvent: (([String: Any]) -> Void)?
@@ -80,7 +84,17 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
     private static let work = DispatchQueue(label: "com.notesage.recorder", qos: .userInitiated)
     private static let startTimeout: TimeInterval = 8
 
-    func start(language: String?, completion: @escaping (Result<Void, Error>) -> Void) {
+    /// `title`/`subtitle` are the LOCK SCREEN's words, passed in from the
+    /// frontend because that is where this app's translations live — the
+    /// native side has no bundle strings of its own outside the Share
+    /// Extension. Missing ones fall back to something true in any language
+    /// rather than to English prose.
+    func start(
+        language: String?, title: String?, subtitle: String?,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        nowPlayingTitle = title
+        nowPlayingSubtitle = subtitle
         guard state == .idle else { return completion(.failure(RecorderError.alreadyRecording)) }
         state = .finalizing  // claimed: a second tap while starting is refused
         AVAudioSession.sharedInstance().requestRecordPermission { granted in
@@ -185,6 +199,8 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
         state = .recording
         installObservers()
         startTick()
+        registerRemoteCommands()
+        updateNowPlaying()
         os_log("started %{public}@", log: Recorder.logger, type: .info, dir.lastPathComponent)
         emit(["event": "started"])
     }
@@ -193,6 +209,7 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
         guard state == .recording, let recorder else { return }
         recorder.pause()
         state = .paused
+        updateNowPlaying()
         emit(["event": "paused"])
     }
 
@@ -201,6 +218,7 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
         interrupted = false
         guard recorder.record() else { return }
         state = .recording
+        updateNowPlaying()
         emit(["event": "resumed"])
     }
 
@@ -223,6 +241,7 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
         state = .idle
         // Claimed until the caller has finished with it — see `inFlight`.
         Recorder.beginFinalizing(dir)
+        clearNowPlaying()
         os_log("stopped after %.1fs, %d bytes", log: Recorder.logger, type: .info, duration, bytes)
         return Staged(dir: dir, audio: url, startedAt: startedAt, durationSecs: duration, bytes: bytes, language: language)
     }
@@ -315,6 +334,71 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
             durationSecs: Double(file.length) / file.fileFormat.sampleRate, bytes: bytes, language: nil)
     }
 
+    // MARK: - Lock screen and Control Center
+
+    /// A recording belongs on the lock screen for the same reason playback
+    /// does: it is a thing the phone is doing that outlives the app being on
+    /// screen, and there was no way to see it — or pause it — without
+    /// unlocking and coming back (Peter, device, build 50).
+    ///
+    /// `isLiveStream` is the honest shape: a recording has an elapsed time
+    /// and no duration, so the system draws a running counter rather than a
+    /// scrubber for a length nobody knows yet.
+    private func updateNowPlaying() {
+        let live = state == .recording
+        MPNowPlayingInfoCenter.default().playbackState = live ? .playing : .paused
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: nowPlayingTitle ?? "Notesage",
+            MPNowPlayingInfoPropertyIsLiveStream: true,
+            MPNowPlayingInfoPropertyPlaybackRate: live ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: recorder?.currentTime ?? 0,
+        ]
+        if let nowPlayingSubtitle { info[MPMediaItemPropertyArtist] = nowPlayingSubtitle }
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+    }
+
+    private func clearNowPlaying() {
+        removeRemoteCommands()
+        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        MPNowPlayingInfoCenter.default().playbackState = .stopped
+    }
+
+    /// Pause and resume, and deliberately NOT stop.
+    ///
+    /// Stopping finalises the bundle into the library, and the discard
+    /// question for a slip-of-the-finger recording cannot be asked from a
+    /// locked screen. A recording that must end is one unlock away; a
+    /// recording ended by accident from a pocket is not recoverable.
+    private func registerRemoteCommands() {
+        guard !remoteCommandsRegistered else { return }
+        remoteCommandsRegistered = true
+        let centre = MPRemoteCommandCenter.shared()
+        centre.playCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async { self?.resume() }
+            return .success
+        }
+        centre.pauseCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async { self?.pause() }
+            return .success
+        }
+        centre.togglePlayPauseCommand.addTarget { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.state == .recording ? self.pause() : self.resume()
+            }
+            return .success
+        }
+    }
+
+    private func removeRemoteCommands() {
+        guard remoteCommandsRegistered else { return }
+        remoteCommandsRegistered = false
+        let centre = MPRemoteCommandCenter.shared()
+        centre.playCommand.removeTarget(nil)
+        centre.pauseCommand.removeTarget(nil)
+        centre.togglePlayPauseCommand.removeTarget(nil)
+    }
+
     // MARK: - Tick and metering
 
     private func startTick() {
@@ -322,6 +406,10 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
         tick = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             guard let self, let recorder = self.recorder, self.state == .recording else { return }
             self.emit(["event": "tick", "elapsedSecs": recorder.currentTime, "level": self.currentLevel()])
+            // The lock screen counts on its own once given a rate and an
+            // anchor, but a pause-aware recorder drifts from wall clock, so
+            // the anchor is re-published rather than left to run.
+            self.updateNowPlaying()
         }
     }
 

@@ -9,7 +9,7 @@ import { SwipeRevealRow } from "./SwipeRevealRow";
 import { useLongPress } from "./useLongPress";
 import { presentEntryMenu } from "@/lib/mobile-entry-actions";
 import { ListenButton } from "./ListenButton";
-import { readingLine, READ_THRESHOLD } from "./reading-progress";
+import { isUnreadRow, readingLine, READ_THRESHOLD } from "./reading-progress";
 
 /**
  * A read-later list row for a saved article (#836) — Instapaper's shape:
@@ -46,6 +46,13 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
   const [meta, setMeta] = useState<ArticleCardMeta | null | undefined>(undefined);
   const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(null);
   const progress = useMobileStore((s) => s.readingProgress[entry.path] ?? 0);
+  const opened = useMobileStore((s) => s.inboxOpened);
+  // Weight, not a badge: a dot beside every thumbnail was clutter (Peter,
+  // 2026-09-05). An unopened title sits at 600 against 400 for one already
+  // read — the Mail convention minus the ornament. It reads as emphasis
+  // rather than as a marker, which is what makes it scannable without
+  // demanding anything of the eye.
+  const unread = isUnreadRow(entry.path, opened, progress);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,7 +105,10 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
         nested-interactive pattern assistive tech handles inconsistently. */}
     <div
       className={cn(
-        "flex items-stretch",
+        // `relative`, because the Listen control floats over this row rather
+        // than sitting beside it — see `ListenButton`. The row keeps its full
+        // width for the title and the excerpt.
+        "relative flex items-stretch",
         "border-b border-border last:border-b-0",
         props.active && "bg-muted",
       )}
@@ -112,7 +122,7 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
         // Centred like the plain row: the slot is fixed-height, and a
         // title-only row (header not yet read, or no excerpt) would otherwise
         // sit top-heavy beside an empty 72pt box.
-        "ios-press-row flex min-w-0 flex-1 items-center gap-3 pl-4 pr-2 text-left",
+        "ios-press-row flex min-w-0 flex-1 items-center gap-3 px-4 text-left",
         condensed ? "py-2" : "py-3",
         "hover:bg-muted/50",
       )}
@@ -139,7 +149,11 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
             condensed ? "truncate" : "line-clamp-2",
             done && "text-muted-foreground",
           )}
-          style={{ fontWeight: "max(500, var(--ns-a11y-weight, 400))" }}
+          style={{
+            fontWeight: unread
+              ? "max(600, var(--ns-a11y-weight, 400))"
+              : "max(400, var(--ns-a11y-weight, 400))",
+          }}
         >
           {title}
         </div>
@@ -155,8 +169,14 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
         )}
       </div>
     </button>
-      {/* Read aloud without opening: the row's one control (#833). */}
-      <ListenButton entry={entry} size="row" />
+      {/* Read aloud without opening: the row's one control (#833), floating
+          over the right edge so it costs the text nothing. Centred on the
+          row, where it has always been, so the reach does not change. */}
+      <ListenButton
+        entry={entry}
+        size="row"
+        className="absolute right-2 top-1/2 -translate-y-1/2"
+      />
     </div>
     </SwipeRevealRow>
   );

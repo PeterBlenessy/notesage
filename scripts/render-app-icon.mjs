@@ -137,10 +137,22 @@ if (existsSync(appIconSet)) {
 // because `copytree` preserves mtimes the file still looked untouched
 // afterwards. Writing the source is the only thing that survives.
 if (existsSync(LAUNCH_SRC)) {
-  // Base 60pt at 1x/2x/3x. Size and position must not change: the storyboard's
-  // icon and the plugin's launch cover are one continuous image across the
-  // launch-screen → webview handoff, so only the artwork may differ.
-  for (const [suffix, px] of [["1x", 60], ["2x", 120], ["3x", 180]]) {
+  // The logo is DRAWN at 120pt, but the launch cover grows it to 2.3x while
+  // the app loads — 276pt on screen, which needs 828px on a 3x display. The
+  // set used to be a 60pt base (60/120/180px), so the peak of that animation
+  // magnified 180px across 276pt: about 4.6x, and it looked it (Peter,
+  // device, build 50: "the zoomed logo animation looks blurry").
+  //
+  // A transform does not re-render the artwork, it samples whatever pixels
+  // the image already has, so the fix is pixels rather than layout. Base
+  // 280pt covers the peak at 3x with a little headroom; every smaller size
+  // is a downscale, which is the sharp direction.
+  //
+  // Size and POSITION on screen must not change: the storyboard's icon and
+  // the plugin's launch cover are one continuous image across the launch-
+  // screen → webview handoff. Both constrain the view to 120pt explicitly,
+  // so a larger intrinsic size changes resolution and nothing else.
+  for (const [suffix, px] of [["1x", 280], ["2x", 560], ["3x", 840]]) {
     await render(iosSvg, px, join(LAUNCH_SRC, `logo@${suffix}.png`));
   }
   console.log("  icon-ios.svg → ios/LaunchAssets/LaunchLogo.imageset (3 files, tracked source)");

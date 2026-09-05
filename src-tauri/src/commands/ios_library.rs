@@ -1079,10 +1079,15 @@ pub struct RecordingStopped {
 /// bundle reaches the library on stop). Errors: `microphone-denied`,
 /// `low-disk-space`, `recording-in-progress`.
 #[tauri::command]
-pub async fn ios_recording_start(app: tauri::AppHandle, language: Option<String>) -> Result<(), String> {
+pub async fn ios_recording_start(
+    app: tauri::AppHandle,
+    language: Option<String>,
+    title: Option<String>,
+    subtitle: Option<String>,
+) -> Result<(), String> {
     #[cfg(target_os = "ios")]
     {
-        ios_impl::recording_start(&app, language.as_deref()).await
+        ios_impl::recording_start(&app, language.as_deref(), title.as_deref(), subtitle.as_deref()).await
     }
     #[cfg(not(target_os = "ios"))]
     {
@@ -1549,8 +1554,12 @@ mod ios_impl {
         }
     }
 
-    pub async fn recording_start(app: &AppHandle, language: Option<&str>) -> Result<(), String> {
-        app.notesage_ios().recording_start(language).map_err(|e| e.to_string())
+    pub async fn recording_start(
+        app: &AppHandle, language: Option<&str>, title: Option<&str>, subtitle: Option<&str>,
+    ) -> Result<(), String> {
+        app.notesage_ios()
+            .recording_start(language, title, subtitle)
+            .map_err(|e| e.to_string())
     }
 
     pub async fn recording_pause(app: &AppHandle) -> Result<(), String> {

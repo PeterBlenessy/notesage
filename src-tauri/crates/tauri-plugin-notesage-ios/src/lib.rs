@@ -595,8 +595,13 @@ impl<R: Runtime> NotesageIos<R> {
         self.call("speechState", ())
     }
 
-    pub fn recording_start(&self, language: Option<&str>) -> Result<()> {
-        self.call("recordingStart", serde_json::json!({ "language": language }))
+    pub fn recording_start(
+        &self, language: Option<&str>, title: Option<&str>, subtitle: Option<&str>,
+    ) -> Result<()> {
+        self.call(
+            "recordingStart",
+            serde_json::json!({ "language": language, "title": title, "subtitle": subtitle }),
+        )
     }
 
     pub fn recording_pause(&self) -> Result<()> {
@@ -817,7 +822,9 @@ impl<R: Runtime> NotesageIos<R> {
     pub fn speech_state(&self) -> Result<SpeechState> {
         Err(Error::Unavailable)
     }
-    pub fn recording_start(&self, _language: Option<&str>) -> Result<()> {
+    pub fn recording_start(
+        &self, _language: Option<&str>, _title: Option<&str>, _subtitle: Option<&str>,
+    ) -> Result<()> {
         Err(Error::Unavailable)
     }
     pub fn recording_pause(&self) -> Result<()> {

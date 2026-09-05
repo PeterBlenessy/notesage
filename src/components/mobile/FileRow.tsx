@@ -9,6 +9,8 @@ import { t } from "@/lib/i18n";
 import { SwipeRevealRow, type SwipeRevealAction } from "./SwipeRevealRow";
 import { useLongPress } from "./useLongPress";
 import { useFolderAppearance } from "./useFolderAppearance";
+import { isUnreadRow } from "./reading-progress";
+import { useMobileStore } from "@/stores/mobile-store";
 import {
   confirmDelete,
   presentEntryMenu,
@@ -250,6 +252,11 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext, c
   const tile = !entry.is_directory;
   const large = tile && !condensed;
   const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(null);
+  // The same unread weight the article row uses: an Inbox holding a PDF and a
+  // saved page should not tell you about one and stay silent about the other.
+  const opened = useMobileStore((s) => s.inboxOpened);
+  const progress = useMobileStore((s) => s.readingProgress[entry.path] ?? 0);
+  const unread = isUnreadRow(entry.path, opened, progress);
   useEffect(() => {
     if (!wantsThumbnail) return;
     let cancelled = false;
@@ -336,9 +343,10 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext, c
             entry.hidden && "opacity-60",
           )}
           style={{
-            fontWeight: active
-              ? "max(500, var(--ns-a11y-weight, 400))"
-              : "var(--ns-a11y-weight, 400)",
+            fontWeight:
+              active || unread
+                ? "max(600, var(--ns-a11y-weight, 400))"
+                : "var(--ns-a11y-weight, 400)",
           }}
         >
           {entry.name}
