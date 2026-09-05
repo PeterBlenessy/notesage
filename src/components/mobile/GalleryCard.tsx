@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Folder } from "lucide-react";
+import { useFolderAppearance } from "./useFolderAppearance";
+import { t } from "@/lib/i18n";
 import { ListenButton } from "./ListenButton";
 import { cn } from "@/lib/utils";
 import type { FileEntry } from "@/lib/tauri";
@@ -94,6 +95,7 @@ export function GalleryCard({
   }, [entry.path, entry.is_directory, theme]);
 
   const Icon = iconFor(entry);
+  const folder = useFolderAppearance(entry);
   // Read aloud without opening (#833): every saved page's card carries the
   // control on its picture.
   const listenable = !entry.is_directory && classifyFile(entry.name) === "html";
@@ -111,11 +113,14 @@ export function GalleryCard({
     >
       <span className="relative aspect-square w-full overflow-hidden rounded-lg bg-muted">
         {entry.is_directory ? (
-          <Folder
+          // The icon and colour the folder was given on the Mac (#140);
+          // sized to the CARD (55% of its square), not a fixed 32px — at
+          // three cards per row a fixed icon reads as a speck.
+          <folder.Icon
             strokeWidth={1}
-            // Sized to the CARD (55% of its square), not a fixed 32px — at
-            // three cards per row a fixed icon reads as a speck.
             className="absolute inset-0 m-auto h-[55%] w-[55%] text-muted-foreground"
+            style={folder.color ? { color: folder.color } : undefined}
+            data-testid="folder-card-icon"
           />
         ) : thumbnail === null ? (
           <span className="absolute inset-0 animate-pulse" aria-hidden />
@@ -152,13 +157,30 @@ export function GalleryCard({
           />
         )}
       </span>
-      <span className="w-full min-w-0">
+      {/* A folder's caption is centred under its icon, like Files; a
+          document's stays left under its picture. Condensed keeps the name
+          alone; at rest a folder adds its count and last change. */}
+      <span className={cn("w-full min-w-0", entry.is_directory && "text-center")}>
         <span className={cn("block truncate font-medium text-foreground", condensed ? "text-[11px]" : "text-xs")}>
           {entry.name}
         </span>
         {!condensed && !entry.is_directory && entry.modified !== undefined && (
           <span className="block truncate text-[11px] text-muted-foreground">
             {formatModified(entry.modified)} · {currentFolderName}
+          </span>
+        )}
+        {!condensed && entry.is_directory && (entry.child_count !== undefined || entry.modified !== undefined) && (
+          <span className="block truncate text-[11px] text-muted-foreground" data-testid="folder-card-meta">
+            {[
+              entry.child_count === undefined
+                ? null
+                : entry.child_count === 1
+                  ? t("library.itemsOne")
+                  : t("library.items", { count: entry.child_count }),
+              entry.modified !== undefined ? formatModified(entry.modified) : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
           </span>
         )}
       </span>
