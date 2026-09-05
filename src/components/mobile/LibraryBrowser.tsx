@@ -827,10 +827,6 @@ export function LibraryBrowser() {
         onTouchMove={onPullMove}
         onTouchEnd={onPullEnd}
         onTouchCancel={onPullEnd}
-        // Named for the same reason as the indicator: its test reached it as
-        // the first `.overflow-y-auto` in the tree, which the next card
-        // added above the listing that scrolls its own content would take.
-        data-testid="library-scroller"
         className="view-enter absolute inset-0 overflow-y-auto"
         style={{
           ...CONTENT_INSETS,
