@@ -33,6 +33,10 @@ struct SpeechRateArgs: Decodable {
   let rate: Float
 }
 
+struct UnreadCountArgs: Decodable {
+  let markSeen: Bool?
+}
+
 struct NotificationPrefsArgs: Decodable {
   let badge: Bool?
   let newItems: Bool?
@@ -693,10 +697,12 @@ class NotesageIosPlugin: Plugin {
     } catch { invoke.reject(String(describing: error)) }
   }
 
-  /// Recount from disk, refresh the badge, and record that the user has the
-  /// current Inbox in front of them (so the next refresh announces only what
-  /// arrives after this).
+  /// Recount from disk and refresh the badge. With `markSeen`, also record
+  /// that the user has the Inbox's items in front of them — only the Inbox
+  /// listing says so; Home shows a count, not the items, and a return to the
+  /// foreground says nothing about what is on screen.
   @objc public func inboxUnreadCount(_ invoke: Invoke) {
+    let markSeen = (try? invoke.parseArgs(UnreadCountArgs.self))?.markSeen ?? false
     DispatchQueue.global(qos: .userInitiated).async {
       do {
         let root = try LibraryAccess.resolveRoot()
@@ -704,10 +710,10 @@ class NotesageIosPlugin: Plugin {
         defer { if scoped { root.stopAccessingSecurityScopedResource() } }
         let names = InboxState.names(root: root)
         let unread = InboxState.unreadCount(root: root)
-        InboxState.Prefs.markSeen(names)
+        if markSeen { InboxState.Prefs.markSeen(names) }
         DispatchQueue.main.async {
           Notifier.shared.setBadge(unread)
-          Notifier.shared.clearAnnounced()
+          if markSeen { Notifier.shared.clearAnnounced() }
           invoke.resolve(["count": unread])
         }
       } catch { invoke.reject(String(describing: error)) }

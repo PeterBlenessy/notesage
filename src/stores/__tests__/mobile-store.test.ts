@@ -673,19 +673,27 @@ describe("notifications — badge, banners, the one prompt", () => {
     ...over,
   });
 
-  it("refreshNotificationStatus hands the localised banner strings over and keeps the status", async () => {
+  it("refreshNotificationStatus reads the status; on mount it also hands the localised banner strings over", async () => {
     let handed: Record<string, string> | undefined;
+    let reads = 0;
+    setMockInvokeHandler("ios_notification_status", () => {
+      reads += 1;
+      return status({ authorization: "authorized", badge: true });
+    });
     setMockInvokeHandler("ios_notification_set_prefs", (args) => {
       handed = (args as { templates?: Record<string, string> }).templates;
       return status({ authorization: "authorized", badge: true });
     });
     await store().refreshNotificationStatus();
+    expect(reads).toBe(1);
+    expect(handed).toBeUndefined();
     expect(store().notifications).toMatchObject({ authorization: "authorized", badge: true });
+    await store().refreshNotificationStatus(true);
     expect(handed).toEqual({ title: "New in Inbox", one: "{title}", many: "{count} new in Inbox", more: "{list} and {count} more" });
   });
 
   it("is null where there is no native side", async () => {
-    setMockInvokeHandler("ios_notification_set_prefs", () => {
+    setMockInvokeHandler("ios_notification_status", () => {
       throw new Error("only available on iOS");
     });
     await store().refreshNotificationStatus();
@@ -713,9 +721,15 @@ describe("notifications — badge, banners, the one prompt", () => {
     expect(store().notifications?.authorization).toBe("denied");
   });
 
-  it("refreshUnread stores the native count and tolerates having no native side", async () => {
-    setMockInvokeHandler("ios_inbox_unread_count", () => 7);
+  it("refreshUnread stores the native count, marks seen only when asked, and tolerates having no native side", async () => {
+    const seen: boolean[] = [];
+    setMockInvokeHandler("ios_inbox_unread_count", (args) => {
+      seen.push((args as { markSeen: boolean }).markSeen);
+      return 7;
+    });
     await store().refreshUnread();
+    await store().refreshUnread(true);
+    expect(seen).toEqual([false, true]);
     expect(store().unreadInbox).toBe(7);
     setMockInvokeHandler("ios_inbox_unread_count", () => {
       throw new Error("only available on iOS");

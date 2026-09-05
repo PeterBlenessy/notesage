@@ -1556,7 +1556,7 @@ init` on a Mac — see `src-tauri/ios/README.md`.
 | `ios_notification_status` | `() -> NotificationStatus` | Authorization (`notDetermined` \| `denied` \| `authorized`), Background App Refresh (`available` \| `denied` \| `restricted`), and the badge / new-items preferences. |
 | `ios_notification_request` | `() -> NotificationStatus` | The one system prompt (badge + alert, no sound). |
 | `ios_notification_set_prefs` | `(badge?, newItems?, templates?) -> NotificationStatus` | Preferences plus the localised banner strings the native side posts with. `badge: false` clears the icon badge at once. |
-| `ios_inbox_unread_count` | `() -> u32` | Recount the unread Inbox from disk (the shared `reading-progress.json` rule), refresh the icon badge, mark the current Inbox as seen. No path argument. |
+| `ios_inbox_unread_count` | `(markSeen?) -> u32` | Recount the unread Inbox from disk (the shared `reading-progress.json` rule) and refresh the icon badge; with `markSeen` (the Inbox listing only) record the items as seen. No path argument. |
 | `ios_consume_launch_route` | `() -> Option<String>` | `"inbox"` once after a notification tap, then `None`. |
 | `ios_open_settings` | `() -> ()` | Open the Settings app at Notesage's page. |
 

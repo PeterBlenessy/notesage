@@ -1049,12 +1049,21 @@ pub async fn ios_notification_set_prefs(
     }
 }
 
-/// Recount the unread Inbox from disk, refresh the icon badge, and record
-/// that the user has the current Inbox in front of them. Takes no path:
-/// the Inbox folder is fixed, so the sanitizer list is unaffected.
+/// Recount the unread Inbox from disk and refresh the icon badge. With
+/// `mark_seen` (the Inbox listing only), also record that the user has the
+/// Inbox's items in front of them. Takes no path: the Inbox folder is fixed,
+/// so the sanitizer list is unaffected.
 #[tauri::command]
-pub async fn ios_inbox_unread_count(app: tauri::AppHandle) -> Result<u32, String> {
-    ios_only!("ios_inbox_unread_count", app, ios_impl::inbox_unread_count(&app).await)
+pub async fn ios_inbox_unread_count(app: tauri::AppHandle, mark_seen: Option<bool>) -> Result<u32, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::inbox_unread_count(&app, mark_seen.unwrap_or(false)).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, mark_seen);
+        Err("ios_inbox_unread_count is only available on iOS".into())
+    }
 }
 
 /// Where a notification tap wants the app to land, once.
@@ -1410,8 +1419,8 @@ mod ios_impl {
             .map_err(|e| e.to_string())
     }
 
-    pub async fn inbox_unread_count(app: &AppHandle) -> Result<u32, String> {
-        app.notesage_ios().inbox_unread_count().map_err(|e| e.to_string())
+    pub async fn inbox_unread_count(app: &AppHandle, mark_seen: bool) -> Result<u32, String> {
+        app.notesage_ios().inbox_unread_count(mark_seen).map_err(|e| e.to_string())
     }
 
     pub async fn consume_launch_route(app: &AppHandle) -> Result<Option<String>, String> {

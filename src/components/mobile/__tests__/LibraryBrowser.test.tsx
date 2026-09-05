@@ -431,6 +431,22 @@ describe("notifications on the phone", () => {
     await waitFor(() => expect(asked).toBe(1));
   });
 
+  it("only the Inbox listing marks its items as seen; Home just counts", async () => {
+    const calls: boolean[] = [];
+    setMockInvokeHandler("ios_inbox_unread_count", (args) => {
+      calls.push((args as { markSeen: boolean }).markSeen);
+      return 0;
+    });
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 1 },
+    ]);
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(calls).toEqual([false]));
+    setMockInvokeHandler("ios_list_directory", inboxListing);
+    useMobileStore.getState().jumpToFolder({ relPath: "Inbox", name: "Inbox" });
+    await waitFor(() => expect(calls).toEqual([false, true]));
+  });
+
   it("the Inbox card shows the unread count in the accent, the total otherwise", async () => {
     setMockInvokeHandler("ios_list_directory", () => [
       { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 5 },

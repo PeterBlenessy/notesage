@@ -745,8 +745,10 @@ for itself. Two things ship, both honest about their limits:
   `src/lib/reading-progress-file.ts` — no entry, a tombstone, or
   `openedAt: null` — locked together by `inbox-unread-rule.test.ts`. It is
   refreshed wherever the truth can change: every root or Inbox listing
-  (`ios_inbox_unread_count`, which also marks what is on screen as *seen*
-  and clears the delivered banner), every return to the foreground, every
+  (`ios_inbox_unread_count`; the Inbox listing alone also marks its items
+  as *seen* and clears the delivered banner — Home shows a number, not the
+  items, and a return to the foreground says nothing about what is on
+  screen), every return to the foreground, every
   push of the reading-progress sidecar, and the Share Extension's own
   capture (`InboxState.didWriteCapture`, called by every writer in
   `LibraryCapture.swift` — a contract test in `pipeline_contract.rs` fails
@@ -782,7 +784,11 @@ them with a row that opens the Settings app, and Background App Refresh
 being off adds one more. Preferences, the seen set and the localised banner
 strings (handed over by the frontend, which owns the translation table)
 live in the App Group defaults under `notesage.notify.*`, shared by the app,
-the task and the extension.
+the task and the extension. The seen set is written by two processes (the
+app's recount replaces it; the extension appends its own capture) without a
+lock: a capture landing in the same instant as a recount can lose its
+"seen" mark and be announced once by the next refresh — accepted, since
+the next recount corrects it.
 
 ## Office web-viewer URLs are documents (#868)
 

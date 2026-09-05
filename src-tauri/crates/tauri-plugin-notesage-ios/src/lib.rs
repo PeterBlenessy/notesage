@@ -564,8 +564,9 @@ impl<R: Runtime> NotesageIos<R> {
         )
     }
 
-    pub fn inbox_unread_count(&self) -> Result<u32> {
-        self.call::<_, UnreadCount>("inboxUnreadCount", ()).map(|c| c.count)
+    pub fn inbox_unread_count(&self, mark_seen: bool) -> Result<u32> {
+        self.call::<_, UnreadCount>("inboxUnreadCount", serde_json::json!({ "markSeen": mark_seen }))
+            .map(|c| c.count)
     }
 
     pub fn consume_launch_route(&self) -> Result<Option<String>> {
@@ -749,7 +750,7 @@ impl<R: Runtime> NotesageIos<R> {
     ) -> Result<NotificationStatus> {
         Err(Error::Unavailable)
     }
-    pub fn inbox_unread_count(&self) -> Result<u32> {
+    pub fn inbox_unread_count(&self, _mark_seen: bool) -> Result<u32> {
         Err(Error::Unavailable)
     }
     pub fn consume_launch_route(&self) -> Result<Option<String>> {

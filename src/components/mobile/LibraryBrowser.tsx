@@ -127,9 +127,9 @@ export function LibraryBrowser() {
       // change made on the iPad shows on the next refresh here.
       if (currentRelPath === "") void loadHomeFolders();
       // The badge is the unread Inbox count: recount whenever the Inbox or
-      // the root (its card) is listed — and, on the Inbox itself, mark what
-      // is on screen as seen.
-      if (currentRelPath === "" || currentRelPath === INBOX_NAME) void refreshUnread();
+      // the root (its card) is listed. Only the Inbox listing marks its
+      // items as seen — Home shows a number, not the items.
+      if (currentRelPath === "" || currentRelPath === INBOX_NAME) void refreshUnread(currentRelPath === INBOX_NAME);
     } catch (err) {
       if (loadIdRef.current !== loadId) return;
       setState({ status: "error", message: String(err) });
@@ -139,7 +139,7 @@ export function LibraryBrowser() {
   // Notification status on mount and on every return to the foreground —
   // the user may have just come back from the Settings app.
   useEffect(() => {
-    void refreshNotificationStatus();
+    void refreshNotificationStatus(true);
     const onVisible = () => {
       if (document.visibilityState === "visible") void refreshNotificationStatus();
     };
@@ -513,6 +513,9 @@ export function LibraryBrowser() {
     if (!notifications) return;
     if (notifications.authorization === "notDetermined") {
       await requestNotifications();
+      // A grant turns both on; make the tapped one true regardless, so the
+      // row does what it said whatever the defaults become.
+      if (useMobileStore.getState().notifications?.authorization === "authorized") await setNotificationPref({ [pref]: true });
       return;
     }
     await setNotificationPref({ [pref]: !notifications[pref] });

@@ -615,10 +615,11 @@ export function iosNotificationSetPrefs(patch: {
   return invoke<IosNotificationStatus>("ios_notification_set_prefs", patch);
 }
 
-/** Recount the unread Inbox from disk, refresh the icon badge, and mark the
- *  current Inbox as seen. */
-export function iosInboxUnreadCount(): Promise<number> {
-  return invoke<number>("ios_inbox_unread_count");
+/** Recount the unread Inbox from disk and refresh the icon badge; with
+ *  `markSeen` (only when the Inbox's items are on screen) record them as
+ *  seen, so the next background refresh announces only what comes after. */
+export function iosInboxUnreadCount(markSeen = false): Promise<number> {
+  return invoke<number>("ios_inbox_unread_count", { markSeen });
 }
 
 /** Where a notification tap wants the app to land, once. */

@@ -84,16 +84,20 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         let t = InboxState.Prefs.templates
         let stems = unseen.map { ($0 as NSString).deletingPathExtension }
         let content = UNMutableNotificationContent()
-        content.title = t["title"] ?? "New in Inbox"
         if stems.count == 1 {
+            // "New in Inbox" / the item's title.
+            content.title = t["title"] ?? "New in Inbox"
             content.body = (t["one"] ?? "{title}").replacingOccurrences(of: "{title}", with: stems[0])
         } else {
+            // "3 new in Inbox" / "A, B and 1 more".
+            content.title = (t["many"] ?? "{count} new in Inbox").replacingOccurrences(of: "{count}", with: String(stems.count))
             let lead = stems.prefix(2).joined(separator: ", ")
             let rest = stems.count - 2
-            let list = rest > 0 ? (t["more"] ?? "{list} and {count} more")
-                .replacingOccurrences(of: "{list}", with: lead)
-                .replacingOccurrences(of: "{count}", with: String(rest)) : lead
-            content.body = (t["many"] ?? "{count} new in Inbox").replacingOccurrences(of: "{count}", with: String(stems.count)) + "\n" + list
+            content.body = rest > 0
+                ? (t["more"] ?? "{list} and {count} more")
+                    .replacingOccurrences(of: "{list}", with: lead)
+                    .replacingOccurrences(of: "{count}", with: String(rest))
+                : lead
         }
         content.threadIdentifier = "inbox"
         content.userInfo = ["route": "inbox"]

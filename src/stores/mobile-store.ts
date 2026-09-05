@@ -20,6 +20,7 @@ import {
   iosInboxUnreadCount,
   iosNotificationRequest,
   iosNotificationSetPrefs,
+  iosNotificationStatus,
   type IosNotificationStatus,
 } from "@/lib/ios-api";
 import { t } from "@/lib/i18n";
@@ -315,15 +316,16 @@ interface MobileStore {
   unreadInbox: number;
   /** "Not now" on the Inbox's pre-prompt card is permanent (persisted). */
   notificationPrePromptDismissed: boolean;
-  /** Re-read the status, handing over the localised banner strings so the
-   *  background task and the extension post in the user's language. */
-  refreshNotificationStatus: () => Promise<void>;
+  /** Re-read the status; with `sendTemplates` (mount), also hand over the
+   *  localised banner strings so the background task and the extension post
+   *  in the user's language. */
+  refreshNotificationStatus: (sendTemplates?: boolean) => Promise<void>;
   /** The one system prompt; on a grant both preferences turn on. */
   requestNotifications: () => Promise<void>;
   setNotificationPref: (patch: { badge?: boolean; newItems?: boolean }) => Promise<void>;
-  /** Recount the unread Inbox natively (refreshes the badge, marks the
-   *  current Inbox seen). Tolerates having no native side. */
-  refreshUnread: () => Promise<void>;
+  /** Recount the unread Inbox natively and refresh the badge; `markSeen`
+   *  only when the Inbox's items are on screen. Tolerates no native side. */
+  refreshUnread: (markSeen?: boolean) => Promise<void>;
   dismissNotificationPrePrompt: () => void;
   /** Whether the Edit Home screen is showing (session only). */
   homeEditorOpen: boolean;
@@ -625,9 +627,13 @@ export const useMobileStore = create<MobileStore>()(
         set({ homeFolders: next });
       },
 
-      refreshNotificationStatus: async () => {
+      refreshNotificationStatus: async (sendTemplates = false) => {
         try {
-          set({ notifications: await iosNotificationSetPrefs({ templates: notificationTemplates() }) });
+          set({
+            notifications: sendTemplates
+              ? await iosNotificationSetPrefs({ templates: notificationTemplates() })
+              : await iosNotificationStatus(),
+          });
         } catch {
           set({ notifications: null });
         }
@@ -662,9 +668,9 @@ export const useMobileStore = create<MobileStore>()(
         }
       },
 
-      refreshUnread: async () => {
+      refreshUnread: async (markSeen = false) => {
         try {
-          set({ unreadInbox: await iosInboxUnreadCount() });
+          set({ unreadInbox: await iosInboxUnreadCount(markSeen) });
         } catch {
           // No native side (desktop dev, tests): the count stays as it was.
         }
