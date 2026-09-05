@@ -1,4 +1,10 @@
 import { tauriApi } from '@/lib/tauri';
+import {
+  RECORDING_MANIFEST,
+  parseRecordingManifest,
+  serializeRecordingManifest,
+  type RecordingManifest,
+} from '@/lib/transcription/manifest';
 
 /**
  * Artifact-bundle helpers for the meeting-recording feature.
@@ -6,13 +12,17 @@ import { tauriApi } from '@/lib/tauri';
  * A recording bundle is a FOLDER (PRD `2026-05-30-meeting-recording.md` →
  * "The artifact bundle"):
  *
- *   ~/Notesage/Recordings/Meeting <YYYY-MM-DD HH-MM-SS>/
- *     ├── audio.wav        # finalized capture (already on disk)
+ *   <library root>/Recordings/Recording <YYYY-MM-DD HH-MM-SS>/
+ *     ├── audio.wav        # finalized capture (audio.m4a when the phone recorded it)
+ *     ├── recording.json   # manifest — see `manifest.ts` (PRD 2026-09-05-ios-recordings)
  *     └── transcript.md    # rendered from segments (written here)
  *
- * The bundle directory is always `dirname(audioPath)` — capture wrote the WAV
- * into the folder, so the folder already exists. These helpers add the
- * transcript note and relocate the whole folder into a chosen project.
+ * The bundle directory is always `dirname(audioPath)` — capture wrote the
+ * audio into the folder, so the folder already exists. These helpers are
+ * container-agnostic: they only ever take `dirname` / `basename` of the audio
+ * path, so a phone bundle's `audio.m4a` and the Mac's `audio.wav` behave the
+ * same. They add the transcript note and relocate the whole folder (audio +
+ * manifest + transcript) into a chosen project.
  */
 
 /** The transcript note filename inside every bundle. */
@@ -51,6 +61,32 @@ export function joinPath(...parts: string[]): string {
 /** Absolute path of the transcript note for a given audio file. */
 export function transcriptPathForAudio(audioPath: string): string {
   return joinPath(dirname(audioPath), TRANSCRIPT_FILENAME);
+}
+
+/** Absolute path of the `recording.json` manifest for a given audio file. */
+export function manifestPathForAudio(audioPath: string): string {
+  return joinPath(dirname(audioPath), RECORDING_MANIFEST);
+}
+
+/**
+ * Read and parse a bundle's `recording.json`. `null` when the bundle has no
+ * manifest (a Mac bundle from before the manifest existed) or the file does
+ * not parse — the caller treats both as "not a manifest bundle".
+ */
+export async function readRecordingManifest(bundleDir: string): Promise<RecordingManifest | null> {
+  try {
+    return parseRecordingManifest(await tauriApi.readFile(joinPath(bundleDir, RECORDING_MANIFEST)));
+  } catch {
+    return null;
+  }
+}
+
+/** Write a bundle's `recording.json` in the contract's canonical form. */
+export async function writeRecordingManifest(
+  bundleDir: string,
+  manifest: RecordingManifest,
+): Promise<void> {
+  await tauriApi.writeFile(joinPath(bundleDir, RECORDING_MANIFEST), serializeRecordingManifest(manifest));
 }
 
 /**

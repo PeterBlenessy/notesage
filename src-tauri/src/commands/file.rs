@@ -289,6 +289,24 @@ pub async fn path_exists(path: String) -> Result<bool, String> {
     Ok(Path::new(&path).exists())
 }
 
+/// On-disk size of a file in bytes, without reading it.
+///
+/// The recordings scanner's partial-download gate (PRD
+/// `2026-09-05-ios-recordings`): iCloud delivers a bundle's manifest and its
+/// audio separately, and a truncated `.m4a` decodes silently to a truncated
+/// transcript, so the Mac transcribes only once the size on disk equals the
+/// byte count the phone wrote at stop time. An evicted iCloud placeholder
+/// (`.audio.m4a.icloud` beside a missing `audio.m4a`) is an error here — the
+/// caller then asks `icloud_ensure_downloaded` for it.
+#[tauri::command]
+pub async fn file_size(path: String) -> Result<u64, String> {
+    let meta = fs::metadata(&path).map_err(|e| format!("Failed to stat {path}: {e}"))?;
+    if !meta.is_file() {
+        return Err(format!("Not a file: {path}"));
+    }
+    Ok(meta.len())
+}
+
 #[tauri::command]
 pub async fn copy_file(source: String, destination: String) -> Result<(), String> {
     // Ensure destination parent directory exists (create_dir_all is a no-op if it exists)
@@ -340,6 +358,70 @@ pub async fn get_home_dir() -> Result<String, String> {
     dirs::home_dir()
         .map(|p| p.to_string_lossy().to_string())
         .ok_or_else(|| "Could not determine home directory".to_string())
+}
+
+/// The user-facing name of this machine — `"Peter's MacBook Pro"` — the label
+/// the Mac writes into a recording manifest when it claims or finishes a
+/// transcription, so the phone can say *Transcribing on Peter's Mac…*.
+///
+/// macOS: the computer name from System Settings > General > About (the one
+/// Finder and AirDrop show), read with `scutil --get ComputerName` — `NSHost`
+/// would give the same string but is deprecated, and the SystemConfiguration
+/// call behind `scutil` is not worth a crate for one label. Elsewhere: the
+/// hostname with any domain suffix dropped. Never empty — a machine without a
+/// name is called "Mac" / "Desktop" rather than "".
+#[tauri::command]
+pub async fn get_device_name() -> Result<String, String> {
+    // A subprocess on macOS; keep it off the IPC thread.
+    tokio::task::spawn_blocking(device_name_blocking)
+        .await
+        .map_err(|e| format!("device name task failed: {e}"))
+}
+
+fn device_name_blocking() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        let name = std::process::Command::new("/usr/sbin/scutil")
+            .args(["--get", "ComputerName"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|n| !n.is_empty());
+        if let Some(name) = name {
+            return name;
+        }
+    }
+    hostname_label().unwrap_or_else(|| {
+        if cfg!(target_os = "macos") { "Mac" } else { "Desktop" }.to_string()
+    })
+}
+
+/// `gethostname` with the domain suffix removed (`Peters-MacBook-Pro.local`
+/// → `Peters-MacBook-Pro`). `None` when the OS reports nothing usable.
+fn hostname_label() -> Option<String> {
+    #[cfg(unix)]
+    {
+        let mut buf = [0u8; 256];
+        // SAFETY: the buffer outlives the call and its length is passed
+        // alongside it; gethostname NUL-terminates on success.
+        let rc = unsafe { libc::gethostname(buf.as_mut_ptr() as *mut libc::c_char, buf.len()) };
+        if rc != 0 {
+            return None;
+        }
+        let end = buf.iter().position(|b| *b == 0).unwrap_or(buf.len());
+        let raw = String::from_utf8_lossy(&buf[..end]).to_string();
+        return strip_domain(&raw);
+    }
+    #[cfg(not(unix))]
+    {
+        std::env::var("COMPUTERNAME").ok().and_then(|h| strip_domain(&h))
+    }
+}
+
+fn strip_domain(hostname: &str) -> Option<String> {
+    let label = hostname.split('.').next().unwrap_or("").trim();
+    if label.is_empty() { None } else { Some(label.to_string()) }
 }
 
 #[tauri::command]
@@ -433,6 +515,37 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+
+    #[tokio::test]
+    async fn file_size_reports_the_byte_count_of_a_regular_file() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("audio.m4a");
+        fs::write(&path, vec![0u8; 14_703]).unwrap();
+        assert_eq!(file_size(path.to_string_lossy().to_string()).await.unwrap(), 14_703);
+    }
+
+    #[tokio::test]
+    async fn file_size_errors_for_a_missing_file_and_for_a_directory() {
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("audio.m4a");
+        // The iCloud-evicted shape: only the placeholder is on disk.
+        fs::write(dir.path().join(".audio.m4a.icloud"), b"plist").unwrap();
+        assert!(file_size(missing.to_string_lossy().to_string()).await.is_err());
+        assert!(file_size(dir.path().to_string_lossy().to_string()).await.is_err());
+    }
+
+    #[test]
+    fn strip_domain_keeps_the_first_label_only() {
+        assert_eq!(strip_domain("Peters-MacBook-Pro.local"), Some("Peters-MacBook-Pro".into()));
+        assert_eq!(strip_domain("studio"), Some("studio".into()));
+        assert_eq!(strip_domain(""), None);
+        assert_eq!(strip_domain(".local"), None);
+    }
+
+    #[test]
+    fn device_name_is_never_empty() {
+        assert!(!device_name_blocking().trim().is_empty());
+    }
 
     #[tokio::test]
     async fn list_files_shallow_returns_error_for_nonexistent_path() {

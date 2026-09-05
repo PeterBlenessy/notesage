@@ -293,6 +293,24 @@ mod tests {
         assert_is_the_tone(&d, 0);
     }
 
+    /// The exact shape the phone's recorder writes (recordings PRD): AAC-LC,
+    /// mono, 48 kHz, 64 kbps in an MP4 container. The Mac transcribes these
+    /// without any new audio work, which this locks in — and records which
+    /// decoder took it, so the #803 question keeps an answer in CI.
+    #[test]
+    fn decodes_the_phones_recording_shape() {
+        let d = decode_audio_f32(&fixture("tone-phone-48k-mono-64k.m4a")).expect("phone m4a");
+        assert_eq!(d.sample_rate, 48_000, "sample rate");
+        assert_eq!(d.channels, 1, "channels");
+        // 0.4 s at 48 kHz; AAC adds encoder priming, so a frame or two of slack.
+        let expected = 19_200;
+        let diff = d.samples.len().abs_diff(expected);
+        assert!(diff <= 4096, "expected ~{expected} samples, got {} (diff {diff})", d.samples.len());
+        let peak = d.samples.iter().fold(0f32, |m, s| m.max(s.abs()));
+        assert!((0.2..0.6).contains(&peak), "peak {peak} is not a 0.4-amplitude tone");
+        eprintln!("phone-shaped AAC decoded by {}", d.decoder.as_str());
+    }
+
     /// The format an iPhone Voice Memo actually is, and the whole reason #803
     /// exists — it failed outright with "Not a valid WAV file" before.
     #[test]

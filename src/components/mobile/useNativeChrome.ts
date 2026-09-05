@@ -4,6 +4,7 @@ import {
   type IosChromeItem,
   type IosChromeBreadcrumb,
   type IosChromePlayer,
+  type IosChromeRecorder,
   type IosChromeSearch,
 } from "@/lib/ios-api";
 
@@ -16,6 +17,9 @@ export interface NativeChromeSpec {
    *  captured article is presented in a separate native web view ABOVE the
    *  app's own, so a React-rendered bar is simply behind it. */
   bottomCenter?: IosChromePlayer;
+  /** The recording island (recordings PRD); takes the player's slot while
+   *  a recording runs — the two never coexist. */
+  bottomRecorder?: IosChromeRecorder;
   search?: IosChromeSearch;
 }
 

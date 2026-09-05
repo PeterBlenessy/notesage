@@ -448,7 +448,9 @@ enum LibraryAccess {
     }
 
     /// First free name for `rel` under `root`: `stem.ext`, `stem-1.ext`, `stem-2.ext`, …
-    private static func deduped(_ rel: String, under root: URL) -> (URL, String) {
+    // Internal, not private: `RecordingLibrary.swift` (app target only) extends
+    // this type and needs the same dedupe.
+    static func deduped(_ rel: String, under root: URL) -> (URL, String) {
         let ns = rel as NSString
         let dir = ns.deletingLastPathComponent
         let ext = ns.pathExtension

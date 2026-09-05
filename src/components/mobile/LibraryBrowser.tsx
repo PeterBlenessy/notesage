@@ -14,6 +14,8 @@ import { InboxCard } from "./InboxCard";
 import { AllFoldersRow } from "./AllFoldersRow";
 import { HomeHint } from "./HomeHint";
 import { NotificationPrePrompt } from "./NotificationPrePrompt";
+import { RecordingBar } from "./RecordingBar";
+import { formatElapsed, pauseRecording, resumeRecording, startRecording, stopRecording } from "@/lib/recording-controller";
 import { BrowserSkeleton, BrowserError } from "./BrowserStates";
 import { defaultHomeFolders } from "@/lib/home-file";
 import { Button } from "@/components/ui/button";
@@ -71,6 +73,12 @@ export function LibraryBrowser() {
   const unreadInbox = useMobileStore((s) => s.unreadInbox);
   const prePromptDismissed = useMobileStore((s) => s.notificationPrePromptDismissed);
   const dismissNotificationPrePrompt = useMobileStore((s) => s.dismissNotificationPrePrompt);
+  // Recording (recordings PRD): the island follows the store; the folder
+  // `Recordings/` makes "+" record.
+  const recordingStatus = useMobileStore((s) => s.recording.status);
+  const recordingElapsed = useMobileStore((s) => s.recording.elapsedSecs);
+  const recordingLevel = useMobileStore((s) => s.recording.level);
+  const recordingInterrupted = useMobileStore((s) => s.recording.interrupted);
   const inlineImagesEnabled = useMobileStore((s) => s.inlineImagesEnabled);
   const setInlineImagesEnabled = useMobileStore((s) => s.setInlineImagesEnabled);
   const imageMaxPixel = useMobileStore((s) => s.imageMaxPixel);
@@ -89,6 +97,7 @@ export function LibraryBrowser() {
   // The key under which this SCREEN remembers its scroll offset and view:
   // Home and All Folders must not share one.
   const screenKey = screenKeyOf(folderStack);
+  const inRecordings = currentRelPath === "Recordings";
   // This screen's own view (layout, density, order, grouping), remembered
   // per folder like Finder's — one primitive selector each so a change to
   // another folder's view does not re-render this listing.
@@ -675,14 +684,45 @@ export function LibraryBrowser() {
             : []),
         ],
       },
-      bottomRight: atRoot
-        ? { id: "create-folder", icon: "plus" }
-        : {
-            // Tap = new note instantly (primaryAction); hold = UIMenu.
-            id: "create-note",
-            icon: "plus",
-            menu: [{ id: "create-folder", title: t("menu.newFolder"), icon: "folder.badge.plus" }],
-          },
+      // Inside Recordings/ the "+" records (two taps from Home to a meeting);
+      // everywhere else New Recording is one hold away.
+      bottomRight:
+        recordingStatus !== "idle"
+          ? undefined
+          : inRecordings
+            ? {
+                id: "create-recording",
+                icon: "waveform.badge.plus",
+                menu: [
+                  { id: "create-note", title: t("action.newNote"), icon: "note.text.badge.plus" },
+                  { id: "create-folder", title: t("menu.newFolder"), icon: "folder.badge.plus" },
+                ],
+              }
+            : atRoot
+              ? {
+                  id: "create-folder",
+                  icon: "plus",
+                  menu: [{ id: "create-recording", title: t("menu.newRecording"), icon: "waveform.badge.plus" }],
+                }
+              : {
+                  // Tap = new note instantly (primaryAction); hold = UIMenu.
+                  id: "create-note",
+                  icon: "plus",
+                  menu: [
+                    { id: "create-folder", title: t("menu.newFolder"), icon: "folder.badge.plus" },
+                    { id: "create-recording", title: t("menu.newRecording"), icon: "waveform.badge.plus" },
+                  ],
+                },
+      bottomRecorder:
+        recordingStatus === "idle"
+          ? undefined
+          : {
+              elapsed: formatElapsed(recordingElapsed),
+              paused: recordingStatus !== "recording",
+              level: recordingLevel,
+              interrupted: recordingInterrupted,
+              interruptedLabel: t("recording.interrupted"),
+            },
       search: {
         placeholder: t("library.searchFolder"),
         status:
@@ -719,6 +759,9 @@ export function LibraryBrowser() {
       "notify-refresh": () => void iosOpenSettings().catch(() => {}),
       "create-note": () => createNote(),
       "create-folder": () => void createFolder(),
+      "create-recording": () => void startRecording(),
+      "rec-toggle": () => (recordingStatus === "recording" ? pauseRecording() : resumeRecording()),
+      "rec-stop": () => void stopRecording(),
       "search-query": (value?: string) => setQuery(value ?? ""),
       "search-close": () => setQuery(""),
       ...Object.fromEntries(
@@ -1044,6 +1087,7 @@ export function LibraryBrowser() {
 
       {/* Button islands (iOS 26 / Notes layout): nav top-left, actions
           top-right, passive status bottom-center. */}
+      {!nativeChrome && <RecordingBar onStop={() => void stopRecording()} />}
       {!nativeChrome && (
         <Island corner="top-right">
           <ChromeButton

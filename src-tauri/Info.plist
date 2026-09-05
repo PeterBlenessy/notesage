@@ -7,6 +7,6 @@
     <key>NSAppSleepDisabled</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Notesage needs microphone access for voice dictation and meeting recording</string>
+    <string>Notesage records meetings and voice notes you start yourself. Recordings stay in your library.</string>
 </dict>
 </plist>

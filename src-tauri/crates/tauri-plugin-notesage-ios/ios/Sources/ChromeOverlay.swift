@@ -120,10 +120,27 @@ struct ChromePlayerSpec: Decodable, Equatable {
   let rate: String
 }
 
+/// The recording island (recordings PRD): a red dot, the elapsed time,
+/// pause/resume and stop. Shown in the browser and the Reader alike while a
+/// recording runs, in the player's slot — the two never coexist, since the
+/// audio session has one owner.
+struct ChromeRecorderSpec: Decodable, Equatable {
+  /// Already-formatted "02:14".
+  let elapsed: String
+  let paused: Bool
+  /// 0…1 metered level, drawn as a faint bar so a muted mic reads as a flat line.
+  let level: Double
+  /// Paused by a call and not resumed: the island says so.
+  let interrupted: Bool
+  /// Already-localised "Paused — call ended".
+  let interruptedLabel: String?
+}
+
 struct ChromeSpec: Decodable, Equatable {
   let topLeft: ChromeItemSpec?
   let topRight: ChromeItemSpec?
   let topCenter: ChromeBreadcrumbSpec?
+  let bottomRecorder: ChromeRecorderSpec?
   /// Bottom-trailing action button (the folder view's "+"). Pinned to the
   /// bottom safe area — the keyboard covers it while typing, like Notes'
   /// compose button.
@@ -167,7 +184,10 @@ final class ChromeManager {
     setCorner("topRight", item: spec.topRight, over: webView, leading: false)
     setCorner("bottomRight", item: spec.bottomRight, over: webView, leading: false, top: false)
     setBreadcrumb(spec.topCenter, over: webView)
-    setPlayer(spec.bottomCenter, over: webView)
+    // The recorder takes the slot when both are declared: a recording is
+    // never silently displaced by a transport for something not playing.
+    setPlayer(spec.bottomRecorder == nil ? spec.bottomCenter : nil, over: webView)
+    setRecorder(spec.bottomRecorder, over: webView)
     setSearch(spec.search, over: webView)
   }
 
@@ -294,6 +314,38 @@ final class ChromeManager {
     host.view.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
     host.view.setContentHuggingPriority(.defaultHigh, for: .horizontal)
     playerHost = host
+  }
+
+  private var recorderHost: UIHostingController<AnyView>?
+
+  private func setRecorder(_ spec: ChromeRecorderSpec?, over webView: WKWebView) {
+    guard let container = webView.superview else { return }
+    guard let spec else {
+      recorderHost?.view.removeFromSuperview()
+      recorderHost = nil
+      return
+    }
+    let view = AnyView(GlassRecorder(spec: spec) { [weak self] id in self?.emit(id, value: nil) })
+    if let host = recorderHost, host.view.superview != nil {
+      host.rootView = view
+      host.view.invalidateIntrinsicContentSize()
+      container.bringSubviewToFront(host.view)
+      return
+    }
+    let host = UIHostingController(rootView: view)
+    host.view.backgroundColor = .clear
+    host.view.translatesAutoresizingMaskIntoConstraints = false
+    container.addSubview(host.view)
+    NSLayoutConstraint.activate([
+      host.view.bottomAnchor.constraint(
+        equalTo: container.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+      host.view.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+      host.view.heightAnchor.constraint(equalToConstant: 66),
+      host.view.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -24),
+    ])
+    host.view.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+    host.view.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+    recorderHost = host
   }
 
   private func setSearch(_ spec: ChromeSearchSpec?, over webView: WKWebView) {
@@ -890,6 +942,54 @@ struct GlassPlayer: View {
         .frame(width: large ? 54 : 46, height: large ? 54 : 46)
     }
     .buttonStyle(.plain)
+  }
+}
+
+/// Red dot · elapsed · pause/resume · stop, with a faint level bar under the
+/// time. Nothing of ours on the lock screen while recording: iOS's own red
+/// microphone indicator is the affordance there.
+struct GlassRecorder: View {
+  let spec: ChromeRecorderSpec
+  let emit: (String) -> Void
+
+  var body: some View {
+    HStack(spacing: 8) {
+      Circle()
+        .fill(Color.red)
+        .frame(width: 12, height: 12)
+        .opacity(spec.paused ? 0.4 : 1)
+        .padding(.leading, 6)
+      VStack(alignment: .leading, spacing: 3) {
+        Text(spec.interrupted && spec.paused ? (spec.interruptedLabel ?? spec.elapsed) : spec.elapsed)
+          .font(.footnote.monospacedDigit())
+          .lineLimit(1)
+          .minimumScaleFactor(0.75)
+        GeometryReader { geo in
+          ZStack(alignment: .leading) {
+            Capsule().fill(Color.primary.opacity(0.12))
+            Capsule().fill(Color.primary.opacity(0.55))
+              .frame(width: max(2, geo.size.width * CGFloat(min(1, max(0, spec.level)))))
+          }
+        }
+        .frame(width: 88, height: 3)
+      }
+      Button { emit("rec-toggle") } label: {
+        Image(systemName: spec.paused ? "record.circle" : "pause.fill")
+          .font(.title2)
+          .frame(width: 54, height: 54)
+      }
+      .buttonStyle(.plain)
+      Button { emit("rec-stop") } label: {
+        Image(systemName: "stop.fill")
+          .font(.title3)
+          .frame(width: 46, height: 46)
+      }
+      .buttonStyle(.plain)
+    }
+    .padding(.horizontal, 10)
+    .padding(.vertical, 5)
+    .foregroundStyle(.primary)
+    .modifier(GlassIslandSurface())
   }
 }
 
