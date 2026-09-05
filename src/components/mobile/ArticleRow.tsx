@@ -9,7 +9,7 @@ import { SwipeRevealRow } from "./SwipeRevealRow";
 import { useLongPress } from "./useLongPress";
 import { presentEntryMenu } from "@/lib/mobile-entry-actions";
 import { ListenButton } from "./ListenButton";
-import { readingLine, READ_THRESHOLD } from "./reading-progress";
+import { isUnreadRow, readingLine, READ_THRESHOLD } from "./reading-progress";
 
 /**
  * A read-later list row for a saved article (#836) — Instapaper's shape:
@@ -46,6 +46,13 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
   const [meta, setMeta] = useState<ArticleCardMeta | null | undefined>(undefined);
   const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(null);
   const progress = useMobileStore((s) => s.readingProgress[entry.path] ?? 0);
+  const opened = useMobileStore((s) => s.inboxOpened);
+  // Weight, not a badge: a dot beside every thumbnail was clutter (Peter,
+  // 2026-09-05). An unopened title sits at 600 against 400 for one already
+  // read — the Mail convention minus the ornament. It reads as emphasis
+  // rather than as a marker, which is what makes it scannable without
+  // demanding anything of the eye.
+  const unread = isUnreadRow(entry.path, opened, progress);
 
   useEffect(() => {
     let cancelled = false;
@@ -139,7 +146,11 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
             condensed ? "truncate" : "line-clamp-2",
             done && "text-muted-foreground",
           )}
-          style={{ fontWeight: "max(500, var(--ns-a11y-weight, 400))" }}
+          style={{
+            fontWeight: unread
+              ? "max(600, var(--ns-a11y-weight, 400))"
+              : "max(400, var(--ns-a11y-weight, 400))",
+          }}
         >
           {title}
         </div>
