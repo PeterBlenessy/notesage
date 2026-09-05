@@ -1827,7 +1827,15 @@ describe("native pull-to-refresh (issue #620)", () => {
 describe("web pull-to-refresh indicator (2026-08-20)", () => {
   function scrollerAndIndicator(container: HTMLElement) {
     return {
+      // Every scrolling box, for the "the indicator is inside none of them"
+      // assertion — that one wants the class query, since being exhaustive
+      // is its whole point.
       scrollers: Array.from(container.querySelectorAll(".overflow-y-auto")),
+      // The listing's own scroller, by name. Indexing `scrollers[0]` assumed
+      // the first match in document order was the real one, which the next
+      // card added above the listing that scrolls internally would break —
+      // silently, by exercising the wrong element's touch handlers.
+      scroller: container.querySelector<HTMLElement>('[data-testid="library-scroller"]'),
       // By test id, NOT by `svg.h-5.w-5`: that matched the first icon of
       // that size anywhere in the tree, so adding any icon above the
       // indicator quietly redirected every assertion below at the wrong
@@ -1860,14 +1868,14 @@ describe("web pull-to-refresh indicator (2026-08-20)", () => {
     const { container } = renderWithProviders(<LibraryBrowser />);
     await screen.findByText("Nothing here yet");
 
-    const { scrollers, indicator } = scrollerAndIndicator(container);
+    const { scroller, indicator } = scrollerAndIndicator(container);
+    expect(scroller).not.toBeNull();
     expect(indicator!.style.opacity).toBe("0");
 
     // Pull 100px from the top. The gesture damps by 0.45, so this lands at
     // 45px — past halfway to the 64px trigger but short of firing it.
-    const scroller = scrollers[0];
-    fireEvent.touchStart(scroller, { touches: [{ clientY: 0 }] });
-    fireEvent.touchMove(scroller, { touches: [{ clientY: 100 }] });
+    fireEvent.touchStart(scroller!, { touches: [{ clientY: 0 }] });
+    fireEvent.touchMove(scroller!, { touches: [{ clientY: 100 }] });
 
     const opacity = Number(indicator!.style.opacity);
     expect(opacity).toBeGreaterThan(0.5);
