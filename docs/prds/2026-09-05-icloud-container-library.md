@@ -167,7 +167,42 @@ reversible only by editing this section.
     with a higher `CFBundleVersion`. The TestFlight script already stamps a
     fresh build number every run, which is sufficient — noted so nobody debugs
     an "invisible in Files" container for an afternoon.
-12. **`sync-settings.json` is not extended.** `read_sync_settings` has no
+12. **A fresh install never looks for the marker, and that is a gap the owner
+    is willing to carry.** `reconcile()` reads the container's marker only when
+    the mode is already `picked`; an install with no bookmark goes straight to
+    `container`, creates `Documents/`, and writes a marker of its own. Right
+    for a genuinely new user (Edith, the first external tester: no library
+    anywhere, nothing to follow). Wrong for a NEW DEVICE belonging to an
+    existing user before the Mac has migrated — that phone would create an
+    empty container, present it as a finished library, and quietly capture into
+    a place the Mac never reads. The app cannot detect this: reaching the old
+    folder needs a picker grant a fresh install does not have.
+
+    Not fixed, deliberately. The owner is the only iOS user (2026-09-05), so
+    the case requires him replacing his phone before migrating, and he would
+    know why. The cheap safeguard if that changes is not detection but an
+    affordance: when the container is newly created and empty, offer "Already
+    have a Notesage folder? Choose it" beside it, rather than presenting
+    emptiness as a finished library.
+13. **Migration is the Mac's job, and it verifies before it announces.**
+    The phone could do it — the picked folder's grant is already there — but
+    its copy of that folder may be nothing but iCloud placeholders, so each
+    file must be downloaded first; interrupt that on cellular and the result is
+    a library where some files are zero bytes and nothing records which. On the
+    Mac both roots are ordinary local directories under
+    `~/Library/Mobile Documents`, and the Mac can confirm the copy is complete
+    BEFORE writing `migratedFrom`. That ordering matters more than the speed:
+    the phone treats that key as the signal to switch and to DROP its bookmark,
+    so announcing an incomplete migration strands a device on a half-copied
+    library with no grant to the original.
+
+    The tempting alternative — "whichever app gains container support last
+    performs the migration" — does not work. The hazard is not who migrates
+    but any device still writing to the old folder afterwards, whose captures
+    and reading progress then land where nothing else looks. No app can detect
+    that every device has been updated, so migration stays a deliberate action
+    taken by someone who knows.
+14. **`sync-settings.json` is not extended.** `read_sync_settings` has no
     frontend caller today (only the `tauri.ts` wrapper); the sync state is
     derived from paths (`isProjectSynced`). The marker file carries what the
     migration needs. Deleting the dead command is a separate cleanup.
