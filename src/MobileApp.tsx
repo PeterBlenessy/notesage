@@ -9,6 +9,7 @@ import { startSpeechEvents } from "@/lib/speech-controller";
 import { Onboarding } from "@/components/mobile/Onboarding";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 import { Reader } from "@/components/mobile/Reader";
+import { HomeFolders } from "@/components/mobile/HomeFolders";
 import { useInlineSweep } from "@/components/mobile/useInlineSweep";
 import { SweepIndicator } from "@/components/mobile/SweepIndicator";
 
@@ -24,6 +25,7 @@ import { SweepIndicator } from "@/components/mobile/SweepIndicator";
 export function MobileApp() {
   const grantState = useMobileStore((s) => s.grantState);
   const openDoc = useMobileStore((s) => s.openDoc);
+  const homeEditorOpen = useMobileStore((s) => s.homeEditorOpen);
   const refreshGrant = useMobileStore((s) => s.refreshGrant);
 
   // Mounted HERE, at the root, deliberately: it must keep working while the
@@ -120,7 +122,7 @@ export function MobileApp() {
         ) : grantState === "granted" ? (
           // Keyed by path: a document switch REMOUNTS the reader, so per-doc
           // state (find query, marks, refs) can never leak between documents.
-          openDoc ? <Reader key={openDoc.relPath} /> : <LibraryBrowser />
+          homeEditorOpen ? <HomeFolders /> : openDoc ? <Reader key={openDoc.relPath} /> : <LibraryBrowser />
         ) : (
           <Onboarding />
         )}
