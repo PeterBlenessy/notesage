@@ -34,6 +34,11 @@ struct SpeechRateArgs: Decodable {
 }
 
 struct RelPathArgs: Decodable {
+struct NotificationPrefsArgs: Decodable {
+  let badge: Bool?
+  let newItems: Bool?
+  let templates: [String: String]?
+}
   let relPath: String
 }
 
@@ -246,6 +251,11 @@ class NotesageIosPlugin: Plugin {
   /// — and re-apply on the next runloop turn because the view hierarchy is
   /// not fully assembled when the plugin loads.
   @objc public override func load(webview: WKWebView) {
+    // Notifications are ours on iOS (Tauri's plugin is not registered here):
+    // the delegate and the background refresh must both exist before the app
+    // finishes launching, which is where plugin load sits.
+    Notifier.shared.install()
+    BackgroundRefresh.register()
     applyLaunchBackground(to: webview)
     DispatchQueue.main.async { [weak webview] in
       guard let webview else { return }
@@ -407,6 +417,7 @@ class NotesageIosPlugin: Plugin {
       let webView = KeyboardAccessory.findWebView(in: window)
     else { return nil }
     webViewRef = webView
+    Notifier.shared.webView = webView
     KeyboardAccessory.remove(from: webView)
     ContentProcessRecovery.install(on: webView)
     return webView
@@ -656,6 +667,65 @@ class NotesageIosPlugin: Plugin {
         "total": SpeechPlayer.shared.paragraphCount,
         "playing": SpeechPlayer.shared.isPlaying,
       ])
+    }
+  }
+
+  // MARK: - Notifications (badge, banners, background refresh)
+
+  @objc public func notificationStatus(_ invoke: Invoke) {
+    Notifier.shared.status { invoke.resolve($0.asDictionary) }
+  }
+
+  @objc public func notificationRequest(_ invoke: Invoke) {
+    Notifier.shared.request { invoke.resolve($0.asDictionary) }
+  }
+
+  @objc public func notificationSetPrefs(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(NotificationPrefsArgs.self)
+      if let badge = args.badge {
+        InboxState.Prefs.badge = badge
+        if !badge { Notifier.shared.setBadge(0) }
+      }
+      if let newItems = args.newItems { InboxState.Prefs.newItems = newItems }
+      if let templates = args.templates { InboxState.Prefs.templates = templates }
+      Notifier.shared.status { invoke.resolve($0.asDictionary) }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Recount from disk, refresh the badge, and record that the user has the
+  /// current Inbox in front of them (so the next refresh announces only what
+  /// arrives after this).
+  @objc public func inboxUnreadCount(_ invoke: Invoke) {
+    DispatchQueue.global(qos: .userInitiated).async {
+      do {
+        let root = try LibraryAccess.resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let names = InboxState.names(root: root)
+        let unread = InboxState.unreadCount(root: root)
+        InboxState.Prefs.markSeen(names)
+        DispatchQueue.main.async {
+          Notifier.shared.setBadge(unread)
+          Notifier.shared.clearAnnounced()
+          invoke.resolve(["count": unread])
+        }
+      } catch { invoke.reject(String(describing: error)) }
+    }
+  }
+
+  @objc public func consumeLaunchRoute(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      invoke.resolve(["route": Notifier.shared.consumeLaunchRoute() as Any])
+    }
+  }
+
+  @objc public func openSettings(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      if let url = URL(string: UIApplication.openSettingsURLString) {
+        UIApplication.shared.open(url)
+      }
+      invoke.resolve()
     }
   }
 

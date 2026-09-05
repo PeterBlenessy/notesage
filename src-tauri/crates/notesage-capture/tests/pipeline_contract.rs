@@ -1933,3 +1933,32 @@ fn integration_script_does_not_reclaim_the_plist() {
         "the step that installs the tracked plist into gen/ is gone"
     );
 }
+
+/// Every capture writer in the iOS Share Extension records its own capture
+/// as seen and refreshes the badge — the "a perfect writer nobody invokes"
+/// failure the contract exists for: a writer that returns without the funnel
+/// leaves the badge stale and lets the next background refresh announce the
+/// item the user just shared.
+#[test]
+fn every_ios_capture_writer_reaches_the_notification_funnel() {
+    let swift = ios_src("LibraryCapture.swift");
+    let mut writers = 0;
+    let mut cursor = 0;
+    while let Some(pos) = swift[cursor..].find("static func write") {
+        let start = cursor + pos;
+        let end = swift[start..].find("\n    static func ").map(|e| start + e).unwrap_or(swift.len());
+        let body = &swift[start..end];
+        let name: String = swift[start + "static func ".len()..].chars().take_while(|c| c.is_alphanumeric()).collect();
+        // Only writers that perform a coordinated write into the Inbox are
+        // captures; helpers that return nothing on disk are not.
+        if body.contains("NSFileCoordinator") {
+            writers += 1;
+            assert!(
+                body.contains("InboxState.didWriteCapture(root:"),
+                "`{name}` writes a capture without calling InboxState.didWriteCapture"
+            );
+        }
+        cursor = end;
+    }
+    assert!(writers >= 6, "expected the capture writers, found {writers}");
+}

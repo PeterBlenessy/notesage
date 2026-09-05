@@ -991,6 +991,79 @@ pub async fn ios_speech_state(app: tauri::AppHandle) -> Result<SpeechState, Stri
     }
 }
 
+/// Notification and background-refresh state (badge and banner preferences,
+/// authorization, Background App Refresh availability).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationStatus {
+    pub authorization: String,
+    pub background_refresh: String,
+    pub badge: bool,
+    pub new_items: bool,
+}
+
+macro_rules! ios_only {
+    ($name:literal, $app:ident, $body:expr) => {{
+        #[cfg(target_os = "ios")]
+        {
+            $body
+        }
+        #[cfg(not(target_os = "ios"))]
+        {
+            let _ = &$app;
+            Err(concat!($name, " is only available on iOS").into())
+        }
+    }};
+}
+
+#[tauri::command]
+pub async fn ios_notification_status(app: tauri::AppHandle) -> Result<NotificationStatus, String> {
+    ios_only!("ios_notification_status", app, ios_impl::notification_status(&app).await)
+}
+
+/// The one system prompt (badge and alert, no sound).
+#[tauri::command]
+pub async fn ios_notification_request(app: tauri::AppHandle) -> Result<NotificationStatus, String> {
+    ios_only!("ios_notification_request", app, ios_impl::notification_request(&app).await)
+}
+
+/// Badge and banner preferences, plus the localised banner strings the
+/// background task and the Share Extension post with — the frontend owns the
+/// translation table, so it hands the strings over rather than the native
+/// side carrying a resource bundle.
+#[tauri::command]
+pub async fn ios_notification_set_prefs(
+    app: tauri::AppHandle,
+    badge: Option<bool>,
+    new_items: Option<bool>,
+    templates: Option<std::collections::HashMap<String, String>>,
+) -> Result<NotificationStatus, String> {
+    ios_only!(
+        "ios_notification_set_prefs",
+        app,
+        ios_impl::notification_set_prefs(&app, badge, new_items, templates.as_ref()).await
+    )
+}
+
+/// Recount the unread Inbox from disk, refresh the icon badge, and record
+/// that the user has the current Inbox in front of them. Takes no path:
+/// the Inbox folder is fixed, so the sanitizer list is unaffected.
+#[tauri::command]
+pub async fn ios_inbox_unread_count(app: tauri::AppHandle) -> Result<u32, String> {
+    ios_only!("ios_inbox_unread_count", app, ios_impl::inbox_unread_count(&app).await)
+}
+
+/// Where a notification tap wants the app to land, once.
+#[tauri::command]
+pub async fn ios_consume_launch_route(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    ios_only!("ios_consume_launch_route", app, ios_impl::consume_launch_route(&app).await)
+}
+
+#[tauri::command]
+pub async fn ios_open_settings(app: tauri::AppHandle) -> Result<(), String> {
+    ios_only!("ios_open_settings", app, ios_impl::open_settings(&app).await)
+}
+
 /// Open WebKit's find bar over the presented report.
 ///
 /// `false` means no report is on screen; the caller falls back to the web
@@ -1090,7 +1163,9 @@ pub async fn ios_stat_file(app: tauri::AppHandle, rel_path: String) -> Result<Fi
 
 #[cfg(target_os = "ios")]
 mod ios_impl {
-    use super::{DownloadState, FileEntry, FileStat, LibraryGrant, SpeechStarted, SpeechState, SpeechVoice};
+    use super::{
+        DownloadState, FileEntry, FileStat, LibraryGrant, NotificationStatus, SpeechStarted, SpeechState, SpeechVoice,
+    };
     use tauri::AppHandle;
     use tauri_plugin_notesage_ios::NotesageIosExt;
 
@@ -1302,6 +1377,47 @@ mod ios_impl {
             .map_err(|e| e.to_string())
     }
 
+    fn notification(s: tauri_plugin_notesage_ios::NotificationStatus) -> NotificationStatus {
+        NotificationStatus {
+            authorization: s.authorization,
+            background_refresh: s.background_refresh,
+            badge: s.badge,
+            new_items: s.new_items,
+        }
+    }
+
+    pub async fn notification_status(app: &AppHandle) -> Result<NotificationStatus, String> {
+        app.notesage_ios().notification_status().map(notification).map_err(|e| e.to_string())
+    }
+
+    pub async fn notification_request(app: &AppHandle) -> Result<NotificationStatus, String> {
+        app.notesage_ios().notification_request().map(notification).map_err(|e| e.to_string())
+    }
+
+    pub async fn notification_set_prefs(
+        app: &AppHandle,
+        badge: Option<bool>,
+        new_items: Option<bool>,
+        templates: Option<&std::collections::HashMap<String, String>>,
+    ) -> Result<NotificationStatus, String> {
+        app.notesage_ios()
+            .notification_set_prefs(badge, new_items, templates)
+            .map(notification)
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn inbox_unread_count(app: &AppHandle) -> Result<u32, String> {
+        app.notesage_ios().inbox_unread_count().map_err(|e| e.to_string())
+    }
+
+    pub async fn consume_launch_route(app: &AppHandle) -> Result<Option<String>, String> {
+        app.notesage_ios().consume_launch_route().map_err(|e| e.to_string())
+    }
+
+    pub async fn open_settings(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().open_settings().map_err(|e| e.to_string())
+    }
+
     pub async fn dismiss_report(app: &AppHandle) -> Result<(), String> {
         app.notesage_ios().dismiss_report().map_err(|e| e.to_string())
     }
@@ -1339,6 +1455,27 @@ mod ios_impl {
 
 #[cfg(test)]
 mod tests {
+    /// Tauri's notification plugin must never be registered on iOS: its Swift
+    /// delegate (`NotificationHandler.toActiveNotification`) force-unwraps a
+    /// map of the notifications it scheduled itself, so a banner posted by
+    /// our background refresh or the Share Extension — or tapped after a
+    /// relaunch — would crash the app inside it. The plugin's notifications
+    /// are ours (`Notifier.swift`).
+    #[test]
+    fn tauri_notification_plugin_is_not_registered_on_ios() {
+        let src = include_str!("../lib.rs");
+        let lines: Vec<&str> = src.lines().collect();
+        let idx = lines
+            .iter()
+            .position(|l| l.contains("tauri_plugin_notification::init()"))
+            .expect("the notification plugin is still registered somewhere");
+        let guard = lines[idx.saturating_sub(4)..idx].join("\n");
+        assert!(
+            guard.contains("not(target_os = \"ios\")"),
+            "tauri_plugin_notification::init() must sit under #[cfg(not(target_os = \"ios\"))]; got:\n{guard}"
+        );
+    }
+
     use super::*;
 
     #[test]

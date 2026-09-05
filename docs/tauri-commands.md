@@ -1553,6 +1553,12 @@ init` on a Mac — see `src-tauri/ios/README.md`.
 | `ios_move_file` | `(relPath, destDir) -> String` | Move a FILE into another folder under the library root (#754). Files only; `destDir` must already exist (`""` = root); BOTH paths sanitized. Deduped; returns the final rel path. |
 | `ios_stat_file` | `(relPath) -> FileStat { sizeBytes }` | On-disk file size without reading content. Called before `ios_read_file` for text/markdown/html so the reader can decline an oversized file instead of freezing the WebView on a giant JSON read (issue #616). |
 | `ios_text_prompt` | `(title, placeholder, confirmLabel) -> Option<String>` | Native single-line `UIAlertController` text prompt (the create flow's name entry). `None` = cancelled. Pure UI, no filesystem. |
+| `ios_notification_status` | `() -> NotificationStatus` | Authorization (`notDetermined` \| `denied` \| `authorized`), Background App Refresh (`available` \| `denied` \| `restricted`), and the badge / new-items preferences. |
+| `ios_notification_request` | `() -> NotificationStatus` | The one system prompt (badge + alert, no sound). |
+| `ios_notification_set_prefs` | `(badge?, newItems?, templates?) -> NotificationStatus` | Preferences plus the localised banner strings the native side posts with. `badge: false` clears the icon badge at once. |
+| `ios_inbox_unread_count` | `() -> u32` | Recount the unread Inbox from disk (the shared `reading-progress.json` rule), refresh the icon badge, mark the current Inbox as seen. No path argument. |
+| `ios_consume_launch_route` | `() -> Option<String>` | `"inbox"` once after a notification tap, then `None`. |
+| `ios_open_settings` | `() -> ()` | Open the Settings app at Notesage's page. |
 
 ```rust
 #[serde(rename_all = "camelCase")]

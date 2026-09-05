@@ -93,6 +93,15 @@ const ALLOWED = new Set([
   "ios_context_menu",
   "ios_entry_menu",
   "ios_ensure_directory",
+  // Notifications: badge/banner preferences and the one system prompt; a
+  // recount of the unread Inbox from disk (no path argument — the Inbox is a
+  // fixed folder); the route a notification tap asked for; the Settings app.
+  "ios_notification_status",
+  "ios_notification_request",
+  "ios_notification_set_prefs",
+  "ios_inbox_unread_count",
+  "ios_consume_launch_route",
+  "ios_open_settings",
 ]);
 
 /** Commands that would mutate paths OUTSIDE the granted library, or reach
