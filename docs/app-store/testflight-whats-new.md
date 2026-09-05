@@ -25,15 +25,16 @@ screen; the sender warns past that.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Home shows only the folders you chose; the icon counts your unread Inbox; recording starts on the phone.
 
-NEW
-• Home: the Inbox and the folders you put there. Hold a folder for Show on Home, or … › Edit Home.
-• Each folder remembers its own view, order and grouping.
-• The app icon shows your unread Inbox count (turn it on from the Inbox).
-• New Recording (hold +): your Mac transcribes it when it syncs in.
-• Saved articles now swipe to Share and Delete.
+Everything you found on the phone, fixed — and a recording now shows on the lock screen.
+
+FIXED
+• Stop is no longer hidden behind the search pill.
+• Errors appear instead of hiding under the toolbar.
+• Unread Inbox items are the bolder ones; opened ones step back.
+• The icon count moves again on a synced library.
+• The launch logo stays sharp as it grows.
 
 TRY
-• Open the Inbox, tap Turn on, allow, then look at the icon.
-• Hold +, New Recording, talk a minute, stop, open Recordings.
+• Record, lock the phone, pause and resume from the lock screen, then unlock and stop.
+• Read something in the Inbox and watch the icon count drop.
