@@ -71,23 +71,66 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
 
     // MARK: - Control
 
+    /// The audio work runs OFF the main thread: `AVAudioRecorder.record()`
+    /// goes through AudioToolbox's XPC, which the simulator has been seen to
+    /// deadlock inside (a lock wait in the mix engine, observed 2026-09-05).
+    /// A frozen main thread would take the whole app with it; on a worker
+    /// the watchdog below reports a start that never returns and the UI
+    /// stays usable.
+    private static let work = DispatchQueue(label: "com.notesage.recorder", qos: .userInitiated)
+    private static let startTimeout: TimeInterval = 8
+
     func start(language: String?, completion: @escaping (Result<Void, Error>) -> Void) {
         guard state == .idle else { return completion(.failure(RecorderError.alreadyRecording)) }
+        state = .finalizing  // claimed: a second tap while starting is refused
         AVAudioSession.sharedInstance().requestRecordPermission { granted in
-            DispatchQueue.main.async {
-                guard granted else { return completion(.failure(RecorderError.microphoneDenied)) }
+            guard granted else {
+                DispatchQueue.main.async {
+                    self.state = .idle
+                    completion(.failure(RecorderError.microphoneDenied))
+                }
+                return
+            }
+            var answered = false
+            let answer: (Result<Void, Error>) -> Void = { result in
+                DispatchQueue.main.async {
+                    guard !answered else { return }
+                    answered = true
+                    if case .failure(let error) = result {
+                        os_log("start failed: %{public}@", log: Recorder.logger, type: .error, String(describing: error))
+                        self.state = .idle
+                    }
+                    completion(result)
+                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + Recorder.startTimeout) {
+                guard !answered else { return }
+                os_log("start timed out", log: Recorder.logger, type: .error)
+                AudioSessionArbiter.shared.release(.recording)
+                answer(.failure(RecorderError.ioError("the recorder did not start")))
+            }
+            Recorder.work.async {
                 do {
-                    try self.begin(language: language)
-                    completion(.success(()))
+                    let (rec, dir) = try self.prepare()
+                    DispatchQueue.main.async {
+                        // A timed-out start that returns late is thrown away.
+                        guard !answered else {
+                            rec.stop()
+                            try? FileManager.default.removeItem(at: dir)
+                            return
+                        }
+                        self.adopt(rec, dir: dir, language: language)
+                        answer(.success(()))
+                    }
                 } catch {
-                    os_log("start failed: %{public}@", log: Recorder.logger, type: .error, String(describing: error))
-                    completion(.failure(error))
+                    answer(.failure(error))
                 }
             }
         }
     }
 
-    private func begin(language: String?) throws {
+    /// Everything that talks to AudioToolbox, on the worker.
+    private func prepare() throws -> (AVAudioRecorder, URL) {
         // An hour is ~30 MB; refusing at the start beats a truncation at
         // minute ninety.
         if let free = try? Recorder.stagingRoot.deletingLastPathComponent()
@@ -97,6 +140,10 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
             throw RecorderError.lowDiskSpace
         }
         do {
+            // The simulator's audio input deadlocks `record()` whatever the
+            // category (AudioToolbox mix-engine lock, observed 2026-09-05 with
+            // `.playAndRecord` and with plain `.record`): capture is verified
+            // on a device; the watchdog above keeps the simulator usable.
             try AudioSessionArbiter.shared.claim(
                 .recording, category: .playAndRecord, mode: .default,
                 options: [.allowBluetooth, .defaultToSpeaker])
@@ -108,13 +155,20 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("audio.m4a")
         let rec = try AVAudioRecorder(url: url, settings: Recorder.settings)
-        rec.delegate = self
-        rec.isMeteringEnabled = true
+        os_log("recorder ready at %{public}@", log: Recorder.logger, type: .info, dir.lastPathComponent)
         guard rec.record() else {
             os_log("AVAudioRecorder.record() returned false", log: Recorder.logger, type: .error)
             AudioSessionArbiter.shared.release(.recording)
+            try? FileManager.default.removeItem(at: dir)
             throw RecorderError.ioError("the recorder did not start")
         }
+        rec.isMeteringEnabled = true
+        return (rec, dir)
+    }
+
+    /// The recorder is running: take it on (main thread).
+    private func adopt(_ rec: AVAudioRecorder, dir: URL, language: String?) {
+        rec.delegate = self
         recorder = rec
         stagingDir = dir
         startedAt = Date()

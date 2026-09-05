@@ -44,9 +44,14 @@ struct RecordingManifest: Codable {
         return f.string(from: date)
     }
 
+    /// The contract says `"transcription": null` until the Mac writes its
+    /// status; `JSONEncoder` drops a nil optional, so it is put back.
     func json() throws -> Data {
         let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return try encoder.encode(self)
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let encoded = try encoder.encode(self)
+        var object = try JSONSerialization.jsonObject(with: encoded) as? [String: Any] ?? [:]
+        if object["transcription"] == nil { object["transcription"] = NSNull() }
+        return try JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
     }
 }
