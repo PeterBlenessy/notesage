@@ -97,6 +97,30 @@ describe("SwipeRevealRow: whose finger is this? (2026-09-06)", () => {
     }
   });
 
+  it("a stolen touch that never comes back does not eat the next real tap", () => {
+    // The hard half of the same problem. Suppressing the click at the moment
+    // the watchdog fires looks right, but in the case the watchdog exists
+    // for — the touch is gone and no lift and no click ever arrive — the
+    // flag would stay armed with nothing to consume it, and swallow the
+    // user's next, unrelated tap on this row instead.
+    vi.useFakeTimers();
+    try {
+      const onRowClick = vi.fn();
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={onRowClick} />);
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000));
+      // Pointer 1 is never heard from again. A later, separate tap:
+      fireEvent.pointerDown(content, { pointerId: 2, clientX: 150, clientY: 0 });
+      fireEvent.pointerUp(content, { pointerId: 2, clientX: 150, clientY: 0 });
+      fireEvent.click(content);
+      expect(onRowClick).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("still closes an open row when a resting finger finally lifts", () => {
     // The watchdog deliberately ignores a press that never became a drag:
     // it strands nothing, and dropping it would cost the tap-to-close that

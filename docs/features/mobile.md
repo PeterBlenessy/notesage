@@ -378,12 +378,14 @@ contract, or it will drop gestures:
    the surface returns to where it was and the gesture can be made again.
    Two details make it safe. It acts only on a LOCKED drag — a press that
    never became one strands nothing and blocks no later touch, and dropping
-   it would cost an open row its tap-to-close. And in a list row it arms the
-   same click suppression a real drag end does: the finger may still be
-   physically down, which is the whole premise, so a native click follows
-   when it lifts. Without that the row springs back and then OPENS the
-   document the user was swiping away from — worse than the freeze it
-   replaced.
+   it would cost an open row its tap-to-close. And in a list row the finger
+   may still be physically down, which is the whole premise, so a native
+   click follows if it ever lifts — and it must not open the document the
+   user was swiping away from. That suppression is armed AT THE LIFT, not
+   when the watchdog fires: arming it early would leave it armed for ever in
+   the case the watchdog exists for, where the touch really was stolen and
+   no lift and no click ever arrive, and it would then swallow the user's
+   next unrelated tap on that row.
 
 ## Swipe in from the left edge to leave a document
 

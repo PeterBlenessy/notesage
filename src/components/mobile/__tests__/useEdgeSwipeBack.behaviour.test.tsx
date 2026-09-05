@@ -130,6 +130,21 @@ describe("edge-swipe-back: whose finger is this? (2026-09-06)", () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
+  it("leaves a press that never became a swipe alone when the timer fires", () => {
+    // The watchdog acts only on a LOCKED swipe. An undecided press has moved
+    // nothing and blocks no later touch, so dropping it would only throw
+    // away a gesture someone is still in the middle of making — a finger
+    // resting on the edge while they read, then swiping.
+    const onBack = vi.fn();
+    renderWithProviders(<Subject onBack={onBack} />);
+    const el = page();
+    fireEvent.pointerDown(el, { pointerId: 1, clientX: 4, clientY: 0 });
+    act(() => vi.advanceTimersByTime(4000)); // held still, never locked
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: 200, clientY: 0 });
+    fireEvent.pointerUp(el, { pointerId: 1, clientX: 200, clientY: 0 });
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
   it("a touch that never became a swipe is replaced, not left to block the strip", () => {
     // The other half of the stranding problem: a drag that stalled before
     // the axis lock took no capture, so nothing above can free it. It has

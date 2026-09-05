@@ -129,6 +129,9 @@ export function SwipeRevealRow({
   // pointerup must not also activate the row. Mirrors the suppressClick
   // idiom already used for the sidebar's long-press ancestor menu.
   const suppressClickRef = useRef(false);
+  // The pointer of a drag the watchdog gave up on, if that finger might
+  // still be down. See `endDrag` for why the suppression waits for the lift.
+  const abandonedRef = useRef<number | null>(null);
 
   // A row is unmounted by any listing refresh, which a finger being down does
   // nothing to prevent.
@@ -152,11 +155,13 @@ export function SwipeRevealRow({
       dragRef.current = null;
       setDragOffset(null);
       // The finger may still be down — the whole point is that we never
-      // heard it go — so a native click follows when it lifts. Without this
-      // the row springs back and then OPENS the document the user was
-      // swiping away from, which is worse than the freeze it replaced.
-      // `endDrag` arms this for exactly the same reason on every real drag.
-      suppressClickRef.current = true;
+      // heard it go — so a native click may still follow when it lifts, and
+      // it must not open the document the user was swiping away from.
+      // Remembered, NOT suppressed here: arming the flag now would leave it
+      // armed for ever in the case this whole mechanism exists for, where
+      // the touch really was stolen and no lift and no click ever arrive.
+      // It would then swallow the user's next, unrelated tap on this row.
+      abandonedRef.current = drag.pointerId;
     }, STALE_MS);
   };
 
@@ -220,7 +225,17 @@ export function SwipeRevealRow({
     if (staleRef.current) clearTimeout(staleRef.current);
     staleRef.current = null;
     dragRef.current = null;
-    if (!drag) return;
+    if (!drag) {
+      // The lift of a drag the watchdog already gave up on. Nothing left to
+      // settle, but the browser's trailing click is now imminent and the
+      // user was swiping, not tapping — so this is the moment to suppress
+      // it, and only if that finger really did come back.
+      if (e && abandonedRef.current === e.pointerId) {
+        abandonedRef.current = null;
+        suppressClickRef.current = true;
+      }
+      return;
+    }
     setDragOffset(null);
     if (drag.isDrag) {
       // Full swipe past the strip commits the edge action directly.
