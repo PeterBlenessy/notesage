@@ -392,7 +392,12 @@ contract, or it will drop gestures:
    set the same flag nothing consumes. And the abandoned pointers are a SET:
    abandoning one drag is exactly what stops the touchdown guard refusing a
    second finger, so a row can abandon two, and a single slot lost the first
-   one's lift.
+   one's lift. The same rule governs a drag that is still live when the news
+   arrives: only a lift FINISHES a gesture. A cancel is an interruption by
+   definition, and capture loss reaches a live drag only when it comes
+   without the lift that normally precedes it, which is the same thing —
+   so neither commits the edge Delete nobody completed, and neither arms a
+   suppression no click will consume.
 
 ## Swipe in from the left edge to leave a document
 

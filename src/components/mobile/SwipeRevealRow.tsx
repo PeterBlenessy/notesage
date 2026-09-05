@@ -267,6 +267,18 @@ export function SwipeRevealRow({
       return;
     }
     setDragOffset(null);
+    // Did the gesture FINISH, or was it taken away? Only a lift finishes
+    // one. `pointercancel` is an interruption by definition, and
+    // `lostpointercapture` only reaches a live drag when it arrives without
+    // the lift that normally precedes it — which is the same thing. The
+    // distinction matters twice over: an interrupted swipe must not commit
+    // the edge Delete nobody completed, and it must not arm the click
+    // suppression either, because no click follows a cancel. Arming it would
+    // leave the flag set with nothing to consume it, and the next thing it
+    // swallowed would be the row's next real tap — the same failure the
+    // abandoned-drag branch above was rewritten three times to avoid.
+    const lifted = !e || e.type === "pointerup";
+    if (!lifted) return;
     if (drag.isDrag) {
       // Full swipe past the strip commits the edge action directly.
       if (

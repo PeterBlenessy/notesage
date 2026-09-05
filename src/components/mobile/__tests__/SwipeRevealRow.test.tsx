@@ -244,16 +244,42 @@ describe("SwipeRevealRow: whose finger is this? (2026-09-06)", () => {
     }
   });
 
-  it("recovers a captured drag when capture is lost with no pointerup", () => {
+  it("treats capture lost without a lift as an interruption, not a completion", () => {
+    // Only a lift finishes a gesture. Capture loss reaches a LIVE drag only
+    // when it arrives without the pointerup that normally precedes it, which
+    // means the system took the touch — so the row springs back rather than
+    // settling as though the user had let go where they were. It must also
+    // leave no click suppression armed: no click follows a steal, so the
+    // flag would sit there and swallow the row's next real tap.
     const onSelect = vi.fn();
-    renderWithProviders(<Row actions={[makeAction({ onSelect })]} onRowClick={vi.fn()} />);
+    const onRowClick = vi.fn();
+    renderWithProviders(<Row actions={[makeAction({ onSelect })]} onRowClick={onRowClick} />);
     const content = screen.getByText("row content");
     fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
     fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
     fireEvent.lostPointerCapture(content, { pointerId: 1, clientX: 100, clientY: 0 });
-    // Ended like any other lift: 100px is past half the action width, so the
-    // row settles open rather than freezing mid-drag.
-    expect(screen.getByRole("button", { name: "Share" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+    // The next tap is the user's, and it works.
+    fireEvent.pointerDown(content, { pointerId: 2, clientX: 150, clientY: 0 });
+    fireEvent.pointerUp(content, { pointerId: 2, clientX: 150, clientY: 0 });
+    fireEvent.click(content);
+    expect(onRowClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("a cancelled full swipe does not delete anything", () => {
+    // The sharper half of the same rule. A drag dragged past the full-swipe
+    // distance and then CANCELLED was committing the edge action outright —
+    // deleting a document on a gesture the user never finished.
+    const onSelect = vi.fn();
+    renderWithProviders(
+      <Row actions={[makeAction({ id: "delete", label: "Delete", onSelect })]} onRowClick={vi.fn()} />,
+    );
+    const content = screen.getByText("row content");
+    fireEvent.pointerDown(content, { pointerId: 1, clientX: 300, clientY: 0 });
+    fireEvent.pointerMove(content, { pointerId: 1, clientX: 0, clientY: 0 }); // past 72 + 96
+    fireEvent.pointerCancel(content, { pointerId: 1, clientX: 0, clientY: 0 });
+    expect(onSelect).not.toHaveBeenCalled();
   });
 
   it("replaces a touch that never became a drag rather than being blocked by it", () => {
