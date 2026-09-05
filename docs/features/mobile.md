@@ -376,6 +376,14 @@ contract, or it will drop gestures:
    that goes missing, so it cannot be the answer on its own. Four seconds is
    far longer than any swipe; the penalty if it ever cuts one off is that
    the surface returns to where it was and the gesture can be made again.
+   Two details make it safe. It acts only on a LOCKED drag — a press that
+   never became one strands nothing and blocks no later touch, and dropping
+   it would cost an open row its tap-to-close. And in a list row it arms the
+   same click suppression a real drag end does: the finger may still be
+   physically down, which is the whole premise, so a native click follows
+   when it lifts. Without that the row springs back and then OPENS the
+   document the user was swiping away from — worse than the freeze it
+   replaced.
 
 ## Swipe in from the left edge to leave a document
 

@@ -141,10 +141,22 @@ export function SwipeRevealRow({
     if (staleRef.current) clearTimeout(staleRef.current);
     staleRef.current = setTimeout(() => {
       staleRef.current = null;
+      const drag = dragRef.current;
+      // Only a LOCKED drag can strand anything. A press that never became
+      // one holds no capture, has moved nothing, and blocks no later touch
+      // — and dropping it would break tap-to-close for a finger that simply
+      // rests on an open row before lifting.
+      if (!drag?.isDrag) return;
       // Abandoned, so it must not COMMIT: an unfinished drag is not a
       // request to delete anything. The row returns to where it was.
       dragRef.current = null;
       setDragOffset(null);
+      // The finger may still be down — the whole point is that we never
+      // heard it go — so a native click follows when it lifts. Without this
+      // the row springs back and then OPENS the document the user was
+      // swiping away from, which is worse than the freeze it replaced.
+      // `endDrag` arms this for exactly the same reason on every real drag.
+      suppressClickRef.current = true;
     }, STALE_MS);
   };
 

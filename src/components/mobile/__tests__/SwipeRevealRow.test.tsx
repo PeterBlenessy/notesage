@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { fireEvent } from "@testing-library/react";
+import { act, fireEvent } from "@testing-library/react";
 import { renderWithProviders, screen } from "@/test/component-harness";
 import {
   SwipeRevealRow,
@@ -64,23 +64,56 @@ describe("SwipeRevealRow: whose finger is this? (2026-09-06)", () => {
     expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
   });
 
-  it("gives up on a drag that goes silent, without firing its edge action", () => {
+  it("gives up on a drag that goes silent, and its late lift opens nothing", () => {
     // Same recovery as the reader's, and for the same reason: the event that
     // would tell us the touch is gone is exactly the one that goes missing.
-    // A row abandoned mid-swipe must return to where it was — and must never
-    // read as a Delete nobody asked for.
+    //
+    // The lift and click at the end are the point. The finger may still be
+    // physically down — that is the whole premise — so the browser fires a
+    // trailing click when it goes. An earlier version of this test stopped
+    // at the timer and passed with the watchdog deleted entirely, because
+    // neither assertion could move without a pointer event: `onSelect` is
+    // only reachable from a real lift, and the action stays `aria-hidden`
+    // either way. Carried through, it discriminates twice over — the row
+    // must neither delete itself nor open.
     vi.useFakeTimers();
     try {
       const onSelect = vi.fn();
+      const onRowClick = vi.fn();
       renderWithProviders(
-        <Row actions={[makeAction({ id: "delete", label: "Delete", onSelect })]} onRowClick={vi.fn()} />,
+        <Row actions={[makeAction({ id: "delete", label: "Delete", onSelect })]} onRowClick={onRowClick} />,
       );
       const content = screen.getByText("row content");
       fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
-      fireEvent.pointerMove(content, { pointerId: 1, clientX: 0, clientY: 0 }); // full swipe distance
-      vi.advanceTimersByTime(4000);
-      expect(onSelect).not.toHaveBeenCalled();
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 0, clientY: 0 }); // past the full-swipe distance
+      act(() => vi.advanceTimersByTime(4000));
       expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+      fireEvent.pointerUp(content, { pointerId: 1, clientX: 0, clientY: 0 });
+      fireEvent.click(content);
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(onRowClick).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still closes an open row when a resting finger finally lifts", () => {
+    // The watchdog deliberately ignores a press that never became a drag:
+    // it strands nothing, and dropping it would cost the tap-to-close that
+    // an open row depends on.
+    vi.useFakeTimers();
+    try {
+      const onRowClick = vi.fn();
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={onRowClick} />);
+      const content = screen.getByText("row content");
+      swipe(content, 200, 100); // reveal
+      expect(screen.getByRole("button", { name: "Share" })).toBeTruthy();
+      fireEvent.pointerDown(content, { pointerId: 2, clientX: 150, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000)); // a finger resting, never moving
+      fireEvent.pointerUp(content, { pointerId: 2, clientX: 150, clientY: 0 });
+      fireEvent.click(content);
+      expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+      expect(onRowClick).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

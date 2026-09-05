@@ -126,6 +126,10 @@ export function useEdgeSwipeBack(onBack: () => void): {
     if (stale.current) clearTimeout(stale.current);
     stale.current = setTimeout(() => {
       stale.current = null;
+      // Only a LOCKED swipe can strand anything: an undecided drag has moved
+      // nothing on screen and blocks no later touch, since the touchdown
+      // guard only refuses while a real swipe is in flight.
+      if (drag.current?.axis !== "swipe") return;
       // Abandoned, so it must not COMMIT — a gesture nobody finished is not
       // a request to close the document.
       drag.current = null;
