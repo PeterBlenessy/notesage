@@ -45,8 +45,10 @@ import { useTrayEvents } from "@/hooks/useTrayEvents";
 import { useTraySync } from "@/hooks/useTraySync";
 import { useApprovalMigrationToast } from "@/hooks/useApprovalMigrationToast";
 import { useFileRenameSync } from "@/hooks/useFileRenameSync";
+import { useInboxArrivals } from "@/hooks/useInboxArrivals";
 import { useRecentDocumentCycle } from "@/hooks/useRecentDocumentCycle";
 import { useTranscriptionJob } from "@/hooks/useTranscriptionJob";
+import { useRecordingsInbox } from "@/hooks/useRecordingsInbox";
 import { useModelFitCapture } from "@/hooks/useModelFitCapture";
 import { useCalibrationSharePrompt } from "@/hooks/useCalibrationSharePrompt";
 import { useAccent } from "@/hooks/useAccent";
@@ -188,6 +190,11 @@ function App() {
   // ============================================================
   useProjectMetadata();
   useStartWatchers();
+  // Inbox folder watch + "New in Inbox" notification (PRD
+  // 2026-09-05-ios-notifications, the Mac's side). Lives here, not in the
+  // sidebar row: the sidebar unmounts on ⌘⇧L and a share from the phone must
+  // still be noticed.
+  useInboxArrivals();
   useFileRenameSync();
   useSkillDiscovery();
   // #105 — keep the OS window title in sync with the active tab
@@ -209,6 +216,11 @@ function App() {
   // drives the whole-file transcription → note-render → bundle-write pipeline.
   // A hook defined but not mounted never runs (see "Startup Hooks in App.tsx").
   useTranscriptionJob();
+  // Recordings handoff (PRD 2026-09-05-ios-recordings, task #15) — scans
+  // `<library root>/Recordings` for bundles the phone finalized, gates on the
+  // manifest's byte count, and dispatches `startTranscription` one at a time.
+  // Same rule as the job above: unmounted here, it never runs.
+  useRecordingsInbox();
   // Live-test 2026-04-25 #144 — without this mount the accent radio in
   // Settings > Appearance writes to settings-store but the DOM never
   // gets the `.accent-orange` / `.accent-blue` / `.accent-system`

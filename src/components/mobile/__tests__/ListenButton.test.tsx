@@ -53,3 +53,13 @@ describe("ListenButton (read aloud from the list, #833)", () => {
     expect(screen.getByRole("button", { name: "Listen" }).getAttribute("data-state")).toBe("idle");
   });
 });
+
+describe("while a recording runs", () => {
+  it("the Listen control is disabled and says why — one owner of the audio session", async () => {
+    const { renderWithProviders, screen } = await import("@/test/component-harness");
+    useMobileStore.setState({ recording: { ...useMobileStore.getState().recording, status: "recording" } });
+    renderWithProviders(<ListenButton entry={{ name: "a.html", path: "a.html" }} size="row" />);
+    const button = screen.getByRole("button", { name: "Recording in progress" }) as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+  });
+});

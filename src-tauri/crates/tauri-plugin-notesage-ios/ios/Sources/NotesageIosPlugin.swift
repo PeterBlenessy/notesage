@@ -33,6 +33,28 @@ struct SpeechRateArgs: Decodable {
   let rate: Float
 }
 
+struct RecordingStartArgs: Decodable {
+  let language: String?
+}
+
+struct RecordingStopArgs: Decodable {
+  let discard: Bool?
+}
+
+struct RecordingRecoverArgs: Decodable {
+  let action: String
+  let dir: String
+}
+
+struct UnreadCountArgs: Decodable {
+  let markSeen: Bool?
+}
+
+struct NotificationPrefsArgs: Decodable {
+  let badge: Bool?
+  let newItems: Bool?
+  let templates: [String: String]?
+}
 struct RelPathArgs: Decodable {
   let relPath: String
 }
@@ -246,6 +268,12 @@ class NotesageIosPlugin: Plugin {
   /// — and re-apply on the next runloop turn because the view hierarchy is
   /// not fully assembled when the plugin loads.
   @objc public override func load(webview: WKWebView) {
+    // Notifications are ours on iOS (Tauri's plugin is not registered here):
+    // the delegate and the background refresh must both exist before the app
+    // finishes launching, which is where plugin load sits.
+    Notifier.shared.install()
+    BackgroundRefresh.register()
+    Recorder.shared.onEvent = { [weak self] detail in self?.emit("notesage:recording", detail) }
     applyLaunchBackground(to: webview)
     DispatchQueue.main.async { [weak webview] in
       guard let webview else { return }
@@ -407,6 +435,7 @@ class NotesageIosPlugin: Plugin {
       let webView = KeyboardAccessory.findWebView(in: window)
     else { return nil }
     webViewRef = webView
+    Notifier.shared.webView = webView
     KeyboardAccessory.remove(from: webView)
     ContentProcessRecovery.install(on: webView)
     return webView
@@ -535,7 +564,102 @@ class NotesageIosPlugin: Plugin {
   // now-playing info centre are all process-wide, and a second synthesiser
   // would fight the first for the same audio route.
 
+  // MARK: - Recording
+
+  @objc public func recordingStart(_ invoke: Invoke) {
+    let language = (try? invoke.parseArgs(RecordingStartArgs.self))?.language
+    DispatchQueue.main.async {
+      Recorder.shared.start(language: language) { result in
+        switch result {
+        case .success: invoke.resolve()
+        case .failure(let error):
+          if case Recorder.RecorderError.microphoneDenied = error {
+            invoke.reject("microphone-denied")
+          } else if case Recorder.RecorderError.lowDiskSpace = error {
+            invoke.reject("low-disk-space")
+          } else if case AudioOwnerError.recordingInProgress = error {
+            invoke.reject("recording-in-progress")
+          } else {
+            invoke.reject(String(describing: error))
+          }
+        }
+      }
+    }
+  }
+
+  @objc public func recordingPause(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      Recorder.shared.pause()
+      invoke.resolve()
+    }
+  }
+
+  @objc public func recordingResume(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      Recorder.shared.resume()
+      invoke.resolve()
+    }
+  }
+
+  /// Stop, and either finalise into the library or discard (a slip of the
+  /// finger under five seconds — the frontend decides and says which).
+  @objc public func recordingStop(_ invoke: Invoke) {
+    let discard = (try? invoke.parseArgs(RecordingStopArgs.self))?.discard ?? false
+    DispatchQueue.main.async {
+      do {
+        let staged = try Recorder.shared.stop()
+        if discard {
+          try? FileManager.default.removeItem(at: staged.dir)
+          invoke.resolve(["relPath": NSNull(), "manifest": NSNull()])
+          return
+        }
+        DispatchQueue.global(qos: .userInitiated).async {
+          do {
+            let (rel, manifest) = try LibraryAccess.finalizeRecording(staged)
+            invoke.resolve(["relPath": rel, "manifest": manifest])
+          } catch {
+            // The audio is safe in the staging folder: the next launch offers
+            // to recover it.
+            invoke.reject(String(describing: error))
+          }
+        }
+      } catch { invoke.reject(String(describing: error)) }
+    }
+  }
+
+  @objc public func recordingState(_ invoke: Invoke) {
+    DispatchQueue.main.async { invoke.resolve(Recorder.shared.stateDictionary()) }
+  }
+
+  /// An orphan left by a force-quit: keep it (finalise into the library) or
+  /// discard it. Never decided without the user.
+  @objc public func recordingRecover(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(RecordingRecoverArgs.self)
+      DispatchQueue.global(qos: .userInitiated).async {
+        if args.action == "discard" {
+          Recorder.discardOrphan(args.dir)
+          invoke.resolve(["relPath": NSNull()])
+          return
+        }
+        guard let staged = Recorder.stagedOrphan(args.dir) else {
+          invoke.reject("the recording could not be read")
+          return
+        }
+        do {
+          let (rel, _) = try LibraryAccess.finalizeRecording(staged)
+          invoke.resolve(["relPath": rel])
+        } catch { invoke.reject(String(describing: error)) }
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
   @objc public func speechStart(_ invoke: Invoke) {
+    // A meeting being recorded is worth more than an article being read.
+    if Recorder.shared.state != .idle {
+      invoke.reject("recording-in-progress")
+      return
+    }
     do {
       let args = try invoke.parseArgs(SpeechStartArgs.self)
       // Language detection is up to 60 recogniser passes on a long article —
@@ -659,15 +783,82 @@ class NotesageIosPlugin: Plugin {
     }
   }
 
+  // MARK: - Notifications (badge, banners, background refresh)
+
+  @objc public func notificationStatus(_ invoke: Invoke) {
+    Notifier.shared.status { invoke.resolve($0.asDictionary) }
+  }
+
+  @objc public func notificationRequest(_ invoke: Invoke) {
+    Notifier.shared.request { invoke.resolve($0.asDictionary) }
+  }
+
+  @objc public func notificationSetPrefs(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(NotificationPrefsArgs.self)
+      if let badge = args.badge {
+        InboxState.Prefs.badge = badge
+        if !badge { Notifier.shared.setBadge(0) }
+      }
+      if let newItems = args.newItems { InboxState.Prefs.newItems = newItems }
+      if let templates = args.templates { InboxState.Prefs.templates = templates }
+      Notifier.shared.status { invoke.resolve($0.asDictionary) }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Recount from disk and refresh the badge. With `markSeen`, also record
+  /// that the user has the Inbox's items in front of them — only the Inbox
+  /// listing says so; Home shows a count, not the items, and a return to the
+  /// foreground says nothing about what is on screen.
+  @objc public func inboxUnreadCount(_ invoke: Invoke) {
+    let markSeen = (try? invoke.parseArgs(UnreadCountArgs.self))?.markSeen ?? false
+    DispatchQueue.global(qos: .userInitiated).async {
+      do {
+        let root = try LibraryAccess.resolveRoot()
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let names = InboxState.names(root: root)
+        let unread = InboxState.unreadCount(root: root)
+        if markSeen { InboxState.Prefs.markSeen(names) }
+        DispatchQueue.main.async {
+          Notifier.shared.setBadge(unread)
+          if markSeen { Notifier.shared.clearAnnounced() }
+          invoke.resolve(["count": unread])
+        }
+      } catch { invoke.reject(String(describing: error)) }
+    }
+  }
+
+  @objc public func consumeLaunchRoute(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      invoke.resolve(["route": Notifier.shared.consumeLaunchRoute() as Any])
+    }
+  }
+
+  @objc public func openSettings(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      if let url = URL(string: UIApplication.openSettingsURLString) {
+        UIApplication.shared.open(url)
+      }
+      invoke.resolve()
+    }
+  }
+
   /// Same bridge shape as the chrome overlay's `emit` — JSON-serialised so a
   /// title with quotes or emoji cannot break out of the JS string literal.
   private func emitSpeech(_ detail: [String: Any]) {
+    emit("notesage:speech", detail)
+  }
+
+  private func emit(_ name: String, _ detail: [String: Any]) {
     guard let data = try? JSONSerialization.data(withJSONObject: detail),
       let json = String(data: data, encoding: .utf8)
     else { return }
-    webViewRef?.evaluateJavaScript(
-      "window.dispatchEvent(new CustomEvent('notesage:speech',{detail:\(json)}))"
-    )
+    DispatchQueue.main.async { [weak self] in
+      self?.webViewRef?.evaluateJavaScript(
+        "window.dispatchEvent(new CustomEvent('\(name)',{detail:\(json)}))"
+      )
+    }
   }
 
   @objc public func listDirectory(_ invoke: Invoke) {

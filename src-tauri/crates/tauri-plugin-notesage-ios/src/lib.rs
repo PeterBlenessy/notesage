@@ -117,6 +117,48 @@ pub struct SpeechState {
     pub playing: bool,
 }
 
+/// Where a stopped recording landed: its bundle's rel path and the manifest
+/// JSON the phone wrote beside the audio (`None` when discarded).
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingStopped {
+    pub rel_path: Option<String>,
+    pub manifest: Option<String>,
+}
+
+/// The recorder as the native side reports it — a plain JSON object because
+/// the orphan field is optional and free-form (`dir`, `readable`,
+/// `durationSecs`, `startedAt`).
+pub type RecordingState = serde_json::Value;
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingRecovered {
+    pub rel_path: Option<String>,
+}
+
+/// Notification and background-refresh state as the native side reports it.
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationStatus {
+    /// "notDetermined" | "denied" | "authorized"
+    pub authorization: String,
+    /// "available" | "denied" | "restricted"
+    pub background_refresh: String,
+    pub badge: bool,
+    pub new_items: bool,
+}
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+struct UnreadCount {
+    count: u32,
+}
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
+struct LaunchRoute {
+    route: Option<String>,
+}
+
 /// What `speech_start` decided: the language it will read the article in, so
 /// the frontend's voice picker knows which voices to list.
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
@@ -522,6 +564,63 @@ impl<R: Runtime> NotesageIos<R> {
         self.call("speechState", ())
     }
 
+    pub fn recording_start(&self, language: Option<&str>) -> Result<()> {
+        self.call("recordingStart", serde_json::json!({ "language": language }))
+    }
+
+    pub fn recording_pause(&self) -> Result<()> {
+        self.call("recordingPause", ())
+    }
+
+    pub fn recording_resume(&self) -> Result<()> {
+        self.call("recordingResume", ())
+    }
+
+    pub fn recording_stop(&self, discard: bool) -> Result<RecordingStopped> {
+        self.call("recordingStop", serde_json::json!({ "discard": discard }))
+    }
+
+    pub fn recording_state(&self) -> Result<RecordingState> {
+        self.call("recordingState", ())
+    }
+
+    pub fn recording_recover(&self, action: &str, dir: &str) -> Result<RecordingRecovered> {
+        self.call("recordingRecover", serde_json::json!({ "action": action, "dir": dir }))
+    }
+
+    pub fn notification_status(&self) -> Result<NotificationStatus> {
+        self.call("notificationStatus", ())
+    }
+
+    pub fn notification_request(&self) -> Result<NotificationStatus> {
+        self.call("notificationRequest", ())
+    }
+
+    pub fn notification_set_prefs(
+        &self,
+        badge: Option<bool>,
+        new_items: Option<bool>,
+        templates: Option<&std::collections::HashMap<String, String>>,
+    ) -> Result<NotificationStatus> {
+        self.call(
+            "notificationSetPrefs",
+            serde_json::json!({ "badge": badge, "newItems": new_items, "templates": templates }),
+        )
+    }
+
+    pub fn inbox_unread_count(&self, mark_seen: bool) -> Result<u32> {
+        self.call::<_, UnreadCount>("inboxUnreadCount", serde_json::json!({ "markSeen": mark_seen }))
+            .map(|c| c.count)
+    }
+
+    pub fn consume_launch_route(&self) -> Result<Option<String>> {
+        self.call::<_, LaunchRoute>("consumeLaunchRoute", ()).map(|r| r.route)
+    }
+
+    pub fn open_settings(&self) -> Result<()> {
+        self.call("openSettings", ())
+    }
+
     pub fn dismiss_report(&self) -> Result<()> {
         self.call("dismissReport", ())
     }
@@ -679,6 +778,47 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn speech_state(&self) -> Result<SpeechState> {
+        Err(Error::Unavailable)
+    }
+    pub fn recording_start(&self, _language: Option<&str>) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn recording_pause(&self) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn recording_resume(&self) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn recording_stop(&self, _discard: bool) -> Result<RecordingStopped> {
+        Err(Error::Unavailable)
+    }
+    pub fn recording_state(&self) -> Result<RecordingState> {
+        Err(Error::Unavailable)
+    }
+    pub fn recording_recover(&self, _action: &str, _dir: &str) -> Result<RecordingRecovered> {
+        Err(Error::Unavailable)
+    }
+    pub fn notification_status(&self) -> Result<NotificationStatus> {
+        Err(Error::Unavailable)
+    }
+    pub fn notification_request(&self) -> Result<NotificationStatus> {
+        Err(Error::Unavailable)
+    }
+    pub fn notification_set_prefs(
+        &self,
+        _badge: Option<bool>,
+        _new_items: Option<bool>,
+        _templates: Option<&std::collections::HashMap<String, String>>,
+    ) -> Result<NotificationStatus> {
+        Err(Error::Unavailable)
+    }
+    pub fn inbox_unread_count(&self, _mark_seen: bool) -> Result<u32> {
+        Err(Error::Unavailable)
+    }
+    pub fn consume_launch_route(&self) -> Result<Option<String>> {
+        Err(Error::Unavailable)
+    }
+    pub fn open_settings(&self) -> Result<()> {
         Err(Error::Unavailable)
     }
     pub fn dismiss_report(&self) -> Result<()> {

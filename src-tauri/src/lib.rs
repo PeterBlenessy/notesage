@@ -139,8 +139,18 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .plugin(tauri_plugin_http::init())
-        .plugin(tauri_plugin_notification::init());
+        .plugin(tauri_plugin_http::init());
+
+    // Notifications: Tauri's plugin on desktop only. Its iOS delegate
+    // force-unwraps a map of the notifications it scheduled itself, so any
+    // notification ours posts (badge refresh, Share Extension, a tap after a
+    // relaunch) would crash the app in it. iOS owns the layer in the native
+    // plugin (`Notifier.swift`); the Cargo dependency stays so the
+    // capability file keeps validating.
+    #[cfg(not(target_os = "ios"))]
+    {
+        builder = builder.plugin(tauri_plugin_notification::init());
+    }
 
     // iOS native bridge (security-scoped library access). A plugin crate with
     // its own Swift Package — see crates/tauri-plugin-notesage-ios — because
@@ -324,6 +334,18 @@ pub fn run() {
             ios_speech_state,
             ios_speech_voices,
             ios_speech_set_voice,
+            ios_recording_start,
+            ios_recording_pause,
+            ios_recording_resume,
+            ios_recording_stop,
+            ios_recording_state,
+            ios_recording_recover,
+            ios_notification_status,
+            ios_notification_request,
+            ios_notification_set_prefs,
+            ios_inbox_unread_count,
+            ios_consume_launch_route,
+            ios_open_settings,
         render_markdown_fragment,
         repair_html_doctype,
         article_source_url,
@@ -361,6 +383,7 @@ pub fn run() {
             delete_path,
             trash_path,
             path_exists,
+            file_size,
             allow_asset_dir,
             ios_pick_library_folder,
             ios_get_library_grant,
@@ -410,6 +433,18 @@ pub fn run() {
             ios_speech_state,
             ios_speech_voices,
             ios_speech_set_voice,
+            ios_recording_start,
+            ios_recording_pause,
+            ios_recording_resume,
+            ios_recording_stop,
+            ios_recording_state,
+            ios_recording_recover,
+            ios_notification_status,
+            ios_notification_request,
+            ios_notification_set_prefs,
+            ios_inbox_unread_count,
+            ios_consume_launch_route,
+            ios_open_settings,
             open_folder_dialog,
             open_file_dialog,
             run_in_terminal,
@@ -423,6 +458,7 @@ pub fn run() {
             list_models,
             ollama_model_supports_vision,
             get_home_dir,
+            get_device_name,
             reveal_in_finder,
             git_check_available,
             git_is_repo,
@@ -464,6 +500,7 @@ pub fn run() {
             migrate_to_icloud,
             migrate_from_icloud,
             migrate_quick_notes,
+            icloud_ensure_downloaded,
             telemetry_apply_consent,
             agent_resolve_binary,
             agent_install,

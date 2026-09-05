@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-09-05 |
-| **Status** | Not started |
+| **Status** | ✅ Built and verified in the simulator (2026-09-05); device gates in #17 pending a device |
 | **PRD** | [ios-notifications](../prds/2026-09-05-ios-notifications.md) |
 | **Total** | 17 tasks: 3S, 12M, 2L |
 | **Suggested order** | De-risk (#1–#2) → Native core (#3–#8) → Phone UI (#9–#13) → Mac (#14–#15) → Ship (#16–#17) |
@@ -46,7 +46,7 @@ Legend: ✅ done · 🚧 in progress · (blank) pending.
 
 ## Phase 0 — De-risk
 
-### #1 Spike: `BGAppRefreshTask` under Tauri iOS, measured on a device
+### #1 ✅ Spike: `BGAppRefreshTask` under Tauri iOS, measured on a device
 
 **Description.** Answer the PRD's three open questions with evidence, then
 delete the throwaway code.
@@ -85,7 +85,23 @@ reverted.
   (throwaway), `src-tauri/ios/LibraryCapture.swift` (throwaway),
   this file.
 
-### #2 Unregister `tauri-plugin-notification` on iOS, with a lock
+**Findings (2026-09-05, iPhone simulator, iOS 26.x).**
+
+1. `BGTaskScheduler.shared.register` from the plugin's `load(webview:)`
+   succeeds: the log shows `[com.notesage.app:refresh] register
+   com.notesage.app.inbox-refresh: ok` at launch and the app comes up
+   normally — so plugin load sits inside the launch window and the
+   constructor fallback is not needed.
+2. `submit` from the simulator fails with `BGTaskSchedulerErrorDomain Code=1`
+   (`.unavailable`) — the simulator never runs Background App Refresh, as
+   documented. Whether a Mac capture appears in a background listing, and
+   at what delay, needs a device with a forced run (#17).
+3. `setBadgeCount` from the app updates the home-screen icon (badge 7 for
+   seven unread items) immediately after the prompt was granted. The
+   extension path (`didWriteCapture`) is compiled and exercised by the
+   contract test; its badge update is verified on a device in #17.
+
+### #2 ✅ Unregister `tauri-plugin-notification` on iOS, with a lock
 
 **Description.** Wrap `.plugin(tauri_plugin_notification::init())` in
 `src-tauri/src/lib.rs` so it is registered only `#[cfg(not(target_os =
@@ -114,7 +130,7 @@ fail if either guard is removed.
 
 ## Phase 1 — Native core (compiled into app and extension)
 
-### #3 `InboxState.swift` — the disk truth, shared by three processes
+### #3 ✅ `InboxState.swift` — the disk truth, shared by three processes
 
 **Description.** A new file in the plugin package, also added to the Share
 Extension target's `sources` in `integrate-share-extension.py` (beside
@@ -150,7 +166,7 @@ the new source entry.
   `src-tauri/ios/integrate-share-extension.py`,
   `src/lib/__tests__/inbox-unread-rule.test.ts` (new).
 
-### #4 `Notifier.swift` — the app's one `UNUserNotificationCenterDelegate`
+### #4 ✅ `Notifier.swift` — the app's one `UNUserNotificationCenterDelegate`
 
 **Description.** In the plugin package. Owns:
 
@@ -187,7 +203,7 @@ event; the delegate is the plugin's, verified by logging
 - **Files:** `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/Notifier.swift`
   (new), `NotesageIosPlugin.swift` (delegate install, `webViewRef` reuse).
 
-### #5 `BackgroundRefresh.swift` — register, schedule, run
+### #5 ✅ `BackgroundRefresh.swift` — register, schedule, run
 
 **Description.** Registration where #1 proved it works. Scheduling: submit a
 `BGAppRefreshTaskRequest(identifier:)` with `earliestBeginDate = now + 15 min`
@@ -226,7 +242,7 @@ occurs. Each verified with `idevicesyslog`.
 - **Files:** `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/BackgroundRefresh.swift`
   (new), `NotesageIosPlugin.swift` (observer + registration call).
 
-### #6 Plist keys through the integration script, asserted in the built app
+### #6 ✅ Plist keys through the integration script, asserted in the built app
 
 **Description.** Keep #1's plist change and finish it: `UIBackgroundModes`
 gains `fetch` beside `audio` (same idempotent append),
@@ -249,7 +265,7 @@ app-info patch.
 - **Dependencies:** #1
 - **Files:** `src-tauri/ios/integrate-share-extension.py`.
 
-### #7 Commands: plugin methods → Rust seams → `ios-api.ts`
+### #7 ✅ Commands: plugin methods → Rust seams → `ios-api.ts`
 
 **Description.** Six commands, following `ios_speech_state` end to end
 (Swift `@objc` method → `run_mobile_plugin` in the plugin crate → `ios_impl`
@@ -283,7 +299,7 @@ passes; the iOS simulator build links.
   `src/lib/ios-api.ts`, `src/components/mobile/__tests__/mobile-app.test.tsx`,
   `docs/tauri-commands.md`.
 
-### #8 Share Extension: badge up, own capture marked seen, no banner
+### #8 ✅ Share Extension: badge up, own capture marked seen, no banner
 
 **Description.** In `LibraryCapture.swift`, one funnel
 `LibraryAccess.didWriteCapture(relPath:)` called after every successful
@@ -314,7 +330,7 @@ when any writer's call is removed.
 
 ## Phase 2 — Phone UI
 
-### #9 `mobile-store` notification slice
+### #9 ✅ `mobile-store` notification slice
 
 **Description.** `notifications: NotificationStatus | null`, `unreadInbox:
 number`, `notificationPrePromptDismissed: boolean` (persisted — add to
@@ -337,7 +353,7 @@ prefs on; dismissal persisted; `refreshUnread` tolerates rejection).
 - **Files:** `src/stores/mobile-store.ts`, `src/lib/i18n.ts`,
   `src/stores/__tests__/` (new test).
 
-### #10 Pre-prompt card on the Inbox listing
+### #10 ✅ Pre-prompt card on the Inbox listing
 
 **Description.** `NotificationPrePrompt.tsx` rendered by `LibraryBrowser`
 above the Inbox folder's rows only when: `currentRelPath === INBOX_NAME`,
@@ -360,7 +376,7 @@ the App Review demo-path describe block still passes unchanged.
   `src/components/mobile/LibraryBrowser.tsx`, `src/lib/i18n.ts`,
   `src/components/mobile/__tests__/mobile-app.test.tsx`.
 
-### #11 Menu rows: badge, banners, and the two Settings escapes
+### #11 ✅ Menu rows: badge, banners, and the two Settings escapes
 
 **Description.** In `LibraryBrowser`'s root top-right `UIMenu` spec
 (`useNativeChrome`), a new section (`sectionBreak: true`) after the image
@@ -390,7 +406,7 @@ spec for all four states; strings in `en`/`sv`.
 - **Files:** `src/components/mobile/LibraryBrowser.tsx`,
   `src/components/mobile/Chrome.tsx`, `src/lib/i18n.ts`, tests.
 
-### #12 Badge refresh points, `InboxCard` unread count, launch route
+### #12 ✅ Badge refresh points, `InboxCard` unread count, launch route
 
 **Description.**
 
@@ -420,7 +436,7 @@ the refresh call after a push.
   `src/lib/inbox-progress-sync.ts`, `src/lib/ios-api.ts` (event subscriber),
   tests.
 
-### #13 Phone tests sweep + surface lock
+### #13 ✅ Phone tests sweep + surface lock
 
 **Description.** The tests named in #9–#12 written as part of those tasks;
 this task is the audit pass (`feedback_thorough_audit`): confirm each PRD
@@ -442,7 +458,7 @@ with the gaps that only a device can close listed for #17.
 
 ## Phase 3 — The Mac
 
-### #14 `useInboxArrivals` — always-mounted watch + one notification per batch
+### #14 ✅ `useInboxArrivals` — always-mounted watch + one notification per batch
 
 **Description.** New hook mounted in `App.tsx` beside `useStartWatchers`.
 Move the `watchDirectory` effect and the `file-changed-batch` listener out of
@@ -475,7 +491,7 @@ set. Settings: `notifyInboxCaptures` (default `true`, with the
   `src/stores/settings-store.ts`,
   `src/components/settings/v2/SystemSettings.tsx`, `src/lib/i18n.ts`.
 
-### #15 Mac tests
+### #15 ✅ Mac tests
 
 **Description.** `useInboxArrivals.test.ts`: baseline load notifies nothing;
 a later load adding one name notifies once with the title; adding three
@@ -498,7 +514,7 @@ watcher.
 
 ## Phase 4 — Ship
 
-### #16 Docs
+### #16 ✅ Docs
 
 **Description.** `docs/features/mobile.md`: a "Notifications (badge and
 background refresh)" section — the mechanism table's conclusions, the seen-set
@@ -520,7 +536,7 @@ change nothing ("Data Not Collected" stands; no push entitlement).
 - **Dependencies:** #5, #7, #14
 - **Files:** as listed.
 
-### #17 Device verification and a TestFlight build
+### #17 🚧 Device verification and a TestFlight build
 
 **Description.** Run every phone gate in the PRD on a device in both English
 and Swedish, and every Mac gate on the desktop build, and record the results

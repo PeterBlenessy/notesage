@@ -17,7 +17,15 @@ import {
   iosReadFile,
   iosWriteFile,
   iosEnsureDirectory,
+  iosInboxUnreadCount,
+  iosNotificationRequest,
+  iosNotificationSetPrefs,
+  iosNotificationStatus,
+  type IosNotificationStatus,
+  type IosRecordingOrphan,
+  type IosRecordingStatus,
 } from "@/lib/ios-api";
+import { t } from "@/lib/i18n";
 import {
   PINS_FILE_REL_PATH,
   parsePinsFileContent,
@@ -298,6 +306,38 @@ interface MobileStore {
    *  shared file, compacting entries that no longer name a folder in
    *  `rootEntries`. Rethrows so the caller can say so. */
   setOnHome: (relPath: string, shown: boolean, rootEntries: FileEntry[]) => Promise<void>;
+  /**
+   * The recorder (recordings PRD). Not persisted: the native recorder is the
+   * truth and the app asks it on launch. Everything that must keep going
+   * with the screen locked lives natively; this is the mirror the islands
+   * draw from.
+   */
+  recording: RecordingState;
+  setRecording: (patch: Partial<RecordingState>) => void;
+
+  /**
+   * Notifications (badge and banners) as the native side reports them, or
+   * `null` where there is no native side (desktop dev, tests). The phone can
+   * only announce what it observes itself: the badge is the unread Inbox
+   * count read from disk, the banner comes from a best-effort background
+   * refresh — never a delivery guarantee.
+   */
+  notifications: IosNotificationStatus | null;
+  /** Unread Inbox items, as last counted natively — the icon badge's number. */
+  unreadInbox: number;
+  /** "Not now" on the Inbox's pre-prompt card is permanent (persisted). */
+  notificationPrePromptDismissed: boolean;
+  /** Re-read the status; with `sendTemplates` (mount), also hand over the
+   *  localised banner strings so the background task and the extension post
+   *  in the user's language. */
+  refreshNotificationStatus: (sendTemplates?: boolean) => Promise<void>;
+  /** The one system prompt; on a grant both preferences turn on. */
+  requestNotifications: () => Promise<void>;
+  setNotificationPref: (patch: { badge?: boolean; newItems?: boolean }) => Promise<void>;
+  /** Recount the unread Inbox natively and refresh the badge; `markSeen`
+   *  only when the Inbox's items are on screen. Tolerates no native side. */
+  refreshUnread: (markSeen?: boolean) => Promise<void>;
+  dismissNotificationPrePrompt: () => void;
   /** Whether the Edit Home screen is showing (session only). */
   homeEditorOpen: boolean;
   openHomeEditor: () => void;
@@ -336,6 +376,40 @@ const MAX_READING_PROGRESS = 500;
 const MAX_READING_RESETS = 500;
 /** Folders that remember a view of their own; the oldest forgotten first. */
 const MAX_FOLDER_VIEWS = 200;
+
+export interface RecordingState {
+  status: IosRecordingStatus;
+  startedAt: number | null;
+  elapsedSecs: number;
+  /** 0…1, metered. */
+  level: number;
+  /** Paused by the system (a call) and not resumed. */
+  interrupted: boolean;
+  micPermission: "unknown" | "granted" | "denied";
+  /** A staging folder a force-quit left behind, until the user decides. */
+  orphan: IosRecordingOrphan | null;
+}
+
+export const IDLE_RECORDING: RecordingState = {
+  status: "idle",
+  startedAt: null,
+  elapsedSecs: 0,
+  level: 0,
+  interrupted: false,
+  micPermission: "unknown",
+  orphan: null,
+};
+
+/** The banner strings the native side posts with, in the user's language —
+ *  the frontend owns the translation table, so it hands them over. */
+export function notificationTemplates(): Record<string, string> {
+  return {
+    title: t("notify.title"),
+    one: t("notify.one"),
+    many: t("notify.many"),
+    more: t("notify.more"),
+  };
+}
 
 /**
  * The view a screen shows: its own choices over the app-wide fallback. Home
@@ -410,6 +484,10 @@ export const useMobileStore = create<MobileStore>()(
       homeFolders: null,
       homeEditorOpen: false,
       homeHintDismissed: false,
+      notifications: null,
+      unreadInbox: 0,
+      notificationPrePromptDismissed: false,
+      recording: IDLE_RECORDING,
 
       currentRelPath: () => {
         const stack = get().folderStack;
@@ -583,6 +661,59 @@ export const useMobileStore = create<MobileStore>()(
         await iosWriteFile(HOME_FILE_REL_PATH, serializeHomeFileContent(next));
         set({ homeFolders: next });
       },
+
+      setRecording: (patch) => set((s) => ({ recording: { ...s.recording, ...patch } })),
+
+      refreshNotificationStatus: async (sendTemplates = false) => {
+        try {
+          set({
+            notifications: sendTemplates
+              ? await iosNotificationSetPrefs({ templates: notificationTemplates() })
+              : await iosNotificationStatus(),
+          });
+        } catch {
+          set({ notifications: null });
+        }
+      },
+
+      requestNotifications: async () => {
+        try {
+          const status = await iosNotificationRequest();
+          if (status.authorization === "authorized") {
+            set({
+              notifications: await iosNotificationSetPrefs({
+                badge: true,
+                newItems: true,
+                templates: notificationTemplates(),
+              }),
+            });
+            void get().refreshUnread();
+          } else {
+            set({ notifications: status });
+          }
+        } catch {
+          // No native side: nothing to ask.
+        }
+      },
+
+      setNotificationPref: async (patch) => {
+        try {
+          set({ notifications: await iosNotificationSetPrefs({ ...patch, templates: notificationTemplates() }) });
+          if (patch.badge) void get().refreshUnread();
+        } catch {
+          // No native side.
+        }
+      },
+
+      refreshUnread: async (markSeen = false) => {
+        try {
+          set({ unreadInbox: await iosInboxUnreadCount(markSeen) });
+        } catch {
+          // No native side (desktop dev, tests): the count stays as it was.
+        }
+      },
+
+      dismissNotificationPrePrompt: () => set({ notificationPrePromptDismissed: true }),
 
       openHomeEditor: () => set({ homeEditorOpen: true }),
       closeHomeEditor: () => set({ homeEditorOpen: false }),
@@ -825,6 +956,10 @@ export const useMobileStore = create<MobileStore>()(
           homeFolders: null,
           homeEditorOpen: false,
           homeHintDismissed: false,
+          notifications: null,
+          unreadInbox: 0,
+          notificationPrePromptDismissed: false,
+          recording: IDLE_RECORDING,
             }),
     }),
     {
@@ -850,6 +985,7 @@ export const useMobileStore = create<MobileStore>()(
         readingResets: s.readingResets,
         listDensity: s.listDensity,
         homeHintDismissed: s.homeHintDismissed,
+        notificationPrePromptDismissed: s.notificationPrePromptDismissed,
         sortMode: s.sortMode,
         groupMode: s.groupMode,
         viewMode: s.viewMode,

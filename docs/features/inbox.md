@@ -11,7 +11,10 @@ adds selection, keyboard, and drag-to-project.
   is the synced iCloud library (`settings.icloudNotesagePath`, the same root
   the pins file uses) when sync is on, else `settings.notesRootPath` expanded
   by `resolveNotesRoot` (`src/lib/notes-root.ts`), the one place its `~` is
-  handled.
+  handled. `Recordings/` follows the same root rule (`recordingsDir`, same
+  file) — the phone's recording bundles land beside the Inbox and the Mac's
+  `useRecordingsInbox` scans them there (docs/features/ai-workflows.md
+  § Meeting Recording).
 - **A mode, not a document.** Quiet Composer is a single-document shell, so
   the list cannot be a tab beside the article it opens. `inbox-store.open`
   swaps the document column between `InboxView` and the editor
@@ -23,7 +26,31 @@ adds selection, keyboard, and drag-to-project.
   returns to it.
 - **The sidebar row.** `InboxSection` sits above Pinned, shown once the root
   is known and the folder has ever received something. Its badge is the
-  unread count.
+  unread count. The row only lists and renders — the first listing once the
+  root resolves, then whatever the store holds.
+- **The folder watch and "New in Inbox".** `useInboxArrivals`
+  (`src/hooks/useInboxArrivals.ts`, mounted in `App.tsx`) watches `Inbox/`
+  and reloads the listing on any change under it (not its `.notesage/`
+  sidecar), 300 ms debounced. It lives at the app root, not in the sidebar
+  row: the sidebar unmounts on ⌘⇧L, and a share landing while it is hidden
+  must still be noticed (the always-mounted-listener rule). The same hook
+  diffs the listing's names across loads: the first completed load for a
+  root is the baseline — startup never announces a backlog, and the root
+  resolving in two steps (local, then iCloud) starts a fresh baseline each
+  time — and every later load that adds names produces **one** desktop
+  notification through `notify("inbox_capture", …)`: title *New in Inbox*
+  with the item's title as the body (the cached article header when known,
+  else the filename stem) for one arrival; *3 new in Inbox* with the first
+  two titles "and 1 more" for several. Gated on
+  `settings.notifyInboxCaptures` (Settings → System → Notifications → "New
+  Inbox items", default **on** — arrivals are rare and wanted) and
+  suppressed while the window is focused *and* the Inbox view is open.
+  Clicking the notification opens the Inbox and focuses the window
+  (`extra: { inbox: true }` on the notification, the `onAction` pattern from
+  `useSessionManager`). The Mac's own Share Extension captures are
+  indistinguishable from the phone's on disk and are announced too — the
+  desktop sheet closes at once, and "it landed" is worth one banner. PRD:
+  `docs/prds/2026-09-05-ios-notifications.md`, "The Mac's side".
 
 ## The view
 
@@ -164,7 +191,8 @@ open (no-ops otherwise). See `docs/keyboard-shortcuts.md`.
 | `src/components/inbox/InboxReaderControls.tsx` | Reader pill slot + scroll progress |
 | `src/components/inbox/useInboxActions.ts` | The triage verbs |
 | `src/components/inbox/pill-leading-context.tsx` | The pill's leading slot |
-| `src/components/sidebar/quiet/InboxSection.tsx` | Sidebar row + badge |
+| `src/components/sidebar/quiet/InboxSection.tsx` | Sidebar row + badge (first listing; no watcher) |
+| `src/hooks/useInboxArrivals.ts` | Always-mounted folder watch + "New in Inbox" notification + click-to-open |
 | `src/lib/reading-progress-file.ts` | Sidecar format, parse / merge |
 | `src/lib/inbox-progress-sync.ts` | The phone's write-through |
 | `src/lib/desktop-thumbnails.ts` | Desktop thumbnail pipeline |

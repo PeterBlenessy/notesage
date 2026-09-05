@@ -203,6 +203,45 @@ async fn path_exists(path: String) -> Result<bool, String>
 - `Ok(false)`: Path does not exist
 - `Err(String)`: Error message if check fails
 
+### file_size
+
+On-disk size of a file in bytes, without reading it. The recordings scanner's partial-download gate (PRD `2026-09-05-ios-recordings`): a phone bundle is transcribed only once `file_size(audio.m4a)` equals the `audio.bytes` its `recording.json` recorded at stop time.
+
+```rust
+#[tauri::command]
+async fn file_size(path: String) -> Result<u64, String>
+```
+
+**Parameters:**
+
+- `path`: Absolute path to the file
+
+**Returns:**
+
+- `Ok(u64)`: Size in bytes
+- `Err(String)`: The path is missing (including an evicted iCloud placeholder — see `icloud_ensure_downloaded`) or is not a regular file
+
+**Frontend usage:**
+
+```typescript
+const bytes = await tauriApi.fileSize('/path/to/Recording 2026-09-05 14-02-11/audio.m4a');
+```
+
+### get_device_name
+
+This machine's user-facing name — `"Peter's MacBook Pro"` — the label the Mac writes into a recording manifest's `transcription.device` when it claims or finishes a transcription, so the phone can say *Transcribing on Peter's Mac…*. macOS reads the computer name from System Settings > General > About (`scutil --get ComputerName`); other platforms use the hostname without its domain suffix. Never empty.
+
+```rust
+#[tauri::command]
+async fn get_device_name() -> Result<String, String>
+```
+
+**Frontend usage:**
+
+```typescript
+const device = await tauriApi.getDeviceName();
+```
+
 ## FileEntry Struct
 
 Used by `list_directory` to represent the file tree structure.
@@ -1109,6 +1148,38 @@ listen<{ old_path: string; new_path: string; is_directory: boolean }>('file-rena
 });
 ```
 
+## iCloud Sync Operations
+
+Located in `src-tauri/src/commands/sync.rs`. Besides the sync-settings and migration commands (`get_icloud_path`, `read_sync_settings`, `write_sync_settings`, `migrate_to_icloud`, `migrate_from_icloud`, `migrate_quick_notes`), one command backs the recordings scanner:
+
+### icloud_ensure_downloaded
+
+Make sure an iCloud Drive file is materialized on disk. iCloud can evict a synced file, leaving `.<name>.icloud` beside a missing `<name>`; `file_size` on the real name then fails. This asks iCloud to download the item and reports where things stand — the caller waits for the watcher's `create` event the arriving file produces rather than polling.
+
+```rust
+#[tauri::command]
+async fn icloud_ensure_downloaded(path: String) -> Result<DownloadState, String>
+
+#[serde(rename_all = "lowercase")]
+pub enum DownloadState { Ready, Downloading, Failed }
+```
+
+**Parameters:**
+
+- `path`: Absolute path of the file itself (not of the `.icloud` placeholder)
+
+**Returns:**
+
+- `Ok("ready")`: The file is on disk
+- `Ok("downloading")`: A placeholder was found and `NSFileManager.startDownloadingUbiquitousItem(at:)` accepted the request (macOS)
+- `Ok("failed")`: No file and no placeholder, or the download request was refused; on non-macOS platforms anything but an existing file
+
+**Frontend usage:**
+
+```typescript
+const state = await tauriApi.icloudEnsureDownloaded(audioPath); // "ready" | "downloading" | "failed"
+```
+
 ## Research Operations
 
 Located in `src-tauri/src/index/mod.rs` (part of the SQLite document index — the legacy filesystem-scanning `search_research` command was removed when research search moved to the index).
@@ -1553,6 +1624,17 @@ init` on a Mac — see `src-tauri/ios/README.md`.
 | `ios_move_file` | `(relPath, destDir) -> String` | Move a FILE into another folder under the library root (#754). Files only; `destDir` must already exist (`""` = root); BOTH paths sanitized. Deduped; returns the final rel path. |
 | `ios_stat_file` | `(relPath) -> FileStat { sizeBytes }` | On-disk file size without reading content. Called before `ios_read_file` for text/markdown/html so the reader can decline an oversized file instead of freezing the WebView on a giant JSON read (issue #616). |
 | `ios_text_prompt` | `(title, placeholder, confirmLabel) -> Option<String>` | Native single-line `UIAlertController` text prompt (the create flow's name entry). `None` = cancelled. Pure UI, no filesystem. |
+| `ios_recording_start` | `(language?) -> ()` | Record from the microphone into the app's container (AAC, mono, 48 kHz, 64 kbps); the bundle reaches the library on stop. Errors `microphone-denied`, `low-disk-space`, `recording-in-progress`. |
+| `ios_recording_pause` / `ios_recording_resume` | `() -> ()` | Pause-aware; an interruption (a call) pauses natively. |
+| `ios_recording_stop` | `(discard?) -> { relPath, manifest }` | Finalise into `Recordings/Recording <stamp>/` (`audio.m4a` + `recording.json`), or discard. |
+| `ios_recording_state` | `() -> { status, elapsedSecs, level, interrupted, micPermission, orphan? }` | The recorder, and any staging folder a force-quit left behind. |
+| `ios_recording_recover` | `(action: keep \| discard, dir) -> Option<relPath>` | Keep (finalise) or discard an orphan. |
+| `ios_notification_status` | `() -> NotificationStatus` | Authorization (`notDetermined` \| `denied` \| `authorized`), Background App Refresh (`available` \| `denied` \| `restricted`), and the badge / new-items preferences. |
+| `ios_notification_request` | `() -> NotificationStatus` | The one system prompt (badge + alert, no sound). |
+| `ios_notification_set_prefs` | `(badge?, newItems?, templates?) -> NotificationStatus` | Preferences plus the localised banner strings the native side posts with. `badge: false` clears the icon badge at once. |
+| `ios_inbox_unread_count` | `(markSeen?) -> u32` | Recount the unread Inbox from disk (the shared `reading-progress.json` rule) and refresh the icon badge; with `markSeen` (the Inbox listing only) record the items as seen. No path argument. |
+| `ios_consume_launch_route` | `() -> Option<String>` | `"inbox"` once after a notification tap, then `None`. |
+| `ios_open_settings` | `() -> ()` | Open the Settings app at Notesage's page. |
 
 ```rust
 #[serde(rename_all = "camelCase")]

@@ -734,6 +734,107 @@ the Mac does not read it yet.
 the remembered view are keyed by `HOME_KEY` (`"/home"`, which no relative
 path can be) at Home and by the folder path elsewhere.
 
+## Notifications: the badge and the background refresh
+
+The phone has no server behind it, so it can only announce what it observes
+for itself. Two things ship, both honest about their limits:
+
+- **The app icon badge is the unread Inbox count**, read from disk by one
+  Swift helper (`InboxState.swift`, compiled into the app and the Share
+  Extension) with the same rule as `isUnread` in
+  `src/lib/reading-progress-file.ts` — no entry, a tombstone, or
+  `openedAt: null` — locked together by `inbox-unread-rule.test.ts`. It is
+  refreshed wherever the truth can change: every root or Inbox listing
+  (`ios_inbox_unread_count`; the Inbox listing alone also marks its items
+  as *seen* and clears the delivered banner — Home shows a number, not the
+  items, and a return to the foreground says nothing about what is on
+  screen), every return to the foreground, every
+  push of the reading-progress sidecar, and the Share Extension's own
+  capture (`InboxState.didWriteCapture`, called by every writer in
+  `LibraryCapture.swift` — a contract test in `pipeline_contract.rs` fails
+  when a writer forgets). The `InboxCard` shows the same number in the
+  accent when it is above zero.
+- **"N new in Inbox", best effort.** A `BGAppRefreshTask`
+  (`BackgroundRefresh.swift`, identifier `com.notesage.app.inbox-refresh`,
+  registered in the plugin's `load` and scheduled on every background) lists
+  the Inbox, refreshes the badge and posts **one** banner for everything the
+  user has not seen — replacing the delivered one, never stacking, never
+  repeating an unchanged set. iOS runs it on its own schedule: minutes to
+  hours later, never in Low Power Mode, never with Background App Refresh
+  off, never after a force-quit. The simulator never runs it; on a device it
+  is forced from the debugger with
+  `e -l objc -- (void)[[BGTaskScheduler sharedScheduler] _simulateLaunchForTaskWithIdentifier:@"com.notesage.app.inbox-refresh"]`,
+  and every branch logs under `subsystem com.notesage.app`, categories
+  `refresh` and `notify`.
+
+**Tauri's notification plugin is not registered on iOS** (`lib.rs`, locked by
+a source-shape test): its delegate force-unwraps a map of the notifications
+it scheduled itself, so anything posted natively would crash the app in it.
+`Notifier.swift` is the app's one `UNUserNotificationCenterDelegate`; a tap
+lands on the Inbox — warm through the `notesage:notification` event, cold
+through `ios_consume_launch_route` once the grant is in
+(`useNotificationRoute`).
+
+**Permission is asked when it means something.** Never on first launch: a
+card on the Inbox listing (`NotificationPrePrompt`) appears once the Inbox
+holds an item while iOS has not been asked; *Turn on* spends the one system
+prompt (badge + alert, no sound), *Not now* is permanent. The root "…" menu
+carries *Badge unread count* and *Notify about new items*; a denial replaces
+them with a row that opens the Settings app, and Background App Refresh
+being off adds one more. Preferences, the seen set and the localised banner
+strings (handed over by the frontend, which owns the translation table)
+live in the App Group defaults under `notesage.notify.*`, shared by the app,
+the task and the extension. The seen set is written by two processes (the
+app's recount replaces it; the extension appends its own capture) without a
+lock: a capture landing in the same instant as a recount can lose its
+"seen" mark and be announced once by the next refresh — accepted, since
+the next recount corrects it.
+
+## Recordings: capture on the phone, transcribe on the Mac
+
+A meeting or a voice note is recorded on the phone and transcribed by the
+Mac, which already has the model, the GPU and the job runner
+(`docs/prds/2026-09-05-ios-recordings.md`). *New Recording* is one hold
+of the "+" away everywhere, and inside `Recordings/` the "+" records.
+
+**Capture is native** (`Recorder.swift`): `AVAudioRecorder`, AAC-LC mono
+48 kHz 64 kbps — an hour is ~30 MB, which is what makes syncing it through
+iCloud affordable — into the app's own container while it runs; a file
+growing for two hours inside iCloud Drive would be re-uploaded repeatedly
+and be a half-file to the Mac. The audio session is `.playAndRecord` with
+the `audio` background mode, so a locked screen does not stop it; a phone
+call pauses it, and it resumes only when iOS says it should (otherwise the
+island says *Paused — call ended · Resume*); an AirPod taken out keeps
+recording on the built-in mic. `AudioSessionArbiter` gives the session one
+owner: starting a recording stops read-aloud, and Listen is refused (and
+its buttons disabled) while a recording runs. On stop,
+`LibraryAccess.finalizeRecording` (`RecordingLibrary.swift`, the app target
+only — the Share Extension compiles `LibraryAccess.swift` too) copies the
+audio under coordination into `Recordings/Recording <stamp>/audio.m4a`
+(the Mac's stamp format, deduped) and writes `recording.json` — device,
+start, duration, bytes, codec, language, `transcription: null` — then
+removes the staging folder. Under five seconds is a slip of the finger and
+asks to discard. A force-quit leaves a staging folder; the next launch
+offers to keep (finalise) or discard it (`RecoverRecordingSheet`), never
+deciding alone.
+
+**The island** (`bottomRecorder` in the chrome spec, `GlassRecorder` in
+`ChromeOverlay.swift`, `RecordingBar` as the web fallback): red dot,
+elapsed, a faint level bar (a muted mic reads as a flat line),
+pause/resume, stop — shown in the browser and the Reader alike while a
+recording runs, in the read-aloud transport's slot. Nothing of ours on the
+lock screen: iOS's red microphone indicator is the affordance. The
+frontend mirror is `mobile-store.recording`, fed by `notesage:recording`
+events (`recording-controller.ts`); everything that must keep going with
+the screen locked is native, since the WebView's timers are suspended.
+
+**The Mac's part** — noticing a bundle whose manifest has no transcript,
+waiting for the audio's size to match the manifest, queueing the existing
+transcription job and writing the status back — is `useRecordingsInbox`
+on the desktop (`docs/features/ai-workflows.md` § Meeting Recording). The
+phone shows the transcript when it exists; playback on the phone is the
+next phase.
+
 ## Office web-viewer URLs are documents (#868)
 
 `view.officeapps.live.com/op/view.aspx?src=<url>` (and `embed.aspx`) is not a
@@ -888,12 +989,17 @@ The onboarding copy says this explicitly, so a reviewer isn't left guessing.
    Notesage folder" message; the button is immediately re-tappable, nothing
    is left in a stuck/loading state.
 
-**Permissions.** The app requests no runtime permission beyond the one-time
-folder grant itself — no camera, microphone, photo library, contacts,
-location, or notification usage keys are declared
-(`src-tauri/ios/Notesage.entitlements` / `ShareExtension-Info.plist`), so
-reviewers will not hit a permission prompt they can't explain from the UI in
-front of them.
+**Permissions.** Beyond the one-time folder grant, the only runtime prompt
+is notifications — and it is reached only from the UI in front of the
+reviewer: a card on the Inbox listing once the Inbox holds an item, or the
+*Badge unread count* / *Notify about new items* rows in the root "…" menu.
+The demo path above (grant a local folder, browse, read) never shows it.
+The microphone is declared (`NSMicrophoneUsageDescription`, written into
+the app target by `integrate-share-extension.py`) and asked for only when
+the reviewer starts a recording themselves (*New Recording* under the "+");
+recording never starts on its own and the audio never leaves the device
+except through the user's own iCloud Drive. No camera, photo library,
+contacts or location keys are declared.
 
 **Verified this pass (code review — no macOS/Xcode available in this
 environment, so the actual `UIDocumentPickerViewController` could not be
@@ -1062,6 +1168,17 @@ bad voice" and falls back — selection is verifiable, audible output is not.
 | `src/components/mobile/AllFoldersRow.tsx` | The last row on Home: pushes the full root listing as a level |
 | `src/components/mobile/HomeHint.tsx` | The one-time line under a not-yet-curated Home |
 | `src/components/mobile/BrowserStates.tsx` | The listing's skeleton and error states, shared by the browser and Edit Home |
+| `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/InboxState.swift` | The Inbox's disk truth (names, unread count, seen set, preferences) — app, background task and Share Extension |
+| `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/Notifier.swift` | The one notification delegate: status, the prompt, the badge, the "new in Inbox" banner, the tap route |
+| `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/BackgroundRefresh.swift` | `BGAppRefreshTask`: register, schedule, run |
+| `src/components/mobile/NotificationPrePrompt.tsx` | The Inbox card that asks before the system prompt |
+| `src/components/mobile/useNotificationRoute.ts` | A notification tap lands on the Inbox (warm event, cold launch route) |
+| `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/Recorder.swift` | The native recorder: AAC into the app's container, interruptions, routes, the 1 Hz tick |
+| `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/AudioOwner.swift` | One owner of the audio session: speech, recording, or playback |
+| `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/RecordingLibrary.swift` | Finalise a recording into `Recordings/Recording <stamp>/` with its manifest |
+| `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/RecordingManifest.swift` | `recording.json` as the phone writes it |
+| `src/lib/recording-controller.ts` | Start / pause / resume / stop / recover; the native events into the store |
+| `src/components/mobile/RecordingBar.tsx`, `RecoverRecordingSheet.tsx` | The island's web fallback; the keep-or-discard sheet after a force-quit |
 | `src/components/mobile/LibraryBrowser.tsx` | Push-navigation folder browser |
 | `src/components/mobile/Reader.tsx` | Markdown / HTML / mermaid / text / image / PDF reader + iCloud download + theme re-render |
 | `src/components/mobile/ArticleRow.tsx` | Read-later list row: title, `site · min left`, excerpt, thumbnail; falls back to `FileRow` |

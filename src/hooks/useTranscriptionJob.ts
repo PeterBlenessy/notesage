@@ -68,7 +68,7 @@ export function isDecodeFailure(err: unknown): boolean {
 export const START_TRANSCRIPTION_EVENT = 'notesage:start-transcription';
 
 export interface StartTranscriptionDetail {
-  /** Finalized WAV path inside the recording bundle. */
+  /** Finalized audio path inside the recording bundle (`audio.wav` here, `audio.m4a` from the phone). */
   audioPath: string;
   /** Optional originating document id (carried onto the activity item). */
   documentId?: string;
@@ -95,6 +95,12 @@ export interface StartTranscriptionDetail {
    * when omitted.
    */
   model?: string;
+  /**
+   * Device label of the recorder when the bundle came from another device
+   * (the phone's `createdBy.device` in `recording.json`). Shown on the card
+   * as *from Peter's iPhone*. Omitted for the Mac's own recordings.
+   */
+  sourceDevice?: string;
 }
 
 /** Convenience dispatcher so callers don't hand-build the CustomEvent. */
@@ -146,6 +152,7 @@ export function useTranscriptionJob(): void {
         language,
         jobId: reuseJobId,
         model,
+        sourceDevice,
       } = detail;
       if (!audioPath) return;
 
@@ -175,6 +182,7 @@ export function useTranscriptionJob(): void {
           recordingStoppedAt,
           recordingDurationSecs,
           language: effectiveLanguage,
+          sourceDevice,
         });
       }
 
@@ -238,7 +246,7 @@ export function useTranscriptionJob(): void {
             decoder: "failed",
           });
         }
-        useActivityStore.getState().setTranscriptionError(jobId);
+        useActivityStore.getState().setTranscriptionError(jobId, String(err));
         toast.error(`Transcription failed: ${err}`);
       } finally {
         if (unlistenProgress) {

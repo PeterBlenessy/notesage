@@ -5,6 +5,11 @@ import { useRecordingStore } from "@/stores/recording-store";
 import { useActivityStore } from "@/stores/activity-store";
 import { startTranscription } from "@/hooks/useTranscriptionJob";
 import { track } from "@/lib/telemetry";
+import { tauriApi, type RecordingResult } from "@/lib/tauri";
+import { appVersion } from "@/lib/version";
+import { basename, dirname, writeRecordingManifest } from "@/lib/transcription/bundle";
+import { createMacRecordingManifest } from "@/lib/transcription/manifest";
+import { log } from "@/lib/logger";
 
 /**
  * Single owner of the meeting-recording start/stop flow shared by every
@@ -32,6 +37,42 @@ let liveRecordingItemId: string | null = null;
 /** Test-only: reset the module-scoped live recording item id. */
 export function __resetLiveRecordingItemId(): void {
   liveRecordingItemId = null;
+}
+
+/**
+ * Write `recording.json` into the Mac's own bundle after `stop_recording`, so
+ * the format is bilateral: the scanner treats a Mac bundle and a phone bundle
+ * by one rule, and a phone can show a Mac recording with its duration (PRD
+ * `2026-09-05-ios-recordings`, task #13). `bytes` is the finalized WAV's size
+ * on disk — the same partial-download gate the phone's manifest carries.
+ *
+ * Best-effort: a failure here is logged and never blocks the transcription
+ * that follows — the bundle simply looks like a pre-manifest Mac bundle.
+ */
+export async function writeMacRecordingManifest(
+  result: RecordingResult,
+  startedAtMs: number | undefined,
+  language: string | undefined,
+): Promise<void> {
+  try {
+    const [bytes, device] = await Promise.all([
+      tauriApi.fileSize(result.path),
+      tauriApi.getDeviceName().catch(() => "Mac"),
+    ]);
+    const manifest = createMacRecordingManifest({
+      startedAtMs: startedAtMs ?? Date.now() - result.duration_secs * 1000,
+      durationSecs: result.duration_secs,
+      bytes,
+      sampleRate: result.sample_rate,
+      audioFile: basename(result.path),
+      device,
+      appVersion: appVersion(),
+      language,
+    });
+    await writeRecordingManifest(dirname(result.path), manifest);
+  } catch (err) {
+    log.warn("recording", "Could not write recording.json for the finished bundle", err);
+  }
 }
 
 export interface MeetingRecordingHook {
@@ -78,6 +119,9 @@ export function useMeetingRecording(): MeetingRecordingHook {
         liveRecordingItemId = null;
       }
       if (result?.path) {
+        // The manifest goes in BEFORE the job is dispatched, so the scanner's
+        // create event for it finds the bundle already tracked by audioPath.
+        await writeMacRecordingManifest(result, startedAt, language);
         startTranscription({
           audioPath: result.path,
           recordingStartedAt: startedAt,

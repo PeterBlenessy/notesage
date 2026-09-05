@@ -991,6 +991,161 @@ pub async fn ios_speech_state(app: tauri::AppHandle) -> Result<SpeechState, Stri
     }
 }
 
+/// Notification and background-refresh state (badge and banner preferences,
+/// authorization, Background App Refresh availability).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotificationStatus {
+    pub authorization: String,
+    pub background_refresh: String,
+    pub badge: bool,
+    pub new_items: bool,
+}
+
+macro_rules! ios_only {
+    ($name:literal, $app:ident, $body:expr) => {{
+        #[cfg(target_os = "ios")]
+        {
+            $body
+        }
+        #[cfg(not(target_os = "ios"))]
+        {
+            let _ = &$app;
+            Err(concat!($name, " is only available on iOS").into())
+        }
+    }};
+}
+
+/// Where a stopped recording landed (`rel_path` `None` when discarded).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingStopped {
+    pub rel_path: Option<String>,
+    pub manifest: Option<String>,
+}
+
+/// Start recording from the microphone into the app's own container (the
+/// bundle reaches the library on stop). Errors: `microphone-denied`,
+/// `low-disk-space`, `recording-in-progress`.
+#[tauri::command]
+pub async fn ios_recording_start(app: tauri::AppHandle, language: Option<String>) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::recording_start(&app, language.as_deref()).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, language);
+        Err("ios_recording_start is only available on iOS".into())
+    }
+}
+
+#[tauri::command]
+pub async fn ios_recording_pause(app: tauri::AppHandle) -> Result<(), String> {
+    ios_only!("ios_recording_pause", app, ios_impl::recording_pause(&app).await)
+}
+
+#[tauri::command]
+pub async fn ios_recording_resume(app: tauri::AppHandle) -> Result<(), String> {
+    ios_only!("ios_recording_resume", app, ios_impl::recording_resume(&app).await)
+}
+
+/// Stop; finalise into `Recordings/Recording <stamp>/` with its manifest,
+/// or discard when the frontend says so (a tap under five seconds).
+#[tauri::command]
+pub async fn ios_recording_stop(app: tauri::AppHandle, discard: Option<bool>) -> Result<RecordingStopped, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::recording_stop(&app, discard.unwrap_or(false)).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, discard);
+        Err("ios_recording_stop is only available on iOS".into())
+    }
+}
+
+/// `{ status, elapsedSecs, level, interrupted, micPermission, orphan? }`.
+#[tauri::command]
+pub async fn ios_recording_state(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    ios_only!("ios_recording_state", app, ios_impl::recording_state(&app).await)
+}
+
+/// Keep or discard a staging folder a force-quit left behind.
+#[tauri::command]
+pub async fn ios_recording_recover(app: tauri::AppHandle, action: String, dir: String) -> Result<Option<String>, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::recording_recover(&app, &action, &dir).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, action, dir);
+        Err("ios_recording_recover is only available on iOS".into())
+    }
+}
+
+#[tauri::command]
+pub async fn ios_notification_status(app: tauri::AppHandle) -> Result<NotificationStatus, String> {
+    ios_only!("ios_notification_status", app, ios_impl::notification_status(&app).await)
+}
+
+/// The one system prompt (badge and alert, no sound).
+#[tauri::command]
+pub async fn ios_notification_request(app: tauri::AppHandle) -> Result<NotificationStatus, String> {
+    ios_only!("ios_notification_request", app, ios_impl::notification_request(&app).await)
+}
+
+/// Badge and banner preferences, plus the localised banner strings the
+/// background task and the Share Extension post with — the frontend owns the
+/// translation table, so it hands the strings over rather than the native
+/// side carrying a resource bundle.
+#[tauri::command]
+pub async fn ios_notification_set_prefs(
+    app: tauri::AppHandle,
+    badge: Option<bool>,
+    new_items: Option<bool>,
+    templates: Option<std::collections::HashMap<String, String>>,
+) -> Result<NotificationStatus, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::notification_set_prefs(&app, badge, new_items, templates.as_ref()).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, badge, new_items, templates);
+        Err("ios_notification_set_prefs is only available on iOS".into())
+    }
+}
+
+/// Recount the unread Inbox from disk and refresh the icon badge. With
+/// `mark_seen` (the Inbox listing only), also record that the user has the
+/// Inbox's items in front of them. Takes no path: the Inbox folder is fixed,
+/// so the sanitizer list is unaffected.
+#[tauri::command]
+pub async fn ios_inbox_unread_count(app: tauri::AppHandle, mark_seen: Option<bool>) -> Result<u32, String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::inbox_unread_count(&app, mark_seen.unwrap_or(false)).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, mark_seen);
+        Err("ios_inbox_unread_count is only available on iOS".into())
+    }
+}
+
+/// Where a notification tap wants the app to land, once.
+#[tauri::command]
+pub async fn ios_consume_launch_route(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    ios_only!("ios_consume_launch_route", app, ios_impl::consume_launch_route(&app).await)
+}
+
+#[tauri::command]
+pub async fn ios_open_settings(app: tauri::AppHandle) -> Result<(), String> {
+    ios_only!("ios_open_settings", app, ios_impl::open_settings(&app).await)
+}
+
 /// Open WebKit's find bar over the presented report.
 ///
 /// `false` means no report is on screen; the caller falls back to the web
@@ -1090,7 +1245,10 @@ pub async fn ios_stat_file(app: tauri::AppHandle, rel_path: String) -> Result<Fi
 
 #[cfg(target_os = "ios")]
 mod ios_impl {
-    use super::{DownloadState, FileEntry, FileStat, LibraryGrant, SpeechStarted, SpeechState, SpeechVoice};
+    use super::{
+        DownloadState, FileEntry, FileStat, LibraryGrant, NotificationStatus, RecordingStopped, SpeechStarted, SpeechState,
+        SpeechVoice,
+    };
     use tauri::AppHandle;
     use tauri_plugin_notesage_ios::NotesageIosExt;
 
@@ -1302,6 +1460,74 @@ mod ios_impl {
             .map_err(|e| e.to_string())
     }
 
+    fn notification(s: tauri_plugin_notesage_ios::NotificationStatus) -> NotificationStatus {
+        NotificationStatus {
+            authorization: s.authorization,
+            background_refresh: s.background_refresh,
+            badge: s.badge,
+            new_items: s.new_items,
+        }
+    }
+
+    pub async fn recording_start(app: &AppHandle, language: Option<&str>) -> Result<(), String> {
+        app.notesage_ios().recording_start(language).map_err(|e| e.to_string())
+    }
+
+    pub async fn recording_pause(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().recording_pause().map_err(|e| e.to_string())
+    }
+
+    pub async fn recording_resume(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().recording_resume().map_err(|e| e.to_string())
+    }
+
+    pub async fn recording_stop(app: &AppHandle, discard: bool) -> Result<RecordingStopped, String> {
+        app.notesage_ios()
+            .recording_stop(discard)
+            .map(|r| RecordingStopped { rel_path: r.rel_path, manifest: r.manifest })
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn recording_state(app: &AppHandle) -> Result<serde_json::Value, String> {
+        app.notesage_ios().recording_state().map_err(|e| e.to_string())
+    }
+
+    pub async fn recording_recover(app: &AppHandle, action: &str, dir: &str) -> Result<Option<String>, String> {
+        app.notesage_ios().recording_recover(action, dir).map(|r| r.rel_path).map_err(|e| e.to_string())
+    }
+
+    pub async fn notification_status(app: &AppHandle) -> Result<NotificationStatus, String> {
+        app.notesage_ios().notification_status().map(notification).map_err(|e| e.to_string())
+    }
+
+    pub async fn notification_request(app: &AppHandle) -> Result<NotificationStatus, String> {
+        app.notesage_ios().notification_request().map(notification).map_err(|e| e.to_string())
+    }
+
+    pub async fn notification_set_prefs(
+        app: &AppHandle,
+        badge: Option<bool>,
+        new_items: Option<bool>,
+        templates: Option<&std::collections::HashMap<String, String>>,
+    ) -> Result<NotificationStatus, String> {
+        app.notesage_ios()
+            .notification_set_prefs(badge, new_items, templates)
+            .map(notification)
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn inbox_unread_count(app: &AppHandle, mark_seen: bool) -> Result<u32, String> {
+        app.notesage_ios().inbox_unread_count(mark_seen).map_err(|e| e.to_string())
+    }
+
+    pub async fn consume_launch_route(app: &AppHandle) -> Result<Option<String>, String> {
+        app.notesage_ios().consume_launch_route().map_err(|e| e.to_string())
+    }
+
+    pub async fn open_settings(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().open_settings().map_err(|e| e.to_string())
+    }
+
     pub async fn dismiss_report(app: &AppHandle) -> Result<(), String> {
         app.notesage_ios().dismiss_report().map_err(|e| e.to_string())
     }
@@ -1339,6 +1565,27 @@ mod ios_impl {
 
 #[cfg(test)]
 mod tests {
+    /// Tauri's notification plugin must never be registered on iOS: its Swift
+    /// delegate (`NotificationHandler.toActiveNotification`) force-unwraps a
+    /// map of the notifications it scheduled itself, so a banner posted by
+    /// our background refresh or the Share Extension — or tapped after a
+    /// relaunch — would crash the app inside it. The plugin's notifications
+    /// are ours (`Notifier.swift`).
+    #[test]
+    fn tauri_notification_plugin_is_not_registered_on_ios() {
+        let src = include_str!("../lib.rs");
+        let lines: Vec<&str> = src.lines().collect();
+        let idx = lines
+            .iter()
+            .position(|l| l.contains("tauri_plugin_notification::init()"))
+            .expect("the notification plugin is still registered somewhere");
+        let guard = lines[idx.saturating_sub(4)..idx].join("\n");
+        assert!(
+            guard.contains("not(target_os = \"ios\")"),
+            "tauri_plugin_notification::init() must sit under #[cfg(not(target_os = \"ios\"))]; got:\n{guard}"
+        );
+    }
+
     use super::*;
 
     #[test]

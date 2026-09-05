@@ -536,6 +536,75 @@ describe('ActivityTaskCard — transcription kind', () => {
   });
 
   // -------------------------------------------------------------------------
+  // Phone-recorded bundles (PRD 2026-09-05-ios-recordings, task #17)
+  // -------------------------------------------------------------------------
+
+  describe('phone-recorded bundles', () => {
+    it("captions a job with its source device: from Peter's iPhone", () => {
+      renderWithProviders(<ActivityTaskCard task={txTask({ sourceDevice: "Peter's iPhone" })} />);
+      expect(screen.getByTestId('transcription-source-device').textContent).toBe("from Peter's iPhone");
+    });
+
+    it('shows no provenance line for the Mac’s own recordings', () => {
+      renderWithProviders(<ActivityTaskCard task={txTask()} />);
+      expect(screen.queryByTestId('transcription-source-device')).toBeNull();
+    });
+
+    it('moves an audio.m4a bundle whole and repoints both paths inside it', async () => {
+      const inbox = '/Users/me/Library/Mobile Documents/com~apple~CloudDocs/Notesage/Recordings/Recording 2026-09-05 14-02-11';
+      moveBundleToProjectMock.mockResolvedValue('/Users/me/Code/acme/Recording 2026-09-05 14-02-11');
+      useWorkspaceStore.setState({ projects: [{ path: '/Users/me/Code/acme', fileTree: [] }] });
+      useActivityStore.getState().addTranscriptionJob({
+        id: 'tx-1',
+        label: 'Recording 2026-09-05 14-02-11',
+        audioPath: `${inbox}/audio.m4a`,
+        sourceDevice: "Peter's iPhone",
+      });
+      useActivityStore.getState().setTranscriptionDone('tx-1', `${inbox}/transcript.md`);
+      const task = useActivityStore.getState().tasks.find((t) => t.id === 'tx-1')!;
+      renderWithProviders(<ActivityTaskCard task={task} />);
+
+      const trigger = screen.getByRole('button', { name: /move to project/i });
+      act(() => {
+        fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+        fireEvent.pointerUp(trigger, { button: 0 });
+        fireEvent.click(trigger);
+      });
+      const item = await screen.findByRole('menuitem', { name: 'acme' });
+      act(() => { fireEvent.click(item); });
+
+      // The move is folder-level — audio, recording.json and transcript travel together.
+      await waitFor(() => {
+        expect(moveBundleToProjectMock).toHaveBeenCalledWith(inbox, '/Users/me/Code/acme');
+      });
+      const moved = useActivityStore.getState().tasks.find((t) => t.id === 'tx-1');
+      expect(moved?.audioPath).toBe('/Users/me/Code/acme/Recording 2026-09-05 14-02-11/audio.m4a');
+      expect(moved?.transcriptPath).toBe('/Users/me/Code/acme/Recording 2026-09-05 14-02-11/transcript.md');
+      expect(moved?.sourceDevice).toBe("Peter's iPhone");
+    });
+
+    it('re-runs against the retained audio.m4a', async () => {
+      useRecordingStore.setState({
+        availableModels: [{ name: 'small', size_bytes: 1, downloaded: true }],
+        defaultModel: 'small',
+      } as Partial<ReturnType<typeof useRecordingStore.getState>>);
+      const task = txTask({ status: 'done', audioPath: '/lib/Recordings/Recording 2026-09-05 14-02-11/audio.m4a', sourceDevice: "Peter's iPhone" });
+      renderWithProviders(<ActivityTaskCard task={task} />);
+      const trigger = screen.getByRole('button', { name: /re-run transcription/i });
+      act(() => {
+        fireEvent.pointerDown(trigger, { button: 0, ctrlKey: false });
+        fireEvent.pointerUp(trigger, { button: 0 });
+        fireEvent.click(trigger);
+      });
+      const item = await screen.findByRole('menuitem', { name: 'Small' });
+      act(() => { fireEvent.click(item); });
+      expect(startTranscriptionMock).toHaveBeenCalledWith(
+        expect.objectContaining({ audioPath: '/lib/Recordings/Recording 2026-09-05 14-02-11/audio.m4a', jobId: 'tx-1', model: 'small' }),
+      );
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Bundle path display (#698)
   // -------------------------------------------------------------------------
 

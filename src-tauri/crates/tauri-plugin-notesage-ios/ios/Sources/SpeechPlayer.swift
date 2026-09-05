@@ -147,8 +147,9 @@ private let MAX_VOTING_PARAGRAPHS = 60
     @objc public func stop() {
         let wasLive = !paragraphs.isEmpty
         resetQueue()
-        try? AVAudioSession.sharedInstance().setActive(
-            false, options: .notifyOthersOnDeactivation)
+        // Through the arbiter: a late stop must not deactivate a session a
+        // recording has since taken over.
+        AudioSessionArbiter.shared.release(.speech)
         // Tell the frontend playback is over, so the transport can go away
         // instead of sitting there showing Pause for an article that ended.
         if wasLive { onFinished?() }
@@ -464,11 +465,11 @@ private let MAX_VOTING_PARAGRAPHS = 60
     }
 
     private func activateSession() {
-        let session = AVAudioSession.sharedInstance()
         // `.spokenAudio` tells iOS this is speech, so it ducks correctly
-        // against navigation prompts instead of fighting them.
-        try? session.setCategory(.playback, mode: .spokenAudio, options: [])
-        try? session.setActive(true)
+        // against navigation prompts instead of fighting them. Refused while
+        // a recording holds the session — the plugin's `speechStart` checks
+        // first and rejects, so this is only the last line of defence.
+        try? AudioSessionArbiter.shared.claim(.speech, category: .playback, mode: .spokenAudio, options: [])
     }
 
     private func updateNowPlaying(playing: Bool) {

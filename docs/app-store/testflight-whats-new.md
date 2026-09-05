@@ -25,17 +25,14 @@ screen; the sender warns past that.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Home shows only the folders you chose, and every folder remembers its own view.
+Home shows only the folders you chose; the icon counts your unread Inbox; recording starts on the phone.
 
 NEW
-• Home: the Inbox and the folders you put there; everything else under All Folders. Hold a folder for Show on Home, or use … › Edit Home.
-• Each folder remembers list or gallery, order, grouping and Condensed on its own.
-• Folders show the icon and colour you gave them on the Mac, in the list and as gallery cards.
-• The launch logo grows while the app starts.
-
-FIXED
-• Condensed is no longer offered where it changed nothing.
+• Home: the Inbox and the folders you put there. Hold a folder for Show on Home, or … › Edit Home.
+• Each folder remembers its own view, order and grouping.
+• The app icon shows your unread Inbox count (turn it on from the Inbox).
+• New Recording (hold +): your Mac transcribes it when it syncs in.
 
 TRY
-• Open All Folders, hold a folder, choose Show on Home, go back.
-• Set one folder to gallery and another to list, then switch between them.
+• Open the Inbox, tap Turn on, allow, then look at the icon.
+• Hold +, New Recording, talk a minute, stop, open Recordings.
