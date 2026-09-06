@@ -25,16 +25,13 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Svep tillbaka fungerar igen, och du kan välja var ljudet kommer ut.
-
-NYTT
-• En knapp i spelaren väljer ljudet: telefon, hörlurar, bil.
+Båda svepen fungerar igen — det var mitt fel, två gånger om.
 
 FIXAT
-• Att svepa in från vänsterkanten för att lämna ett dokument hade slutat fungera.
-• Olästa syns även i gallerivyn, inte bara i listan.
-• Inspelningsspåret visar en röst som stiger och faller, inte ett massivt block.
+• Svep in från vänsterkanten för att lämna ett dokument.
+• Svep vänster på en rad i listan för att visa dess åtgärder.
+• Inspelningsspåret ser ut som uppspelningsspåret: prickar när det är tyst, streck när du talar.
 
 PROVA
-• Spela upp en artikel, tryck på ljudknappen, flytta till hörlurar och tillbaka.
-• Svep in från vänsterkanten i en artikel, och i en sparad webbsida.
+• Svep en rad i Inbox, svep sedan in från vänsterkanten i en artikel.
+• Spela in några sekunder, spela upp, och jämför de två spåren.
