@@ -44,6 +44,7 @@ import { splitSpeechParagraphs } from "./speech-text";
 import { documentToSpeechText } from "./speech-text";
 import { SpeechPlayerBar } from "./SpeechPlayerBar";
 import { RecordingBar } from "./RecordingBar";
+import { useEdgeSwipeBack } from "./useEdgeSwipeBack";
 import { formatElapsed, pauseRecording, resumeRecording, stopRecording } from "@/lib/recording-controller";
 import { useSpeechPlayer } from "@/hooks/useSpeechPlayer";
 import { measureReaderInsets, withReaderInsets, withWideContentGuard } from "./html-insets";
@@ -641,6 +642,16 @@ export function Reader() {
       goBack();
     })();
   }, [editing, persistDraft, goBack]);
+
+  // Swipe in from the left edge to leave, the way every iOS navigation stack
+  // behaves. It goes through `backAction`, so an edit in progress is saved
+  // exactly as the back button saves it — a gesture must not be the one route
+  // that loses work.
+  //
+  // Declared HERE, with the other hooks, not beside the markup it decorates:
+  // this component returns early when there is no open document, and a hook
+  // below that is a hook React sometimes does not see.
+  const swipeBack = useEdgeSwipeBack(backAction);
 
   // "Update from source" (#829) — only offered for a capture that still knows
   // where it came from.
@@ -1529,7 +1540,17 @@ export function Reader() {
   if (!openDoc) return null;
 
   return (
-    <div className="view-enter relative h-full w-full bg-background">
+    <div
+      className="view-enter relative h-full w-full bg-background"
+      {...swipeBack.handlers}
+      style={{
+        transform: swipeBack.offset ? `translateX(${swipeBack.offset}px)` : undefined,
+        // Only while the finger is down. A transition during the drag would
+        // lag behind it; one on release is what springs the page back when
+        // the swipe did not go far enough to count.
+        transition: swipeBack.dragging ? "none" : "transform 220ms cubic-bezier(0.25, 0.8, 0.35, 1)",
+      }}
+    >
       {/* Fallback transport for builds with no native chrome (desktop dev,
           the vitest harness). On device the player is drawn by the chrome
           overlay instead — a React island portals to document.body and would
