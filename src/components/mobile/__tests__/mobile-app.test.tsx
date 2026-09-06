@@ -1264,6 +1264,22 @@ describe("HTML reports", () => {
     expect(src.endsWith(registered[0].id)).toBe(true);
   });
 
+  it("declares touch-action on both swipe surfaces, or WebKit takes the gesture", async () => {
+    // Half of the swipe contract, and the half that fails silently. Without
+    // `pan-y` WebKit decides mid-drag that it owns a horizontal gesture and
+    // fires pointercancel — which used to commit anyway, and now correctly
+    // does not, so the swipe just stops working on device. Asserted rather
+    // than trusted, because jsdom cannot reproduce the cancellation itself.
+    await openHtml();
+    const strip = screen.getByTestId("reader-edge-swipe-strip");
+    expect(strip.style.touchAction).toBe("pan-y");
+    // The reader root, which carries the gesture handlers, must declare it too.
+    const roots = Array.from(document.querySelectorAll<HTMLElement>("div")).filter(
+      (el) => el !== strip && el.style.touchAction === "pan-y" && el.contains(strip),
+    );
+    expect(roots.length, "the reader root must declare touch-action: pan-y").toBeGreaterThan(0);
+  });
+
   it("leaves the swipe-back gesture reachable over a report", async () => {
     // A captured report is a separate document on an opaque origin: a finger
     // that lands on the frame produces no pointer events out here, so the

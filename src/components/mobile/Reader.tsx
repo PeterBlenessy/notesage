@@ -1544,6 +1544,15 @@ export function Reader() {
       className="view-enter relative h-full w-full bg-background"
       {...swipeBack.handlers}
       style={{
+        // BOTH halves of the swipe contract, or the gesture drops (see
+        // docs/features/mobile.md). The row gesture has had `pan-y` since it
+        // shipped; this surface never did, and got away with it only because
+        // an interrupted drag used to commit anyway. Now that only a lift
+        // commits — as it must, or a cancelled swipe closes the document —
+        // WebKit deciding mid-drag that it owns the gesture kills it
+        // outright. `pan-y` is what stops WebKit deciding: vertical scrolling
+        // stays the browser's, horizontal is ours.
+        touchAction: "pan-y",
         transform: swipeBack.offset ? `translateX(${swipeBack.offset}px)` : undefined,
         // Only while the finger is down. A transition during the drag would
         // lag behind it; one on release is what springs the page back when
@@ -1696,7 +1705,9 @@ export function Reader() {
           <div
             data-testid="reader-edge-swipe-strip"
             className="absolute inset-y-0 left-0 z-30"
-            style={{ width: EDGE_WIDTH }}
+            // Same contract as the root: without `pan-y` WebKit claims the
+            // horizontal drag and cancels ours.
+            style={{ width: EDGE_WIDTH, touchAction: "pan-y" }}
             {...swipeBack.handlers}
             onPointerDown={(e) => {
               try {

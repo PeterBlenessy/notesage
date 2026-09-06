@@ -7,6 +7,7 @@ import { setMockInvokeHandler } from "@/test/tauri-mock";
 import { clearFolderAppearanceCache } from "@/lib/folder-appearance-cache";
 import type { FileEntry } from "@/lib/tauri";
 import { GalleryView } from "@/components/mobile/GalleryView";
+import { useMobileStore } from "@/stores/mobile-store";
 
 /** Minimal long-press action context (#680) — these suites cover rendering
  *  and activation, not the menu; the menu has its own suite. */
@@ -271,5 +272,43 @@ describe("GalleryView (#633)", () => {
     );
     fireEvent.click(screen.getByText("note.md"));
     expect(onActivate).toHaveBeenCalledWith(expect.objectContaining({ name: "note.md" }));
+  });
+});
+
+describe("unread in the gallery (2026-09-06)", () => {
+  it("weights an unread Inbox card, and leaves an opened one alone", () => {
+    // The gallery carried no unread indication at all, so switching Home to
+    // gallery lost the only signal of what was still to read — the weight
+    // the list rows have used since the dot was rejected as clutter.
+    useMobileStore.setState({ inboxOpened: { "Inbox/read.md": true }, readingProgress: {} });
+    renderWithProviders(
+      <GalleryView
+        actionContext={noopActions}
+        entries={[
+          entry({ name: "unread.md", path: "Inbox/unread.md" }),
+          entry({ name: "read.md", path: "Inbox/read.md" }),
+        ]}
+        currentFolderName="Inbox"
+        theme="light"
+        onActivate={() => {}}
+      />,
+    );
+    expect(screen.getByText("unread.md").style.fontWeight).toContain("600");
+    expect(screen.getByText("read.md").style.fontWeight).not.toContain("600");
+  });
+
+  it("does not weight anything outside the Inbox", () => {
+    // Unread is an Inbox idea. A note in a project is not "unread".
+    useMobileStore.setState({ inboxOpened: {}, readingProgress: {} });
+    renderWithProviders(
+      <GalleryView
+        actionContext={noopActions}
+        entries={[entry({ name: "spec.md", path: "Projects/spec.md" })]}
+        currentFolderName="Projects"
+        theme="light"
+        onActivate={() => {}}
+      />,
+    );
+    expect(screen.getByText("spec.md").style.fontWeight).not.toContain("600");
   });
 });

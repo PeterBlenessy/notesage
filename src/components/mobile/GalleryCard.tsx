@@ -8,6 +8,8 @@ import { presentEntryMenu, type EntryActionContext } from "@/lib/mobile-entry-ac
 import { useLongPress } from "./useLongPress";
 import { classifyFile, formatModified, iconFor } from "./FileRow";
 import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
+import { isUnreadRow } from "./reading-progress";
+import { useMobileStore } from "@/stores/mobile-store";
 
 interface GalleryCardProps {
   entry: FileEntry;
@@ -41,6 +43,14 @@ export function GalleryCard({
   actionContext,
   condensed = false,
 }: GalleryCardProps) {
+  // Read from the store here rather than threaded through props: the gallery
+  // renders from the same listing as the rows, and a card that has to be TOLD
+  // it is unread is a card the next caller forgets to tell — which is exactly
+  // how this went missing.
+  const opened = useMobileStore((s) => s.inboxOpened);
+  const progress = useMobileStore((s) => s.readingProgress[entry.path] ?? 0);
+  const unread = isUnreadRow(entry.path, opened, progress);
+
   const longPress = useLongPress((rect) => {
     void presentEntryMenu(entry, rect, actionContext);
   });
@@ -161,7 +171,21 @@ export function GalleryCard({
           document's stays left under its picture. Condensed keeps the name
           alone; at rest a folder adds its count and last change. */}
       <span className={cn("w-full min-w-0", entry.is_directory && "text-center")}>
-        <span className={cn("block truncate font-medium text-foreground", condensed ? "text-[11px]" : "text-xs")}>
+        {/* The same unread weight the list rows carry. It was missing here
+            entirely, so switching Home to gallery lost every indication of
+            what had not been read (Peter, build 52: "Unread is not indicated
+            in gallery view"). Weight rather than a badge, for the reason the
+            rows use weight: a dot on every card is clutter. The captions are
+            small, so the step is 600 against 500 — at 11px a 400 caption
+            reads as faint rather than as "already read". */}
+        <span
+          className={cn("block truncate text-foreground", condensed ? "text-[11px]" : "text-xs")}
+          style={{
+            fontWeight: unread
+              ? "max(600, var(--ns-a11y-weight, 500))"
+              : "max(500, var(--ns-a11y-weight, 500))",
+          }}
+        >
           {entry.name}
         </span>
         {!condensed && !entry.is_directory && entry.modified !== undefined && (
