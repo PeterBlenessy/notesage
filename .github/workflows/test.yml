@@ -326,6 +326,7 @@ jobs:
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/AudioOwner.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/SpeechPlayer.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ChromeOverlay.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/NativeNavShell.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ReportWebView.swift
           swiftc -parse src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/NotesageIosPlugin.swift
 

@@ -541,6 +541,55 @@ impl<R: Runtime> NotesageIos<R> {
         )
     }
 
+    /// Native navigation shell (`native-shell` Labs flag): the mobile shell as
+    /// a real `UINavigationController` rooted at Home. See
+    /// `docs/prds/2026-09-06-ios-native-navigation.md`.
+    pub fn nav_shell_present(&self, root_title: Option<&str>) -> Result<()> {
+        self.call("navShellPresent", serde_json::json!({ "rootTitle": root_title }))
+    }
+
+    /// Freeze the current screen before the web layer draws the next one.
+    pub fn nav_shell_prepare(&self) -> Result<()> {
+        self.call("navShellPrepare", serde_json::json!({}))
+    }
+
+    pub fn nav_shell_push(
+        &self, screen_id: &str, title: Option<&str>, animated: bool,
+    ) -> Result<()> {
+        self.call(
+            "navShellPush",
+            serde_json::json!({ "screenId": screen_id, "title": title, "animated": animated }),
+        )
+    }
+
+    pub fn nav_shell_pop(&self, animated: bool) -> Result<()> {
+        self.call("navShellPop", serde_json::json!({ "animated": animated }))
+    }
+
+    /// Collapse to the root — the recovery path for a drifted stack.
+    pub fn nav_shell_pop_to_root(&self) -> Result<()> {
+        self.call("navShellPopToRoot", serde_json::json!({}))
+    }
+
+    pub fn nav_shell_set_title(&self, title: Option<&str>) -> Result<()> {
+        self.call("navShellSetTitle", serde_json::json!({ "title": title }))
+    }
+
+    /// The web layer has drawn the screen it was told to draw.
+    pub fn nav_shell_rendered(&self, screen_id: &str) -> Result<()> {
+        self.call("navShellRendered", serde_json::json!({ "screenId": screen_id }))
+    }
+
+    /// The chrome's top-right control, mirrored onto the navigation bar —
+    /// icon, tap action and menu together.
+    pub fn nav_shell_set_action(&self, item: &serde_json::Value) -> Result<()> {
+        self.call("navShellSetAction", serde_json::json!({ "item": item }))
+    }
+
+    pub fn nav_shell_dismiss(&self) -> Result<()> {
+        self.call("navShellDismiss", serde_json::json!({}))
+    }
+
     /// Start (or restart) reading an article aloud (#833).
     ///
     /// `start_index` is a PARAGRAPH index, not a character offset — that is
@@ -808,6 +857,25 @@ impl<R: Runtime> NotesageIos<R> {
     pub fn present_report(&self, _html: &str, _top: f64, _bottom: f64) -> Result<()> {
         Err(Error::Unavailable)
     }
+    pub fn nav_shell_present(&self, _root_title: Option<&str>) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn nav_shell_prepare(&self) -> Result<()> { Err(Error::Unavailable) }
+    pub fn nav_shell_push(
+        &self, _screen_id: &str, _title: Option<&str>, _animated: bool,
+    ) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn nav_shell_pop(&self, _animated: bool) -> Result<()> { Err(Error::Unavailable) }
+    pub fn nav_shell_pop_to_root(&self) -> Result<()> { Err(Error::Unavailable) }
+    pub fn nav_shell_set_title(&self, _title: Option<&str>) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn nav_shell_rendered(&self, _screen_id: &str) -> Result<()> { Err(Error::Unavailable) }
+    pub fn nav_shell_set_action(&self, _item: &serde_json::Value) -> Result<()> {
+        Err(Error::Unavailable)
+    }
+    pub fn nav_shell_dismiss(&self) -> Result<()> { Err(Error::Unavailable) }
     pub fn speech_start(
         &self, _text: &str, _title: &str, _start: u32, _rate: f32,
         _voices: &std::collections::HashMap<String, String>, _artwork: Option<&str>,

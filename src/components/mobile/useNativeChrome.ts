@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
+  iosNavShellSetAction,
   iosSetChrome,
   type IosChromeItem,
   type IosChromeBreadcrumb,
@@ -7,6 +8,7 @@ import {
   type IosChromeRecorder,
   type IosChromeSearch,
 } from "@/lib/ios-api";
+import { useNavShellPresented } from "./nav-shell-state";
 
 export interface NativeChromeSpec {
   topLeft?: IosChromeItem;
@@ -53,12 +55,28 @@ export function useNativeChrome(
   const [active, setActive] = useState(nativeChromeAnswered ?? false);
   const actionsRef = useRef(actions);
   actionsRef.current = actions;
+  // With the native navigation shell up, the TOP row belongs to the
+  // navigation bar: back is the system's, the title is the bar's, and the "…"
+  // menu moves to a bar button — the same menu, sent to a different place, so
+  // every action keeps working through the same `notesage:chrome` channel.
+  // The bottom islands (the "+", the player, the recorder, the search pill)
+  // are not navigation and stay exactly where they are.
+  // Whether the bar is actually THERE, not merely whether the flag is on —
+  // see `nav-shell-state`.
+  const navShell = useNavShellPresented();
 
   // Re-declare only when the SHAPE changes, not on every render.
   const specKey = JSON.stringify(spec);
   useEffect(() => {
     let cancelled = false;
-    const parsed = JSON.parse(specKey) as NativeChromeSpec;
+    const full = JSON.parse(specKey) as NativeChromeSpec;
+    const parsed: NativeChromeSpec = navShell
+      ? { ...full, topLeft: undefined, topCenter: undefined, topRight: undefined }
+      : full;
+    if (navShell) {
+      // The whole control, not just its menu — see `NavShellAction`.
+      void iosNavShellSetAction(full.topRight ?? null).catch(() => {});
+    }
     iosSetChrome(parsed)
       .then(() => {
         nativeChromeAnswered = true;
@@ -71,7 +89,7 @@ export function useNativeChrome(
     return () => {
       cancelled = true;
     };
-  }, [specKey]);
+  }, [specKey, navShell]);
 
   useEffect(() => {
     const onChrome = (e: Event) => {

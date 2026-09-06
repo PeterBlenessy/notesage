@@ -394,6 +394,66 @@ export function iosPresentReport(
   });
 }
 
+/**
+ * The chrome's top-right control, mirrored onto the navigation bar.
+ *
+ * The WHOLE spec, because that slot is not always a menu: it is a pencil that
+ * edits on tap with a menu behind a long-press, a ✓ that saves and has no
+ * menu, or an ellipsis whose tap opens the menu. Sending only the menu would
+ * lose Save and turn tap-to-edit into a menu.
+ */
+export type NavShellAction = IosChromeItem | null;
+
+/**
+ * The native navigation shell (`native-shell` Labs flag). PRD:
+ * `docs/prds/2026-09-06-ios-native-navigation.md`.
+ *
+ * The stack is the source of truth for navigation; these are the calls that
+ * keep the web layer in step with it.
+ */
+export function iosNavShellPresent(rootTitle: string | null): Promise<void> {
+  return invoke("ios_nav_shell_present", { rootTitle });
+}
+
+/** Freeze the current screen, before rendering the next one into the live view. */
+export function iosNavShellPrepare(): Promise<void> {
+  return invoke("ios_nav_shell_prepare");
+}
+
+export function iosNavShellPush(
+  screenId: string,
+  title: string | null,
+  animated: boolean,
+): Promise<void> {
+  return invoke("ios_nav_shell_push", { screenId, title, animated });
+}
+
+/** Collapse the stack to its root — recovery when the two sides disagree. */
+export function iosNavShellPopToRoot(): Promise<void> {
+  return invoke("ios_nav_shell_pop_to_root");
+}
+
+export function iosNavShellPop(animated: boolean): Promise<void> {
+  return invoke("ios_nav_shell_pop", { animated });
+}
+
+export function iosNavShellSetTitle(title: string | null): Promise<void> {
+  return invoke("ios_nav_shell_set_title", { title });
+}
+
+/** Say the screen is drawn, so the frozen picture over it can be dropped. */
+export function iosNavShellRendered(screenId: string): Promise<void> {
+  return invoke("ios_nav_shell_rendered", { screenId });
+}
+
+export function iosNavShellSetAction(item: NavShellAction): Promise<void> {
+  return invoke("ios_nav_shell_set_action", { item });
+}
+
+export function iosNavShellDismiss(): Promise<void> {
+  return invoke("ios_nav_shell_dismiss");
+}
+
 /** Tear down the presented report. Idempotent; safe to call when none is up. */
 export function iosDismissReport(): Promise<void> {
   return invoke("ios_dismiss_report");

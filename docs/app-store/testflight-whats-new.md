@@ -26,16 +26,13 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-The Inbox is there from the first launch, and articles close with a swipe.
-
-FIXED
-• The Inbox is on Home from a clean install, before anything has been shared into it — and opening it works.
-• Swipe in from the left edge to leave a saved article. It worked in notes, never in articles.
-• "Try again" on a folder the app owns now makes the folder.
+Native navigation, behind a switch — try it and tell me how it feels.
 
 NEW
-• Listen to a note, not only a saved article.
+• The whole shell can run in a real iOS navigation stack: Home, folders and documents, with the system's own push, back gesture and parallax at every level.
+• Turn it on at Home: "…" → Native navigation. Turn it off the same way.
 
 TRY
-• Open the Inbox from Home, then from the menu at the top.
-• Swipe in from the left edge of a saved article, then of a note.
+• With it on, open a folder, then a document, then swipe in from the left edge — stop halfway and let go, twice.
+• Then turn it off and do the same, so you can feel the difference.
+• Everything else should behave exactly as before, both ways. Anything that does not is the bug I want.

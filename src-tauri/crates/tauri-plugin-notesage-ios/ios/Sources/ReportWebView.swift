@@ -176,7 +176,12 @@ final class ReportPresenter: NSObject {
       view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
       view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
     ])
-    attachEdgeBack(to: view, in: container)
+    // Not while the navigation shell owns back: its interactive pop starts in
+    // the same leading strip, and two gestures over one edge is how the web
+    // strip came to swallow touches the system wanted (#947 → #950).
+    if !NavShellPresenter.shared.isPresenting {
+      attachEdgeBack(to: view, in: container)
+    }
     // Chrome LAST: the back button, share and search island must stay above
     // both the report and the swipe strip.
     ChromeManager.shared.bringChromeToFront()

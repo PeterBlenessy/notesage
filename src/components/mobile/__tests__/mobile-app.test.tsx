@@ -359,6 +359,12 @@ describe("sort toggle (#632)", () => {
       ["Standard images", true],
       ["Larger images", false],
       ["Original images", false],
+      // The navigation shell's switch, Home only, carrying its own state as a
+      // checkmark. It lives in this menu because Labs is a desktop Settings
+      // panel and the phone has no settings surface at all (#949) — a flag
+      // with no switch on the device it is judged on is not a choice anybody
+      // can make.
+      ["Native navigation", false],
       // Home only: the screen that curates it.
       ["Edit Home…", undefined],
       // Where the library lives, and the way out of it. Shown at Home
@@ -392,6 +398,8 @@ describe("sort toggle (#632)", () => {
         // view(3: list · gallery · condensed rows, #836) · sort(2) · group(5) · offline toggle + 4 size picks
         true, false, false, false, true, true, false, false, false, false,
         true, false, true, false, false,
+        // …the navigation shell's switch, which carries its own state…
+        false,
         // …the Edit Home action row, which is not a pick, then the library
         // rows: the folder in use is checked, changing it is an action.
         undefined,
