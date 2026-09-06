@@ -127,6 +127,10 @@ export function planLibraryMigration(
     // the real item from iCloud, so it stays where it is and is REPORTED —
     // the outcome that used to happen silently, because the default listing
     // hid it entirely.
+    // Debris from an interrupted copy of THIS feature. Never a user's data,
+    // and listing hidden entries is what made it visible in the first place.
+    if (entry.name.endsWith(".notesage-migrating")) continue;
+
     const evicted = /^\.(.+)\.icloud$/.exec(entry.name);
     if (evicted) {
       leftBehind.push({
@@ -148,6 +152,15 @@ export function planLibraryMigration(
         from: ".notesage/sync-settings.json",
         note: "per-device, not carried across",
       });
+      continue;
+    }
+
+    // Any other dot entry is left where it is, and said so. Listing hidden
+    // entries was to SEE evicted placeholders, not to start migrating
+    // `.git`, `.editorconfig` and friends that no previous run ever touched
+    // — a silent scope change is not a fix.
+    if (entry.name.startsWith(".")) {
+      leftBehind.push({ name: entry.name, reason: `${entry.name} is not part of the library` });
       continue;
     }
 
@@ -305,6 +318,7 @@ export async function runLibraryMigration(
           ]);
           const taken = new Set(mine);
           for (const name of theirs) {
+            if (IGNORED.has(name)) continue; // `.DS_Store`, never data
             const target = dedupeName(name, taken);
             taken.add(target);
             await deps.moveEntry(`${from}/${name}`, `${to}/${target}`);

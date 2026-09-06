@@ -386,10 +386,14 @@ async fn migrate_directory(source: &Path, dest: &Path) -> Result<String, String>
 
         // Verify BEFORE the rename, so an unverified copy never wears the
         // real name for even an instant.
-        let source_count = count_files(&source_owned)
-            .map_err(|e| format!("Failed to count source files: {e}"))?;
-        let dest_count = count_files(&staging)
-            .map_err(|e| format!("Failed to count destination files: {e}"))?;
+        let source_count = count_files(&source_owned).map_err(|e| {
+            let _ = std::fs::remove_dir_all(&staging);
+            format!("Failed to count source files: {e}")
+        })?;
+        let dest_count = count_files(&staging).map_err(|e| {
+            let _ = std::fs::remove_dir_all(&staging);
+            format!("Failed to count destination files: {e}")
+        })?;
 
         if source_count != dest_count {
             let _ = std::fs::remove_dir_all(&staging);
