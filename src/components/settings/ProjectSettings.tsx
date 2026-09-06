@@ -42,6 +42,7 @@ import { AgentIcon } from '@/components/AgentIcon';
 import { formatDisplayPath } from '@/lib/utils';
 import { useFormatLocale } from "@/lib/useLocale";
 import { t } from '@/lib/i18n';
+import { syncedRootLabel as labelForRoot } from "@/lib/library-root";
 
 interface ProjectSettingsProps {
   projectPath: string;
@@ -54,7 +55,12 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
   const { updateMetadata, updateAI, clearAiLock } = useProjectMetadataStore();
   const connections = useConnectionsStore((s) => s.connections);
   const getUserInvocableAgents = useSkillStore((s) => s.getUserInvocableAgents);
-  const { icloudAvailable, icloudNotesagePath, notesRootPath } = useSettingsStore();
+  const { icloudAvailable, icloudNotesagePath, notesRootPath, libraryRootKind } =
+    useSettingsStore();
+  // Names the root actually in use: once the library lives in Notesage's own
+  // iCloud folder, "iCloud Drive/Notesage" is the wrong destination to put in
+  // front of a button that moves a project there.
+  const syncedRootLabel = labelForRoot(libraryRootKind);
 
   const [pendingSync, setPendingSync] = useState<boolean | null>(null);
   const [applying, setApplying] = useState(false);
@@ -548,7 +554,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {displaySynced
                       ? "This project syncs across your Apple devices"
-                      : "Enable to sync this project via iCloud Drive"
+                      : `Enable to sync this project via ${syncedRootLabel}`
                     }
                   </p>
                 </div>
@@ -571,8 +577,13 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                   ) : (
                     <>
                       <p className="text-xs text-muted-foreground">
+                        {/* Names the root that is actually in use. Once the
+                            library lives in Notesage's own iCloud folder,
+                            "iCloud Drive/Notesage" is the wrong place and
+                            telling someone their project is going there is
+                            simply false. */}
                         {pendingSync
-                          ? "This project will be moved to iCloud Drive/Notesage."
+                          ? `This project will be moved to ${syncedRootLabel}.`
                           : "This project will be moved back to ~/Notesage."
                         }
                       </p>

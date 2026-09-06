@@ -51,6 +51,25 @@ export interface WorktreeInfo {
   is_main: boolean;
 }
 
+/**
+ * The library's self-description, at `<root>/.notesage/library.json`.
+ *
+ * Written by whichever device creates the library. It is what lets a Mac
+ * FOLLOW a migration it did not perform: a container carrying `migratedFrom`
+ * is the live library and the CloudDocs folder beside it is a leftover,
+ * which looking at the two directories could never establish on its own.
+ */
+export interface LibraryMarker {
+  version: 1;
+  kind: "container";
+  createdBy: "ios" | "macos";
+  createdAt: string;
+  migratedFrom?: string;
+  migratedAt?: string;
+  /** Device name, informational only. */
+  migratedBy?: string;
+}
+
 export interface SyncSettings {
   version: number;
   icloudEnabled: boolean;
@@ -1089,6 +1108,35 @@ export const tauriApi = {
    */
   async icloudEnsureDownloaded(path: string): Promise<ICloudDownloadState> {
     return await invoke<ICloudDownloadState>("icloud_ensure_downloaded", { path });
+  },
+
+  /**
+   * Notesage's OWN iCloud container, if it exists — not Apple's generic
+   * `com~apple~CloudDocs`. `null` when the phone has not created it (or on a
+   * platform that has no such thing). Phase 2 never creates it: an unentitled
+   * Mac that made the directory anyway would get a folder that never syncs.
+   */
+  async getLibraryContainerPath(): Promise<string | null> {
+    return await invoke<string | null>("get_library_container_path");
+  },
+
+  /**
+   * A library's `.notesage/library.json`. `null` for a library that has none
+   * — which is the ordinary state of today's CloudDocs folder, not an error.
+   * A malformed marker also reads as `null`: "no marker" means "not
+   * migrated", and refusing to start over a hand-edited file would be worse.
+   */
+  async readLibraryMarker(root: string): Promise<LibraryMarker | null> {
+    return await invoke<LibraryMarker | null>("read_library_marker", { root });
+  },
+
+  /**
+   * Move ONE entry into the new library, returning where it landed. Never
+   * overwrites: a destination that exists is an error, so every collision is
+   * settled by the plan rather than by the order steps happened to run in.
+   */
+  async migrateLibraryEntry(src: string, dst: string): Promise<string> {
+    return await invoke<string>("migrate_library_entry", { src, dst });
   },
 
   async readSyncSettings(notesagePath: string): Promise<SyncSettings | null> {

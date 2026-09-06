@@ -38,7 +38,23 @@ export interface FlagSpec {
  * The live registry. Empty is a valid state — it means nothing experimental
  * is in flight, which is the goal between features rather than a gap.
  */
-export const FLAGS = {} as const satisfies Record<string, FlagSpec>;
+export const FLAGS = {
+  /**
+   * Performing a library migration into Notesage's own iCloud container.
+   *
+   * FOLLOWING a migration is not flagged and never was: a Mac that finds a
+   * container marked `migratedFrom` uses it, because the alternative is
+   * looking at a library somebody has already moved away from. What the flag
+   * gates is this Mac deciding to MOVE everyone's files — an operation that
+   * re-uploads the whole library and cannot be undone with a button.
+   */
+  "icloud-container-library": {
+    stage: "experimental",
+    summary: "Keep the synced library in Notesage's own iCloud folder",
+    introducedIn: "0.57.0",
+    default: false,
+  },
+} as const satisfies Record<string, FlagSpec>;
 
 export type FlagId = keyof typeof FLAGS;
 

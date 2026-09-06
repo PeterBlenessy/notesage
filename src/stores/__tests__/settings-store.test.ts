@@ -889,6 +889,17 @@ describe('transient fields NOT persisted', () => {
     expect(parsed.state.icloudNotesagePath).toBeUndefined();
   });
 
+  it('does NOT persist libraryRootKind', async () => {
+    // Resolved from disk at every launch, beside the path it describes. A
+    // remembered kind is a lie the moment another device moves the library.
+    useSettingsStore.setState({ libraryRootKind: 'container' });
+    await waitForPersist();
+
+    const raw = localStorageMock.getItem(STORAGE_KEY);
+    const parsed = JSON.parse(raw!);
+    expect(parsed.state.libraryRootKind).toBeUndefined();
+  });
+
   it('does NOT persist deprecated debugLogging', async () => {
     useSettingsStore.setState({ debugLogging: true } as Record<string, unknown>);
     await waitForPersist();
@@ -2554,7 +2565,7 @@ describe('telemetry consent', () => {
   // 2026-08-15-single-binary-feature-flags).
   function resetTelemetry(labsOn = false) {
     buildChannel.isAlpha = false;
-    useFlagStore.setState({ enabled: labsOn ? (['demo'] as FlagId[]) : [] });
+    useFlagStore.setState({ enabled: labsOn ? (['demo'] as unknown as FlagId[]) : [] });
     useSettingsStore.setState({
       ...SETTINGS_DEFAULTS,
       telemetryUsageEnabled: null,

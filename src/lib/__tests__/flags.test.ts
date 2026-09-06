@@ -59,7 +59,7 @@ describe("flag store", () => {
   });
 
   it("resetAll gives a user one way back", () => {
-    useFlagStore.setState({ enabled: ["a", "b"] as FlagId[] });
+    useFlagStore.setState({ enabled: ["a", "b"] as unknown as FlagId[] });
     useFlagStore.getState().resetAll();
     expect(useFlagStore.getState().enabled).toEqual([]);
   });
