@@ -151,6 +151,28 @@ describe('local-ai-store — two coexisting Local Agent engines', () => {
     expect(setupStateFor(persisted.state.localAgentSetup, 'goose').stage).toBe('idle');
   });
 
+  it('hands back the SAME idle object every time it rejects a foreign flow', () => {
+    // `useLocalAgentSetup` calls this inside a Zustand selector, so the return
+    // value IS `useSyncExternalStore`'s snapshot. A fresh `{ stage: 'idle' }`
+    // per call never equals itself, which React reports as "The result of
+    // getSnapshot should be cached to avoid an infinite loop" and escalates to
+    // error #185 — the app logged its startup and then stopped, with no window
+    // (Peter, 0.54.4, 2026-09-06). Reference equality is the whole fix, so it
+    // is what this asserts; `toEqual` would pass against the bug.
+    const foreign = { stage: 'ready' as const, engine: 'goose' as const };
+    const first = setupStateFor(foreign, 'pi');
+    const second = setupStateFor(foreign, 'pi');
+    expect(first).toBe(second);
+    expect(first.stage).toBe('idle');
+  });
+
+  it('returns the stored object itself when the flow IS this engine\'s', () => {
+    // The other half of snapshot stability: an owned flow must pass through by
+    // reference, not be copied, or every read is a new snapshot again.
+    const own = { stage: 'downloading' as const, engine: 'pi' as const };
+    expect(setupStateFor(own, 'pi')).toBe(own);
+  });
+
   it('treats an untagged persisted flow as the asking engine', () => {
     // State written before the tag existed. Everyone upgrading has exactly one
     // engine, so honouring it preserves their resume; the alternative silently
