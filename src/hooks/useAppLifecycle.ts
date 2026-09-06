@@ -13,6 +13,7 @@ import { backfillSidecarOriginalPaths } from "@/lib/backfill-sidecar-paths";
 import { recoverIncompleteTransactions } from "@/lib/rename-transaction";
 import { migrateUserContentPathsForFolders } from "@/lib/migrate-user-content-paths";
 import { migrateV1AISettings } from "@/lib/ai/migration";
+import { resolveSyncedLibraryRoot } from "@/lib/library-root";
 import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
 import { log, setLogLevel } from "@/lib/logger";
 import { stopAllAcpAgents } from "@/hooks/useAIOperations";
@@ -439,12 +440,56 @@ export async function reloadTrees() {
   let icloudAvailable = false;
   let icloudNotesagePath: string | null = null;
   try {
+    // There are now two places a synced library can live: today's
+    // `iCloud Drive/Notesage`, and Notesage's own iCloud container, which the
+    // phone can create without anyone picking a folder. Both can exist at
+    // once — during a migration they must — so the marker decides which is
+    // live, not the directories. `resolveSyncedLibraryRoot` holds the rule;
+    // this reads the three inputs it needs.
     const icloudRoot = await tauriApi.getICloudPath();
-    if (icloudRoot) {
-      icloudNotesagePath = `${icloudRoot}/Notesage`;
+    const cloudDocsRoot = icloudRoot ? `${icloudRoot}/Notesage` : null;
+    // Each container lookup is separately defensive. Whatever the answer,
+    // failing to get one must leave today's CloudDocs library exactly as it
+    // was — a backend without these commands, or an iCloud hiccup, is not a
+    // reason for a Mac to lose its library at startup.
+    let containerRoot: string | null = null;
+    let marker: Awaited<ReturnType<typeof tauriApi.readLibraryMarker>> = null;
+    try {
+      containerRoot = await tauriApi.getLibraryContainerPath();
+      if (containerRoot) marker = await tauriApi.readLibraryMarker(containerRoot);
+    } catch {
+      containerRoot = null;
+      marker = null;
+    }
+    // "Has content" ignores `.DS_Store`: Finder leaves one in any folder a
+    // person merely opened, and counting it would keep a phone-first user
+    // pinned to an empty CloudDocs root for ever.
+    // Only worth asking when there is a container to prefer over it: with no
+    // container the answer cannot change the outcome, and this is a
+    // directory listing on a cloud path in the startup budget.
+    let cloudDocsHasContent = Boolean(cloudDocsRoot);
+    if (cloudDocsRoot && containerRoot) {
+      try {
+        const entries = await tauriApi.listDirectory(cloudDocsRoot);
+        cloudDocsHasContent = entries.some((e) => e.name !== ".DS_Store");
+      } catch {
+        // No folder there at all, which is exactly "no content".
+        cloudDocsHasContent = false;
+      }
+    }
+    const resolved = resolveSyncedLibraryRoot({
+      containerRoot,
+      cloudDocsRoot,
+      marker,
+      cloudDocsHasContent,
+    });
+    if (resolved.path) {
+      icloudNotesagePath = resolved.path;
       icloudAvailable = true;
       settings.setICloudAvailable(true);
       settings.setICloudNotesagePath(icloudNotesagePath);
+      settings.setLibraryRootKind(resolved.kind);
+      log.info("startup", `Library root: ${resolved.kind} at ${icloudNotesagePath}`);
     }
   } catch {
     // Expected: iCloud path unavailable on non-Apple systems or when iCloud is not set up

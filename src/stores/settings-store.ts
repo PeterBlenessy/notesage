@@ -10,6 +10,7 @@ import {
 } from '@/lib/quiet-chrome-presets';
 import { useFlagStore } from '@/stores/flag-store';
 import { setLocale as applyLocale, SUPPORTED_LOCALES, type Locale } from '@/lib/i18n';
+import type { LibraryRootKind } from "@/lib/library-root";
 
 
 type Theme = "light" | "dark" | "system";
@@ -292,6 +293,14 @@ interface SettingsStore {
   startupReady: boolean;
   icloudAvailable: boolean;
   icloudNotesagePath: string | null;
+  /**
+   * WHICH synced library `icloudNotesagePath` points at: Notesage's own
+   * iCloud container, or today's folder in Apple's generic CloudDocs. Only
+   * the Settings UI reads it — every other consumer wants the path, not the
+   * kind. Non-persisted for the same reason as the path itself: it is
+   * resolved from disk at every startup, and a stale copy would be a lie.
+   */
+  libraryRootKind: LibraryRootKind | null;
   setTheme: (theme: Theme) => void;
   setAccent: (accent: AccentName) => void;
   setContrastLevel: (level: number) => void;
@@ -349,6 +358,7 @@ interface SettingsStore {
   setStartupReady: (ready: boolean) => void;
   setICloudAvailable: (available: boolean) => void;
   setICloudNotesagePath: (path: string | null) => void;
+  setLibraryRootKind: (kind: LibraryRootKind | null) => void;
   setPersonasMigrated: (migrated: boolean) => void;
   setBundledAgentsCleaned: (cleaned: boolean) => void;
   setChatHintsShown: (shown: boolean) => void;
@@ -539,6 +549,7 @@ export const useSettingsStore = create<SettingsStore>()(
       startupReady: false,
       icloudAvailable: false,
       icloudNotesagePath: null,
+      libraryRootKind: null,
       printLayout: false,
       typewriterScrolling: false,
       externalChangeDiffReview: false,
@@ -801,6 +812,10 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setICloudNotesagePath: (path: string | null) => {
         set({ icloudNotesagePath: path });
+      },
+
+      setLibraryRootKind: (kind: LibraryRootKind | null) => {
+        set({ libraryRootKind: kind });
       },
 
       setPersonasMigrated: (migrated: boolean) => {
@@ -1299,7 +1314,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
       partialize: (state) => {
         // Exclude runtime-only fields and deprecated fields from persistence
-        const { homeDir: _hd, skillsReady: _sr, startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, debugLogging: _d, ...persisted } = state;
+        const { homeDir: _hd, skillsReady: _sr, startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, libraryRootKind: _lk, debugLogging: _d, ...persisted } = state;
         return persisted;
       },
       // After rehydration, push the effective consent to Rust so the backend
