@@ -101,6 +101,7 @@ export function LibraryMigrationDialog({
         // which is exactly what looks like data loss. Runs even when steps
         // failed: whatever DID move has moved, and leaving the bookkeeping
         // pointing at the old place would be worse than a partial move.
+        const treeReadFailures: string[] = [];
         const ws = useWorkspaceStore.getState();
         const editor = useEditorStore.getState();
         const notesRoot = useSettingsStore.getState().notesRootPath;
@@ -125,9 +126,19 @@ export function LibraryMigrationDialog({
           // to avoid. `migrateProjectPath` has always done it this way for a
           // single project.
           updateProjectPath: async (from, to) => {
-            const tree = await tauriApi
-              .listDirectory(to, useSettingsStore.getState().showHiddenFiles)
-              .catch(() => []);
+            // A failed re-read is the empty-tree bug again, one project at a
+            // time — so it is recorded rather than swallowed. The path still
+            // updates: pointing at the right place with a stale tree beats
+            // pointing at a folder that is no longer there.
+            let tree: Awaited<ReturnType<typeof tauriApi.listDirectory>> = [];
+            try {
+              tree = await tauriApi.listDirectory(
+                to,
+                useSettingsStore.getState().showHiddenFiles,
+              );
+            } catch (err) {
+              treeReadFailures.push(`${to}: ${String(err)}`);
+            }
             ws.updateProjectPath(from, to, tree);
           },
           renameOpenDocument: (from, to) => editor.renameOpenDocument(from, to),
@@ -141,7 +152,19 @@ export function LibraryMigrationDialog({
         useSettingsStore.getState().setICloudNotesagePath(newRoot);
         useSettingsStore.getState().setLibraryRootKind("container");
 
-        setPhase({ kind: "done", report });
+        setPhase({
+          kind: "done",
+          report: {
+            ...report,
+            leftBehind: [
+              ...report.leftBehind,
+              ...treeReadFailures.map((f) => ({
+                name: f,
+                reason: "moved, but its contents could not be re-read — restart to see them",
+              })),
+            ],
+          },
+        });
       } catch (err) {
         setPhase({ kind: "error", message: String(err) });
         toast.error(String(err));

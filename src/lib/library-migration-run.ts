@@ -55,7 +55,12 @@ export function mergePinsFiles(mine: string | null, theirs: string | null): stri
 export function migrationDeps(): Omit<MigrationDeps, "onStep"> {
   return {
     moveEntry: (src, dst) => tauriApi.migrateLibraryEntry(src, dst),
-    listNames: async (dir) => (await tauriApi.listDirectory(dir)).map((e) => e.name),
+    // HIDDEN INCLUDED, and this argument is the whole point. A merge that
+    // lists only visible children moves every document out of a folder and
+    // leaves `.notesage/` — its comments, pins, project settings, an AI lock
+    // — behind, reporting success. That is worse than the failure it
+    // replaced, which at least said so.
+    listNames: async (dir) => (await tauriApi.listDirectory(dir, true)).map((e) => e.name),
     readFile: (path) => tauriApi.readFile(path),
     writeFile: (path, content) => tauriApi.writeFile(path, content),
     deletePath: (path) => tauriApi.deletePath(path),
