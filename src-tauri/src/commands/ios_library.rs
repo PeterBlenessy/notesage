@@ -1123,6 +1123,42 @@ pub async fn ios_notification_set_prefs(
     }
 }
 
+/// A thumbnail the app rendered earlier, straight off disk.
+///
+/// The listing's thumbnails were cached only in the WebView's memory, so
+/// every cold launch rebuilt every one of them — and rebuilding a saved
+/// article's is a 200-800 KB read to find its lead image. RAW bytes on the
+/// way back, like `ios_read_binary`, so a hit costs no JSON parse on the
+/// main thread.
+#[tauri::command]
+pub async fn ios_thumb_cache_get(
+    app: tauri::AppHandle,
+    key: String,
+) -> Result<tauri::ipc::Response, String> {
+    #[cfg(target_os = "ios")]
+    {
+        let bytes = ios_impl::thumb_cache_get(&app, &key).await?;
+        Ok(tauri::ipc::Response::new(bytes))
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, &key);
+        Err("ios_thumb_cache_get is only available on iOS".into())
+    }
+}
+
+/// Keep a rendered thumbnail for the next launch. Best effort by design:
+/// the caller has the picture already, so a failed write costs a rebuild
+/// later and nothing now.
+#[tauri::command]
+pub async fn ios_thumb_cache_put(
+    app: tauri::AppHandle,
+    key: String,
+    base64: String,
+) -> Result<(), String> {
+    ios_only!("ios_thumb_cache_put", app, ios_impl::thumb_cache_put(&app, &key, &base64).await)
+}
+
 /// Recount the unread Inbox from disk and refresh the icon badge. With
 /// `mark_seen` (the Inbox listing only), also record that the user has the
 /// Inbox's items in front of them. Takes no path: the Inbox folder is fixed,
@@ -1472,6 +1508,22 @@ mod ios_impl {
             badge: s.badge,
             new_items: s.new_items,
         }
+    }
+
+    pub async fn thumb_cache_get(app: &AppHandle, key: &str) -> Result<Vec<u8>, String> {
+        use base64::Engine as _;
+        let hit = app.notesage_ios().thumb_cache_get(key).map_err(|e| e.to_string())?;
+        // A miss is an EMPTY response, not an error: it is the ordinary case
+        // the first time a folder is seen, and an error per row would make
+        // the frontend's normal path an exception handler.
+        let Some(b64) = hit else { return Ok(Vec::new()) };
+        base64::engine::general_purpose::STANDARD
+            .decode(b64.as_bytes())
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn thumb_cache_put(app: &AppHandle, key: &str, base64: &str) -> Result<(), String> {
+        app.notesage_ios().thumb_cache_put(key, base64).map_err(|e| e.to_string())
     }
 
     pub async fn recording_start(

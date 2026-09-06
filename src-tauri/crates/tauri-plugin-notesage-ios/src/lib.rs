@@ -150,6 +150,12 @@ pub struct NotificationStatus {
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
+struct ThumbCacheHit {
+    hit: bool,
+    base64: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, serde::Deserialize)]
 struct UnreadCount {
     count: u32,
 }
@@ -613,6 +619,16 @@ impl<R: Runtime> NotesageIos<R> {
         )
     }
 
+    /// A cached thumbnail's bytes, or `None` for a miss.
+    pub fn thumb_cache_get(&self, key: &str) -> Result<Option<String>> {
+        self.call::<_, ThumbCacheHit>("thumbCacheGet", serde_json::json!({ "key": key }))
+            .map(|h| if h.hit { h.base64 } else { None })
+    }
+
+    pub fn thumb_cache_put(&self, key: &str, base64: &str) -> Result<()> {
+        self.call("thumbCachePut", serde_json::json!({ "key": key, "base64": base64 }))
+    }
+
     pub fn inbox_unread_count(&self, mark_seen: bool) -> Result<u32> {
         self.call::<_, UnreadCount>("inboxUnreadCount", serde_json::json!({ "markSeen": mark_seen }))
             .map(|c| c.count)
@@ -817,6 +833,12 @@ impl<R: Runtime> NotesageIos<R> {
         _new_items: Option<bool>,
         _templates: Option<&std::collections::HashMap<String, String>>,
     ) -> Result<NotificationStatus> {
+        Err(Error::Unavailable)
+    }
+    pub fn thumb_cache_get(&self, _key: &str) -> Result<Option<String>> {
+        Err(Error::Unavailable)
+    }
+    pub fn thumb_cache_put(&self, _key: &str, _base64: &str) -> Result<()> {
         Err(Error::Unavailable)
     }
     pub fn inbox_unread_count(&self, _mark_seen: bool) -> Result<u32> {

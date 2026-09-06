@@ -7,11 +7,15 @@ const iosReadFileMock = vi.fn<(relPath: string) => Promise<string>>();
 const iosReadBinaryMock = vi.fn<(relPath: string) => Promise<Uint8Array>>();
 const iosThumbnailMock = vi.fn<(relPath: string, maxPixel: number) => Promise<Uint8Array>>();
 const iosArticleThumbnailMock = vi.fn<(relPath: string) => Promise<Uint8Array>>();
+const iosThumbCacheGetMock = vi.fn<(key: string) => Promise<Uint8Array | null>>();
+const iosThumbCachePutMock = vi.fn<(key: string, base64: string) => Promise<void>>();
 vi.mock("@/lib/ios-api", () => ({
   iosReadFile: (relPath: string) => iosReadFileMock(relPath),
   iosReadBinary: (relPath: string) => iosReadBinaryMock(relPath),
   iosThumbnail: (relPath: string, maxPixel: number) => iosThumbnailMock(relPath, maxPixel),
   iosArticleThumbnail: (relPath: string) => iosArticleThumbnailMock(relPath),
+  iosThumbCacheGet: (key: string) => iosThumbCacheGetMock(key),
+  iosThumbCachePut: (key: string, base64: string) => iosThumbCachePutMock(key, base64),
 }));
 
 const renderMarkdownFragmentMock = vi.fn<(markdown: string, theme: "light" | "dark") => Promise<string>>();
@@ -39,6 +43,10 @@ function entry(overrides: Partial<FileEntry> & { name: string }): FileEntry {
     path: overrides.name,
     is_directory: false,
     hidden: false,
+    // A real listing carries one, and the disk cache refuses to key without
+    // it — so the default has to have it or every test silently exercises the
+    // no-cache path.
+    modified: 1_700_000_000,
     ...overrides,
   };
 }
@@ -131,7 +139,7 @@ describe("getThumbnail dispatch (#633)", () => {
     const result = await getThumbnail(entry({ name: "photo.png" }), { theme: "light" });
 
     expect(iosReadBinaryMock).toHaveBeenCalledWith("photo.png");
-    expect(result).toEqual({ kind: "image", url: "blob:mock-thumbnail-url" });
+    expect(result).toMatchObject({ kind: "image", url: "blob:mock-thumbnail-url" });
   });
 
   it("PDFs: reads binary bytes and delegates to the pdf thumbnail renderer", async () => {
@@ -143,7 +151,7 @@ describe("getThumbnail dispatch (#633)", () => {
 
     expect(iosReadBinaryMock).toHaveBeenCalledWith("report.pdf");
     expect(renderPdfThumbnailDataUrlMock).toHaveBeenCalledWith(bytes);
-    expect(result).toEqual({ kind: "pdf", url: "data:image/png;base64,xyz" });
+    expect(result).toMatchObject({ kind: "pdf", url: "data:image/png;base64,xyz" });
   });
 
   it("falls back to a generic icon (not a throw) when the read fails", async () => {
@@ -484,7 +492,7 @@ describe("OpenDocument thumbnails (share-to-Inbox coverage)", () => {
     const result = await getThumbnail(entry({ name: "report.odt" }), {
       theme: "light",
     });
-    expect(result).toEqual({ kind: "image", url: "blob:mock-thumbnail-url" });
+    expect(result).toMatchObject({ kind: "image", url: "blob:mock-thumbnail-url" });
     expect(iosThumbnailMock).toHaveBeenCalled(); // native tried first
   });
 
@@ -504,7 +512,7 @@ describe("OpenDocument thumbnails (share-to-Inbox coverage)", () => {
     const result = await getThumbnail(entry({ name: "report.odt" }), {
       theme: "light",
     });
-    expect(result).toEqual({ kind: "image", url: "blob:mock-thumbnail-url" });
+    expect(result).toMatchObject({ kind: "image", url: "blob:mock-thumbnail-url" });
     expect(iosReadBinaryMock).not.toHaveBeenCalled();
   });
 });
@@ -549,5 +557,61 @@ describe("imageMimeFor coverage of capture-pipeline image formats", () => {
       vi.stubGlobal("Blob", RealBlob);
     }
     expect(blobs).toContain(expected);
+  });
+});
+
+describe("the disk cache keeps a picture across launches", () => {
+  // A miss by default, so every other test in this file behaves as before.
+  beforeEach(() => {
+    iosThumbCacheGetMock.mockReset().mockResolvedValue(null);
+    iosThumbCachePutMock.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("writes the picture it just built, from the bytes it already holds", async () => {
+    // NOT by re-reading the object URL: the app's CSP has no `blob:` in
+    // `connect-src`, so `fetch` on one is refused. That is how this cache
+    // first shipped creating its directory and writing nothing into it.
+    iosReadBinaryMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    const result = await getThumbnail(entry({ name: "photo.png" }), { theme: "light" });
+    expect(result.kind).toBe("image");
+    await vi.waitFor(() => expect(iosThumbCachePutMock).toHaveBeenCalled());
+    const [key, base64] = iosThumbCachePutMock.mock.calls[0];
+    expect(key).toMatch(/^[0-9a-f]{64}$/);
+    expect(base64.length).toBeGreaterThan(0);
+  });
+
+  it("refuses to cache a file with no modification time", async () => {
+    // `LibraryAccess` reads mtime with a `try?`, so it is legitimately absent
+    // for an iCloud placeholder. Keying on a `?? 0` fallback would make the
+    // digest a CONSTANT for that path: edit the file and the stale picture
+    // would be served for ever. No mtime, no cache.
+    iosReadBinaryMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    // Let any earlier test's in-flight write land BEFORE clearing, so a
+    // straggler on a shared mock is not blamed on this call.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    iosThumbCacheGetMock.mockClear();
+    iosThumbCachePutMock.mockClear();
+    const noMtime = { name: "ghost.png", path: "Inbox/ghost.png", is_directory: false, hidden: false };
+    await getThumbnail(noMtime, { theme: "light" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(iosThumbCacheGetMock).not.toHaveBeenCalled();
+    expect(iosThumbCachePutMock).not.toHaveBeenCalled();
+  });
+
+  it("does not keep the bytes alive once they are on disk", async () => {
+    // Keeping them on the result would pin a second copy of every picture in
+    // the session cache, beside the Blob the object URL already holds.
+    iosReadBinaryMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    const result = await getThumbnail(entry({ name: "photo.png" }), { theme: "light" });
+    await vi.waitFor(() => expect(iosThumbCachePutMock).toHaveBeenCalled());
+    if (result.kind === "image") expect(result.bytes).toBeUndefined();
+  });
+
+  it("serves a hit without reading the file at all", async () => {
+    iosThumbCacheGetMock.mockResolvedValue(new Uint8Array([4, 5, 6]));
+    const result = await getThumbnail(entry({ name: "cached.png" }), { theme: "light" });
+    expect(result).toMatchObject({ kind: "image" });
+    expect(iosReadBinaryMock).not.toHaveBeenCalled();
+    expect(iosThumbnailMock).not.toHaveBeenCalled();
   });
 });
