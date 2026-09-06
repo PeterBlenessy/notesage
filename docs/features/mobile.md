@@ -800,7 +800,15 @@ for itself. Two things ship, both honest about their limits:
   evicted file simply fails, which that helper cannot tell apart from
   "nothing has ever been read", so every item counted unread and the badge
   froze at the Inbox's file count for ever — reading wrote a sidecar the
-  counter could not open (device, build 50). It uses the same rule as
+  counter could not open (device, build 50). The download is gated on the
+  item's **downloading status**, not on whether the path exists: since iOS 11
+  an evicted item keeps its real name in the directory listing and hides the
+  `.name.icloud` placeholder, so `fileExists` answers true for a file with
+  nothing behind it and the download is never asked for — the same frozen
+  badge, one condition upstream of the fix. `.current` is the only status
+  that means the bytes are here (`.downloaded` means they are stale), and a
+  file that is not ubiquitous reports no status at all, where existence is
+  again the only question worth asking. It uses the same rule as
   `isUnread` in
   `src/lib/reading-progress-file.ts` — no entry, a tombstone, or
   `openedAt: null` — locked together by `inbox-unread-rule.test.ts`. It is
