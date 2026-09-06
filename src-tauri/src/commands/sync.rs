@@ -373,6 +373,161 @@ async fn migrate_directory(source: &Path, dest: &Path) -> Result<String, String>
     .map_err(|e| format!("Migration task failed: {e}"))?
 }
 
+/// The library's self-description, at `<root>/.notesage/library.json`.
+///
+/// Written by whichever device creates the library and read by every other
+/// one. It is what lets a Mac FOLLOW a migration it did not perform: a
+/// container carrying `migratedFrom` is the live library, and the old
+/// CloudDocs folder beside it is a leftover, which no amount of looking at
+/// the two directories could otherwise establish.
+///
+/// Unknown fields are preserved on rewrite by the frontend, so a newer
+/// device's marker is not truncated by an older one.
+#[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryMarker {
+    pub version: u32,
+    pub kind: String,
+    pub created_by: String,
+    pub created_at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub migrated_from: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub migrated_at: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub migrated_by: Option<String>,
+}
+
+/// `<root>/.notesage/library.json` — mirrors `LibraryAccess.markerRelPath` on
+/// the phone. One spelling, two languages; changing it means changing both.
+pub const LIBRARY_MARKER_REL_PATH: &str = ".notesage/library.json";
+
+/// Notesage's OWN iCloud container, if it exists.
+///
+/// Distinct from `get_icloud_path`, which returns Apple's generic
+/// `com~apple~CloudDocs`. This one is a container only Notesage can write,
+/// which is precisely why the phone can create the library there without
+/// asking anyone to pick a folder.
+///
+/// Phase 2 never CREATES it — an unentitled Mac cannot, and a Mac that made
+/// the directory anyway would produce a folder that never syncs. It exists
+/// only if the phone (or a later entitled Mac) put it there.
+#[tauri::command]
+pub async fn get_library_container_path() -> Result<Option<String>, String> {
+    Ok(library_container_path())
+}
+
+/// The path itself, so the derivation can be tested without the command.
+pub fn library_container_path() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = dirs::home_dir()?;
+        let container = home
+            .join("Library")
+            .join("Mobile Documents")
+            .join("iCloud~com~notesage~app")
+            .join("Documents");
+        if container.is_dir() {
+            return Some(container.to_string_lossy().to_string());
+        }
+        None
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
+/// Read a library's marker. `None` when there is no marker — which is the
+/// ordinary case for today's CloudDocs library, not an error.
+///
+/// A malformed marker is also `None` rather than an error: the resolution
+/// rule treats "no marker" as "not migrated", and refusing to start because
+/// a JSON file was hand-edited would be the worse failure.
+#[tauri::command]
+pub async fn read_library_marker(root: String) -> Result<Option<LibraryMarker>, String> {
+    Ok(read_library_marker_at(Path::new(&root)))
+}
+
+pub fn read_library_marker_at(root: &Path) -> Option<LibraryMarker> {
+    let text = std::fs::read_to_string(root.join(LIBRARY_MARKER_REL_PATH)).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// Move ONE entry into the new library. The orchestrator decides what moves
+/// and what a collision means; this refuses to make either decision.
+///
+/// It never overwrites: a destination that already exists is an error, so a
+/// merge has to be planned rather than falling out of the order things
+/// happened to run in. And the source must sit inside a plausible library
+/// root, so a bad path from the frontend cannot turn this into a general
+/// "move anything anywhere" command.
+#[tauri::command]
+pub async fn migrate_library_entry(src: String, dst: String) -> Result<String, String> {
+    let source = PathBuf::from(&src);
+    let dest = PathBuf::from(&dst);
+
+    if !source.exists() {
+        return Err(format!("Nothing to move at {src}"));
+    }
+    if dest.exists() {
+        return Err(format!("{dst} already exists"));
+    }
+    if !is_inside_library_root(&source) {
+        return Err(format!("{src} is not inside a library"));
+    }
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Could not make {}: {e}", parent.display()))?;
+    }
+
+    // A symlink is moved AS A LINK: `symlink_metadata` does not follow it, so
+    // a link to a directory takes the file path below and is renamed, never
+    // copied through into a duplicate of whatever it points at.
+    let meta = std::fs::symlink_metadata(&source)
+        .map_err(|e| format!("Could not read {src}: {e}"))?;
+    if meta.is_dir() {
+        return migrate_directory(&source, &dest).await;
+    }
+
+    match std::fs::rename(&source, &dest) {
+        Ok(()) => Ok(dst),
+        Err(e) => {
+            #[cfg(unix)]
+            let cross_device = e.raw_os_error() == Some(libc::EXDEV);
+            #[cfg(not(unix))]
+            let cross_device = true;
+            if !cross_device {
+                return Err(format!("Could not move {src}: {e}"));
+            }
+            std::fs::copy(&source, &dest).map_err(|e| format!("Could not copy {src}: {e}"))?;
+            std::fs::remove_file(&source)
+                .map_err(|e| format!("Copied {src} but could not remove it: {e}"))?;
+            Ok(dst)
+        }
+    }
+}
+
+/// Is this path inside a directory that could be a Notesage library?
+///
+/// Deliberately shallow: the two iCloud roots and the local `~/Notesage`.
+/// It is a guard against a wrong path, not a permission system — the app
+/// already trusts its own renderer for file operations (see
+/// docs/architecture.md on the renderer-trust model).
+fn is_inside_library_root(path: &Path) -> bool {
+    let Some(home) = dirs::home_dir() else {
+        return false;
+    };
+    let mobile = home.join("Library").join("Mobile Documents");
+    let roots = [
+        mobile.join("com~apple~CloudDocs"),
+        mobile.join("iCloud~com~notesage~app"),
+        home.join("Notesage"),
+    ];
+    roots.iter().any(|root| path.starts_with(root))
+}
+
 /// Count all files (not directories) recursively in a directory.
 fn count_files(path: &Path) -> Result<usize, std::io::Error> {
     let mut count = 0;
@@ -432,5 +587,144 @@ mod tests {
         let path = dir.path().join("audio.m4a").to_string_lossy().to_string();
         let state = icloud_ensure_downloaded(path).await.unwrap();
         assert_ne!(state, DownloadState::Ready);
+    }
+
+    // --- Phase 2: the container, its marker, and moving one entry ------------
+
+    #[test]
+    fn marker_parses_the_shape_the_phone_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".notesage")).unwrap();
+        std::fs::write(
+            dir.path().join(LIBRARY_MARKER_REL_PATH),
+            r#"{"version":1,"kind":"container","createdBy":"ios","createdAt":"2026-09-05T10:00:00Z"}"#,
+        )
+        .unwrap();
+        let marker = read_library_marker_at(dir.path()).expect("marker");
+        assert_eq!(marker.created_by, "ios");
+        assert_eq!(marker.kind, "container");
+        assert!(marker.migrated_from.is_none());
+    }
+
+    #[test]
+    fn marker_carries_the_migration_fields_when_present() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".notesage")).unwrap();
+        std::fs::write(
+            dir.path().join(LIBRARY_MARKER_REL_PATH),
+            r#"{"version":1,"kind":"container","createdBy":"macos","createdAt":"2026-09-05T10:00:00Z",
+                "migratedFrom":"com~apple~CloudDocs/Notesage","migratedAt":"2026-09-06T08:00:00Z",
+                "migratedBy":"Peter's MacBook Pro"}"#,
+        )
+        .unwrap();
+        let marker = read_library_marker_at(dir.path()).expect("marker");
+        assert_eq!(
+            marker.migrated_from.as_deref(),
+            Some("com~apple~CloudDocs/Notesage")
+        );
+        assert_eq!(marker.migrated_by.as_deref(), Some("Peter's MacBook Pro"));
+    }
+
+    #[test]
+    fn a_library_with_no_marker_is_not_an_error() {
+        // Today's CloudDocs library has no marker at all. That is the normal
+        // case and must read as "not migrated", never as a failure to start.
+        let dir = tempfile::tempdir().unwrap();
+        assert!(read_library_marker_at(dir.path()).is_none());
+    }
+
+    #[test]
+    fn a_hand_edited_marker_reads_as_absent_rather_than_failing() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".notesage")).unwrap();
+        std::fs::write(dir.path().join(LIBRARY_MARKER_REL_PATH), "{ not json").unwrap();
+        assert!(read_library_marker_at(dir.path()).is_none());
+    }
+
+    #[tokio::test]
+    async fn moving_onto_something_that_exists_is_refused() {
+        // The primitive never merges. If it overwrote, a collision would be
+        // resolved by whichever step happened to run last instead of by the
+        // plan — and the loser would be gone.
+        let home = dirs::home_dir().unwrap();
+        let root = home.join("Notesage");
+        let stamp = format!("notesage-test-{}", std::process::id());
+        let base = root.join(&stamp);
+        std::fs::create_dir_all(&base).unwrap();
+        let src = base.join("a.md");
+        let dst = base.join("b.md");
+        std::fs::write(&src, "one").unwrap();
+        std::fs::write(&dst, "two").unwrap();
+
+        let err = migrate_library_entry(
+            src.to_string_lossy().to_string(),
+            dst.to_string_lossy().to_string(),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("already exists"), "{err}");
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "two");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn a_path_outside_every_library_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("stray.md");
+        std::fs::write(&src, "x").unwrap();
+        let err = migrate_library_entry(
+            src.to_string_lossy().to_string(),
+            dir.path().join("moved.md").to_string_lossy().to_string(),
+        )
+        .await
+        .unwrap_err();
+        assert!(err.contains("not inside a library"), "{err}");
+    }
+
+    #[tokio::test]
+    async fn a_file_moves_and_its_content_survives() {
+        let home = dirs::home_dir().unwrap();
+        let stamp = format!("notesage-move-{}", std::process::id());
+        let base = home.join("Notesage").join(&stamp);
+        std::fs::create_dir_all(base.join("from")).unwrap();
+        let src = base.join("from").join("note.md");
+        std::fs::write(&src, "# hello").unwrap();
+        let dst = base.join("to").join("note.md");
+
+        let out = migrate_library_entry(
+            src.to_string_lossy().to_string(),
+            dst.to_string_lossy().to_string(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(out, dst.to_string_lossy());
+        assert!(!src.exists());
+        assert_eq!(std::fs::read_to_string(&dst).unwrap(), "# hello");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn a_directory_moves_with_its_dot_folder_intact() {
+        // `.notesage/` inside a project carries its comments and metadata —
+        // a move that dropped it would silently orphan every comment.
+        let home = dirs::home_dir().unwrap();
+        let stamp = format!("notesage-dir-{}", std::process::id());
+        let base = home.join("Notesage").join(&stamp);
+        let proj = base.join("from").join("Project");
+        std::fs::create_dir_all(proj.join(".notesage")).unwrap();
+        std::fs::write(proj.join("note.md"), "x").unwrap();
+        std::fs::write(proj.join(".notesage").join("project.json"), "{}").unwrap();
+        let dst = base.join("to").join("Project");
+
+        migrate_library_entry(
+            proj.to_string_lossy().to_string(),
+            dst.to_string_lossy().to_string(),
+        )
+        .await
+        .unwrap();
+        assert!(dst.join("note.md").exists());
+        assert!(dst.join(".notesage").join("project.json").exists());
+        assert!(!proj.exists());
+        std::fs::remove_dir_all(&base).ok();
     }
 }
