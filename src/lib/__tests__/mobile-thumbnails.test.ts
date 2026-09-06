@@ -43,6 +43,10 @@ function entry(overrides: Partial<FileEntry> & { name: string }): FileEntry {
     path: overrides.name,
     is_directory: false,
     hidden: false,
+    // A real listing carries one, and the disk cache refuses to key without
+    // it — so the default has to have it or every test silently exercises the
+    // no-cache path.
+    modified: 1_700_000_000,
     ...overrides,
   };
 }
@@ -570,11 +574,37 @@ describe("the disk cache keeps a picture across launches", () => {
     iosReadBinaryMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
     const result = await getThumbnail(entry({ name: "photo.png" }), { theme: "light" });
     expect(result.kind).toBe("image");
-    if (result.kind === "image") expect(result.bytes?.length).toBeGreaterThan(0);
     await vi.waitFor(() => expect(iosThumbCachePutMock).toHaveBeenCalled());
     const [key, base64] = iosThumbCachePutMock.mock.calls[0];
     expect(key).toMatch(/^[0-9a-f]{64}$/);
     expect(base64.length).toBeGreaterThan(0);
+  });
+
+  it("refuses to cache a file with no modification time", async () => {
+    // `LibraryAccess` reads mtime with a `try?`, so it is legitimately absent
+    // for an iCloud placeholder. Keying on a `?? 0` fallback would make the
+    // digest a CONSTANT for that path: edit the file and the stale picture
+    // would be served for ever. No mtime, no cache.
+    iosReadBinaryMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    // Let any earlier test's in-flight write land BEFORE clearing, so a
+    // straggler on a shared mock is not blamed on this call.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    iosThumbCacheGetMock.mockClear();
+    iosThumbCachePutMock.mockClear();
+    const noMtime = { name: "ghost.png", path: "Inbox/ghost.png", is_directory: false, hidden: false };
+    await getThumbnail(noMtime, { theme: "light" });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(iosThumbCacheGetMock).not.toHaveBeenCalled();
+    expect(iosThumbCachePutMock).not.toHaveBeenCalled();
+  });
+
+  it("does not keep the bytes alive once they are on disk", async () => {
+    // Keeping them on the result would pin a second copy of every picture in
+    // the session cache, beside the Blob the object URL already holds.
+    iosReadBinaryMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    const result = await getThumbnail(entry({ name: "photo.png" }), { theme: "light" });
+    await vi.waitFor(() => expect(iosThumbCachePutMock).toHaveBeenCalled());
+    if (result.kind === "image") expect(result.bytes).toBeUndefined();
   });
 
   it("serves a hit without reading the file at all", async () => {

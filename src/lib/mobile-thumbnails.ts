@@ -28,6 +28,7 @@ import {
   iosThumbCachePut,
 } from "@/lib/ios-api";
 import { renderMarkdownFragment } from "@/lib/markdown-render";
+import { log } from "@/lib/logger";
 import { classifyFile, isOpenDocument } from "@/components/mobile/FileRow";
 import type { FileEntry } from "@/lib/tauri";
 
@@ -400,7 +401,15 @@ async function diskKey(entry: FileEntry, theme: "light" | "dark"): Promise<strin
   // No digest (jsdom, an old WebView) means no disk cache, not a weaker key:
   // a collision would serve one document's picture for another.
   if (!subtle) return null;
-  const material = `v1|${entry.path}|${entry.modified ?? 0}|${theme}|${THUMBNAIL_MAX_EDGE}`;
+  // No modification time, no disk cache. `LibraryAccess` reads it with a
+  // `try?`, so it is legitimately absent for an iCloud placeholder or a
+  // transient failure — and a `?? 0` fallback would make the key a CONSTANT
+  // for that path. Edit the file and the digest would not move, so the stale
+  // picture would be served for ever, which is precisely the invalidation bug
+  // keying on mtime exists to avoid. Rebuilding is always safe; serving the
+  // wrong picture is not.
+  if (entry.modified === undefined || entry.modified === null) return null;
+  const material = `v1|${entry.path}|${entry.modified}|${theme}|${THUMBNAIL_MAX_EDGE}`;
   const digest = await subtle.digest("SHA-256", new TextEncoder().encode(material));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -414,9 +423,15 @@ async function diskCached(
     if (!key) return null;
     const bytes = await iosThumbCacheGet(key);
     if (!bytes) return null;
-    return { kind: "image", url: URL.createObjectURL(new Blob([bytes.slice().buffer])), bytes };
-  } catch {
-    // No native side, or an unreadable entry: rebuild, which is always safe.
+    // No `bytes` on a hit: it is already on disk, so carrying a copy for the
+    // session would be pure waste.
+    return { kind: "image", url: URL.createObjectURL(new Blob([bytes.slice().buffer])) };
+  } catch (err) {
+    // A miss is normal and silent; a FAILURE is not. The first cut of this
+    // cache wrote nothing at all for two builds because a rejected `fetch`
+    // was swallowed exactly here, so the one thing that must never happen
+    // again is failing quietly.
+    log.warn("thumbnails", `disk cache read failed: ${String(err)}`);
     return null;
   }
 }
@@ -424,15 +439,11 @@ async function diskCached(
 async function rememberOnDisk(
   entry: FileEntry,
   theme: "light" | "dark",
-  result: ThumbnailResult,
+  buf: Uint8Array | undefined,
 ): Promise<void> {
-  // Only pictures. A markdown thumbnail is an HTML fragment rendered from ten
-  // lines of source — already cheap, and not bytes.
-  if (result.kind !== "image" && result.kind !== "pdf") return;
   try {
     const key = await diskKey(entry, theme);
     if (!key) return;
-    const buf = result.bytes;
     // No bytes means the picture came from somewhere that could not give
     // them up. Skip rather than reach for the object URL: `fetch` on a
     // `blob:` is blocked by this app's CSP, which is exactly how this cache
@@ -441,9 +452,11 @@ async function rememberOnDisk(
     let binary = "";
     for (const b of buf) binary += String.fromCharCode(b);
     await iosThumbCachePut(key, btoa(binary));
-  } catch {
-    // Best effort by design: the picture is already on screen, so a failed
-    // write costs a rebuild next launch and nothing now.
+  } catch (err) {
+    // Best effort for the USER — the picture is already on screen — but not
+    // silent for us: a write that always fails means the cache is doing
+    // nothing, which is invisible from the outside.
+    log.warn("thumbnails", `disk cache write failed: ${String(err)}`);
   }
 }
 
@@ -472,8 +485,13 @@ export function getThumbnail(
       await yieldToUi();
       if (isStale()) throw new ThumbnailCancelled();
       const built = await buildThumbnail(entry, opts, isStale);
-      void rememberOnDisk(entry, opts.theme, built);
-      return built;
+      // The bytes go to disk and are then DROPPED. Keeping them on the result
+      // would pin a second full copy of every picture in the session cache,
+      // beside the Blob its object URL already holds — for a library browsed
+      // in one sitting that is real memory, permanently, on a phone.
+      const bytes = built.kind === "image" || built.kind === "pdf" ? built.bytes : undefined;
+      void rememberOnDisk(entry, opts.theme, bytes);
+      return bytes ? { ...built, bytes: undefined } : built;
     });
   })().catch((err) => {
     if (err instanceof ThumbnailCancelled) {
