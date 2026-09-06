@@ -26,17 +26,16 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-A fresh install now makes its own library — no folder to pick.
+Swipe back works again, and you can choose where the sound comes out.
 
 NEW
-• Recordings has its own card under the Inbox, always there.
-• Swipe in from the left edge of a document to go back.
-• The recording bar matches the player and draws your voice.
+• A button in the player picks the output: phone, headphones, car.
 
 FIXED
-• Thumbnails are there when the list opens, not after.
-• The unread count moves again.
+• Swiping in from the left edge to leave a document had stopped working.
+• Unread items are marked in gallery view too, not only in the list.
+• The recording trace shows a voice rising and falling, not a solid block.
 
 TRY
-• Swipe in from the left edge to leave an article, then a saved web page.
-• For the new library setup, delete the app and install again: it must never ask for a folder.
+• Play an article, tap the output button, move it to headphones and back.
+• Swipe in from the left edge of an article, and of a saved web page.
