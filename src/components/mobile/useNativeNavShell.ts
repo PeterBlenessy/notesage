@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   iosNavShellDismiss,
@@ -59,6 +59,19 @@ export function useNativeNavShell(active: boolean): void {
   /** Set while applying a system pop, so the reconcile does not answer the
    *  store change it just caused with a second round of pops. */
   const applyingPop = useRef(false);
+  /**
+   * One reconcile at a time.
+   *
+   * A reconcile is several awaited calls, and someone tapping quickly changes
+   * the store again in the middle of one. Two overlapping runs both mutate the
+   * tracked stack and end up describing a stack neither of them built — which
+   * the drift recovery then answers by collapsing to the root, in front of a
+   * user whose only crime was tapping twice. So runs are serialised, and a
+   * change that arrives mid-run schedules exactly one more pass afterwards.
+   */
+  const reconciling = useRef(false);
+  const rerun = useRef(false);
+  const [reconcileTick, setReconcileTick] = useState(0);
 
   // The freeze has to happen at the tap, before React redraws — see
   // `setNavigationGate`.
@@ -124,6 +137,10 @@ export function useNativeNavShell(active: boolean): void {
       rootTitle,
       homeEditorTitle: t("menu.editHome"),
     });
+    if (reconciling.current) {
+      rerun.current = true;
+      return;
+    }
     const { pops, pushes } = diffNavStack(nativeStack.current, next);
     if (pops === 0 && pushes.length === 0) {
       // Same screens: a title may still have changed under a rename.
@@ -142,17 +159,26 @@ export function useNativeNavShell(active: boolean): void {
     // animating that is a stack of slides nobody asked for, on the first
     // screen they see.
     const animated = pops + pushes.length === 1;
+    reconciling.current = true;
     void (async () => {
-      for (let i = 0; i < pops; i += 1) await iosNavShellPop(animated).catch(() => {});
-      for (const screen of pushes) {
-        await iosNavShellPush(screen.id, screen.title, animated).catch(() => {});
+      try {
+        for (let i = 0; i < pops; i += 1) await iosNavShellPop(animated).catch(() => {});
+        for (const screen of pushes) {
+          await iosNavShellPush(screen.id, screen.title, animated).catch(() => {});
+        }
+        nativeStack.current = next;
+        // The destination is drawn — the outgoing screen's frozen picture can go.
+        const top = next[next.length - 1];
+        if (top) await iosNavShellRendered(top.id).catch(() => {});
+      } finally {
+        reconciling.current = false;
+        if (rerun.current) {
+          rerun.current = false;
+          setReconcileTick((n) => n + 1);
+        }
       }
-      nativeStack.current = next;
-      // The destination is drawn — the outgoing screen's frozen picture can go.
-      const top = next[next.length - 1];
-      if (top) await iosNavShellRendered(top.id).catch(() => {});
     })();
-  }, [on, presented, folderStack, docStack, openDoc, homeEditorOpen, rootTitle]);
+  }, [on, presented, folderStack, docStack, openDoc, homeEditorOpen, rootTitle, reconcileTick]);
 
   // Stack → store.
   useEffect(() => {
