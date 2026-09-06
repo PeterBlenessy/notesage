@@ -64,7 +64,7 @@ describe("Labs panel", () => {
     const { rerender } = renderWithProviders(<LabsSettings />);
     expect(screen.queryByRole("button", { name: "Reset" })).toBeNull();
 
-    useFlagStore.setState({ enabled: ["demo-0", "demo-1"] as FlagId[] });
+    useFlagStore.setState({ enabled: ["demo-0", "demo-1"] as unknown as FlagId[] });
     rerender(<LabsSettings />);
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     expect(useFlagStore.getState().enabled).toEqual([]);
