@@ -66,6 +66,68 @@ The workspace tree is exposed through the flat `QuietSidebar` (`src/components/s
 - Cloud badge icon on synced files and folders in sidebar
 - "Configure then apply" pattern: toggles update pending state, Apply button triggers migration
 
+**Two possible synced roots, and the marker that decides (2026-09-06).**
+
+A synced library can now live in either of two places: today's
+`iCloud Drive/Notesage` — a plain folder in Apple's generic
+`com~apple~CloudDocs` container, which the Mac created with ordinary file
+I/O — or **Notesage's own iCloud container**,
+`iCloud~com~notesage~app/Documents`, which only Notesage can write and which
+the phone can therefore create without asking anyone to pick a folder.
+
+Both can exist at once — during a migration they must — so which is live
+cannot be read off the directories. A marker file answers it:
+`<root>/.notesage/library.json`, written by whichever device created the
+library and extended by a migration with `migratedFrom` / `migratedAt` /
+`migratedBy`. `resolveSyncedLibraryRoot` (`src/lib/library-root.ts`) applies
+four branches in order, at every startup:
+
+1. a container whose marker records `migratedFrom` → the container, wherever
+   the migration was performed;
+2. a marked container with the old folder empty → the container (a
+   phone-first library this Mac is joining);
+3. an old folder with content → the old folder, which is the branch every
+   current user takes and is deliberately untouched;
+4. a container and no old library → the container.
+
+`.DS_Store` does not count as content: Finder leaves one in any folder
+someone opened, and counting it would pin a phone-first user to an empty
+root. The result lands in `icloudNotesagePath` — which every consumer already
+reads — plus `libraryRootKind` for the Settings copy. **Neither is
+persisted**: both are re-derived each launch, because a remembered root is a
+lie the moment another device moves the library.
+
+**Following is not flagged; MIGRATING is.** A Mac that finds a migrated
+container uses it, since the alternative is showing a library people have
+moved away from. Performing a migration — moving everyone's files, which
+re-uploads the library through iCloud and has no undo — is behind the
+`icloud-container-library` Labs flag. Settings → Projects → Library shows the
+resolved root and, when the flag is on and there is something to move, offers
+it. The dialog shows the plan first: counts, and every collision with the
+rule that will be applied.
+
+| Entry | Rule on collision |
+| --- | --- |
+| `Inbox/` | Merged item by item; a taken name gets the phone's `name-1.ext` dedupe. |
+| `Inbox/.notesage/reading-progress.json` | Merged by the existing sidecar rules (progress moves forward, tombstones win by time), never overwritten — both devices have been writing it. |
+| `.notesage/pins.json` | Union of the pinned paths. |
+| `.notesage/sync-settings.json` | Dropped: it is per-device. |
+| Folder of the same name, only one a project | Merged into the destination; the project's `.notesage/` travels with it. |
+| Folder of the same name, both projects | Both kept — the source becomes `<name> (from iCloud Drive)` and is listed in the report. Two projects' metadata are never merged. |
+| Loose file of the same name | Deduped. |
+
+The move is **resumable**: a step whose source is already gone counts as
+done, so re-planning over what remains reaches the same end state. A failing
+step does not abort the run — a library half in each place with no record of
+which half is worse than finishing and reporting the gap.
+
+**Paths are rewritten in the same pass.** Projects, pins, recents, the open
+document and the path-keyed comment sidecars all store absolute paths; a
+library that moved without them comes back with an empty sidebar, no pins and
+orphaned comments, with all the data still on disk — which is exactly what
+makes it look like loss. Sidecars are re-keyed rather than moved, because
+their filename is a hash of the document's path.
+
 **iCloud project auto-discovery:**
 
 - On startup, scans iCloud Notesage folder for projects synced from other machines

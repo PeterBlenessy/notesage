@@ -96,3 +96,17 @@ export function libraryMigrationAvailable(inputs: LibraryRootInputs): boolean {
       !inputs.marker?.migratedFrom,
   );
 }
+
+/**
+ * How to NAME the synced library in copy that tells someone where their
+ * files are going.
+ *
+ * Hardcoding "iCloud Drive/Notesage" was fine while that was the only
+ * possibility. Once the library can live in Notesage's own iCloud folder,
+ * that sentence is simply false for anyone who has migrated — and it appears
+ * in exactly the places where being wrong matters, next to a button that
+ * moves a project.
+ */
+export function syncedRootLabel(kind: LibraryRootKind | null): string {
+  return kind === "container" ? "Notesage in iCloud" : "iCloud Drive/Notesage";
+}

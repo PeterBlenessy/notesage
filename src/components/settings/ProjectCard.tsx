@@ -32,6 +32,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { LockProjectDialog } from './LockProjectDialog';
 import { t } from '@/lib/i18n';
+import { syncedRootLabel as labelForRoot } from "@/lib/library-root";
 
 interface ProjectCardProps {
   projectPath: string;
@@ -86,6 +87,9 @@ function ActionPill({
 }
 
 export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
+  // Names the root actually in use, so a tooltip beside a move button cannot
+  // point at a folder the library has left.
+  const syncedRootLabel = labelForRoot(useSettingsStore((s) => s.libraryRootKind));
   const metadata = useProjectMetadataStore((s) => s.getMetadata(projectPath));
   const updateMetadata = useProjectMetadataStore((s) => s.updateMetadata);
   const isSynced = useIsProjectSynced(projectPath);
@@ -513,10 +517,10 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
               disabled={busy || !icloudAvailable}
               title={
                 !icloudAvailable
-                  ? 'iCloud Drive not available on this device'
+                  ? 'iCloud is not available on this device'
                   : isSynced
                     ? 'Move project back to local library'
-                    : 'Mirror project to iCloud Drive'
+                    : `Mirror project to ${syncedRootLabel}`
               }
             />
             <ActionPill
