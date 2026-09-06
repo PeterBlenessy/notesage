@@ -16,8 +16,14 @@ import type { MigrationDeps, MigrationListing } from "@/lib/library-migration";
 
 /** Read one root into the shape the planner wants. */
 export async function buildMigrationListing(root: string): Promise<MigrationListing> {
-  const entries = await tauriApi.listDirectory(root).catch(() => []);
-  const inbox = await tauriApi.listDirectory(`${root}/Inbox`).catch(() => []);
+  // Hidden entries INCLUDED. An evicted iCloud file is on disk only as a
+  // `.name.icloud` placeholder, and the default listing hides dotfiles — so a
+  // loose note nobody had opened recently was invisible to planning: never
+  // moved, never reported, and left stranded in a folder the app had stopped
+  // looking at. The planner decides what to do with them; it cannot decide
+  // about something it never sees.
+  const entries = await tauriApi.listDirectory(root, true).catch(() => []);
+  const inbox = await tauriApi.listDirectory(`${root}/Inbox`, true).catch(() => []);
   // A directory is a PROJECT when it carries `.notesage/` — the same test the
   // rest of the app uses, and the one the collision rules turn on.
   const projectDirs = new Set<string>();
@@ -49,6 +55,7 @@ export function mergePinsFiles(mine: string | null, theirs: string | null): stri
 export function migrationDeps(): Omit<MigrationDeps, "onStep"> {
   return {
     moveEntry: (src, dst) => tauriApi.migrateLibraryEntry(src, dst),
+    listNames: async (dir) => (await tauriApi.listDirectory(dir)).map((e) => e.name),
     readFile: (path) => tauriApi.readFile(path),
     writeFile: (path, content) => tauriApi.writeFile(path, content),
     deletePath: (path) => tauriApi.deletePath(path),

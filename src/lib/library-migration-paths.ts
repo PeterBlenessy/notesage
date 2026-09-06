@@ -97,7 +97,9 @@ export function planPathRewrites(inputs: PathRewriteInputs): PathRewritePlan {
 }
 
 export interface PathRewriteDeps {
-  updateProjectPath: (from: string, to: string) => void;
+  /** May be async: the caller re-reads the moved project's tree, and the
+   *  ordering below only holds if that is awaited rather than left running. */
+  updateProjectPath: (from: string, to: string) => void | Promise<void>;
   renameOpenDocument: (from: string, to: string) => void;
   updateFilePaths: (fromPrefix: string, toPrefix: string) => void;
   migrateSidecars: (inputs: SidecarMigrationInput[]) => Promise<void>;
@@ -113,7 +115,7 @@ export async function applyPathRewrites(
   plan: PathRewritePlan,
   deps: PathRewriteDeps,
 ): Promise<void> {
-  for (const { from, to } of plan.projects) deps.updateProjectPath(from, to);
+  for (const { from, to } of plan.projects) await deps.updateProjectPath(from, to);
   for (const { from, to } of plan.documents) deps.renameOpenDocument(from, to);
   if (plan.pinPrefix) deps.updateFilePaths(plan.pinPrefix.from, plan.pinPrefix.to);
   if (plan.sidecars.length) await deps.migrateSidecars(plan.sidecars);

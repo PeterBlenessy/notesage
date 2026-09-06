@@ -50,7 +50,7 @@ describe("planning the library migration (2026-09-06)", () => {
       listing({ entries: [entry("Notes", true)], projectDirs: new Set(["Notes"]) }),
       listing({ entries: [entry("Notes", true)] }), // no .notesage on the far side
     );
-    expect(plan.steps[0]).toMatchObject({ kind: "move", from: "Notes", to: "Notes" });
+    expect(plan.steps[0]).toMatchObject({ kind: "merge-folder", from: "Notes", to: "Notes" });
     expect(plan.steps[0].note).toContain("merged into");
   });
 
@@ -77,6 +77,21 @@ describe("planning the library migration (2026-09-06)", () => {
     const plan = planLibraryMigration(listing({ entries: [entry(".notesage", true)] }), listing());
     expect(plan.steps.map((s) => s.kind)).toEqual(["merge-pins", "drop"]);
     expect(plan.steps[1].from).toBe(".notesage/sync-settings.json");
+  });
+
+  it("reports an evicted file instead of moving its placeholder", () => {
+    // On disk it is `.note.md.icloud` with the bytes still in the cloud.
+    // Copying that and deleting the source deletes the real item from
+    // iCloud. It stays put, and — unlike before, when the default listing
+    // hid it — it is named in the report.
+    const plan = planLibraryMigration(
+      listing({ entries: [entry(".note.md.icloud")] }),
+      listing(),
+    );
+    expect(plan.steps).toEqual([]);
+    expect(plan.leftBehind).toEqual([
+      { name: "note.md", reason: expect.stringContaining("not been downloaded") },
+    ]);
   });
 
   it("ignores .DS_Store entirely", () => {
@@ -119,6 +134,7 @@ describe("running the migration", () => {
   function deps(over: Partial<MigrationDeps> = {}): MigrationDeps {
     return {
       moveEntry: vi.fn(async (_s: string, d: string) => d),
+      listNames: vi.fn(async () => []),
       readFile: vi.fn(async () => "{}"),
       writeFile: vi.fn(async () => {}),
       deletePath: vi.fn(async () => {}),
@@ -128,6 +144,36 @@ describe("running the migration", () => {
       ...over,
     };
   }
+
+  it("merges a folder by moving its children, because a move onto it is refused", () => {
+    // The step used to be a plain `move` onto a destination that exists by
+    // definition — which the move primitive refuses, so this collision shape
+    // failed every time and the promised merge never happened. Nothing was
+    // lost; nothing arrived either.
+    const plan = planLibraryMigration(
+      listing({ entries: [entry("Notes", true)] }),
+      listing({ entries: [entry("Notes", true)] }),
+    );
+    expect(plan.steps[0].kind).toBe("merge-folder");
+
+    const moves: string[][] = [];
+    const d = deps({
+      listNames: vi.fn(async (dir: string) =>
+        dir.endsWith("/Notes") && dir.startsWith("/old") ? ["a.md", "b.md"] : ["a.md"],
+      ),
+      moveEntry: vi.fn(async (s: string, dst: string) => {
+        moves.push([s, dst]);
+        return dst;
+      }),
+    });
+    return runLibraryMigration(plan, "/old", "/new", d).then(() => {
+      // `a.md` is taken on the far side, so it is deduped; `b.md` is not.
+      expect(moves).toEqual([
+        ["/old/Notes/a.md", "/new/Notes/a-1.md"],
+        ["/old/Notes/b.md", "/new/Notes/b.md"],
+      ]);
+    });
+  });
 
   it("treats a step whose source is gone as already done", async () => {
     // What makes a run resumable: re-planning after an interruption yields

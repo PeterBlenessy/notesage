@@ -83,7 +83,9 @@ describe("applying the rewrites", () => {
       commentsDir: COMMENTS,
     });
     await applyPathRewrites(plan, {
-      updateProjectPath: vi.fn(() => order.push("project")),
+      updateProjectPath: vi.fn(() => {
+        order.push("project");
+      }),
       renameOpenDocument: vi.fn(() => order.push("document")),
       updateFilePaths: vi.fn(() => order.push("pins")),
       migrateSidecars: vi.fn(async () => {
@@ -91,6 +93,33 @@ describe("applying the rewrites", () => {
       }),
     });
     expect(order).toEqual(["project", "document", "pins", "sidecars"]);
+  });
+
+  it("waits for each project's tree before moving on", async () => {
+    // The re-read is async. If it is not awaited, the ordering this function
+    // exists to guarantee — stores settled before sidecars — is lost, and a
+    // project can still be showing its old tree when the run reports done.
+    const order: string[] = [];
+    const plan = planPathRewrites({
+      oldRoot: OLD,
+      newRoot: NEW,
+      projectPaths: [`${OLD}/R`],
+      documentPaths: [],
+      sidecarFilePaths: [`${OLD}/loose.md`],
+      commentsDir: COMMENTS,
+    });
+    await applyPathRewrites(plan, {
+      updateProjectPath: async () => {
+        await new Promise((r) => setTimeout(r, 5));
+        order.push("project");
+      },
+      renameOpenDocument: vi.fn(),
+      updateFilePaths: vi.fn(),
+      migrateSidecars: vi.fn(async () => {
+        order.push("sidecars");
+      }),
+    });
+    expect(order).toEqual(["project", "sidecars"]);
   });
 
   it("does not call the sidecar migration when there is nothing to migrate", async () => {
