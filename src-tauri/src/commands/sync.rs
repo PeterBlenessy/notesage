@@ -354,27 +354,57 @@ async fn migrate_directory(source: &Path, dest: &Path) -> Result<String, String>
                 found
             ));
         }
-        // Copy recursively
+        // Copy to a STAGING name, then rename into place.
+        //
+        // A copy straight to the destination is only safe if nothing can
+        // interrupt it — and the interruptions that matter are not the ones
+        // an app can catch: a force quit, a crash, a closed lid mid-transfer
+        // over iCloud. `.notesage/` sorts early in a directory walk, so a
+        // half-copied project can already carry the marker that makes it look
+        // like a complete project. The next run then sees the same name on
+        // both sides, treats it as a genuine collision, and keeps the torn
+        // copy for ever as "<name> (from iCloud Drive)".
+        //
+        // Staging removes the possibility rather than narrowing the window.
+        // The rename is atomic within one directory, so the destination name
+        // never exists in a half-written state; and a leftover staging
+        // directory is dot-prefixed, so a later listing ignores it and it can
+        // be cleaned up without being mistaken for anyone's data.
+        let staging = dest_owned.with_file_name(format!(
+            ".{}.notesage-migrating",
+            dest_owned.file_name().unwrap_or_default().to_string_lossy()
+        ));
+        let _ = std::fs::remove_dir_all(&staging); // a previous run's debris
         let mut options = fs_extra::dir::CopyOptions::new();
         options.copy_inside = true;
         options.content_only = false;
 
-        fs_extra::dir::copy(&source_owned, dest_owned.parent().unwrap(), &options)
-            .map_err(|e| format!("Failed to copy project: {e}"))?;
+        fs_extra::dir::copy(&source_owned, &staging, &options).map_err(|e| {
+            let _ = std::fs::remove_dir_all(&staging);
+            format!("Failed to copy project: {e}")
+        })?;
 
-        // Verify: compare file counts
+        // Verify BEFORE the rename, so an unverified copy never wears the
+        // real name for even an instant.
         let source_count = count_files(&source_owned)
             .map_err(|e| format!("Failed to count source files: {e}"))?;
-        let dest_count = count_files(&dest_owned)
+        let dest_count = count_files(&staging)
             .map_err(|e| format!("Failed to count destination files: {e}"))?;
 
         if source_count != dest_count {
-            // Clean up failed copy
-            let _ = std::fs::remove_dir_all(&dest_owned);
+            let _ = std::fs::remove_dir_all(&staging);
             return Err(format!(
                 "Verification failed: source has {source_count} files but copy has {dest_count}"
             ));
         }
+
+        // Atomic within the destination directory: after this the name either
+        // does not exist or names a fully verified copy, never anything in
+        // between.
+        std::fs::rename(&staging, &dest_owned).map_err(|e| {
+            let _ = std::fs::remove_dir_all(&staging);
+            format!("Copy verified but could not be put in place: {e}")
+        })?;
 
         // Delete source only after successful verification — and if THAT
         // fails, roll the copy back. Leaving both behind is the worst
@@ -563,7 +593,12 @@ fn first_evicted_placeholder(dir: &Path) -> Option<String> {
         if name.starts_with('.') && name.ends_with(".icloud") {
             return Some(name.trim_start_matches('.').trim_end_matches(".icloud").to_string());
         }
-        if path.is_dir() {
+        // `symlink_metadata`, not `is_dir()`: the latter follows links, and a
+        // cyclic symlink would recurse until the stack ran out.
+        let is_real_dir = std::fs::symlink_metadata(&path)
+            .map(|m| m.is_dir())
+            .unwrap_or(false);
+        if is_real_dir {
             if let Some(found) = first_evicted_placeholder(&path) {
                 return Some(found);
             }

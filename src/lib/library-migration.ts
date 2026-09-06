@@ -28,6 +28,7 @@ export type MigrationStepKind =
   | "merge-pins"
   | "merge-reading-progress"
   | "rename-conflicting-project"
+  | "merge-folder"
   | "drop";
 
 export interface MigrationStep {
@@ -121,6 +122,20 @@ export function planLibraryMigration(
     if (IGNORED.has(entry.name)) continue;
     if (entry.name === "Inbox") continue; // done above
 
+    // An evicted file: on disk only as `.name.icloud`, with the bytes in the
+    // cloud. Copying the placeholder and deleting the source would delete
+    // the real item from iCloud, so it stays where it is and is REPORTED —
+    // the outcome that used to happen silently, because the default listing
+    // hid it entirely.
+    const evicted = /^\.(.+)\.icloud$/.exec(entry.name);
+    if (evicted) {
+      leftBehind.push({
+        name: evicted[1],
+        reason: `${evicted[1]} has not been downloaded from iCloud yet — open it once, then migrate again`,
+      });
+      continue;
+    }
+
     if (entry.name === ".notesage") {
       steps.push({
         kind: "merge-pins",
@@ -182,9 +197,15 @@ export function planLibraryMigration(
     }
 
     // A plain folder on one side: merge into the destination, file by file.
-    // The project's own `.notesage/` travels with it.
+    //
+    // NOT a `move` — the move primitive refuses a destination that exists,
+    // which for this step is true by definition, so it failed every single
+    // time and the merge it promised never happened. `merge-folder` is
+    // executed by moving the source's CHILDREN one at a time, which is what
+    // "merge" meant all along; the folder's own `.notesage/` travels with
+    // them.
     steps.push({
-      kind: "move",
+      kind: "merge-folder",
       unit: isProject ? "project" : "file",
       from: entry.name,
       to: entry.name,
@@ -201,6 +222,8 @@ export function planLibraryMigration(
  *  touching a filesystem or a store. */
 export interface MigrationDeps {
   moveEntry: (src: string, dst: string) => Promise<string>;
+  /** Names directly inside a directory, for merging one into another. */
+  listNames: (dir: string) => Promise<string[]>;
   readFile: (path: string) => Promise<string>;
   writeFile: (path: string, content: string) => Promise<void>;
   deletePath: (path: string) => Promise<void>;
@@ -270,6 +293,24 @@ export async function runLibraryMigration(
           if (to) await deps.writeFile(to, merged);
           await deps.deletePath(from);
           report.merged += 1;
+          break;
+        }
+        case "merge-folder": {
+          if (!to) break;
+          // Child by child, deduping against what is already there. The
+          // destination folder stays; only its contents grow.
+          const [mine, theirs] = await Promise.all([
+            deps.listNames(to).catch(() => []),
+            deps.listNames(from),
+          ]);
+          const taken = new Set(mine);
+          for (const name of theirs) {
+            const target = dedupeName(name, taken);
+            taken.add(target);
+            await deps.moveEntry(`${from}/${name}`, `${to}/${target}`);
+          }
+          if (step.unit === "project") report.moved.projects += 1;
+          else report.moved.looseFiles += 1;
           break;
         }
         default: {

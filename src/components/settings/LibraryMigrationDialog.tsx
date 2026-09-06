@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { tauriApi } from "@/lib/tauri";
 import { t } from "@/lib/i18n";
 import {
   planLibraryMigration,
@@ -109,13 +110,26 @@ export function LibraryMigrationDialog({
           projectPaths: ws.projects.map((p) => p.path),
           documentPaths: [
             ...editor.openDocuments.map((d) => d.filePath),
-            ...(editor.recentFiles ?? []).map((r) => (typeof r === "string" ? r : r.path)),
+            ...(editor.recentFiles ?? []).map((r) => r.path),
           ].filter((p): p is string => Boolean(p)),
           sidecarFilePaths: notesRoot ? await collectSidecarFilePaths(notesRoot) : [],
           commentsDir: `${notesRoot ?? ""}/.notesage/comments`,
         });
         await applyPathRewrites(rewrites, {
-          updateProjectPath: (from, to) => ws.updateProjectPath(from, to, []),
+          // The tree is RE-READ, not blanked. `updateProjectPath(from, to, [])`
+          // wipes the cached tree, and nothing refills it: the watchers that
+          // start on the new root only report future events, so the files
+          // that are already sitting there never produce one. Every migrated
+          // project would render as an empty folder until the app restarted
+          // — which is the "my notes are gone" moment this whole feature has
+          // to avoid. `migrateProjectPath` has always done it this way for a
+          // single project.
+          updateProjectPath: async (from, to) => {
+            const tree = await tauriApi
+              .listDirectory(to, useSettingsStore.getState().showHiddenFiles)
+              .catch(() => []);
+            ws.updateProjectPath(from, to, tree);
+          },
           renameOpenDocument: (from, to) => editor.renameOpenDocument(from, to),
           updateFilePaths: (fromPrefix, toPrefix) => ws.updateFilePaths(fromPrefix, toPrefix),
           migrateSidecars: (inputs) =>
@@ -220,6 +234,11 @@ export function LibraryMigrationDialog({
                 files: String(phase.report.moved.looseFiles),
               })}
             </p>
+            {phase.report.renamed > 0 && (
+              <p className="text-muted-foreground">
+                {t("settings.libraryMoveRenamed", { count: String(phase.report.renamed) })}
+              </p>
+            )}
             {phase.report.failed.length > 0 && (
               <p className="text-[var(--color-destructive)]">
                 {t("settings.libraryMoveFailed", { count: String(phase.report.failed.length) })}
