@@ -1418,6 +1418,20 @@ export function Reader() {
     if (!hasNativeReport) return;
     const onReport = (e: Event) => {
       const detail = (e as CustomEvent<{ type?: string; href?: string; fraction?: number }>).detail;
+      if (detail?.type === "back") {
+        // The left-edge swipe, reported by the report's OWN web view.
+        //
+        // `useEdgeSwipeBack` cannot serve this document: its 24 pt strip lives
+        // in the app's web view, and a presented report sits ABOVE that view,
+        // so a finger on an article never reaches the strip at all —
+        // instrumenting it on a presented report logged not one `pointerdown`
+        // (Peter, build 54: swipe right does not close an article). The
+        // recogniser is native (`ReportWebView.swift`); leaving is still this
+        // side's decision, which is why it arrives as an event rather than the
+        // report dismissing itself.
+        backAction();
+        return;
+      }
       if (detail?.type === "crashed") {
         // Its own content process, so a report can die alone. Say so — a blank
         // rectangle is indistinguishable from an empty document.
@@ -1437,7 +1451,7 @@ export function Reader() {
     };
     window.addEventListener("notesage:report", onReport);
     return () => window.removeEventListener("notesage:report", onReport);
-  }, [hasNativeReport, t, relPath, rememberReadingProgress]);
+  }, [hasNativeReport, t, relPath, rememberReadingProgress, backAction]);
 
   // Render ```mermaid fences into SVG diagrams — parity with the desktop
   // editor's Mermaid node view, using the same lazily-imported library. The

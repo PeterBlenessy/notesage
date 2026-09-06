@@ -436,15 +436,41 @@ gesture lives, so having the touch taken away mid-swipe is the expected case
 here rather than a corner one. Committing on either would close the document
 on a gesture nobody finished. Same rule as a list row's edge action.
 
-**A captured report needs its own strip.** An HTML document renders in a
-sandboxed iframe on an opaque origin, and a finger that lands on it produces
-no pointer events out in the app — the handlers on the reader root never
-fire, on exactly the documents people read longest. A transparent 24 pt strip
-over the frame's leading edge carries the same handlers, below the islands
-(z-40) and above the frame. It captures the pointer on POINTERDOWN, not at
-the axis lock: once the finger moves right it is over the frame, and a move
-the strip does not receive is a gesture that dies halfway with the page left
-mid-slide.
+**A captured report needs its own strip, and on device that strip is
+NATIVE.** On iOS an HTML report is presented in its own `WKWebView` above the
+app's (ADR 0010), so nothing in the app's web view is ever under the finger:
+instrumenting the JS strip on a presented report logged not one
+`pointerdown`. The gesture was not failing, it was never arriving — swipe
+worked in notes and never in articles, which are exactly the documents people
+read longest (Peter, build 54). `ReportWebView.swift` therefore lays its own
+transparent 24 pt `UIView` over the report's leading edge and hangs a
+`UIPanGestureRecognizer` on it. A recogniser attached to the report web view
+instead was tried first and never fired: WebKit's own recognisers claimed the
+drag and turned it into a text selection. A view that is simply in front has
+nothing to arbitrate — the touch begins in the strip, so UIKit delivers the
+whole drag there even once the finger is over the document. The report
+follows the finger with the same resisted curve, commits on the same 96 pt /
+500 pt-per-second thresholds, and reports the finished gesture to the reader
+as a `notesage:report` `back` event; leaving stays the app's decision (an
+unsaved draft to persist, a folder to return to), so the report never
+dismisses itself. `src/components/mobile/__tests__/report-swipe-back-contract.test.ts`
+locks the event name and the thresholds across the two languages — there is
+no XCTest target for the plugin (issue #933), and a rename on either side
+would fail silently as "the swipe stopped working".
+
+The cost is the one the JS strip already carries (#931): a stationary tap in
+that 24 pt band does not reach the document. Reports carry body padding, so
+the band is nearly always margin, and iOS reserves its own leading edge for
+the interactive pop for the same reason.
+
+Off iOS — desktop dev, the vitest suite, a build without the plugin — the
+report still renders in a sandboxed iframe, and the JS strip described above
+is what serves it: a finger on an opaque-origin frame produces no pointer
+events out in the app, so a transparent 24 pt strip over the frame's leading
+edge carries the reader's own handlers, below the islands (z-40) and above
+the frame. It captures the pointer on POINTERDOWN, not at the axis lock: once
+the finger moves right it is over the frame, and a move the strip does not
+receive is a gesture that dies halfway with the page left mid-slide.
 
 **Every list row swipes, whatever it looks like.** The action set is built
 once, by `entrySwipeActions` in `FileRow.tsx`, and used by both list rows —
