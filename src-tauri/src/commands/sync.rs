@@ -341,6 +341,19 @@ async fn migrate_directory(source: &Path, dest: &Path) -> Result<String, String>
     let dest_owned = dest.to_path_buf();
 
     tokio::task::spawn_blocking(move || {
+        // REFUSE if anything underneath is evicted. iCloud can leave a file
+        // on disk as a `.name.icloud` placeholder with the bytes only in the
+        // cloud. A recursive copy would duplicate the PLACEHOLDER — matching
+        // the file count, so verification passes — and removing the source
+        // then deletes the real item from iCloud. That is unrecoverable, and
+        // it is the likeliest failure for exactly the files someone has not
+        // opened lately. Better to leave the folder where it is and say so.
+        if let Some(found) = first_evicted_placeholder(&source_owned) {
+            return Err(format!(
+                "{} has not been downloaded from iCloud yet — open it once, or wait for it to download, then try again",
+                found
+            ));
+        }
         // Copy recursively
         let mut options = fs_extra::dir::CopyOptions::new();
         options.copy_inside = true;
@@ -363,9 +376,17 @@ async fn migrate_directory(source: &Path, dest: &Path) -> Result<String, String>
             ));
         }
 
-        // Delete source only after successful verification
-        std::fs::remove_dir_all(&source_owned)
-            .map_err(|e| format!("Copy succeeded but failed to remove source: {e}"))?;
+        // Delete source only after successful verification — and if THAT
+        // fails, roll the copy back. Leaving both behind is the worst
+        // outcome: the source is intact so nothing is lost, but the next
+        // plan sees a complete project at the destination, cannot tell it
+        // from one that was always there, and files the source beside it as
+        // a name collision. One transient failure becomes two divergent
+        // copies with a misleading explanation.
+        if let Err(e) = std::fs::remove_dir_all(&source_owned) {
+            let _ = std::fs::remove_dir_all(&dest_owned);
+            return Err(format!("Copied but could not remove the source, so the copy was undone: {e}"));
+        }
 
         Ok(dest_owned.to_string_lossy().to_string())
     })
@@ -526,6 +547,29 @@ fn is_inside_library_root(path: &Path) -> bool {
         home.join("Notesage"),
     ];
     roots.iter().any(|root| path.starts_with(root))
+}
+
+
+/// The first evicted-iCloud placeholder under `dir`, if any.
+///
+/// iCloud names them `.<name>.icloud` beside the missing `<name>`. They are
+/// ordinary small files to anything that walks the tree, which is what makes
+/// them dangerous to copy-then-delete.
+fn first_evicted_placeholder(dir: &Path) -> Option<String> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') && name.ends_with(".icloud") {
+            return Some(name.trim_start_matches('.').trim_end_matches(".icloud").to_string());
+        }
+        if path.is_dir() {
+            if let Some(found) = first_evicted_placeholder(&path) {
+                return Some(found);
+            }
+        }
+    }
+    None
 }
 
 /// Count all files (not directories) recursively in a directory.

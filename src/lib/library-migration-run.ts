@@ -66,3 +66,32 @@ export function migrationDeps(): Omit<MigrationDeps, "onStep"> {
     mergePins: mergePinsFiles,
   };
 }
+
+/**
+ * Absolute paths of every non-project file that has a comment sidecar.
+ *
+ * These are keyed by a hash OF THE PATH, so moving the file changes the key
+ * and the comments become unreachable while still sitting on disk. The only
+ * way to find them is to read each sidecar's own record of the document it
+ * belongs to.
+ */
+export async function collectSidecarFilePaths(notesRoot: string): Promise<string[]> {
+  const dir = `${notesRoot}/.notesage/comments`;
+  const entries = await tauriApi.listDirectory(dir).catch(() => []);
+  const paths: string[] = [];
+  for (const entry of entries) {
+    if (entry.is_directory || !entry.name.startsWith("path-") || !entry.name.endsWith(".json")) {
+      continue;
+    }
+    try {
+      const parsed = JSON.parse(await tauriApi.readFile(`${dir}/${entry.name}`)) as {
+        originalPath?: unknown;
+      };
+      if (typeof parsed.originalPath === "string") paths.push(parsed.originalPath);
+    } catch {
+      // A sidecar we cannot read is one we cannot re-key. Skipping it leaves
+      // it exactly as it was rather than moving it somewhere wrong.
+    }
+  }
+  return paths;
+}

@@ -455,8 +455,20 @@ export async function reloadTrees() {
     let containerRoot: string | null = null;
     let marker: Awaited<ReturnType<typeof tauriApi.readLibraryMarker>> = null;
     try {
-      containerRoot = await tauriApi.getLibraryContainerPath();
-      if (containerRoot) marker = await tauriApi.readLibraryMarker(containerRoot);
+      containerRoot =
+        (await withTimeout(
+          tauriApi.getLibraryContainerPath(),
+          STEP_TIMEOUT_MS,
+          "getLibraryContainerPath",
+        )) ?? null;
+      if (containerRoot) {
+        marker =
+          (await withTimeout(
+            tauriApi.readLibraryMarker(containerRoot),
+            STEP_TIMEOUT_MS,
+            "readLibraryMarker",
+          )) ?? null;
+      }
     } catch {
       containerRoot = null;
       marker = null;
@@ -470,11 +482,24 @@ export async function reloadTrees() {
     let cloudDocsHasContent = Boolean(cloudDocsRoot);
     if (cloudDocsRoot && containerRoot) {
       try {
-        const entries = await tauriApi.listDirectory(cloudDocsRoot);
+        // Timed out like every other cloud-touching step here, and — when it
+        // fails or is slow — assumed to HAVE content. That default is the
+        // safe one: reading a slow or transiently-empty listing as "empty"
+        // would switch a Mac with a real CloudDocs library over to a
+        // near-empty container for the session, and someone seeing their
+        // notes apparently gone may do something drastic before the next
+        // restart puts it right.
+        const entries = await withTimeout(
+          tauriApi.listDirectory(cloudDocsRoot),
+          STEP_TIMEOUT_MS,
+          "listDirectory(cloudDocs)",
+        );
+        // `withTimeout` widens the type; an absent result is a timeout, which
+        // takes the safe default below rather than reading as "empty".
+        if (!entries) throw new Error("timed out");
         cloudDocsHasContent = entries.some((e) => e.name !== ".DS_Store");
       } catch {
-        // No folder there at all, which is exactly "no content".
-        cloudDocsHasContent = false;
+        cloudDocsHasContent = true;
       }
     }
     const resolved = resolveSyncedLibraryRoot({
