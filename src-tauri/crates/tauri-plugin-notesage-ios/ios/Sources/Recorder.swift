@@ -428,11 +428,39 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
     /// second, which is far too often to push across the JS bridge — and the
     /// bridge is asleep with the screen locked anyway, while the recorder is
     /// not.
+    /// The mic level as a 0…1 height for the trace.
+    ///
+    /// NOT a straight `(db + 60) / 60`. That maps the full -60…0 dB range
+    /// linearly, and speech does not live in that range: ordinary talking
+    /// averages around -25 dB, which came out at 0.58 — over half height —
+    /// while a shout at -10 dB reached 0.83. Everything audible therefore
+    /// drew tall and within a quarter of everything else, so the trace read
+    /// as a solid amplified block rather than a voice (Peter, build 52: "the
+    /// loudness illustration is a bit too large... it all gets kind of flat,
+    /// although amplified").
+    ///
+    /// Two changes. The window is -50…-5 dB, which is where speech actually
+    /// sits — below that is room tone, above it is clipping. And the result
+    /// is raised to a power, which stretches the quiet end downwards: room
+    /// tone falls to nearly nothing, conversation lands near a third, and
+    /// only a genuinely loud passage fills the bar. The dynamics are then
+    /// visible as differences in height, which is the entire point of
+    /// drawing a level at all.
     func currentLevel() -> Double {
         guard let recorder, state == .recording else { return 0 }
         recorder.updateMeters()
         let db = Double(recorder.averagePower(forChannel: 0))
-        return max(0, min(1, (db + 60) / 60))
+        return Recorder.levelHeight(db: db)
+    }
+
+    /// Pure, so the curve can be reasoned about (and checked) without a mic.
+    /// -50 dB → 0.00, -40 → 0.09, -30 → 0.26, -25 → 0.38, -20 → 0.52,
+    /// -15 → 0.68, -10 → 0.85, -5 → 1.00.
+    static func levelHeight(db: Double) -> Double {
+        let floorDb = -50.0
+        let ceilDb = -5.0
+        let t = (db - floorDb) / (ceilDb - floorDb)
+        return pow(max(0, min(1, t)), 1.6)
     }
 
     // MARK: - Interruptions and routes
