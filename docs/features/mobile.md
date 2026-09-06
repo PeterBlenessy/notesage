@@ -368,6 +368,81 @@ contract, or it will drop gestures:
    rather than gradually turning the drag back into a scroll.
 3. **`setPointerCapture`** on lock, so a finger that drifts onto the
    neighbouring row keeps feeding the gesture instead of silently ending it.
+4. **One drag, one finger.** Every drag records the `pointerId` that started
+   it; moves and lifts from any other pointer are ignored, as is a second
+   touchdown while a drag is in flight. Without that guard a drag reads
+   `clientX` off whatever pointer arrives, so a thumb landing anywhere else
+   to steady the phone feeds ITS coordinates into the gesture already
+   running: measured from the first finger's start that is a throw of a few
+   hundred pixels, which is a commit. The row fires its edge Delete, the
+   reader closes the document, and letting go of either finger seals it.
+
+   The guard applies only while the first drag is a REAL swipe. Refusing
+   every second touchdown outright trades a corrupted gesture for a stranded
+   one: WebKit does not reliably deliver `pointercancel` when the system
+   steals a captured touch, and a drag whose terminator never arrives would
+   then block the surface for ever. A drag that never locked has taken no
+   capture and moved nothing on screen, so it is simply replaced; a locked
+   one is ended by an abandonment watchdog: a live drag that goes four
+   seconds with no move and no lift springs back without committing. That
+   timer is the recovery, because it depends on NO event arriving —
+   `lostpointercapture` is the obvious candidate and is handled too, but the
+   spec fires it as a consequence of the very pointerup or pointercancel
+   that goes missing, so it cannot be the answer on its own. Four seconds is
+   far longer than any swipe; the penalty if it ever cuts one off is that
+   the surface returns to where it was and the gesture can be made again.
+   Two details make it safe. It acts only on a LOCKED drag — a press that
+   never became one strands nothing and blocks no later touch, and dropping
+   it would cost an open row its tap-to-close. And in a list row the finger
+   may still be physically down, which is the whole premise, so a native
+   click follows if it ever lifts — and it must not open the document the
+   user was swiping away from. That suppression is armed AT THE LIFT, not
+   when the watchdog fires: arming it early would leave it armed for ever in
+   the case the watchdog exists for, where the touch really was stolen and
+   no lift and no click ever arrive, and it would then swallow the user's
+   next unrelated tap on that row. Two details follow from that. Only a
+   `pointerup` arms it — `pointercancel` is never followed by a click, by
+   spec, and `lostpointercapture` is not a termination at all, yet both are
+   the likely shape of a genuinely stolen touch, so arming on either would
+   set the same flag nothing consumes. And the abandoned pointers are a SET:
+   abandoning one drag is exactly what stops the touchdown guard refusing a
+   second finger, so a row can abandon two, and a single slot lost the first
+   one's lift. The same rule governs a drag that is still live when the news
+   arrives: only a lift FINISHES a gesture. A cancel is an interruption by
+   definition, and capture loss reaches a live drag only when it comes
+   without the lift that normally precedes it, which is the same thing —
+   so neither commits the edge Delete nobody completed, and neither arms a
+   suppression no click will consume.
+
+## Swipe in from the left edge to leave a document
+
+The gesture iOS gives every navigation stack, which a web view has to supply
+for itself (`useEdgeSwipeBack`; Peter, 2026-09-05: *"I want right swipe in a
+document to close it and go back to inbox"*). It starts ONLY within 24 pt of
+the leading edge, which is what keeps it out of the way of everything else
+the reader does horizontally — a wide table scrolling inside itself, text
+selection, the speech highlight. Rightward only: a leftward drag from the
+edge is someone reaching for something else and must never close their
+document. It commits on 96 pt of travel OR on a fast flick, timed from the
+AXIS LOCK rather than from touchdown, so a finger that rests on the edge
+while reading and then throws is not counted as slow.
+
+**Only a lift finishes it.** A cancel is an interruption by definition, and
+capture loss arrives without the lift that normally precedes it, which is the
+same thing — and this strip is precisely where the OS's own interactive-pop
+gesture lives, so having the touch taken away mid-swipe is the expected case
+here rather than a corner one. Committing on either would close the document
+on a gesture nobody finished. Same rule as a list row's edge action.
+
+**A captured report needs its own strip.** An HTML document renders in a
+sandboxed iframe on an opaque origin, and a finger that lands on it produces
+no pointer events out in the app — the handlers on the reader root never
+fire, on exactly the documents people read longest. A transparent 24 pt strip
+over the frame's leading edge carries the same handlers, below the islands
+(z-40) and above the frame. It captures the pointer on POINTERDOWN, not at
+the axis lock: once the finger moves right it is over the frame, and a move
+the strip does not receive is a gesture that dies halfway with the page left
+mid-slide.
 
 **Every list row swipes, whatever it looks like.** The action set is built
 once, by `entrySwipeActions` in `FileRow.tsx`, and used by both list rows —

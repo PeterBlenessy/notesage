@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 /**
  * Swipe in from the left edge to go back — the gesture iOS gives every
@@ -23,6 +23,22 @@ const HORIZONTAL_BIAS = 0.75;
 export const COMMIT_DISTANCE = 96;
 /** …or less travel, thrown fast. px per ms. */
 export const COMMIT_VELOCITY = 0.5;
+/**
+ * A live drag that goes this long with no news at all is abandoned.
+ *
+ * The recovery of last resort, and the only one that depends on no event
+ * arriving. `lostpointercapture` is the obvious candidate, but the spec fires
+ * it as a CONSEQUENCE of pointerup/pointercancel — so in the case worth
+ * recovering from, where WebKit delivers no terminator because the system
+ * took the touch, there is no reason to expect it either. Both are handled
+ * (they cost nothing when they do arrive); this is what makes the recovery
+ * unconditional.
+ *
+ * Four seconds is far longer than any swipe and long enough that a finger
+ * genuinely held mid-drag is not cut off in normal use. The penalty if it
+ * ever is: the page springs back and the swipe can be made again.
+ */
+const STALE_MS = 4000;
 
 export type EdgeAxis = "undecided" | "swipe" | "scroll";
 
@@ -44,9 +60,16 @@ export function commitsBack(dx: number, elapsedMs: number): boolean {
 }
 
 interface Drag {
+  /** Which finger owns this drag. Without it a second touch anywhere in the
+   *  reader feeds its own coordinates into the same drag — a tap near the
+   *  right edge reads as a 300 px rightward throw and closes the document. */
+  pointerId: number;
   startX: number;
   startY: number;
-  startedAt: number;
+  /** When the gesture became a swipe, NOT when the finger landed. Velocity
+   *  measured from touchdown counts a pause before the flick as travel time,
+   *  so a finger that rests on the edge and then throws reads as slow. */
+  swipeAt: number;
   axis: EdgeAxis;
   dx: number;
 }
@@ -63,21 +86,64 @@ export function useEdgeSwipeBack(onBack: () => void): {
     onPointerMove: (e: ReactPointerEvent) => void;
     onPointerUp: (e: ReactPointerEvent) => void;
     onPointerCancel: (e: ReactPointerEvent) => void;
+    onLostPointerCapture: (e: ReactPointerEvent) => void;
   };
   offset: number;
   dragging: boolean;
 } {
   const drag = useRef<Drag | null>(null);
+  const stale = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [offset, setOffset] = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  const end = () => {
+  // A drag can outlive the reader (the document closes while a finger is
+  // down), and a timer firing into an unmounted component is a console
+  // warning at best.
+  useEffect(
+    () => () => {
+      if (stale.current) clearTimeout(stale.current);
+    },
+    [],
+  );
+
+  const end = (e?: ReactPointerEvent) => {
     const d = drag.current;
+    // Lifting the other finger must not end — or commit — a drag it never
+    // owned.
+    if (d && e && d.pointerId !== e.pointerId) return;
+    if (stale.current) clearTimeout(stale.current);
+    stale.current = null;
     drag.current = null;
     setDragging(false);
     setOffset(0);
     if (!d || d.axis !== "swipe") return;
-    if (commitsBack(d.dx, Date.now() - d.startedAt)) onBack();
+    // Only a lift FINISHES a gesture. A cancel is an interruption by
+    // definition, and capture loss arrives here only without the lift that
+    // normally precedes it, which is the same thing — and this strip is
+    // precisely where the OS's own interactive-pop lives, so having the
+    // touch taken away mid-swipe is the expected case, not a corner one.
+    // Committing on either closes the document on a gesture nobody
+    // finished. Same rule as `SwipeRevealRow`'s edge action.
+    if (e && e.type !== "pointerup") return;
+    if (commitsBack(d.dx, Date.now() - d.swipeAt)) onBack();
+  };
+
+  /** Restart the abandonment timer. Every sign of life postpones it; only
+   *  silence lets it fire. */
+  const arm = () => {
+    if (stale.current) clearTimeout(stale.current);
+    stale.current = setTimeout(() => {
+      stale.current = null;
+      // Only a LOCKED swipe can strand anything: an undecided drag has moved
+      // nothing on screen and blocks no later touch, since the touchdown
+      // guard only refuses while a real swipe is in flight.
+      if (drag.current?.axis !== "swipe") return;
+      // Abandoned, so it must not COMMIT — a gesture nobody finished is not
+      // a request to close the document.
+      drag.current = null;
+      setDragging(false);
+      setOffset(0);
+    }, STALE_MS);
   };
 
   return {
@@ -85,26 +151,41 @@ export function useEdgeSwipeBack(onBack: () => void): {
     dragging,
     handlers: {
       onPointerDown: (e) => {
-        // Only from the edge, and only from a real touch or pen: a mouse in
-        // the simulator would otherwise pick this up on every click near the
-        // left margin.
+        // Only from the edge. (Not gated on `pointerType`: a mouse drag from
+        // the left margin in the simulator is a fine way to exercise this,
+        // and on device there is no mouse.)
+        // A drag already owned by another finger keeps it — but ONLY while it
+        // is a real swipe. Refusing every second touchdown outright trades a
+        // corrupted gesture for a stranded one: if the owning pointer's
+        // pointerup/pointercancel never arrives (WebKit does not reliably
+        // deliver one when the system steals a captured touch, and the OS's
+        // own interactive-pop lives in exactly this strip), the ref stays
+        // set for ever and every later touch is refused. An undecided drag
+        // has taken no capture and moved nothing on screen, so replacing it
+        // costs nothing and heals that case; a locked swipe is recovered by
+        // `onLostPointerCapture` below.
+        if (drag.current?.axis === "swipe") return;
         const rect = e.currentTarget.getBoundingClientRect();
         if (e.clientX - rect.left > EDGE_WIDTH) return;
         drag.current = {
+          pointerId: e.pointerId,
           startX: e.clientX,
           startY: e.clientY,
-          startedAt: Date.now(),
+          swipeAt: Date.now(),
           axis: "undecided",
           dx: 0,
         };
+        arm();
       },
       onPointerMove: (e) => {
         const d = drag.current;
-        if (!d || d.axis === "scroll") return;
+        if (!d || d.pointerId !== e.pointerId || d.axis === "scroll") return;
+        arm();
         const dx = e.clientX - d.startX;
         if (d.axis === "undecided") {
           d.axis = resolveEdgeAxis(dx, e.clientY - d.startY);
           if (d.axis !== "swipe") return;
+          d.swipeAt = Date.now();
           setDragging(true);
           try {
             (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
@@ -120,6 +201,12 @@ export function useEdgeSwipeBack(onBack: () => void): {
       },
       onPointerUp: end,
       onPointerCancel: end,
+      // The recovery signal for a captured swipe. When the system takes the
+      // touch away, capture is released even where the pointer event that
+      // should follow it is not delivered — so this is the one notification
+      // that always arrives. Without it a stolen touch leaves the page
+      // frozen mid-slide with the gesture dead until the reader remounts.
+      onLostPointerCapture: end,
     },
   };
 }
