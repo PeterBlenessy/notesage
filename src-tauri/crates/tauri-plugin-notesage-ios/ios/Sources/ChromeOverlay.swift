@@ -1074,17 +1074,28 @@ struct RecordingWave: View {
   @StateObject private var meter = WaveMeter()
 
   var body: some View {
-    // Fine-grained, per Peter's reference shot: many thin marks rather than a
-    // few thick ones. Coarse bars read as a bar chart; at this density the
-    // quiet stretches become a dotted line and a spoken phrase becomes a
-    // legible shape, which is what makes the trace scan as a voice.
-    HStack(alignment: .center, spacing: 1.5) {
+    // Matched to the PLAYBACK trace, which is the one Peter compared it
+    // against side by side (build 53). Two things made them look unrelated.
+    //
+    // The gap: at 1.5pt marks with 1.5pt gaps the marks touch, so the trace
+    // drew as one continuous envelope. Playback separates them, so a quiet
+    // stretch reads as a dotted line and a phrase reads as distinct strokes.
+    // 2pt marks with 3pt gaps is that proportion.
+    //
+    // And the sample rate: 20 Hz over a 1.7-second window means neighbouring
+    // marks are nearly the same value, which is what smooths the shape into
+    // an envelope. Playback draws a whole recording, where adjacent marks
+    // differ. Sampling at 10 Hz over 20 marks — two seconds — gives the same
+    // kind of variation between neighbours.
+    HStack(alignment: .center, spacing: 3) {
       ForEach(Array(meter.samples.enumerated()), id: \.offset) { _, level in
         Capsule()
           .fill(Color.primary.opacity(paused ? 0.25 : 0.6))
-          // A floor of 2pt so silence is a row of dots rather than a gap:
-          // the trace should read as "running, and quiet", not as "stopped".
-          .frame(width: 1.5, height: max(1.5, level * Self.height))
+          // A floor equal to the width, so silence is a row of round DOTS
+          // rather than a gap or a dash — the trace should read as "running,
+          // and quiet", not as "stopped", and that is exactly how the
+          // playback trace draws its quiet stretches.
+          .frame(width: 2, height: max(2, level * Self.height))
       }
     }
     // Trailing, so a half-filled history hugs the right edge and the newest
@@ -1104,7 +1115,7 @@ struct RecordingWave: View {
 /// island being reconstructed is the TIMER, not just the samples.
 final class WaveMeter: ObservableObject {
   /// How many bars fit the strip. Older samples fall off the left.
-  private static let capacity = 34
+  private static let capacity = 20
   @Published private(set) var samples: [CGFloat] = []
   private var timer: Timer?
 
@@ -1126,7 +1137,7 @@ final class WaveMeter: ObservableObject {
   /// scroll gesture — the trace would freeze exactly while someone reads.
   func start() {
     guard timer == nil else { return }
-    let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+    let t = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
       dispatchPrecondition(condition: .onQueue(.main))
       guard let self else { return }
       self.samples.append(CGFloat(Recorder.shared.currentLevel()))

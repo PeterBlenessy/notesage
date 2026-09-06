@@ -86,7 +86,6 @@ export function useEdgeSwipeBack(onBack: () => void): {
     onPointerMove: (e: ReactPointerEvent) => void;
     onPointerUp: (e: ReactPointerEvent) => void;
     onPointerCancel: (e: ReactPointerEvent) => void;
-    onLostPointerCapture: (e: ReactPointerEvent) => void;
   };
   offset: number;
   dragging: boolean;
@@ -163,7 +162,7 @@ export function useEdgeSwipeBack(onBack: () => void): {
         // set for ever and every later touch is refused. An undecided drag
         // has taken no capture and moved nothing on screen, so replacing it
         // costs nothing and heals that case; a locked swipe is recovered by
-        // `onLostPointerCapture` below.
+        // the abandonment watchdog below.
         if (drag.current?.axis === "swipe") return;
         const rect = e.currentTarget.getBoundingClientRect();
         if (e.clientX - rect.left > EDGE_WIDTH) return;
@@ -201,12 +200,14 @@ export function useEdgeSwipeBack(onBack: () => void): {
       },
       onPointerUp: end,
       onPointerCancel: end,
-      // The recovery signal for a captured swipe. When the system takes the
-      // touch away, capture is released even where the pointer event that
-      // should follow it is not delivered — so this is the one notification
-      // that always arrives. Without it a stolen touch leaves the page
-      // frozen mid-slide with the gesture dead until the reader remounts.
-      onLostPointerCapture: end,
+      // `lostpointercapture` is deliberately NOT wired. It was added as a
+      // recovery signal, but capture is released as part of ENDING a normal
+      // gesture too — so the handler ran on every successful swipe, and
+      // because only a lift may complete one, it cleared the drag and
+      // refused to settle before the real pointerup arrived. The gesture
+      // stopped working outright (Peter, build 53: "swipe right does not
+      // work at all", "swipe left in the list is also broken"). Recovery is
+      // the watchdog's job, and unlike this it depends on no event at all.
     },
   };
 }

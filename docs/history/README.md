@@ -229,3 +229,4 @@ Chronological log of major implementation milestones and changes.
 | 223 | [Release v0.56.0](223-release-v0.56.0.md) | The Inbox on the Mac: read-later list, filing, keyboard triage, progress shared with the phone. |
 | 224 | [Release v0.56.1](224-release-v0.56.1.md) | Opening a file closes the Inbox; the sidebar uses the arrow pointer. |
 | 225 | [Release v0.56.2](225-release-v0.56.2.md) | A faster Inbox; the Mac's "mark as unread" reaches the phone. |
+| 226 | [Release v0.56.3](226-release-v0.56.3.md) | Fixes an app that could start up and never show its window. |

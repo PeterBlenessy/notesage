@@ -26,16 +26,13 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Swipe back works again, and you can choose where the sound comes out.
-
-NEW
-• A button in the player picks the output: phone, headphones, car.
+Both swipes work again — that one was my fault, twice over.
 
 FIXED
-• Swiping in from the left edge to leave a document had stopped working.
-• Unread items are marked in gallery view too, not only in the list.
-• The recording trace shows a voice rising and falling, not a solid block.
+• Swipe in from the left edge to leave a document.
+• Swipe left on a list row to reveal its actions.
+• The recording trace now looks like the playback trace: dots when quiet, strokes when you speak.
 
 TRY
-• Play an article, tap the output button, move it to headphones and back.
-• Swipe in from the left edge of an article, and of a saved web page.
+• Swipe a row in the Inbox, then swipe in from the left edge of an article.
+• Record a few seconds, play it back, and compare the two traces.

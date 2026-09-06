@@ -3,7 +3,7 @@ import "@/test/tauri-mock";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { waitFor } from "@testing-library/react";
 import { renderWithProviders, screen } from "@/test/component-harness";
-import { FileRow, formatModified, classifyFile, iconFor, rowWantsThumbnail } from "@/components/mobile/FileRow";
+import { FileRow, formatModified, classifyFile, iconFor, rowWantsThumbnail, isSpeakable } from "@/components/mobile/FileRow";
 
 const getThumbnailMock = vi.fn();
 vi.mock("@/lib/mobile-thumbnails", () => ({
@@ -292,5 +292,27 @@ describe("swipe-to-delete forgets the path like the hold menu's Delete does", ()
     await waitFor(() => expect(onPathRemoved).toHaveBeenCalledWith("Notes/gone.md"));
     expect(deleted).toBe("Notes/gone.md");
     expect(onChanged).toHaveBeenCalled();
+  });
+});
+
+describe("reading a note aloud (2026-09-06)", () => {
+  it("offers Listen on markdown and text, not on a folder or a PDF", () => {
+    // The speech pipeline has handled markdown since it shipped —
+    // `documentToSpeechText` dispatches on kind — but the button only ever
+    // appeared on the captured-article row, so a note the app could read
+    // perfectly well had no way to start it (Peter, build 54: "I am
+    // surprised that markdown files are not playable").
+    expect(isSpeakable({ name: "note.md", is_directory: false })).toBe(true);
+    expect(isSpeakable({ name: "NOTE.MARKDOWN", is_directory: false })).toBe(true);
+    expect(isSpeakable({ name: "log.txt", is_directory: false })).toBe(true);
+    expect(isSpeakable({ name: "paper.pdf", is_directory: false })).toBe(false);
+    expect(isSpeakable({ name: "photo.png", is_directory: false })).toBe(false);
+    expect(isSpeakable({ name: "Notes", is_directory: true })).toBe(false);
+  });
+
+  it("leaves captures to the article row, which has its own", () => {
+    // Two buttons on one row would be the bug this fixes, inverted.
+    expect(isSpeakable({ name: "article.html", is_directory: false })).toBe(false);
+    expect(isSpeakable({ name: "article.htm", is_directory: false })).toBe(false);
   });
 });
