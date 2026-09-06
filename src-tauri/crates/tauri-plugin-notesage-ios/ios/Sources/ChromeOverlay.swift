@@ -1074,13 +1074,17 @@ struct RecordingWave: View {
   @StateObject private var meter = WaveMeter()
 
   var body: some View {
-    HStack(alignment: .center, spacing: 2) {
+    // Fine-grained, per Peter's reference shot: many thin marks rather than a
+    // few thick ones. Coarse bars read as a bar chart; at this density the
+    // quiet stretches become a dotted line and a spoken phrase becomes a
+    // legible shape, which is what makes the trace scan as a voice.
+    HStack(alignment: .center, spacing: 1.5) {
       ForEach(Array(meter.samples.enumerated()), id: \.offset) { _, level in
         Capsule()
           .fill(Color.primary.opacity(paused ? 0.25 : 0.6))
           // A floor of 2pt so silence is a row of dots rather than a gap:
           // the trace should read as "running, and quiet", not as "stopped".
-          .frame(width: 2, height: max(2, level * Self.height))
+          .frame(width: 1.5, height: max(1.5, level * Self.height))
       }
     }
     // Trailing, so a half-filled history hugs the right edge and the newest
@@ -1100,7 +1104,7 @@ struct RecordingWave: View {
 /// island being reconstructed is the TIMER, not just the samples.
 final class WaveMeter: ObservableObject {
   /// How many bars fit the strip. Older samples fall off the left.
-  private static let capacity = 32
+  private static let capacity = 34
   @Published private(set) var samples: [CGFloat] = []
   private var timer: Timer?
 
