@@ -916,13 +916,15 @@ struct GlassCircleProminent: ViewModifier {
 struct RoutePickerButton: UIViewRepresentable {
   func makeUIView(context: Context) -> AVRoutePickerView {
     let view = AVRoutePickerView()
-    // Match the island's glyphs rather than the system default blue, which
-    // is the one chromatic colour the palette does not allow.
-    view.tintColor = .label
+    // Not the system default blue — that is the one chromatic colour the
+    // palette does not allow. But not the same value for both either: iOS
+    // uses `activeTintColor` to show that audio is routed somewhere other
+    // than the phone, and that passive cue is most of the point here, since
+    // the complaint was not knowing where sound was going. Dimmer at rest,
+    // full strength when routed elsewhere — the signal survives inside a
+    // neutral palette as a difference in weight rather than in hue.
+    view.tintColor = .secondaryLabel
     view.activeTintColor = .label
-    // The button draws its own AirPlay glyph; the frame is what makes it a
-    // 46pt target like its neighbours.
-    view.prioritizesVideoDevices = false
     return view
   }
 
@@ -946,14 +948,21 @@ struct GlassPlayer: View {
     // buttons tappable — a non-interactive glass surface wrapping controls
     // swallowed their taps in the search island. Verified by tapping
     // skip-forward on the simulator and watching the position advance.
-    // Budget: 402pt (iPhone 17 Pro) minus 24pt margins. Five circles at
-    // 46/54 plus the two labels and 6pt gaps came to ~340pt; the first cut at
-    // 52/60 with 10pt gaps was ~412pt and clipped both end buttons. The route
-    // picker adds a 40pt target and its own gap, so the spacing drops to 5
-    // and the position label's floor to 56 to pay for it — ~380pt, still
-    // inside 378 only because the label can shrink. Worth a look on the
-    // narrowest phone.
-    HStack(spacing: 5) {
+    // Budget, and this time counted properly. Every circle is an EXACT
+    // `.frame(width:)` and every label had a `minWidth` floor, so nothing in
+    // this row could shrink: with the route picker added it needed 388pt
+    // against the 378pt cap on a 402pt phone, and 351pt on an SE. A row that
+    // overflows still draws, but the hosting view clips HIT-TESTING to its
+    // own bounds (the #581 lesson, twice over in this file), so the trailing
+    // controls — Stop, of all things — go quietly dead. Two changes make it
+    // fit at the smallest size instead of the largest: the picker is 32pt
+    // wide (still 46 tall, so the target is unchanged where a thumb lands),
+    // and the position label is now the one COMPRESSIBLE element, with a
+    // negative layout priority so SwiftUI takes space from it rather than
+    // overflowing. Worst case, 375pt phone: 274 fixed + 24 gaps + 16 padding
+    // + 40 label floor = 354 against 351 available, with the label's
+    // `minimumScaleFactor` covering the last few points.
+    HStack(spacing: 4) {
       button("player-back", system: "backward.fill")
       button("player-toggle", system: spec.playing ? "pause.fill" : "play.fill", large: true)
       button("player-forward", system: "forward.fill")
@@ -970,8 +979,11 @@ struct GlassPlayer: View {
         .lineLimit(1)
         .minimumScaleFactor(0.75)
         // A floor so the capsule does not re-lay out every paragraph as the
-        // digits change width; wide enough for "128 / 178" at full size.
-        .frame(minWidth: 56)
+        // digits change width — but a LOW layout priority, so on a narrow
+        // phone the space comes out of this label instead of pushing a
+        // button past the edge of what can be tapped.
+        .frame(minWidth: 40)
+        .layoutPriority(-1)
         .padding(.horizontal, 2)
       Button { emit("player-rate") } label: {
         Text(spec.rate)
@@ -984,10 +996,10 @@ struct GlassPlayer: View {
       // Where the sound comes out. Sized to the other circles so the row
       // still reads as one set of controls.
       RoutePickerButton()
-        .frame(width: 40, height: 46)
+        .frame(width: 32, height: 46)
       button("player-stop", system: "stop.fill")
     }
-    .padding(.horizontal, 10)
+    .padding(.horizontal, 8)
     .padding(.vertical, 5)
     .foregroundStyle(.primary)
     .modifier(GlassIslandSurface())
@@ -1033,7 +1045,7 @@ struct GlassRecorder: View {
       button("rec-toggle", system: spec.paused ? "record.circle" : "pause.fill", large: true)
       button("rec-stop", system: "stop.fill")
     }
-    .padding(.horizontal, 10)
+    .padding(.horizontal, 8)
     .padding(.vertical, 5)
     .foregroundStyle(.primary)
     .modifier(GlassIslandSurface())

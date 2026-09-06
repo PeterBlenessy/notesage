@@ -457,6 +457,13 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
     /// -50 dB → 0.00, -40 → 0.09, -30 → 0.26, -25 → 0.38, -20 → 0.52,
     /// -15 → 0.68, -10 → 0.85, -5 → 1.00.
     static func levelHeight(db: Double) -> Double {
+        // `min`/`max` are not NaN-safe: every comparison against NaN is
+        // false, so `min(1, .nan)` yields 1 and a garbage reading would clamp
+        // to FULL height — a bar spiking to the top for no reason, which is
+        // the opposite of what a broken sample should look like.
+        // `averagePower` has been seen to return NaN transiently after an
+        // interruption resumes.
+        guard db.isFinite else { return 0 }
         let floorDb = -50.0
         let ceilDb = -5.0
         let t = (db - floorDb) / (ceilDb - floorDb)
