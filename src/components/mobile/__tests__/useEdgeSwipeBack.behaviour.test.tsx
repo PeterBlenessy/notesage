@@ -72,63 +72,33 @@ describe("edge-swipe-back: whose finger is this? (2026-09-06)", () => {
     expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it("recovers when the system steals a captured swipe and sends no pointerup", () => {
-    // WebKit does not reliably deliver pointercancel when the OS takes a
-    // captured touch — and the OS's own interactive-pop gesture lives in
-    // exactly this strip. Capture IS released though, so that is the signal
-    // worth listening to. Without it the page stays frozen mid-slide and the
-    // gesture is dead until the reader remounts.
-    const onBack = vi.fn();
-    renderWithProviders(<Subject onBack={onBack} />);
-    const el = page();
-    fireEvent.pointerDown(el, { pointerId: 1, clientX: 4, clientY: 0 });
-    fireEvent.pointerMove(el, { pointerId: 1, clientX: 60, clientY: 0 });
-    expect(el.style.transform).toBe("translateX(56px)");
-    fireEvent.lostPointerCapture(el, { pointerId: 1, clientX: 60, clientY: 0 });
-    expect(el.style.transform).toBe("translateX(0px)");
-    // …and the next touch is not refused.
-    fireEvent.pointerDown(el, { pointerId: 2, clientX: 4, clientY: 0 });
-    fireEvent.pointerMove(el, { pointerId: 2, clientX: 200, clientY: 0 });
-    fireEvent.pointerUp(el, { pointerId: 2, clientX: 200, clientY: 0 });
-    expect(onBack).toHaveBeenCalledTimes(1);
-  });
-
-  it.each([
-    ["pointercancel", (el: HTMLElement) => fireEvent.pointerCancel(el, { pointerId: 1, clientX: 200, clientY: 0 })],
-    ["lostpointercapture", (el: HTMLElement) => fireEvent.lostPointerCapture(el, { pointerId: 1, clientX: 200, clientY: 0 })],
-  ])("does not close the document on a swipe ended by %s", (_name, interrupt) => {
+  it("does not close the document on a swipe ended by pointercancel", () => {
     // Only a lift finishes a gesture. This strip is exactly where the OS's
-    // own interactive-pop gesture lives, so having the touch taken away
-    // mid-swipe is the expected case here — and past the commit distance it
-    // would otherwise close the document on a gesture nobody finished.
+    // own interactive-pop lives, so having the touch taken away mid-swipe is
+    // the expected case — and past the commit distance it would otherwise
+    // close the document on a gesture nobody finished.
     const onBack = vi.fn();
     renderWithProviders(<Subject onBack={onBack} />);
     const el = page();
     fireEvent.pointerDown(el, { pointerId: 1, clientX: 4, clientY: 0 });
-    fireEvent.pointerMove(el, { pointerId: 1, clientX: 200, clientY: 0 }); // well past COMMIT_DISTANCE
-    interrupt(el);
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: 200, clientY: 0 });
+    fireEvent.pointerCancel(el, { pointerId: 1, clientX: 200, clientY: 0 });
     expect(onBack).not.toHaveBeenCalled();
     expect(el.style.transform).toBe("translateX(0px)");
   });
 
   it("gives up on a drag that goes silent, without committing it", () => {
-    // The recovery that depends on NO event arriving. `lostpointercapture`
-    // is fired by the spec as a consequence of the very pointerup or
-    // pointercancel that goes missing when the system steals a touch, so it
-    // cannot be the only answer. A gesture nobody finished must spring back,
-    // and must not count as a request to close the document.
+    // The recovery that depends on NO event arriving — the only kind that
+    // survives a touch the browser never reports ending.
     const onBack = vi.fn();
     renderWithProviders(<Subject onBack={onBack} />);
     const el = page();
     fireEvent.pointerDown(el, { pointerId: 1, clientX: 4, clientY: 0 });
-    fireEvent.pointerMove(el, { pointerId: 1, clientX: 200, clientY: 0 }); // past the commit distance
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: 200, clientY: 0 });
     expect(el.style.transform).not.toBe("translateX(0px)");
-    // Wrapped: the watchdog sets React state from a timer, which does not
-    // reach the DOM outside act().
     act(() => vi.advanceTimersByTime(4000));
     expect(el.style.transform).toBe("translateX(0px)");
     expect(onBack).not.toHaveBeenCalled();
-    // …and the strip works again straight away.
     fireEvent.pointerDown(el, { pointerId: 2, clientX: 4, clientY: 0 });
     fireEvent.pointerMove(el, { pointerId: 2, clientX: 200, clientY: 0 });
     fireEvent.pointerUp(el, { pointerId: 2, clientX: 200, clientY: 0 });
@@ -149,16 +119,32 @@ describe("edge-swipe-back: whose finger is this? (2026-09-06)", () => {
   });
 
   it("leaves a press that never became a swipe alone when the timer fires", () => {
-    // The watchdog acts only on a LOCKED swipe. An undecided press has moved
-    // nothing and blocks no later touch, so dropping it would only throw
-    // away a gesture someone is still in the middle of making — a finger
-    // resting on the edge while they read, then swiping.
+    // The watchdog acts only on a LOCKED swipe: an undecided press has moved
+    // nothing and blocks no later touch, so dropping it would only throw away
+    // a gesture someone is still in the middle of making.
     const onBack = vi.fn();
     renderWithProviders(<Subject onBack={onBack} />);
     const el = page();
     fireEvent.pointerDown(el, { pointerId: 1, clientX: 4, clientY: 0 });
-    act(() => vi.advanceTimersByTime(4000)); // held still, never locked
+    act(() => vi.advanceTimersByTime(4000));
     fireEvent.pointerMove(el, { pointerId: 1, clientX: 200, clientY: 0 });
+    fireEvent.pointerUp(el, { pointerId: 1, clientX: 200, clientY: 0 });
+    expect(onBack).toHaveBeenCalledTimes(1);
+  });
+
+  it("a capture release in the middle of a normal swipe does not kill it", () => {
+    // Capture is released as part of ENDING a gesture, so wiring
+    // `lostpointercapture` as a terminator ran it on every successful swipe
+    // — and since only a lift may complete one, it cleared the drag and
+    // refused to settle before the real pointerup arrived. The gesture
+    // stopped working outright on device (build 53). It is not wired now, so
+    // the event passes harmlessly and the lift still commits.
+    const onBack = vi.fn();
+    renderWithProviders(<Subject onBack={onBack} />);
+    const el = page();
+    fireEvent.pointerDown(el, { pointerId: 1, clientX: 4, clientY: 0 });
+    fireEvent.pointerMove(el, { pointerId: 1, clientX: 200, clientY: 0 });
+    fireEvent.lostPointerCapture(el, { pointerId: 1, clientX: 200, clientY: 0 });
     fireEvent.pointerUp(el, { pointerId: 1, clientX: 200, clientY: 0 });
     expect(onBack).toHaveBeenCalledTimes(1);
   });

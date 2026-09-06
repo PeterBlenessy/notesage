@@ -386,9 +386,11 @@ contract, or it will drop gestures:
    one is ended by an abandonment watchdog: a live drag that goes four
    seconds with no move and no lift springs back without committing. That
    timer is the recovery, because it depends on NO event arriving —
-   `lostpointercapture` is the obvious candidate and is handled too, but the
-   spec fires it as a consequence of the very pointerup or pointercancel
-   that goes missing, so it cannot be the answer on its own. Four seconds is
+   `lostpointercapture` is NOT wired at all: capture is released as part of
+   ending a normal gesture, so a handler there ran on every successful swipe
+   — and because only a lift may complete one, it cleared the drag and
+   refused to settle before the real pointerup arrived, which stopped both
+   gestures working outright on build 53. Four seconds is
    far longer than any swipe; the penalty if it ever cuts one off is that
    the surface returns to where it was and the gesture can be made again.
    Two details make it safe. It acts only on a LOCKED drag — a press that
