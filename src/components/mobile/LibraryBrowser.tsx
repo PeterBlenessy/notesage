@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, FolderOpen, Plus, FolderPlus, ArrowDownAZ, Clock, LayoutGrid, List, SlidersHorizontal } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
-import { iosListDirectory, iosCreateDirectory, iosTextPrompt, iosQuickLook, iosOpenSettings } from "@/lib/ios-api";
+import { iosListDirectory, iosCreateDirectory, iosEnsureDirectory, iosTextPrompt, iosQuickLook, iosOpenSettings } from "@/lib/ios-api";
 import { toast } from "sonner";
 import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-store";
 import { stopSpeech, toggleSpeech } from "@/lib/speech-controller";
@@ -10,7 +10,7 @@ import type { EntryActionContext } from "@/lib/mobile-entry-actions";
 import { FileRow, classifyFile } from "./FileRow";
 import { ArticleRow } from "./ArticleRow";
 import { GalleryView } from "./GalleryView";
-import { InboxCard } from "./InboxCard";
+import { InboxCard, RecordingsCard } from "./InboxCard";
 import { AllFoldersRow } from "./AllFoldersRow";
 import { HomeHint } from "./HomeHint";
 import { NotificationPrePrompt } from "./NotificationPrePrompt";
@@ -18,6 +18,7 @@ import { RecordingBar } from "./RecordingBar";
 import { formatElapsed, pauseRecording, resumeRecording, startRecording, stopRecording } from "@/lib/recording-controller";
 import { BrowserSkeleton, BrowserError } from "./BrowserStates";
 import { defaultHomeFolders } from "@/lib/home-file";
+import { RECORDINGS_FOLDER_NAME } from "@/lib/notes-root";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
@@ -45,6 +46,30 @@ export function LibraryBrowser() {
   const folderStack = useMobileStore((s) => s.folderStack);
   const enterFolder = useMobileStore((s) => s.enterFolder);
   const jumpToFolder = useMobileStore((s) => s.jumpToFolder);
+
+  /**
+   * Open Recordings, creating the folder when nothing has made one yet.
+   *
+   * The card is always on screen, so it has to work before the first
+   * recording exists — an always-visible row that says "not found" would be
+   * worse than no row at all.
+   */
+  const openRecordings = useCallback(async () => {
+    // `ensureDirectory`, NOT `createDirectory`: the latter DEDUPES, so a
+    // second tap — or a root that already holds a *file* called Recordings —
+    // would quietly make "Recordings-1" and then navigate to the name that
+    // was never created. Ensure is idempotent, needs no "does it exist?"
+    // argument read from a render closure that a double tap makes stale, and
+    // refuses honestly when the name is taken by something that is not a
+    // folder.
+    try {
+      await iosEnsureDirectory(RECORDINGS_FOLDER_NAME);
+    } catch (err) {
+      toast.error(t("action.createFolderFailed", { error: String(err) }));
+      return;
+    }
+    jumpToFolder({ relPath: RECORDINGS_FOLDER_NAME, name: RECORDINGS_FOLDER_NAME });
+  }, [jumpToFolder]);
   const openDocument = useMobileStore((s) => s.openDocument);
   const goBack = useMobileStore((s) => s.goBack);
   const goToDepth = useMobileStore((s) => s.goToDepth);
@@ -862,6 +887,10 @@ export function LibraryBrowser() {
         onTouchMove={onPullMove}
         onTouchEnd={onPullEnd}
         onTouchCancel={onPullEnd}
+        // Named for the same reason as the indicator below: its test reached
+        // it as the first `.overflow-y-auto` in the tree, which the next card
+        // added above the listing that scrolls its own content would take.
+        data-testid="library-scroller"
         className="view-enter absolute inset-0 overflow-y-auto"
         style={{
           ...CONTENT_INSETS,
@@ -939,8 +968,28 @@ export function LibraryBrowser() {
                 onOpen={() => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME })}
               />
             ) : null;
+            // Recordings sits directly under the Inbox and is ALWAYS there,
+            // whether or not the folder exists yet: somewhere to look is
+            // more use than a card that appears only once you have guessed
+            // where your recordings went. Opening it creates the folder when
+            // the first recording has not already.
+            const recordingsEntry = state.entries.find(
+              (e) => e.is_directory && e.name === RECORDINGS_FOLDER_NAME,
+            );
+            const recordingsCard = curated ? (
+              <RecordingsCard
+                count={recordingsEntry?.child_count}
+                onOpen={() => void openRecordings()}
+              />
+            ) : null;
             const listed = curated
-              ? visible.filter((e) => !e.is_directory || (homeSet.has(e.path) && e.name !== INBOX_NAME))
+              ? visible.filter(
+                  (e) =>
+                    !e.is_directory ||
+                    (homeSet.has(e.path) &&
+                      e.name !== INBOX_NAME &&
+                      e.name !== RECORDINGS_FOLDER_NAME),
+                )
               : visible;
             const homeTail = curated ? (
               <>
@@ -964,10 +1013,20 @@ export function LibraryBrowser() {
                   onNotNow={dismissNotificationPrePrompt}
                 />
               ) : null;
-            if (state.entries.length === 0) return <EmptyFolder />;
+            if (state.entries.length === 0)
+              // Even here: an empty library is exactly where "where do
+              // recordings go?" is hardest to answer, and the card is the
+              // answer — tapping it makes the folder.
+              return (
+                <>
+                  {recordingsCard}
+                  <EmptyFolder />
+                </>
+              );
             if (curated && !inboxCard && listed.length === 0)
               return (
                 <>
+                  {recordingsCard}
                   <HomeEmpty onChoose={openHomeEditor} />
                   {homeTail}
                 </>
@@ -985,6 +1044,7 @@ export function LibraryBrowser() {
               return (
                 <>
                   {inboxCard}
+                  {recordingsCard}
                   {prePrompt}
                 <GalleryView
                   entries={listed}
@@ -1004,6 +1064,7 @@ export function LibraryBrowser() {
             return (
               <>
                 {inboxCard}
+                {recordingsCard}
                 {prePrompt}
                 {groupEntries(listed).map((section) => (
                   <section key={section.key}>
@@ -1083,6 +1144,10 @@ export function LibraryBrowser() {
             `stroke` set directly. Nothing to override, and the arc reads at
             any size. */}
         <svg
+          // Named, not found by shape. Its test located it as the first
+          // `svg.h-5.w-5` in the tree, which any icon added above it in the
+          // DOM silently steals — as the pinned Recordings card's mic did.
+          data-testid="pull-refresh-indicator"
           viewBox="0 0 20 20"
           className={pullBusy ? "h-5 w-5 animate-spin" : "h-5 w-5"}
           style={

@@ -575,6 +575,23 @@ the folder list):
   (which is exactly what shipped first). Root only — one level down it
   is noise — and only when an Inbox exists. The folder is filtered out of the
   list below so it is never offered twice.
+- **A pinned Recordings card** directly beneath it, same style, above the
+  ordinary folders, ALWAYS visible — unlike the Inbox card it does not wait
+  for the folder to exist, because the question it answers is "where do my
+  recordings go?" and the folder is created by tapping it (Peter, 2026-09-05:
+  *"Recordings must be a folder like Inbox! Displayed below it with same
+  style, above other folders, always visible"*). Two rules make "always"
+  true rather than aspirational. It renders in EVERY branch of the root
+  listing — grouped, gallery, empty Home, empty library — because the folder
+  is filtered out of the plain listing in all of them, so a card missing from
+  one branch means Recordings vanishes from that view entirely (which is what
+  shipped first: switching Home to gallery lost it). And the tap uses
+  `ensureDirectory`, never `createDirectory`: the latter DEDUPES on
+  collision, so a root already holding a file called `Recordings` would get a
+  folder called `Recordings-1` while the card navigated to `Recordings` —
+  opening a file as a folder, with the real folder unreachable from the card
+  for ever. `ensureDirectory` is idempotent, so a double tap is also a no-op
+  rather than a race between two render closures.
 - **A permanent "Inbox" entry in the breadcrumb island's menu**, after the
   ancestors, so it is one tap from ANY depth without new corner chrome. It
   uses `jumpToFolder`, which REPLACES the folder stack — entering it would
