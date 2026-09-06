@@ -725,11 +725,11 @@ export function LibraryBrowser() {
                 { id: "img-original", title: t("menu.imageSizeOriginal"), icon: "photo.badge.arrow.down", selected: imageMaxPixel === "original" },
               ] as const)
             : []),
-          // SPIKE (`native-inbox-list`): the switch for it, HERE rather than in
-          // Labs, because Labs is a desktop Settings panel and the phone has
-          // no settings surface at all (#949) — a flag with no switch on the
-          // device it is meant to be judged on is not an experiment. Inbox
-          // only: it is the one screen the spike replaces.
+          // The navigation shell's switch, HERE rather than in Labs, because
+          // Labs is a desktop Settings panel and the phone has no settings
+          // surface at all (#949) — a flag with no switch on the device it is
+          // judged on is not a choice anybody can make. Home only: the shell
+          // is rooted there, so that is where turning it on or off belongs.
           ...(atHome
             ? [{
                 id: "spike-native-shell",

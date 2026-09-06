@@ -64,23 +64,6 @@ export const FLAGS = {
     default: false,
   },
 
-  /**
-   * Within the shell spike: read each folder's rows in Swift instead of
-   * having TypeScript compose and hand them over.
-   *
-   * The handed-over mode keeps ONE implementation of the unread rule and the
-   * reading labels, at the cost of a round trip per folder opened — Swift
-   * asks, JS lists, JS composes, IPC back. The native mode has no round trip
-   * and a second implementation of rules that already exist. Which matters
-   * more is a question about a real phone with a real library, so both are
-   * built and both are timed; each list shows how long its rows took.
-   */
-  "native-shell-native-data": {
-    stage: "experimental",
-    summary: "Read rows in Swift rather than passing them from the web layer",
-    introducedIn: "0.57.0",
-    default: false,
-  },
 } as const satisfies Record<string, FlagSpec>;
 
 export type FlagId = keyof typeof FLAGS;
