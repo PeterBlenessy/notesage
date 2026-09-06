@@ -972,44 +972,135 @@ struct GlassRecorder: View {
   let emit: (String) -> Void
 
   var body: some View {
-    HStack(spacing: 8) {
+    // Same metrics as `GlassPlayer`: spacing 6, a large 54pt primary and 46pt
+    // secondaries, the same padding and the same glass. Recording and
+    // listening are the same kind of thing to a thumb, so they are the same
+    // shape and the same size (Peter, 2026-09-05).
+    HStack(spacing: 6) {
       Circle()
         .fill(Color.red)
-        .frame(width: 12, height: 12)
-        .opacity(spec.paused ? 0.4 : 1)
+        .frame(width: 10, height: 10)
+        .opacity(spec.paused ? 0.35 : 1)
         .padding(.leading, 6)
-      VStack(alignment: .leading, spacing: 3) {
-        Text(spec.interrupted && spec.paused ? (spec.interruptedLabel ?? spec.elapsed) : spec.elapsed)
-          .font(.footnote.monospacedDigit())
-          .lineLimit(1)
-          .minimumScaleFactor(0.75)
-        GeometryReader { geo in
-          ZStack(alignment: .leading) {
-            Capsule().fill(Color.primary.opacity(0.12))
-            Capsule().fill(Color.primary.opacity(0.55))
-              .frame(width: max(2, geo.size.width * CGFloat(min(1, max(0, spec.level)))))
-          }
-        }
-        .frame(width: 88, height: 3)
-      }
-      Button { emit("rec-toggle") } label: {
-        Image(systemName: spec.paused ? "record.circle" : "pause.fill")
-          .font(.title2)
-          .frame(width: 54, height: 54)
-      }
-      .buttonStyle(.plain)
-      Button { emit("rec-stop") } label: {
-        Image(systemName: "stop.fill")
-          .font(.title3)
-          .frame(width: 46, height: 46)
-      }
-      .buttonStyle(.plain)
+      Text(spec.interrupted && spec.paused ? (spec.interruptedLabel ?? spec.elapsed) : spec.elapsed)
+        .font(.footnote.monospacedDigit())
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.75)
+        // A floor, like the player's position label, so the capsule does not
+        // re-lay out every second as the digits change width.
+        .frame(minWidth: 52)
+      RecordingWave(paused: spec.paused)
+      button("rec-toggle", system: spec.paused ? "record.circle" : "pause.fill", large: true)
+      button("rec-stop", system: "stop.fill")
     }
     .padding(.horizontal, 10)
     .padding(.vertical, 5)
     .foregroundStyle(.primary)
     .modifier(GlassIslandSurface())
   }
+
+  private func button(_ id: String, system: String, large: Bool = false) -> some View {
+    Button { emit(id) } label: {
+      Image(systemName: system)
+        .font(large ? .title2 : .title3)
+        .frame(width: large ? 54 : 46, height: large ? 54 : 46)
+    }
+    .buttonStyle(.plain)
+  }
+}
+
+/// The loudness trace: newest sample at the RIGHT, older ones marching left,
+/// the way Voice Memos draws a recording in progress.
+///
+/// It replaces a single bar showing the instantaneous level, which was fed
+/// from the recorder's once-a-second tick — at that rate a level bar barely
+/// moves, so there was nothing to read and nothing that looked alive (Peter,
+/// device, build 51: "during recording I don't get the progress line
+/// displayed").
+///
+/// Sampled HERE, natively, twenty times a second. Pushing that across the JS
+/// bridge would be 20 messages a second for decoration, and the bridge is
+/// asleep with the screen locked while the recorder is still running.
+struct RecordingWave: View {
+  let paused: Bool
+  private static let height: CGFloat = 22
+  // `@StateObject`, so the meter and its timer belong to the VIEW'S LIFETIME
+  // rather than to each `init`. The island's hosting controller has its
+  // `rootView` reassigned on every chrome push — which is at least once a
+  // second while recording, because the elapsed time is part of the spec —
+  // and a timer stored as a plain `let` would be rebuilt every one of those,
+  // with the old subscription's teardown left to chance. Stacked timers would
+  // show as a trace that speeds up the longer you record.
+  @StateObject private var meter = WaveMeter()
+
+  var body: some View {
+    HStack(alignment: .center, spacing: 2) {
+      ForEach(Array(meter.samples.enumerated()), id: \.offset) { _, level in
+        Capsule()
+          .fill(Color.primary.opacity(paused ? 0.25 : 0.6))
+          // A floor of 2pt so silence is a row of dots rather than a gap:
+          // the trace should read as "running, and quiet", not as "stopped".
+          .frame(width: 2, height: max(2, level * Self.height))
+      }
+    }
+    // Trailing, so a half-filled history hugs the right edge and the newest
+    // sample is always in the same place.
+    .frame(width: 104, height: Self.height, alignment: .trailing)
+    // Keyed on `paused`: SwiftUI cancels and restarts this when it changes,
+    // so a paused recording stops sampling entirely instead of waking twenty
+    // times a second to do nothing.
+    .task(id: paused) { paused ? meter.stop() : meter.start() }
+    .onDisappear { meter.stop() }
+  }
+}
+
+/// Owns the trace's samples and the timer that fills them.
+///
+/// A class, held by `@StateObject`, because the thing that must survive the
+/// island being reconstructed is the TIMER, not just the samples.
+final class WaveMeter: ObservableObject {
+  /// How many bars fit the strip. Older samples fall off the left.
+  private static let capacity = 32
+  @Published private(set) var samples: [CGFloat] = []
+  private var timer: Timer?
+
+  /// The run loop is named, not inherited. `Timer.scheduledTimer` attaches
+  /// to whatever thread's run loop is current AT THE CALL SITE, and
+  /// SwiftUI's `.task` closure is `@Sendable () async -> Void` — its
+  /// execution context is not part of the type, so scheduling that way would
+  /// rest the timer's thread on an inference rather than on a rule. On a
+  /// cooperative-pool worker, whose run loop is not spinning, it would
+  /// simply never fire: no crash, no log, an empty `samples` array and a
+  /// flat trace — which is EXACTLY the symptom this view was written to fix
+  /// (Peter, build 51: "during recording I don't get the progress line
+  /// displayed"). Naming `RunLoop.main` also keeps `currentLevel()`, and so
+  /// `AVAudioRecorder.updateMeters()`, on the one thread the recorder's own
+  /// 1 Hz tick already calls it from.
+  ///
+  /// `.common` rather than `.default`: articles stay readable while
+  /// recording, and a default-mode timer stops dead for the whole of a
+  /// scroll gesture — the trace would freeze exactly while someone reads.
+  func start() {
+    guard timer == nil else { return }
+    let t = Timer(timeInterval: 0.05, repeats: true) { [weak self] _ in
+      dispatchPrecondition(condition: .onQueue(.main))
+      guard let self else { return }
+      self.samples.append(CGFloat(Recorder.shared.currentLevel()))
+      if self.samples.count > Self.capacity {
+        self.samples.removeFirst(self.samples.count - Self.capacity)
+      }
+    }
+    RunLoop.main.add(t, forMode: .common)
+    timer = t
+  }
+
+  func stop() {
+    timer?.invalidate()
+    timer = nil
+  }
+
+  deinit { timer?.invalidate() }
 }
 
 /// The player island's surface: real Liquid Glass on iOS 26 — the same
