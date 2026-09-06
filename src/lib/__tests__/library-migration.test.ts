@@ -23,7 +23,9 @@ describe("planning the library migration (2026-09-06)", () => {
       listing({ entries: [entry("Research", true)], projectDirs: new Set(["Research"]) }),
       listing(),
     );
-    expect(plan.steps).toEqual([{ kind: "move", from: "Research", to: "Research" }]);
+    expect(plan.steps).toEqual([
+      { kind: "move", unit: "project", from: "Research", to: "Research" },
+    ]);
     expect(plan.counts.projects).toBe(1);
   });
 
@@ -142,6 +144,60 @@ describe("running the migration", () => {
     }));
     expect(moveEntry).not.toHaveBeenCalled();
     expect(report.failed).toEqual([]);
+  });
+
+  it("a re-plan after a partial run does not dedupe an already-deduped name again", async () => {
+    // Resumability's sharp edge. First run: source `a.md` collides and lands
+    // as `a-1.md`. If the source is then gone, the re-plan must not see
+    // `a-1.md` at the destination, dedupe against it, and produce `a-2.md`
+    // — the file would move twice under two names. It does not, because the
+    // source entry is what drives planning and it is no longer there.
+    const first = planLibraryMigration(
+      listing({ inbox: [entry("a.html")] }),
+      listing({ inbox: [entry("a.html")] }),
+    );
+    expect(first.steps[0].to).toBe("Inbox/a-1.html");
+
+    // After the move: the source Inbox is empty, the destination holds both.
+    const second = planLibraryMigration(
+      listing({ inbox: [] }),
+      listing({ inbox: [entry("a.html"), entry("a-1.html")] }),
+    );
+    expect(second.steps).toEqual([]);
+  });
+
+  it("counts what actually moved, by kind", async () => {
+    // The report is the one screen someone judges the move by. It used to
+    // count every project as a loose file, then back-fill projects by
+    // subtracting the TOTAL failure count — so a failed inbox merge was
+    // blamed on a project that had moved perfectly well.
+    const plan = planLibraryMigration(
+      listing({
+        entries: [entry("Proj", true), entry("loose.md")],
+        inbox: [entry("a.html")],
+        projectDirs: new Set(["Proj"]),
+      }),
+      listing(),
+    );
+    const report = await runLibraryMigration(plan, "/old", "/new", deps());
+    expect(report.moved).toEqual({ projects: 1, inboxItems: 1, looseFiles: 1 });
+  });
+
+  it("does not blame a project for someone else's failure", async () => {
+    const plan = planLibraryMigration(
+      listing({
+        entries: [entry("Proj", true), entry("a.md"), entry("b.md")],
+        projectDirs: new Set(["Proj"]),
+      }),
+      listing(),
+    );
+    const moveEntry = vi.fn(async (s: string, d: string) => {
+      if (s.endsWith(".md")) throw new Error("nope");
+      return d;
+    });
+    const report = await runLibraryMigration(plan, "/old", "/new", deps({ moveEntry }));
+    expect(report.failed).toHaveLength(2);
+    expect(report.moved.projects).toBe(1); // the project moved, and says so
   });
 
   it("finishes the rest when one step fails, and says which failed", async () => {

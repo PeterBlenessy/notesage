@@ -32,6 +32,9 @@ export type MigrationStepKind =
 
 export interface MigrationStep {
   kind: MigrationStepKind;
+  /** What this step moves, so the report can count it correctly. Decided at
+   *  planning time, where a project is already distinguished from a folder. */
+  unit?: "project" | "file" | "inboxItem";
   /** Relative to the source root. */
   from: string;
   /** Relative to the destination root; absent for `drop`. */
@@ -94,6 +97,7 @@ export function planLibraryMigration(
     destInbox.add(to);
     steps.push({
       kind: "merge-inbox-item",
+      unit: "inboxItem",
       from: `Inbox/${item.name}`,
       to: `Inbox/${to}`,
       note: to === item.name ? undefined : `renamed to ${to} — the name was taken`,
@@ -137,6 +141,7 @@ export function planLibraryMigration(
       destTop.add(to);
       steps.push({
         kind: "move",
+        unit: "file",
         from: entry.name,
         to,
         note: to === entry.name ? undefined : `renamed to ${to} — the name was taken`,
@@ -147,7 +152,7 @@ export function planLibraryMigration(
 
     const isProject = source.projectDirs.has(entry.name);
     if (!destTop.has(entry.name)) {
-      steps.push({ kind: "move", from: entry.name, to: entry.name });
+      steps.push({ kind: "move", unit: isProject ? "project" : "file", from: entry.name, to: entry.name });
       if (isProject) counts.projects += 1;
       else counts.looseFiles += 1;
       continue;
@@ -163,6 +168,7 @@ export function planLibraryMigration(
       destTop.add(to);
       steps.push({
         kind: "rename-conflicting-project",
+        unit: "project",
         from: entry.name,
         to,
         note: "a project of this name is already there — both kept",
@@ -179,6 +185,7 @@ export function planLibraryMigration(
     // The project's own `.notesage/` travels with it.
     steps.push({
       kind: "move",
+      unit: isProject ? "project" : "file",
       from: entry.name,
       to: entry.name,
       note: "merged into the folder already there",
@@ -269,8 +276,13 @@ export async function runLibraryMigration(
           if (!to) break;
           await deps.moveEntry(from, to);
           if (step.kind === "rename-conflicting-project") report.renamed += 1;
-          if (step.kind === "merge-inbox-item") report.moved.inboxItems += 1;
-          else if (step.from.includes("/")) report.moved.looseFiles += 1;
+          // Counted from what the step SAYS it moves. The previous version
+          // had both arms of an if/else do the same thing, so every project
+          // was reported as a loose file, and projects were then back-filled
+          // by subtracting the total failure count — which blamed a failed
+          // inbox merge on a project that had moved perfectly well.
+          if (step.unit === "project") report.moved.projects += 1;
+          else if (step.unit === "inboxItem") report.moved.inboxItems += 1;
           else report.moved.looseFiles += 1;
         }
       }
@@ -281,9 +293,6 @@ export async function runLibraryMigration(
     deps.onStep?.(done, plan.steps.length, step);
   }
 
-  // Counts the plan already knows, corrected by what actually failed.
-  report.moved.projects = plan.counts.projects - report.failed.length;
-  if (report.moved.projects < 0) report.moved.projects = 0;
   return report;
 }
 

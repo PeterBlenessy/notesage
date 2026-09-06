@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -17,7 +17,16 @@ import {
   type MigrationPlan,
   type MigrationReport,
 } from "@/lib/library-migration";
-import { buildMigrationListing, migrationDeps } from "@/lib/library-migration-run";
+import {
+  buildMigrationListing,
+  collectSidecarFilePaths,
+  migrationDeps,
+} from "@/lib/library-migration-run";
+import { applyPathRewrites, planPathRewrites } from "@/lib/library-migration-paths";
+import { executeRenameTransaction } from "@/lib/rename-transaction";
+import { useWorkspaceStore } from "@/stores/workspace-store";
+import { useEditorStore } from "@/stores/editor-store";
+import { useSettingsStore } from "@/stores/settings-store";
 
 type Phase =
   | { kind: "planning" }
@@ -48,6 +57,10 @@ export function LibraryMigrationDialog({
   newRoot: string;
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: "planning" });
+  // A run in flight, tracked in a ref so a re-render cannot lose it. The
+  // dialog can be dismissed and reopened; that must not start a second run
+  // over the same two roots while the first is still moving files.
+  const runningRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -71,24 +84,85 @@ export function LibraryMigrationDialog({
 
   const start = useCallback(
     async (plan: MigrationPlan) => {
+      if (runningRef.current) return; // a second confirm while one is in flight
+      runningRef.current = true;
       setPhase({ kind: "running", plan, done: 0 });
       try {
         const report = await runLibraryMigration(plan, oldRoot, newRoot, {
           ...migrationDeps(),
           onStep: (done) => setPhase({ kind: "running", plan, done }),
         });
+
+        // Moving the bytes is only half of it. Projects, the open document,
+        // recents, pins and the path-keyed comment sidecars all store
+        // ABSOLUTE paths — without this the library comes back with an empty
+        // sidebar, no pins and orphaned comments, every byte still on disk,
+        // which is exactly what looks like data loss. Runs even when steps
+        // failed: whatever DID move has moved, and leaving the bookkeeping
+        // pointing at the old place would be worse than a partial move.
+        const ws = useWorkspaceStore.getState();
+        const editor = useEditorStore.getState();
+        const notesRoot = useSettingsStore.getState().notesRootPath;
+        const rewrites = planPathRewrites({
+          oldRoot,
+          newRoot,
+          projectPaths: ws.projects.map((p) => p.path),
+          documentPaths: [
+            ...editor.openDocuments.map((d) => d.filePath),
+            ...(editor.recentFiles ?? []).map((r) => (typeof r === "string" ? r : r.path)),
+          ].filter((p): p is string => Boolean(p)),
+          sidecarFilePaths: notesRoot ? await collectSidecarFilePaths(notesRoot) : [],
+          commentsDir: `${notesRoot ?? ""}/.notesage/comments`,
+        });
+        await applyPathRewrites(rewrites, {
+          updateProjectPath: (from, to) => ws.updateProjectPath(from, to, []),
+          renameOpenDocument: (from, to) => editor.renameOpenDocument(from, to),
+          updateFilePaths: (fromPrefix, toPrefix) => ws.updateFilePaths(fromPrefix, toPrefix),
+          migrateSidecars: (inputs) =>
+            notesRoot ? executeRenameTransaction(notesRoot, inputs) : Promise.resolve(),
+        });
+
+        // The library has moved: point the app at it, so the watchers and
+        // every consumer follow without waiting for a restart.
+        useSettingsStore.getState().setICloudNotesagePath(newRoot);
+        useSettingsStore.getState().setLibraryRootKind("container");
+
         setPhase({ kind: "done", report });
       } catch (err) {
         setPhase({ kind: "error", message: String(err) });
         toast.error(String(err));
+      } finally {
+        runningRef.current = false;
       }
     },
     [oldRoot, newRoot],
   );
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[480px]">
+    <Dialog
+      open={open}
+      // A run cannot be dismissed. Disabling the footer button was cosmetic:
+      // Escape, the corner ✕ and an outside click all closed the dialog
+      // anyway, and because the roots stay set, reopening re-planned and
+      // could start a SECOND run over the same files while the first was
+      // still moving them. There is no cancel here because there is nothing
+      // safe to cancel to — a half-moved library needs the run to finish and
+      // report, not to stop in the middle.
+      onOpenChange={(next) => {
+        if (!next && phase.kind === "running") return;
+        onOpenChange(next);
+      }}
+    >
+      <DialogContent
+        className="max-w-[480px]"
+        showCloseButton={phase.kind !== "running"}
+        onEscapeKeyDown={(e) => {
+          if (phase.kind === "running") e.preventDefault();
+        }}
+        onInteractOutside={(e) => {
+          if (phase.kind === "running") e.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>
             {phase.kind === "done" ? t("settings.libraryMoveDone") : t("settings.libraryMoveTitle")}
