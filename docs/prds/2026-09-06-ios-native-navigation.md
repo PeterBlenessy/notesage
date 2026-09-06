@@ -3,7 +3,7 @@
 |  |  |
 | --- | --- |
 | **Date** | 2026-09-06 |
-| **Status** | In progress |
+| **Status** | Shipped behind the `native-shell` flag — TestFlight build 56, 2026-09-07. The flag defaults OFF until a push and a pop have been exercised on a device. |
 | **Priority** | High |
 | **Impact** | Leaving a document, or a folder, looks and feels the way iOS does it — at every level, with nothing hand-built |
 | **Tasks** | [ios-native-navigation-tasks](../tasks/2026-09-06-ios-native-navigation-tasks.md) |

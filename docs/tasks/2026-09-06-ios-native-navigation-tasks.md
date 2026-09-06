@@ -77,9 +77,9 @@ Two passes over the whole diff. Fixed:
 - the root-push race and the title-driven teardown, both found by reading
   rather than running.
 
-## 7. Ship 🚧
+## 7. Ship ✅
 
-Tester notes written, TestFlight build cut. Flag ships **off** — see task 5:
+Tester notes written; TestFlight build 56 uploaded and released 2026-09-07 (tag `ios-build/56` at `bd08943e`). Flag ships **off** — see task 5:
 shipping an unexercised navigation rewrite as the default would risk exactly
 what the brief forbids, an app with fewer working features than the last one.
 It flips on once somebody has swiped it.
