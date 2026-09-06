@@ -26,13 +26,16 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Both swipes work again — that one was my fault, twice over.
+The Inbox is there from the first launch, and articles close with a swipe.
 
 FIXED
-• Swipe in from the left edge to leave a document.
-• Swipe left on a list row to reveal its actions.
-• The recording trace now looks like the playback trace: dots when quiet, strokes when you speak.
+• The Inbox is on Home from a clean install, before anything has been shared into it — and opening it works.
+• Swipe in from the left edge to leave a saved article. It worked in notes, never in articles.
+• "Try again" on a folder the app owns now makes the folder.
+
+NEW
+• Listen to a note, not only a saved article.
 
 TRY
-• Swipe a row in the Inbox, then swipe in from the left edge of an article.
-• Record a few seconds, play it back, and compare the two traces.
+• Open the Inbox from Home, then from the menu at the top.
+• Swipe in from the left edge of a saved article, then of a note.

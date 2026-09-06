@@ -25,13 +25,16 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Båda svepen fungerar igen — det var mitt fel, två gånger om.
+Inbox finns där från första starten, och artiklar stängs med ett svep.
 
 FIXAT
-• Svep in från vänsterkanten för att lämna ett dokument.
-• Svep vänster på en rad i listan för att visa dess åtgärder.
-• Inspelningsspåret ser ut som uppspelningsspåret: prickar när det är tyst, streck när du talar.
+• Inbox finns på Hem direkt efter en ren installation, innan något delats dit — och den går att öppna.
+• Svep in från vänsterkanten för att lämna en sparad artikel. Det fungerade i anteckningar, aldrig i artiklar.
+• "Försök igen" på en mapp appen äger skapar nu mappen.
+
+NYTT
+• Lyssna på en anteckning, inte bara en sparad artikel.
 
 PROVA
-• Svep en rad i Inbox, svep sedan in från vänsterkanten i en artikel.
-• Spela in några sekunder, spela upp, och jämför de två spåren.
+• Öppna Inbox från Hem, och sedan från menyn längst upp.
+• Svep in från vänsterkanten i en sparad artikel, och sedan i en anteckning.
