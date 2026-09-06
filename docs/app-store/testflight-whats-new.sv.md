@@ -25,17 +25,16 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-En ny installation skapar sitt eget bibliotek — ingen mapp att välja.
+Svep tillbaka fungerar igen, och du kan välja var ljudet kommer ut.
 
 NYTT
-• Inspelningar har ett eget kort under Inbox, alltid där.
-• Svep in från vänsterkanten i ett dokument för att gå tillbaka.
-• Inspelningsraden ser ut som spelaren och ritar din röst.
+• En knapp i spelaren väljer ljudet: telefon, hörlurar, bil.
 
 FIXAT
-• Miniatyrer finns där när listan öppnas, inte efteråt.
-• Antalet olästa rör sig igen.
+• Att svepa in från vänsterkanten för att lämna ett dokument hade slutat fungera.
+• Olästa syns även i gallerivyn, inte bara i listan.
+• Inspelningsspåret visar en röst som stiger och faller, inte ett massivt block.
 
 PROVA
-• Svep in från vänsterkanten för att lämna en artikel, sedan en webbsida.
-• För den nya bibliotekstarten: radera appen och installera om. Den ska aldrig fråga efter en mapp.
+• Spela upp en artikel, tryck på ljudknappen, flytta till hörlurar och tillbaka.
+• Svep in från vänsterkanten i en artikel, och i en sparad webbsida.
