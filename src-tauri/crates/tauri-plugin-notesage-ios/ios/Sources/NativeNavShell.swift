@@ -79,14 +79,24 @@ final class ScreenController: UIViewController {
   func attachLive(_ webView: WKWebView) {
     self.webView = webView
     webView.removeFromSuperview()
-    webView.translatesAutoresizingMaskIntoConstraints = true
-    webView.frame = view.bounds
-    webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    // CONSTRAINTS, not a frame copied from `view.bounds`. A pushed controller
+    // has not been laid out by the navigation controller yet — its view still
+    // carries whatever size it was created with — so copying bounds here sizes
+    // the web view from a rectangle that is about to change, and an
+    // autoresizing mask then scales that wrong size proportionally. Pinning to
+    // the edges is right whenever layout happens, which is the whole point.
+    webView.translatesAutoresizingMaskIntoConstraints = false
     if let snapshot {
       view.insertSubview(webView, belowSubview: snapshot)
     } else {
       view.addSubview(webView)
     }
+    NSLayoutConstraint.activate([
+      webView.topAnchor.constraint(equalTo: view.topAnchor),
+      webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+    ])
   }
 
   /// Freeze what is on screen right now, so this controller keeps showing it
@@ -97,11 +107,16 @@ final class ScreenController: UIViewController {
     // frame, which during a push is the destination: the outgoing screen
     // would flash the incoming one.
     guard let shot = webView.snapshotView(afterScreenUpdates: false) else { return }
-    shot.frame = view.bounds
-    shot.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+    shot.translatesAutoresizingMaskIntoConstraints = false
     snapshot?.removeFromSuperview()
     snapshot = shot
     view.addSubview(shot)
+    NSLayoutConstraint.activate([
+      shot.topAnchor.constraint(equalTo: view.topAnchor),
+      shot.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      shot.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      shot.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+    ])
   }
 
   /// Drop the frozen picture, revealing whatever is live underneath.
@@ -385,6 +400,15 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     // The screen is showing its snapshot; tell the web layer to draw itself
     // again, and thaw only when it says it has (`rendered`).
     dispatch("didPop", detail: "{ screenId: \(Self.jsonString(screen.screenId)) }")
+    // …but never wait forever. If that message is lost, or the web layer
+    // throws before answering, the snapshot stays over a live screen and the
+    // app is frozen on a picture — taps land on content nobody can see. Two
+    // seconds is far longer than a re-render and short enough that the worst
+    // case is a stale image, not a dead screen.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self, weak screen] in
+      guard let screen, self?.nav?.topViewController === screen else { return }
+      screen.thaw()
+    }
   }
 }
 

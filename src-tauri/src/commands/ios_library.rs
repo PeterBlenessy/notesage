@@ -926,14 +926,15 @@ pub async fn ios_nav_shell_push(
 #[tauri::command]
 pub async fn ios_nav_shell_pop(
     app: tauri::AppHandle,
+    animated: Option<bool>,
 ) -> Result<(), String> {
     #[cfg(target_os = "ios")]
     {
-        ios_impl::nav_shell_pop(&app).await
+        ios_impl::nav_shell_pop(&app, animated.unwrap_or(true)).await
     }
     #[cfg(not(target_os = "ios"))]
     {
-        let _ = (&app);
+        let _ = (&app, animated);
         Err("ios_nav_shell_pop is only available on iOS".into())
     }
 }
