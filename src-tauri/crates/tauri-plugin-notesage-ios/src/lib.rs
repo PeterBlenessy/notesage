@@ -61,11 +61,31 @@ pub struct FileEntry {
     pub child_count: Option<u32>,
 }
 
+/// Mirrors `LibraryGrant` in LibraryAccess.swift. `kind` is the raw wire
+/// string (`"container"` | `"picked"`) — the app crate maps it onto its own
+/// enum, the way it maps every other type from this crate.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryGrant {
     pub display_name: String,
     pub granted: bool,
+    /// How the root was resolved; absent when not granted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// Whether the app's iCloud container could be resolved at all.
+    #[serde(default)]
+    pub icloud_available: bool,
+}
+
+impl LibraryGrant {
+    fn ungranted() -> Self {
+        LibraryGrant {
+            display_name: String::new(),
+            granted: false,
+            kind: None,
+            icloud_available: false,
+        }
+    }
 }
 
 // Response envelopes — these mirror the dictionaries NotesageIosPlugin.swift
@@ -344,10 +364,21 @@ impl<R: Runtime> NotesageIos<R> {
     pub fn get_library_grant(&self) -> Result<LibraryGrant> {
         // Never fatal: "no grant yet" is the first-run state, and an error here
         // would block onboarding rather than show it.
-        Ok(self.call("getLibraryGrant", ()).unwrap_or(LibraryGrant {
-            display_name: String::new(),
-            granted: false,
-        }))
+        Ok(self.call("getLibraryGrant", ()).unwrap_or_else(|_| LibraryGrant::ungranted()))
+    }
+
+    /// Settle the library mode (container | picked) against iCloud and the
+    /// bookmark, then resolve the grant. The app's first call at mount; the
+    /// native side does the (possibly seconds-long) container resolution off
+    /// the main thread. Same never-fatal stance as `get_library_grant`.
+    pub fn setup_library(&self) -> Result<LibraryGrant> {
+        Ok(self.call("setupLibrary", ()).unwrap_or_else(|_| LibraryGrant::ungranted()))
+    }
+
+    /// The settings action: `"container"` or `"picked"`. Errors when the
+    /// target has nothing to resolve to (no iCloud, no kept bookmark).
+    pub fn set_library_mode(&self, mode: &str) -> Result<LibraryGrant> {
+        self.call("setLibraryMode", serde_json::json!({ "mode": mode }))
     }
 
     pub fn clear_library_grant(&self) -> Result<()> {
@@ -693,7 +724,13 @@ impl<R: Runtime> NotesageIos<R> {
         Err(Error::Unavailable)
     }
     pub fn get_library_grant(&self) -> Result<LibraryGrant> {
-        Ok(LibraryGrant { display_name: String::new(), granted: false })
+        Ok(LibraryGrant::ungranted())
+    }
+    pub fn setup_library(&self) -> Result<LibraryGrant> {
+        Err(Error::Unavailable)
+    }
+    pub fn set_library_mode(&self, _mode: &str) -> Result<LibraryGrant> {
+        Err(Error::Unavailable)
     }
     pub fn clear_library_grant(&self) -> Result<()> {
         Ok(())

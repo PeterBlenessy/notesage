@@ -3,24 +3,48 @@ import { FolderOpen, ShieldCheck, BookOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useMobileStore } from "@/stores/mobile-store";
+import { iosOpenSettings } from "@/lib/ios-api";
 import { t } from "@/lib/i18n";
 import { useLocale } from "@/lib/useLocale";
 import { useA11yPrefs, a11yRootProps } from "./useNativeChrome";
 
 /**
- * First-run / re-grant screen. Explains that iOS requires a one-time permission
- * to read the iCloud `Notesage` folder and that the app only *adds* capture
- * notes. The picker is pre-pointed at `iCloud Drive/Notesage`, so granting is a
- * confirm tap, not a folder hunt (PRD task #12).
+ * The picker screen, in three voices (PRD 2026-09-05-icloud-container-library):
+ *
+ * - `icloud-unavailable` — the container could not be resolved (no iCloud
+ *   account, iCloud Drive off for Notesage, a reviewer's device): explains
+ *   that Notesage keeps its library in iCloud and offers a folder of the
+ *   user's choosing instead, plus the way to Settings.
+ * - `stale` — a chosen folder's bookmark no longer resolves: re-grant copy.
+ *   With iCloud available, a second button switches to Notesage in iCloud.
+ * - `ungranted` — the original welcome copy (kept for a cleared grant).
+ *
+ * With iCloud on, a fresh install never sees this screen at all — the
+ * library is the app's own container and `MobileApp` goes straight to it.
+ * The picker is pre-pointed at `iCloud Drive/Notesage`.
  */
 export function Onboarding() {
   const grantState = useMobileStore((s) => s.grantState);
+  const icloudAvailable = useMobileStore((s) => s.icloudAvailable);
   useLocale();
   const pickFolder = useMobileStore((s) => s.pickFolder);
+  const setLibraryMode = useMobileStore((s) => s.setLibraryMode);
   const [busy, setBusy] = useState(false);
   const a11y = useA11yPrefs();
 
   const isStale = grantState === "stale";
+  const noICloud = grantState === "icloud-unavailable";
+
+  const handleSwitchToContainer = async () => {
+    setBusy(true);
+    try {
+      await setLibraryMode("container");
+    } catch (err) {
+      toast.error(t("library.switchToICloudFailed", { error: String(err) }));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleGrant = async () => {
     setBusy(true);
@@ -52,14 +76,22 @@ export function Onboarding() {
         className="mt-6 text-[length:calc(1.25rem*var(--ns-a11y-scale,1))] text-foreground"
         style={{ fontWeight: "max(600, var(--ns-a11y-weight, 400))" }}
       >
-        {isStale ? t("onboarding.titleStale") : t("onboarding.title")}
+        {noICloud
+          ? t("onboarding.titleNoICloud")
+          : isStale
+            ? t("onboarding.titleStale")
+            : t("onboarding.title")}
       </h1>
 
       <p
         className="mt-3 max-w-sm text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] leading-relaxed text-muted-foreground"
         style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
       >
-        {isStale ? t("onboarding.introStale") : t("onboarding.intro")}
+        {noICloud
+          ? t("onboarding.introNoICloud")
+          : isStale
+            ? t("onboarding.introStale")
+            : t("onboarding.intro")}
       </p>
 
       <div className="mt-6 w-full max-w-sm space-y-3 text-left">
@@ -77,8 +109,39 @@ export function Onboarding() {
         onClick={handleGrant}
         disabled={busy}
       >
-        {busy ? t("onboarding.opening") : isStale ? t("onboarding.pickAgain") : t("onboarding.pick")}
+        {busy
+          ? t("onboarding.opening")
+          : noICloud
+            ? t("onboarding.chooseFolder")
+            : isStale
+              ? t("onboarding.pickAgain")
+              : t("onboarding.pick")}
       </Button>
+
+      {/* The way out that is NOT the picker: to Settings when iCloud is off
+          (turning it on is the intended path — the picker is the fallback),
+          and to Notesage in iCloud when a chosen folder broke but iCloud is
+          right there. A text button, second to the primary on purpose. */}
+      {noICloud && (
+        <Button
+          variant="link"
+          className="ios-press-row mt-2 w-full max-w-sm"
+          onClick={() => void iosOpenSettings().catch(() => {})}
+          disabled={busy}
+        >
+          {t("onboarding.howToTurnOnICloud")}
+        </Button>
+      )}
+      {isStale && icloudAvailable && (
+        <Button
+          variant="link"
+          className="ios-press-row mt-2 w-full max-w-sm"
+          onClick={handleSwitchToContainer}
+          disabled={busy}
+        >
+          {t("onboarding.useICloudInstead")}
+        </Button>
+      )}
     </div>
   );
 }

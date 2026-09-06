@@ -221,6 +221,32 @@ screenshots, description, support URL or privacy-policy URL required.
   nothing about the build looks wrong; the notes simply describe something that
   already shipped.
 
+## Signing needs an App Store Connect key, not a signed-in Xcode
+
+Since Xcode 9.3 the developer account's credentials live in the "local items"
+keychain, which **no command-line session can read** ([Apple
+DTS](https://developer.apple.com/forums/thread/112606)). A build run from a
+terminal therefore reports
+
+```
+error: No Accounts: Add a new account in Accounts settings.
+```
+
+however thoroughly Xcode's own window is signed in — the Accounts pane will
+happily show the account and its team while `xcodebuild` sees neither.
+
+This stayed invisible for as long as a cached profile happened to satisfy the
+entitlements. The day one had to be REGENERATED — adding the iCloud container
+did it — every cut stopped dead, with the misleading claim that no account
+existed.
+
+Apple's answer is to hand `xcodebuild` an App Store Connect key. The export
+step always did. The **archive** step could not: it runs through the Tauri
+CLI, which forwards `-allowProvisioningUpdates` and silently drops every other
+argument, so the script writes a one-line `xcodebuild` wrapper first on `PATH`
+that puts the credentials back on the invocation Tauri makes. Nothing about
+your Xcode installation needs changing, and CI needs no account either.
+
 ## Upload
 
 **Validate first.** It costs a minute and catches the things that would
