@@ -1180,6 +1180,43 @@ pub enum DownloadState { Ready, Downloading, Failed }
 const state = await tauriApi.icloudEnsureDownloaded(audioPath); // "ready" | "downloading" | "failed"
 ```
 
+### get_library_container_path
+
+Notesage's OWN iCloud container — not Apple's generic `com~apple~CloudDocs`. `None` unless it exists; Phase 2 never creates it, because an unentitled Mac that made the directory anyway would produce a folder that never syncs.
+
+```rust
+#[tauri::command]
+pub async fn get_library_container_path() -> Result<Option<String>, String>
+```
+
+### read_library_marker
+
+A library's `<root>/.notesage/library.json`. `None` for a library with no marker — the ordinary state of today's CloudDocs folder — and `None` for a malformed one, since "no marker" means "not migrated" and refusing to start over a hand-edited file would be worse.
+
+```rust
+#[tauri::command]
+pub async fn read_library_marker(root: String) -> Result<Option<LibraryMarker>, String>
+
+pub struct LibraryMarker {
+    pub version: u32,
+    pub kind: String,          // "container"
+    pub created_by: String,    // "ios" | "macos"
+    pub created_at: String,
+    pub migrated_from: Option<String>,
+    pub migrated_at: Option<String>,
+    pub migrated_by: Option<String>,
+}
+```
+
+### migrate_library_entry
+
+Move ONE entry into the new library, returning where it landed. **Never overwrites**: a destination that exists is an error, so every collision is settled by the migration plan rather than by the order steps happened to run in. Refuses a source outside a plausible library root, so a bad path cannot turn it into a general move-anything command. `rename(2)`, falling back to copy-verify-delete across volumes; a symlink is moved as a link, not followed.
+
+```rust
+#[tauri::command]
+pub async fn migrate_library_entry(src: String, dst: String) -> Result<String, String>
+```
+
 ## Research Operations
 
 Located in `src-tauri/src/index/mod.rs` (part of the SQLite document index — the legacy filesystem-scanning `search_research` command was removed when research search moved to the index).

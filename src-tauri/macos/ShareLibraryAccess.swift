@@ -151,13 +151,25 @@ enum ShareLibraryAccess {
         UserDefaults.standard.removeObject(forKey: displayNameKey)
     }
 
+    /// Where to point the folder picker.
+    ///
+    /// The container comes FIRST. Once the library has moved into Notesage's
+    /// own iCloud folder, opening the picker on `iCloud Drive/Notesage` puts
+    /// someone in a folder their library has left — and a capture filed there
+    /// goes somewhere nothing reads. The extension keeps its own
+    /// user-selected bookmark either way; this only decides where the panel
+    /// starts, so guessing the newer location costs nothing when it is wrong.
     private static func defaultLibraryGuess() -> URL? {
         let home = FileManager.default.homeDirectoryForCurrentUser
+        let fm = FileManager.default
+        let container = home.appendingPathComponent(
+            "Library/Mobile Documents/iCloud~com~notesage~app/Documents")
+        if fm.fileExists(atPath: container.path) { return container }
         let icloud = home.appendingPathComponent(
             "Library/Mobile Documents/com~apple~CloudDocs/Notesage")
-        if FileManager.default.fileExists(atPath: icloud.path) { return icloud }
+        if fm.fileExists(atPath: icloud.path) { return icloud }
         let local = home.appendingPathComponent("Notesage")
-        return FileManager.default.fileExists(atPath: local.path) ? local : home
+        return fm.fileExists(atPath: local.path) ? local : home
     }
 
     // MARK: - Resolving
