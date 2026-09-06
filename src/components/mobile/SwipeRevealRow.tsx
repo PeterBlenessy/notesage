@@ -181,7 +181,7 @@ export function SwipeRevealRow({
     // deliver one when the system steals a captured touch), the ref stays
     // set for ever and every later touch on this row is refused. A drag that
     // never locked has taken no capture and moved nothing, so replacing it
-    // costs nothing; a locked one is recovered by `onLostPointerCapture`.
+    // costs nothing; a locked one is recovered by the watchdog.
     // Pointer ids are reused once released. A fresh press under an id we
     // were still waiting on is a new finger, not the old one coming back —
     // and this runs BEFORE the guard below, or an id pressed again while
@@ -372,12 +372,12 @@ export function SwipeRevealRow({
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
-        // The recovery signal for a captured drag. When the system takes the
-        // touch away, capture is released even where the pointer event that
-        // should follow it is not delivered — so this is the one
-        // notification that always arrives. Without it a stolen touch leaves
-        // the row stuck half-revealed with its swipe dead until it remounts.
-        onLostPointerCapture={endDrag}
+        // NOT `onLostPointerCapture`: capture is released as part of ending a
+        // normal gesture, so wiring it here ran the terminator on every
+        // successful swipe — and since only a lift may complete one, it
+        // cleared the drag and refused to settle before the real pointerup
+        // arrived. The row stopped opening at all. Recovery belongs to the
+        // watchdog, which depends on no event arriving.
         onClickCapture={onContentClickCapture}
         style={{
           // Tell WebKit we own horizontal panning and it owns vertical. This
