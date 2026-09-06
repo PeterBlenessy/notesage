@@ -39,8 +39,14 @@ enum ThumbnailCache {
     /// rather than sanitised, because a "cleaned" key could collide with a
     /// real one and serve the wrong picture.
     static func isValidKey(_ key: String) -> Bool {
+        // Explicit ASCII, not `isHexDigit`: that property also matches
+        // Unicode's fullwidth digit forms, which would pass and then name a
+        // file nobody meant. Harmless, but a validator should refuse what it
+        // did not intend to accept.
         !key.isEmpty && key.count <= 128
-            && key.allSatisfy { $0.isHexDigit && ($0.isNumber || $0.isLowercase) }
+            && key.utf8.allSatisfy { c in
+                (c >= 0x30 && c <= 0x39) || (c >= 0x61 && c <= 0x66)
+            }
     }
 
     private static func file(_ key: String) -> URL? {
@@ -56,6 +62,14 @@ enum ThumbnailCache {
         return data
     }
 
+    /// Writes since the last sweep. The sweep stats every file in the
+    /// directory, so doing it on every write means thousands of stat calls
+    /// per write once the cache is full — and the retroactive image sweep
+    /// writes one thumbnail per document across hundreds of documents.
+    private static let sweepLock = NSLock()
+    private static var writesSinceSweep = 0
+    private static let sweepEvery = 24
+
     static func put(_ key: String, _ data: Data) {
         guard let url = file(key) else { return }
         do {
@@ -64,13 +78,25 @@ enum ThumbnailCache {
             os_log("write failed: %{public}@", log: logger, type: .error, String(describing: error))
             return
         }
-        sweep()
+        sweepLock.lock()
+        writesSinceSweep += 1
+        let due = writesSinceSweep >= sweepEvery
+        if due { writesSinceSweep = 0 }
+        sweepLock.unlock()
+        // The budget is soft by a couple of MB between sweeps, which is the
+        // right trade for not stat-ing the whole directory on every write.
+        if due { sweep() }
     }
 
     /// Drop least-recently-used entries once the budget is exceeded. Cheap
     /// enough to run after a write: it lists one flat directory and does
     /// nothing at all until the cache is actually full.
     static func sweep() {
+        // One sweep at a time: two concurrent ones would each work from their
+        // own snapshot and delete against a total the other has already
+        // changed.
+        sweepLock.lock()
+        defer { sweepLock.unlock() }
         guard let directory,
             let urls = try? FileManager.default.contentsOfDirectory(
                 at: directory, includingPropertiesForKeys: [.fileSizeKey, .contentModificationDateKey],
