@@ -2554,7 +2554,7 @@ describe('telemetry consent', () => {
   // 2026-08-15-single-binary-feature-flags).
   function resetTelemetry(labsOn = false) {
     buildChannel.isAlpha = false;
-    useFlagStore.setState({ enabled: labsOn ? (['demo'] as FlagId[]) : [] });
+    useFlagStore.setState({ enabled: labsOn ? (['demo'] as unknown as FlagId[]) : [] });
     useSettingsStore.setState({
       ...SETTINGS_DEFAULTS,
       telemetryUsageEnabled: null,

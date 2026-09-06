@@ -868,6 +868,157 @@ pub async fn ios_set_chrome(app: tauri::AppHandle, spec: serde_json::Value) -> R
     }
 }
 
+/// Native navigation shell (`native-shell` Labs flag) — the mobile shell as a
+/// real `UINavigationController` rooted at Home. PRD:
+/// `docs/prds/2026-09-06-ios-native-navigation.md`.
+#[tauri::command]
+pub async fn ios_nav_shell_present(
+    app: tauri::AppHandle,
+    root_title: Option<String>,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::nav_shell_present(&app, root_title.as_deref()).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, root_title);
+        Err("ios_nav_shell_present is only available on iOS".into())
+    }
+}
+
+/// Freeze the current screen before the web layer draws the next one.
+#[tauri::command]
+pub async fn ios_nav_shell_prepare(
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::nav_shell_prepare(&app).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app);
+        Err("ios_nav_shell_prepare is only available on iOS".into())
+    }
+}
+
+
+#[tauri::command]
+pub async fn ios_nav_shell_push(
+    app: tauri::AppHandle,
+    screen_id: String,
+    title: Option<String>,
+    animated: Option<bool>,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::nav_shell_push(&app, &screen_id, title.as_deref(), animated.unwrap_or(true)).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, screen_id, title, animated);
+        Err("ios_nav_shell_push is only available on iOS".into())
+    }
+}
+
+
+#[tauri::command]
+pub async fn ios_nav_shell_pop(
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::nav_shell_pop(&app).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app);
+        Err("ios_nav_shell_pop is only available on iOS".into())
+    }
+}
+
+
+/// Collapse the stack to its root — recovery when the two sides disagree.
+#[tauri::command]
+pub async fn ios_nav_shell_pop_to_root(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::nav_shell_pop_to_root(&app).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = &app;
+        Err("ios_nav_shell_pop_to_root is only available on iOS".into())
+    }
+}
+
+#[tauri::command]
+pub async fn ios_nav_shell_set_title(
+    app: tauri::AppHandle,
+    title: Option<String>,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::nav_shell_set_title(&app, title.as_deref()).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, title);
+        Err("ios_nav_shell_set_title is only available on iOS".into())
+    }
+}
+
+/// The web layer has drawn the screen it was told to draw.
+#[tauri::command]
+pub async fn ios_nav_shell_rendered(
+    app: tauri::AppHandle,
+    screen_id: String,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::nav_shell_rendered(&app, &screen_id).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, screen_id);
+        Err("ios_nav_shell_rendered is only available on iOS".into())
+    }
+}
+
+/// Mirror the chrome's top-right control onto the navigation bar.
+#[tauri::command]
+pub async fn ios_nav_shell_set_action(
+    app: tauri::AppHandle,
+    item: serde_json::Value,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::nav_shell_set_action(&app, &item).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, item);
+        Err("ios_nav_shell_set_action is only available on iOS".into())
+    }
+}
+
+
+#[tauri::command]
+pub async fn ios_nav_shell_dismiss(
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::nav_shell_dismiss(&app).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app);
+        Err("ios_nav_shell_dismiss is only available on iOS".into())
+    }
+}
+
 /// Show an exported HTML report in its own bridge-less WKWebView (#606,
 /// ADR 0010) instead of the sandboxed `htmlpreview://` iframe.
 ///
@@ -1526,6 +1677,38 @@ mod ios_impl {
         app.notesage_ios()
             .present_report(html, inset_top, inset_bottom)
             .map_err(|e| e.to_string())
+    }
+
+    pub async fn nav_shell_present(app: &AppHandle, root_title: Option<&str>) -> Result<(), String> {
+        app.notesage_ios().nav_shell_present(root_title).map_err(|e| e.to_string())
+    }
+    pub async fn nav_shell_prepare(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().nav_shell_prepare().map_err(|e| e.to_string())
+    }
+    pub async fn nav_shell_push(
+        app: &AppHandle, screen_id: &str, title: Option<&str>, animated: bool,
+    ) -> Result<(), String> {
+        app.notesage_ios().nav_shell_push(screen_id, title, animated).map_err(|e| e.to_string())
+    }
+    pub async fn nav_shell_pop(app: &AppHandle, animated: bool) -> Result<(), String> {
+        app.notesage_ios().nav_shell_pop(animated).map_err(|e| e.to_string())
+    }
+    pub async fn nav_shell_pop_to_root(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().nav_shell_pop_to_root().map_err(|e| e.to_string())
+    }
+    pub async fn nav_shell_set_title(app: &AppHandle, title: Option<&str>) -> Result<(), String> {
+        app.notesage_ios().nav_shell_set_title(title).map_err(|e| e.to_string())
+    }
+    pub async fn nav_shell_rendered(app: &AppHandle, screen_id: &str) -> Result<(), String> {
+        app.notesage_ios().nav_shell_rendered(screen_id).map_err(|e| e.to_string())
+    }
+    pub async fn nav_shell_set_action(
+        app: &AppHandle, item: &serde_json::Value,
+    ) -> Result<(), String> {
+        app.notesage_ios().nav_shell_set_action(item).map_err(|e| e.to_string())
+    }
+    pub async fn nav_shell_dismiss(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios().nav_shell_dismiss().map_err(|e| e.to_string())
     }
 
     pub async fn speech_start(

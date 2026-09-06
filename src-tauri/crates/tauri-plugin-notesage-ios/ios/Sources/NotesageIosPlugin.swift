@@ -1299,6 +1299,107 @@ class NotesageIosPlugin: Plugin {
   ///
   /// See `ReportWebView.swift` for why a second web view rather than the
   /// sandboxed `htmlpreview://` iframe it replaces.
+  // MARK: - Native navigation shell (`native-shell` Labs flag)
+
+  struct NavPresentArgs: Decodable { let rootTitle: String? }
+  struct NavPushArgs: Decodable { let screenId: String; let title: String?; let animated: Bool? }
+  struct NavTitleArgs: Decodable { let title: String? }
+  struct NavRenderedArgs: Decodable { let screenId: String }
+  struct NavActionArgs: Decodable { let item: ChromeItemSpec? }
+
+  @objc public func navShellPresent(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(NavPresentArgs.self)
+      DispatchQueue.main.async {
+        guard let webView = self.resolveWebView() else {
+          invoke.reject("No webview to build a navigation shell around")
+          return
+        }
+        if NavShellPresenter.shared.present(rootTitle: args.rootTitle, over: webView) {
+          invoke.resolve()
+        } else {
+          invoke.reject("nav shell: no view controller to host the stack")
+        }
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// Freeze the current screen before the web layer draws the next one.
+  @objc public func navShellPrepare(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      NavShellPresenter.shared.prepare()
+      invoke.resolve()
+    }
+  }
+
+  @objc public func navShellPush(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(NavPushArgs.self)
+      DispatchQueue.main.async {
+        NavShellPresenter.shared.push(
+          screenId: args.screenId, title: args.title, animated: args.animated ?? true)
+        invoke.resolve()
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  struct NavPopArgs: Decodable { let animated: Bool? }
+
+  @objc public func navShellPop(_ invoke: Invoke) {
+    let animated = (try? invoke.parseArgs(NavPopArgs.self))?.animated ?? true
+    DispatchQueue.main.async {
+      NavShellPresenter.shared.pop(animated: animated)
+      invoke.resolve()
+    }
+  }
+
+  /// Collapse to the root — the recovery path when the two sides disagree.
+  @objc public func navShellPopToRoot(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      NavShellPresenter.shared.popToRoot()
+      invoke.resolve()
+    }
+  }
+
+  @objc public func navShellSetTitle(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(NavTitleArgs.self)
+      DispatchQueue.main.async {
+        NavShellPresenter.shared.setTitle(args.title)
+        invoke.resolve()
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// The web layer has drawn the screen it was told to draw.
+  @objc public func navShellRendered(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(NavRenderedArgs.self)
+      DispatchQueue.main.async {
+        NavShellPresenter.shared.rendered(screenId: args.screenId)
+        invoke.resolve()
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// The chrome's top-right control, mirrored onto the navigation bar.
+  @objc public func navShellSetAction(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(NavActionArgs.self)
+      DispatchQueue.main.async {
+        NavShellPresenter.shared.setAction(args.item)
+        invoke.resolve()
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  @objc public func navShellDismiss(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      NavShellPresenter.shared.dismiss()
+      invoke.resolve()
+    }
+  }
+
   @objc public func presentReport(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(PresentReportArgs.self)

@@ -38,7 +38,50 @@ export interface FlagSpec {
  * The live registry. Empty is a valid state — it means nothing experimental
  * is in flight, which is the goal between features rather than a gap.
  */
-export const FLAGS = {} as const satisfies Record<string, FlagSpec>;
+export const FLAGS = {
+  /**
+   * SPIKE: the mobile shell as a real `UINavigationController`, rooted at
+   * Home, with the web view reduced to drawing a document.
+   *
+   * Not a feature — an experiment with an answer to collect. Everything
+   * expensive about the mobile reader lately has been navigation, not
+   * rendering: an edge-swipe gesture built twice by hand, and a
+   * leaving-a-document transition that has to be written from nothing (#950)
+   * because the list is unmounted the moment a document opens. UIKit supplies
+   * all of it, at every level of the hierarchy.
+   *
+   * Rooted at HOME deliberately. A stack rooted at one screen has nothing
+   * beneath it to pop to, and leaves the web shell still navigating
+   * underneath — two navigation systems over one web view, which was the
+   * first version of this spike and the reason it proved nothing.
+   *
+   * Graduates or is deleted; it does not sit here.
+   */
+  "native-shell": {
+    stage: "experimental",
+    summary: "Navigate natively — Home, folders and documents in a real stack",
+    introducedIn: "0.57.0",
+    default: false,
+  },
+
+  /**
+   * Within the shell spike: read each folder's rows in Swift instead of
+   * having TypeScript compose and hand them over.
+   *
+   * The handed-over mode keeps ONE implementation of the unread rule and the
+   * reading labels, at the cost of a round trip per folder opened — Swift
+   * asks, JS lists, JS composes, IPC back. The native mode has no round trip
+   * and a second implementation of rules that already exist. Which matters
+   * more is a question about a real phone with a real library, so both are
+   * built and both are timed; each list shows how long its rows took.
+   */
+  "native-shell-native-data": {
+    stage: "experimental",
+    summary: "Read rows in Swift rather than passing them from the web layer",
+    introducedIn: "0.57.0",
+    default: false,
+  },
+} as const satisfies Record<string, FlagSpec>;
 
 export type FlagId = keyof typeof FLAGS;
 

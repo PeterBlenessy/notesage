@@ -25,16 +25,13 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Inbox finns där från första starten, och artiklar stängs med ett svep.
-
-FIXAT
-• Inbox finns på Hem direkt efter en ren installation, innan något delats dit — och den går att öppna.
-• Svep in från vänsterkanten för att lämna en sparad artikel. Det fungerade i anteckningar, aldrig i artiklar.
-• "Försök igen" på en mapp appen äger skapar nu mappen.
+Inbyggd navigering, bakom en inställning — testa och säg hur den känns.
 
 NYTT
-• Lyssna på en anteckning, inte bara en sparad artikel.
+• Hela skalet kan köras i en riktig iOS-navigationsstack: Hem, mappar och dokument, med systemets egen push, bakåtgest och parallax på varje nivå.
+• Slå på det på Hem: "…" → Inbyggd navigering. Stäng av på samma sätt.
 
 PROVA
-• Öppna Inbox från Hem, och sedan från menyn längst upp.
-• Svep in från vänsterkanten i en sparad artikel, och sedan i en anteckning.
+• Med det på: öppna en mapp, sedan ett dokument, och svep in från vänsterkanten — stanna halvvägs och släpp, två gånger.
+• Stäng sedan av och gör samma sak, så att du känner skillnaden.
+• Allt annat ska bete sig precis som förut, i båda lägena. Det som inte gör det är buggen jag vill veta om.

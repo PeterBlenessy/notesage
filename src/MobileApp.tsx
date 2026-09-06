@@ -13,6 +13,7 @@ import { useNotificationRoute } from "@/components/mobile/useNotificationRoute";
 import { RecoverRecordingSheet } from "@/components/mobile/RecoverRecordingSheet";
 import { startRecordingEvents, syncRecordingState } from "@/lib/recording-controller";
 import { Reader } from "@/components/mobile/Reader";
+import { useNativeNavShell } from "@/components/mobile/useNativeNavShell";
 import { HomeFolders } from "@/components/mobile/HomeFolders";
 import { useInlineSweep } from "@/components/mobile/useInlineSweep";
 import { SweepIndicator } from "@/components/mobile/SweepIndicator";
@@ -29,6 +30,11 @@ import { SweepIndicator } from "@/components/mobile/SweepIndicator";
 export function MobileApp() {
   const grantState = useMobileStore((s) => s.grantState);
   const openDoc = useMobileStore((s) => s.openDoc);
+  // The native navigation shell (PRD 2026-09-06-ios-native-navigation).
+  // Mounted HERE, at the root, because it follows the STORE rather than any
+  // one screen — a hook living inside `LibraryBrowser` would unmount the
+  // moment a document opened, which is exactly when the stack has work to do.
+  useNativeNavShell(grantState === "granted");
   const homeEditorOpen = useMobileStore((s) => s.homeEditorOpen);
   const refreshGrant = useMobileStore((s) => s.refreshGrant);
 

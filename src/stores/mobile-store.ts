@@ -159,6 +159,32 @@ export interface FolderViewEntry {
  */
 export type ImageMaxPixel = 1200 | 1600 | 2048 | "original";
 
+/**
+ * Called at the instant a navigation action runs, BEFORE the state changes.
+ *
+ * The native navigation shell needs it (PRD
+ * `docs/prds/2026-09-06-ios-native-navigation.md`): a push shows two screens
+ * at once and there is one web view, so the screen being left has to be
+ * frozen as a picture while it is still the screen on display. React has not
+ * re-rendered at this point and the web view has not repainted, which is what
+ * makes the freeze show the right thing.
+ *
+ * Synchronous and fire-and-forget by design. Making the store's navigation
+ * actions await an IPC round trip would push every state change a microtask
+ * later, which is a behaviour change for the whole app — including 28 test
+ * files that read the store straight after acting — to serve one optional
+ * shell. The freeze lands a fraction of a millisecond into a repaint that
+ * takes at least a frame; if it ever loses that race the cost is one frame of
+ * the outgoing screen showing the incoming content mid-slide.
+ *
+ * Null off iOS and whenever the flag is off, where it costs one comparison.
+ */
+let navigationGate: (() => void) | null = null;
+
+export function setNavigationGate(fn: (() => void) | null): void {
+  navigationGate = fn;
+}
+
 interface MobileStore {
   grantState: GrantState;
   libraryName: string;
@@ -630,12 +656,18 @@ export const useMobileStore = create<MobileStore>()(
         });
       },
 
-      enterFolder: (ref) =>
-        set((s) => ({ folderStack: [...s.folderStack, ref], openDoc: null })),
+      enterFolder: (ref) => {
+        navigationGate?.();
+        set((s) => ({ folderStack: [...s.folderStack, ref], openDoc: null }));
+      },
 
-      jumpToFolder: (ref) => set({ folderStack: [ref], openDoc: null }),
+      jumpToFolder: (ref) => {
+        navigationGate?.();
+        set({ folderStack: [ref], openDoc: null });
+      },
 
-      openDocument: (ref) =>
+      openDocument: (ref) => {
+        navigationGate?.();
         set((s) => ({
           openDoc: ref,
           // Opening from the listing starts a new trail — whatever chain of
@@ -646,9 +678,11 @@ export const useMobileStore = create<MobileStore>()(
             ref.relPath,
             ...s.recentlyRead.filter((p) => p !== ref.relPath),
           ].slice(0, RECENT_CAP),
-        })),
+        }));
+      },
 
-      openLinkedDocument: (ref) =>
+      openLinkedDocument: (ref) => {
+        navigationGate?.();
         set((s) => ({
           openDoc: ref,
           // A link to the page you are already on is not a step — pushing it
@@ -661,11 +695,16 @@ export const useMobileStore = create<MobileStore>()(
             ref.relPath,
             ...s.recentlyRead.filter((p) => p !== ref.relPath),
           ].slice(0, RECENT_CAP),
-        })),
+        }));
+      },
 
-      closeDocument: () => set({ openDoc: null, docStack: [] }),
+      closeDocument: () => {
+        navigationGate?.();
+        set({ openDoc: null, docStack: [] });
+      },
 
       goBack: () => {
+        navigationGate?.();
         const { openDoc, folderStack, docStack, homeEditorOpen } = get();
         if (homeEditorOpen) {
           set({ homeEditorOpen: false });
@@ -694,12 +733,14 @@ export const useMobileStore = create<MobileStore>()(
       setGroupMode: (mode) =>
         set((s) => ({ folderViews: withFolderView(s.folderViews, screenKeyOf(s.folderStack), { groupMode: mode }) })),
 
-      goToDepth: (depth) =>
+      goToDepth: (depth) => {
+        navigationGate?.();
         set((s) => ({
           folderStack: s.folderStack.slice(0, Math.max(0, depth)),
           openDoc: null,
           docStack: [],
-        })),
+        }));
+      },
 
       setViewMode: (mode) =>
         set((s) => ({ folderViews: withFolderView(s.folderViews, screenKeyOf(s.folderStack), { viewMode: mode }) })),
@@ -799,8 +840,14 @@ export const useMobileStore = create<MobileStore>()(
 
       dismissNotificationPrePrompt: () => set({ notificationPrePromptDismissed: true }),
 
-      openHomeEditor: () => set({ homeEditorOpen: true }),
-      closeHomeEditor: () => set({ homeEditorOpen: false }),
+      openHomeEditor: () => {
+        navigationGate?.();
+        set({ homeEditorOpen: true });
+      },
+      closeHomeEditor: () => {
+        navigationGate?.();
+        set({ homeEditorOpen: false });
+      },
       dismissHomeHint: () => set({ homeHintDismissed: true }),
 
 

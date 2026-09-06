@@ -35,6 +35,7 @@ import { Button } from "@/components/ui/button";
 import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome } from "./useNativeChrome";
+import { useNavShellPresented } from "./nav-shell-state";
 import { withFindAgent } from "./html-find-agent";
 import { withLinkAgent } from "./html-link-agent";
 import { withSpeechAgent } from "./html-speech-agent";
@@ -651,7 +652,13 @@ export function Reader() {
   // Declared HERE, with the other hooks, not beside the markup it decorates:
   // this component returns early when there is no open document, and a hook
   // below that is a hook React sometimes does not see.
+  // With the native navigation shell up, leaving a document is the system's
+  // interactive pop — so the reader's own edge-swipe stands down. Two gestures
+  // over the same 24pt is how the web strip came to swallow touches the system
+  // wanted: one navigation system, not two negotiating.
+  const navShellOwnsBack = useNavShellPresented();
   const swipeBack = useEdgeSwipeBack(backAction);
+  const swipeHandlers = navShellOwnsBack ? {} : swipeBack.handlers;
 
   // "Update from source" (#829) — only offered for a capture that still knows
   // where it came from.
@@ -1556,7 +1563,7 @@ export function Reader() {
   return (
     <div
       className="view-enter relative h-full w-full bg-background"
-      {...swipeBack.handlers}
+      {...swipeHandlers}
       style={{
         // BOTH halves of the swipe contract, or the gesture drops (see
         // docs/features/mobile.md). The row gesture has had `pan-y` since it
@@ -1722,14 +1729,14 @@ export function Reader() {
             // Same contract as the root: without `pan-y` WebKit claims the
             // horizontal drag and cancels ours.
             style={{ width: EDGE_WIDTH, touchAction: "pan-y" }}
-            {...swipeBack.handlers}
+            {...swipeHandlers}
             onPointerDown={(e) => {
               try {
                 (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
               } catch {
                 // jsdom, and any view without capture.
               }
-              swipeBack.handlers.onPointerDown(e);
+              if (!navShellOwnsBack) swipeBack.handlers.onPointerDown(e);
             }}
           />
         </div>

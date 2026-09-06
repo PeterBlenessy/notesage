@@ -8,6 +8,7 @@ import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-
 import { stopSpeech, toggleSpeech } from "@/lib/speech-controller";
 import type { EntryActionContext } from "@/lib/mobile-entry-actions";
 import { FileRow, classifyFile } from "./FileRow";
+import { useFlagStore } from "@/stores/flag-store";
 import { ArticleRow } from "./ArticleRow";
 import { GalleryView } from "./GalleryView";
 import { InboxCard, RecordingsCard } from "./InboxCard";
@@ -143,6 +144,7 @@ export function LibraryBrowser() {
   // "Root listing" and "top of the stack" are therefore two questions.
   const atHome = folderStack.length === 0;
   const isRootListing = currentRelPath === "";
+  const nativeShellOn = useFlagStore((f) => f.enabled.includes("native-shell"));
   // The key under which this SCREEN remembers its scroll offset and view:
   // Home and All Folders must not share one.
   const screenKey = screenKeyOf(folderStack);
@@ -723,6 +725,20 @@ export function LibraryBrowser() {
                 { id: "img-original", title: t("menu.imageSizeOriginal"), icon: "photo.badge.arrow.down", selected: imageMaxPixel === "original" },
               ] as const)
             : []),
+          // SPIKE (`native-inbox-list`): the switch for it, HERE rather than in
+          // Labs, because Labs is a desktop Settings panel and the phone has
+          // no settings surface at all (#949) — a flag with no switch on the
+          // device it is meant to be judged on is not an experiment. Inbox
+          // only: it is the one screen the spike replaces.
+          ...(atHome
+            ? [{
+                id: "spike-native-shell",
+                title: t("menu.nativeNavigation"),
+                icon: "hammer",
+                selected: nativeShellOn,
+                sectionBreak: true,
+              }]
+            : []),
           // Notifications: the two preferences, or the way to the Settings
           // app when iOS has them off. Only where there is a native side.
           ...notificationRows,
@@ -825,6 +841,10 @@ export function LibraryBrowser() {
       "img-original": () => setImageMaxPixel("original"),
       "goto-inbox": () => void openInbox(),
       "edit-home": () => openHomeEditor(),
+      "spike-native-shell": () => {
+        const flags = useFlagStore.getState();
+        flags.setEnabled("native-shell", !flags.isEnabled("native-shell"));
+      },
       "notify-badge": () => void toggleNotification("badge"),
       "notify-new": () => void toggleNotification("newItems"),
       "notify-settings": () => void iosOpenSettings().catch(() => {}),
