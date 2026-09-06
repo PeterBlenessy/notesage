@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.56.3",
+      "date": "2026-09-06",
+      "previousVersion": "0.56.2",
+      "sections": {
+        "fixes": [
+          "**The app could start up and never show its window.** It happened after setting up a Local Agent, and once it started it happened every launch — there was nothing to click, so there was no way to fix it from inside the app either. If this is you, install this version over the old one; you do not need to reset anything first."
+        ]
+      }
+    },
+    {
       "version": "0.56.2",
       "date": "2026-09-04",
       "previousVersion": "0.56.1",
