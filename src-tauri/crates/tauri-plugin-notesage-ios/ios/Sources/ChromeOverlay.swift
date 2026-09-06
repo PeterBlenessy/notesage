@@ -1,3 +1,4 @@
+import AVKit
 import Combine
 import SwiftUI
 import UIKit
@@ -898,6 +899,36 @@ struct GlassCircleProminent: ViewModifier {
 /// walking — which is the case the whole feature exists for. Position is shown
 /// in PARAGRAPHS, not minutes: `AVSpeechSynthesizer` gives no reliable
 /// duration up front, and a wrong clock is worse than an honest count.
+/// The system's own output-route chooser, wrapped for SwiftUI.
+///
+/// There was no way to choose where listening came out (Peter, build 52: "I
+/// cannot select to play it in the phone and the phone's loudspeaker in the
+/// earphones. Like I can in other audio playback applications"). iOS routes
+/// to the most recently connected device and nothing in the app offered a
+/// say, so a car that had ever paired kept the audio whether or not the
+/// listener was in it.
+///
+/// `AVRoutePickerView` is the control every other audio app uses for this —
+/// it raises the system sheet listing iPhone, headphones, Bluetooth and
+/// AirPlay, and it needs no permission and no route logic of our own. Only
+/// the playback island gets one: a recording's route is an INPUT question,
+/// and the two islands never coexist anyway.
+struct RoutePickerButton: UIViewRepresentable {
+  func makeUIView(context: Context) -> AVRoutePickerView {
+    let view = AVRoutePickerView()
+    // Match the island's glyphs rather than the system default blue, which
+    // is the one chromatic colour the palette does not allow.
+    view.tintColor = .label
+    view.activeTintColor = .label
+    // The button draws its own AirPlay glyph; the frame is what makes it a
+    // 46pt target like its neighbours.
+    view.prioritizesVideoDevices = false
+    return view
+  }
+
+  func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
+}
+
 struct GlassPlayer: View {
   let spec: ChromePlayerSpec
   let emit: (String) -> Void
@@ -916,9 +947,13 @@ struct GlassPlayer: View {
     // swallowed their taps in the search island. Verified by tapping
     // skip-forward on the simulator and watching the position advance.
     // Budget: 402pt (iPhone 17 Pro) minus 24pt margins. Five circles at
-    // 46/54 plus the two labels and 6pt gaps come to ~340pt; the first cut at
-    // 52/60 with 10pt gaps was ~412pt and clipped both end buttons.
-    HStack(spacing: 6) {
+    // 46/54 plus the two labels and 6pt gaps came to ~340pt; the first cut at
+    // 52/60 with 10pt gaps was ~412pt and clipped both end buttons. The route
+    // picker adds a 40pt target and its own gap, so the spacing drops to 5
+    // and the position label's floor to 56 to pay for it — ~380pt, still
+    // inside 378 only because the label can shrink. Worth a look on the
+    // narrowest phone.
+    HStack(spacing: 5) {
       button("player-back", system: "backward.fill")
       button("player-toggle", system: spec.playing ? "pause.fill" : "play.fill", large: true)
       button("player-forward", system: "forward.fill")
@@ -936,7 +971,7 @@ struct GlassPlayer: View {
         .minimumScaleFactor(0.75)
         // A floor so the capsule does not re-lay out every paragraph as the
         // digits change width; wide enough for "128 / 178" at full size.
-        .frame(minWidth: 64)
+        .frame(minWidth: 56)
         .padding(.horizontal, 2)
       Button { emit("player-rate") } label: {
         Text(spec.rate)
@@ -946,6 +981,10 @@ struct GlassPlayer: View {
           .frame(minWidth: 46, minHeight: 46)
       }
       .buttonStyle(.plain)
+      // Where the sound comes out. Sized to the other circles so the row
+      // still reads as one set of controls.
+      RoutePickerButton()
+        .frame(width: 40, height: 46)
       button("player-stop", system: "stop.fill")
     }
     .padding(.horizontal, 10)
