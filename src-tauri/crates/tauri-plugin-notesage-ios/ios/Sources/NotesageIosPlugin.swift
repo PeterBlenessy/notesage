@@ -71,6 +71,11 @@ struct RelPathArgs: Decodable {
   let relPath: String
 }
 
+/// "container" | "picked" — the settings action's target mode.
+struct LibraryModeArgs: Decodable {
+  let mode: String
+}
+
 struct WriteFileArgs: Decodable {
   let relPath: String
   let text: String
@@ -562,7 +567,7 @@ class NotesageIosPlugin: Plugin {
       LibraryAccess.pickLibraryFolder(presenter: presenter) { result in
         switch result {
         case .success(let grant):
-          invoke.resolve(["displayName": grant.displayName, "granted": grant.granted])
+          invoke.resolve(Self.grantPayload(grant))
         case .failure(let error):
           invoke.reject(error.localizedDescription)
         }
@@ -570,10 +575,59 @@ class NotesageIosPlugin: Plugin {
     }
   }
 
+  /// The wire shape of `LibraryGrant` — mirrors the Rust struct in the
+  /// plugin crate. `kind` is the plain optional: JsonObject's values are
+  /// `Any?`, so nil serialises as JSON null without `as Any` boxing.
+  private static func grantPayload(_ g: LibraryGrant) -> JsonObject {
+    return [
+      "displayName": g.displayName,
+      "granted": g.granted,
+      "kind": g.kind?.rawValue,
+      "icloudAvailable": g.icloudAvailable,
+    ]
+  }
+
+  /// Settle the library mode and resolve the grant — the app's first call at
+  /// mount (PRD 2026-09-05-icloud-container-library). OFF the main thread on
+  /// purpose: the first `url(forUbiquityContainerIdentifier:)` in a process
+  /// can block for seconds while iCloud initialises the container, and the
+  /// WebView is showing the `provisioning` spinner meanwhile.
+  @objc public func setupLibrary(_ invoke: Invoke) {
+    configureWebViewOnce()
+    DispatchQueue.global(qos: .userInitiated).async {
+      let g = LibraryAccess.getLibraryGrant()
+      DispatchQueue.main.async { invoke.resolve(Self.grantPayload(g)) }
+    }
+  }
+
   @objc public func getLibraryGrant(_ invoke: Invoke) {
     configureWebViewOnce()
-    let g = LibraryAccess.getLibraryGrant()
-    invoke.resolve(["displayName": g.displayName, "granted": g.granted])
+    // Same background hop as `setupLibrary`: the container cache is warm after
+    // the first resolve, but a cold first call must never sit on main.
+    DispatchQueue.global(qos: .userInitiated).async {
+      let g = LibraryAccess.getLibraryGrant()
+      DispatchQueue.main.async { invoke.resolve(Self.grantPayload(g)) }
+    }
+  }
+
+  /// "Switch to Notesage in iCloud" / back to the kept folder. Throws when
+  /// the target mode has nothing to resolve to (no iCloud, no bookmark).
+  @objc public func setLibraryMode(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(LibraryModeArgs.self)
+      guard let mode = LibraryKind(rawValue: args.mode) else {
+        invoke.reject("unknown library mode: \(args.mode)")
+        return
+      }
+      DispatchQueue.global(qos: .userInitiated).async {
+        do {
+          let g = try LibraryAccess.setLibraryMode(mode)
+          DispatchQueue.main.async { invoke.resolve(Self.grantPayload(g)) }
+        } catch {
+          DispatchQueue.main.async { invoke.reject(String(describing: error)) }
+        }
+      }
+    } catch { invoke.reject(String(describing: error)) }
   }
 
   @objc public func clearLibraryGrant(_ invoke: Invoke) {

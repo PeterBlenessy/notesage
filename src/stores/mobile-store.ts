@@ -11,7 +11,8 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-  iosGetLibraryGrant,
+  iosSetupLibrary,
+  iosSetLibraryMode,
   iosPickLibraryFolder,
   iosClearLibraryGrant,
   iosReadFile,
@@ -21,6 +22,8 @@ import {
   iosNotificationRequest,
   iosNotificationSetPrefs,
   iosNotificationStatus,
+  type IosLibraryGrant,
+  type IosLibraryKind,
   type IosNotificationStatus,
   type IosRecordingOrphan,
   type IosRecordingStatus,
@@ -42,12 +45,29 @@ import {
 import type { FileEntry } from "@/lib/tauri";
 
 /**
- * - `unknown`  — not yet resolved (initial; show a neutral splash)
- * - `ungranted`— no grant; show onboarding
- * - `granted`  — usable grant; show the library
- * - `stale`    — bookmark went stale; show onboarding's re-grant copy
+ * - `unknown`           — not yet resolved (initial; show a neutral splash)
+ * - `provisioning`      — the iCloud container is being resolved (first
+ *                         launch can take seconds); a spinner with a line of
+ *                         copy, nothing to tap
+ * - `ungranted`         — no grant and nothing to fall back on. Kept for the
+ *                         pre-container persisted state; `applyGrant` no
+ *                         longer produces it, because an app with its own
+ *                         container always has a library when iCloud is
+ *                         available. First run goes provisioning → granted
+ *                         with no folder to choose, which is the point.
+ * - `icloud-unavailable`— no iCloud for this app, no folder chosen; show
+ *                         onboarding's picker-fallback copy
+ * - `granted`           — usable root; show the library
+ * - `stale`             — a chosen folder's bookmark no longer resolves; show
+ *                         onboarding's re-grant copy
  */
-export type GrantState = "unknown" | "ungranted" | "granted" | "stale";
+export type GrantState =
+  | "unknown"
+  | "provisioning"
+  | "ungranted"
+  | "icloud-unavailable"
+  | "granted"
+  | "stale";
 
 /** A folder in the breadcrumb (relative path + display name). */
 export interface FolderRef {
@@ -142,6 +162,13 @@ export type ImageMaxPixel = 1200 | 1600 | 2048 | "original";
 interface MobileStore {
   grantState: GrantState;
   libraryName: string;
+  /** How the root was resolved — the container, or a chosen folder. `null`
+   *  until granted. Not persisted: the native side is the truth, reconciled
+   *  on every resolve. */
+  libraryKind: IosLibraryKind | null;
+  /** Whether the app's iCloud container could be resolved at all — gates
+   *  "Switch to Notesage in iCloud". Not persisted. */
+  icloudAvailable: boolean;
   /** Breadcrumb of entered folders; empty = library root. */
   folderStack: FolderRef[];
   /** Open document, or null when browsing. */
@@ -188,10 +215,17 @@ interface MobileStore {
   /** Current folder relative path (`""` at root). */
   currentRelPath: () => string;
 
-  /** Resolve the native grant. Sets granted/ungranted, or `stale` on error. */
+  /** Settle the library mode natively and resolve the grant. From `unknown`
+   *  it passes through `provisioning` while the container initialises. Lands
+   *  in `granted`, `icloud-unavailable` (no iCloud, no folder) or `stale`
+   *  (a chosen folder no longer resolves, or the bridge keeps throwing). */
   refreshGrant: () => Promise<void>;
-  /** Drive the folder picker; on success transitions to `granted`. Rethrows on failure. */
+  /** Drive the folder picker; on success transitions to `granted` in
+   *  `picked` mode. Rethrows on failure. */
   pickFolder: () => Promise<void>;
+  /** Switch between Notesage in iCloud and the kept chosen folder without
+   *  moving anything. Resets navigation. Rethrows on failure. */
+  setLibraryMode: (mode: IosLibraryKind) => Promise<void>;
   /** Forget the grant and reset navigation. */
   clearGrant: () => Promise<void>;
 
@@ -465,11 +499,41 @@ function withReset(ledger: Record<string, string>, relPath: string, resetAt: str
   return next;
 }
 
+/**
+ * Map a native grant onto the state machine. Not granted with iCloud
+ * available can only mean a chosen folder that no longer resolves (with
+ * iCloud, an empty mode lands in the container on its own) — that is the
+ * re-grant copy, not the welcome copy. Not granted WITHOUT iCloud is the
+ * picker fallback.
+ */
+function applyGrant(
+  set: (partial: Partial<MobileStore>) => void,
+  grant: IosLibraryGrant,
+): void {
+  if (grant.granted) {
+    set({
+      grantState: "granted",
+      libraryName: grant.displayName,
+      libraryKind: grant.kind ?? null,
+      icloudAvailable: grant.icloudAvailable,
+    });
+  } else {
+    set({
+      grantState: grant.icloudAvailable ? "stale" : "icloud-unavailable",
+      libraryName: "",
+      libraryKind: null,
+      icloudAvailable: grant.icloudAvailable,
+    });
+  }
+}
+
 export const useMobileStore = create<MobileStore>()(
   persist(
     (set, get) => ({
       grantState: "unknown",
       libraryName: "",
+      libraryKind: null,
+      icloudAvailable: false,
       folderStack: [],
       openDoc: null,
       docStack: [],
@@ -505,13 +569,12 @@ export const useMobileStore = create<MobileStore>()(
       },
 
       refreshGrant: async () => {
+        // The container can take seconds to initialise on a fresh install.
+        // Only the FIRST resolve shows the provisioning copy: a refresh from
+        // the foreground must not flash a spinner over the library.
+        if (get().grantState === "unknown") set({ grantState: "provisioning" });
         const resolve = async () => {
-          const grant = await iosGetLibraryGrant();
-          if (grant.granted) {
-            set({ grantState: "granted", libraryName: grant.displayName });
-          } else {
-            set({ grantState: "ungranted", libraryName: "" });
-          }
+          applyGrant(set, await iosSetupLibrary());
         };
         try {
           await resolve();
@@ -523,7 +586,7 @@ export const useMobileStore = create<MobileStore>()(
           try {
             await resolve();
           } catch {
-            set({ grantState: "stale" });
+            set({ grantState: "stale", libraryKind: null });
           }
         }
       },
@@ -539,10 +602,20 @@ export const useMobileStore = create<MobileStore>()(
         set({
           grantState: "granted",
           libraryName: grant.displayName,
+          // A pick is always a decision to use that folder.
+          libraryKind: grant.kind ?? "picked",
+          icloudAvailable: grant.icloudAvailable,
           folderStack: [],
           openDoc: null,
           docStack: [],
         });
+      },
+
+      setLibraryMode: async (mode) => {
+        const grant = await iosSetLibraryMode(mode);
+        applyGrant(set, grant);
+        // Nothing moved, but everything on screen belonged to the other root.
+        set({ folderStack: [], openDoc: null, docStack: [] });
       },
 
       clearGrant: async () => {
@@ -550,6 +623,7 @@ export const useMobileStore = create<MobileStore>()(
         set({
           grantState: "ungranted",
           libraryName: "",
+          libraryKind: null,
           folderStack: [],
           openDoc: null,
           docStack: [],
@@ -954,6 +1028,8 @@ export const useMobileStore = create<MobileStore>()(
         set({
           grantState: "unknown",
           libraryName: "",
+          libraryKind: null,
+          icloudAvailable: false,
           folderStack: [],
           openDoc: null,
           docStack: [],

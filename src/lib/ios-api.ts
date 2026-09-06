@@ -11,23 +11,56 @@ import { invoke } from "@tauri-apps/api/core";
 import type { FileEntry } from "./tauri";
 import { t } from "@/lib/i18n";
 
+/**
+ * How the library root is resolved (PRD 2026-09-05-icloud-container-library,
+ * Decision 4): the app's own iCloud container (no grant, no picker) or a
+ * folder the user chose (the fallback without iCloud, and a choice with it).
+ */
+export type IosLibraryKind = "container" | "picked";
+
 export interface IosLibraryGrant {
-  /** User-facing folder name (e.g. "Notesage"); empty when not granted. */
+  /** User-facing name — "Notesage" in container mode, the chosen folder's
+   *  name in picked mode; empty when not granted. */
   displayName: string;
-  /** Whether a usable (non-stale) grant is currently resolved. */
+  /** Whether a usable root is currently resolved. */
   granted: boolean;
+  /** How the root was resolved. Absent when not granted. */
+  kind?: IosLibraryKind;
+  /** Whether the container could be resolved at all (drives the fallback copy). */
+  icloudAvailable: boolean;
 }
 
 export type IosDownloadState = "ready" | "downloading" | "failed";
 
-/** Present the folder picker (pre-pointed at iCloud Drive/Notesage) and persist the grant. */
+/** Present the folder picker (pre-pointed at iCloud Drive/Notesage) and
+ *  persist the grant. Persisting a bookmark also sets the mode to `picked`. */
 export function iosPickLibraryFolder(): Promise<IosLibraryGrant> {
   return invoke<IosLibraryGrant>("ios_pick_library_folder");
 }
 
-/** Resolve the persisted grant; `granted: false` when none / stale. */
+/** Resolve the current grant; `granted: false` when nothing resolves. */
 export function iosGetLibraryGrant(): Promise<IosLibraryGrant> {
   return invoke<IosLibraryGrant>("ios_get_library_grant");
+}
+
+/**
+ * Settle the library mode against iCloud and the bookmark, then resolve the
+ * grant — the mobile store's call at mount. The native side does the
+ * container resolution off the main thread; the first call on a fresh
+ * install can take seconds, which is what the `provisioning` state is for.
+ */
+export function iosSetupLibrary(): Promise<IosLibraryGrant> {
+  return invoke<IosLibraryGrant>("ios_setup_library");
+}
+
+/**
+ * The library settings action. `"container"` switches to Notesage in iCloud
+ * (the kept bookmark is not forgotten, so switching back is possible);
+ * `"picked"` returns to the kept folder. A NEW folder goes through
+ * `iosPickLibraryFolder`. Rejects when the target has nothing to resolve to.
+ */
+export function iosSetLibraryMode(mode: IosLibraryKind): Promise<IosLibraryGrant> {
+  return invoke<IosLibraryGrant>("ios_set_library_mode", { mode });
 }
 
 /** Forget the persisted grant (used on re-grant / sign-out). */

@@ -12,26 +12,47 @@ beforeEach(() => {
 });
 
 describe("mobile-store grant state machine", () => {
+  // `refreshGrant` drives `ios_setup_library`, not `ios_get_library_grant`:
+  // settling the library MODE (the app's own iCloud container, or a folder
+  // the user picked) is what resolving the grant means now, and the
+  // container's first resolve can block for seconds, so it has a command of
+  // its own rather than being a side effect of reading the bookmark.
   it("starts unknown", () => {
     expect(store().grantState).toBe("unknown");
   });
 
   it("refreshGrant → granted when the backend reports a grant", async () => {
-    setMockInvokeHandler("ios_get_library_grant", () => ({ displayName: "Notesage", granted: true }));
+    setMockInvokeHandler("ios_setup_library", () => ({ displayName: "Notesage", granted: true }));
     await store().refreshGrant();
     expect(store().grantState).toBe("granted");
     expect(store().libraryName).toBe("Notesage");
   });
 
-  it("refreshGrant → ungranted when there is no grant", async () => {
-    setMockInvokeHandler("ios_get_library_grant", () => ({ displayName: "", granted: false }));
+  it("refreshGrant → stale when nothing resolves although iCloud is there", async () => {
+    // With a container of its own the app always has a library when iCloud is
+    // available, so "no root, but iCloud exists" is not a first run — it is
+    // something that used to resolve and no longer does. Hence stale, and its
+    // re-grant copy, rather than the welcome screen.
+    setMockInvokeHandler("ios_setup_library", () => ({
+      displayName: "", granted: false, icloudAvailable: true,
+    }));
     await store().refreshGrant();
-    expect(store().grantState).toBe("ungranted");
+    expect(store().grantState).toBe("stale");
     expect(store().libraryName).toBe("");
   });
 
+  it("refreshGrant → icloud-unavailable when there is no container to fall back on", async () => {
+    // No grant AND no iCloud for this app is a different screen: the picker
+    // fallback, because there is nothing to open until a folder is chosen.
+    setMockInvokeHandler("ios_setup_library", () => ({
+      displayName: "", granted: false, icloudAvailable: false,
+    }));
+    await store().refreshGrant();
+    expect(store().grantState).toBe("icloud-unavailable");
+  });
+
   it("refreshGrant → stale when resolving throws", async () => {
-    setMockInvokeHandler("ios_get_library_grant", () => {
+    setMockInvokeHandler("ios_setup_library", () => {
       throw new Error("stale bookmark");
     });
     await store().refreshGrant();
@@ -42,7 +63,7 @@ describe("mobile-store grant state machine", () => {
     // A one-off IPC hiccup (unrelated to bookmark validity) must not surface
     // "Reconnect your library" — the retry should succeed and resolve granted.
     let calls = 0;
-    setMockInvokeHandler("ios_get_library_grant", () => {
+    setMockInvokeHandler("ios_setup_library", () => {
       calls++;
       if (calls === 1) throw new Error("transient IPC hiccup");
       return { displayName: "Notesage", granted: true };
@@ -57,7 +78,7 @@ describe("mobile-store grant state machine", () => {
     // A genuinely stale bookmark fails consistently — it must not be
     // misclassified as transient just because a retry was attempted.
     let calls = 0;
-    setMockInvokeHandler("ios_get_library_grant", () => {
+    setMockInvokeHandler("ios_setup_library", () => {
       calls++;
       throw new Error("stale bookmark");
     });
@@ -77,7 +98,7 @@ describe("mobile-store grant state machine", () => {
 
   it("clearGrant → ungranted and resets navigation", async () => {
     setMockInvokeHandler("ios_clear_library_grant", () => undefined);
-    setMockInvokeHandler("ios_get_library_grant", () => ({ displayName: "Notesage", granted: true }));
+    setMockInvokeHandler("ios_setup_library", () => ({ displayName: "Notesage", granted: true }));
     await store().refreshGrant();
     store().enterFolder({ relPath: "Sub", name: "Sub" });
     await store().clearGrant();

@@ -19,6 +19,26 @@
 use crate::commands::file::FileEntry;
 use serde::{Deserialize, Serialize};
 
+/// Defined HERE, above every use, because `macro_rules!` is only in scope
+/// AFTER its definition point in the file. It used to sit two thirds of the
+/// way down, next to the notification commands that first needed it, so a
+/// command added higher up failed to compile with "cannot find macro
+/// `ios_only` in this scope" — a puzzling error for code that is textually
+/// identical to its working neighbours.
+macro_rules! ios_only {
+    ($name:literal, $app:ident, $body:expr) => {{
+        #[cfg(target_os = "ios")]
+        {
+            $body
+        }
+        #[cfg(not(target_os = "ios"))]
+        {
+            let _ = &$app;
+            Err(concat!($name, " is only available on iOS").into())
+        }
+    }};
+}
+
 /// Where the speech player is (#833).
 ///
 /// Declared here rather than re-exported: `tauri-plugin-notesage-ios` is an
@@ -53,14 +73,37 @@ pub struct SpeechVoice {
 }
 
 
-/// State of the iCloud library grant.
+/// How the phone resolves its library root (PRD
+/// `docs/prds/2026-09-05-icloud-container-library.md`, Decision 4).
+///
+/// `container` — the app's own iCloud container (`iCloud.com.notesage.app`,
+/// its `Documents/` folder); no grant, no picker. `picked` — a folder the
+/// user chose, held as a security-scoped bookmark; the fallback when iCloud
+/// is unavailable, and a choice otherwise. Wire strings match the Swift
+/// `LibraryKind` raw values and the frontend's `IosLibraryKind`.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LibraryKind {
+    Container,
+    Picked,
+}
+
+/// State of the library grant.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LibraryGrant {
-    /// User-facing folder name (e.g. `Notesage`). Empty when not granted.
+    /// User-facing name — `Notesage` in container mode, the chosen folder's
+    /// name in picked mode. Empty when not granted.
     pub display_name: String,
-    /// Whether a usable (non-stale) bookmark is currently resolved.
+    /// Whether a usable root is currently resolved.
     pub granted: bool,
+    /// How the root was resolved. Absent when not granted.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<LibraryKind>,
+    /// Whether the app's iCloud container could be resolved at all — drives
+    /// the onboarding fallback copy (picker vs. "reconnect your folder").
+    #[serde(default)]
+    pub icloud_available: bool,
 }
 
 /// iCloud download state for a file that may be a not-yet-downloaded placeholder.
@@ -139,8 +182,8 @@ pub async fn ios_pick_library_folder(app: tauri::AppHandle) -> Result<LibraryGra
     }
 }
 
-/// Return the current grant (resolving the persisted bookmark), or `granted:
-/// false` when none exists / the bookmark is stale.
+/// Return the current grant (reconciling the library mode and resolving the
+/// root), or `granted: false` when nothing resolves.
 #[tauri::command]
 pub async fn ios_get_library_grant(app: tauri::AppHandle) -> Result<LibraryGrant, String> {
     #[cfg(target_os = "ios")]
@@ -153,8 +196,29 @@ pub async fn ios_get_library_grant(app: tauri::AppHandle) -> Result<LibraryGrant
         Ok(LibraryGrant {
             display_name: String::new(),
             granted: false,
+            kind: None,
+            icloud_available: false,
         })
     }
+}
+
+/// Settle the library mode (`container` | `picked`) against iCloud and the
+/// bookmark, then resolve the grant — `mobile-store.refreshGrant`'s call at
+/// mount. The native side does the container resolution OFF the main thread
+/// (the first call per process can block for seconds), which is why this is
+/// its own command rather than a side effect of `ios_get_library_grant`.
+#[tauri::command]
+pub async fn ios_setup_library(app: tauri::AppHandle) -> Result<LibraryGrant, String> {
+    ios_only!("ios_setup_library", app, ios_impl::setup_library(&app).await)
+}
+
+/// The library settings action: switch to the iCloud container ("Switch to
+/// Notesage in iCloud") or back to the kept chosen folder. Switching to
+/// `container` keeps the bookmark so "switch back" stays possible; a fresh
+/// folder goes through `ios_pick_library_folder`, which sets `picked` itself.
+#[tauri::command]
+pub async fn ios_set_library_mode(app: tauri::AppHandle, mode: LibraryKind) -> Result<LibraryGrant, String> {
+    ios_only!("ios_set_library_mode", app, ios_impl::set_library_mode(&app, mode).await)
 }
 
 /// Forget the persisted bookmark (used when the user re-grants or signs out).
@@ -1002,19 +1066,6 @@ pub struct NotificationStatus {
     pub new_items: bool,
 }
 
-macro_rules! ios_only {
-    ($name:literal, $app:ident, $body:expr) => {{
-        #[cfg(target_os = "ios")]
-        {
-            $body
-        }
-        #[cfg(not(target_os = "ios"))]
-        {
-            let _ = &$app;
-            Err(concat!($name, " is only available on iOS").into())
-        }
-    }};
-}
 
 /// Where a stopped recording landed (`rel_path` `None` when discarded).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -1287,16 +1338,34 @@ pub async fn ios_stat_file(app: tauri::AppHandle, rel_path: String) -> Result<Fi
 #[cfg(target_os = "ios")]
 mod ios_impl {
     use super::{
-        DownloadState, FileEntry, FileStat, LibraryGrant, NotificationStatus, RecordingStopped, SpeechStarted, SpeechState,
-        SpeechVoice,
+        DownloadState, FileEntry, FileStat, LibraryGrant, LibraryKind, NotificationStatus, RecordingStopped,
+        SpeechStarted, SpeechState, SpeechVoice,
     };
     use tauri::AppHandle;
     use tauri_plugin_notesage_ios::NotesageIosExt;
 
     /// Map the plugin's richer types onto this module's, which are what the
-    /// frontend already consumes.
+    /// frontend already consumes. An unknown `kind` string from a newer
+    /// native side degrades to "unknown", never to an error.
     fn grant(g: tauri_plugin_notesage_ios::LibraryGrant) -> LibraryGrant {
-        LibraryGrant { display_name: g.display_name, granted: g.granted }
+        let kind = match g.kind.as_deref() {
+            Some("container") => Some(LibraryKind::Container),
+            Some("picked") => Some(LibraryKind::Picked),
+            _ => None,
+        };
+        LibraryGrant {
+            display_name: g.display_name,
+            granted: g.granted,
+            kind,
+            icloud_available: g.icloud_available,
+        }
+    }
+
+    fn kind_wire(kind: LibraryKind) -> &'static str {
+        match kind {
+            LibraryKind::Container => "container",
+            LibraryKind::Picked => "picked",
+        }
     }
 
     pub async fn pick_library_folder(app: &AppHandle) -> Result<LibraryGrant, String> {
@@ -1305,6 +1374,17 @@ mod ios_impl {
 
     pub async fn get_library_grant(app: &AppHandle) -> Result<LibraryGrant, String> {
         app.notesage_ios().get_library_grant().map(grant).map_err(|e| e.to_string())
+    }
+
+    pub async fn setup_library(app: &AppHandle) -> Result<LibraryGrant, String> {
+        app.notesage_ios().setup_library().map(grant).map_err(|e| e.to_string())
+    }
+
+    pub async fn set_library_mode(app: &AppHandle, mode: LibraryKind) -> Result<LibraryGrant, String> {
+        app.notesage_ios()
+            .set_library_mode(kind_wire(mode))
+            .map(grant)
+            .map_err(|e| e.to_string())
     }
 
     pub async fn clear_library_grant(app: &AppHandle) -> Result<(), String> {

@@ -259,7 +259,43 @@ fi
 echo "==> Building ${MARKETING}"
 # The export method here is irrelevant — step 3 re-exports the archive
 # properly. `debugging` simply avoids a guaranteed failure at this stage.
-pnpm tauri ios build --export-method debugging
+#
+# Signing needs the developer account, and since Xcode 9.3 those credentials
+# live in the "local items" keychain, which NO command-line session can read
+# (Apple DTS, developer.apple.com/forums/thread/112606). So a build run from a
+# terminal reports "No Accounts: Add a new account in Accounts settings"
+# however thoroughly signed in Xcode's own window is. That stayed invisible
+# here for as long as a cached profile happened to satisfy the entitlements;
+# the day one had to be REGENERATED — adding the iCloud container did it — the
+# whole cut stopped dead.
+#
+# Apple's answer for exactly this is to hand xcodebuild an App Store Connect
+# key, which step 3 below already does. This step cannot pass one directly:
+# it goes through the Tauri CLI, which forwards `-allowProvisioningUpdates`
+# and silently drops every other argument. A wrapper first on PATH puts the
+# credentials back on the invocation Tauri makes.
+SHIM="$(mktemp -d)"
+cat > "$SHIM/xcodebuild" <<SHIM_EOF
+#!/bin/bash
+# Only real build invocations take the key; \`xcodebuild -version\` and friends
+# pass straight through.
+for arg in "\$@"; do
+  if [ "\$arg" = "-scheme" ]; then
+    exec /usr/bin/xcodebuild "\$@" \\
+      -authenticationKeyPath "${ASC_PRIVATE_KEY_PATH}" \\
+      -authenticationKeyID "${ASC_KEY_ID}" \\
+      -authenticationKeyIssuerID "${ASC_ISSUER_ID}"
+  fi
+done
+exec /usr/bin/xcodebuild "\$@"
+SHIM_EOF
+chmod +x "$SHIM/xcodebuild"
+# Removed whether the build succeeds or not; the later EXIT trap belongs to
+# the export step and would replace anything set here.
+build_status=0
+PATH="$SHIM:$PATH" pnpm tauri ios build --export-method debugging || build_status=$?
+rm -rf "$SHIM"
+[ "$build_status" -eq 0 ] || exit "$build_status"
 
 ARCHIVE=$(ls -dt src-tauri/gen/apple/build/*.xcarchive 2>/dev/null | head -1)
 [ -n "$ARCHIVE" ] || { echo "The build produced no archive."; exit 1; }
@@ -372,6 +408,41 @@ if [ -n "$EXT_PLIST" ]; then
 else
   echo "No extension found in the .ipa — the Share Extension should be there."
   exit 1
+fi
+
+# An entitlement the app declares but the SIGNATURE does not carry produces a
+# build that installs, launches, and then cannot see its own library —
+# `url(forUbiquityContainerIdentifier:)` returns nil in an unentitled process,
+# so the app silently falls back to the folder picker and the whole feature
+# looks like it was never built. That is the same failure shape
+# `docs/ios-testflight.md` records for the App Group, and it is invisible
+# until someone installs the build.
+#
+# The expectation comes from the entitlements the BUILD used, not from the
+# reference file in `src-tauri/ios/` — that one has listed a container since
+# before anything wrote it into the generated project, so keying off it would
+# demand a container from every build that never asked for one.
+GEN_ENT="src-tauri/gen/apple/notesage_iOS/notesage_iOS.entitlements"
+WANT_CONTAINER=""
+if [ -f "$GEN_ENT" ]; then
+  WANT_CONTAINER=$(/usr/libexec/PlistBuddy -c "Print :com.apple.developer.ubiquity-container-identifiers:0" "$GEN_ENT" 2>/dev/null || true)
+fi
+if [ -n "$WANT_CONTAINER" ]; then
+  EXT_BUNDLE=$(find "$WORK/Payload" -name '*.appex' -maxdepth 3 | head -1)
+  for bundle in "$APP" "$EXT_BUNDLE"; do
+    [ -n "$bundle" ] || continue
+    signed=$(codesign -d --entitlements :- "$bundle" 2>/dev/null | tr -d '\0' || true)
+    case "$signed" in
+      *"$WANT_CONTAINER"*) ;;
+      *)
+        echo "$(basename "$bundle") is signed WITHOUT ${WANT_CONTAINER}."
+        echo "The App ID needs the iCloud capability with that container assigned,"
+        echo "or the build installs and then cannot find its library. Not uploading."
+        exit 1
+        ;;
+    esac
+  done
+  echo "    iCloud container ${WANT_CONTAINER} present on both bundles"
 fi
 
 # --- 5. upload ----------------------------------------------------------------

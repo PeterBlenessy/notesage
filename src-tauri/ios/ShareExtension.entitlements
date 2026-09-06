@@ -1,9 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  Share Extension entitlements (reference). The extension only needs the App
-  Group to read the shared library bookmark written by the app. It writes the
-  capture note into the granted (security-scoped) folder resolved from that
-  bookmark — no iCloud capability required on the extension target.
+  Share Extension entitlements (reference). `integrate-share-extension.py`
+  writes the same keys into the generated project; this file is what that
+  output must mirror.
+
+  - App Group: the shared library mode and, for a chosen folder, the
+    security-scoped bookmark written by the app.
+  - iCloud Documents, container `iCloud.com.notesage.app`: the extension
+    resolves the library container ITSELF, in its own process, so a share
+    before the app has ever launched still lands in `Inbox/`. The App Group
+    alone is not enough — `url(forUbiquityContainerIdentifier:)` is per
+    process and returns nil without this entitlement.
 -->
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -11,6 +18,19 @@
     <key>com.apple.security.application-groups</key>
     <array>
         <string>group.com.notesage.app</string>
+    </array>
+
+    <key>com.apple.developer.icloud-container-identifiers</key>
+    <array>
+        <string>iCloud.com.notesage.app</string>
+    </array>
+    <key>com.apple.developer.icloud-services</key>
+    <array>
+        <string>CloudDocuments</string>
+    </array>
+    <key>com.apple.developer.ubiquity-container-identifiers</key>
+    <array>
+        <string>iCloud.com.notesage.app</string>
     </array>
 </dict>
 </plist>

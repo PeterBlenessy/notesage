@@ -74,6 +74,9 @@ export function LibraryBrowser() {
   const goBack = useMobileStore((s) => s.goBack);
   const goToDepth = useMobileStore((s) => s.goToDepth);
   const pickFolder = useMobileStore((s) => s.pickFolder);
+  const setLibraryMode = useMobileStore((s) => s.setLibraryMode);
+  const libraryKind = useMobileStore((s) => s.libraryKind);
+  const icloudAvailable = useMobileStore((s) => s.icloudAvailable);
   const setSortMode = useMobileStore((s) => s.setSortMode);
   const setGroupMode = useMobileStore((s) => s.setGroupMode);
   const recentlyRead = useMobileStore((s) => s.recentlyRead);
@@ -565,10 +568,10 @@ export function LibraryBrowser() {
   ];
   const nativeChrome = useNativeChrome(
     {
-      topLeft:
-        folderStack.length > 0
-          ? { id: "back", icon: "chevron.backward" }
-          : { id: "pick", icon: "folder" },
+      // At the root there is no corner button: the bare re-pick that used to
+      // live here moved into the "…" menu's Library section, beside "Switch
+      // to Notesage in iCloud" (PRD 2026-09-05-icloud-container-library).
+      topLeft: folderStack.length > 0 ? { id: "back", icon: "chevron.backward" } : undefined,
       // Breadcrumb island (#615): current folder on a glass capsule between
       // the corner buttons; tap opens the ancestor jump menu (root first).
       // At the root it is a passive label carrying the library name. The
@@ -707,6 +710,29 @@ export function LibraryBrowser() {
           ...(atHome
             ? [{ id: "edit-home", title: t("menu.editHome"), icon: "slider.horizontal.3", sectionBreak: true }]
             : []),
+          // Library (root only): where the library is, as a checked row, and
+          // the two ways to change it. "Use a different folder…" is the
+          // picker; "Switch to Notesage in iCloud" only when a chosen folder
+          // is in use AND the container exists — switching shows the
+          // container's contents at once, it moves nothing.
+          ...(atHome
+            ? [
+                {
+                  id: "library-current",
+                  title:
+                    libraryKind === "container"
+                      ? t("menu.libraryInICloud")
+                      : t("menu.libraryChosenFolder", { name: libraryName || "Notesage" }),
+                  icon: libraryKind === "container" ? "icloud" : "folder",
+                  selected: true,
+                  sectionBreak: true,
+                },
+                { id: "pick", title: t("menu.useDifferentFolder"), icon: "folder.badge.gearshape" },
+                ...(libraryKind === "picked" && icloudAvailable
+                  ? [{ id: "library-container", title: t("menu.switchToICloud"), icon: "icloud" }]
+                  : []),
+              ]
+            : []),
         ],
       },
       // Inside Recordings/ the "+" records (two taps from Home to a meeting);
@@ -799,6 +825,15 @@ export function LibraryBrowser() {
             if (!String(err).includes("No folder was selected")) {
               toast.error(t("library.changeFolderFailed", { error: String(err) }));
             }
+          });
+      },
+      // The checked "where the library is" row: informational, a no-op.
+      "library-current": () => {},
+      "library-container": () => {
+        void setLibraryMode("container")
+          .then(() => void load())
+          .catch((err) => {
+            toast.error(t("library.switchToICloudFailed", { error: String(err) }));
           });
       },
       // Fired by the native pull-to-refresh gesture (WKWebView's
