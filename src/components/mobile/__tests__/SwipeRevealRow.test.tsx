@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { fireEvent } from "@testing-library/react";
+import { act, fireEvent } from "@testing-library/react";
 import { renderWithProviders, screen } from "@/test/component-harness";
 import {
   SwipeRevealRow,
@@ -42,6 +42,267 @@ function swipe(el: HTMLElement, from: number, to: number, dy = 0) {
   fireEvent.pointerMove(el, { clientX: to, clientY: dy });
   fireEvent.pointerUp(el, { clientX: to, clientY: dy });
 }
+
+describe("SwipeRevealRow: whose finger is this? (2026-09-06)", () => {
+  it("ignores a second finger instead of letting it drive the row", () => {
+    const onSelect = vi.fn();
+    renderWithProviders(
+      <Row actions={[makeAction(), makeAction({ id: "delete", label: "Delete", onSelect })]} onRowClick={vi.fn()} />,
+    );
+    const content = screen.getByText("row content");
+    fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+    fireEvent.pointerMove(content, { pointerId: 1, clientX: 190, clientY: 0 });
+    // A steadying thumb near the left edge. Measured from the first finger's
+    // start that is -200px: past the two 72px actions plus the 96px overshoot,
+    // which is the full-swipe that fires Delete outright.
+    fireEvent.pointerMove(content, { pointerId: 2, clientX: 0, clientY: 0 });
+    fireEvent.pointerUp(content, { pointerId: 2, clientX: 0, clientY: 0 });
+    expect(onSelect).not.toHaveBeenCalled();
+    // …and the first finger's own drag survived it: 10px is under half of one
+    // action width, so the row snaps closed rather than opening.
+    fireEvent.pointerUp(content, { pointerId: 1, clientX: 190, clientY: 0 });
+    expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+  });
+
+  it("gives up on a drag that goes silent, and its late lift opens nothing", () => {
+    // Same recovery as the reader's, and for the same reason: the event that
+    // would tell us the touch is gone is exactly the one that goes missing.
+    //
+    // The lift and click at the end are the point. The finger may still be
+    // physically down — that is the whole premise — so the browser fires a
+    // trailing click when it goes. An earlier version of this test stopped
+    // at the timer and passed with the watchdog deleted entirely, because
+    // neither assertion could move without a pointer event: `onSelect` is
+    // only reachable from a real lift, and the action stays `aria-hidden`
+    // either way. Carried through, it discriminates twice over — the row
+    // must neither delete itself nor open.
+    vi.useFakeTimers();
+    try {
+      const onSelect = vi.fn();
+      const onRowClick = vi.fn();
+      renderWithProviders(
+        <Row actions={[makeAction({ id: "delete", label: "Delete", onSelect })]} onRowClick={onRowClick} />,
+      );
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 0, clientY: 0 }); // past the full-swipe distance
+      act(() => vi.advanceTimersByTime(4000));
+      expect(screen.queryByRole("button", { name: "Delete" })).toBeNull();
+      fireEvent.pointerUp(content, { pointerId: 1, clientX: 0, clientY: 0 });
+      fireEvent.click(content);
+      expect(onSelect).not.toHaveBeenCalled();
+      expect(onRowClick).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a stolen touch that never comes back does not eat the next real tap", () => {
+    // The hard half of the same problem. Suppressing the click at the moment
+    // the watchdog fires looks right, but in the case the watchdog exists
+    // for — the touch is gone and no lift and no click ever arrive — the
+    // flag would stay armed with nothing to consume it, and swallow the
+    // user's next, unrelated tap on this row instead.
+    vi.useFakeTimers();
+    try {
+      const onRowClick = vi.fn();
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={onRowClick} />);
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000));
+      // Pointer 1 is never heard from again. A later, separate tap:
+      fireEvent.pointerDown(content, { pointerId: 2, clientX: 150, clientY: 0 });
+      fireEvent.pointerUp(content, { pointerId: 2, clientX: 150, clientY: 0 });
+      fireEvent.click(content);
+      expect(onRowClick).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it.each([
+    ["pointercancel", (el: HTMLElement) => fireEvent.pointerCancel(el, { pointerId: 1, clientX: 100, clientY: 0 })],
+    ["lostpointercapture", (el: HTMLElement) => fireEvent.lostPointerCapture(el, { pointerId: 1, clientX: 100, clientY: 0 })],
+  ])("a late %s does not arm a suppression no click will consume", (_name, terminate) => {
+    // Only a pointerup is followed by a native click. `pointercancel` never
+    // is, by spec, and `lostpointercapture` is not a termination at all —
+    // and both are the LIKELY shape of a genuinely stolen touch, which is
+    // the case this mechanism exists for. Arming on either sets a flag
+    // nothing consumes, and the next thing it swallows is the user's next
+    // unrelated tap: the same bug, in through a different door.
+    vi.useFakeTimers();
+    try {
+      const onRowClick = vi.fn();
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={onRowClick} />);
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000));
+      terminate(content);
+      // A later, separate tap must still open the document.
+      fireEvent.pointerDown(content, { pointerId: 2, clientX: 150, clientY: 0 });
+      fireEvent.pointerUp(content, { pointerId: 2, clientX: 150, clientY: 0 });
+      fireEvent.click(content);
+      expect(onRowClick).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps waiting after capture loss, and still suppresses the real lift", () => {
+    // The interleaving the id-swapping tests above cannot see. Capture loss
+    // is not a termination — that is the whole reason it is treated
+    // separately — so the SAME finger may still lift afterwards, and its
+    // trailing click still has to be suppressed. Forgetting the pointer on
+    // capture loss lets that click open the document.
+    vi.useFakeTimers();
+    try {
+      const onRowClick = vi.fn();
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={onRowClick} />);
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000));
+      fireEvent.lostPointerCapture(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      // Same finger, later.
+      fireEvent.pointerUp(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      fireEvent.click(content);
+      expect(onRowClick).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a cancelled pointer is forgotten, so a reused id does not eat a tap", () => {
+    // The other half: a cancel really does end that pointer, so there is
+    // nothing left to wait for and keeping it would be the leak.
+    vi.useFakeTimers();
+    try {
+      const onRowClick = vi.fn();
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={onRowClick} />);
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000));
+      fireEvent.pointerCancel(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      // The browser hands id 1 to the next touch, which is a plain tap.
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 150, clientY: 0 });
+      fireEvent.pointerUp(content, { pointerId: 1, clientX: 150, clientY: 0 });
+      fireEvent.click(content);
+      expect(onRowClick).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("remembers both fingers when a row abandons two drags in a row", () => {
+    // Abandoning the first drag is exactly what stops the touchdown guard
+    // refusing a second finger, so two abandonments on one row is a path the
+    // code opens itself. With a single slot the second overwrote the first,
+    // and when the first finger finally lifted its trailing click opened the
+    // document — the original bug, reached the long way round.
+    vi.useFakeTimers();
+    try {
+      const onRowClick = vi.fn();
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={onRowClick} />);
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000));
+      fireEvent.pointerDown(content, { pointerId: 3, clientX: 200, clientY: 0 });
+      fireEvent.pointerMove(content, { pointerId: 3, clientX: 100, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000));
+      // The FIRST finger comes back.
+      fireEvent.pointerUp(content, { pointerId: 1, clientX: 100, clientY: 0 });
+      fireEvent.click(content);
+      expect(onRowClick).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("still closes an open row when a resting finger finally lifts", () => {
+    // The watchdog deliberately ignores a press that never became a drag:
+    // it strands nothing, and dropping it would cost the tap-to-close that
+    // an open row depends on.
+    vi.useFakeTimers();
+    try {
+      const onRowClick = vi.fn();
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={onRowClick} />);
+      const content = screen.getByText("row content");
+      swipe(content, 200, 100); // reveal
+      expect(screen.getByRole("button", { name: "Share" })).toBeTruthy();
+      fireEvent.pointerDown(content, { pointerId: 2, clientX: 150, clientY: 0 });
+      act(() => vi.advanceTimersByTime(4000)); // a finger resting, never moving
+      fireEvent.pointerUp(content, { pointerId: 2, clientX: 150, clientY: 0 });
+      fireEvent.click(content);
+      expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+      expect(onRowClick).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("treats capture lost without a lift as an interruption, not a completion", () => {
+    // Only a lift finishes a gesture. Capture loss reaches a LIVE drag only
+    // when it arrives without the pointerup that normally precedes it, which
+    // means the system took the touch — so the row springs back rather than
+    // settling as though the user had let go where they were. It must also
+    // leave no click suppression armed: no click follows a steal, so the
+    // flag would sit there and swallow the row's next real tap.
+    const onSelect = vi.fn();
+    const onRowClick = vi.fn();
+    renderWithProviders(<Row actions={[makeAction({ onSelect })]} onRowClick={onRowClick} />);
+    const content = screen.getByText("row content");
+    fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+    fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+    fireEvent.lostPointerCapture(content, { pointerId: 1, clientX: 100, clientY: 0 });
+    expect(screen.queryByRole("button", { name: "Share" })).toBeNull();
+    expect(onSelect).not.toHaveBeenCalled();
+    // The next tap is the user's, and it works.
+    fireEvent.pointerDown(content, { pointerId: 2, clientX: 150, clientY: 0 });
+    fireEvent.pointerUp(content, { pointerId: 2, clientX: 150, clientY: 0 });
+    fireEvent.click(content);
+    expect(onRowClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("a cancelled full swipe does not delete anything", () => {
+    // The sharper half of the same rule. A drag dragged past the full-swipe
+    // distance and then CANCELLED was committing the edge action outright —
+    // deleting a document on a gesture the user never finished.
+    const onSelect = vi.fn();
+    renderWithProviders(
+      <Row actions={[makeAction({ id: "delete", label: "Delete", onSelect })]} onRowClick={vi.fn()} />,
+    );
+    const content = screen.getByText("row content");
+    fireEvent.pointerDown(content, { pointerId: 1, clientX: 300, clientY: 0 });
+    fireEvent.pointerMove(content, { pointerId: 1, clientX: 0, clientY: 0 }); // past 72 + 96
+    fireEvent.pointerCancel(content, { pointerId: 1, clientX: 0, clientY: 0 });
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("replaces a touch that never became a drag rather than being blocked by it", () => {
+    // The other half: a press that stalled before the axis lock took no
+    // capture and moved nothing, so nothing else can free it.
+    renderWithProviders(<Row actions={[makeAction()]} onRowClick={vi.fn()} />);
+    const content = screen.getByText("row content");
+    fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 }); // never lifts
+    swipe(content, 200, 100);
+    expect(screen.getByRole("button", { name: "Share" })).toBeTruthy();
+  });
+
+  it("does not let a second touchdown restart the drag", () => {
+    renderWithProviders(<Row actions={[makeAction()]} onRowClick={vi.fn()} />);
+    const content = screen.getByText("row content");
+    fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 0 });
+    fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 0 });
+    fireEvent.pointerDown(content, { pointerId: 2, clientX: 100, clientY: 0 });
+    fireEvent.pointerUp(content, { pointerId: 1, clientX: 100, clientY: 0 });
+    // Still the first finger's 100px drag, so the action is revealed.
+    expect(screen.getByRole("button", { name: "Share" })).toBeTruthy();
+  });
+});
 
 describe("SwipeRevealRow (issue #618)", () => {
   it("hides the action until the row is swiped", () => {

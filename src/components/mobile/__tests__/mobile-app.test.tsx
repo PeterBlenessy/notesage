@@ -1256,6 +1256,21 @@ describe("HTML reports", () => {
     expect(src.endsWith(registered[0].id)).toBe(true);
   });
 
+  it("leaves the swipe-back gesture reachable over a report", async () => {
+    // A captured report is a separate document on an opaque origin: a finger
+    // that lands on the frame produces no pointer events out here, so the
+    // handlers on the reader root never fire and the gesture is dead on
+    // exactly the documents people read longest. A transparent strip over the
+    // frame's leading edge carries the same handlers.
+    await openHtml();
+    const strip = screen.getByTestId("reader-edge-swipe-strip");
+    fireEvent.pointerDown(strip, { pointerId: 1, clientX: 4, clientY: 0 });
+    fireEvent.pointerMove(strip, { pointerId: 1, clientX: 60, clientY: 0 });
+    fireEvent.pointerMove(strip, { pointerId: 1, clientX: 200, clientY: 0 });
+    fireEvent.pointerUp(strip, { pointerId: 1, clientX: 200, clientY: 0 });
+    await waitFor(() => expect(useMobileStore.getState().openDoc).toBeNull());
+  });
+
   it("treats .htm the same as .html", async () => {
     const frame = await openHtml("legacy.htm");
     expect(frame.tagName).toBe("IFRAME");
