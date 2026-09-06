@@ -2211,7 +2211,7 @@ describe("Inbox shortcut (#683)", () => {
     ]);
   });
 
-  it("shows no card when nothing has ever been shared", async () => {
+  it("shows the card even when nothing has ever been shared", async () => {
     setMockInvokeHandler("ios_read_file", (args) =>
       (args as { relPath: string }).relPath === ".notesage/home.json"
         ? JSON.stringify({ version: 1, folders: ["Ideas"] })
@@ -2224,7 +2224,13 @@ describe("Inbox shortcut (#683)", () => {
     ]);
     renderWithProviders(<LibraryBrowser />);
     await screen.findByText("Ideas");
-    expect(screen.queryByText("Inbox")).toBeNull();
+    // Was: no card until something had been shared. On a container install
+    // nothing creates `Inbox/` until the first share, so that left a fresh
+    // install with no Inbox on Home at all — and the breadcrumb's Inbox
+    // entry navigating to a folder that did not exist (Peter, build 54).
+    // Same rule as Recordings now: always there, and opening it makes the
+    // folder.
+    expect(screen.getByText("Inbox")).toBeTruthy();
   });
 });
 

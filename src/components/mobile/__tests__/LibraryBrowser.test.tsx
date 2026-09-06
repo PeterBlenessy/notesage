@@ -260,8 +260,11 @@ describe("Home — only the folders you chose", () => {
     expect(screen.queryByText("Archive")).toBeNull();
     expect(screen.queryByText("Gone")).toBeNull(); // renamed on the Mac: dropped, no error
     expect(screen.queryByText(/Your folders are in All Folders/)).toBeNull();
-    // The Inbox is not listed in the file, so its card is off.
-    expect(screen.queryByText("Inbox")).toBeNull();
+    // The Inbox card is NOT governed by the Home file — it is pinned like
+    // Recordings, because on a container install the folder does not exist
+    // until the first share and gating on it left a fresh install with no
+    // Inbox at all (Peter, build 54).
+    expect(screen.getByText("Inbox")).toBeTruthy();
     const names = rowNames();
     expect(names.findIndex((n) => n.includes("Reading"))).toBeLessThan(names.findIndex((n) => n.includes("Writing")));
   });
@@ -536,6 +539,26 @@ describe("Recordings is pinned under the Inbox (2026-09-05)", () => {
         useMobileStore.getState().folderStack[useMobileStore.getState().folderStack.length - 1]?.relPath,
       ).toBe("Recordings"),
     );
+  });
+
+  it("opens the Inbox by ENSURING it, so a fresh container install can", async () => {
+    // On a container install nothing creates `Inbox/` until the first share.
+    // Both ways in navigated to it regardless, so a clean install got
+    // "Couldn't open this folder — no such file", with a Retry that re-read
+    // the same missing path (Peter, build 54).
+    const ensured: string[] = [];
+    setMockInvokeHandler("ios_ensure_directory", (args) => {
+      ensured.push((args as { relPath: string }).relPath);
+    });
+    // A root with a folder but NO Inbox — the state a fresh container
+    // install is in before anything is shared.
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "Ideas", path: "Ideas", is_directory: true, hidden: false, child_count: 0 },
+    ]);
+    renderWithProviders(<LibraryBrowser />);
+    const card = await screen.findByText("Inbox");
+    fireEvent.click(card);
+    await waitFor(() => expect(ensured).toContain("Inbox"));
   });
 
   it("is there in gallery view too, where it used to vanish", async () => {

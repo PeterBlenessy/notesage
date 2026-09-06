@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
 import type { FileEntry } from "@/lib/tauri";
 import { iosShareFile, iosDeleteFile } from "@/lib/ios-api";
+import { ListenButton } from "./ListenButton";
 import { cn } from "@/lib/utils";
 import { t } from "@/lib/i18n";
 import { SwipeRevealRow, type SwipeRevealAction } from "./SwipeRevealRow";
@@ -63,6 +64,23 @@ export function isOpenDocument(name: string): boolean {
  *  not, and they landed as grey generic rows. When adding a row there, add the
  *  extension here — `classify_file_covers_every_linked_document_extension` in
  *  FileRow.test.tsx fails the build if the two lists drift apart. */
+/**
+ * Can this file be read aloud?
+ *
+ * The speech pipeline has handled markdown and plain text since it shipped
+ * (`documentToSpeechText` dispatches on kind), but the button only ever
+ * appeared on `ArticleRow`, which is reserved for captured `.html`. So a
+ * note the app could read perfectly well simply had no way to start it
+ * (Peter, build 54: "I am surprised that markdown files are not playable").
+ *
+ * Captures keep the article row and its own button; this covers everything
+ * else that is prose.
+ */
+export function isSpeakable(entry: Pick<FileEntry, "name" | "is_directory">): boolean {
+  if (entry.is_directory) return false;
+  return /\.(md|markdown|txt|text)$/i.test(entry.name);
+}
+
 export function classifyFile(
   name: string,
 ): "markdown" | "image" | "text" | "pdf" | "doc" | "media" | "html" | "other" {
@@ -360,6 +378,17 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext, c
           <ChevronRight strokeWidth={1.5} className="h-4 w-4 shrink-0 text-muted-foreground" />
         )}
       </button>
+      {/* Outside the button, floating over the row's trailing edge — the same
+          placement the article row uses, so a note and a capture offer the
+          same affordance in the same place. Inside the button it would make
+          the whole row a single tap target and swallow the row's own tap. */}
+      {isSpeakable(entry) && (
+        <ListenButton
+          entry={entry}
+          size="row"
+          className="absolute right-3 top-1/2 -translate-y-1/2"
+        />
+      )}
     </SwipeRevealRow>
   );
 }

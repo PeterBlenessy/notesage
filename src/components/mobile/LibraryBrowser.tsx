@@ -70,6 +70,27 @@ export function LibraryBrowser() {
     }
     jumpToFolder({ relPath: RECORDINGS_FOLDER_NAME, name: RECORDINGS_FOLDER_NAME });
   }, [jumpToFolder]);
+
+  /**
+   * The Inbox, ensured the same way.
+   *
+   * On a container install the folder does not exist until something is
+   * shared into it, and BOTH ways in navigated to it regardless: the
+   * breadcrumb menu's "Inbox" and the Home card. On a fresh install that is
+   * "Couldn't open this folder — no such file", with a Retry that re-reads
+   * the same missing path and changes nothing (Peter, build 54, on a clean
+   * install of the container build). The Inbox is a folder the app owns, so
+   * it makes it rather than reporting its absence.
+   */
+  const openInbox = useCallback(async () => {
+    try {
+      await iosEnsureDirectory(INBOX_NAME);
+    } catch (err) {
+      toast.error(t("action.createFolderFailed", { error: String(err) }));
+      return;
+    }
+    jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME });
+  }, [jumpToFolder]);
   const openDocument = useMobileStore((s) => s.openDocument);
   const goBack = useMobileStore((s) => s.goBack);
   const goToDepth = useMobileStore((s) => s.goToDepth);
@@ -802,7 +823,7 @@ export function LibraryBrowser() {
       "img-1600": () => setImageMaxPixel(1600),
       "img-2048": () => setImageMaxPixel(2048),
       "img-original": () => setImageMaxPixel("original"),
-      "goto-inbox": () => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME }),
+      "goto-inbox": () => void openInbox(),
       "edit-home": () => openHomeEditor(),
       "notify-badge": () => void toggleNotification("badge"),
       "notify-new": () => void toggleNotification("newItems"),
@@ -939,7 +960,24 @@ export function LibraryBrowser() {
         )}
 
         {state.status === "loading" && <BrowserSkeleton />}
-        {state.status === "error" && <BrowserError message={state.message} onRetry={() => void load()} />}
+        {state.status === "error" && (
+          <BrowserError
+            message={state.message}
+            onRetry={() => {
+              // Retry used to re-read the same missing path and fail
+              // identically, so the button looked dead (Peter, build 54:
+              // "'Försök igen' is not reacting when pressed"). For a folder
+              // the app OWNS, the answer to "it isn't there" is to make it —
+              // then the retry has something to succeed at.
+              void (async () => {
+                if (currentRelPath === INBOX_NAME || currentRelPath === RECORDINGS_FOLDER_NAME) {
+                  await iosEnsureDirectory(currentRelPath).catch(() => {});
+                }
+                await load();
+              })();
+            }}
+          />
+        )}
         {state.status === "ready" &&
           (() => {
             const visible = sortEntries(
@@ -953,19 +991,26 @@ export function LibraryBrowser() {
             // looks through the whole root, so a hidden folder is one
             // query away.
             const curated = atHome && !query;
-            const inboxEntry =
-              curated && homeSet.has(INBOX_NAME)
-                ? state.entries.find((e) => e.is_directory && e.name === INBOX_NAME)
-                : undefined;
+            const inboxEntry = state.entries.find(
+              (e) => e.is_directory && e.name === INBOX_NAME,
+            );
             // The Inbox card sits above whatever the listing shows, so no
             // sort or grouping choice can move it — and it is excluded from
             // the list below so the folder is not offered twice.
-            const inboxCard = inboxEntry ? (
+            //
+            // ALWAYS there, whether or not the folder exists yet — the same
+            // rule as Recordings, and for the same reason. On a container
+            // install nothing creates `Inbox/` until something is shared, so
+            // gating the card on the folder meant a fresh install had no
+            // Inbox on Home at all until the first share (Peter, build 54:
+            // "I think inbox should be there from start just like
+            // recordings"). Opening it makes the folder.
+            const inboxCard = curated ? (
               // The count rides along on the listing (#684) — no extra read.
               <InboxCard
-                count={inboxEntry.child_count}
+                count={inboxEntry?.child_count}
                 unread={unreadInbox}
-                onOpen={() => jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME })}
+                onOpen={() => void openInbox()}
               />
             ) : null;
             // Recordings sits directly under the Inbox and is ALWAYS there,
@@ -1023,9 +1068,15 @@ export function LibraryBrowser() {
                   <EmptyFolder />
                 </>
               );
-            if (curated && !inboxCard && listed.length === 0)
+            // "Nothing chosen yet" is about the HOME FILE, not about the
+            // pinned cards. It used to key off the Inbox card's absence,
+            // which worked only while that card was itself conditional; now
+            // that Inbox and Recordings are always pinned, keying on them
+            // would mean the invitation to choose folders never appeared.
+            if (curated && homeSet.size === 0 && listed.length === 0)
               return (
                 <>
+                  {inboxCard}
                   {recordingsCard}
                   <HomeEmpty onChoose={openHomeEditor} />
                   {homeTail}
