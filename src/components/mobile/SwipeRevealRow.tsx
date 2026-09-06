@@ -1,4 +1,4 @@
-import { useRef, useState, type ComponentType, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export interface SwipeRevealAction {
@@ -31,6 +31,13 @@ const RADIUS_REVEALED = 14;
 /** Trailing corner radius at maximum drag — near-circular on a ~60 px row,
  *  deliberately short of a true pill so the row still reads as a row. */
 const RADIUS_MAX = 26;
+/** A live drag that goes this long with no news at all is abandoned — the
+ *  one recovery that depends on no event arriving. See the matching constant
+ *  in `useEdgeSwipeBack` for why `lostpointercapture` alone is not enough:
+ *  the spec fires it as a consequence of the very terminator that goes
+ *  missing. The penalty if it ever cuts off a real drag is a row that snaps
+ *  back to where it was. */
+const STALE_MS = 4000;
 
 /**
  * How far action `index` of `count` has emerged, 0 → 1.
@@ -85,6 +92,11 @@ export function resolveDragAxis(dx: number, dy: number): DragAxis {
 }
 
 interface DragState {
+  /** Which finger owns this drag. A second touch anywhere on the row
+   *  otherwise feeds ITS coordinates into the same drag: the row jumps to
+   *  wherever the new finger landed, and letting go of either finger can
+   *  commit the full-swipe Delete the user never made. */
+  pointerId: number;
   startX: number;
   startY: number;
   axis: DragAxis;
@@ -111,18 +123,73 @@ export function SwipeRevealRow({
   const [open, setOpen] = useState(false);
   const [dragOffset, setDragOffset] = useState<number | null>(null);
   const dragRef = useRef<DragState | null>(null);
+  const staleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Set when a real drag (or a tap-to-close on an already-open row) just
   // resolved the gesture — the trailing native `click` that follows a real
   // pointerup must not also activate the row. Mirrors the suppressClick
   // idiom already used for the sidebar's long-press ancestor menu.
   const suppressClickRef = useRef(false);
+  // Every pointer whose drag the watchdog gave up on and which might still
+  // be down. A SET, not one slot: once a drag is abandoned the touchdown
+  // guard stops refusing second fingers, so a row can abandon two in a row —
+  // and with one slot the second overwrote the first, leaving the first
+  // finger's real lift unsuppressed and opening the document. See `endDrag`
+  // for why the suppression waits for the lift.
+  const abandonedRef = useRef<Set<number>>(new Set());
+
+  // A row is unmounted by any listing refresh, which a finger being down does
+  // nothing to prevent.
+  useEffect(() => () => {
+    if (staleRef.current) clearTimeout(staleRef.current);
+  }, []);
+
+  /** Restart the abandonment timer. Every sign of life postpones it. */
+  const arm = () => {
+    if (staleRef.current) clearTimeout(staleRef.current);
+    staleRef.current = setTimeout(() => {
+      staleRef.current = null;
+      const drag = dragRef.current;
+      // Only a LOCKED drag can strand anything. A press that never became
+      // one holds no capture, has moved nothing, and blocks no later touch
+      // — and dropping it would break tap-to-close for a finger that simply
+      // rests on an open row before lifting.
+      if (!drag?.isDrag) return;
+      // Abandoned, so it must not COMMIT: an unfinished drag is not a
+      // request to delete anything. The row returns to where it was.
+      dragRef.current = null;
+      setDragOffset(null);
+      // The finger may still be down — the whole point is that we never
+      // heard it go — so a native click may still follow when it lifts, and
+      // it must not open the document the user was swiping away from.
+      // Remembered, NOT suppressed here: arming the flag now would leave it
+      // armed for ever in the case this whole mechanism exists for, where
+      // the touch really was stolen and no lift and no click ever arrive.
+      // It would then swallow the user's next, unrelated tap on this row.
+      abandonedRef.current.add(drag.pointerId);
+    }, STALE_MS);
+  };
 
   const offset = dragOffset ?? (open ? -revealWidth : 0);
   const animating = dragOffset === null;
 
   const onPointerDown = (e: React.PointerEvent) => {
     if (actions.length === 0) return;
+    // A drag already owned by another finger keeps it — but ONLY while it is
+    // a real swipe. Refusing every second touchdown outright trades a
+    // corrupted gesture for a stranded one: if the owning pointer's
+    // pointerup/pointercancel never arrives (WebKit does not reliably
+    // deliver one when the system steals a captured touch), the ref stays
+    // set for ever and every later touch on this row is refused. A drag that
+    // never locked has taken no capture and moved nothing, so replacing it
+    // costs nothing; a locked one is recovered by `onLostPointerCapture`.
+    // Pointer ids are reused once released. A fresh press under an id we
+    // were still waiting on is a new finger, not the old one coming back —
+    // and this runs BEFORE the guard below, or an id pressed again while
+    // some other finger holds a locked drag would never be swept.
+    abandonedRef.current.delete(e.pointerId);
+    if (dragRef.current?.isDrag) return;
     dragRef.current = {
+      pointerId: e.pointerId,
       startX: e.clientX,
       startY: e.clientY,
       axis: "undecided",
@@ -130,11 +197,13 @@ export function SwipeRevealRow({
       isDrag: false,
       lastOffset: open ? -revealWidth : 0,
     };
+    arm();
   };
 
   const onPointerMove = (e: React.PointerEvent) => {
     const drag = dragRef.current;
-    if (!drag || drag.axis === "scroll") return;
+    if (!drag || drag.pointerId !== e.pointerId || drag.axis === "scroll") return;
+    arm();
     const delta = e.clientX - drag.startX;
     if (drag.axis === "undecided") {
       drag.axis = resolveDragAxis(delta, e.clientY - drag.startY);
@@ -158,11 +227,58 @@ export function SwipeRevealRow({
     setDragOffset(next);
   };
 
-  const endDrag = () => {
+  const endDrag = (e?: React.PointerEvent) => {
     const drag = dragRef.current;
+    // Lifting the OTHER finger must not end a drag it never owned.
+    if (drag && e && drag.pointerId !== e.pointerId) return;
+    if (staleRef.current) clearTimeout(staleRef.current);
+    staleRef.current = null;
     dragRef.current = null;
-    if (!drag) return;
+    if (!drag) {
+      // News of a drag the watchdog already gave up on. Nothing left to
+      // settle, and the pointer is accounted for either way — but ONLY a
+      // pointerup is followed by a native click. `pointercancel` never is,
+      // by spec, and `lostpointercapture` is not a termination at all; both
+      // are in fact the likely shape of a genuinely stolen touch, which is
+      // the case this whole mechanism is about. Arming on those would set a
+      // flag no click ever consumes, and the next thing it swallowed would
+      // be the user's next unrelated tap — the very bug this branch exists
+      // to avoid, walked back in through a different door.
+      // Each event type is answered on its own terms. `delete` is a call,
+      // not a boolean read, so folding it into the condition would drop the
+      // pointer whatever the type turned out to be — and dropping it on
+      // capture loss is exactly wrong, because capture loss is not a
+      // termination and the lift may still be coming. The next arrival would
+      // then find nothing tracked and let the click through: the original
+      // bug, in through the door this branch was built to shut.
+      if (e && abandonedRef.current.has(e.pointerId)) {
+        if (e.type === "pointerup") {
+          // The one event a native click follows.
+          abandonedRef.current.delete(e.pointerId);
+          suppressClickRef.current = true;
+        } else if (e.type === "pointercancel") {
+          // A cancel really does end that pointer: no lift, and so no click,
+          // can follow it without a fresh press first.
+          abandonedRef.current.delete(e.pointerId);
+        }
+        // `lostpointercapture`: keep waiting. Nothing is armed, because no
+        // click is due yet, and nothing is forgotten either.
+      }
+      return;
+    }
     setDragOffset(null);
+    // Did the gesture FINISH, or was it taken away? Only a lift finishes
+    // one. `pointercancel` is an interruption by definition, and
+    // `lostpointercapture` only reaches a live drag when it arrives without
+    // the lift that normally precedes it — which is the same thing. The
+    // distinction matters twice over: an interrupted swipe must not commit
+    // the edge Delete nobody completed, and it must not arm the click
+    // suppression either, because no click follows a cancel. Arming it would
+    // leave the flag set with nothing to consume it, and the next thing it
+    // swallowed would be the row's next real tap — the same failure the
+    // abandoned-drag branch above was rewritten three times to avoid.
+    const lifted = !e || e.type === "pointerup";
+    if (!lifted) return;
     if (drag.isDrag) {
       // Full swipe past the strip commits the edge action directly.
       if (
@@ -256,6 +372,12 @@ export function SwipeRevealRow({
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
+        // The recovery signal for a captured drag. When the system takes the
+        // touch away, capture is released even where the pointer event that
+        // should follow it is not delivered — so this is the one
+        // notification that always arrives. Without it a stolen touch leaves
+        // the row stuck half-revealed with its swipe dead until it remounts.
+        onLostPointerCapture={endDrag}
         onClickCapture={onContentClickCapture}
         style={{
           // Tell WebKit we own horizontal panning and it owns vertical. This
