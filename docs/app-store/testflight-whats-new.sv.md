@@ -25,15 +25,17 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Allt du hittade i telefonen är fixat — och en inspelning syns nu på låsskärmen.
+En ny installation skapar sitt eget bibliotek — ingen mapp att välja.
+
+NYTT
+• Inspelningar har ett eget kort under Inbox, alltid där.
+• Svep in från vänsterkanten i ett dokument för att gå tillbaka.
+• Inspelningsraden ser ut som spelaren och ritar din röst.
 
 FIXAT
-• Stopp göms inte längre bakom sökrutan.
-• Fel visas i stället för att hamna under verktygsraden.
-• Olästa i Inbox är de fetare; öppnade tonas ner.
-• Ikonsiffran rör sig igen i ett synkat bibliotek.
-• Startlogotypen är skarp när den växer.
+• Miniatyrer finns där när listan öppnas, inte efteråt.
+• Antalet olästa rör sig igen.
 
-TESTA
-• Spela in, lås telefonen, pausa och återuppta från låsskärmen, lås upp och stoppa.
-• Läs något i Inbox och se ikonsiffran minska.
+PROVA
+• Svep in från vänsterkanten för att lämna en artikel, sedan en webbsida.
+• För den nya bibliotekstarten: radera appen och installera om. Den ska aldrig fråga efter en mapp.

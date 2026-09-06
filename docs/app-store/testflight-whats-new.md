@@ -26,15 +26,17 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Everything you found on the phone, fixed — and a recording now shows on the lock screen.
+A fresh install now makes its own library — no folder to pick.
+
+NEW
+• Recordings has its own card under the Inbox, always there.
+• Swipe in from the left edge of a document to go back.
+• The recording bar matches the player and draws your voice.
 
 FIXED
-• Stop is no longer hidden behind the search pill.
-• Errors appear instead of hiding under the toolbar.
-• Unread Inbox items are the bolder ones; opened ones step back.
-• The icon count moves again on a synced library.
-• The launch logo stays sharp as it grows.
+• Thumbnails are there when the list opens, not after.
+• The unread count moves again.
 
 TRY
-• Record, lock the phone, pause and resume from the lock screen, then unlock and stop.
-• Read something in the Inbox and watch the icon count drop.
+• Swipe in from the left edge to leave an article, then a saved web page.
+• For the new library setup, delete the app and install again: it must never ask for a folder.
