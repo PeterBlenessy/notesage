@@ -66,11 +66,30 @@ export interface LocalAgentSetupState {
  * everyone upgrading — and is harmless for the two-engine case, because the
  * first thing the dialog does on a mismatch is claim the flow.
  */
+/**
+ * The ONE idle snapshot handed back for a flow that belongs to the other
+ * engine.
+ *
+ * It has to be a shared constant, not a fresh literal. `useLocalAgentSetup`
+ * calls `setupStateFor` INSIDE a Zustand selector, so its return value is what
+ * `useSyncExternalStore` compares between renders: a new object each call is a
+ * snapshot that never equals itself, which React reports as "The result of
+ * getSnapshot should be cached to avoid an infinite loop" and then escalates
+ * to error #185 (maximum update depth) — an app that logs its startup and then
+ * stops, with no window (Peter, 0.54.4, 2026-09-06). It only ever bit someone
+ * whose persisted flow was tagged for the OTHER engine, which is why no test
+ * and no clean install ever saw it.
+ *
+ * Frozen so a caller that tries to mutate the shared value says so loudly
+ * instead of corrupting every later read.
+ */
+const IDLE_SETUP: LocalAgentSetupState = Object.freeze({ stage: 'idle' });
+
 export function setupStateFor(
   setup: LocalAgentSetupState,
   engine: LocalAgentEngine,
 ): LocalAgentSetupState {
-  if (setup.engine && setup.engine !== engine) return { stage: 'idle' };
+  if (setup.engine && setup.engine !== engine) return IDLE_SETUP;
   return setup;
 }
 
