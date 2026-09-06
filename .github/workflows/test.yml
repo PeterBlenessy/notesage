@@ -298,10 +298,18 @@ jobs:
             src-tauri/ios/LibraryCapture.swift \
             src-tauri/ios/PageRenderer.swift \
             src-tauri/ios/ShareViewController.swift
-          # The audio group, together, because they are mutually dependent:
+          # The app's non-Tauri Swift, together, because it is mutually
+          # dependent:
           # `RecordingLibrary` extends `LibraryAccess` and reads
-          # `Recorder.Staged`, and the session arbiter names `SpeechPlayer`.
-          # None import Tauri, so this is a real compile check.
+          # `Recorder.Staged`, the session arbiter names `SpeechPlayer`, and
+          # the recording island samples `Recorder`'s meter directly — twenty
+          # times a second is far too often for the JS bridge, and the bridge
+          # is asleep with the screen locked while the recorder is not. None
+          # import Tauri, so this is a real compile check.
+          #
+          # The chrome used to be checked on its own, which is why it could
+          # not reference anything: that split was an artefact of the file
+          # list, not a boundary worth keeping.
           #
           # Added after this job went red on `InboxState` above — a call the
           # notifications work added to `LibraryCapture.swift` while this list
@@ -316,16 +324,7 @@ jobs:
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/Recorder.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/RecordingManifest.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/AudioOwner.swift \
-            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/SpeechPlayer.swift
-          # The report web view and the chrome overlay import only UIKit /
-          # WebKit / SwiftUI / Combine — no Tauri — so unlike the plugin they
-          # can be genuinely type-checked here. Together, because
-          # ReportWebView calls ChromeManager.
-          #
-          # Added with #606: ReportWebView.swift was landing in a job that
-          # read every OTHER iOS Swift file, so a type error in the newest and
-          # least-exercised native code was the one thing CI could not see.
-          swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios16.0 \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/SpeechPlayer.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ChromeOverlay.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ReportWebView.swift
           swiftc -parse src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/NotesageIosPlugin.swift
