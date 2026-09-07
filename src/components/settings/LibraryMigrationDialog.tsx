@@ -65,6 +65,14 @@ type Phase =
   | { kind: "undone"; report: UndoReport }
   | { kind: "error"; message: string };
 
+/** A path shown the way somebody could find it: relative to its own root. */
+function relativeToRoot(path: string, roots: string[]): string {
+  for (const root of roots) {
+    if (path.startsWith(`${root}/`)) return path.slice(root.length + 1);
+  }
+  return path;
+}
+
 /**
  * Point every stored absolute path at where the library now is.
  *
@@ -557,7 +565,11 @@ export function LibraryMigrationDialog({
             </p>
             <ul className="list-disc pl-5 text-muted-foreground">
               {phase.pending.slice(0, 10).map((p) => (
-                <li key={p.path}>{p.path.split("/").pop()}</li>
+                // Relative to whichever root holds it, not the bare filename:
+                // several stuck files can share a name, and a list reading
+                // "note.md, note.md, note.md" tells the reader nothing about
+                // which ones or where to look.
+                <li key={p.path}>{relativeToRoot(p.path, [oldRoot, newRoot])}</li>
               ))}
             </ul>
             {phase.pending.length > 10 && (
