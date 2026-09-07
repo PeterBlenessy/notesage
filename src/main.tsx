@@ -13,6 +13,20 @@ import {
 } from "@/stores/settings-store";
 import { useLocalAIStore } from "@/stores/local-ai-store";
 import { useConnectionsStore } from "@/stores/connections-store";
+import {
+  planLibraryMigration,
+  runLibraryMigration,
+  unaccountedInOldRoot,
+} from "@/lib/library-migration";
+import {
+  buildMigrationListing,
+  collectSidecarFilePaths,
+  markerWriteDeps,
+  migrationDeps,
+  recordMigrationInMarker,
+} from "@/lib/library-migration-run";
+import { applyPathRewrites, planPathRewrites } from "@/lib/library-migration-paths";
+import { lockLibraryRoots, unlockLibraryRoots } from "@/lib/library-lock";
 import { useInboxStore } from "@/stores/inbox-store";
 import { useFlagStore } from "@/stores/flag-store";
 
@@ -54,6 +68,27 @@ if (import.meta.env.DEV) {
   (window as unknown as Record<string, unknown>).__E2E_SETTINGS_STORE__ = useSettingsStore;
   (window as unknown as Record<string, unknown>).__E2E_LOCAL_AI_STORE__ = useLocalAIStore;
   (window as unknown as Record<string, unknown>).__E2E_CONNECTIONS_STORE__ = useConnectionsStore;
+  // The library migration, so a real-E2E spec can run it end to end against a
+  // THROWAWAY library. Everything else that covers this feature stops at a
+  // seam: the rehearsal suite drives the planner and runner over real files
+  // but through node `fs`, and `sync.rs`'s tests cover the Rust primitive on
+  // its own. Nothing exercised the join — the actual Tauri IPC — and a
+  // migration that moves every file somebody owns should not first meet that
+  // boundary on a real library.
+  (window as unknown as Record<string, unknown>).__E2E_LIBRARY_MIGRATION__ = {
+    buildMigrationListing,
+    planLibraryMigration,
+    runLibraryMigration,
+    migrationDeps,
+    recordMigrationInMarker,
+    markerWriteDeps,
+    collectSidecarFilePaths,
+    unaccountedInOldRoot,
+    planPathRewrites,
+    applyPathRewrites,
+    lockLibraryRoots,
+    unlockLibraryRoots,
+  };
 }
 
 // Global crash capture for uncaught frontend errors and unhandled promise
