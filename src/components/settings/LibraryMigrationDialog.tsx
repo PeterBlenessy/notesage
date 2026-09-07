@@ -15,6 +15,7 @@ import { t } from "@/lib/i18n";
 import {
   planLibraryMigration,
   runLibraryMigration,
+  unaccountedInOldRoot,
   type MigrationPlan,
   type MigrationReport,
 } from "@/lib/library-migration";
@@ -178,6 +179,28 @@ export function LibraryMigrationDialog({
             notesRoot ? executeRenameTransaction(notesRoot, inputs) : Promise.resolve(),
         });
 
+        // Check the belief against the disk before declaring anything.
+        //
+        // Everything above is what the runner THINKS happened. A step can
+        // report success and still leave something behind, and the plan was
+        // built before this dialog was confirmed — so anything that landed in
+        // the old root in between is in no step at all. Re-reading is cheap
+        // and is the difference between a partial migration and a partial
+        // migration reported as complete. A failure to re-read is itself
+        // reported rather than assumed clean.
+        let unaccounted: { name: string; reason: string }[] = [];
+        try {
+          const remaining = await tauriApi.listDirectory(oldRoot, true);
+          unaccounted = unaccountedInOldRoot(remaining, report);
+        } catch (err) {
+          unaccounted = [
+            {
+              name: oldRoot,
+              reason: t("settings.libraryMoveVerifyFailed", { error: String(err) }),
+            },
+          ];
+        }
+
         // Record the move in the container's marker BEFORE touching the
         // settings, because the marker is what survives a restart and the
         // settings are not. Startup re-resolves the root every launch; an
@@ -206,6 +229,7 @@ export function LibraryMigrationDialog({
             ...report,
             leftBehind: [
               ...report.leftBehind,
+              ...unaccounted,
               ...sidecarScan.unreadable.map((name) => ({
                 name,
                 reason: t("settings.libraryMoveSidecarUnreadable"),

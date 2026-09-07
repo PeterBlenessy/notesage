@@ -7,6 +7,7 @@ import { join, dirname } from "node:path";
 import {
   planLibraryMigration,
   runLibraryMigration,
+  unaccountedInOldRoot,
   type MigrationDeps,
   type MigrationListing,
 } from "@/lib/library-migration";
@@ -334,5 +335,61 @@ describe("rehearsal: the migration against a real filesystem", () => {
     for (const p of [...projects, ...documents]) {
       expect(existsSync(p), `${p} does not exist after the rewrite`).toBe(true);
     }
+  });
+
+  it("notices a file that arrived after the plan was made", async () => {
+    // The plan is built when the dialog opens and run when the user confirms.
+    // Anything that lands in between is in no step at all, so it is neither
+    // moved nor reported — stranded in silence, which is the one thing worse
+    // than a partial migration.
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, "planned.md"), "planned");
+    mkdirSync(newRoot, { recursive: true });
+
+    const plan = planLibraryMigration(listing(oldRoot), listing(newRoot));
+    // …the user reads the confirmation, and meanwhile iCloud delivers this:
+    write(join(oldRoot, "arrived-late.md"), "late");
+    const report = await runLibraryMigration(plan, oldRoot, newRoot, realDeps());
+
+    expect(report.failed).toEqual([]);
+    const unaccounted = unaccountedInOldRoot(listing(oldRoot).entries, report);
+    expect(unaccounted.map((u) => u.name)).toEqual(["arrived-late.md"]);
+    // And it is still on disk, unharmed.
+    expect(readFileSync(join(oldRoot, "arrived-late.md"), "utf8")).toBe("late");
+  });
+
+  it("counts a stranded placeholder as explained, not as an anomaly", async () => {
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, ".holiday.md.icloud"), "");
+    write(join(oldRoot, "real.md"), "real");
+    mkdirSync(newRoot, { recursive: true });
+
+    const { report } = await migrate(oldRoot, newRoot);
+    const unaccounted = unaccountedInOldRoot(listing(oldRoot).entries, report);
+    expect(unaccounted, "the report already names it, so it is not an anomaly").toEqual([]);
+  });
+
+  it("counts a failed step's source as explained", async () => {
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, "a.md"), "a");
+    write(join(oldRoot, "b.md"), "b");
+    mkdirSync(newRoot, { recursive: true });
+
+    const { report } = await migrate(
+      oldRoot,
+      newRoot,
+      realDeps({
+        moveEntry: async (src, dst) => {
+          if (src.endsWith("b.md")) throw new Error("iCloud went away");
+          mkdirSync(dirname(dst), { recursive: true });
+          renameSync(src, dst);
+          return dst;
+        },
+      }),
+    );
+    expect(unaccountedInOldRoot(listing(oldRoot).entries, report)).toEqual([]);
   });
 });

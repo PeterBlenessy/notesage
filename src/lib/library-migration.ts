@@ -438,6 +438,46 @@ export async function runLibraryMigration(
   return report;
 }
 
+/**
+ * What is still sitting in the old root that nothing accounts for.
+ *
+ * The report is what the RUNNER believes happened; until now nothing checked
+ * that belief against the disk. For a feature whose whole promise is "your
+ * files are all over there now", a belief is not enough — a step can report
+ * success and leave something behind, and the plan itself is built before the
+ * user confirms, so anything that arrives in the window between planning and
+ * running is in no step at all and would be stranded in silence.
+ *
+ * Everything explained is subtracted: ignorable debris, the entries the plan
+ * deliberately left, the sources of steps that failed and are named already,
+ * and `.notesage` — whose files are merged or dropped by design, leaving a
+ * husk. Whatever remains is surfaced, because the one thing worse than a
+ * partial migration is a partial migration reported as complete.
+ */
+export function unaccountedInOldRoot(
+  remaining: FileEntry[],
+  report: Pick<MigrationReport, "leftBehind" | "failed">,
+): { name: string; reason: string }[] {
+  const explained = new Set<string>([".notesage", "Inbox"]);
+  for (const left of report.leftBehind) explained.add(left.name.split("/")[0]);
+  for (const failure of report.failed) explained.add(failure.step.from.split("/")[0]);
+
+  const out: { name: string; reason: string }[] = [];
+  for (const entry of remaining) {
+    if (IGNORED.has(entry.name)) continue;
+    // An evicted file is reported under the name it stands for, so compare
+    // that form too or every stranded placeholder reads as unaccounted.
+    const evicted = EVICTED.exec(entry.name);
+    const reported = evicted ? evicted[1] : entry.name;
+    if (explained.has(entry.name) || explained.has(reported)) continue;
+    out.push({
+      name: reported,
+      reason: `still in the old folder — it was not moved, and nothing explains why`,
+    });
+  }
+  return out;
+}
+
 /*
  * There is deliberately no "remove the old root" here.
  *
