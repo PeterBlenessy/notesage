@@ -28,6 +28,7 @@ import {
 } from "@/lib/library-migration-run";
 import { applyPathRewrites, planPathRewrites } from "@/lib/library-migration-paths";
 import { executeRenameTransaction } from "@/lib/rename-transaction";
+import { applyProjectMoved } from "@/lib/project-moved";
 import { lockLibraryRoots, unlockLibraryRoots } from "@/lib/library-lock";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -165,22 +166,19 @@ export function LibraryMigrationDialog({
             // — which is the "my notes are gone" moment this whole feature has
             // to avoid. `migrateProjectPath` has always done it this way for a
             // single project.
-            updateProjectPath: async (from, to) => {
-              // A failed re-read is the empty-tree bug again, one project at a
-              // time — so it is recorded rather than swallowed. The path still
-              // updates: pointing at the right place with a stale tree beats
-              // pointing at a folder that is no longer there.
-              let tree: Awaited<ReturnType<typeof tauriApi.listDirectory>> = [];
-              try {
-                tree = await tauriApi.listDirectory(
-                  to,
-                  useSettingsStore.getState().showHiddenFiles,
-                );
-              } catch (err) {
-                treeReadFailures.push(`${to}: ${String(err)}`);
-              }
-              ws.updateProjectPath(from, to, tree);
-            },
+            // The SAME bookkeeping the per-project sync uses. It used to be
+            // a second implementation here, and the copy was missing the
+            // project-metadata re-key — so every migrated project kept its
+            // metadata keyed to the old path and its AI lock silently stopped
+            // enforcing until the next launch. Writes go through the
+            // migration's own entry points because the roots are locked.
+            updateProjectPath: (from, to) =>
+              applyProjectMoved(from, to, {
+                listDirectory: (path) =>
+                  tauriApi.listDirectory(path, useSettingsStore.getState().showHiddenFiles),
+                writeFile: (path, content) => tauriApi.migrationWriteFile(path, content),
+                onTreeReadFailure: (path, err) => treeReadFailures.push(`${path}: ${String(err)}`),
+              }),
             renameOpenDocument: (from, to) => editor.renameOpenDocument(from, to),
             updateFilePaths: (fromPrefix, toPrefix) => ws.updateFilePaths(fromPrefix, toPrefix),
             migrateSidecars: (inputs) =>
