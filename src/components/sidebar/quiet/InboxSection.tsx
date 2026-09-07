@@ -12,13 +12,18 @@ import { cn } from "@/lib/utils";
  * count — items never opened on any device — read from the shared sidecar.
  * Choosing it switches the document column into the Inbox view.
  *
- * Hidden while the library root is unknown (startup) and when the folder
- * has never received a capture: a row for an empty Inbox at the top of every
- * sidebar would be the same clutter an empty Pinned section was.
+ * Hidden ONLY while the library root is unknown (startup). An empty Inbox
+ * still shows its row: it was hidden until it had items, by analogy with the
+ * empty Pinned section, and that analogy was wrong. Pinned is a list of
+ * things you chose, so with nothing chosen there is nothing to name; the
+ * Inbox is a PLACE — the one the phone shares into — and a place that only
+ * appears once something is already in it cannot be checked, cannot be
+ * learned, and reads as missing rather than empty (Peter, 2026-09-07, on a
+ * Mac that had never received a capture). The phone shows it at zero for the
+ * same reason.
  */
 export function InboxSection({ filter = "" }: { filter?: string }) {
   const open = useInboxStore((s) => s.open);
-  const hasItems = useInboxStore((s) => s.items.length > 0);
   const dir = useInboxStore((s) => s.dir);
   const unread = useInboxStore((s) => s.unreadCount());
   const load = useInboxStore((s) => s.load);
@@ -37,7 +42,6 @@ export function InboxSection({ filter = "" }: { filter?: string }) {
   }, [homeDir, notesRootPath, icloudNotesagePath, load]);
 
   if (!dir) return null;
-  if (!hasItems && !open) return null;
   if (filter && !INBOX_FOLDER_NAME.toLowerCase().includes(filter.toLowerCase())) return null;
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {

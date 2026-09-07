@@ -42,16 +42,24 @@ describe("InboxSection (sidebar row)", () => {
     await waitFor(() => expect(row.getAttribute("aria-current")).toBe("page"));
   });
 
-  it("stays hidden while the home directory is unknown or the Inbox is empty", async () => {
+  it("stays hidden only while the home directory is unknown", async () => {
     useSettingsStore.setState({ homeDir: null });
-    const { unmount } = renderWithProviders(<InboxSection />);
+    renderWithProviders(<InboxSection />);
     expect(screen.queryByTestId("inbox-row")).toBeNull();
-    unmount();
+  });
+
+  it("shows the row for an empty Inbox — it is a place, not a list", async () => {
+    // It used to appear only once it had items, which meant a Mac that had
+    // never received a capture had no Inbox at all: nothing to check, nothing
+    // to learn, and indistinguishable from a broken feature (Peter,
+    // 2026-09-07). The phone shows it at zero for the same reason.
     useSettingsStore.setState({ homeDir: "/Users/peter" });
     setMockInvokeHandler("list_files_shallow", () => []);
     renderWithProviders(<InboxSection />);
     await waitFor(() => expect(useInboxStore.getState().dir).toBe(INBOX));
-    expect(screen.queryByTestId("inbox-row")).toBeNull();
+    expect(await screen.findByTestId("inbox-row")).toBeTruthy();
+    // No badge, though: an unread count of zero is noise.
+    expect(screen.queryByTestId("inbox-unread")).toBeNull();
   });
 
   it("only lists — the folder watch and the change listener live in useInboxArrivals (App root)", async () => {

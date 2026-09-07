@@ -24,10 +24,30 @@ adds selection, keyboard, and drag-to-project.
   Inbox itself, since that changes nothing the store could watch — v0.56.0
   left the list up in that case). The reader pill's "‹ Inbox" (or ⌘⇧I)
   returns to it.
-- **The sidebar row.** `InboxSection` sits above Pinned, shown once the root
-  is known and the folder has ever received something. Its badge is the
-  unread count. The row only lists and renders — the first listing once the
-  root resolves, then whatever the store holds.
+- **The sidebar row.** `InboxSection` sits above Pinned, shown as soon as the
+  library root is known — including when the folder is empty. It used to
+  appear only once the folder had items, by analogy with the empty Pinned
+  section, and the analogy was wrong: Pinned is a list of things you chose,
+  so with nothing chosen there is nothing to name, whereas the Inbox is a
+  PLACE — the one the phone shares into — and a place that only exists once
+  something is in it cannot be checked or learned, and reads as missing
+  rather than empty (Peter, 2026-09-07, on a Mac that had never received a
+  capture). Its badge is the unread count. The row only lists and renders —
+  the first listing once the root resolves, then whatever the store holds.
+- **The Recordings row, under it.** `RecordingsSection` + `RecordingsView`
+  (`src/components/recordings/`) are the same idea for
+  `<library root>/Recordings`: the bundles this Mac and the phone recorded,
+  with the transcript, a re-run, "move to project" and Reveal. Before it,
+  Recordings had no desktop surface at all — a bundle appeared as a card in
+  the agent orb while its transcription ran and then vanished, so a run that
+  FAILED could not be reached in the app at all. The badge counts failed
+  bundles rather than all of them: recordings transcribe and file themselves,
+  so a standing total would never reach zero and would never mean anything,
+  while a failure is the one state that wants a decision. The store is
+  read-only over the folder — `useRecordingsInbox` still owns dispatch and
+  every manifest write, and two writers on one manifest is the race that file
+  exists to avoid. Inbox and Recordings are both modes of the document
+  column, so opening either closes the other.
 - **The folder watch and "New in Inbox".** `useInboxArrivals`
   (`src/hooks/useInboxArrivals.ts`, mounted in `App.tsx`) watches `Inbox/`
   and reloads the listing on any change under it (not its `.notesage/`
@@ -192,6 +212,9 @@ open (no-ops otherwise). See `docs/keyboard-shortcuts.md`.
 | `src/components/inbox/useInboxActions.ts` | The triage verbs |
 | `src/components/inbox/pill-leading-context.tsx` | The pill's leading slot |
 | `src/components/sidebar/quiet/InboxSection.tsx` | Sidebar row + badge (first listing; no watcher) |
+| `src/components/sidebar/quiet/RecordingsSection.tsx` | Recordings row + failed badge |
+| `src/components/recordings/RecordingsView.tsx` | Recordings list: transcript, re-run, move to project, Reveal |
+| `src/stores/recordings-store.ts` | Read-only listing of `<library root>/Recordings` |
 | `src/hooks/useInboxArrivals.ts` | Always-mounted folder watch + "New in Inbox" notification + click-to-open |
 | `src/lib/reading-progress-file.ts` | Sidecar format, parse / merge |
 | `src/lib/inbox-progress-sync.ts` | The phone's write-through |

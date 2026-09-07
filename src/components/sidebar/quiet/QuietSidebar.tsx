@@ -33,6 +33,7 @@ import { RecentSection } from "./RecentSection";
 import { TagsSection } from "./TagsSection";
 import { MentionsSection } from "./MentionsSection";
 import { InboxSection } from "@/components/sidebar/quiet/InboxSection";
+import { RecordingsSection } from "@/components/sidebar/quiet/RecordingsSection";
 import { t } from "@/lib/i18n";
 
 /**
@@ -242,6 +243,7 @@ export function QuietSidebar({
       <div className="flex flex-col gap-4 min-h-0 flex-1 overflow-y-auto -mr-2 pr-2">
         {filter.length > 0 && <FilterBadge filter={filter} onClear={() => setFilter("")} />}
         <InboxSection filter={filter} />
+        <RecordingsSection filter={filter} />
     <PinnedSection filter={filter} />
         <ProjectsSection filter={filter} onAdd={handleAddProject} />
         {/* Sidebar-simplification task #10 — Folders section sits
