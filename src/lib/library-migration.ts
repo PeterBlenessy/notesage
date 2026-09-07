@@ -305,6 +305,29 @@ export interface MigrationReport {
    * `merge-folder` decides its children's names while it runs.
    */
   renames: { from: string; to: string }[];
+  /**
+   * EVERY relocation this run performed, as `from` → `to` relative to the two
+   * roots — not only the renamed ones.
+   *
+   * `renames` answers "where did the path rewriter need to look?"; this
+   * answers "what would it take to put everything back?". They differ exactly
+   * where it matters: a `merge-folder` moves its children one at a time into
+   * a folder the destination already had, and a child that did NOT collide is
+   * absent from `renames`. An undo built on `renames` alone could not tell
+   * which files in the merged folder came from the old root, so it would take
+   * back too few — or, guessing, too many.
+   */
+  moves: { from: string; to: string }[];
+  /**
+   * Content the run destroyed at the DESTINATION, so an undo can restore it.
+   *
+   * The merges read the destination, write a merged result and delete the
+   * source: the destination's own prior copy is gone. `drop` deletes outright.
+   * These are pins, read state and per-device settings — kilobytes, whatever
+   * the library's size — so they are kept rather than declared unrecoverable.
+   * `content: null` means there was nothing there before.
+   */
+  destroyed: { path: string; content: string | null }[];
 }
 
 /**
@@ -329,6 +352,8 @@ export async function runLibraryMigration(
     leftBehind: [...plan.leftBehind],
     failed: [],
     renames: [],
+    moves: [],
+    destroyed: [],
   };
 
   let done = 0;
@@ -345,12 +370,20 @@ export async function runLibraryMigration(
       }
       switch (step.kind) {
         case "drop":
+          // Kept so an undo can put it back: `sync-settings.json` is
+          // per-device and deliberately not carried across, but "deliberately"
+          // is not the same as "unrecoverable".
+          report.destroyed.push({ path: step.from, content: await deps.readFile(from).catch(() => null) });
           await deps.deletePath(from);
           break;
         case "merge-reading-progress":
         case "merge-pins": {
           const mine = to && (await deps.exists(to)) ? await deps.readFile(to) : null;
           const theirs = await deps.readFile(from);
+          // The destination's own copy is about to be overwritten by the
+          // merged result. Recorded before that happens, or an undo can
+          // restore where the source went but not what was already there.
+          if (step.to) report.destroyed.push({ path: step.to, content: mine });
           const merged =
             step.kind === "merge-pins"
               ? deps.mergePins(mine, theirs)
@@ -394,6 +427,8 @@ export async function runLibraryMigration(
             const target = dedupeName(name, taken);
             taken.add(target);
             await deps.moveEntry(`${from}/${name}`, `${to}/${target}`);
+            // Every child, not only the renamed ones — see `moves`.
+            report.moves.push({ from: `${step.from}/${name}`, to: `${step.to}/${target}` });
             if (target !== name) {
               report.renames.push({ from: `${step.from}/${name}`, to: `${step.to}/${target}` });
             }
@@ -414,6 +449,7 @@ export async function runLibraryMigration(
         default: {
           if (!to) break;
           await deps.moveEntry(from, to);
+          if (step.to) report.moves.push({ from: step.from, to: step.to });
           if (step.to && step.to !== step.from) {
             report.renames.push({ from: step.from, to: step.to });
           }

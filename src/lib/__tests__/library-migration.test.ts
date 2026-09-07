@@ -425,6 +425,52 @@ describe("running the migration", () => {
     expect(report.failed.map((f) => f.error)).toContain("Error: disk full");
   });
 
+  it("records EVERY move, not only the renamed ones", async () => {
+    // `renames` answers "where must the path rewriter look?"; `moves` answers
+    // "what would it take to put everything back?". A merged folder's child
+    // that did not collide is absent from the first and essential to the
+    // second — without it an undo cannot tell which files in the merged
+    // folder came from the old root.
+    const plan = planLibraryMigration(
+      listing({ entries: [entry("Shared", true), entry("loose.md")] }),
+      listing({ entries: [entry("Shared", true)] }),
+    );
+    const report = await runLibraryMigration(plan, "/old", "/new", deps({
+      listNames: vi.fn(async (dir: string) => (dir.startsWith("/old") ? ["a.md", "b.md"] : ["a.md"])),
+    }));
+
+    expect(report.moves).toEqual([
+      { from: "Shared/a.md", to: "Shared/a-1.md" },
+      { from: "Shared/b.md", to: "Shared/b.md" },
+      { from: "loose.md", to: "loose.md" },
+    ]);
+    // Only the collision shows up as a rename.
+    expect(report.renames).toEqual([{ from: "Shared/a.md", to: "Shared/a-1.md" }]);
+  });
+
+  it("keeps what it destroyed at the destination, so an undo can restore it", async () => {
+    // The merges overwrite the destination's own copy and the drop deletes
+    // outright. Deliberate is not the same as unrecoverable.
+    const plan = planLibraryMigration(
+      listing({ entries: [entry(".notesage", true)], inbox: [entry(".notesage", true)] }),
+      listing(),
+    );
+    const report = await runLibraryMigration(plan, "/old", "/new", deps({
+      exists: vi.fn(async () => true),
+      readFile: vi.fn(async (p: string) => (p.startsWith("/new") ? "theirs" : "mine")),
+    }));
+
+    expect(report.destroyed).toContainEqual({ path: ".notesage/pins.json", content: "theirs" });
+    expect(report.destroyed).toContainEqual({
+      path: "Inbox/.notesage/reading-progress.json",
+      content: "theirs",
+    });
+    expect(report.destroyed).toContainEqual({
+      path: ".notesage/sync-settings.json",
+      content: "mine",
+    });
+  });
+
   it("treats a step whose source is gone as already done", async () => {
     // What makes a run resumable: re-planning after an interruption yields
     // steps that were already carried out, and they must be no-ops rather
