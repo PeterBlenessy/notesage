@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, statSync } from "node:fs";
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, renameSync, statSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 
@@ -12,6 +12,7 @@ import {
   type MigrationListing,
 } from "@/lib/library-migration";
 import { planPathRewrites, applyPathRewrites } from "@/lib/library-migration-paths";
+import { undoLibraryMigration, undoRecordFor } from "@/lib/library-migration-undo";
 import type { FileEntry } from "@/lib/tauri";
 
 /**
@@ -465,5 +466,150 @@ describe("rehearsal: the migration against a real filesystem", () => {
       readFileSync(join(newRoot, "Inbox", ".notesage", "reading-progress.json"), "utf8"),
     ) as { items: Record<string, unknown> };
     expect(Object.keys(progress.items)).toEqual(["a.html"]);
+  });
+
+  it("puts a whole migration back, byte for byte", async () => {
+    // The property that matters: after migrate-then-undo the old root is
+    // indistinguishable from how it started.
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, "Welcome.md"), "# Welcome\n");
+    write(join(oldRoot, "Research", ".notesage", "project.json"), "{}");
+    write(join(oldRoot, "Research", "paper.md"), "# Paper\n");
+    write(join(oldRoot, "Research", "deep", "nested.md"), "nested\n");
+    write(join(oldRoot, "Inbox", "a.html"), "<h1>a</h1>");
+    write(join(oldRoot, ".notesage", "pins.json"), JSON.stringify({ pins: ["Welcome.md"] }));
+    write(join(oldRoot, ".notesage", "sync-settings.json"), JSON.stringify({ device: "mac" }));
+    mkdirSync(newRoot, { recursive: true });
+
+    const before = snapshot(oldRoot);
+    const { report } = await migrate(oldRoot, newRoot);
+    expect(report.failed).toEqual([]);
+    expect(snapshot(oldRoot)).not.toEqual(before); // it really did move
+
+    const undone = await undoLibraryMigration(
+      undoRecordFor("m1", oldRoot, newRoot, report),
+      realDeps(),
+    );
+
+    expect(undone.failed).toEqual([]);
+    expect(snapshot(oldRoot)).toEqual(before);
+  });
+
+  it("takes a merged folder's children back without taking the destination's", async () => {
+    // The case `renames` alone could not express. `Shared` exists on both
+    // sides; only the children that came from the old root may go home.
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, "Shared", "mine.md"), "mine");
+    write(join(oldRoot, "Shared", "both.md"), "mac version");
+    write(join(newRoot, "Shared", "theirs.md"), "theirs");
+    write(join(newRoot, "Shared", "both.md"), "phone version");
+
+    const beforeOld = snapshot(oldRoot);
+    const { report } = await migrate(oldRoot, newRoot);
+    const undone = await undoLibraryMigration(
+      undoRecordFor("m2", oldRoot, newRoot, report),
+      realDeps(),
+    );
+
+    expect(undone.failed).toEqual([]);
+    expect(snapshot(oldRoot)).toEqual(beforeOld);
+    // The phone's files stayed where they were, both of them.
+    expect(snapshot(join(newRoot, "Shared"))).toEqual({
+      "theirs.md": "theirs",
+      "both.md": "phone version",
+    });
+  });
+
+  it("restores what a merge overwrote at the destination", async () => {
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, ".notesage", "pins.json"), JSON.stringify({ pins: ["mac.md"] }));
+    write(join(newRoot, ".notesage", "pins.json"), JSON.stringify({ pins: ["phone.md"] }));
+
+    const { report } = await migrate(oldRoot, newRoot);
+    // The merge unioned them.
+    expect(
+      JSON.parse(readFileSync(join(newRoot, ".notesage", "pins.json"), "utf8")).pins,
+    ).toEqual(["mac.md", "phone.md"]);
+
+    await undoLibraryMigration(undoRecordFor("m3", oldRoot, newRoot, report), realDeps());
+
+    // …and the undo gave the container its own back.
+    expect(
+      JSON.parse(readFileSync(join(newRoot, ".notesage", "pins.json"), "utf8")).pins,
+    ).toEqual(["phone.md"]);
+    expect(JSON.parse(readFileSync(join(oldRoot, ".notesage", "pins.json"), "utf8")).pins).toEqual([
+      "mac.md",
+    ]);
+  });
+
+  it("removes a merged file the destination never had", async () => {
+    // `content: null` means nothing was there before. Leaving the merged
+    // result would be the migration's output surviving its own undo.
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, ".notesage", "pins.json"), JSON.stringify({ pins: ["mac.md"] }));
+    mkdirSync(newRoot, { recursive: true });
+
+    const { report } = await migrate(oldRoot, newRoot);
+    expect(existsSync(join(newRoot, ".notesage", "pins.json"))).toBe(true);
+
+    await undoLibraryMigration(undoRecordFor("m4", oldRoot, newRoot, report), realDeps());
+
+    expect(existsSync(join(newRoot, ".notesage", "pins.json"))).toBe(false);
+    expect(existsSync(join(oldRoot, ".notesage", "pins.json"))).toBe(true);
+  });
+
+  it("can be re-run after an interrupted undo", async () => {
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, "a.md"), "a");
+    write(join(oldRoot, "b.md"), "b");
+    mkdirSync(newRoot, { recursive: true });
+
+    const { report } = await migrate(oldRoot, newRoot);
+    const record = undoRecordFor("m5", oldRoot, newRoot, report);
+
+    let n = 0;
+    await undoLibraryMigration(
+      record,
+      realDeps({
+        moveEntry: async (src, dst) => {
+          if (n++ >= 1) throw new Error("interrupted");
+          renameSync(src, dst);
+          return dst;
+        },
+      }),
+    );
+    const second = await undoLibraryMigration(record, realDeps());
+
+    expect(second.failed).toEqual([]);
+    expect(snapshot(oldRoot)).toEqual({ "a.md": "a", "b.md": "b" });
+  });
+
+  it("keeps every file's dates through a migration", async () => {
+    // `rename` preserves them because it is the same inode. Measured rather
+    // than assumed, because the failure is silent: the bytes verify, no step
+    // fails, and the whole library quietly reads as modified today — which is
+    // what Notesage sorts and groups by.
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, "old.md"), "ancient");
+    write(join(oldRoot, "Project", ".notesage", "project.json"), "{}");
+    write(join(oldRoot, "Project", "note.md"), "also ancient");
+    mkdirSync(newRoot, { recursive: true });
+
+    const past = new Date("2020-01-01T12:00:00Z");
+    utimesSync(join(oldRoot, "old.md"), past, past);
+    utimesSync(join(oldRoot, "Project", "note.md"), past, past);
+
+    const { report } = await migrate(oldRoot, newRoot);
+    expect(report.failed).toEqual([]);
+
+    for (const rel of ["old.md", "Project/note.md"]) {
+      expect(statSync(join(newRoot, rel)).mtime.getTime()).toBe(past.getTime());
+    }
   });
 });

@@ -319,15 +319,22 @@ export interface MigrationReport {
    */
   moves: { from: string; to: string }[];
   /**
-   * Content the run destroyed at the DESTINATION, so an undo can restore it.
+   * Content the run destroyed, so an undo can restore it — on BOTH sides.
    *
-   * The merges read the destination, write a merged result and delete the
-   * source: the destination's own prior copy is gone. `drop` deletes outright.
-   * These are pins, read state and per-device settings — kilobytes, whatever
-   * the library's size — so they are kept rather than declared unrecoverable.
-   * `content: null` means there was nothing there before.
+   * A merge reads the destination, writes a merged result over it, and
+   * deletes the source. That destroys two things, at two different roots: the
+   * destination's own prior copy, and the source file itself. Recording only
+   * the first is a half-undo that silently loses the old library's pins and
+   * read state, which is why `root` is part of the record rather than
+   * inferred from the path. `drop` destroys one thing, at the old root.
+   *
+   * `content: null` means nothing was there before, so the undo removes what
+   * the migration put there rather than restoring anything.
+   *
+   * Pins, read state and per-device settings — kilobytes whatever the
+   * library's size, so they are kept rather than declared unrecoverable.
    */
-  destroyed: { path: string; content: string | null }[];
+  destroyed: { root: "old" | "new"; path: string; content: string | null }[];
 }
 
 /**
@@ -373,17 +380,23 @@ export async function runLibraryMigration(
           // Kept so an undo can put it back: `sync-settings.json` is
           // per-device and deliberately not carried across, but "deliberately"
           // is not the same as "unrecoverable".
-          report.destroyed.push({ path: step.from, content: await deps.readFile(from).catch(() => null) });
+          report.destroyed.push({
+            root: "old",
+            path: step.from,
+            content: await deps.readFile(from).catch(() => null),
+          });
           await deps.deletePath(from);
           break;
         case "merge-reading-progress":
         case "merge-pins": {
           const mine = to && (await deps.exists(to)) ? await deps.readFile(to) : null;
           const theirs = await deps.readFile(from);
-          // The destination's own copy is about to be overwritten by the
-          // merged result. Recorded before that happens, or an undo can
-          // restore where the source went but not what was already there.
-          if (step.to) report.destroyed.push({ path: step.to, content: mine });
+          // BOTH sides are about to be destroyed: the destination's own copy
+          // by the merged result written over it, and the source by the
+          // delete below. Recording only the destination is a half-undo that
+          // loses the old library's own pins and read state.
+          if (step.to) report.destroyed.push({ root: "new", path: step.to, content: mine });
+          report.destroyed.push({ root: "old", path: step.from, content: theirs });
           const merged =
             step.kind === "merge-pins"
               ? deps.mergePins(mine, theirs)

@@ -448,9 +448,12 @@ describe("running the migration", () => {
     expect(report.renames).toEqual([{ from: "Shared/a.md", to: "Shared/a-1.md" }]);
   });
 
-  it("keeps what it destroyed at the destination, so an undo can restore it", async () => {
-    // The merges overwrite the destination's own copy and the drop deletes
-    // outright. Deliberate is not the same as unrecoverable.
+  it("keeps what it destroyed on BOTH sides, so an undo can restore it", async () => {
+    // A merge destroys two things at two different roots: the destination's
+    // own copy, overwritten by the merged result, and the source, deleted
+    // after. Recording only the destination is a half-undo that silently
+    // loses the old library's pins and read state — which is why the root is
+    // part of the record rather than inferred from the path.
     const plan = planLibraryMigration(
       listing({ entries: [entry(".notesage", true)], inbox: [entry(".notesage", true)] }),
       listing(),
@@ -460,12 +463,26 @@ describe("running the migration", () => {
       readFile: vi.fn(async (p: string) => (p.startsWith("/new") ? "theirs" : "mine")),
     }));
 
-    expect(report.destroyed).toContainEqual({ path: ".notesage/pins.json", content: "theirs" });
+    // The destination's prior copy…
     expect(report.destroyed).toContainEqual({
+      root: "new",
+      path: ".notesage/pins.json",
+      content: "theirs",
+    });
+    // …and the source that was deleted after the merge.
+    expect(report.destroyed).toContainEqual({
+      root: "old",
+      path: ".notesage/pins.json",
+      content: "mine",
+    });
+    expect(report.destroyed).toContainEqual({
+      root: "new",
       path: "Inbox/.notesage/reading-progress.json",
       content: "theirs",
     });
+    // The drop only ever destroys at the old root.
     expect(report.destroyed).toContainEqual({
+      root: "old",
       path: ".notesage/sync-settings.json",
       content: "mine",
     });
