@@ -26,17 +26,10 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Native navigation is now how the app navigates — no switch, nothing to turn on.
-
-NEW
-• Home, folders and documents live in a real iOS navigation stack: the system's own back gesture, with the list moving behind the article as you swipe it away.
-• The screen is taller. The list was reserving room for a title row that the navigation bar already provides, which cost it a row everywhere.
+A layout fix on top of build 57.
 
 FIXED
-• The read-aloud player stayed hidden when you started listening inside a document.
-• Section headings ("Recent", "All notes") stuck under the title bar instead of below it while scrolling.
+• Section headings ("Recent", "All notes") now sit right under the title bar instead of a row too low — and no longer slide over the first article in their own group.
 
 TRY
-• Open a folder, then a document, then swipe in from the left edge — stop halfway and let go, twice.
-• Start Listen from inside an article and check the player is there.
-• Scroll a long list and watch where the section heading parks.
+• Open the Inbox, scroll, and watch where the heading parks.

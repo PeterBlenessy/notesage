@@ -25,17 +25,10 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Inbyggd navigering är nu hur appen navigerar — ingen inställning, inget att slå på.
-
-NYTT
-• Hem, mappar och dokument ligger i en riktig iOS-navigationsstack: systemets egen bakåtgest, med listan som rör sig bakom artikeln när du sveper bort den.
-• Skärmen är högre. Listan reserverade plats för en titelrad som navigationsfältet redan ger, vilket kostade den en rad överallt.
+En layoutfix ovanpå bygge 57.
 
 FIXAT
-• Uppläsningsspelaren syntes inte när man startade lyssning inuti ett dokument.
-• Avsnittsrubriker ("Senaste", "Alla anteckningar") fastnade under titelfältet i stället för under det vid rullning.
+• Avsnittsrubriker ("Senaste", "Alla anteckningar") ligger nu direkt under titelfältet i stället för en rad för långt ner — och glider inte längre över den första artikeln i sin egen grupp.
 
 PROVA
-• Öppna en mapp, sedan ett dokument, och svep in från vänsterkanten — stanna halvvägs och släpp, två gånger.
-• Starta Lyssna inifrån en artikel och kolla att spelaren finns där.
-• Rulla en lång lista och se var avsnittsrubriken parkerar.
+• Öppna Inkorgen, rulla, och se var rubriken parkerar.
