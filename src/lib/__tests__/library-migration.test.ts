@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import {
   dedupeName,
-  oldRootIsEmpty,
   planLibraryMigration,
   runLibraryMigration,
   type MigrationDeps,
@@ -102,9 +101,10 @@ describe("planning the library migration (2026-09-06)", () => {
     expect(plan.steps).toEqual([]);
   });
 
-  it("never deletes anything before its destination exists", () => {
-    // The invariant the whole design rests on. A drop is the one exception,
-    // and it is a file deliberately not carried across.
+  it("plans no step that lacks a destination", () => {
+    // A weaker claim than it used to make. This checks the PLAN; the runner's
+    // write-before-delete ordering, which is the actual invariant, is
+    // asserted against the runner in "running the migration" below.
     const plan = planLibraryMigration(
       listing({
         entries: [entry(".notesage", true), entry("A", true), entry("loose.md")],
@@ -364,6 +364,67 @@ describe("running the migration", () => {
     expect(report.failed).toHaveLength(1);
     expect(report.failed[0].error).toContain("iCloud is not responding");
   });
+  it("writes the destination before deleting the source, on every merge", async () => {
+    // THE invariant, asserted where it lives. The previous test of this name
+    // only checked that planned steps carried a `to`, so it would have passed
+    // unchanged if the runner deleted every source before writing anything.
+    // A merge is the case that matters: it is the only step that reads two
+    // files, writes one and removes the other, so a wrong order destroys the
+    // source with nothing at the destination.
+    const calls: string[] = [];
+    const plan = planLibraryMigration(
+      listing({ entries: [entry(".notesage", true)], inbox: [entry(".notesage", true)] }),
+      listing(),
+    );
+    await runLibraryMigration(plan, "/old", "/new", deps({
+      exists: vi.fn(async () => true),
+      readFile: vi.fn(async () => "{}"),
+      writeFile: vi.fn(async (path: string) => {
+        calls.push(`write ${path}`);
+      }),
+      deletePath: vi.fn(async (path: string) => {
+        calls.push(`delete ${path}`);
+      }),
+    }));
+
+    const writes = calls.filter((c) => c.startsWith("write"));
+    expect(writes.length, "the merges must have written").toBeGreaterThan(0);
+    for (const write of writes) {
+      const target = write.slice("write ".length);
+      const source = `delete ${target.replace("/new/", "/old/")}`;
+      const deleteIndex = calls.indexOf(source);
+      if (deleteIndex === -1) continue;
+      expect(
+        calls.indexOf(write),
+        `${target} was deleted from the old root before it was written to the new one`,
+      ).toBeLessThan(deleteIndex);
+    }
+  });
+
+  it("does not delete the source when the destination write fails", async () => {
+    // The other half: an exception between the write and the delete must
+    // leave the source intact, so a re-run can still find it.
+    const deleted: string[] = [];
+    const plan = planLibraryMigration(listing({ entries: [entry(".notesage", true)] }), listing());
+    const report = await runLibraryMigration(plan, "/old", "/new", deps({
+      exists: vi.fn(async () => true),
+      readFile: vi.fn(async () => "{}"),
+      writeFile: vi.fn(async () => {
+        throw new Error("disk full");
+      }),
+      deletePath: vi.fn(async (path: string) => {
+        deleted.push(path);
+      }),
+    }));
+    // `sync-settings.json` is the `drop` step and is MEANT to go — it is
+    // per-device and deliberately not carried across. What must survive is
+    // the file the failed merge was reading.
+    expect(deleted, "the merged file's source must survive a failed write").not.toContain(
+      "/old/.notesage/pins.json",
+    );
+    expect(report.failed.map((f) => f.error)).toContain("Error: disk full");
+  });
+
   it("treats a step whose source is gone as already done", async () => {
     // What makes a run resumable: re-planning after an interruption yields
     // steps that were already carried out, and they must be no-ops rather
@@ -479,10 +540,3 @@ describe("running the migration", () => {
   });
 });
 
-describe("removing the old root", () => {
-  it("is empty when only debris remains, and not otherwise", () => {
-    expect(oldRootIsEmpty([entry(".DS_Store")])).toBe(true);
-    expect(oldRootIsEmpty([])).toBe(true);
-    expect(oldRootIsEmpty([entry(".DS_Store"), entry("Leftover", true)])).toBe(false);
-  });
-});

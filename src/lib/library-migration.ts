@@ -438,10 +438,17 @@ export async function runLibraryMigration(
   return report;
 }
 
-/** Is the old root safe to remove? Only when nothing but ignorable debris
- *  remains — never a blind delete of whatever did not move. */
-export function oldRootIsEmpty(entries: FileEntry[]): boolean {
-  return entries.every((e) => IGNORED.has(e.name));
-}
+/*
+ * There is deliberately no "remove the old root" here.
+ *
+ * An `oldRootIsEmpty` helper used to sit at this spot, exported and tested
+ * and called by nothing — which read as implemented behaviour to anyone
+ * skimming, and invited wiring it up. The old CloudDocs folder is KEPT: a
+ * migration can leave things behind (an undownloaded file, a step that
+ * failed), `resolveSyncedLibraryRoot` follows the marker rather than the
+ * directories so a leftover folder costs nothing, and deleting a root this
+ * feature has just finished writing to is the one action with no undo.
+ * Cleaning it up is the user's call, in Finder, once they can see both.
+ */
 
 export const MIGRATION_INTERNAL = { IGNORED, DROPPED_RELATIVE };
