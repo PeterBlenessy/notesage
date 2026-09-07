@@ -92,7 +92,22 @@ export function migrationDeps(): Omit<MigrationDeps, "onStep"> {
     readFile: (path) => tauriApi.readFile(path),
     // The migration-only entry points: these must work while the library
     // lock is held, which is exactly what the lock refuses to everyone else.
-    writeFile: (path, content) => tauriApi.migrationWriteFile(path, content),
+    //
+    // The parent directory is created first, because `write_file` does NOT
+    // create one — it is a bare `fs::write`. Every merge target lives in a
+    // dot-directory (`.notesage/pins.json`,
+    // `Inbox/.notesage/reading-progress.json`) that a destination need not
+    // have: a container the phone made without pinning anything has no
+    // `.notesage/` at all. Without this the pins merge and the read-state
+    // merge fail on a large share of real migrations, and the state they were
+    // merging stays behind. Found by driving the migration through the real
+    // app — the rehearsal's fake `writeFile` created parents, so it was
+    // kinder than the command it stood for and hid this completely.
+    writeFile: async (path, content) => {
+      const parent = path.slice(0, path.lastIndexOf("/"));
+      if (parent) await tauriApi.migrationCreateDirectory(parent).catch(() => {});
+      await tauriApi.migrationWriteFile(path, content);
+    },
     deletePath: (path) => tauriApi.migrationDeletePath(path),
     exists: (path) => tauriApi.pathExists(path),
     // Both devices have been writing this file, so it is merged by the

@@ -63,39 +63,59 @@ function snapshot(dir: string): Record<string, string> {
   return out;
 }
 
-/** Run the whole migration inside the app, against the two test roots. */
+/**
+ * Run the whole migration inside the app, against the two test roots.
+ *
+ * `executeAsync`, not `execute`: WebDriver's synchronous script execution
+ * returns a Promise as `null`, so an async body silently produces nothing.
+ * `helpers/actions.ts` documents the same trap for Tauri invokes.
+ */
 async function migrateInApp(from: string, to: string) {
-  return browser.execute(
-    async (oldR: string, newR: string) => {
+  const result = (await browser.executeAsync(
+    (oldR: string, newR: string, done: (r: unknown) => void) => {
       const w = window as unknown as { __E2E_LIBRARY_MIGRATION__: Record<string, any> };
       const m = w.__E2E_LIBRARY_MIGRATION__;
-      m.lockLibraryRoots([oldR, newR]);
-      try {
-        const [source, dest] = await Promise.all([
-          m.buildMigrationListing(oldR),
-          m.buildMigrationListing(newR),
-        ]);
-        const plan = m.planLibraryMigration(source, dest);
-        const report = await m.runLibraryMigration(plan, oldR, newR, m.migrationDeps());
-        await m.recordMigrationInMarker(newR, m.markerWriteDeps());
-        const remaining = await m.buildMigrationListing(oldR);
-        return {
-          steps: plan.steps.length,
-          moved: report.moved,
-          failed: report.failed.map((f: { error: string }) => f.error),
-          leftBehind: report.leftBehind.map((l: { name: string }) => l.name),
-          renames: report.renames,
-          unaccounted: m
-            .unaccountedInOldRoot(remaining.entries, report, remaining.inbox)
-            .map((u: { name: string }) => u.name),
-        };
-      } finally {
-        m.unlockLibraryRoots();
+      if (!m) {
+        done({ ok: false, error: "__E2E_LIBRARY_MIGRATION__ missing — not a dev build?" });
+        return;
       }
+      m.lockLibraryRoots([oldR, newR]);
+      void (async () => {
+        try {
+          const [source, dest] = await Promise.all([
+            m.buildMigrationListing(oldR),
+            m.buildMigrationListing(newR),
+          ]);
+          const plan = m.planLibraryMigration(source, dest);
+          const report = await m.runLibraryMigration(plan, oldR, newR, m.migrationDeps());
+          await m.recordMigrationInMarker(newR, m.markerWriteDeps());
+          const remaining = await m.buildMigrationListing(oldR);
+          done({
+            ok: true,
+            value: {
+              steps: plan.steps.length,
+              moved: report.moved,
+              failed: report.failed.map((f: { error: string }) => f.error),
+              leftBehind: report.leftBehind.map((l: { name: string }) => l.name),
+              renames: report.renames,
+              unaccounted: m
+                .unaccountedInOldRoot(remaining.entries, report, remaining.inbox)
+                .map((u: { name: string }) => u.name),
+            },
+          });
+        } catch (err) {
+          done({ ok: false, error: String(err) });
+        } finally {
+          m.unlockLibraryRoots();
+        }
+      })();
     },
     from,
     to,
-  );
+  )) as { ok: boolean; error?: string; value?: any };
+
+  if (!result.ok) throw new Error(`migration failed in the app: ${result.error}`);
+  return result.value;
 }
 
 describe("iCloud container migration, through the real app", () => {
@@ -127,10 +147,21 @@ describe("iCloud container migration, through the real app", () => {
 
     expect(result.failed).toEqual([]);
     const after = snapshot(newRoot);
+    // Documents must arrive byte for byte. The two sidecars are MERGED and
+    // re-serialised by design, so they are asserted on meaning below rather
+    // than on bytes, and `sync-settings.json` is deliberately dropped.
+    const merged = new Set([".notesage/pins.json", "Inbox/.notesage/reading-progress.json"]);
     for (const [rel, content] of Object.entries(before)) {
       if (rel === ".DS_Store" || rel === ".notesage/sync-settings.json") continue;
-      expect(after[rel], `${rel} did not survive the move`).toBe(content);
+      if (merged.has(rel)) {
+        expect(existsSync(join(newRoot, rel))).toBe(true);
+        continue;
+      }
+      expect(after[rel]).toBe(content);
     }
+    // The pins survived the merge, whatever shape the file took.
+    const pins = JSON.parse(readFileSync(join(newRoot, ".notesage", "pins.json"), "utf8"));
+    expect(pins.pins).toEqual(["Welcome.md"]);
     expect(result.unaccounted).toEqual([]);
     // The marker is what makes the move stick across a restart.
     const marker = JSON.parse(readFileSync(join(newRoot, ".notesage", "library.json"), "utf8"));
@@ -165,7 +196,7 @@ describe("iCloud container migration, through the real app", () => {
 
     const result = await migrateInApp(oldRoot, newRoot);
 
-    expect(existsSync(join(oldRoot, ".holiday.md.icloud")), "the stub must stay put").toBe(true);
+    expect(existsSync(join(oldRoot, ".holiday.md.icloud"))).toBe(true);
     expect(result.leftBehind).toContain("holiday.md");
     expect(readFileSync(join(newRoot, "real.md"), "utf8")).toBe("real");
     // The nested one is refused by the Rust walk, so the project does not move
@@ -182,7 +213,7 @@ describe("iCloud container migration, through the real app", () => {
 
     expect(result.failed).toEqual([]);
     expect(readFileSync(join(newRoot, "notes-1.md"), "utf8")).toBe("mac notes");
-    expect(existsSync(join(newRoot, "notes.md")), "the name stays free").toBe(false);
+    expect(existsSync(join(newRoot, "notes.md"))).toBe(false);
   });
 
   it("merges an Inbox and its read state rather than replacing either", async () => {
@@ -212,34 +243,31 @@ describe("iCloud container migration, through the real app", () => {
     write(join(oldRoot, "note.md"), "original");
     mkdirSync(newRoot, { recursive: true });
 
-    const refused = await browser.execute(
-      async (oldR: string, newR: string) => {
-        const w = window as unknown as {
-          __E2E_LIBRARY_MIGRATION__: Record<string, any>;
-          __TAURI_INTERNALS__?: unknown;
-        };
+    const refused = (await browser.executeAsync(
+      (oldR: string, newR: string, done: (r: unknown) => void) => {
+        const w = window as unknown as { __E2E_LIBRARY_MIGRATION__: Record<string, any> };
         const m = w.__E2E_LIBRARY_MIGRATION__;
         m.lockLibraryRoots([oldR, newR]);
-        try {
-          // What an autosave would do mid-migration. `write_file` CREATES a
-          // missing file, so unrefused this recreates a note at a root the
-          // app is abandoning, with the newest edit in it.
-          const { tauriApi } = await import("/src/lib/tauri.ts");
-          await tauriApi.writeFile(`${oldR}/note.md`, "an autosave mid-migration");
-          return "allowed";
-        } catch (err) {
-          return String(err);
-        } finally {
-          m.unlockLibraryRoots();
-        }
+        void (async () => {
+          try {
+            // What an autosave would do mid-migration. `write_file` CREATES a
+            // missing file, so unrefused this recreates a note at a root the
+            // app is abandoning, with the newest edit in it.
+            const mod = await import("/src/lib/tauri.ts");
+            await mod.tauriApi.writeFile(`${oldR}/note.md`, "an autosave mid-migration");
+            done("allowed");
+          } catch (err) {
+            done(String(err));
+          } finally {
+            m.unlockLibraryRoots();
+          }
+        })();
       },
       oldRoot,
       newRoot,
-    );
+    )) as string;
 
     expect(refused).toContain("being moved");
-    expect(readFileSync(join(oldRoot, "note.md"), "utf8"), "the file must be untouched").toBe(
-      "original",
-    );
+    expect(readFileSync(join(oldRoot, "note.md"), "utf8")).toBe("original");
   });
 });

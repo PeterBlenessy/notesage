@@ -610,6 +610,19 @@ fn is_inside_library_root(path: &Path) -> bool {
             return true;
         }
     }
+    // The real-E2E harness needs to drive a migration over a THROWAWAY
+    // library, and a throwaway library is by definition not one of the three
+    // real roots. Compiled only into the `e2e-testing` feature, which the
+    // shipped app does not build, so this cannot be switched on in anybody's
+    // hands — and even then it only widens to a directory the harness names.
+    #[cfg(feature = "e2e-testing")]
+    {
+        if let Ok(root) = std::env::var("NOTESAGE_E2E_LIBRARY_ROOT") {
+            if !root.is_empty() && path.starts_with(&root) {
+                return true;
+            }
+        }
+    }
     let Some(home) = dirs::home_dir() else {
         return false;
     };

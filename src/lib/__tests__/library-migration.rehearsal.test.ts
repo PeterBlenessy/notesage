@@ -68,9 +68,16 @@ function realDeps(over: Partial<MigrationDeps> = {}): MigrationDeps {
     },
     listNames: async (dir) => (existsSync(dir) ? readdirSync(dir) : []),
     readFile: async (p) => readFileSync(p, "utf8"),
+    // Mirrors `migrationDeps().writeFile`: it creates the parent and THEN
+    // writes, because the underlying `write_file` is a bare `fs::write` that
+    // fails when the parent is missing. `rawWrite` below keeps that strict,
+    // so a dep that forgot the mkdir would still be caught here — the earlier
+    // fake created parents unconditionally, which is kinder than the command
+    // it stands for and hid a merge failure until the migration was driven
+    // through the real app.
     writeFile: async (p, c) => {
       mkdirSync(dirname(p), { recursive: true });
-      writeFileSync(p, c);
+      rawWrite(p, c);
     },
     deletePath: async (p) => rmSync(p, { recursive: true, force: true }),
     exists: async (p) => existsSync(p),
@@ -85,6 +92,14 @@ function realDeps(over: Partial<MigrationDeps> = {}): MigrationDeps {
     },
     ...over,
   };
+}
+
+/** A write with the real command's contract: no implicit parent creation. */
+function rawWrite(path: string, content: string): void {
+  if (!existsSync(dirname(path))) {
+    throw new Error(`Failed to write file ${path}: No such file or directory`);
+  }
+  writeFileSync(path, content);
 }
 
 function write(path: string, content: string): void {
@@ -421,5 +436,34 @@ describe("rehearsal: the migration against a real filesystem", () => {
     const { report } = await migrate(oldRoot, newRoot);
     const l = listing(oldRoot);
     expect(unaccountedInOldRoot(l.entries, report, l.inbox)).toEqual([]);
+  });
+
+  it("merges pins and read state into a destination that has no .notesage yet", async () => {
+    // The bug the real app found and this suite had been hiding. `write_file`
+    // is a bare `fs::write` and does not create parents, and every merge
+    // target lives in a dot-directory the destination need not have: a
+    // container the phone made without pinning anything has no `.notesage/`
+    // at all. Both merges failed there, leaving pins and read state behind on
+    // a large share of real migrations.
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, ".notesage", "pins.json"), JSON.stringify({ pins: ["a.md"] }));
+    write(
+      join(oldRoot, "Inbox", ".notesage", "reading-progress.json"),
+      JSON.stringify({ version: 1, items: { "a.html": { openedAt: 1 } } }),
+    );
+    // A bare container: no `.notesage/`, no `Inbox/.notesage/`.
+    mkdirSync(newRoot, { recursive: true });
+
+    const { report } = await migrate(oldRoot, newRoot);
+
+    expect(report.failed).toEqual([]);
+    expect(JSON.parse(readFileSync(join(newRoot, ".notesage", "pins.json"), "utf8")).pins).toEqual([
+      "a.md",
+    ]);
+    const progress = JSON.parse(
+      readFileSync(join(newRoot, "Inbox", ".notesage", "reading-progress.json"), "utf8"),
+    ) as { items: Record<string, unknown> };
+    expect(Object.keys(progress.items)).toEqual(["a.html"]);
   });
 });
