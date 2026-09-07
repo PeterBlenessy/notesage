@@ -34,6 +34,7 @@ import { classifyFile } from "./FileRow";
 import { Button } from "@/components/ui/button";
 import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
+import { useNavShellPresented } from "./nav-shell-state";
 import { useNativeChrome } from "./useNativeChrome";
 import { withFindAgent } from "./html-find-agent";
 import { withLinkAgent } from "./html-link-agent";
@@ -989,6 +990,7 @@ export function Reader() {
     }
   }, [relPath]);
 
+  const navShellPresented = useNavShellPresented();
   const nativeChrome = useNativeChrome(
     {
       topLeft: { id: "back", icon: "chevron.backward" },
@@ -1607,7 +1609,12 @@ export function Reader() {
           </Island>
         </>
       )}
-      {state.status !== "pdf" && (
+      {/* The document's name, for the shells that have nowhere else to put it.
+          The navigation bar carries the title when the stack is up, and
+          drawing this as well printed the filename twice — once in the bar and
+          once just under it, since the safe area now includes the bar
+          (Peter, 2026-09-07). */}
+      {state.status !== "pdf" && !navShellPresented && (
         <h1 className="pointer-events-none absolute left-1/2 top-[max(1.25rem,env(safe-area-inset-top))] z-40 max-w-[55vw] -translate-x-1/2 truncate text-sm font-medium text-muted-foreground">
           {name}
         </h1>
