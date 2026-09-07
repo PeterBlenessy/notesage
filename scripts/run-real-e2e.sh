@@ -69,13 +69,19 @@ START_TIME=$SECONDS
 # --- Parse flags -------------------------------------------------------------
 
 NO_BUILD=false
+# Which specs to run. Defaults to all of them; a substring narrows it, so a
+# change to one feature can be verified against the real app without paying
+# for the whole suite.
+SPEC_FILTER=""
 for arg in "$@"; do
     case "$arg" in
         --no-build) NO_BUILD=true ;;
+        --spec=*) SPEC_FILTER="${arg#--spec=}" ;;
         --help|-h)
-            echo "Usage: $0 [--no-build]"
+            echo "Usage: $0 [--no-build] [--spec=<substring>]"
             echo ""
             echo "  --no-build   Skip starting Tauri app; assume it is already running"
+            echo "  --spec=NAME  Run only specs whose filename contains NAME"
             exit 0
             ;;
         *)
@@ -107,6 +113,9 @@ free_ports() {
 cleanup() {
     local exit_code=${1:-$?}
     log "Cleaning up background processes..."
+    if [[ "${E2E_LAB_OWNED:-false}" == true && -n "${NOTESAGE_E2E_LIBRARY_ROOT:-}" ]]; then
+        rm -rf "$NOTESAGE_E2E_LIBRARY_ROOT"
+    fi
 
     # Kill tauri-webdriver
     if [[ -n "$DRIVER_PID" ]] && kill -0 "$DRIVER_PID" 2>/dev/null; then
@@ -128,6 +137,24 @@ cleanup() {
 
     exit "$exit_code"
 }
+
+# --- The throwaway library root ----------------------------------------------
+#
+# The migration spec drives a real library move, and the Rust side refuses to
+# move anything that is not inside a library — the guard that keeps the command
+# from being pointed at arbitrary directories. A throwaway library is by
+# definition not one of the three real roots, so the `e2e-testing` build widens
+# the guard to ONE directory this harness names, and both the app and the spec
+# read it from here. Without it the migration spec fails with "is not inside a
+# library", which is the guard working, not a bug.
+#
+# It is created fresh per run and removed on exit, so nothing can accumulate
+# and nothing can point at anybody's real library.
+if [[ -z "${NOTESAGE_E2E_LIBRARY_ROOT:-}" ]]; then
+    NOTESAGE_E2E_LIBRARY_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/notesage-e2e-lab-XXXXXX")"
+    E2E_LAB_OWNED=true
+fi
+export NOTESAGE_E2E_LIBRARY_ROOT
 
 trap 'cleanup' EXIT
 trap 'err "Interrupted"; cleanup 130' INT TERM
@@ -273,6 +300,7 @@ SPECS_RETRIED=0
 
 for spec in e2e-real/tests/*.test.ts; do
     spec_name=$(basename "$spec")
+    if [[ -n "$SPEC_FILTER" && "$spec_name" != *"$SPEC_FILTER"* ]]; then continue; fi
     log "Running: ${BOLD}${spec_name}${RESET}"
 
     if run_spec "$spec"; then

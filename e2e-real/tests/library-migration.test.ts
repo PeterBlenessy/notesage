@@ -98,6 +98,10 @@ async function migrateInApp(from: string, to: string) {
               failed: report.failed.map((f: { error: string }) => f.error),
               leftBehind: report.leftBehind.map((l: { name: string }) => l.name),
               renames: report.renames,
+              // The two fields the undo is built from. Carried out of the
+              // app so a spec can reverse a run it just performed.
+              moves: report.moves,
+              destroyed: report.destroyed,
               unaccounted: m
                 .unaccountedInOldRoot(remaining.entries, report, remaining.inbox)
                 .map((u: { name: string }) => u.name),
@@ -118,9 +122,70 @@ async function migrateInApp(from: string, to: string) {
   return result.value;
 }
 
+/**
+ * Reverse the migration inside the app, from a record round-tripped through
+ * the real store.
+ *
+ * The record is SAVED and re-LOADED rather than passed straight across: what
+ * is being tested is whether the thing that has to survive a restart really
+ * does, and passing the in-memory object would test nothing about the file.
+ */
+async function undoInApp(home: string, from: string, to: string, report: unknown) {
+  const result = (await browser.executeAsync(
+    (homeDir: string, oldR: string, newR: string, rep: any, done: (r: unknown) => void) => {
+      const w = window as unknown as { __E2E_LIBRARY_MIGRATION__: Record<string, any> };
+      const m = w.__E2E_LIBRARY_MIGRATION__;
+      if (!m) {
+        done({ ok: false, error: "__E2E_LIBRARY_MIGRATION__ missing — not a dev build?" });
+        return;
+      }
+      m.lockLibraryRoots([oldR, newR]);
+      void (async () => {
+        try {
+          const record = m.undoRecordFor("e2e-undo", oldR, newR, rep);
+          await m.saveUndoRecord(homeDir, record, m.undoStoreDeps());
+          const loaded = await m.latestUndoRecord(homeDir, m.undoStoreDeps());
+          if (!loaded) throw new Error("the undo record did not survive being written");
+          const undone = await m.undoLibraryMigration(loaded, m.migrationDeps());
+          await m.clearMigrationInMarker(newR, m.markerWriteDeps());
+          await m.discardUndoRecord(homeDir, loaded.id, m.undoStoreDeps());
+          done({
+            ok: true,
+            value: {
+              id: loaded.id,
+              moves: loaded.moves.length,
+              restored: undone.restored,
+              failed: undone.failed.map((f: { error: string }) => f.error),
+              recordGone: (await m.latestUndoRecord(homeDir, m.undoStoreDeps())) === null,
+            },
+          });
+        } catch (err) {
+          done({ ok: false, error: String(err) });
+        } finally {
+          m.unlockLibraryRoots();
+        }
+      })();
+    },
+    home,
+    from,
+    to,
+    report,
+  )) as { ok: boolean; error?: string; value?: any };
+
+  if (!result.ok) throw new Error(`undo failed in the app: ${result.error}`);
+  return result.value;
+}
+
 describe("iCloud container migration, through the real app", () => {
   beforeEach(() => {
-    lab = mkdtempSync(join(tmpdir(), "notesage-e2e-migration-"));
+    // Inside the root the harness told the app about, or the Rust guard
+    // refuses every move with "is not inside a library" — see
+    // `scripts/run-real-e2e.sh`. Falling back to the system temp dir keeps a
+    // hand-run possible, and `guardTestRoot` below is what actually keeps a
+    // real library out of reach either way.
+    lab = mkdtempSync(
+      join(process.env.NOTESAGE_E2E_LIBRARY_ROOT || tmpdir(), "notesage-e2e-migration-"),
+    );
     guardTestRoot(lab);
     oldRoot = join(lab, "CloudDocs", "Notesage");
     newRoot = join(lab, "Container", "Documents");
@@ -269,5 +334,38 @@ describe("iCloud container migration, through the real app", () => {
 
     expect(refused).toContain("being moved");
     expect(readFileSync(join(oldRoot, "note.md"), "utf8")).toBe("original");
+  });
+  it("puts the library back, from a record written to disk and read again", async () => {
+    // The undo's own IPC boundary: the record is written through `write_file`
+    // into a throwaway home, read back through `list_directory` /
+    // `read_file`, and only then applied — so a shape that does not survive
+    // the round trip fails here rather than on somebody's real library the
+    // morning after they decide they want out.
+    const home = join(lab, "home");
+    write(join(oldRoot, "Welcome.md"), "# Welcome\n");
+    write(join(oldRoot, "Research", ".notesage", "project.json"), '{"name":"Research"}');
+    write(join(oldRoot, "Research", "sources", "deep.md"), "nested\n");
+    write(join(oldRoot, "Inbox", "article.html"), "<h1>One</h1>");
+    mkdirSync(newRoot, { recursive: true });
+
+    const before = snapshot(oldRoot);
+    const result = await migrateInApp(oldRoot, newRoot);
+    expect(result.failed).toEqual([]);
+
+    const undone = await undoInApp(home, oldRoot, newRoot, {
+      moves: result.moves,
+      destroyed: result.destroyed,
+    });
+
+    expect(undone.failed).toEqual([]);
+    expect(undone.moves).toBeGreaterThan(0);
+    // Every byte back where it started.
+    expect(snapshot(oldRoot)).toEqual(before);
+    // And the marker no longer claims the container is the library, or the
+    // next launch follows it to a folder the files have left.
+    const marker = JSON.parse(readFileSync(join(newRoot, ".notesage", "library.json"), "utf8"));
+    expect(marker.migratedFrom).toBeUndefined();
+    // A spent record is not offered again.
+    expect(undone.recordGone).toBe(true);
   });
 });
