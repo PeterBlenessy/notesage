@@ -87,8 +87,15 @@ async function repointStoredPaths(
   from: string,
   to: string,
   renames: MigrationRename[],
-): Promise<{ failure: string | null; treeReadFailures: string[]; sidecarUnreadable: string[] }> {
-  const treeReadFailures: string[] = [];
+): Promise<{
+  failure: string | null;
+  treeReadFailures: { path: string; error: string }[];
+  sidecarUnreadable: string[];
+}> {
+  // Path and error kept apart: the report renders the name as the subject of
+  // the reason, and gluing them together produced "<path>: <error> moved, but
+  // its contents could not be re-read".
+  const treeReadFailures: { path: string; error: string }[] = [];
   const ws = useWorkspaceStore.getState();
   const editor = useEditorStore.getState();
   const notesRoot = useSettingsStore.getState().notesRootPath;
@@ -137,7 +144,7 @@ async function repointStoredPaths(
           listDirectory: (path) =>
             tauriApi.listDirectory(path, useSettingsStore.getState().showHiddenFiles),
           writeFile: (path, content) => tauriApi.migrationWriteFile(path, content),
-          onTreeReadFailure: (path, err) => treeReadFailures.push(`${path}: ${String(err)}`),
+          onTreeReadFailure: (path, err) => treeReadFailures.push({ path, error: String(err) }),
         }),
       renameOpenDocument: (a, b) => editor.renameOpenDocument(a, b),
       updateFilePaths: (fromPrefix, toPrefix) => ws.updateFilePaths(fromPrefix, toPrefix),
@@ -391,8 +398,8 @@ export function LibraryMigrationDialog({
                   ]
                 : []),
               ...treeReadFailures.map((f) => ({
-                name: f,
-                reason: t("settings.libraryMoveTreeUnreadable"),
+                name: f.path,
+                reason: `${t("settings.libraryMoveTreeUnreadable")} (${f.error})`,
               })),
             ],
           },
@@ -482,9 +489,9 @@ export function LibraryMigrationDialog({
               // not be re-keyed leaves comments unreachable — both read as
               // losing something that is still on disk.
               ...repoint.treeReadFailures.map((f) => ({
-                from: f,
+                from: f.path,
                 to: oldRoot,
-                error: t("settings.libraryMoveTreeUnreadable"),
+                error: `${t("settings.libraryMoveTreeUnreadable")} (${f.error})`,
               })),
               ...repoint.sidecarUnreadable.map((name) => ({
                 from: name,
