@@ -230,3 +230,4 @@ Chronological log of major implementation milestones and changes.
 | 224 | [Release v0.56.1](224-release-v0.56.1.md) | Opening a file closes the Inbox; the sidebar uses the arrow pointer. |
 | 225 | [Release v0.56.2](225-release-v0.56.2.md) | A faster Inbox; the Mac's "mark as unread" reaches the phone. |
 | 226 | [Release v0.56.3](226-release-v0.56.3.md) | Fixes an app that could start up and never show its window. |
+| 227 | [Release v0.56.4](227-release-v0.56.4.md) | The Inbox is always in the sidebar, and recordings get a place of their own. |

@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.56.4",
+      "date": "2026-09-07",
+      "previousVersion": "0.56.3",
+      "sections": {
+        "features": [
+          "**Recordings has its own place in the sidebar.** Everything you or your phone recorded, with the transcript, \"move to project\", and a way to try a transcription again when one didn't work. Until now a recording only appeared while it was being transcribed, and one that failed was impossible to get back to without going hunting in Finder."
+        ],
+        "fixes": [
+          "**The Inbox is always in the sidebar.** It used to appear only after something had been shared to it, so a new Mac looked as though it had no Inbox at all. It's a place, so it's there whether or not anything is in it — the count still only shows when something is unread."
+        ]
+      }
+    },
+    {
       "version": "0.56.3",
       "date": "2026-09-06",
       "previousVersion": "0.56.2",
