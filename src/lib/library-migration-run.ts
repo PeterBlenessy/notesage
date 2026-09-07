@@ -31,7 +31,16 @@ export async function buildMigrationListing(root: string): Promise<MigrationList
   // moved, never reported, and left stranded in a folder the app had stopped
   // looking at. The planner decides what to do with them; it cannot decide
   // about something it never sees.
-  const entries = await tauriApi.listDirectory(root, true).catch(() => []);
+  // The ROOT listing is allowed to fail loudly. Swallowing it into `[]` made
+  // an unreachable library indistinguishable from an empty one, and the
+  // difference is everything: an empty source plans zero steps, the run
+  // reports success, and the caller then records the migration and repoints
+  // the app at a container holding nothing. `resolveSyncedLibraryRoot`
+  // follows that marker for ever, so one transient iCloud fault becomes a
+  // library that reads as empty permanently. iCloud IS transiently
+  // unavailable; that is the environment this feature runs in.
+  const entries = await tauriApi.listDirectory(root, true);
+  // `Inbox/` genuinely may not exist, and that is not a fault.
   const inbox = await tauriApi.listDirectory(`${root}/Inbox`, true).catch(() => []);
   // A directory is a PROJECT when it carries `.notesage/` — the same test the
   // rest of the app uses, and the one the collision rules turn on.

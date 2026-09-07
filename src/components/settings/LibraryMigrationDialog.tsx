@@ -75,7 +75,19 @@ export function LibraryMigrationDialog({
           buildMigrationListing(oldRoot),
           buildMigrationListing(newRoot),
         ]);
-        if (!cancelled) setPhase({ kind: "confirm", plan: planLibraryMigration(source, dest) });
+        const plan = planLibraryMigration(source, dest);
+        // A plan with nothing in it is not a migration, and must never be
+        // allowed to record one. This dialog is only reachable when the old
+        // root HAS content (`libraryMigrationAvailable`), so an empty plan
+        // means the two listings disagree with the thing that offered the
+        // move — a race, a permissions fault, or a listing that came back
+        // short. Confirming it would move no files and still write the
+        // marker, which is the one outcome nothing can undo.
+        if (!cancelled && plan.steps.length === 0) {
+          setPhase({ kind: "error", message: t("settings.libraryMoveNothingToMove") });
+          return;
+        }
+        if (!cancelled) setPhase({ kind: "confirm", plan });
       } catch (err) {
         if (!cancelled) setPhase({ kind: "error", message: String(err) });
       }

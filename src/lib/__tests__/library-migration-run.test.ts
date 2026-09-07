@@ -141,3 +141,32 @@ describe("recording the migration in the marker (2026-09-06)", () => {
     expect(marker.migratedBy).toBe("an older Mac");
   });
 });
+
+describe("reading a root for planning", () => {
+  it("lets a failed ROOT listing throw, so it cannot pass as an empty library", async () => {
+    // The finding this locks: `.catch(() => [])` made an unreachable library
+    // indistinguishable from an empty one. An empty source plans zero steps,
+    // the run reports success, and the caller then records the migration and
+    // repoints the app at a container holding nothing — which
+    // `resolveSyncedLibraryRoot` follows for ever. One transient iCloud
+    // fault, one permanently empty-looking library.
+    setMockInvokeHandler("list_directory", () => {
+      throw new Error("iCloud is not responding");
+    });
+    await expect(buildMigrationListing("/old")).rejects.toThrow("iCloud is not responding");
+  });
+
+  it("still tolerates a missing Inbox, which is not a fault", async () => {
+    setMockInvokeHandler("list_directory", (args) =>
+      String(args?.path ?? "").endsWith("/Inbox")
+        ? (() => {
+            throw new Error("No such directory");
+          })()
+        : [{ name: "a.md", path: "/old/a.md", is_directory: false, hidden: false }],
+    );
+    setMockInvokeHandler("path_exists", () => false);
+    const listing = await buildMigrationListing("/old");
+    expect(listing.entries.map((e) => e.name)).toEqual(["a.md"]);
+    expect(listing.inbox).toEqual([]);
+  });
+});
