@@ -333,7 +333,7 @@ async fn migrate_directory(source: &Path, dest: &Path) -> Result<String, String>
     let walked = source.to_path_buf();
     let evicted = tokio::task::spawn_blocking(move || first_evicted_placeholder(&walked))
         .await
-        .map_err(|e| format!("Could not check for undownloaded files: {e}"))?;
+        .map_err(|e| format!("Could not check for undownloaded files: {e}"))??;
     if let Some(found) = evicted {
         return Err(format!(
             "{found} has not been downloaded from iCloud yet — open it once, or wait for it to download, then try again"
@@ -615,26 +615,39 @@ fn is_inside_library_root(path: &Path) -> bool {
 /// iCloud names them `.<name>.icloud` beside the missing `<name>`. They are
 /// ordinary small files to anything that walks the tree, which is what makes
 /// them dangerous to copy-then-delete.
-fn first_evicted_placeholder(dir: &Path) -> Option<String> {
-    let entries = std::fs::read_dir(dir).ok()?;
-    for entry in entries.flatten() {
+fn first_evicted_placeholder(dir: &Path) -> Result<Option<String>, String> {
+    // `Result`, not `Option`. This used to open with `read_dir(dir).ok()?`,
+    // so a directory it could not read produced `None` — which the caller
+    // reads as "nothing undownloaded here, safe to move". The one guard
+    // standing between this migration and an unrecoverable stub move failed
+    // OPEN, on precisely the transient iCloud faults it exists to survive;
+    // and `count_files` cannot catch what it misses, because a placeholder
+    // copies as a placeholder and the count matches. Both guards failed on
+    // the same input. A subtree that cannot be inspected is now a refusal.
+    let entries = std::fs::read_dir(dir)
+        .map_err(|e| format!("Could not read {} to check for undownloaded files: {e}", dir.display()))?;
+    for entry in entries {
+        let entry = entry
+            .map_err(|e| format!("Could not read an entry in {}: {e}", dir.display()))?;
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
         if name.starts_with('.') && name.ends_with(".icloud") {
-            return Some(name.trim_start_matches('.').trim_end_matches(".icloud").to_string());
+            return Ok(Some(
+                name.trim_start_matches('.').trim_end_matches(".icloud").to_string(),
+            ));
         }
         // `symlink_metadata`, not `is_dir()`: the latter follows links, and a
         // cyclic symlink would recurse until the stack ran out.
         let is_real_dir = std::fs::symlink_metadata(&path)
-            .map(|m| m.is_dir())
-            .unwrap_or(false);
+            .map_err(|e| format!("Could not inspect {}: {e}", path.display()))?
+            .is_dir();
         if is_real_dir {
-            if let Some(found) = first_evicted_placeholder(&path) {
-                return Some(found);
+            if let Some(found) = first_evicted_placeholder(&path)? {
+                return Ok(Some(found));
             }
         }
     }
-    None
+    Ok(None)
 }
 
 /// Count all files (not directories) recursively in a directory.
@@ -835,6 +848,40 @@ mod tests {
         assert!(err.contains("has not been downloaded"), "{err}");
         assert!(stub.exists(), "the placeholder must be left exactly where it was");
         std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn an_unreadable_subtree_refuses_rather_than_reporting_no_placeholders() {
+        // The guard used to open with `read_dir(dir).ok()?`, so a directory it
+        // could not read produced `None` — which the caller reads as "nothing
+        // undownloaded here, safe to move". It failed OPEN, on exactly the
+        // transient faults it exists to survive, and `count_files` cannot
+        // catch what it misses because a placeholder copies as a placeholder.
+        let home = dirs::home_dir().unwrap();
+        let stamp = format!("notesage-unreadable-{}", std::process::id());
+        let base = home.join("Notesage").join(&stamp);
+        let locked = base.join("Project").join("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // No read bit: the walk cannot see inside, so it cannot promise
+            // there is no stub in there.
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+            let result = first_evicted_placeholder(&base.join("Project"));
+
+            // Put it back before asserting, so a failure cannot leave an
+            // undeletable directory behind.
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let _ = std::fs::remove_dir_all(&base);
+
+            let err = result.expect_err("an unreadable subtree must not read as clean");
+            assert!(err.contains("Could not read"), "unexpected error: {err}");
+        }
+        #[cfg(not(unix))]
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[tokio::test]
