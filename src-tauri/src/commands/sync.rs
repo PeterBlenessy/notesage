@@ -597,6 +597,19 @@ pub async fn migrate_library_entry(src: String, dst: String) -> Result<String, S
 /// already trusts its own renderer for file operations (see
 /// docs/architecture.md on the renderer-trust model).
 fn is_inside_library_root(path: &Path) -> bool {
+    // Tests register a temp root here instead of writing into the real
+    // `~/Notesage`. They used to do exactly that — scratch folders inside the
+    // owner's own library, where the file watcher, the Inbox listing and the
+    // recordings scanner can all see them, and where a panicking test leaves
+    // debris behind. A migration test has no business inside anybody's
+    // library (Peter, 2026-09-07). Additive, so tests running in parallel
+    // cannot clobber each other's root.
+    #[cfg(test)]
+    {
+        if tests::extra_roots().iter().any(|root| path.starts_with(root)) {
+            return true;
+        }
+    }
     let Some(home) = dirs::home_dir() else {
         return false;
     };
@@ -668,6 +681,27 @@ fn count_files(path: &Path) -> Result<usize, std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::{Mutex, OnceLock};
+
+    /// Temp roots the tests have declared as libraries, so no test ever
+    /// writes inside the real `~/Notesage`.
+    fn roots() -> &'static Mutex<Vec<PathBuf>> {
+        static ROOTS: OnceLock<Mutex<Vec<PathBuf>>> = OnceLock::new();
+        ROOTS.get_or_init(|| Mutex::new(Vec::new()))
+    }
+
+    pub(super) fn extra_roots() -> Vec<PathBuf> {
+        roots().lock().map(|r| r.clone()).unwrap_or_default()
+    }
+
+    /// A throwaway library. The `TempDir` is returned so it lives as long as
+    /// the test and cleans itself up even on a panic.
+    fn test_library() -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().to_path_buf();
+        roots().lock().unwrap().push(base.clone());
+        (dir, base)
+    }
 
     #[test]
     fn placeholder_path_is_dot_name_dot_icloud_beside_the_item() {
@@ -768,10 +802,7 @@ mod tests {
         // The primitive never merges. If it overwrote, a collision would be
         // resolved by whichever step happened to run last instead of by the
         // plan — and the loser would be gone.
-        let home = dirs::home_dir().unwrap();
-        let root = home.join("Notesage");
-        let stamp = format!("notesage-test-{}", std::process::id());
-        let base = root.join(&stamp);
+        let (_guard, base) = test_library();
         std::fs::create_dir_all(&base).unwrap();
         let src = base.join("a.md");
         let dst = base.join("b.md");
@@ -786,7 +817,6 @@ mod tests {
         .unwrap_err();
         assert!(err.contains("already exists"), "{err}");
         assert_eq!(std::fs::read_to_string(&dst).unwrap(), "two");
-        std::fs::remove_dir_all(&base).ok();
     }
 
     #[tokio::test]
@@ -805,9 +835,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_file_moves_and_its_content_survives() {
-        let home = dirs::home_dir().unwrap();
-        let stamp = format!("notesage-move-{}", std::process::id());
-        let base = home.join("Notesage").join(&stamp);
+        let (_guard, base) = test_library();
         std::fs::create_dir_all(base.join("from")).unwrap();
         let src = base.join("from").join("note.md");
         std::fs::write(&src, "# hello").unwrap();
@@ -822,7 +850,6 @@ mod tests {
         assert_eq!(out, dst.to_string_lossy());
         assert!(!src.exists());
         assert_eq!(std::fs::read_to_string(&dst).unwrap(), "# hello");
-        std::fs::remove_dir_all(&base).ok();
     }
 
     #[tokio::test]
@@ -831,9 +858,7 @@ mod tests {
         // Moving it and deleting the source is how the real item disappears
         // out of iCloud, and no verification catches it — a placeholder
         // copies as a placeholder, so the file COUNT matches.
-        let home = dirs::home_dir().unwrap();
-        let stamp = format!("notesage-evicted-{}", std::process::id());
-        let base = home.join("Notesage").join(&stamp);
+        let (_guard, base) = test_library();
         std::fs::create_dir_all(&base).unwrap();
         let stub = base.join(".notes.md.icloud");
         std::fs::write(&stub, "").unwrap();
@@ -847,7 +872,6 @@ mod tests {
 
         assert!(err.contains("has not been downloaded"), "{err}");
         assert!(stub.exists(), "the placeholder must be left exactly where it was");
-        std::fs::remove_dir_all(&base).ok();
     }
 
     #[test]
@@ -857,9 +881,7 @@ mod tests {
         // undownloaded here, safe to move". It failed OPEN, on exactly the
         // transient faults it exists to survive, and `count_files` cannot
         // catch what it misses because a placeholder copies as a placeholder.
-        let home = dirs::home_dir().unwrap();
-        let stamp = format!("notesage-unreadable-{}", std::process::id());
-        let base = home.join("Notesage").join(&stamp);
+        let (_guard, base) = test_library();
         let locked = base.join("Project").join("locked");
         std::fs::create_dir_all(&locked).unwrap();
 
@@ -875,22 +897,17 @@ mod tests {
             // Put it back before asserting, so a failure cannot leave an
             // undeletable directory behind.
             std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
-            let _ = std::fs::remove_dir_all(&base);
 
             let err = result.expect_err("an unreadable subtree must not read as clean");
             assert!(err.contains("Could not read"), "unexpected error: {err}");
         }
-        #[cfg(not(unix))]
-        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[tokio::test]
     async fn a_directory_holding_an_evicted_file_is_refused_whole() {
         // The same rule one level up, and the one the planner relies on when
         // it moves a project wholesale: nothing inside may be a stub.
-        let home = dirs::home_dir().unwrap();
-        let stamp = format!("notesage-evicted-dir-{}", std::process::id());
-        let base = home.join("Notesage").join(&stamp);
+        let (_guard, base) = test_library();
         let proj = base.join("from").join("Project");
         std::fs::create_dir_all(proj.join("deep")).unwrap();
         std::fs::write(proj.join("note.md"), "x").unwrap();
@@ -909,16 +926,13 @@ mod tests {
         assert!(err.contains("has not been downloaded"), "{err}");
         assert!(proj.join("note.md").exists(), "nothing may move when the answer is no");
         assert!(!dst.exists());
-        std::fs::remove_dir_all(&base).ok();
     }
 
     #[tokio::test]
     async fn a_directory_moves_with_its_dot_folder_intact() {
         // `.notesage/` inside a project carries its comments and metadata —
         // a move that dropped it would silently orphan every comment.
-        let home = dirs::home_dir().unwrap();
-        let stamp = format!("notesage-dir-{}", std::process::id());
-        let base = home.join("Notesage").join(&stamp);
+        let (_guard, base) = test_library();
         let proj = base.join("from").join("Project");
         std::fs::create_dir_all(proj.join(".notesage")).unwrap();
         std::fs::write(proj.join("note.md"), "x").unwrap();
@@ -934,6 +948,5 @@ mod tests {
         assert!(dst.join("note.md").exists());
         assert!(dst.join(".notesage").join("project.json").exists());
         assert!(!proj.exists());
-        std::fs::remove_dir_all(&base).ok();
     }
 }
