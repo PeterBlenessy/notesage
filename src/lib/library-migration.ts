@@ -254,7 +254,27 @@ export interface MigrationReport {
   renamed: number;
   leftBehind: { name: string; reason: string }[];
   failed: { step: MigrationStep; error: string }[];
+  /**
+   * Every entry that landed under a DIFFERENT relative path than it had, as
+   * `from` → `to` relative to the two roots.
+   *
+   * The path rewriter needs this and cannot derive it. It rebases stored
+   * absolute paths from the old root to the new one, which is correct only
+   * while the name is unchanged — and this migration renames on every
+   * collision. Without the list, a project kept as
+   * `X (from iCloud Drive)` has its workspace entry, recents and pins
+   * rewritten to `<new root>/X`, which is a DIFFERENT project: the one
+   * already in the container.
+   *
+   * Recorded by the runner rather than read off the plan because
+   * `merge-folder` decides its children's names while it runs.
+   */
+  renames: { from: string; to: string }[];
 }
+
+/** An iCloud file whose bytes are still in the cloud: on disk it is only
+ *  `.name.icloud` beside the missing `name`. */
+const EVICTED = /^\.(.+)\.icloud$/;
 
 /**
  * Run a plan. Resumable by construction: a step whose source is already gone
@@ -277,6 +297,7 @@ export async function runLibraryMigration(
     renamed: 0,
     leftBehind: [...plan.leftBehind],
     failed: [],
+    renames: [],
   };
 
   let done = 0;
@@ -317,11 +338,39 @@ export async function runLibraryMigration(
             deps.listNames(from),
           ]);
           const taken = new Set(mine);
+          let stranded = false;
           for (const name of theirs) {
             if (IGNORED.has(name)) continue; // `.DS_Store`, never data
+            // An evicted child, refused for the same reason the top level
+            // refuses one: on disk it is a stub, so moving it and deleting
+            // the source deletes the real item out of iCloud. Planning
+            // catches these at the top level; nothing caught them HERE,
+            // where they are reached by name from a hidden-inclusive
+            // listing and moved as ordinary small files.
+            const evicted = EVICTED.exec(name);
+            if (evicted) {
+              stranded = true;
+              report.leftBehind.push({
+                name: `${step.from}/${evicted[1]}`,
+                reason: `${evicted[1]} has not been downloaded from iCloud yet — open it once, then migrate again`,
+              });
+              continue;
+            }
             const target = dedupeName(name, taken);
             taken.add(target);
             await deps.moveEntry(`${from}/${name}`, `${to}/${target}`);
+            if (target !== name) {
+              report.renames.push({ from: `${step.from}/${name}`, to: `${step.to}/${target}` });
+            }
+          }
+          // The emptied folder itself. Leaving it made the old root never
+          // read as empty, which is both debris and a wrong answer: the
+          // startup rule asks "does the old folder still have content?" and
+          // an empty husk says yes. Only removed when nothing but ignorable
+          // debris is left — never a blind delete of what did not move.
+          if (!stranded) {
+            const rest = await deps.listNames(from).catch(() => ["?"]);
+            if (rest.every((n) => IGNORED.has(n))) await deps.deletePath(from);
           }
           if (step.unit === "project") report.moved.projects += 1;
           else report.moved.looseFiles += 1;
@@ -330,6 +379,9 @@ export async function runLibraryMigration(
         default: {
           if (!to) break;
           await deps.moveEntry(from, to);
+          if (step.to && step.to !== step.from) {
+            report.renames.push({ from: step.from, to: step.to });
+          }
           if (step.kind === "rename-conflicting-project") report.renamed += 1;
           // Counted from what the step SAYS it moves. The previous version
           // had both arms of an if/else do the same thing, so every project

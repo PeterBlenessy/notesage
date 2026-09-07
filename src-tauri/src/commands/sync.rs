@@ -320,6 +320,26 @@ pub async fn migrate_quick_notes(
 async fn migrate_directory(source: &Path, dest: &Path) -> Result<String, String> {
     let dest_str = dest.to_string_lossy().to_string();
 
+    // REFUSE anything holding an evicted file, BEFORE the rename below and
+    // not only in the copy fallback where this check used to live.
+    //
+    // The two iCloud roots are both under `~/Library/Mobile Documents`, so
+    // they are on one volume, so every real migration takes the rename — and
+    // the guard, sitting past it, never ran on the path it was written for.
+    // Renaming is not the safe case here either: the two roots are separate
+    // iCloud CONTAINERS, and moving a `.name.icloud` stub out of the
+    // container that holds its bytes leaves a reference to an item its owner
+    // is then free to purge. Same outcome as the copy, by a shorter route.
+    let walked = source.to_path_buf();
+    let evicted = tokio::task::spawn_blocking(move || first_evicted_placeholder(&walked))
+        .await
+        .map_err(|e| format!("Could not check for undownloaded files: {e}"))?;
+    if let Some(found) = evicted {
+        return Err(format!(
+            "{found} has not been downloaded from iCloud yet — open it once, or wait for it to download, then try again"
+        ));
+    }
+
     // Try atomic rename first (works on same APFS volume)
     match std::fs::rename(source, dest) {
         Ok(()) => return Ok(dest_str),
@@ -341,19 +361,8 @@ async fn migrate_directory(source: &Path, dest: &Path) -> Result<String, String>
     let dest_owned = dest.to_path_buf();
 
     tokio::task::spawn_blocking(move || {
-        // REFUSE if anything underneath is evicted. iCloud can leave a file
-        // on disk as a `.name.icloud` placeholder with the bytes only in the
-        // cloud. A recursive copy would duplicate the PLACEHOLDER — matching
-        // the file count, so verification passes — and removing the source
-        // then deletes the real item from iCloud. That is unrecoverable, and
-        // it is the likeliest failure for exactly the files someone has not
-        // opened lately. Better to leave the folder where it is and say so.
-        if let Some(found) = first_evicted_placeholder(&source_owned) {
-            return Err(format!(
-                "{} has not been downloaded from iCloud yet — open it once, or wait for it to download, then try again",
-                found
-            ));
-        }
+        // The eviction check is above, before the rename — a copy that got
+        // here has already passed it.
         // Copy to a STAGING name, then rename into place.
         //
         // A copy straight to the destination is only safe if nothing can
@@ -535,6 +544,23 @@ pub async fn migrate_library_entry(src: String, dst: String) -> Result<String, S
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| format!("Could not make {}: {e}", parent.display()))?;
+    }
+
+    // An evicted file, refused for the same reason a directory containing one
+    // is: `.name.icloud` is a stub with the bytes still in the cloud, so
+    // moving it out of the container it belongs to and deleting the source
+    // can take the real item with it. `migrate_directory` has always refused
+    // these; a FILE reached this far unchecked, which is how one inside a
+    // merged folder — moved by name, one child at a time — got past the
+    // planner's top-level check.
+    if source
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.starts_with('.') && n.ends_with(".icloud"))
+    {
+        return Err(format!(
+            "{src} has not been downloaded from iCloud yet — open it once, or wait for it to download, then try again"
+        ));
     }
 
     // A symlink is moved AS A LINK: `symlink_metadata` does not follow it, so
@@ -783,6 +809,59 @@ mod tests {
         assert_eq!(out, dst.to_string_lossy());
         assert!(!src.exists());
         assert_eq!(std::fs::read_to_string(&dst).unwrap(), "# hello");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn an_evicted_file_is_refused_rather_than_moved_as_a_stub() {
+        // `.name.icloud` is a placeholder: the bytes are still in the cloud.
+        // Moving it and deleting the source is how the real item disappears
+        // out of iCloud, and no verification catches it — a placeholder
+        // copies as a placeholder, so the file COUNT matches.
+        let home = dirs::home_dir().unwrap();
+        let stamp = format!("notesage-evicted-{}", std::process::id());
+        let base = home.join("Notesage").join(&stamp);
+        std::fs::create_dir_all(&base).unwrap();
+        let stub = base.join(".notes.md.icloud");
+        std::fs::write(&stub, "").unwrap();
+
+        let err = migrate_library_entry(
+            stub.to_string_lossy().to_string(),
+            base.join("moved.md").to_string_lossy().to_string(),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.contains("has not been downloaded"), "{err}");
+        assert!(stub.exists(), "the placeholder must be left exactly where it was");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[tokio::test]
+    async fn a_directory_holding_an_evicted_file_is_refused_whole() {
+        // The same rule one level up, and the one the planner relies on when
+        // it moves a project wholesale: nothing inside may be a stub.
+        let home = dirs::home_dir().unwrap();
+        let stamp = format!("notesage-evicted-dir-{}", std::process::id());
+        let base = home.join("Notesage").join(&stamp);
+        let proj = base.join("from").join("Project");
+        std::fs::create_dir_all(proj.join("deep")).unwrap();
+        std::fs::write(proj.join("note.md"), "x").unwrap();
+        // Nested, because the check has to walk — an evicted file is most
+        // likely to be one nobody has opened in a while, not one at the top.
+        std::fs::write(proj.join("deep").join(".old.md.icloud"), "").unwrap();
+        let dst = base.join("to").join("Project");
+
+        let err = migrate_library_entry(
+            proj.to_string_lossy().to_string(),
+            dst.to_string_lossy().to_string(),
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.contains("has not been downloaded"), "{err}");
+        assert!(proj.join("note.md").exists(), "nothing may move when the answer is no");
+        assert!(!dst.exists());
         std::fs::remove_dir_all(&base).ok();
     }
 

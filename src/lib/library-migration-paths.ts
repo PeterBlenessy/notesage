@@ -28,6 +28,44 @@ export function rebase(path: string, oldRoot: string, newRoot: string): string |
   return `${newRoot}${path.slice(oldRoot.length)}`;
 }
 
+/** A relative path that changed during the move, as the report records it. */
+export interface MigrationRename {
+  from: string;
+  to: string;
+}
+
+/**
+ * Rebase, applying whatever rename the migration gave this path.
+ *
+ * A plain rebase is right only while the name survived the move, and this
+ * migration renames on every collision: a project kept as
+ * `X (from iCloud Drive)`, a deduped `note-1.md`, a merged folder's child.
+ * Rebasing those to `<new root>/<original name>` does not point at nothing —
+ * it points at the entry that WON the collision, which for two same-named
+ * projects is a different project entirely. Pins, recents, the open document
+ * and a re-keyed comment sidecar would all quietly attach to it.
+ *
+ * The longest matching rename wins, so a renamed file inside a renamed folder
+ * lands in the right place, and the match is at a path boundary so `Notes`
+ * never rewrites `Notes Archive`.
+ */
+export function rebaseWithRenames(
+  path: string,
+  oldRoot: string,
+  newRoot: string,
+  renames: MigrationRename[],
+): string | null {
+  if (!isUnder(path, oldRoot)) return null;
+  const rel = path.slice(oldRoot.length).replace(/^\//, "");
+  let best: MigrationRename | null = null;
+  for (const rename of renames) {
+    if (rel !== rename.from && !rel.startsWith(`${rename.from}/`)) continue;
+    if (!best || rename.from.length > best.from.length) best = rename;
+  }
+  if (!best) return rebase(path, oldRoot, newRoot);
+  return `${newRoot}/${best.to}${rel.slice(best.from.length)}`;
+}
+
 export interface PathRewritePlan {
   /** Projects whose root moved: old → new. */
   projects: { from: string; to: string }[];
@@ -35,6 +73,12 @@ export interface PathRewritePlan {
   documents: { from: string; to: string }[];
   /** Pinned files, as a single prefix swap. */
   pinPrefix: { from: string; to: string } | null;
+  /**
+   * Pins the prefix swap lands in the wrong place, corrected afterwards.
+   * Expressed in POST-SWAP terms (`<new root>/<old name>` →
+   * `<new root>/<new name>`) because that is the state the swap leaves.
+   */
+  renamedPins: { from: string; to: string }[];
   /** Comment sidecars for non-project files, which are keyed by a hash OF THE
    *  PATH — so moving the file changes the key and the sidecar has to be
    *  rewritten under the new name or the comments are lost. */
@@ -52,6 +96,12 @@ export interface PathRewriteInputs {
   sidecarFilePaths: string[];
   /** Where the path-keyed sidecars live (`<notes root>/.notesage/comments`). */
   commentsDir: string;
+  /**
+   * Relative paths the migration renamed, from the run's report. Optional so
+   * a caller with nothing to declare stays honest rather than passing `[]`
+   * it has not actually checked.
+   */
+  renames?: MigrationRename[];
 }
 
 /**
@@ -61,22 +111,24 @@ export interface PathRewriteInputs {
  */
 export function planPathRewrites(inputs: PathRewriteInputs): PathRewritePlan {
   const { oldRoot, newRoot, commentsDir } = inputs;
+  const renames = inputs.renames ?? [];
+  const move = (path: string) => rebaseWithRenames(path, oldRoot, newRoot, renames);
 
   const projects: { from: string; to: string }[] = [];
   for (const from of inputs.projectPaths) {
-    const to = rebase(from, oldRoot, newRoot);
+    const to = move(from);
     if (to) projects.push({ from, to });
   }
 
   const documents: { from: string; to: string }[] = [];
   for (const from of inputs.documentPaths) {
-    const to = rebase(from, oldRoot, newRoot);
+    const to = move(from);
     if (to) documents.push({ from, to });
   }
 
   const sidecars: SidecarMigrationInput[] = [];
   for (const from of inputs.sidecarFilePaths) {
-    const to = rebase(from, oldRoot, newRoot);
+    const to = move(from);
     if (!to) continue;
     sidecars.push({
       oldSidecar: `${commentsDir}/path-${hashPath(from)}.json`,
@@ -91,7 +143,15 @@ export function planPathRewrites(inputs: PathRewriteInputs): PathRewritePlan {
     // Pins live relative to the library root in the shared file, but the
     // workspace store holds them absolute; one prefix swap covers every one,
     // and the store ignores paths that do not match it.
+    //
+    // A prefix swap cannot express a rename, so a pinned file that WAS
+    // renamed is handled by `renamedPins` below — applied after the sweep,
+    // since it has to correct what the sweep just did.
     pinPrefix: { from: oldRoot, to: newRoot },
+    renamedPins: renames.map((r) => ({
+      from: `${newRoot}/${r.from}`,
+      to: `${newRoot}/${r.to}`,
+    })),
     sidecars,
   };
 }
@@ -118,5 +178,7 @@ export async function applyPathRewrites(
   for (const { from, to } of plan.projects) await deps.updateProjectPath(from, to);
   for (const { from, to } of plan.documents) deps.renameOpenDocument(from, to);
   if (plan.pinPrefix) deps.updateFilePaths(plan.pinPrefix.from, plan.pinPrefix.to);
+  // After the sweep, never before: these correct paths the sweep produced.
+  for (const { from, to } of plan.renamedPins) deps.updateFilePaths(from, to);
   if (plan.sidecars.length) await deps.migrateSidecars(plan.sidecars);
 }

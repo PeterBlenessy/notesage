@@ -21,7 +21,9 @@ import {
 import {
   buildMigrationListing,
   collectSidecarFilePaths,
+  markerWriteDeps,
   migrationDeps,
+  recordMigrationInMarker,
 } from "@/lib/library-migration-run";
 import { applyPathRewrites, planPathRewrites } from "@/lib/library-migration-paths";
 import { executeRenameTransaction } from "@/lib/rename-transaction";
@@ -115,6 +117,10 @@ export function LibraryMigrationDialog({
           ].filter((p): p is string => Boolean(p)),
           sidecarFilePaths: notesRoot ? await collectSidecarFilePaths(notesRoot) : [],
           commentsDir: `${notesRoot ?? ""}/.notesage/comments`,
+          // What the run actually renamed. A plain rebase would point a
+          // project kept as `X (from iCloud Drive)` at `<new root>/X` — the
+          // OTHER project, the one already in the container.
+          renames: report.renames,
         });
         await applyPathRewrites(rewrites, {
           // The tree is RE-READ, not blanked. `updateProjectPath(from, to, [])`
@@ -147,6 +153,23 @@ export function LibraryMigrationDialog({
             notesRoot ? executeRenameTransaction(notesRoot, inputs) : Promise.resolve(),
         });
 
+        // Record the move in the container's marker BEFORE touching the
+        // settings, because the marker is what survives a restart and the
+        // settings are not. Startup re-resolves the root every launch; an
+        // unmarked container loses to "the old folder still has something in
+        // it", and the app comes back pointing at the folder it just
+        // emptied.
+        //
+        // A failure here does not fail the migration — the files have moved
+        // and that cannot be undone — but it MUST be visible, because the
+        // library is now in a state only this marker explains.
+        let markerFailure: string | null = null;
+        try {
+          await recordMigrationInMarker(newRoot, markerWriteDeps());
+        } catch (err) {
+          markerFailure = String(err);
+        }
+
         // The library has moved: point the app at it, so the watchers and
         // every consumer follow without waiting for a restart.
         useSettingsStore.getState().setICloudNotesagePath(newRoot);
@@ -158,6 +181,14 @@ export function LibraryMigrationDialog({
             ...report,
             leftBehind: [
               ...report.leftBehind,
+              ...(markerFailure
+                ? [
+                    {
+                      name: t("settings.libraryMoveMarkerName"),
+                      reason: t("settings.libraryMoveMarkerFailed", { error: markerFailure }),
+                    },
+                  ]
+                : []),
               ...treeReadFailures.map((f) => ({
                 name: f,
                 reason: "moved, but its contents could not be re-read — restart to see them",

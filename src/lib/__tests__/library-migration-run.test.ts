@@ -2,7 +2,18 @@
 import "@/test/tauri-mock";
 import { describe, it, expect, beforeEach } from "vitest";
 import { setMockInvokeHandler } from "@/test/tauri-mock";
-import { buildMigrationListing, mergePinsFiles, migrationDeps } from "@/lib/library-migration-run";
+import {
+  buildMigrationListing,
+  mergePinsFiles,
+  migrationDeps,
+  recordMigrationInMarker,
+} from "@/lib/library-migration-run";
+import {
+  LEGACY_CLOUD_DOCS_LIBRARY,
+  markMigrated,
+  newLibraryMarker,
+  type LibraryMarker,
+} from "@/lib/library-marker";
 
 /**
  * The wiring between the pure migration and the real filesystem.
@@ -55,5 +66,78 @@ describe("merging the pins file", () => {
     ]);
     expect(JSON.parse(mergePinsFiles("not json", '{"pins":["b"]}')).pins).toEqual(["b"]);
     expect(JSON.parse(mergePinsFiles(null, null)).pins).toEqual([]);
+  });
+});
+
+describe("recording the migration in the marker (2026-09-06)", () => {
+  const deps = (existing: LibraryMarker | null) => {
+    const written: { path: string; content: string }[] = [];
+    const made: string[] = [];
+    return {
+      written,
+      made,
+      deps: {
+        readMarker: async () => existing,
+        createDirectory: async (path: string) => {
+          made.push(path);
+        },
+        writeFile: async (path: string, content: string) => {
+          written.push({ path, content });
+        },
+        deviceName: async () => "Peter's MacBook Pro",
+      },
+    };
+  };
+
+  it("writes migratedFrom into the container's marker", async () => {
+    // THE step that makes a migration stick. Without it startup re-resolves
+    // the root, cannot see that a migration happened, and falls through to
+    // "the old folder still has something in it" — pointing the app back at
+    // the folder it just emptied.
+    const created = newLibraryMarker("ios", "2026-09-01T10:00:00.000Z");
+    const { deps: d, written } = deps(created);
+
+    const marker = await recordMigrationInMarker("/new", d, "2026-09-06T18:00:00.000Z");
+
+    expect(marker.migratedFrom).toBe(LEGACY_CLOUD_DOCS_LIBRARY);
+    expect(marker.migratedAt).toBe("2026-09-06T18:00:00.000Z");
+    expect(marker.migratedBy).toBe("Peter's MacBook Pro");
+    // The phone created this library; the migration extends its marker
+    // rather than replacing it.
+    expect(marker.createdBy).toBe("ios");
+    expect(marker.createdAt).toBe("2026-09-01T10:00:00.000Z");
+    expect(written[0].path).toBe("/new/.notesage/library.json");
+    expect(JSON.parse(written[0].content).migratedFrom).toBe(LEGACY_CLOUD_DOCS_LIBRARY);
+  });
+
+  it("marks an UNMARKED container rather than leaving it unmarked", async () => {
+    // A container this Mac is the first to use has no marker: the phone
+    // writes one when IT creates the library. Migrating into an unmarked
+    // root and leaving it unmarked is the exact state that reads as "never
+    // migrated" on the next launch.
+    const { deps: d, written, made } = deps(null);
+
+    const marker = await recordMigrationInMarker("/new", d, "2026-09-06T18:00:00.000Z");
+
+    expect(marker.createdBy).toBe("macos");
+    expect(marker.migratedFrom).toBe(LEGACY_CLOUD_DOCS_LIBRARY);
+    expect(made).toContain("/new/.notesage");
+    expect(written).toHaveLength(1);
+  });
+
+  it("keeps the FIRST migration's record when run again", async () => {
+    // Re-running (a resumed migration, a retry after a partial failure) must
+    // not restamp the record every other device followed.
+    const first = markMigrated(newLibraryMarker("ios", "2026-09-01T10:00:00.000Z"), {
+      from: LEGACY_CLOUD_DOCS_LIBRARY,
+      by: "an older Mac",
+      at: "2026-09-02T09:00:00.000Z",
+    });
+    const { deps: d } = deps(first);
+
+    const marker = await recordMigrationInMarker("/new", d, "2026-09-06T18:00:00.000Z");
+
+    expect(marker.migratedAt).toBe("2026-09-02T09:00:00.000Z");
+    expect(marker.migratedBy).toBe("an older Mac");
   });
 });

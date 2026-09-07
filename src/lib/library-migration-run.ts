@@ -5,6 +5,15 @@ import {
   serializeReadingProgress,
 } from "@/lib/reading-progress-file";
 import type { MigrationDeps, MigrationListing } from "@/lib/library-migration";
+import {
+  LEGACY_CLOUD_DOCS_LIBRARY,
+  LIBRARY_MARKER_REL_PATH,
+  markMigrated,
+  newLibraryMarker,
+  parseLibraryMarker,
+  serializeLibraryMarker,
+  type LibraryMarker,
+} from "@/lib/library-marker";
 
 /**
  * The wiring between the pure migration and the real filesystem.
@@ -106,4 +115,74 @@ export async function collectSidecarFilePaths(notesRoot: string): Promise<string
     }
   }
   return paths;
+}
+
+/** What `recordMigrationInMarker` needs, injected so it is testable without
+ *  a filesystem. */
+export interface MarkerWriteDeps {
+  readMarker: (root: string) => Promise<LibraryMarker | null>;
+  createDirectory: (path: string) => Promise<void>;
+  writeFile: (path: string, content: string) => Promise<void>;
+  deviceName: () => Promise<string>;
+}
+
+/**
+ * Record the migration in the container's marker. THE step that makes a
+ * migration stick.
+ *
+ * Everything else about this feature is bytes on disk; this is the only thing
+ * that says which root is the library. Without it:
+ *
+ * - no other Mac and no phone can follow the move, because
+ *   `resolveSyncedLibraryRoot`'s first branch tests exactly this field;
+ * - this Mac keeps offering a migration it already performed, since
+ *   `libraryMigrationAvailable` also tests it;
+ * - and worst, the next launch re-resolves the root from scratch and falls
+ *   through to "the old folder still has something in it, so it is the
+ *   library" — pointing the app back at the folder it just emptied, with the
+ *   dialog's own `setICloudNotesagePath` silently overwritten.
+ *
+ * A container with no marker at all gets one: the phone writes it when IT
+ * creates the library, but a container this Mac is the first to use has
+ * nothing in it yet, and a migration into an unmarked root is exactly the
+ * case that must not read as "never migrated".
+ */
+export async function recordMigrationInMarker(
+  newRoot: string,
+  deps: MarkerWriteDeps,
+  now: string = new Date().toISOString(),
+): Promise<LibraryMarker> {
+  const existing = await deps.readMarker(newRoot).catch(() => null);
+  const base = existing ?? newLibraryMarker("macos", now);
+  const marked = markMigrated(base, {
+    from: LEGACY_CLOUD_DOCS_LIBRARY,
+    by: await deps.deviceName().catch(() => "a Mac"),
+    at: now,
+  });
+  await deps.createDirectory(`${newRoot}/.notesage`).catch(() => {
+    // Already there, which is the ordinary case for a container the phone
+    // created. A real failure surfaces on the write below, where it belongs.
+  });
+  await deps.writeFile(`${newRoot}/${LIBRARY_MARKER_REL_PATH}`, serializeLibraryMarker(marked));
+  return marked;
+}
+
+/** The real wiring for {@link recordMigrationInMarker}. */
+export function markerWriteDeps(): MarkerWriteDeps {
+  return {
+    // Through the parser, not straight across: the IPC type is the loose
+    // shape the command can return (`migratedFrom?: string`), and this module
+    // works in the validated one. Re-serialising what Rust read and parsing
+    // it is the same check every other reader applies, so a marker a hand
+    // edit has made invalid reads as absent here too — and gets replaced by
+    // a valid one, rather than being extended into something no reader
+    // accepts.
+    readMarker: async (root) => {
+      const raw = await tauriApi.readLibraryMarker(root);
+      return raw ? parseLibraryMarker(JSON.stringify(raw)) : null;
+    },
+    createDirectory: (path) => tauriApi.createDirectory(path),
+    writeFile: (path, content) => tauriApi.writeFile(path, content),
+    deviceName: () => tauriApi.getDeviceName(),
+  };
 }

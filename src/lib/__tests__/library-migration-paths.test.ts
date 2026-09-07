@@ -141,3 +141,112 @@ describe("applying the rewrites", () => {
     expect(migrateSidecars).not.toHaveBeenCalled();
   });
 });
+
+describe("rewrites follow the renames the migration made (2026-09-06)", () => {
+  const OLD = "/old/Notesage";
+  const NEW = "/new/Notesage";
+
+  it("sends a collision-renamed project to the name it actually got", () => {
+    // The case that makes this more than tidiness: two projects called
+    // "Research", one on each side. The source is kept as
+    // "Research (from iCloud Drive)" — and a plain rebase points the
+    // workspace entry, recents and pins at `<new>/Research`, which is the
+    // OTHER project. Every subsequent edit would land in it.
+    const plan = planPathRewrites({
+      oldRoot: OLD,
+      newRoot: NEW,
+      projectPaths: [`${OLD}/Research`],
+      documentPaths: [`${OLD}/Research/notes/today.md`],
+      sidecarFilePaths: [],
+      commentsDir: "/home/.notesage/comments",
+      renames: [{ from: "Research", to: "Research (from iCloud Drive)" }],
+    });
+
+    expect(plan.projects).toEqual([
+      { from: `${OLD}/Research`, to: `${NEW}/Research (from iCloud Drive)` },
+    ]);
+    expect(plan.documents).toEqual([
+      {
+        from: `${OLD}/Research/notes/today.md`,
+        to: `${NEW}/Research (from iCloud Drive)/notes/today.md`,
+      },
+    ]);
+  });
+
+  it("re-keys a comment sidecar under the renamed path", () => {
+    // The sidecar's filename is a hash OF THE PATH, so a rename it does not
+    // know about re-keys the comments onto a file that is not theirs.
+    const plan = planPathRewrites({
+      oldRoot: OLD,
+      newRoot: NEW,
+      projectPaths: [],
+      documentPaths: [],
+      sidecarFilePaths: [`${OLD}/note.md`],
+      commentsDir: "/home/.notesage/comments",
+      renames: [{ from: "note.md", to: "note-1.md" }],
+    });
+
+    expect(plan.sidecars[0].newFilePath).toBe(`${NEW}/note-1.md`);
+  });
+
+  it("prefers the longest rename, so a renamed child inside a renamed folder lands right", () => {
+    const plan = planPathRewrites({
+      oldRoot: OLD,
+      newRoot: NEW,
+      projectPaths: [],
+      documentPaths: [`${OLD}/Notes/deep/a.md`],
+      sidecarFilePaths: [],
+      commentsDir: "/home/.notesage/comments",
+      renames: [
+        { from: "Notes", to: "Notes-1" },
+        { from: "Notes/deep", to: "Notes-1/deep-1" },
+      ],
+    });
+
+    expect(plan.documents[0].to).toBe(`${NEW}/Notes-1/deep-1/a.md`);
+  });
+
+  it("matches a rename only at a path boundary", () => {
+    // `Notes` must not rewrite `Notes Archive` — the bug that silently moves
+    // a whole neighbouring tree.
+    const plan = planPathRewrites({
+      oldRoot: OLD,
+      newRoot: NEW,
+      projectPaths: [`${OLD}/Notes Archive`],
+      documentPaths: [],
+      sidecarFilePaths: [],
+      commentsDir: "/home/.notesage/comments",
+      renames: [{ from: "Notes", to: "Notes-1" }],
+    });
+
+    expect(plan.projects[0].to).toBe(`${NEW}/Notes Archive`);
+  });
+
+  it("corrects pins after the prefix sweep, which cannot express a rename", () => {
+    const plan = planPathRewrites({
+      oldRoot: OLD,
+      newRoot: NEW,
+      projectPaths: [],
+      documentPaths: [],
+      sidecarFilePaths: [],
+      commentsDir: "/home/.notesage/comments",
+      renames: [{ from: "note.md", to: "note-1.md" }],
+    });
+
+    // Post-swap terms: the sweep has already moved the pin to `<new>/note.md`.
+    expect(plan.renamedPins).toEqual([{ from: `${NEW}/note.md`, to: `${NEW}/note-1.md` }]);
+
+    const calls: { from: string; to: string }[] = [];
+    void applyPathRewrites(plan, {
+      updateProjectPath: () => {},
+      renameOpenDocument: () => {},
+      updateFilePaths: (from, to) => calls.push({ from, to }),
+      migrateSidecars: async () => {},
+    });
+    // Order matters: the correction has to run after the sweep it corrects.
+    expect(calls).toEqual([
+      { from: OLD, to: NEW },
+      { from: `${NEW}/note.md`, to: `${NEW}/note-1.md` },
+    ]);
+  });
+});

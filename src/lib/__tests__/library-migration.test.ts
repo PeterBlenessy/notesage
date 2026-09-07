@@ -145,6 +145,132 @@ describe("running the migration", () => {
     };
   }
 
+  it("records every rename it made, because the path rewriter cannot infer them", async () => {
+    // Stored paths are absolute, and rewriting them is a rebase — correct
+    // only while the name survived. A project kept as "X (from iCloud
+    // Drive)" that is rebased to `<new>/X` points at the OTHER project.
+    const plan = planLibraryMigration(
+      listing({
+        entries: [entry("note.md"), entry("Research", true)],
+        projectDirs: new Set(["Research"]),
+      }),
+      listing({
+        entries: [entry("note.md"), entry("Research", true)],
+        projectDirs: new Set(["Research"]),
+      }),
+    );
+    const report = await runLibraryMigration(plan, "/old", "/new", deps());
+
+    expect(report.renames).toEqual(
+      expect.arrayContaining([
+        { from: "note.md", to: "note-1.md" },
+        { from: "Research", to: "Research (from iCloud Drive)" },
+      ]),
+    );
+  });
+
+  it("records a merged folder's child renames too, which only the run knows", async () => {
+    const plan = planLibraryMigration(
+      listing({ entries: [entry("Notes", true)] }),
+      listing({ entries: [entry("Notes", true)] }),
+    );
+    const report = await runLibraryMigration(
+      plan,
+      "/old",
+      "/new",
+      deps({
+        listNames: vi.fn(async (dir: string) =>
+          dir.startsWith("/old") ? ["a.md"] : ["a.md"],
+        ),
+      }),
+    );
+
+    expect(report.renames).toEqual([{ from: "Notes/a.md", to: "Notes/a-1.md" }]);
+  });
+
+  it("removes the emptied folder after a merge, so the old root can read as empty", async () => {
+    // Left behind, an empty husk is not just debris: startup asks "does the
+    // old folder still have content?" to decide which root is the library,
+    // and an empty directory answers yes.
+    const plan = planLibraryMigration(
+      listing({ entries: [entry("Notes", true)] }),
+      listing({ entries: [entry("Notes", true)] }),
+    );
+    const listNames = vi
+      .fn<(dir: string) => Promise<string[]>>()
+      .mockResolvedValueOnce(["x.md"]) // destination, for the dedupe set
+      .mockResolvedValueOnce(["b.md"]) // source children
+      .mockResolvedValueOnce([".DS_Store"]); // what is left afterwards
+    const deleted: string[] = [];
+    await runLibraryMigration(
+      plan,
+      "/old",
+      "/new",
+      deps({ listNames, deletePath: vi.fn(async (p: string) => void deleted.push(p)) }),
+    );
+
+    expect(deleted).toEqual(["/old/Notes"]);
+  });
+
+  it("keeps a folder whose children did not all move", async () => {
+    // The other half of the rule: never a blind delete of what did not move.
+    const plan = planLibraryMigration(
+      listing({ entries: [entry("Notes", true)] }),
+      listing({ entries: [entry("Notes", true)] }),
+    );
+    const listNames = vi
+      .fn<(dir: string) => Promise<string[]>>()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce(["b.md"])
+      .mockResolvedValueOnce(["stuck.md"]); // something is still there
+    const deleted: string[] = [];
+    await runLibraryMigration(
+      plan,
+      "/old",
+      "/new",
+      deps({ listNames, deletePath: vi.fn(async (p: string) => void deleted.push(p)) }),
+    );
+
+    expect(deleted).toEqual([]);
+  });
+
+  it("refuses an evicted child inside a merged folder, and says which", async () => {
+    // The top-level planner refuses these; nothing refused them HERE, where
+    // children are reached by name from a hidden-inclusive listing. Moving
+    // the stub out of the container holding its bytes is the unrecoverable
+    // case the whole check exists for.
+    const plan = planLibraryMigration(
+      listing({ entries: [entry("Notes", true)] }),
+      listing({ entries: [entry("Notes", true)] }),
+    );
+    const moved: string[] = [];
+    const deleted: string[] = [];
+    const report = await runLibraryMigration(
+      plan,
+      "/old",
+      "/new",
+      deps({
+        listNames: vi.fn(async (dir: string) =>
+          dir.startsWith("/old") ? [".old.md.icloud", "fine.md"] : [],
+        ),
+        moveEntry: vi.fn(async (src: string, dst: string) => {
+          moved.push(src);
+          return dst;
+        }),
+        deletePath: vi.fn(async (p: string) => void deleted.push(p)),
+      }),
+    );
+
+    expect(moved).toEqual(["/old/Notes/fine.md"]);
+    expect(report.leftBehind).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ name: "Notes/old.md" }),
+      ]),
+    );
+    // And the folder stays: something of the user's is still in it.
+    expect(deleted).toEqual([]);
+  });
+
   it("merges a folder by moving its children, because a move onto it is refused", () => {
     // The step used to be a plain `move` onto a destination that exists by
     // definition — which the move primitive refuses, so this collision shape
