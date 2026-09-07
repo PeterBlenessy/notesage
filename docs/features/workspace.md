@@ -121,6 +121,44 @@ done, so re-planning over what remains reaches the same end state. A failing
 step does not abort the run — a library half in each place with no record of
 which half is worse than finishing and reporting the gap.
 
+**The library is held while it moves** (`src/lib/library-lock.ts`). There is
+no natural quiescence: the editor autosaves on a debounce, the Inbox store
+flushes `reading-progress.json`, the recordings scanner writes manifests, an
+agent may be mid-task — and the stored paths are only rewritten AFTER every
+move, so for the whole run every writer is still aimed at the old root. Since
+`write_file` CREATES a missing file rather than failing, an autosave arriving
+after its note has moved would recreate that note at the abandoned root with
+the newest edit in it. Both roots are therefore locked and every mutating
+file operation refuses paths inside them for the duration. The migration's
+own writes use the separate `migration*` entry points in `tauri.ts` rather
+than an exemption flag — a flag would have to be set around each awaited
+call, and anything else running during that await would be exempt too.
+
+**Nothing is trusted that can be checked.** Every environment answer this
+feature depends on fails CLOSED, because iCloud is transiently unavailable by
+nature and each of these once failed open:
+
+| Check | What a swallowed failure did |
+| --- | --- |
+| Listing the source root | An unreachable library read as an empty one: zero steps, a "successful" run, the marker written, and the app pointed at an empty container for ever. |
+| Listing an `Inbox/` that exists | No Inbox steps planned, so every captured article stays behind while the report says it completed. |
+| `.notesage` project detection | A project demoted to a plain folder — and same-named plain folders are MERGED, combining metadata that must never meet. |
+| Listing a merge destination | Deduping against nothing, planning every child straight onto what is already there. |
+| The evicted-file walk (`sync.rs`) | An unreadable subtree read as "no stubs, safe to move", and `count_files` cannot cover for it: a placeholder copies as a placeholder, so the count matches. |
+| The comments directory | Every sidecar orphaned, silently. |
+
+A destination placeholder counts as a name already taken: an undownloaded
+file is on disk only as `.name.icloud`, so reading the listing literally
+missed the collision entirely — in exactly the case this feature is for, a
+Mac joining a library whose contents have not all come down yet.
+
+**The result is verified against the disk.** The report is what the runner
+believes; afterwards the old root and its `Inbox/` are re-read and anything
+unexplained — not debris, not deliberately left, not a step that already
+failed loudly — is named. This also catches what arrives in the window
+between planning and confirming, which belongs to no step at all. A re-read
+that fails is itself reported rather than passing for a clean bill of health.
+
 **Paths are rewritten in the same pass.** Projects, pins, recents, the open
 document and the path-keyed comment sidecars all store absolute paths; a
 library that moved without them comes back with an empty sidebar, no pins and
@@ -210,6 +248,8 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 | `src/components/sidebar/quiet/FolderPeek.tsx` | Inline `→`-expand one-level peek on a focused project/folder row |
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |
 | `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler (routes by `externalChangeDiffReview`) |
+| `src/lib/library-lock.ts` | Holds both roots while the library moves; every mutating file op checks it |
+| `src/lib/__tests__/library-migration.rehearsal.test.ts` | The migration run against a real filesystem, end to end |
 | `src/hooks/useFileRenameSync.ts` | Rename sync: open-tab path rewrites, Save-Now toast, path-keyed sidecar migration |
 | `src/hooks/useFileWatcherIntegration.ts` | Auto-reload + toast display (OFF) / inline decorations + sticky action toast (ON) |
 | `src/lib/notifications.ts` | `toastExternalChange`, `toastExternalReload` — external-change toast helpers |
