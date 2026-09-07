@@ -1174,6 +1174,15 @@ export const tauriApi = {
     return await invoke<string>("migrate_library_entry", { src, dst });
   },
 
+  /**
+   * Every undownloaded file under a library root, as the path of the file
+   * that is MISSING (not of the `.name.icloud` stub standing in for it).
+   * Backs the migration's materialise-first pre-flight.
+   */
+  async listEvictedPlaceholders(root: string): Promise<string[]> {
+    return await invoke<string[]>("list_evicted_placeholders", { root });
+  },
+
   async readSyncSettings(notesagePath: string): Promise<SyncSettings | null> {
     return await invoke<SyncSettings | null>("read_sync_settings", { notesagePath });
   },

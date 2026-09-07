@@ -642,14 +642,38 @@ fn is_inside_library_root(path: &Path) -> bool {
 /// ordinary small files to anything that walks the tree, which is what makes
 /// them dangerous to copy-then-delete.
 fn first_evicted_placeholder(dir: &Path) -> Result<Option<String>, String> {
-    // `Result`, not `Option`. This used to open with `read_dir(dir).ok()?`,
-    // so a directory it could not read produced `None` — which the caller
-    // reads as "nothing undownloaded here, safe to move". The one guard
-    // standing between this migration and an unrecoverable stub move failed
-    // OPEN, on precisely the transient iCloud faults it exists to survive;
-    // and `count_files` cannot catch what it misses, because a placeholder
-    // copies as a placeholder and the count matches. Both guards failed on
-    // the same input. A subtree that cannot be inspected is now a refusal.
+    let mut found = Vec::new();
+    walk_evicted_placeholders(dir, true, &mut found)?;
+    // The NAME, which is what the refusal message says. Short-circuiting
+    // matters here: this runs per entry during a migration, and walking the
+    // whole subtree every time would make the guard quadratic.
+    Ok(found.into_iter().next().map(|p| {
+        p.file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_else(|| p.display().to_string())
+    }))
+}
+
+/// Every evicted placeholder under `dir`, as the path of the MISSING file.
+///
+/// `first_only` stops at the first, for the per-entry guard. The full list is
+/// what the migration's pre-flight needs: it asks iCloud to bring each one
+/// down and refuses to start until they have all arrived, which removes the
+/// eviction race rather than narrowing it. The guard stays as the backstop for
+/// anything evicted mid-run.
+///
+/// Fails CLOSED throughout. This used to open with `read_dir(dir).ok()?`, so a
+/// directory it could not read produced "nothing undownloaded here, safe to
+/// move" — the one guard between this migration and an unrecoverable stub move
+/// failing open on precisely the transient iCloud faults it exists to survive.
+/// `count_files` could not cover for it either: a placeholder copies as a
+/// placeholder, so the count matches. A subtree that cannot be inspected is a
+/// refusal.
+fn walk_evicted_placeholders(
+    dir: &Path,
+    first_only: bool,
+    out: &mut Vec<PathBuf>,
+) -> Result<(), String> {
     let entries = std::fs::read_dir(dir)
         .map_err(|e| format!("Could not read {} to check for undownloaded files: {e}", dir.display()))?;
     for entry in entries {
@@ -658,9 +682,17 @@ fn first_evicted_placeholder(dir: &Path) -> Result<Option<String>, String> {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
         if name.starts_with('.') && name.ends_with(".icloud") {
-            return Ok(Some(
-                name.trim_start_matches('.').trim_end_matches(".icloud").to_string(),
-            ));
+            // The path of the file that is NOT there — `.note.md.icloud`
+            // stands for `note.md` beside it. That is the path
+            // `icloud_ensure_downloaded` takes and the one whose arrival the
+            // caller waits for; handing back the stub's own path would ask
+            // iCloud to download something that already exists.
+            let real = name.trim_start_matches('.').trim_end_matches(".icloud").to_string();
+            out.push(dir.join(real));
+            if first_only {
+                return Ok(());
+            }
+            continue;
         }
         // `symlink_metadata`, not `is_dir()`: the latter follows links, and a
         // cyclic symlink would recurse until the stack ran out.
@@ -668,12 +700,38 @@ fn first_evicted_placeholder(dir: &Path) -> Result<Option<String>, String> {
             .map_err(|e| format!("Could not inspect {}: {e}", path.display()))?
             .is_dir();
         if is_real_dir {
-            if let Some(found) = first_evicted_placeholder(&path)? {
-                return Ok(Some(found));
+            walk_evicted_placeholders(&path, first_only, out)?;
+            if first_only && !out.is_empty() {
+                return Ok(());
             }
         }
     }
-    Ok(None)
+    Ok(())
+}
+
+/// Every undownloaded file under a library root, absolute paths.
+///
+/// Backs the migration's materialise-first pre-flight. Read-only and strictly
+/// less capable than `list_directory`, which the renderer already has, so it
+/// carries no root guard of its own — unlike `migrate_library_entry`, which
+/// moves bytes and does.
+///
+/// A root that does not exist is an empty list rather than an error: the
+/// container may legitimately not be there yet. Anything else — a subtree that
+/// cannot be read — fails, for the reason above.
+#[tauri::command]
+pub async fn list_evicted_placeholders(root: String) -> Result<Vec<String>, String> {
+    let dir = PathBuf::from(&root);
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    tokio::task::spawn_blocking(move || {
+        let mut out = Vec::new();
+        walk_evicted_placeholders(&dir, false, &mut out)?;
+        Ok(out.into_iter().map(|p| p.to_string_lossy().to_string()).collect())
+    })
+    .await
+    .map_err(|e| format!("Could not check for undownloaded files: {e}"))?
 }
 
 /// Count all files (not directories) recursively in a directory.
@@ -909,6 +967,86 @@ mod tests {
 
             // Put it back before asserting, so a failure cannot leave an
             // undeletable directory behind.
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+            let err = result.expect_err("an unreadable subtree must not read as clean");
+            assert!(err.contains("Could not read"), "unexpected error: {err}");
+        }
+    }
+
+    #[tokio::test]
+    async fn lists_every_undownloaded_file_as_the_path_that_is_missing() {
+        // The pre-flight's input. It returns the path of the file that is NOT
+        // there — `.note.md.icloud` stands for `note.md` beside it — because
+        // that is what `icloud_ensure_downloaded` takes and what the caller
+        // waits to appear. Handing back the stub's own path would ask iCloud
+        // to download something that already exists, and the wait would never
+        // end.
+        let (_guard, base) = test_library();
+        std::fs::create_dir_all(base.join("Project").join("deep")).unwrap();
+        std::fs::create_dir_all(base.join("Inbox")).unwrap();
+        std::fs::write(base.join("here.md"), "downloaded").unwrap();
+        std::fs::write(base.join(".away.md.icloud"), "").unwrap();
+        std::fs::write(base.join("Project").join("deep").join(".old.md.icloud"), "").unwrap();
+        std::fs::write(base.join("Inbox").join(".article.html.icloud"), "").unwrap();
+
+        let mut found = list_evicted_placeholders(base.to_string_lossy().to_string())
+            .await
+            .unwrap();
+        found.sort();
+
+        let mut want = vec![
+            base.join("away.md").to_string_lossy().to_string(),
+            base.join("Inbox").join("article.html").to_string_lossy().to_string(),
+            base.join("Project").join("deep").join("old.md").to_string_lossy().to_string(),
+        ];
+        want.sort();
+        assert_eq!(found, want);
+    }
+
+    #[tokio::test]
+    async fn a_root_with_nothing_evicted_lists_nothing() {
+        let (_guard, base) = test_library();
+        std::fs::write(base.join("note.md"), "x").unwrap();
+
+        assert!(list_evicted_placeholders(base.to_string_lossy().to_string())
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_root_that_does_not_exist_lists_nothing_rather_than_failing() {
+        // The container may legitimately not be there yet, and a pre-flight
+        // that errors on it would block a migration INTO a root that is about
+        // to be created.
+        let (_guard, base) = test_library();
+
+        assert!(
+            list_evicted_placeholders(base.join("nope").to_string_lossy().to_string())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_subtree_fails_the_listing_too() {
+        // Same rule as the per-entry guard: a subtree that cannot be inspected
+        // cannot be promised to hold no stubs. A pre-flight that reported
+        // "nothing to download" here would hand a clean bill of health to
+        // exactly the case it exists to catch.
+        let (_guard, base) = test_library();
+        let locked = base.join("locked");
+        std::fs::create_dir_all(&locked).unwrap();
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+            let result = list_evicted_placeholders(base.to_string_lossy().to_string()).await;
+
             std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
 
             let err = result.expect_err("an unreadable subtree must not read as clean");

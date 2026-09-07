@@ -121,6 +121,42 @@ done, so re-planning over what remains reaches the same end state. A failing
 step does not abort the run — a library half in each place with no record of
 which half is worse than finishing and reporting the gap.
 
+**Nothing is moved that is not on this Mac.** Before the plan is even built,
+both roots are walked for `.icloud` placeholders
+(`list_evicted_placeholders`), each one is asked for
+(`icloud_ensure_downloaded`), and the move **refuses to start** until they
+have all arrived, naming what is missing. This is the only path to true data
+loss the review found: iCloud can take a file's bytes back between the
+per-entry guard and the rename, and moving the resulting stub into a container
+that does not own its content leaves a reference its owner may purge. Waiting
+until nothing is evicted removes the race rather than narrowing it; the
+per-entry guard in `sync.rs` stays as the backstop for anything evicted
+mid-run. The wait shows progress and can be cancelled — on a large library
+over iCloud it can take a long time, and cancelling stops the waiting, not the
+downloads. `src/lib/library-materialise.ts`.
+
+**A move can be undone.** Not a backup — a reversal. The runner records every
+relocation and stashes the few things a merge destroys, and
+`src/lib/library-migration-undo.ts` replays that record backwards: moves in
+reverse order (so a directory is never taken back while its children are still
+in it), then the stashed files to the root each came from. The record is
+written to `~/.notesage/migrations/<id>.json` — outside both roots, because
+both are moving — before the bookkeeping and the marker, since every step after
+the run can fail and a record written last is missing in exactly the cases
+somebody wants it. It survives a restart: the moment someone realises the
+result is wrong is more likely to be the next morning than the next minute.
+
+Undo is itself a migration: same lock, same `migration*` write entry points,
+same partial-failure reporting. It repoints the stored paths through the same
+routine the forward run uses (roots swapped, renames inverted — derived from
+the record's own moves so the two cannot disagree), and clears `migratedFrom`
+from the marker, or every device keeps resolving the library to a container the
+files have just left. A partially applied record is kept so it can be re-run;
+only a clean undo spends it. It cannot help if bytes were destroyed in the
+cloud or something outside the app changed a file — materialise-first is what
+closes that; the undo closes regret. Design:
+`docs/design/migration-safety.md`.
+
 **The library is held while it moves** (`src/lib/library-lock.ts`). There is
 no natural quiescence: the editor autosaves on a debounce, the Inbox store
 flushes `reading-progress.json`, the recordings scanner writes manifests, an
@@ -249,6 +285,8 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |
 | `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler (routes by `externalChangeDiffReview`) |
 | `src/lib/library-lock.ts` | Holds both roots while the library moves; every mutating file op checks it |
+| `src/lib/library-materialise.ts` | Materialise-first pre-flight — walks both roots for `.icloud` stubs, asks iCloud for them, refuses to start until they arrive |
+| `src/lib/library-migration-undo.ts` | The undo record, its store under `~/.notesage/migrations/`, and the reversal |
 | `src/lib/__tests__/library-migration.rehearsal.test.ts` | The migration run against a real filesystem, end to end |
 | `src/hooks/useFileRenameSync.ts` | Rename sync: open-tab path rewrites, Save-Now toast, path-keyed sidecar migration |
 | `src/hooks/useFileWatcherIntegration.ts` | Auto-reload + toast display (OFF) / inline decorations + sticky action toast (ON) |

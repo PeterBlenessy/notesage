@@ -38,6 +38,11 @@ import {
   undoStoreDeps,
 } from "@/lib/library-migration-run";
 import {
+  materialiseDeps,
+  materialiseLibrary,
+  type PendingDownload,
+} from "@/lib/library-materialise";
+import {
   applyPathRewrites,
   planPathRewrites,
   type MigrationRename,
@@ -50,6 +55,8 @@ import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
 
 type Phase =
+  | { kind: "materialising"; arrived: number; total: number }
+  | { kind: "blocked"; pending: PendingDownload[]; cancelled: boolean }
   | { kind: "planning" }
   | { kind: "confirm"; plan: MigrationPlan }
   | { kind: "running"; plan: MigrationPlan; done: number }
@@ -156,18 +163,48 @@ export function LibraryMigrationDialog({
   oldRoot: string;
   newRoot: string;
 }) {
-  const [phase, setPhase] = useState<Phase>({ kind: "planning" });
+  const [phase, setPhase] = useState<Phase>({ kind: "materialising", arrived: 0, total: 0 });
   // A run in flight, tracked in a ref so a re-render cannot lose it. The
   // dialog can be dismissed and reopened; that must not start a second run
   // over the same two roots while the first is still moving files.
   const runningRef = useRef(false);
+  // The pre-flight's stop button. A ref, because the wait loop reads it
+  // between sweeps and a state value would be the one captured at the start.
+  const cancelPreflightRef = useRef(false);
+  // Bumped by "Check again", to re-run the pre-flight without reopening.
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    setPhase({ kind: "planning" });
+    cancelPreflightRef.current = false;
+    setPhase({ kind: "materialising", arrived: 0, total: 0 });
     void (async () => {
       try {
+        // Materialise FIRST, before the plan is even built. An evicted file is
+        // on disk only as a `.name.icloud` stub, and moving that stub out of
+        // the container holding its bytes leaves a reference its owner may
+        // purge — the one path to real data loss this feature has. Waiting
+        // until nothing is evicted removes the race instead of narrowing it,
+        // and it has to happen before planning too: a placeholder is a name
+        // already taken, invisible to a listing read literally.
+        const materialised = await materialiseLibrary([oldRoot, newRoot], {
+          ...materialiseDeps(),
+          onProgress: (arrived, total) => {
+            if (!cancelled) setPhase({ kind: "materialising", arrived, total });
+          },
+          isCancelled: () => cancelled || cancelPreflightRef.current,
+        });
+        if (cancelled) return;
+        if (materialised.pending.length > 0) {
+          setPhase({
+            kind: "blocked",
+            pending: materialised.pending,
+            cancelled: materialised.cancelled,
+          });
+          return;
+        }
+
         const [source, dest] = await Promise.all([
           buildMigrationListing(oldRoot),
           buildMigrationListing(newRoot),
@@ -192,7 +229,7 @@ export function LibraryMigrationDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, oldRoot, newRoot]);
+  }, [open, oldRoot, newRoot, attempt]);
 
   const start = useCallback(
     async (plan: MigrationPlan) => {
@@ -494,6 +531,45 @@ export function LibraryMigrationDialog({
           )}
         </DialogHeader>
 
+        {phase.kind === "materialising" && (
+          <div className="space-y-2">
+            <p className="text-sm">{t("settings.libraryMoveMaterialising")}</p>
+            {phase.total > 0 && (
+              <>
+                <Progress value={(phase.arrived / phase.total) * 100} />
+                <p className="text-sm text-muted-foreground">
+                  {t("settings.libraryMoveMaterialisingCount", {
+                    arrived: String(phase.arrived),
+                    total: String(phase.total),
+                  })}
+                </p>
+              </>
+            )}
+          </div>
+        )}
+
+        {phase.kind === "blocked" && (
+          <div className="space-y-2 text-sm">
+            <p>
+              {phase.cancelled
+                ? t("settings.libraryMoveBlockedCancelled")
+                : t("settings.libraryMoveBlocked")}
+            </p>
+            <ul className="list-disc pl-5 text-muted-foreground">
+              {phase.pending.slice(0, 10).map((p) => (
+                <li key={p.path}>{p.path.split("/").pop()}</li>
+              ))}
+            </ul>
+            {phase.pending.length > 10 && (
+              <p className="text-muted-foreground">
+                {t("settings.libraryMoveBlockedMore", {
+                  count: String(phase.pending.length - 10),
+                })}
+              </p>
+            )}
+          </div>
+        )}
+
         {phase.kind === "planning" && (
           <p className="text-sm text-muted-foreground">{t("common.loading")}</p>
         )}
@@ -597,7 +673,33 @@ export function LibraryMigrationDialog({
         )}
 
         <DialogFooter>
-          {phase.kind === "confirm" ? (
+          {phase.kind === "materialising" ? (
+            // The only control during the pre-flight, and it must exist: on a
+            // large library over iCloud this can take a long time, and a modal
+            // spinner with no way out is its own failure.
+            //
+            // "Stop waiting", not "Cancel": what it ends is the waiting, and
+            // the next screen names what has not arrived. The downloads carry
+            // on in iCloud's own time, and Cancel in a modal footer would
+            // read as abandoning the migration itself.
+            <Button
+              variant="ghost"
+              onClick={() => {
+                cancelPreflightRef.current = true;
+              }}
+            >
+              {t("settings.libraryMoveStopWaiting")}
+            </Button>
+          ) : phase.kind === "blocked" ? (
+            <>
+              <Button variant="ghost" onClick={() => setAttempt((n) => n + 1)}>
+                {t("settings.libraryMoveCheckAgain")}
+              </Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                {t("common.close")}
+              </Button>
+            </>
+          ) : phase.kind === "confirm" ? (
             <>
               <Button variant="ghost" onClick={() => onOpenChange(false)}>
                 {t("common.cancel")}

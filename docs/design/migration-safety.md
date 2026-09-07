@@ -110,6 +110,8 @@ file. Materialise-first is what closes that; the undo closes regret.
    Reverses the moves, repoints the stored paths through the same routine the
    forward run uses with the roots swapped, clears `migratedFrom`, and keeps
    the record when the undo only partly succeeded so it can be re-run.
-5. Materialise-first pre-flight, with progress and cancel.
+5. ✅ Materialise-first pre-flight, with progress and cancel. Runs before the
+   plan is built — a placeholder is also a name already taken, invisible to a
+   listing read literally. Cancelling stops the waiting, not the downloads.
 6. ✅ A rehearsal case asserting timestamps survive — the regression that would
    otherwise ship in silence.

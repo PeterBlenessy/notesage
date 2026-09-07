@@ -368,4 +368,55 @@ describe("iCloud container migration, through the real app", () => {
     // A spent record is not offered again.
     expect(undone.recordGone).toBe(true);
   });
+  it("finds an undownloaded file and refuses to start, through the real walk", async () => {
+    // The materialise-first pre-flight over real IPC. A `.name.icloud` stub is
+    // an ordinary small file to anything walking the tree, which is what makes
+    // it dangerous: moving it out of the container that holds its bytes leaves
+    // a reference the owner may purge. The walk must report the path of the
+    // file that is MISSING — what `icloud_ensure_downloaded` takes — and the
+    // pre-flight must refuse while it is still missing.
+    write(join(oldRoot, "Welcome.md"), "# Welcome\n");
+    write(join(oldRoot, "Project", ".notesage", "project.json"), "{}");
+    // Nested, because an evicted file is most likely one nobody has opened in
+    // a while, not one at the top.
+    write(join(oldRoot, "Project", ".old.md.icloud"), "");
+    mkdirSync(newRoot, { recursive: true });
+
+    const result = (await browser.executeAsync(
+      (oldR: string, newR: string, done: (r: unknown) => void) => {
+        const w = window as unknown as { __E2E_LIBRARY_MIGRATION__: Record<string, any> };
+        const m = w.__E2E_LIBRARY_MIGRATION__;
+        if (!m) {
+          done({ ok: false, error: "__E2E_LIBRARY_MIGRATION__ missing — not a dev build?" });
+          return;
+        }
+        void (async () => {
+          try {
+            // A handful of sweeps, not the indefinite wait a person watching a
+            // progress bar gets: nothing here will ever bring the file down.
+            const report = await m.materialiseLibrary([oldR, newR], {
+              ...m.materialiseDeps(),
+              pollMs: 10,
+              maxSweeps: 2,
+            });
+            done({ ok: true, value: report });
+          } catch (err) {
+            done({ ok: false, error: String(err) });
+          }
+        })();
+      },
+      oldRoot,
+      newRoot,
+    )) as { ok: boolean; error?: string; value?: any };
+
+    if (!result.ok) throw new Error(`pre-flight failed in the app: ${result.error}`);
+    expect(result.value.requested).toBe(1);
+    expect(result.value.arrived).toBe(0);
+    // The path of the file that is not there, not of the stub standing in.
+    expect(result.value.pending).toHaveLength(1);
+    expect(result.value.pending[0].path).toBe(join(oldRoot, "Project", "old.md"));
+    // Nothing moved: the pre-flight runs before the plan is even built.
+    expect(existsSync(join(oldRoot, "Welcome.md"))).toBe(true);
+    expect(snapshot(newRoot)).toEqual({});
+  });
 });

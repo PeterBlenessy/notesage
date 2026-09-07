@@ -1217,6 +1217,15 @@ Move ONE entry into the new library, returning where it landed. **Never overwrit
 pub async fn migrate_library_entry(src: String, dst: String) -> Result<String, String>
 ```
 
+### list_evicted_placeholders
+
+Every undownloaded file under a library root, as absolute paths — the input to the migration's materialise-first pre-flight. iCloud leaves a `.<name>.icloud` stub beside a missing `<name>`; this returns the path of the **missing file**, which is what `icloud_ensure_downloaded` takes and whose arrival the caller waits for. A root that does not exist is an empty list (the container may legitimately not be there yet); a subtree that cannot be read is an error, never an empty result — a swallowed listing reads as "nothing undownloaded, safe to move", which is the fail-open this guard exists to prevent. Read-only and strictly less capable than `list_directory`, so unlike `migrate_library_entry` it carries no root guard.
+
+```rust
+#[tauri::command]
+pub async fn list_evicted_placeholders(root: String) -> Result<Vec<String>, String>
+```
+
 ## Research Operations
 
 Located in `src-tauri/src/index/mod.rs` (part of the SQLite document index — the legacy filesystem-scanning `search_research` command was removed when research search moved to the index).

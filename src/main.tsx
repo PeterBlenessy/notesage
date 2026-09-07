@@ -28,6 +28,7 @@ import {
   recordMigrationInMarker,
 } from "@/lib/library-migration-run";
 import { applyPathRewrites, planPathRewrites } from "@/lib/library-migration-paths";
+import { materialiseDeps, materialiseLibrary } from "@/lib/library-materialise";
 import {
   discardUndoRecord,
   latestUndoRecord,
@@ -107,6 +108,10 @@ if (import.meta.env.DEV) {
     discardUndoRecord,
     undoStoreDeps,
     clearMigrationInMarker,
+    // The pre-flight, which has its own IPC boundary (`list_evicted_placeholders`)
+    // and is the one guard between the migration and an unrecoverable stub move.
+    materialiseLibrary,
+    materialiseDeps,
   };
 }
 
