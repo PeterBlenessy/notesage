@@ -7,6 +7,7 @@ import {
   collectSidecarFilePaths,
   mergePinsFiles,
   migrationDeps,
+  clearMigrationInMarker,
   recordMigrationInMarker,
 } from "@/lib/library-migration-run";
 import {
@@ -143,6 +144,37 @@ describe("recording the migration in the marker (2026-09-06)", () => {
 
     expect(marker.migratedAt).toBe("2026-09-02T09:00:00.000Z");
     expect(marker.migratedBy).toBe("an older Mac");
+  });
+
+  it("takes the migration back off the marker for an undo", async () => {
+    // The mirror image of writing it. While `migratedFrom` stands, every
+    // device — this Mac included — resolves the library to a container the
+    // files have just left, so the next launch comes back to an empty one.
+    const migrated = markMigrated(newLibraryMarker("ios", "2026-09-01T10:00:00.000Z"), {
+      from: LEGACY_CLOUD_DOCS_LIBRARY,
+      by: "Peter's MacBook Pro",
+      at: "2026-09-06T18:00:00.000Z",
+    });
+    const { deps: d, written } = deps(migrated);
+
+    const cleared = await clearMigrationInMarker("/new", d);
+
+    expect(cleared?.migratedFrom).toBeUndefined();
+    expect(cleared?.migratedAt).toBeUndefined();
+    expect(cleared?.migratedBy).toBeUndefined();
+    // The rest of the marker is the phone's, and is not this Mac's to rewrite.
+    expect(cleared?.createdBy).toBe("ios");
+    expect(cleared?.createdAt).toBe("2026-09-01T10:00:00.000Z");
+    expect(JSON.parse(written[0].content).migratedFrom).toBeUndefined();
+  });
+
+  it("writes no marker at all when the container has none", async () => {
+    // There is nothing to clear, and inventing a marker for a root being
+    // emptied would be a claim about it that is not true.
+    const { deps: d, written } = deps(null);
+
+    await expect(clearMigrationInMarker("/new", d)).resolves.toBeNull();
+    expect(written).toEqual([]);
   });
 });
 

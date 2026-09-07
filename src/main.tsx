@@ -23,9 +23,18 @@ import {
   collectSidecarFilePaths,
   markerWriteDeps,
   migrationDeps,
+  undoStoreDeps,
+  clearMigrationInMarker,
   recordMigrationInMarker,
 } from "@/lib/library-migration-run";
 import { applyPathRewrites, planPathRewrites } from "@/lib/library-migration-paths";
+import {
+  discardUndoRecord,
+  latestUndoRecord,
+  saveUndoRecord,
+  undoLibraryMigration,
+  undoRecordFor,
+} from "@/lib/library-migration-undo";
 import { lockLibraryRoots, unlockLibraryRoots } from "@/lib/library-lock";
 import { useInboxStore } from "@/stores/inbox-store";
 import { useFlagStore } from "@/stores/flag-store";
@@ -88,6 +97,16 @@ if (import.meta.env.DEV) {
     applyPathRewrites,
     lockLibraryRoots,
     unlockLibraryRoots,
+    // The undo too: reversing a migration is itself a migration, and it meets
+    // the same IPC boundary. A record round-tripped through the real store is
+    // the only way to see that the persisted shape survives the trip.
+    undoLibraryMigration,
+    undoRecordFor,
+    saveUndoRecord,
+    latestUndoRecord,
+    discardUndoRecord,
+    undoStoreDeps,
+    clearMigrationInMarker,
   };
 }
 

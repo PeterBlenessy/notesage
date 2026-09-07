@@ -5,9 +5,11 @@ import {
   serializeReadingProgress,
 } from "@/lib/reading-progress-file";
 import type { MigrationDeps, MigrationListing } from "@/lib/library-migration";
+import type { UndoStoreDeps } from "@/lib/library-migration-undo";
 import {
   LEGACY_CLOUD_DOCS_LIBRARY,
   LIBRARY_MARKER_REL_PATH,
+  clearMigrated,
   markMigrated,
   newLibraryMarker,
   parseLibraryMarker,
@@ -241,5 +243,53 @@ export function markerWriteDeps(): MarkerWriteDeps {
     createDirectory: (path) => tauriApi.migrationCreateDirectory(path),
     writeFile: (path, content) => tauriApi.migrationWriteFile(path, content),
     deviceName: () => tauriApi.getDeviceName(),
+  };
+}
+
+/**
+ * Take the migration back off the marker, for an undo.
+ *
+ * Written with the same care as recording it, and for the mirror-image
+ * reason: while `migratedFrom` stands, `resolveSyncedLibraryRoot` points every
+ * device at the container — including the one the files have just left. A
+ * marker left behind after an undo is a library that reads as empty on the
+ * next launch.
+ *
+ * A container with no marker, or an unreadable one, is left alone: there is
+ * nothing to clear, and writing a fresh marker into a root being emptied would
+ * be inventing a claim about it.
+ */
+export async function clearMigrationInMarker(
+  newRoot: string,
+  deps: MarkerWriteDeps,
+): Promise<LibraryMarker | null> {
+  const existing = await deps.readMarker(newRoot).catch(() => null);
+  if (!existing) return null;
+  const cleared = clearMigrated(existing);
+  await deps.writeFile(`${newRoot}/${LIBRARY_MARKER_REL_PATH}`, serializeLibraryMarker(cleared));
+  return cleared;
+}
+
+/**
+ * The real wiring for the undo-record store.
+ *
+ * Ordinary file commands, NOT the `migration*` ones: the records live under
+ * `~/.notesage/`, outside both library roots, so the lock has no opinion about
+ * them — and going through the guarded path is what proves it, since a record
+ * that ever needed the exemption would be a record stored somewhere it must
+ * not be.
+ */
+export function undoStoreDeps(): UndoStoreDeps {
+  return {
+    createDirectory: (path) => tauriApi.createDirectory(path),
+    writeFile: (path, content) => tauriApi.writeFile(path, content),
+    readFile: (path) => tauriApi.readFile(path),
+    listDirectory: async (path) =>
+      (await tauriApi.listDirectory(path, true)).map((e) => ({
+        name: e.name,
+        is_directory: e.is_directory,
+      })),
+    deletePath: (path) => tauriApi.deletePath(path),
+    pathExists: (path) => tauriApi.pathExists(path),
   };
 }

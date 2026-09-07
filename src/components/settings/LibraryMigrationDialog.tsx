@@ -20,13 +20,28 @@ import {
   type MigrationReport,
 } from "@/lib/library-migration";
 import {
+  discardUndoRecord,
+  invertedRenames,
+  saveUndoRecord,
+  undoLibraryMigration,
+  undoRecordFor,
+  type UndoRecord,
+  type UndoReport,
+} from "@/lib/library-migration-undo";
+import {
   buildMigrationListing,
   collectSidecarFilePaths,
+  clearMigrationInMarker,
   markerWriteDeps,
   migrationDeps,
   recordMigrationInMarker,
+  undoStoreDeps,
 } from "@/lib/library-migration-run";
-import { applyPathRewrites, planPathRewrites } from "@/lib/library-migration-paths";
+import {
+  applyPathRewrites,
+  planPathRewrites,
+  type MigrationRename,
+} from "@/lib/library-migration-paths";
 import { executeRenameTransaction } from "@/lib/rename-transaction";
 import { applyProjectMoved } from "@/lib/project-moved";
 import { lockLibraryRoots, unlockLibraryRoots } from "@/lib/library-lock";
@@ -38,8 +53,87 @@ type Phase =
   | { kind: "planning" }
   | { kind: "confirm"; plan: MigrationPlan }
   | { kind: "running"; plan: MigrationPlan; done: number }
-  | { kind: "done"; report: MigrationReport }
+  | { kind: "done"; report: MigrationReport; undo: UndoRecord | null }
+  | { kind: "undoing"; done: number; total: number }
+  | { kind: "undone"; report: UndoReport }
   | { kind: "error"; message: string };
+
+/**
+ * Point every stored absolute path at where the library now is.
+ *
+ * Shared by the migration and its undo, in the same direction each of them
+ * moved: the undo passes the roots swapped and the renames inverted, and
+ * nothing else about it differs. Two copies would drift, and this is the half
+ * of the migration that decides whether the library comes back with a sidebar
+ * in it — the files are already where they belong by the time this runs, so a
+ * mistake here reads as losing everything while nothing has been lost.
+ */
+async function repointStoredPaths(
+  from: string,
+  to: string,
+  renames: MigrationRename[],
+): Promise<{ failure: string | null; treeReadFailures: string[]; sidecarUnreadable: string[] }> {
+  const treeReadFailures: string[] = [];
+  const ws = useWorkspaceStore.getState();
+  const editor = useEditorStore.getState();
+  const notesRoot = useSettingsStore.getState().notesRootPath;
+  // Sidecars that cannot be re-keyed are named rather than skipped in
+  // silence: their key is a hash of the document path, so after the move the
+  // comments are unreachable with the bytes still on disk — which reads as
+  // losing them.
+  const sidecarScan = notesRoot
+    ? await collectSidecarFilePaths(notesRoot)
+    : { paths: [], unreadable: [] };
+  const rewrites = planPathRewrites({
+    oldRoot: from,
+    newRoot: to,
+    projectPaths: ws.projects.map((p) => p.path),
+    documentPaths: [
+      ...editor.openDocuments.map((d) => d.filePath),
+      ...(editor.recentFiles ?? []).map((r) => r.path),
+    ].filter((p): p is string => Boolean(p)),
+    sidecarFilePaths: sidecarScan.paths,
+    commentsDir: `${notesRoot ?? ""}/.notesage/comments`,
+    renames,
+  });
+  // The rewrites get their own failure boundary, for the same reason the
+  // marker does: by this point the files HAVE moved. Letting an exception
+  // here escape skipped the marker AND the settings update — a library
+  // physically in one place with nothing recording that it went there, which
+  // is the one state the marker exists to prevent.
+  let failure: string | null = null;
+  try {
+    await applyPathRewrites(rewrites, {
+      // The tree is RE-READ, not blanked. `updateProjectPath(from, to, [])`
+      // wipes the cached tree, and nothing refills it: the watchers that
+      // start on the new root only report future events, so the files that
+      // are already sitting there never produce one. Every moved project
+      // would render as an empty folder until the app restarted — which is
+      // the "my notes are gone" moment this whole feature has to avoid.
+      //
+      // The SAME bookkeeping the per-project sync uses. It used to be a
+      // second implementation here, and the copy was missing the
+      // project-metadata re-key — so every migrated project kept its metadata
+      // keyed to the old path and its AI lock silently stopped enforcing
+      // until the next launch. Writes go through the migration's own entry
+      // points because the roots are locked.
+      updateProjectPath: (a, b) =>
+        applyProjectMoved(a, b, {
+          listDirectory: (path) =>
+            tauriApi.listDirectory(path, useSettingsStore.getState().showHiddenFiles),
+          writeFile: (path, content) => tauriApi.migrationWriteFile(path, content),
+          onTreeReadFailure: (path, err) => treeReadFailures.push(`${path}: ${String(err)}`),
+        }),
+      renameOpenDocument: (a, b) => editor.renameOpenDocument(a, b),
+      updateFilePaths: (fromPrefix, toPrefix) => ws.updateFilePaths(fromPrefix, toPrefix),
+      migrateSidecars: (inputs) =>
+        notesRoot ? executeRenameTransaction(notesRoot, inputs) : Promise.resolve(),
+    });
+  } catch (err) {
+    failure = String(err);
+  }
+  return { failure, treeReadFailures, sidecarUnreadable: sidecarScan.unreadable };
+}
 
 /**
  * The one place a library move can be started, and the only place its plan is
@@ -110,11 +204,33 @@ export function LibraryMigrationDialog({
       // still point at the old one — see `library-lock.ts`. Released in
       // `finally`, so a thrown migration cannot leave the app unable to save.
       lockLibraryRoots([oldRoot, newRoot]);
+      let undoRecordFailure: string | null = null;
       try {
         const report = await runLibraryMigration(plan, oldRoot, newRoot, {
           ...migrationDeps(),
           onStep: (done) => setPhase({ kind: "running", plan, done }),
         });
+
+        // The undo record goes to disk FIRST, ahead of the bookkeeping and
+        // the marker, and outside both roots. It is the only artefact that
+        // makes the move reversible, and every step after this one can fail;
+        // a record written last is a record missing in exactly the cases
+        // somebody would want it. Its own failure is not fatal — the
+        // migration succeeded — but it costs the undo, so it is reported.
+        let undoRecord: UndoRecord | null = undoRecordFor(
+          crypto.randomUUID(),
+          oldRoot,
+          newRoot,
+          report,
+        );
+        const homeDir = useSettingsStore.getState().homeDir;
+        try {
+          if (!homeDir) throw new Error("no home directory");
+          await saveUndoRecord(homeDir, undoRecord, undoStoreDeps());
+        } catch (err) {
+          undoRecordFailure = String(err);
+          undoRecord = null;
+        }
 
         // Moving the bytes is only half of it. Projects, the open document,
         // recents, pins and the path-keyed comment sidecars all store
@@ -123,70 +239,15 @@ export function LibraryMigrationDialog({
         // which is exactly what looks like data loss. Runs even when steps
         // failed: whatever DID move has moved, and leaving the bookkeeping
         // pointing at the old place would be worse than a partial move.
-        const treeReadFailures: string[] = [];
-        const ws = useWorkspaceStore.getState();
-        const editor = useEditorStore.getState();
-        const notesRoot = useSettingsStore.getState().notesRootPath;
-        // Sidecars that cannot be re-keyed are named in the report rather
-        // than skipped in silence: their key is a hash of the document path,
-        // so after the move the comments are unreachable with the bytes still
-        // on disk — which reads as losing them.
-        const sidecarScan = notesRoot
-          ? await collectSidecarFilePaths(notesRoot)
-          : { paths: [], unreadable: [] };
-        const rewrites = planPathRewrites({
-          oldRoot,
-          newRoot,
-          projectPaths: ws.projects.map((p) => p.path),
-          documentPaths: [
-            ...editor.openDocuments.map((d) => d.filePath),
-            ...(editor.recentFiles ?? []).map((r) => r.path),
-          ].filter((p): p is string => Boolean(p)),
-          sidecarFilePaths: sidecarScan.paths,
-          commentsDir: `${notesRoot ?? ""}/.notesage/comments`,
-          // What the run actually renamed. A plain rebase would point a
-          // project kept as `X (from iCloud Drive)` at `<new root>/X` — the
-          // OTHER project, the one already in the container.
-          renames: report.renames,
-        });
-        // The rewrites get their own failure boundary, for the same reason
-        // the marker does: by this point the files HAVE moved, and that
-        // cannot be undone. Letting an exception here jump to the outer catch
-        // skipped the marker AND the settings update — a library physically
-        // in the container with nothing recording that it went there, which
-        // is the one state the marker exists to prevent.
-        let rewriteFailure: string | null = null;
-        try {
-          await applyPathRewrites(rewrites, {
-            // The tree is RE-READ, not blanked. `updateProjectPath(from, to, [])`
-            // wipes the cached tree, and nothing refills it: the watchers that
-            // start on the new root only report future events, so the files
-            // that are already sitting there never produce one. Every migrated
-            // project would render as an empty folder until the app restarted
-            // — which is the "my notes are gone" moment this whole feature has
-            // to avoid. `migrateProjectPath` has always done it this way for a
-            // single project.
-            // The SAME bookkeeping the per-project sync uses. It used to be
-            // a second implementation here, and the copy was missing the
-            // project-metadata re-key — so every migrated project kept its
-            // metadata keyed to the old path and its AI lock silently stopped
-            // enforcing until the next launch. Writes go through the
-            // migration's own entry points because the roots are locked.
-            updateProjectPath: (from, to) =>
-              applyProjectMoved(from, to, {
-                listDirectory: (path) =>
-                  tauriApi.listDirectory(path, useSettingsStore.getState().showHiddenFiles),
-                writeFile: (path, content) => tauriApi.migrationWriteFile(path, content),
-                onTreeReadFailure: (path, err) => treeReadFailures.push(`${path}: ${String(err)}`),
-              }),
-            renameOpenDocument: (from, to) => editor.renameOpenDocument(from, to),
-            updateFilePaths: (fromPrefix, toPrefix) => ws.updateFilePaths(fromPrefix, toPrefix),
-            migrateSidecars: (inputs) =>
-              notesRoot ? executeRenameTransaction(notesRoot, inputs) : Promise.resolve(),
-          });
-        } catch (err) {
-          rewriteFailure = String(err);
-        }
+        //
+        // `report.renames` and not a plain rebase: a project kept as
+        // `X (from iCloud Drive)` would otherwise be pointed at
+        // `<new root>/X` — the OTHER project, the one already in the
+        // container.
+        const repoint = await repointStoredPaths(oldRoot, newRoot, report.renames);
+        const rewriteFailure = repoint.failure;
+        const treeReadFailures = repoint.treeReadFailures;
+        const sidecarScan = { unreadable: repoint.sidecarUnreadable };
 
         // Check the belief against the disk before declaring anything.
         //
@@ -241,6 +302,7 @@ export function LibraryMigrationDialog({
 
         setPhase({
           kind: "done",
+          undo: undoRecord,
           report: {
             ...report,
             leftBehind: [
@@ -266,9 +328,17 @@ export function LibraryMigrationDialog({
                     },
                   ]
                 : []),
+              ...(undoRecordFailure
+                ? [
+                    {
+                      name: t("settings.libraryUndoRecordName"),
+                      reason: t("settings.libraryUndoRecordFailed", { error: undoRecordFailure }),
+                    },
+                  ]
+                : []),
               ...treeReadFailures.map((f) => ({
                 name: f,
-                reason: "moved, but its contents could not be re-read — restart to see them",
+                reason: t("settings.libraryMoveTreeUnreadable"),
               })),
             ],
           },
@@ -286,6 +356,106 @@ export function LibraryMigrationDialog({
     [oldRoot, newRoot],
   );
 
+  /**
+   * Put the library back where it came from.
+   *
+   * Undo is itself a migration: it takes the same lock, goes through the same
+   * `migration*` write entry points, repoints the same stored paths, and can
+   * partially fail the same way. What it is NOT is a backup — it reverses what
+   * the run performed and nothing else, so anything changed since is changed
+   * still. See `docs/design/migration-safety.md`.
+   */
+  const undo = useCallback(
+    async (record: UndoRecord) => {
+      if (runningRef.current) return;
+      runningRef.current = true;
+      setPhase({ kind: "undoing", done: 0, total: 0 });
+      lockLibraryRoots([oldRoot, newRoot]);
+      try {
+        const report = await undoLibraryMigration(record, {
+          ...migrationDeps(),
+          onStep: (done, total) => setPhase({ kind: "undoing", done, total }),
+        });
+
+        // Same bookkeeping, the other way round. The renames are derived
+        // from the record's own moves so the two cannot disagree.
+        const repoint = await repointStoredPaths(newRoot, oldRoot, invertedRenames(record));
+
+        // The marker comes off BEFORE the settings, mirroring the order the
+        // migration wrote it in: it is what survives a restart, and while it
+        // stands every device — this Mac included — keeps resolving the
+        // library to a container the files have just left.
+        let markerFailure: string | null = null;
+        try {
+          await clearMigrationInMarker(newRoot, markerWriteDeps());
+        } catch (err) {
+          markerFailure = String(err);
+        }
+
+        useSettingsStore.getState().setICloudNotesagePath(oldRoot);
+        useSettingsStore.getState().setLibraryRootKind("clouddocs");
+
+        // Spent, and only then. Leaving a fully applied record would offer an
+        // undo of an undo — everything moved back a second time — but a
+        // PARTIAL undo is exactly the case the record is still needed for:
+        // it can be re-run over whatever is left, and a step whose source is
+        // already gone counts as done.
+        const homeDir = useSettingsStore.getState().homeDir;
+        if (homeDir && report.failed.length === 0) {
+          await discardUndoRecord(homeDir, record.id, undoStoreDeps());
+        }
+
+        setPhase({
+          kind: "undone",
+          report: {
+            ...report,
+            failed: [
+              ...report.failed,
+              ...(repoint.failure
+                ? [
+                    {
+                      from: t("settings.libraryMoveBookkeepingName"),
+                      to: oldRoot,
+                      error: repoint.failure,
+                    },
+                  ]
+                : []),
+              ...(markerFailure
+                ? [{ from: t("settings.libraryMoveMarkerName"), to: newRoot, error: markerFailure }]
+                : []),
+              // Named, not dropped: a project whose contents could not be
+              // re-read renders as an empty folder, and a sidecar that could
+              // not be re-keyed leaves comments unreachable — both read as
+              // losing something that is still on disk.
+              ...repoint.treeReadFailures.map((f) => ({
+                from: f,
+                to: oldRoot,
+                error: t("settings.libraryMoveTreeUnreadable"),
+              })),
+              ...repoint.sidecarUnreadable.map((name) => ({
+                from: name,
+                to: oldRoot,
+                error: t("settings.libraryMoveSidecarUnreadable"),
+              })),
+            ],
+          },
+        });
+      } catch (err) {
+        setPhase({ kind: "error", message: String(err) });
+        toast.error(String(err));
+      } finally {
+        unlockLibraryRoots();
+        runningRef.current = false;
+      }
+    },
+    [oldRoot, newRoot],
+  );
+
+  // Pulled out of the JSX so the closure below keeps the narrowing: a
+  // property of `phase` narrows at the point it is tested and widens again
+  // inside a callback.
+  const undoRecord = phase.kind === "done" ? phase.undo : null;
+
   return (
     <Dialog
       open={open}
@@ -297,23 +467,27 @@ export function LibraryMigrationDialog({
       // safe to cancel to — a half-moved library needs the run to finish and
       // report, not to stop in the middle.
       onOpenChange={(next) => {
-        if (!next && phase.kind === "running") return;
+        if (!next && (phase.kind === "running" || phase.kind === "undoing")) return;
         onOpenChange(next);
       }}
     >
       <DialogContent
         className="max-w-[480px]"
-        showCloseButton={phase.kind !== "running"}
+        showCloseButton={phase.kind !== "running" && phase.kind !== "undoing"}
         onEscapeKeyDown={(e) => {
-          if (phase.kind === "running") e.preventDefault();
+          if (phase.kind === "running" || phase.kind === "undoing") e.preventDefault();
         }}
         onInteractOutside={(e) => {
-          if (phase.kind === "running") e.preventDefault();
+          if (phase.kind === "running" || phase.kind === "undoing") e.preventDefault();
         }}
       >
         <DialogHeader>
           <DialogTitle>
-            {phase.kind === "done" ? t("settings.libraryMoveDone") : t("settings.libraryMoveTitle")}
+            {phase.kind === "done"
+              ? t("settings.libraryMoveDone")
+              : phase.kind === "undone"
+                ? t("settings.libraryUndoDone")
+                : t("settings.libraryMoveTitle")}
           </DialogTitle>
           {phase.kind === "confirm" && (
             <DialogDescription>{t("settings.libraryMoveBody")}</DialogDescription>
@@ -391,6 +565,33 @@ export function LibraryMigrationDialog({
           </div>
         )}
 
+        {phase.kind === "undoing" && (
+          <div className="space-y-2">
+            <p className="text-sm">{t("settings.libraryUndoRunning")}</p>
+            <Progress value={phase.total ? (phase.done / phase.total) * 100 : 0} />
+          </div>
+        )}
+
+        {phase.kind === "undone" && (
+          <div className="space-y-2 text-sm">
+            <p>{t("settings.libraryUndoRestored", { count: String(phase.report.restored) })}</p>
+            {phase.report.failed.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-[var(--color-destructive)]">
+                  {t("settings.libraryUndoFailed", { count: String(phase.report.failed.length) })}
+                </p>
+                <ul className="list-disc pl-5 text-muted-foreground">
+                  {phase.report.failed.map((f) => (
+                    <li key={`${f.from}->${f.to}`}>
+                      {f.from} — {f.error}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
         {phase.kind === "error" && (
           <p className="text-sm text-[var(--color-destructive)]">{phase.message}</p>
         )}
@@ -406,13 +607,24 @@ export function LibraryMigrationDialog({
               </Button>
             </>
           ) : (
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={phase.kind === "running"}
-            >
-              {t("common.close")}
-            </Button>
+            <>
+              {undoRecord && (
+                // Offered, never automatic, and never the default action: the
+                // move succeeded, and moving everything back is itself a full
+                // migration over iCloud. The record outlives this dialog, so
+                // closing it is not the last chance.
+                <Button variant="ghost" onClick={() => void undo(undoRecord)}>
+                  {t("settings.libraryUndoAction")}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={phase.kind === "running" || phase.kind === "undoing"}
+              >
+                {t("common.close")}
+              </Button>
+            </>
           )}
         </DialogFooter>
       </DialogContent>

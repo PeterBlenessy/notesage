@@ -41,6 +41,21 @@ export function undoRecordFor(
   return { id, at, oldRoot, newRoot, moves: report.moves, destroyed: report.destroyed };
 }
 
+/**
+ * The renames to apply when rebasing stored paths BACK, derived from the
+ * record rather than stored twice.
+ *
+ * A move whose `from` and `to` differ is exactly a rename — that is what the
+ * forward run's `renames` list is — so inverting the moves gives the list the
+ * reverse rebase needs, expressed relative to the new root. Deriving it means
+ * the two can never disagree, which matters because a rename list that is
+ * wrong does not fail: it points a pin, a recent or an open tab at the OTHER
+ * project, the one that won the collision.
+ */
+export function invertedRenames(record: Pick<UndoRecord, "moves">): { from: string; to: string }[] {
+  return record.moves.filter((m) => m.from !== m.to).map((m) => ({ from: m.to, to: m.from }));
+}
+
 export interface UndoReport {
   restored: number;
   /** Entries that could not go back, with why. Never silent. */
@@ -111,4 +126,79 @@ export async function undoLibraryMigration(
   }
 
   return report;
+}
+
+/**
+ * Where an undo record lives: `~/.notesage/migrations/<id>.json`.
+ *
+ * NOT in either library root. Both of those are moving, and a record stored
+ * inside the thing it describes how to reverse is a record that migrates with
+ * it — or worse, one the migration itself relocates halfway through writing.
+ * The global config directory is outside both by construction.
+ *
+ * It has to survive a restart, because the moment someone realises the result
+ * is wrong is more likely to be the next morning than the next minute.
+ */
+export function undoRecordDir(homeDir: string): string {
+  return `${homeDir}/.notesage/migrations`;
+}
+
+export function undoRecordPath(homeDir: string, id: string): string {
+  return `${undoRecordDir(homeDir)}/${id}.json`;
+}
+
+export interface UndoStoreDeps {
+  createDirectory: (path: string) => Promise<void>;
+  writeFile: (path: string, content: string) => Promise<void>;
+  readFile: (path: string) => Promise<string>;
+  listDirectory: (path: string) => Promise<{ name: string; is_directory: boolean }[]>;
+  deletePath: (path: string) => Promise<void>;
+  pathExists: (path: string) => Promise<boolean>;
+}
+
+export async function saveUndoRecord(
+  homeDir: string,
+  record: UndoRecord,
+  deps: UndoStoreDeps,
+): Promise<void> {
+  await deps.createDirectory(undoRecordDir(homeDir)).catch(() => {});
+  await deps.writeFile(undoRecordPath(homeDir, record.id), JSON.stringify(record, null, 2));
+}
+
+/**
+ * The most recent record, or null.
+ *
+ * A malformed one is skipped rather than thrown: a hand-edited or truncated
+ * file should cost its own undo, not the ability to see the others.
+ */
+export async function latestUndoRecord(
+  homeDir: string,
+  deps: UndoStoreDeps,
+): Promise<UndoRecord | null> {
+  const dir = undoRecordDir(homeDir);
+  if (!(await deps.pathExists(dir).catch(() => false))) return null;
+  const entries = await deps.listDirectory(dir).catch(() => []);
+  const records: UndoRecord[] = [];
+  for (const entry of entries) {
+    if (entry.is_directory || !entry.name.endsWith(".json")) continue;
+    try {
+      const parsed = JSON.parse(await deps.readFile(`${dir}/${entry.name}`)) as UndoRecord;
+      if (parsed && typeof parsed.id === "string" && Array.isArray(parsed.moves)) {
+        records.push(parsed);
+      }
+    } catch {
+      // Unreadable: skipped, not fatal.
+    }
+  }
+  records.sort((a, b) => (b.at ?? "").localeCompare(a.at ?? ""));
+  return records[0] ?? null;
+}
+
+/** Forget a record — after an undo, or when the user accepts the move. */
+export async function discardUndoRecord(
+  homeDir: string,
+  id: string,
+  deps: UndoStoreDeps,
+): Promise<void> {
+  await deps.deletePath(undoRecordPath(homeDir, id)).catch(() => {});
 }

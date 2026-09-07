@@ -12,7 +12,16 @@ import {
   type MigrationListing,
 } from "@/lib/library-migration";
 import { planPathRewrites, applyPathRewrites } from "@/lib/library-migration-paths";
-import { undoLibraryMigration, undoRecordFor } from "@/lib/library-migration-undo";
+import {
+  discardUndoRecord,
+  invertedRenames,
+  latestUndoRecord,
+  saveUndoRecord,
+  undoLibraryMigration,
+  undoRecordFor,
+  undoRecordPath,
+  type UndoStoreDeps,
+} from "@/lib/library-migration-undo";
 import type { FileEntry } from "@/lib/tauri";
 
 /**
@@ -92,6 +101,26 @@ function realDeps(over: Partial<MigrationDeps> = {}): MigrationDeps {
       return JSON.stringify({ pins: Array.from(new Set([...read(mine), ...read(theirs)])).sort() });
     },
     ...over,
+  };
+}
+
+/**
+ * The undo-record store against real files, with the same contract as the
+ * commands it stands for: `writeFile` does NOT create parents, so a store that
+ * forgot its `createDirectory` fails here the way it would on a real machine.
+ */
+function realStoreDeps(): UndoStoreDeps {
+  return {
+    createDirectory: async (p) => void mkdirSync(p, { recursive: true }),
+    writeFile: async (p, c) => rawWrite(p, c),
+    readFile: async (p) => readFileSync(p, "utf8"),
+    listDirectory: async (p) =>
+      readdirSync(p).map((name) => ({
+        name,
+        is_directory: statSync(join(p, name)).isDirectory(),
+      })),
+    deletePath: async (p) => rmSync(p, { recursive: true, force: true }),
+    pathExists: async (p) => existsSync(p),
   };
 }
 
@@ -611,5 +640,74 @@ describe("rehearsal: the migration against a real filesystem", () => {
     for (const rel of ["old.md", "Project/note.md"]) {
       expect(statSync(join(newRoot, rel)).mtime.getTime()).toBe(past.getTime());
     }
+  });
+  it("keeps the undo record outside both roots, and survives a restart", async () => {
+    // The whole point of persisting it: the moment somebody realises the
+    // result is wrong is more likely to be the next morning than the next
+    // minute, and by then nothing is in memory. Stored under the home
+    // directory rather than either root — a record inside the thing it
+    // describes how to reverse moves with it.
+    const home = join(root, "home");
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, "a.md"), "a");
+    mkdirSync(newRoot, { recursive: true });
+
+    const { report } = await migrate(oldRoot, newRoot);
+    const record = undoRecordFor("m-persist", oldRoot, newRoot, report);
+    await saveUndoRecord(home, record, realStoreDeps());
+
+    expect(existsSync(undoRecordPath(home, "m-persist"))).toBe(true);
+    expect(snapshot(oldRoot)).toEqual({});
+    expect(Object.keys(snapshot(newRoot))).not.toContain(".notesage/migrations");
+
+    // A fresh process: nothing but the file on disk.
+    const loaded = await latestUndoRecord(home, realStoreDeps());
+    expect(loaded).toEqual(record);
+
+    const undone = await undoLibraryMigration(loaded!, realDeps());
+    expect(undone.failed).toEqual([]);
+    expect(snapshot(oldRoot)).toEqual({ "a.md": "a" });
+  });
+
+  it("offers the most recent record, and skips a corrupt one", async () => {
+    const home = join(root, "home");
+    const deps = realStoreDeps();
+    const base = { oldRoot: "/old", newRoot: "/new", moves: [], destroyed: [] };
+    await saveUndoRecord(home, { ...base, id: "older", at: "2026-01-01T00:00:00Z" }, deps);
+    await saveUndoRecord(home, { ...base, id: "newer", at: "2026-06-01T00:00:00Z" }, deps);
+    // A truncated or hand-edited file costs its own undo, not the others.
+    writeFileSync(join(home, ".notesage", "migrations", "broken.json"), "{ not json");
+
+    expect((await latestUndoRecord(home, deps))?.id).toBe("newer");
+
+    await discardUndoRecord(home, "newer", deps);
+    expect((await latestUndoRecord(home, deps))?.id).toBe("older");
+  });
+
+  it("has nothing to offer when no migration has run", async () => {
+    expect(await latestUndoRecord(join(root, "home"), realStoreDeps())).toBeNull();
+  });
+
+  it("derives the reverse renames from the record itself", async () => {
+    // The bookkeeping rebase has to know that `X (from iCloud Drive)` in the
+    // container came from `X` — a plain rebase back would point pins, recents
+    // and the open document at whichever project WON the collision.
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, "Notes", ".notesage", "project.json"), "{}");
+    write(join(newRoot, "Notes", ".notesage", "project.json"), "{}");
+    write(join(oldRoot, "loose.md"), "loose");
+
+    const { report } = await migrate(oldRoot, newRoot);
+    const record = undoRecordFor("m-renames", oldRoot, newRoot, report);
+    const inverted = invertedRenames(record);
+
+    expect(report.renames.length).toBeGreaterThan(0);
+    for (const rename of report.renames) {
+      expect(inverted).toContainEqual({ from: rename.to, to: rename.from });
+    }
+    // A file that kept its name is not a rename and must not be listed.
+    expect(inverted.map((r) => r.from)).not.toContain("loose.md");
   });
 });

@@ -100,10 +100,16 @@ file. Materialise-first is what closes that; the undo closes regret.
 
 ## Order of work
 
-1. Record every move (foundation — the undo cannot be built without it).
-2. Stash the destructive bits.
-3. Persist the undo record outside both roots.
-4. The undo itself, and its entry point in the report.
+1. ✅ Record every move (foundation — the undo cannot be built without it).
+2. ✅ Stash the destructive bits.
+3. ✅ Persist the undo record outside both roots — `~/.notesage/migrations/<id>.json`,
+   written before the bookkeeping and the marker, because every step after the
+   run can fail and a record written last is missing in exactly the cases
+   somebody wants it.
+4. ✅ The undo itself, and its entry point in the report ("Move it back").
+   Reverses the moves, repoints the stored paths through the same routine the
+   forward run uses with the roots swapped, clears `migratedFrom`, and keeps
+   the record when the undo only partly succeeded so it can be re-run.
 5. Materialise-first pre-flight, with progress and cancel.
-6. A rehearsal case asserting timestamps survive — the regression that would
+6. ✅ A rehearsal case asserting timestamps survive — the regression that would
    otherwise ship in silence.
