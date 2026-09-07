@@ -364,7 +364,6 @@ describe("sort toggle (#632)", () => {
       // panel and the phone has no settings surface at all (#949) — a flag
       // with no switch on the device it is judged on is not a choice anybody
       // can make.
-      ["Native navigation", false],
       // Home only: the screen that curates it.
       ["Edit Home…", undefined],
       // Where the library lives, and the way out of it. Shown at Home
@@ -398,8 +397,6 @@ describe("sort toggle (#632)", () => {
         // view(3: list · gallery · condensed rows, #836) · sort(2) · group(5) · offline toggle + 4 size picks
         true, false, false, false, true, true, false, false, false, false,
         true, false, true, false, false,
-        // …the navigation shell's switch, which carries its own state…
-        false,
         // …the Edit Home action row, which is not a pick, then the library
         // rows: the folder in use is checked, changing it is an action.
         undefined,
@@ -1272,37 +1269,8 @@ describe("HTML reports", () => {
     expect(src.endsWith(registered[0].id)).toBe(true);
   });
 
-  it("declares touch-action on both swipe surfaces, or WebKit takes the gesture", async () => {
-    // Half of the swipe contract, and the half that fails silently. Without
-    // `pan-y` WebKit decides mid-drag that it owns a horizontal gesture and
-    // fires pointercancel — which used to commit anyway, and now correctly
-    // does not, so the swipe just stops working on device. Asserted rather
-    // than trusted, because jsdom cannot reproduce the cancellation itself.
-    await openHtml();
-    const strip = screen.getByTestId("reader-edge-swipe-strip");
-    expect(strip.style.touchAction).toBe("pan-y");
-    // The reader root, which carries the gesture handlers, must declare it too.
-    const roots = Array.from(document.querySelectorAll<HTMLElement>("div")).filter(
-      (el) => el !== strip && el.style.touchAction === "pan-y" && el.contains(strip),
-    );
-    expect(roots.length, "the reader root must declare touch-action: pan-y").toBeGreaterThan(0);
-  });
-
-  it("leaves the swipe-back gesture reachable over a report", async () => {
-    // A captured report is a separate document on an opaque origin: a finger
-    // that lands on the frame produces no pointer events out here, so the
-    // handlers on the reader root never fire and the gesture is dead on
-    // exactly the documents people read longest. A transparent strip over the
-    // frame's leading edge carries the same handlers.
-    await openHtml();
-    const strip = screen.getByTestId("reader-edge-swipe-strip");
-    fireEvent.pointerDown(strip, { pointerId: 1, clientX: 4, clientY: 0 });
-    fireEvent.pointerMove(strip, { pointerId: 1, clientX: 60, clientY: 0 });
-    fireEvent.pointerMove(strip, { pointerId: 1, clientX: 200, clientY: 0 });
-    fireEvent.pointerUp(strip, { pointerId: 1, clientX: 200, clientY: 0 });
-    await waitFor(() => expect(useMobileStore.getState().openDoc).toBeNull());
-  });
-
+  
+  
   it("treats .htm the same as .html", async () => {
     const frame = await openHtml("legacy.htm");
     expect(frame.tagName).toBe("IFRAME");

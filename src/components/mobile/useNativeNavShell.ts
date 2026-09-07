@@ -12,7 +12,6 @@ import {
 } from "@/lib/ios-api";
 import { t } from "@/lib/i18n";
 import { log } from "@/lib/logger";
-import { useFlagStore } from "@/stores/flag-store";
 import { setNavigationGate, useMobileStore } from "@/stores/mobile-store";
 
 import { deriveNavStack, diffNavStack, storeStateForScreen, type NavScreen } from "./nav-stack";
@@ -36,8 +35,7 @@ import { setNavShellPresented, useNavShellPresented } from "./nav-shell-state";
  * folder was renamed would be its own bug.
  */
 export function useNativeNavShell(active: boolean): void {
-  const flagOn = useFlagStore((s) => s.enabled.includes("native-shell"));
-  const on = flagOn && active;
+  const on = active;
 
   const folderStack = useMobileStore((s) => s.folderStack);
   const docStack = useMobileStore((s) => s.docStack);

@@ -25,13 +25,17 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Inbyggd navigering, bakom en inställning — testa och säg hur den känns.
+Inbyggd navigering är nu hur appen navigerar — ingen inställning, inget att slå på.
 
 NYTT
-• Hela skalet kan köras i en riktig iOS-navigationsstack: Hem, mappar och dokument, med systemets egen push, bakåtgest och parallax på varje nivå.
-• Slå på det på Hem: "…" → Inbyggd navigering. Stäng av på samma sätt.
+• Hem, mappar och dokument ligger i en riktig iOS-navigationsstack: systemets egen bakåtgest, med listan som rör sig bakom artikeln när du sveper bort den.
+• Skärmen är högre. Listan reserverade plats för en titelrad som navigationsfältet redan ger, vilket kostade den en rad överallt.
+
+FIXAT
+• Uppläsningsspelaren syntes inte när man startade lyssning inuti ett dokument.
+• Avsnittsrubriker ("Senaste", "Alla anteckningar") fastnade under titelfältet i stället för under det vid rullning.
 
 PROVA
-• Med det på: öppna en mapp, sedan ett dokument, och svep in från vänsterkanten — stanna halvvägs och släpp, två gånger.
-• Stäng sedan av och gör samma sak, så att du känner skillnaden.
-• Allt annat ska bete sig precis som förut, i båda lägena. Det som inte gör det är buggen jag vill veta om.
+• Öppna en mapp, sedan ett dokument, och svep in från vänsterkanten — stanna halvvägs och släpp, två gånger.
+• Starta Lyssna inifrån en artikel och kolla att spelaren finns där.
+• Rulla en lång lista och se var avsnittsrubriken parkerar.

@@ -18,7 +18,45 @@ import { useSyncExternalStore } from "react";
 let presented = false;
 const listeners = new Set<() => void>();
 
+/**
+ * How much room the top of the screen owes to chrome, as a CSS length.
+ *
+ * Two different things can sit up there and they are NOT the same height:
+ *
+ * - the floating islands (back, breadcrumb, "…") hover *over* the content, so
+ *   the web layer has to reserve their height itself — the notch plus 3.75rem;
+ * - a real navigation bar is part of the view controller, so UIKit already
+ *   reports it through the web view's safe area. `env(safe-area-inset-top)`
+ *   inside the stack is the notch AND the bar.
+ *
+ * Adding the island allowance on top of a safe area that already includes the
+ * bar is what left a bar-height band of dead space under the title, and cost
+ * the list its last row (Peter, 2026-09-07).
+ *
+ * A custom property rather than a boolean threaded through every scroller:
+ * the sticky group header, the pull spinner, three scrollers and the injected
+ * report stylesheet all need the same number, and the CSS cascade is a better
+ * distribution mechanism than six props. The literal fallback keeps the value
+ * correct before this module has run at all — a stylesheet default would be a
+ * second place to forget.
+ */
+export const TOP_INSET = "var(--ns-top-inset, calc(3.75rem + env(safe-area-inset-top)))";
+
+function writeTopInset(value: boolean): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.style.setProperty(
+    "--ns-top-inset",
+    value ? "env(safe-area-inset-top)" : "calc(3.75rem + env(safe-area-inset-top))",
+  );
+}
+
 export function setNavShellPresented(value: boolean): void {
+  // Written even when the value has not changed: the property is the DOM's
+  // copy of this fact, and the early return below exists only to avoid waking
+  // listeners for a no-op. Skipping the write as well would leave the default
+  // state — the common one — never written at all, which is survivable today
+  // only because `TOP_INSET` carries a fallback.
+  writeTopInset(value);
   if (presented === value) return;
   presented = value;
   for (const listener of listeners) listener();
