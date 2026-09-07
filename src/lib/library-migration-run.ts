@@ -105,10 +105,32 @@ export function migrationDeps(): Omit<MigrationDeps, "onStep"> {
  * way to find them is to read each sidecar's own record of the document it
  * belongs to.
  */
-export async function collectSidecarFilePaths(notesRoot: string): Promise<string[]> {
+export interface SidecarScan {
+  /** Documents whose sidecar can be re-keyed. */
+  paths: string[];
+  /**
+   * Sidecars that cannot be re-keyed, by filename.
+   *
+   * Skipping them is right — a sidecar we cannot read is one we cannot move
+   * somewhere correct — but skipping them SILENTLY was not. The key is a hash
+   * of the document's path, so once the document moves the key no longer
+   * matches and every comment on it is unreachable while the bytes sit on
+   * disk. That is indistinguishable from losing them, and the report has a
+   * `leftBehind` list precisely to name what did not come along.
+   */
+  unreadable: string[];
+}
+
+export async function collectSidecarFilePaths(notesRoot: string): Promise<SidecarScan> {
   const dir = `${notesRoot}/.notesage/comments`;
-  const entries = await tauriApi.listDirectory(dir).catch(() => []);
+  // A comments directory that does not exist is the ordinary case for a
+  // library nobody has commented in; one that exists but cannot be READ is
+  // not, and would silently orphan every sidecar in it.
+  const exists = await tauriApi.pathExists(dir).catch(() => false);
+  if (!exists) return { paths: [], unreadable: [] };
+  const entries = await tauriApi.listDirectory(dir);
   const paths: string[] = [];
+  const unreadable: string[] = [];
   for (const entry of entries) {
     if (entry.is_directory || !entry.name.startsWith("path-") || !entry.name.endsWith(".json")) {
       continue;
@@ -118,12 +140,12 @@ export async function collectSidecarFilePaths(notesRoot: string): Promise<string
         originalPath?: unknown;
       };
       if (typeof parsed.originalPath === "string") paths.push(parsed.originalPath);
+      else unreadable.push(entry.name);
     } catch {
-      // A sidecar we cannot read is one we cannot re-key. Skipping it leaves
-      // it exactly as it was rather than moving it somewhere wrong.
+      unreadable.push(entry.name);
     }
   }
-  return paths;
+  return { paths, unreadable };
 }
 
 /** What `recordMigrationInMarker` needs, injected so it is testable without

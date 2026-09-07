@@ -4,6 +4,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { setMockInvokeHandler } from "@/test/tauri-mock";
 import {
   buildMigrationListing,
+  collectSidecarFilePaths,
   mergePinsFiles,
   migrationDeps,
   recordMigrationInMarker,
@@ -168,5 +169,42 @@ describe("reading a root for planning", () => {
     const listing = await buildMigrationListing("/old");
     expect(listing.entries.map((e) => e.name)).toEqual(["a.md"]);
     expect(listing.inbox).toEqual([]);
+  });
+});
+
+describe("finding the comment sidecars", () => {
+  it("names the ones it cannot re-key instead of dropping them silently", async () => {
+    // The key IS a hash of the document path, so a sidecar that cannot be
+    // re-keyed leaves every comment on that note unreachable once the note
+    // moves — bytes intact, which is what makes it read as loss.
+    setMockInvokeHandler("path_exists", () => true);
+    setMockInvokeHandler("list_directory", () => [
+      { name: "path-aaa.json", path: "/n/.notesage/comments/path-aaa.json", is_directory: false, hidden: false },
+      { name: "path-bbb.json", path: "/n/.notesage/comments/path-bbb.json", is_directory: false, hidden: false },
+      { name: "path-ccc.json", path: "/n/.notesage/comments/path-ccc.json", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("read_file", (args) => {
+      const name = String(args?.path ?? "");
+      if (name.endsWith("path-aaa.json")) return JSON.stringify({ originalPath: "/old/a.md" });
+      if (name.endsWith("path-bbb.json")) return JSON.stringify({ comments: [] }); // no originalPath
+      throw new Error("unreadable");
+    });
+
+    const scan = await collectSidecarFilePaths("/n");
+    expect(scan.paths).toEqual(["/old/a.md"]);
+    expect(scan.unreadable).toEqual(["path-bbb.json", "path-ccc.json"]);
+  });
+
+  it("treats a missing comments directory as nothing to do, not a fault", async () => {
+    setMockInvokeHandler("path_exists", () => false);
+    await expect(collectSidecarFilePaths("/n")).resolves.toEqual({ paths: [], unreadable: [] });
+  });
+
+  it("lets an unreadable comments directory throw rather than orphaning every sidecar", async () => {
+    setMockInvokeHandler("path_exists", () => true);
+    setMockInvokeHandler("list_directory", () => {
+      throw new Error("permission denied");
+    });
+    await expect(collectSidecarFilePaths("/n")).rejects.toThrow("permission denied");
   });
 });

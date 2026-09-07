@@ -119,6 +119,13 @@ export function LibraryMigrationDialog({
         const ws = useWorkspaceStore.getState();
         const editor = useEditorStore.getState();
         const notesRoot = useSettingsStore.getState().notesRootPath;
+        // Sidecars that cannot be re-keyed are named in the report rather
+        // than skipped in silence: their key is a hash of the document path,
+        // so after the move the comments are unreachable with the bytes still
+        // on disk — which reads as losing them.
+        const sidecarScan = notesRoot
+          ? await collectSidecarFilePaths(notesRoot)
+          : { paths: [], unreadable: [] };
         const rewrites = planPathRewrites({
           oldRoot,
           newRoot,
@@ -127,7 +134,7 @@ export function LibraryMigrationDialog({
             ...editor.openDocuments.map((d) => d.filePath),
             ...(editor.recentFiles ?? []).map((r) => r.path),
           ].filter((p): p is string => Boolean(p)),
-          sidecarFilePaths: notesRoot ? await collectSidecarFilePaths(notesRoot) : [],
+          sidecarFilePaths: sidecarScan.paths,
           commentsDir: `${notesRoot ?? ""}/.notesage/comments`,
           // What the run actually renamed. A plain rebase would point a
           // project kept as `X (from iCloud Drive)` at `<new root>/X` — the
@@ -193,6 +200,10 @@ export function LibraryMigrationDialog({
             ...report,
             leftBehind: [
               ...report.leftBehind,
+              ...sidecarScan.unreadable.map((name) => ({
+                name,
+                reason: t("settings.libraryMoveSidecarUnreadable"),
+              })),
               ...(markerFailure
                 ? [
                     {
