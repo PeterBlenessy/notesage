@@ -916,12 +916,25 @@ export function LibraryBrowser() {
         className="view-enter absolute inset-0 overflow-y-auto"
         style={{
           ...CONTENT_INSETS,
+          // The top allowance is a SPACER below, not padding here.
+          //
+          // A sticky header's offsets are resolved against the scroll
+          // container's padding edge, not its border edge — so with the
+          // allowance as `padding-top`, `top: <allowance>` parked the group
+          // header a second allowance down the screen, and `top: 0` parked it
+          // wherever the padding happened to end. Both were wrong, in the same
+          // direction, which is why "SENASTE" kept sitting a row too low
+          // (Peter, builds 56 and 57). With no padding, padding edge and
+          // border edge coincide and `top` means what it says.
+          paddingTop: 0,
           overscrollBehaviorY: "contain",
           transform:
             pullPx > 0 ? `translateY(${pullPx}px)` : pullBusy ? "translateY(48px)" : undefined,
           transition: pullPx > 0 ? "none" : "transform 260ms cubic-bezier(0.25, 0.8, 0.35, 1)",
         }}
       >
+        {/* The chrome allowance, as a box in the flow — see `paddingTop` above. */}
+        <div aria-hidden style={{ height: TOP_INSET }} />
         {/* The large in-content title + breadcrumb row exist ONLY on the web
             fallback: with native chrome the breadcrumb ISLAND carries both
             the folder name and the path (Peter's #615 design — the island

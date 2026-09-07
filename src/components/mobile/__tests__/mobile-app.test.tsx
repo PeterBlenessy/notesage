@@ -13,6 +13,7 @@ import { useMobileStore, resolveFolderView } from "@/stores/mobile-store";
 import { clearArticleMetaCache } from "@/lib/article-meta-cache";
 import { startSpeechEvents } from "@/lib/speech-controller";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
+import { TOP_INSET } from "@/components/mobile/nav-shell-state";
 import { Reader } from "@/components/mobile/Reader";
 import { useNotificationRoute } from "@/components/mobile/useNotificationRoute";
 import { HomeFolders } from "@/components/mobile/HomeFolders";
@@ -493,6 +494,48 @@ describe("group by (#652)", () => {
     expect(screen.getByRole("heading", { name: "Folders" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Recent" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "All Notes" })).toBeTruthy();
+  });
+
+  it("parks a group header where the content starts, not a second inset below it", async () => {
+    // The bug that shipped twice (Peter, builds 56 and 57): "SENASTE" sat a
+    // row too low, and in 57 it had slid BELOW the first article of its own
+    // group.
+    //
+    // A sticky element's offsets resolve against the scroll container's
+    // PADDING edge. With the chrome allowance applied as `padding-top`, a
+    // header asking for `top: <allowance>` parks a second allowance down the
+    // screen, and one asking for `top: 0` parks wherever the padding happens
+    // to end — which is also why the header could be pushed past its own
+    // first row: sticky moves an element DOWN when its natural offset is
+    // above the threshold.
+    //
+    // So the allowance is a spacer in the flow and the scroller has no top
+    // padding: padding edge and border edge coincide, and `top` means what it
+    // says. This asserts that arrangement rather than the pixel it produces,
+    // because the pixel needs a device and this needs to fail the moment
+    // somebody moves the allowance back into padding.
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "seen.md", path: "seen.md", is_directory: false, hidden: false },
+      { name: "fresh.md", path: "fresh.md", is_directory: false, hidden: false },
+    ]);
+    useMobileStore.setState({ groupMode: "recent", recentlyRead: ["seen.md"] });
+
+    renderWithProviders(<LibraryBrowser />);
+    await screen.findByText("seen.md");
+
+    const scroller = screen.getByTestId("library-scroller");
+    expect(scroller.style.paddingTop, "the scroller must not pad the top").toBe("0px");
+
+    const spacer = scroller.firstElementChild as HTMLElement;
+    expect(spacer.getAttribute("aria-hidden")).toBe("true");
+    expect(spacer.style.height, "the spacer carries the allowance").toBe(TOP_INSET);
+
+    const header = screen.getByRole("heading", { name: "Recent" });
+    expect(header.style.top, "the header sticks at the allowance").toBe(TOP_INSET);
+    // And it precedes its own rows, which is what stopped being true in 57.
+    expect(header.compareDocumentPosition(screen.getByText("seen.md")))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("sections by file type in a fixed reading order, dropping empty kinds", async () => {
