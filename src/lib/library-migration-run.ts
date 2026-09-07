@@ -80,8 +80,10 @@ export function migrationDeps(): Omit<MigrationDeps, "onStep"> {
     // replaced, which at least said so.
     listNames: async (dir) => (await tauriApi.listDirectory(dir, true)).map((e) => e.name),
     readFile: (path) => tauriApi.readFile(path),
-    writeFile: (path, content) => tauriApi.writeFile(path, content),
-    deletePath: (path) => tauriApi.deletePath(path),
+    // The migration-only entry points: these must work while the library
+    // lock is held, which is exactly what the lock refuses to everyone else.
+    writeFile: (path, content) => tauriApi.migrationWriteFile(path, content),
+    deletePath: (path) => tauriApi.migrationDeletePath(path),
     exists: (path) => tauriApi.pathExists(path),
     // Both devices have been writing this file, so it is merged by the
     // existing rules — progress only moves forward, a tombstone wins by time
@@ -212,8 +214,8 @@ export function markerWriteDeps(): MarkerWriteDeps {
       const raw = await tauriApi.readLibraryMarker(root);
       return raw ? parseLibraryMarker(JSON.stringify(raw)) : null;
     },
-    createDirectory: (path) => tauriApi.createDirectory(path),
-    writeFile: (path, content) => tauriApi.writeFile(path, content),
+    createDirectory: (path) => tauriApi.migrationCreateDirectory(path),
+    writeFile: (path, content) => tauriApi.migrationWriteFile(path, content),
     deviceName: () => tauriApi.getDeviceName(),
   };
 }

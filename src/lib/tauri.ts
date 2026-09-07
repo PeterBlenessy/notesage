@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { assertLibraryUnlocked } from "@/lib/library-lock";
 import type { AIProviderType } from './ai/types';
 import type { BackendTypographyPresets } from './typography-presets';
 import type { AcpListResult, AcpSessionResult } from './ai/acp-utils';
@@ -826,7 +827,15 @@ export const tauriApi = {
     return await invoke<number[]>("read_binary_file", { path });
   },
 
+  // Every mutating file operation checks the library lock first. While a
+  // migration is moving the library, a write into it lands in a tree the app
+  // is halfway through relocating — and `write_file` CREATES a missing file
+  // rather than failing, so an autosave arriving after its note has moved
+  // silently recreates that note at the abandoned root with the newest edit
+  // in it. See `library-lock.ts`. The migration's own writes use the
+  // `migration*` entry points below, which deliberately do not check.
   async writeFile(path: string, content: string): Promise<void> {
+    assertLibraryUnlocked(path);
     await invoke("write_file", { path, content });
   },
 
@@ -839,14 +848,18 @@ export const tauriApi = {
   },
 
   async createFile(path: string): Promise<void> {
+    assertLibraryUnlocked(path);
     await invoke("create_file", { path });
   },
 
   async createDirectory(path: string): Promise<void> {
+    assertLibraryUnlocked(path);
     await invoke("create_directory", { path });
   },
 
   async renamePath(oldPath: string, newPath: string): Promise<void> {
+    assertLibraryUnlocked(oldPath);
+    assertLibraryUnlocked(newPath);
     await invoke("rename_path", { oldPath, newPath });
   },
 
@@ -855,11 +868,33 @@ export const tauriApi = {
   },
 
   async deletePath(path: string): Promise<void> {
+    assertLibraryUnlocked(path);
     await invoke("delete_path", { path });
+  },
+
+  /**
+   * The migration's own writes, which must work while the lock is held.
+   *
+   * Separate entry points rather than an exemption flag: a flag would have to
+   * be set around each awaited call, and anything else that ran during that
+   * await would be exempt too — the exact race the lock exists to close.
+   * Nothing but `library-migration-run.ts` should call these.
+   */
+  async migrationWriteFile(path: string, content: string): Promise<void> {
+    await invoke("write_file", { path, content });
+  },
+
+  async migrationDeletePath(path: string): Promise<void> {
+    await invoke("delete_path", { path });
+  },
+
+  async migrationCreateDirectory(path: string): Promise<void> {
+    await invoke("create_directory", { path });
   },
 
   /** Move to the Trash — recoverable, where `deletePath` is not. */
   async trashPath(path: string): Promise<void> {
+    assertLibraryUnlocked(path);
     await invoke("trash_path", { path });
   },
 

@@ -27,6 +27,7 @@ import {
 } from "@/lib/library-migration-run";
 import { applyPathRewrites, planPathRewrites } from "@/lib/library-migration-paths";
 import { executeRenameTransaction } from "@/lib/rename-transaction";
+import { lockLibraryRoots, unlockLibraryRoots } from "@/lib/library-lock";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -102,6 +103,11 @@ export function LibraryMigrationDialog({
       if (runningRef.current) return; // a second confirm while one is in flight
       runningRef.current = true;
       setPhase({ kind: "running", plan, done: 0 });
+      // Hold the library for the duration. Nothing else in the app may write
+      // into either root while the files are moving and the stored paths
+      // still point at the old one — see `library-lock.ts`. Released in
+      // `finally`, so a thrown migration cannot leave the app unable to save.
+      lockLibraryRoots([oldRoot, newRoot]);
       try {
         const report = await runLibraryMigration(plan, oldRoot, newRoot, {
           ...migrationDeps(),
@@ -223,6 +229,9 @@ export function LibraryMigrationDialog({
         setPhase({ kind: "error", message: String(err) });
         toast.error(String(err));
       } finally {
+        // Always, even when the run threw. A lock left held is an app that
+        // cannot save anything in its own library.
+        unlockLibraryRoots();
         runningRef.current = false;
       }
     },
