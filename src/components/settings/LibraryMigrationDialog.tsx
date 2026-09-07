@@ -148,36 +148,47 @@ export function LibraryMigrationDialog({
           // OTHER project, the one already in the container.
           renames: report.renames,
         });
-        await applyPathRewrites(rewrites, {
-          // The tree is RE-READ, not blanked. `updateProjectPath(from, to, [])`
-          // wipes the cached tree, and nothing refills it: the watchers that
-          // start on the new root only report future events, so the files
-          // that are already sitting there never produce one. Every migrated
-          // project would render as an empty folder until the app restarted
-          // — which is the "my notes are gone" moment this whole feature has
-          // to avoid. `migrateProjectPath` has always done it this way for a
-          // single project.
-          updateProjectPath: async (from, to) => {
-            // A failed re-read is the empty-tree bug again, one project at a
-            // time — so it is recorded rather than swallowed. The path still
-            // updates: pointing at the right place with a stale tree beats
-            // pointing at a folder that is no longer there.
-            let tree: Awaited<ReturnType<typeof tauriApi.listDirectory>> = [];
-            try {
-              tree = await tauriApi.listDirectory(
-                to,
-                useSettingsStore.getState().showHiddenFiles,
-              );
-            } catch (err) {
-              treeReadFailures.push(`${to}: ${String(err)}`);
-            }
-            ws.updateProjectPath(from, to, tree);
-          },
-          renameOpenDocument: (from, to) => editor.renameOpenDocument(from, to),
-          updateFilePaths: (fromPrefix, toPrefix) => ws.updateFilePaths(fromPrefix, toPrefix),
-          migrateSidecars: (inputs) =>
-            notesRoot ? executeRenameTransaction(notesRoot, inputs) : Promise.resolve(),
-        });
+        // The rewrites get their own failure boundary, for the same reason
+        // the marker does: by this point the files HAVE moved, and that
+        // cannot be undone. Letting an exception here jump to the outer catch
+        // skipped the marker AND the settings update — a library physically
+        // in the container with nothing recording that it went there, which
+        // is the one state the marker exists to prevent.
+        let rewriteFailure: string | null = null;
+        try {
+          await applyPathRewrites(rewrites, {
+            // The tree is RE-READ, not blanked. `updateProjectPath(from, to, [])`
+            // wipes the cached tree, and nothing refills it: the watchers that
+            // start on the new root only report future events, so the files
+            // that are already sitting there never produce one. Every migrated
+            // project would render as an empty folder until the app restarted
+            // — which is the "my notes are gone" moment this whole feature has
+            // to avoid. `migrateProjectPath` has always done it this way for a
+            // single project.
+            updateProjectPath: async (from, to) => {
+              // A failed re-read is the empty-tree bug again, one project at a
+              // time — so it is recorded rather than swallowed. The path still
+              // updates: pointing at the right place with a stale tree beats
+              // pointing at a folder that is no longer there.
+              let tree: Awaited<ReturnType<typeof tauriApi.listDirectory>> = [];
+              try {
+                tree = await tauriApi.listDirectory(
+                  to,
+                  useSettingsStore.getState().showHiddenFiles,
+                );
+              } catch (err) {
+                treeReadFailures.push(`${to}: ${String(err)}`);
+              }
+              ws.updateProjectPath(from, to, tree);
+            },
+            renameOpenDocument: (from, to) => editor.renameOpenDocument(from, to),
+            updateFilePaths: (fromPrefix, toPrefix) => ws.updateFilePaths(fromPrefix, toPrefix),
+            migrateSidecars: (inputs) =>
+              notesRoot ? executeRenameTransaction(notesRoot, inputs) : Promise.resolve(),
+          });
+        } catch (err) {
+          rewriteFailure = String(err);
+        }
 
         // Check the belief against the disk before declaring anything.
         //
@@ -230,6 +241,14 @@ export function LibraryMigrationDialog({
             leftBehind: [
               ...report.leftBehind,
               ...unaccounted,
+              ...(rewriteFailure
+                ? [
+                    {
+                      name: t("settings.libraryMoveBookkeepingName"),
+                      reason: t("settings.libraryMoveBookkeepingFailed", { error: rewriteFailure }),
+                    },
+                  ]
+                : []),
               ...sidecarScan.unreadable.map((name) => ({
                 name,
                 reason: t("settings.libraryMoveSidecarUnreadable"),
