@@ -23,9 +23,6 @@ const IGNORED = new Set([".DS_Store"]);
  *  `.name.icloud` beside the missing `name`. */
 const EVICTED = /^\.(.+)\.icloud$/;
 
-/** Carried across devices, so it must not follow the library to a new root. */
-const DROPPED_RELATIVE = new Set([".notesage/sync-settings.json"]);
-
 export type MigrationStepKind =
   | "move"
   | "merge-inbox-item"
@@ -157,15 +154,16 @@ export function planLibraryMigration(
     if (IGNORED.has(entry.name)) continue;
     if (entry.name === "Inbox") continue; // done above
 
-    // An evicted file: on disk only as `.name.icloud`, with the bytes in the
-    // cloud. Copying the placeholder and deleting the source would delete
-    // the real item from iCloud, so it stays where it is and is REPORTED —
-    // the outcome that used to happen silently, because the default listing
-    // hid it entirely.
     // Debris from an interrupted copy of THIS feature. Never a user's data,
     // and listing hidden entries is what made it visible in the first place.
     if (entry.name.endsWith(".notesage-migrating")) continue;
 
+    // An evicted file: on disk only as `.name.icloud`, with the bytes in the
+    // cloud. Copying the placeholder and deleting the source would delete
+    // the real item from iCloud, so it stays where it is and is REPORTED —
+    // the outcome that used to happen silently, because the default listing
+    // hid it entirely. The pre-flight normally clears these before a plan is
+    // ever built; this is the backstop for one evicted in between.
     const evicted = EVICTED.exec(entry.name);
     if (evicted) {
       leftBehind.push({
@@ -561,5 +559,3 @@ export function unaccountedInOldRoot(
  * feature has just finished writing to is the one action with no undo.
  * Cleaning it up is the user's call, in Finder, once they can see both.
  */
-
-export const MIGRATION_INTERNAL = { IGNORED, DROPPED_RELATIVE };

@@ -16,11 +16,20 @@ function deps(over: Partial<MaterialiseDeps> = {}): MaterialiseDeps {
   return {
     listPlaceholders: async () => [],
     ensureDownloaded: async () => "downloading" as ICloudDownloadState,
-    exists: async () => true,
     wait: async () => {},
     maxSweeps: 3,
     ...over,
   };
+}
+
+/**
+ * A walk that answers differently each time it is asked about a root — which
+ * is how the real one behaves as files come down. The last answer repeats, so
+ * a test only has to describe the changes it cares about.
+ */
+function walks(...answers: string[][]): (root: string) => Promise<string[]> {
+  let n = 0;
+  return async () => answers[Math.min(n++, answers.length - 1)];
 }
 
 describe("materialising a library before it moves", () => {
@@ -35,10 +44,20 @@ describe("materialising a library before it moves", () => {
     // name already taken, and reading the listing literally misses the
     // collision — in exactly the case this feature is for, a Mac joining a
     // library whose contents have not all come down.
+    const asked: string[] = [];
+    let first = true;
     const report = await materialiseLibrary(["/old", "/new"], deps({
-      listPlaceholders: async (root) => [`${root}/note.md`],
+      listPlaceholders: async (root) => {
+        asked.push(root);
+        return first ? [`${root}/note.md`] : [];
+      },
+      ensureDownloaded: async () => {
+        first = false;
+        return "downloading";
+      },
     }));
 
+    expect(asked.slice(0, 2)).toEqual(["/old", "/new"]);
     expect(report.requested).toBe(2);
     expect(report.arrived).toBe(2);
   });
@@ -48,34 +67,26 @@ describe("materialising a library before it moves", () => {
     // for the next would serialise a whole library over the network — on the
     // kind of link where this matters most.
     const order: string[] = [];
-    let seen = 0;
     await materialiseLibrary(["/old"], deps({
-      listPlaceholders: async () => ["/old/a.md", "/old/b.md", "/old/c.md"],
+      listPlaceholders: walks(["/old/a.md", "/old/b.md", "/old/c.md"], []),
       ensureDownloaded: async (path) => {
         order.push(`ask ${path}`);
         return "downloading";
       },
-      exists: async (path) => {
-        order.push(`check ${path}`);
-        seen += 1;
-        return true;
-      },
     }));
 
-    expect(seen).toBe(3);
-    expect(order.slice(0, 3)).toEqual(["ask /old/a.md", "ask /old/b.md", "ask /old/c.md"]);
+    expect(order).toEqual(["ask /old/a.md", "ask /old/b.md", "ask /old/c.md"]);
   });
 
   it("waits for a file that arrives on a later sweep", async () => {
-    let sweeps = 0;
     const progress: [number, number][] = [];
     const report = await materialiseLibrary(["/old"], deps({
-      listPlaceholders: async () => ["/old/slow.md", "/old/fast.md"],
-      exists: async (path) => {
-        if (path === "/old/fast.md") return true;
-        sweeps += 1;
-        return sweeps > 2;
-      },
+      listPlaceholders: walks(
+        ["/old/slow.md", "/old/fast.md"],
+        ["/old/slow.md"],
+        ["/old/slow.md"],
+        [],
+      ),
       onProgress: (arrived, total) => progress.push([arrived, total]),
       maxSweeps: 10,
     }));
@@ -87,18 +98,29 @@ describe("materialising a library before it moves", () => {
     expect(progress[progress.length - 1]).toEqual([2, 2]);
   });
 
+  it("sees a file evicted while the others were still coming down", async () => {
+    // The reason each sweep re-walks rather than ticking off a list that only
+    // shrinks: iCloud can take a file back under space pressure, and one that
+    // was never in the original list — or was already crossed off — would
+    // never be looked at, so the migration would start on exactly the stub
+    // the pre-flight exists to prevent. (Once a walk comes back clean the
+    // wait is over; a later eviction is the per-entry guard's job.)
+    const report = await materialiseLibrary(["/old"], deps({
+      listPlaceholders: walks(["/old/a.md", "/old/b.md"], ["/old/b.md"], ["/old/c.md"]),
+      maxSweeps: 3,
+    }));
+
+    expect(report.pending.map((p) => p.path)).toEqual(["/old/c.md"]);
+    expect(report.pending[0].reason).toBe("downloading");
+  });
+
   it("keeps waiting for a file iCloud reported as failed", async () => {
     // A refused request is not proof the file will not arrive — another
     // device, or a retry, may still bring it. The only thing that settles it
     // is whether the file is there.
-    let asked = 0;
     const report = await materialiseLibrary(["/old"], deps({
-      listPlaceholders: async () => ["/old/gone.md"],
+      listPlaceholders: walks(["/old/gone.md"], ["/old/gone.md"], []),
       ensureDownloaded: async () => "failed",
-      exists: async () => {
-        asked += 1;
-        return asked > 1;
-      },
       maxSweeps: 10,
     }));
 
@@ -108,9 +130,8 @@ describe("materialising a library before it moves", () => {
 
   it("names what never arrived, with what iCloud last said", async () => {
     const report = await materialiseLibrary(["/old"], deps({
-      listPlaceholders: async () => ["/old/stuck.md"],
+      listPlaceholders: walks(["/old/stuck.md"]),
       ensureDownloaded: async () => "failed",
-      exists: async () => false,
     }));
 
     expect(report.arrived).toBe(0);
@@ -120,11 +141,10 @@ describe("materialising a library before it moves", () => {
 
   it("records the error when the request itself throws, and still waits", async () => {
     const report = await materialiseLibrary(["/old"], deps({
-      listPlaceholders: async () => ["/old/x.md"],
+      listPlaceholders: walks(["/old/x.md"]),
       ensureDownloaded: async () => {
         throw new Error("iCloud is unavailable");
       },
-      exists: async () => false,
     }));
 
     expect(report.pending[0].reason).toContain("iCloud is unavailable");
@@ -143,13 +163,29 @@ describe("materialising a library before it moves", () => {
     ).rejects.toThrow("Could not read");
   });
 
+  it("does not read a walk that fails MID-wait as everything having arrived", async () => {
+    // Same rule as the first walk, at the other end: a transient fault during
+    // the wait must not clear the list and wave the migration through.
+    let n = 0;
+    const report = await materialiseLibrary(["/old"], deps({
+      listPlaceholders: async () => {
+        n += 1;
+        if (n === 1) return ["/old/a.md"];
+        throw new Error("iCloud went away");
+      },
+      maxSweeps: 2,
+    }));
+
+    expect(report.arrived).toBe(0);
+    expect(report.pending.map((p) => p.path)).toEqual(["/old/a.md"]);
+  });
+
   it("stops when cancelled, and says the pending list is not a verdict", async () => {
     // A modal spinner with no way out is its own failure. What stops is the
     // WAITING — the downloads iCloud has been asked for carry on in its time.
     let sweeps = 0;
     const report = await materialiseLibrary(["/old"], deps({
-      listPlaceholders: async () => ["/old/big.md"],
-      exists: async () => false,
+      listPlaceholders: walks(["/old/big.md"]),
       isCancelled: () => sweeps++ > 0,
       maxSweeps: 100,
     }));
@@ -161,7 +197,7 @@ describe("materialising a library before it moves", () => {
   it("cancels before asking, when the answer came that fast", async () => {
     const ensureDownloaded = vi.fn(async () => "downloading" as ICloudDownloadState);
     const report = await materialiseLibrary(["/old"], deps({
-      listPlaceholders: async () => ["/old/a.md"],
+      listPlaceholders: walks(["/old/a.md"]),
       ensureDownloaded,
       isCancelled: () => true,
     }));
@@ -173,7 +209,7 @@ describe("materialising a library before it moves", () => {
   it("asks for the same file once when both roots name it", async () => {
     const asked: string[] = [];
     await materialiseLibrary(["/root", "/root"], deps({
-      listPlaceholders: async () => ["/root/dup.md"],
+      listPlaceholders: walks(["/root/dup.md"], ["/root/dup.md"], []),
       ensureDownloaded: async (path) => {
         asked.push(path);
         return "downloading";

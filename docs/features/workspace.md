@@ -146,6 +146,13 @@ the run can fail and a record written last is missing in exactly the cases
 somebody wants it. It survives a restart: the moment someone realises the
 result is wrong is more likely to be the next morning than the next minute.
 
+The offer appears twice: in the report a move produces, and afterwards in
+Settings → Projects → Library, which reads the record back off disk — a move
+made yesterday is still reversible today. A run in which **nothing** moved is
+not recorded at all: writing the marker would point every device at a container
+holding nothing, and since the offer to migrate also tests the marker, there
+would be no way back inside the app.
+
 Undo is itself a migration: same lock, same `migration*` write entry points,
 same partial-failure reporting. It repoints the stored paths through the same
 routine the forward run uses (roots swapped, renames inverted — derived from

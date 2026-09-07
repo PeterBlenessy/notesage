@@ -61,7 +61,15 @@ function render() {
 
 describe("the library migration dialog", () => {
   beforeEach(() => {
-    useSettingsStore.setState({ notesRootPath: "/lab/Notesage", homeDir: "/lab/home" });
+    // `libraryRootKind` too: a case that completes a migration sets it, and
+    // the next case asserting it was NOT set would otherwise read the
+    // previous one's answer.
+    useSettingsStore.setState({
+      notesRootPath: "/lab/Notesage",
+      homeDir: "/lab/home",
+      libraryRootKind: null,
+      icloudNotesagePath: OLD,
+    });
   });
 
   afterEach(() => {
@@ -190,5 +198,63 @@ describe("the library migration dialog", () => {
     expect(screen.queryByText("Move it back")).toBeNull();
     // And it says so rather than going quiet about it.
     expect(screen.getByText(/The way back/)).toBeTruthy();
+  });
+  it("does NOT record a migration that moved nothing", async () => {
+    // The worst state this feature can reach. The marker is what
+    // `resolveSyncedLibraryRoot` follows before anything else, so recording a
+    // run in which every step failed points this Mac — and every other device
+    // — at a container holding nothing while the whole library sits in the
+    // old folder. The library reads as empty, and because the offer to
+    // migrate also tests the marker, it is never offered again.
+    seedRoots();
+    const markerWrites: string[] = [];
+    setMockInvokeHandler("write_file", (args) => {
+      const path = (args as { path: string }).path;
+      if (path.endsWith("library.json")) markerWrites.push(path);
+      return undefined;
+    });
+    setMockInvokeHandler("create_directory", () => undefined);
+    setMockInvokeHandler("read_library_marker", () => null);
+    setMockInvokeHandler("get_device_name", () => "A Mac");
+    setMockInvokeHandler("migrate_library_entry", () => {
+      throw new Error("the container is not writable");
+    });
+
+    render();
+    fireEvent.click(await screen.findByText("Move the library"));
+
+    await waitFor(() => expect(screen.getByText(/Nothing was moved/)).toBeTruthy());
+    expect(markerWrites).toEqual([]);
+    // And the app still points where it did.
+    expect(useSettingsStore.getState().libraryRootKind).not.toBe("container");
+  });
+
+  it("offers a move made in an earlier session, from the record on disk", async () => {
+    // The whole reason the record is persisted rather than kept in memory:
+    // the moment somebody decides the result is wrong is more likely to be
+    // the next morning, and by then the dialog that performed it is gone.
+    seedRoots();
+    const record = {
+      id: "earlier",
+      at: "2026-09-06T09:00:00.000Z",
+      oldRoot: OLD,
+      newRoot: NEW,
+      moves: [{ from: "Welcome.md", to: "Welcome.md" }],
+      destroyed: [],
+    };
+
+    renderWithProviders(
+      <LibraryMigrationDialog
+        open
+        onOpenChange={vi.fn()}
+        oldRoot={OLD}
+        newRoot={NEW}
+        resumeUndo={record}
+      />,
+    );
+
+    // Straight to the offer — no pre-flight, no plan for a move already made.
+    expect(await screen.findByText("Move it back")).toBeTruthy();
+    expect(screen.queryByText("Move the library")).toBeNull();
   });
 });

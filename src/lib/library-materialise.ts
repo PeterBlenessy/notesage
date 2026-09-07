@@ -40,7 +40,6 @@ export interface MaterialiseReport {
 export interface MaterialiseDeps {
   listPlaceholders: (root: string) => Promise<string[]>;
   ensureDownloaded: (path: string) => Promise<ICloudDownloadState>;
-  exists: (path: string) => Promise<boolean>;
   wait: (ms: number) => Promise<void>;
   /** Called after every sweep, so a modal can show something moving. */
   onProgress?: (arrived: number, total: number) => void;
@@ -67,9 +66,18 @@ export interface MaterialiseDeps {
  *
  * Polling, rather than the watcher the recordings scanner uses. That scanner
  * runs in the background with nothing to report to; this runs behind a modal
- * that has to show progress and stay cancellable, and a sweep of `exists`
- * gives both. The cost is one `path_exists` per outstanding file per sweep,
- * over a set that only shrinks.
+ * that has to show progress and stay cancellable, and a sweep gives both.
+ *
+ * Each sweep RE-WALKS the roots rather than asking after each outstanding file
+ * in turn. Two reasons, and the first is the target scenario itself: a Mac
+ * joining a library the phone made can face thousands of placeholders, and one
+ * `path_exists` per file per sweep is thousands of IPC round trips every
+ * second — the wait would spend longer in the bridge than in iCloud. The
+ * second is correctness: iCloud can evict a file while the others are still
+ * coming down, and a loop over a list that only shrinks would never see one
+ * that was not in it to begin with. The walk is one call per root and answers
+ * both questions. (Once a walk comes back clean the wait is over — an eviction
+ * after that is what the per-entry guard in `sync.rs` is for.)
  */
 export async function materialiseLibrary(
   roots: string[],
@@ -82,10 +90,13 @@ export async function materialiseLibrary(
   // "nothing to download" — it is the exact fault this pre-flight exists to
   // survive, and treating it as clean would hand a migration the clean bill of
   // health it must not have.
+  const seen = new Set<string>();
   const placeholders: string[] = [];
   for (const root of roots) {
     for (const path of await deps.listPlaceholders(root)) {
-      if (!placeholders.includes(path)) placeholders.push(path);
+      if (seen.has(path)) continue;
+      seen.add(path);
+      placeholders.push(path);
     }
   }
 
@@ -112,12 +123,22 @@ export async function materialiseLibrary(
   let outstanding = [...placeholders];
   let sweeps = 0;
   for (;;) {
-    const stillMissing: string[] = [];
-    for (const path of outstanding) {
-      if (!(await deps.exists(path).catch(() => false))) stillMissing.push(path);
+    // The walk again, both roots. A file that has arrived is simply no longer
+    // a placeholder; one that has been evicted again reappears.
+    const still: string[] = [];
+    for (const root of roots) {
+      // A walk that fails mid-wait is not "everything arrived". Keep the
+      // previous answer and try again next sweep — the failure surfaces as
+      // files that never clear, which is the truth.
+      const found = await deps.listPlaceholders(root).catch(() => null);
+      if (found === null) {
+        still.push(...outstanding);
+        break;
+      }
+      for (const path of found) if (!still.includes(path)) still.push(path);
     }
-    outstanding = stillMissing;
-    deps.onProgress?.(total - outstanding.length, total);
+    outstanding = still;
+    deps.onProgress?.(Math.max(0, total - outstanding.length), total);
 
     if (outstanding.length === 0) {
       return { requested: total, arrived: total, pending: [], cancelled: false };
@@ -144,12 +165,11 @@ function pendingFrom(paths: string[], reasons: Map<string, string>): PendingDown
 /** The real wiring. Ordinary read commands — nothing here moves a byte. */
 export function materialiseDeps(): Pick<
   MaterialiseDeps,
-  "listPlaceholders" | "ensureDownloaded" | "exists" | "wait"
+  "listPlaceholders" | "ensureDownloaded" | "wait"
 > {
   return {
     listPlaceholders: (root) => tauriApi.listEvictedPlaceholders(root),
     ensureDownloaded: (path) => tauriApi.icloudEnsureDownloaded(path),
-    exists: (path) => tauriApi.pathExists(path),
     wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   };
 }

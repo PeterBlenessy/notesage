@@ -61,6 +61,7 @@ type Phase =
   | { kind: "confirm"; plan: MigrationPlan }
   | { kind: "running"; plan: MigrationPlan; done: number }
   | { kind: "done"; report: MigrationReport; undo: UndoRecord | null }
+  | { kind: "offerUndo"; record: UndoRecord }
   | { kind: "undoing"; done: number; total: number }
   | { kind: "undone"; report: UndoReport }
   | { kind: "error"; message: string };
@@ -172,11 +173,19 @@ export function LibraryMigrationDialog({
   onOpenChange,
   oldRoot,
   newRoot,
+  resumeUndo,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   oldRoot: string;
   newRoot: string;
+  /**
+   * A record found on disk from a move performed earlier — possibly in
+   * another session. The dialog then opens on the offer to reverse it
+   * instead of planning a new move, which is the whole reason the record is
+   * persisted rather than kept in memory.
+   */
+  resumeUndo?: UndoRecord;
 }) {
   const [phase, setPhase] = useState<Phase>({ kind: "materialising", arrived: 0, total: 0 });
   // A run in flight, tracked in a ref so a re-render cannot lose it. The
@@ -193,6 +202,12 @@ export function LibraryMigrationDialog({
     if (!open) return;
     let cancelled = false;
     cancelPreflightRef.current = false;
+    if (resumeUndo) {
+      // Nothing to plan: this library has already been moved, and the only
+      // question is whether to put it back.
+      setPhase({ kind: "offerUndo", record: resumeUndo });
+      return;
+    }
     setPhase({ kind: "materialising", arrived: 0, total: 0 });
     void (async () => {
       try {
@@ -253,7 +268,7 @@ export function LibraryMigrationDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, oldRoot, newRoot, attempt]);
+  }, [open, oldRoot, newRoot, attempt, resumeUndo]);
 
   const start = useCallback(
     async (plan: MigrationPlan) => {
@@ -339,6 +354,25 @@ export function LibraryMigrationDialog({
           ];
         }
 
+        // Did anything actually move?
+        //
+        // A run where every step failed — an unwritable container, iCloud
+        // offline, a full disk — must NOT be recorded as a migration. The
+        // marker is what `resolveSyncedLibraryRoot` follows before anything
+        // else, so writing it would point this Mac, and every other device,
+        // at a container holding nothing while the whole library sat in the
+        // old folder: the library reads as empty, and because
+        // `libraryMigrationAvailable` also tests the marker, the move is
+        // never offered again. The one state with no way back in the app.
+        //
+        // A resumed run that finds every source already gone is NOT this:
+        // nothing moved because a previous run moved it, so it has no
+        // failures and the marker belongs.
+        const movedAnything =
+          report.moved.projects + report.moved.inboxItems + report.moved.looseFiles + report.merged >
+          0;
+        const achievedNothing = !movedAnything && report.failed.length > 0;
+
         // Record the move in the container's marker BEFORE touching the
         // settings, because the marker is what survives a restart and the
         // settings are not. Startup re-resolves the root every launch; an
@@ -350,16 +384,18 @@ export function LibraryMigrationDialog({
         // and that cannot be undone — but it MUST be visible, because the
         // library is now in a state only this marker explains.
         let markerFailure: string | null = null;
-        try {
-          await recordMigrationInMarker(newRoot, markerWriteDeps());
-        } catch (err) {
-          markerFailure = String(err);
-        }
+        if (!achievedNothing) {
+          try {
+            await recordMigrationInMarker(newRoot, markerWriteDeps());
+          } catch (err) {
+            markerFailure = String(err);
+          }
 
-        // The library has moved: point the app at it, so the watchers and
-        // every consumer follow without waiting for a restart.
-        useSettingsStore.getState().setICloudNotesagePath(newRoot);
-        useSettingsStore.getState().setLibraryRootKind("container");
+          // The library has moved: point the app at it, so the watchers and
+          // every consumer follow without waiting for a restart.
+          useSettingsStore.getState().setICloudNotesagePath(newRoot);
+          useSettingsStore.getState().setLibraryRootKind("container");
+        }
 
         setPhase({
           kind: "done",
@@ -367,6 +403,14 @@ export function LibraryMigrationDialog({
           report: {
             ...report,
             leftBehind: [
+              ...(achievedNothing
+                ? [
+                    {
+                      name: t("settings.libraryMoveNothingMovedName"),
+                      reason: t("settings.libraryMoveNothingMoved"),
+                    },
+                  ]
+                : []),
               ...report.leftBehind,
               ...unaccounted,
               ...(rewriteFailure
@@ -431,7 +475,12 @@ export function LibraryMigrationDialog({
       if (runningRef.current) return;
       runningRef.current = true;
       setPhase({ kind: "undoing", done: 0, total: 0 });
-      lockLibraryRoots([oldRoot, newRoot]);
+      // The record's own roots, not the props. A record read back from disk
+      // may have been written in another session, and reversing it against
+      // roots it does not describe is how an undo moves the wrong files.
+      const from = record.newRoot;
+      const to = record.oldRoot;
+      lockLibraryRoots([to, from]);
       try {
         const report = await undoLibraryMigration(record, {
           ...migrationDeps(),
@@ -440,7 +489,7 @@ export function LibraryMigrationDialog({
 
         // Same bookkeeping, the other way round. The renames are derived
         // from the record's own moves so the two cannot disagree.
-        const repoint = await repointStoredPaths(newRoot, oldRoot, invertedRenames(record));
+        const repoint = await repointStoredPaths(from, to, invertedRenames(record));
 
         // The marker comes off BEFORE the settings, mirroring the order the
         // migration wrote it in: it is what survives a restart, and while it
@@ -448,12 +497,12 @@ export function LibraryMigrationDialog({
         // library to a container the files have just left.
         let markerFailure: string | null = null;
         try {
-          await clearMigrationInMarker(newRoot, markerWriteDeps());
+          await clearMigrationInMarker(from, markerWriteDeps());
         } catch (err) {
           markerFailure = String(err);
         }
 
-        useSettingsStore.getState().setICloudNotesagePath(oldRoot);
+        useSettingsStore.getState().setICloudNotesagePath(to);
         useSettingsStore.getState().setLibraryRootKind("clouddocs");
 
         // Spent, and only then. Leaving a fully applied record would offer an
@@ -476,13 +525,13 @@ export function LibraryMigrationDialog({
                 ? [
                     {
                       from: t("settings.libraryMoveBookkeepingName"),
-                      to: oldRoot,
+                      to,
                       error: repoint.failure,
                     },
                   ]
                 : []),
               ...(markerFailure
-                ? [{ from: t("settings.libraryMoveMarkerName"), to: newRoot, error: markerFailure }]
+                ? [{ from: t("settings.libraryMoveMarkerName"), to: from, error: markerFailure }]
                 : []),
               // Named, not dropped: a project whose contents could not be
               // re-read renders as an empty folder, and a sidecar that could
@@ -490,12 +539,12 @@ export function LibraryMigrationDialog({
               // losing something that is still on disk.
               ...repoint.treeReadFailures.map((f) => ({
                 from: f.path,
-                to: oldRoot,
+                to,
                 error: `${t("settings.libraryMoveTreeUnreadable")} (${f.error})`,
               })),
               ...repoint.sidecarUnreadable.map((name) => ({
                 from: name,
-                to: oldRoot,
+                to,
                 error: t("settings.libraryMoveSidecarUnreadable"),
               })),
             ],
@@ -678,6 +727,15 @@ export function LibraryMigrationDialog({
           </div>
         )}
 
+        {phase.kind === "offerUndo" && (
+          <p className="text-sm">
+            {t("settings.libraryUndoOffer", {
+              when: new Date(phase.record.at).toLocaleString(),
+              count: String(phase.record.moves.length),
+            })}
+          </p>
+        )}
+
         {phase.kind === "undoing" && (
           <div className="space-y-2">
             <p className="text-sm">{t("settings.libraryUndoRunning")}</p>
@@ -710,7 +768,16 @@ export function LibraryMigrationDialog({
         )}
 
         <DialogFooter>
-          {phase.kind === "materialising" ? (
+          {phase.kind === "offerUndo" ? (
+            <>
+              <Button variant="ghost" onClick={() => void undo(phase.record)}>
+                {t("settings.libraryUndoAction")}
+              </Button>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                {t("common.close")}
+              </Button>
+            </>
+          ) : phase.kind === "materialising" ? (
             // The only control during the pre-flight, and it must exist: on a
             // large library over iCloud this can take a long time, and a modal
             // spinner with no way out is its own failure.
