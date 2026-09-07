@@ -17,9 +17,11 @@ import { useWindowFocus } from "@/hooks/useWindowFocus";
 import { FocusPill } from "@/components/editor/FocusPill";
 import { useQuietChrome } from "@/lib/quiet-chrome";
 import { InboxView } from "@/components/inbox/InboxView";
+import { RecordingsView } from "@/components/recordings/RecordingsView";
 import { InboxReaderControls } from "@/components/inbox/InboxReaderControls";
 import { PillLeadingContext } from "@/components/inbox/pill-leading-context";
 import { useInboxStore } from "@/stores/inbox-store";
+import { useRecordingsStore } from "@/stores/recordings-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { cn } from "@/lib/utils";
 
@@ -80,6 +82,7 @@ export interface QuietLayoutProps {
 
 export function QuietLayout(props: QuietLayoutProps) {
   const inboxOpen = useInboxStore((s) => s.open);
+  const recordingsOpen = useRecordingsStore((s) => s.open);
   const inboxActiveItemPath = useInboxStore((s) => s.activeItem);
   // The reader controls belong to the Inbox item only while it is the ACTIVE
   // document; opening anything else from the sidebar drops them.
@@ -372,6 +375,10 @@ export function QuietLayout(props: QuietLayoutProps) {
               {inboxOpen ? (
                 <ErrorBoundary name="Inbox">
                   <InboxView />
+                </ErrorBoundary>
+              ) : recordingsOpen ? (
+                <ErrorBoundary name="Recordings">
+                  <RecordingsView />
                 </ErrorBoundary>
               ) : (
                 <PillLeadingContext.Provider
