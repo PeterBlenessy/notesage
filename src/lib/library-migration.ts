@@ -19,6 +19,10 @@ import type { FileEntry } from "@/lib/tauri";
 /** Finder leaves one in any folder somebody opened. It is never content. */
 const IGNORED = new Set([".DS_Store"]);
 
+/** An iCloud file whose bytes are still in the cloud: on disk it is only
+ *  `.name.icloud` beside the missing `name`. */
+const EVICTED = /^\.(.+)\.icloud$/;
+
 /** Carried across devices, so it must not follow the library to a new root. */
 const DROPPED_RELATIVE = new Set([".notesage/sync-settings.json"]);
 
@@ -73,6 +77,37 @@ export function dedupeName(name: string, taken: Set<string>): string {
 }
 
 /**
+ * The names already spoken for at a destination — including the ones that are
+ * only there as placeholders.
+ *
+ * An iCloud file the local machine has not downloaded is on disk ONLY as
+ * `.name.icloud`. Reading the listing literally therefore misses it: the set
+ * gets `.name.icloud`, `has("name")` is false, and a genuine collision is
+ * planned as an uncontested move. `migrate_library_entry`'s own
+ * `dest.exists()` check misses it for the same reason — the real name does
+ * not exist yet — so the move succeeds and the container ends up holding the
+ * incoming file under a name a DIFFERENT file is still waiting to
+ * materialise into.
+ *
+ * That breaks the guarantee the whole collision design rests on: two things
+ * of the same name are kept side by side, never one on top of the other. And
+ * it breaks it in exactly the case this feature is FOR — a Mac joining a
+ * library the phone made, whose contents have not all come down yet.
+ *
+ * Both forms are added: the placeholder's own name (so nothing plans a move
+ * onto the stub itself) and the name it stands for.
+ */
+export function takenNames(names: string[]): Set<string> {
+  const taken = new Set<string>();
+  for (const name of names) {
+    taken.add(name);
+    const evicted = EVICTED.exec(name);
+    if (evicted) taken.add(evicted[1]);
+  }
+  return taken;
+}
+
+/**
  * Decide every move before making one.
  *
  * `source` is today's library, `dest` the container — which for a phone-first
@@ -87,8 +122,8 @@ export function planLibraryMigration(
   const leftBehind: { name: string; reason: string }[] = [];
   const counts = { projects: 0, inboxItems: 0, looseFiles: 0 };
 
-  const destTop = new Set(dest.entries.map((e) => e.name));
-  const destInbox = new Set(dest.inbox.map((e) => e.name));
+  const destTop = takenNames(dest.entries.map((e) => e.name));
+  const destInbox = takenNames(dest.inbox.map((e) => e.name));
 
   // --- Inbox, merged item by item ------------------------------------------
   for (const item of source.inbox) {
@@ -131,7 +166,7 @@ export function planLibraryMigration(
     // and listing hidden entries is what made it visible in the first place.
     if (entry.name.endsWith(".notesage-migrating")) continue;
 
-    const evicted = /^\.(.+)\.icloud$/.exec(entry.name);
+    const evicted = EVICTED.exec(entry.name);
     if (evicted) {
       leftBehind.push({
         name: evicted[1],
@@ -272,10 +307,6 @@ export interface MigrationReport {
   renames: { from: string; to: string }[];
 }
 
-/** An iCloud file whose bytes are still in the cloud: on disk it is only
- *  `.name.icloud` beside the missing `name`. */
-const EVICTED = /^\.(.+)\.icloud$/;
-
 /**
  * Run a plan. Resumable by construction: a step whose source is already gone
  * is treated as done, so re-planning over what remains and running again
@@ -333,11 +364,15 @@ export async function runLibraryMigration(
           if (!to) break;
           // Child by child, deduping against what is already there. The
           // destination folder stays; only its contents grow.
-          const [mine, theirs] = await Promise.all([
-            deps.listNames(to).catch(() => []),
-            deps.listNames(from),
-          ]);
-          const taken = new Set(mine);
+          // NOT `.catch(() => [])`. This folder exists — the step was only
+          // planned because the name is taken on both sides — so a listing
+          // that fails is a fault, and an empty `mine` would mean deduping
+          // against nothing and planning every child straight onto whatever
+          // is already there. Letting it throw records the step as failed and
+          // leaves the folder for the next run.
+          const [mine, theirs] = await Promise.all([deps.listNames(to), deps.listNames(from)]);
+          // Placeholders count as taken, for the reason `takenNames` gives.
+          const taken = takenNames(mine);
           let stranded = false;
           for (const name of theirs) {
             if (IGNORED.has(name)) continue; // `.DS_Store`, never data

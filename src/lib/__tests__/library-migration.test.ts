@@ -120,6 +120,34 @@ describe("planning the library migration (2026-09-06)", () => {
   });
 });
 
+describe("a destination that has not finished downloading", () => {
+  it("treats an .icloud placeholder as the name it stands for", () => {
+    // The container holds `notes.md`, not yet downloaded, so on disk it is
+    // only `.notes.md.icloud`. Read literally, `destTop` never contains
+    // `notes.md`, the collision is invisible, and the incoming file is moved
+    // straight onto the name a DIFFERENT file is still waiting to
+    // materialise into. `migrate_library_entry`'s `dest.exists()` misses it
+    // for the same reason. This is the normal state of a Mac joining a
+    // library the phone made.
+    const plan = planLibraryMigration(
+      listing({ entries: [entry("notes.md")] }),
+      listing({ entries: [entry(".notes.md.icloud")] }),
+    );
+    const move = plan.steps.find((s) => s.from === "notes.md");
+    expect(move?.to, "the incoming file must not take the placeholder's name").toBe("notes-1.md");
+  });
+
+  it("does the same for an Inbox item", () => {
+    const plan = planLibraryMigration(
+      listing({ inbox: [entry("a.html")] }),
+      listing({ inbox: [entry(".a.html.icloud")] }),
+    );
+    const move = plan.steps.find((s) => s.from === "Inbox/a.html");
+    expect(move?.to).toBe("Inbox/a-1.html");
+  });
+
+});
+
 describe("dedupe", () => {
   it("appends before the extension, and keeps counting", () => {
     expect(dedupeName("a.md", new Set())).toBe("a.md");
@@ -301,6 +329,41 @@ describe("running the migration", () => {
     });
   });
 
+  it("counts placeholders when merging a folder's children too", async () => {
+    const plan = planLibraryMigration(
+      listing({ entries: [entry("Notes", true)] }),
+      listing({ entries: [entry("Notes", true)] }),
+    );
+    const moved: { from: string; to: string }[] = [];
+    await runLibraryMigration(plan, "/old", "/new", deps({
+      listNames: vi.fn(async (dir: string) =>
+        dir.startsWith("/old") ? ["child.md"] : [".child.md.icloud"],
+      ),
+      moveEntry: vi.fn(async (src: string, dst: string) => {
+        moved.push({ from: src, to: dst });
+        return dst;
+      }),
+    }));
+    expect(moved).toEqual([{ from: "/old/Notes/child.md", to: "/new/Notes/child-1.md" }]);
+  });
+
+  it("fails the merge rather than deduping against nothing when the destination cannot be listed", async () => {
+    // An empty `mine` would mean every child planned straight onto whatever
+    // is already there. The folder exists by construction, so a listing
+    // failure is a fault, not an absence.
+    const plan = planLibraryMigration(
+      listing({ entries: [entry("Notes", true)] }),
+      listing({ entries: [entry("Notes", true)] }),
+    );
+    const report = await runLibraryMigration(plan, "/old", "/new", deps({
+      listNames: vi.fn(async (dir: string) => {
+        if (dir.startsWith("/new")) throw new Error("iCloud is not responding");
+        return ["child.md"];
+      }),
+    }));
+    expect(report.failed).toHaveLength(1);
+    expect(report.failed[0].error).toContain("iCloud is not responding");
+  });
   it("treats a step whose source is gone as already done", async () => {
     // What makes a run resumable: re-planning after an interruption yields
     // steps that were already carried out, and they must be no-ops rather
