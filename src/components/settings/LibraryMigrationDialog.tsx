@@ -202,7 +202,14 @@ export function LibraryMigrationDialog({
         let unaccounted: { name: string; reason: string }[] = [];
         try {
           const remaining = await tauriApi.listDirectory(oldRoot, true);
-          unaccounted = unaccountedInOldRoot(remaining, report);
+          // The Inbox folder itself always survives — items move out of it,
+          // it is never removed — so its contents are checked separately or
+          // an article left inside would be hidden by the folder's own
+          // explanation.
+          const remainingInbox = remaining.some((e) => e.is_directory && e.name === "Inbox")
+            ? await tauriApi.listDirectory(`${oldRoot}/Inbox`, true)
+            : [];
+          unaccounted = unaccountedInOldRoot(remaining, report, remainingInbox);
         } catch (err) {
           unaccounted = [
             {

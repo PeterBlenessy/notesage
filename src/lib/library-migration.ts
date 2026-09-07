@@ -457,24 +457,46 @@ export async function runLibraryMigration(
 export function unaccountedInOldRoot(
   remaining: FileEntry[],
   report: Pick<MigrationReport, "leftBehind" | "failed">,
+  /** What is still directly inside the old `Inbox/`. Checked separately
+   *  because the folder ITSELF always survives — items are moved out of it,
+   *  it is never removed — so explaining the folder away would hide every
+   *  article left inside it. */
+  remainingInbox: FileEntry[] = [],
 ): { name: string; reason: string }[] {
   const explained = new Set<string>([".notesage", "Inbox"]);
-  for (const left of report.leftBehind) explained.add(left.name.split("/")[0]);
-  for (const failure of report.failed) explained.add(failure.step.from.split("/")[0]);
+  for (const left of report.leftBehind) {
+    explained.add(left.name);
+    explained.add(left.name.split("/")[0]);
+  }
+  for (const failure of report.failed) {
+    explained.add(failure.step.from);
+    explained.add(failure.step.from.split("/")[0]);
+  }
 
   const out: { name: string; reason: string }[] = [];
-  for (const entry of remaining) {
-    if (IGNORED.has(entry.name)) continue;
+  const check = (entry: FileEntry, prefix: string) => {
+    if (IGNORED.has(entry.name)) return;
+    if (prefix && entry.name === ".notesage") return; // the Inbox's own sidecar husk
     // An evicted file is reported under the name it stands for, so compare
     // that form too or every stranded placeholder reads as unaccounted.
     const evicted = EVICTED.exec(entry.name);
-    const reported = evicted ? evicted[1] : entry.name;
-    if (explained.has(entry.name) || explained.has(reported)) continue;
+    const bare = evicted ? evicted[1] : entry.name;
+    const reported = `${prefix}${bare}`;
+    if (
+      explained.has(entry.name) ||
+      explained.has(bare) ||
+      explained.has(reported) ||
+      explained.has(`${prefix}${entry.name}`)
+    ) {
+      return;
+    }
     out.push({
       name: reported,
       reason: `still in the old folder — it was not moved, and nothing explains why`,
     });
-  }
+  };
+  for (const entry of remaining) check(entry, "");
+  for (const entry of remainingInbox) check(entry, "Inbox/");
   return out;
 }
 

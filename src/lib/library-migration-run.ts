@@ -40,15 +40,25 @@ export async function buildMigrationListing(root: string): Promise<MigrationList
   // library that reads as empty permanently. iCloud IS transiently
   // unavailable; that is the environment this feature runs in.
   const entries = await tauriApi.listDirectory(root, true);
-  // `Inbox/` genuinely may not exist, and that is not a fault.
-  const inbox = await tauriApi.listDirectory(`${root}/Inbox`, true).catch(() => []);
+  // `Inbox/` genuinely may not exist, and that is not a fault. One that
+  // exists and cannot be READ is a different thing entirely: catching that
+  // into `[]` plans no Inbox steps at all, so every captured article stays
+  // behind while the report says the migration completed. Absence is asked
+  // about separately from failure, so the two cannot be confused.
+  const hasInbox = entries.some((e) => e.is_directory && e.name === "Inbox");
+  const inbox = hasInbox ? await tauriApi.listDirectory(`${root}/Inbox`, true) : [];
   // A directory is a PROJECT when it carries `.notesage/` — the same test the
   // rest of the app uses, and the one the collision rules turn on.
+  //
+  // NOT `.catch(() => false)`. A failed check would quietly demote a project
+  // to a plain folder, and a plain folder of the same name on both sides is
+  // MERGED rather than kept side by side — which is the one thing the
+  // collision rules exist to prevent, because it combines two sets of
+  // settings, comments and AI locks that were never meant to meet.
   const projectDirs = new Set<string>();
   for (const entry of entries) {
     if (!entry.is_directory) continue;
-    const marked = await tauriApi.pathExists(`${root}/${entry.name}/.notesage`).catch(() => false);
-    if (marked) projectDirs.add(entry.name);
+    if (await tauriApi.pathExists(`${root}/${entry.name}/.notesage`)) projectDirs.add(entry.name);
   }
   return { entries, inbox, projectDirs };
 }
@@ -128,8 +138,7 @@ export async function collectSidecarFilePaths(notesRoot: string): Promise<Sideca
   // A comments directory that does not exist is the ordinary case for a
   // library nobody has commented in; one that exists but cannot be READ is
   // not, and would silently orphan every sidecar in it.
-  const exists = await tauriApi.pathExists(dir).catch(() => false);
-  if (!exists) return { paths: [], unreadable: [] };
+  if (!(await tauriApi.pathExists(dir))) return { paths: [], unreadable: [] };
   const entries = await tauriApi.listDirectory(dir);
   const paths: string[] = [];
   const unreadable: string[] = [];

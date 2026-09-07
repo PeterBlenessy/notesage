@@ -392,4 +392,34 @@ describe("rehearsal: the migration against a real filesystem", () => {
     );
     expect(unaccountedInOldRoot(listing(oldRoot).entries, report)).toEqual([]);
   });
+
+  it("notices an Inbox article that arrived after the plan was made", async () => {
+    // The Inbox FOLDER always survives a migration — items move out of it, it
+    // is never removed — so explaining the folder away would hide anything
+    // left inside it. Its contents are checked in their own right.
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, "Inbox", "planned.html"), "planned");
+    mkdirSync(newRoot, { recursive: true });
+
+    const plan = planLibraryMigration(listing(oldRoot), listing(newRoot));
+    write(join(oldRoot, "Inbox", "shared-late.html"), "late");
+    const report = await runLibraryMigration(plan, oldRoot, newRoot, realDeps());
+
+    const l = listing(oldRoot);
+    const unaccounted = unaccountedInOldRoot(l.entries, report, l.inbox);
+    expect(unaccounted.map((u) => u.name)).toEqual(["Inbox/shared-late.html"]);
+    expect(readFileSync(join(oldRoot, "Inbox", "shared-late.html"), "utf8")).toBe("late");
+  });
+
+  it("does not flag an emptied Inbox as an anomaly", async () => {
+    const oldRoot = join(root, "CloudDocs");
+    const newRoot = join(root, "Container");
+    write(join(oldRoot, "Inbox", "a.html"), "a");
+    mkdirSync(newRoot, { recursive: true });
+
+    const { report } = await migrate(oldRoot, newRoot);
+    const l = listing(oldRoot);
+    expect(unaccountedInOldRoot(l.entries, report, l.inbox)).toEqual([]);
+  });
 });

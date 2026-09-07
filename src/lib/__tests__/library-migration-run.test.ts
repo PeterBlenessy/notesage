@@ -37,6 +37,9 @@ describe("library migration wiring (2026-09-06)", () => {
         { name: ".notesage", path: `${a.path}/.notesage`, is_directory: true, hidden: true },
       ];
     });
+    // Project detection now asks rather than assuming: a failed check used to
+    // demote a project to a plain folder, and same-named plain folders MERGE.
+    setMockInvokeHandler("path_exists", () => false);
   });
 
   it("lists a folder's children INCLUDING hidden ones when merging", async () => {
@@ -158,17 +161,43 @@ describe("reading a root for planning", () => {
   });
 
   it("still tolerates a missing Inbox, which is not a fault", async () => {
-    setMockInvokeHandler("list_directory", (args) =>
-      String(args?.path ?? "").endsWith("/Inbox")
-        ? (() => {
-            throw new Error("No such directory");
-          })()
-        : [{ name: "a.md", path: "/old/a.md", is_directory: false, hidden: false }],
-    );
+    // Absence is read off the root listing, not from a failed call, so the
+    // two cannot be confused.
+    setMockInvokeHandler("list_directory", () => [
+      { name: "a.md", path: "/old/a.md", is_directory: false, hidden: false },
+    ]);
     setMockInvokeHandler("path_exists", () => false);
     const listing = await buildMigrationListing("/old");
     expect(listing.entries.map((e) => e.name)).toEqual(["a.md"]);
     expect(listing.inbox).toEqual([]);
+  });
+
+  it("lets an Inbox that EXISTS but cannot be read throw", async () => {
+    // Catching this into `[]` plans no Inbox steps at all, so every captured
+    // article stays behind while the report says the migration completed.
+    setMockInvokeHandler("list_directory", (args) =>
+      String(args?.path ?? "").endsWith("/Inbox")
+        ? (() => {
+            throw new Error("permission denied");
+          })()
+        : [{ name: "Inbox", path: "/old/Inbox", is_directory: true, hidden: false }],
+    );
+    setMockInvokeHandler("path_exists", () => false);
+    await expect(buildMigrationListing("/old")).rejects.toThrow("permission denied");
+  });
+
+  it("lets a failed project check throw rather than demoting a project to a folder", async () => {
+    // A demoted project is a PLAIN FOLDER, and same-named plain folders are
+    // MERGED — combining two sets of settings, comments and AI locks that
+    // were never meant to meet, which is the one outcome the collision rules
+    // exist to prevent.
+    setMockInvokeHandler("list_directory", () => [
+      { name: "Research", path: "/old/Research", is_directory: true, hidden: false },
+    ]);
+    setMockInvokeHandler("path_exists", () => {
+      throw new Error("iCloud is not responding");
+    });
+    await expect(buildMigrationListing("/old")).rejects.toThrow("iCloud is not responding");
   });
 });
 
