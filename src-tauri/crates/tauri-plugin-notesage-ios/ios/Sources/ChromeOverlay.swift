@@ -180,7 +180,16 @@ final class ChromeManager {
   /// Apply a chrome spec. Main thread only.
   func apply(_ spec: ChromeSpec, over webView: WKWebView) {
     self.webView = webView
-    installTopScrim(over: webView)
+    // The scrim exists to keep the FLOATING top row legible over scrolling
+    // content. A navigation bar draws its own material and its own scroll-edge
+    // behaviour, so painting a second gradient band over it is both redundant
+    // and visibly darker than the bar iOS would have drawn.
+    if NavShellPresenter.shared.isPresenting {
+      topScrim?.removeFromSuperview()
+      topScrim = nil
+    } else {
+      installTopScrim(over: webView)
+    }
     setCorner("topLeft", item: spec.topLeft, over: webView, leading: true)
     setCorner("topRight", item: spec.topRight, over: webView, leading: false)
     setCorner("bottomRight", item: spec.bottomRight, over: webView, leading: false, top: false)
@@ -209,12 +218,47 @@ final class ChromeManager {
   /// reading surface, it is a trap. Ordering is re-asserted rather than
   /// assumed because the chrome hosts were added at various times and their
   /// relative z-order is not something either side should have to track.
+  /// The view chrome must live in.
+  ///
+  /// NOT `webView.superview` any more. Once the navigation stack takes the web
+  /// view in, its superview is whichever screen is on top — so an island added
+  /// there belongs to one screen: it slides away on a push, hides under a
+  /// report, and cannot be re-ordered from here at all, because
+  /// `bringSubviewToFront` does nothing for a view that is not a subview. The
+  /// stack records the container it was itself inserted into, and that view
+  /// outlives every screen. Before the stack exists the two answers are the
+  /// same view, which is why nothing needs re-parenting.
+  private func chromeContainer(for webView: WKWebView) -> UIView? {
+    NavShellPresenter.shared.chromeContainer ?? webView.superview
+  }
+
+  /// The topmost view that counts as CONTENT — what an overlay must sit above.
+  /// With the stack up that is the navigation controller's view, since the web
+  /// view is nested inside it and is no longer a sibling to insert against.
+  private func contentLayer(for webView: WKWebView, in container: UIView) -> UIView {
+    if let navView = NavShellPresenter.shared.navView, navView.superview === container {
+      return navView
+    }
+    return webView
+  }
+
   func bringChromeToFront() {
-    guard let container = webView?.superview else { return }
+    guard let webView, let container = chromeContainer(for: webView) else { return }
     for host in hosts.values {
       container.bringSubviewToFront(host.view)
     }
     if let breadcrumbHost { container.bringSubviewToFront(breadcrumbHost.view) }
+    // The player and the recorder are chrome too, and leaving them out of this
+    // is why the read-aloud transport vanished the moment a document opened
+    // (Peter, 2026-09-07). They used to survive by accident: each was added
+    // with `addSubview`, so it sat on top of whatever existed when it was
+    // built, and the report web view slid in underneath. The navigation stack
+    // broke that — its view is inserted over the web view and is full-screen,
+    // so a player built BEFORE the stack presented stayed buried under it,
+    // while one built after happened to land on top. That is exactly the
+    // "occasionally it appears" the report described.
+    if let playerHost { container.bringSubviewToFront(playerHost.view) }
+    if let recorderHost { container.bringSubviewToFront(recorderHost.view) }
     if let searchHost { container.bringSubviewToFront(searchHost.view) }
   }
 
@@ -227,7 +271,7 @@ final class ChromeManager {
   /// without a visible cut line. Blur is deliberately omitted — a material
   /// here reads as a toolbar, which is exactly what the design avoids.
   private func installTopScrim(over webView: WKWebView) {
-    guard let container = webView.superview else { return }
+    guard let container = chromeContainer(for: webView) else { return }
     if let existing = topScrim, existing.superview != nil {
       container.bringSubviewToFront(existing)
       return
@@ -237,7 +281,7 @@ final class ChromeManager {
     scrim.translatesAutoresizingMaskIntoConstraints = false
     // Directly above the webview and below every chrome host, so the
     // buttons and title stay crisp while content fades under the band.
-    container.insertSubview(scrim, aboveSubview: webView)
+    container.insertSubview(scrim, aboveSubview: contentLayer(for: webView, in: container))
     NSLayoutConstraint.activate([
       scrim.topAnchor.constraint(equalTo: container.topAnchor),
       scrim.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -249,7 +293,7 @@ final class ChromeManager {
   }
 
   private func setBreadcrumb(_ spec: ChromeBreadcrumbSpec?, over webView: WKWebView) {
-    guard let container = webView.superview else { return }
+    guard let container = chromeContainer(for: webView) else { return }
     guard let spec else {
       breadcrumbHost?.view.removeFromSuperview()
       breadcrumbHost = nil
@@ -280,7 +324,7 @@ final class ChromeManager {
   }
 
   private func setPlayer(_ spec: ChromePlayerSpec?, over webView: WKWebView) {
-    guard let container = webView.superview else { return }
+    guard let container = chromeContainer(for: webView) else { return }
     guard let spec else {
       playerHost?.view.removeFromSuperview()
       playerHost = nil
@@ -333,7 +377,7 @@ final class ChromeManager {
   private var recorderHost: UIHostingController<AnyView>?
 
   private func setRecorder(_ spec: ChromeRecorderSpec?, over webView: WKWebView) {
-    guard let container = webView.superview else { return }
+    guard let container = chromeContainer(for: webView) else { return }
     guard let spec else {
       recorderHost?.view.removeFromSuperview()
       recorderHost = nil
@@ -369,7 +413,7 @@ final class ChromeManager {
   }
 
   private func setSearch(_ spec: ChromeSearchSpec?, over webView: WKWebView) {
-    guard let container = webView.superview else { return }
+    guard let container = chromeContainer(for: webView) else { return }
     guard let spec else {
       searchHost?.view.removeFromSuperview()
       searchHost = nil
@@ -460,7 +504,7 @@ final class ChromeManager {
     _ key: String, item: ChromeItemSpec?, over webView: WKWebView, leading: Bool,
     top: Bool = true
   ) {
-    guard let container = webView.superview else { return }
+    guard let container = chromeContainer(for: webView) else { return }
     guard let item else {
       hosts[key]?.view.removeFromSuperview()
       hosts[key] = nil

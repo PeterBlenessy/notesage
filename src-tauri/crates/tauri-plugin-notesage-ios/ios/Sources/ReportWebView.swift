@@ -60,7 +60,6 @@ final class ReportPresenter: NSObject {
 
   private var reportView: WKWebView?
   /// The transparent leading-edge strip that owns the swipe-back touch.
-  private var edgeStrip: UIView?
   /// The APP's web view. Held weakly and used for exactly one thing:
   /// dispatching link taps back to the web layer. Never the other direction —
   /// nothing the report contains is ever evaluated against this.
@@ -176,14 +175,8 @@ final class ReportPresenter: NSObject {
       view.leadingAnchor.constraint(equalTo: container.leadingAnchor),
       view.trailingAnchor.constraint(equalTo: container.trailingAnchor),
     ])
-    // Not while the navigation shell owns back: its interactive pop starts in
-    // the same leading strip, and two gestures over one edge is how the web
-    // strip came to swallow touches the system wanted (#947 → #950).
-    if !NavShellPresenter.shared.isPresenting {
-      attachEdgeBack(to: view, in: container)
-    }
-    // Chrome LAST: the back button, share and search island must stay above
-    // both the report and the swipe strip.
+    // Chrome LAST: the back button, share and the search island must stay
+    // above the report.
     ChromeManager.shared.bringChromeToFront()
 
     isLoadingInitialDocument = true
@@ -257,91 +250,6 @@ final class ReportPresenter: NSObject {
     // reused reads as a report stuck off-centre.
     view.transform = .identity
     view.removeFromSuperview()
-    edgeStrip?.removeFromSuperview()
-    edgeStrip = nil
-  }
-
-  // MARK: - Swipe back
-
-  /// Swipe in from the left edge to leave a report.
-  ///
-  /// It has to live HERE, natively, and that is the whole point of this
-  /// section. The reader's own `useEdgeSwipeBack` puts a 24 pt strip over the
-  /// document and works for everything the app itself renders — but a report
-  /// is a separate web view sitting ABOVE the app's, so no element in the app
-  /// can be under the finger. Instrumenting the strip on a presented report
-  /// logged not one `pointerdown`: the gesture was not failing, it was never
-  /// arriving (Peter, build 54: swipe right does not close an article).
-  ///
-  /// A transparent 24 pt strip laid OVER the report's leading edge, owning the
-  /// touch by hit-testing, rather than a recogniser on the web view competing
-  /// for it. Tried the competing way first: a
-  /// `UIScreenEdgePanGestureRecognizer` on the report never fired, because
-  /// WebKit's own recognisers claimed the drag and turned it into a text
-  /// selection. A view that is simply in front has nothing to arbitrate — the
-  /// touch begins in the strip, so UIKit delivers the whole drag there even
-  /// once the finger is over the document.
-  ///
-  /// The cost is the one the web strip already documents (#931): a stationary
-  /// tap in that 24 pt band does not reach the report. Reports carry body
-  /// padding, so the band is nearly always margin, and iOS reserves its own
-  /// leading edge for the interactive pop for the same reason.
-  private func attachEdgeBack(to view: WKWebView, in container: UIView) {
-    let strip = UIView()
-    strip.backgroundColor = .clear
-    strip.translatesAutoresizingMaskIntoConstraints = false
-    container.insertSubview(strip, aboveSubview: view)
-    NSLayoutConstraint.activate([
-      strip.topAnchor.constraint(equalTo: view.topAnchor),
-      strip.bottomAnchor.constraint(equalTo: view.bottomAnchor),
-      strip.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-      strip.widthAnchor.constraint(equalToConstant: Self.edgeStripWidth),
-    ])
-    strip.addGestureRecognizer(
-      UIPanGestureRecognizer(target: self, action: #selector(handleEdgeBack(_:))))
-    edgeStrip = strip
-  }
-
-  /// Matches `EDGE_WIDTH` in `useEdgeSwipeBack.ts` — one gesture, one size,
-  /// whichever kind of document is open.
-  private static let edgeStripWidth: CGFloat = 24
-
-  /// Travel that commits the back, in points, and the flick that does it in
-  /// less. Deliberately the same numbers as `useEdgeSwipeBack`'s
-  /// `COMMIT_DISTANCE` / `COMMIT_VELOCITY` (96 pt, 0.5 pt/ms = 500 pt/s): a
-  /// reader should not need a different-sized gesture depending on which kind
-  /// of document happens to be open.
-  private static let backCommitDistance: CGFloat = 96
-  private static let backCommitVelocity: CGFloat = 500
-
-  @objc private func handleEdgeBack(_ gesture: UIPanGestureRecognizer) {
-    guard let view = reportView else { return }
-    let dx = max(0, gesture.translation(in: view).x)
-    switch gesture.state {
-    case .changed:
-      // The page follows the finger, resisted past the commit point — without
-      // it a swipe that does not commit gives no sign it was seen at all.
-      // Same curve as the web strip's.
-      let shown = dx <= Self.backCommitDistance
-        ? dx
-        : Self.backCommitDistance + (dx - Self.backCommitDistance) * 0.3
-      view.transform = CGAffineTransform(translationX: shown, y: 0)
-    case .ended:
-      let fast = gesture.velocity(in: view).x >= Self.backCommitVelocity
-      if dx >= Self.backCommitDistance || fast {
-        // The app decides what "back" means (an unsaved draft, a folder to
-        // return to), so this reports the gesture and does not dismiss itself.
-        // The reader takes the report down as part of leaving, exactly as it
-        // does for the back button.
-        emitBack()
-        return
-      }
-      fallthrough
-    case .cancelled, .failed:
-      UIView.animate(withDuration: 0.2) { view.transform = .identity }
-    default:
-      break
-    }
   }
 
   // MARK: - Find
@@ -510,11 +418,6 @@ extension ReportPresenter: WKNavigationDelegate {
 
   private func emitCrashed() {
     dispatch("crashed", detail: "{}")
-  }
-
-  /// The left-edge swipe finished far enough to mean "leave this document".
-  private func emitBack() {
-    dispatch("back", detail: "{}")
   }
 
   /// Reading progress (#836): how far down the report the user has scrolled,

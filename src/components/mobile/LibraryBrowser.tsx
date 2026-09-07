@@ -8,7 +8,6 @@ import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-
 import { stopSpeech, toggleSpeech } from "@/lib/speech-controller";
 import type { EntryActionContext } from "@/lib/mobile-entry-actions";
 import { FileRow, classifyFile } from "./FileRow";
-import { useFlagStore } from "@/stores/flag-store";
 import { ArticleRow } from "./ArticleRow";
 import { GalleryView } from "./GalleryView";
 import { InboxCard, RecordingsCard } from "./InboxCard";
@@ -22,6 +21,7 @@ import { defaultHomeFolders } from "@/lib/home-file";
 import { RECORDINGS_FOLDER_NAME } from "@/lib/notes-root";
 import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
+import { TOP_INSET } from "./nav-shell-state";
 import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
 import { INLINE_SWEEP_EVENT } from "./useInlineSweep";
 import { t, getFormatLocale } from "@/lib/i18n";
@@ -144,7 +144,6 @@ export function LibraryBrowser() {
   // "Root listing" and "top of the stack" are therefore two questions.
   const atHome = folderStack.length === 0;
   const isRootListing = currentRelPath === "";
-  const nativeShellOn = useFlagStore((f) => f.enabled.includes("native-shell"));
   // The key under which this SCREEN remembers its scroll offset and view:
   // Home and All Folders must not share one.
   const screenKey = screenKeyOf(folderStack);
@@ -725,20 +724,6 @@ export function LibraryBrowser() {
                 { id: "img-original", title: t("menu.imageSizeOriginal"), icon: "photo.badge.arrow.down", selected: imageMaxPixel === "original" },
               ] as const)
             : []),
-          // The navigation shell's switch, HERE rather than in Labs, because
-          // Labs is a desktop Settings panel and the phone has no settings
-          // surface at all (#949) — a flag with no switch on the device it is
-          // judged on is not a choice anybody can make. Home only: the shell
-          // is rooted there, so that is where turning it on or off belongs.
-          ...(atHome
-            ? [{
-                id: "spike-native-shell",
-                title: t("menu.nativeNavigation"),
-                icon: "hammer",
-                selected: nativeShellOn,
-                sectionBreak: true,
-              }]
-            : []),
           // Notifications: the two preferences, or the way to the Settings
           // app when iOS has them off. Only where there is a native side.
           ...notificationRows,
@@ -841,10 +826,6 @@ export function LibraryBrowser() {
       "img-original": () => setImageMaxPixel("original"),
       "goto-inbox": () => void openInbox(),
       "edit-home": () => openHomeEditor(),
-      "spike-native-shell": () => {
-        const flags = useFlagStore.getState();
-        flags.setEnabled("native-shell", !flags.isEnabled("native-shell"));
-      },
       "notify-badge": () => void toggleNotification("badge"),
       "notify-new": () => void toggleNotification("newItems"),
       "notify-settings": () => void iosOpenSettings().catch(() => {}),
@@ -1140,7 +1121,7 @@ export function LibraryBrowser() {
                 {groupEntries(listed).map((section) => (
                   <section key={section.key}>
                     {section.title && (
-                      <h2 className="select-none [-webkit-touch-callout:none] sticky top-0 z-10 bg-background/85 px-4 py-1.5 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
+                      <h2 style={{ top: TOP_INSET }} className="select-none [-webkit-touch-callout:none] sticky z-10 bg-background/85 px-4 py-1.5 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] font-semibold uppercase tracking-wide text-muted-foreground backdrop-blur">
                         {section.title}
                       </h2>
                     )}
@@ -1200,7 +1181,7 @@ export function LibraryBrowser() {
       <div
         aria-hidden={!pullBusy && pullPx === 0}
         className="pointer-events-none absolute left-0 right-0 flex h-12 items-center justify-center"
-        style={{ top: "calc(3.75rem + env(safe-area-inset-top))" }}
+        style={{ top: TOP_INSET }}
       >
         {/* An SVG ring, not a bordered div.
 

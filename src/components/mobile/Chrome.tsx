@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { Search, X, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useA11yPrefs, a11yRootProps } from "./useNativeChrome";
+import { TOP_INSET } from "./nav-shell-state";
 
 /**
  * iOS 26-style chrome for the mobile shell (issue #581): floating glass
@@ -266,6 +267,9 @@ export function SearchIsland({
 
 /** Insets for full-height scrollers so content starts clear of the islands. */
 export const CONTENT_INSETS: React.CSSProperties = {
-  paddingTop: "calc(3.75rem + env(safe-area-inset-top))",
+  // `TOP_INSET` rather than a literal: the allowance differs by whether the
+  // native navigation bar is up (it is already in the safe area) or the
+  // floating islands are (they are not). See `nav-shell-state`.
+  paddingTop: TOP_INSET,
   paddingBottom: "calc(4.25rem + env(safe-area-inset-bottom))",
 };

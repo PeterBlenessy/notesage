@@ -32,11 +32,10 @@ const RADIUS_REVEALED = 14;
  *  deliberately short of a true pill so the row still reads as a row. */
 const RADIUS_MAX = 26;
 /** A live drag that goes this long with no news at all is abandoned — the
- *  one recovery that depends on no event arriving. See the matching constant
- *  in `useEdgeSwipeBack` for why `lostpointercapture` alone is not enough:
- *  the spec fires it as a consequence of the very terminator that goes
- *  missing. The penalty if it ever cuts off a real drag is a row that snaps
- *  back to where it was. */
+ *  one recovery that depends on no event arriving. `lostpointercapture` alone
+ *  is not enough: the spec fires it as a consequence of the very terminator
+ *  that goes missing. The penalty if it ever cuts off a real drag is a row
+ *  that snaps back to where it was. */
 const STALE_MS = 4000;
 
 /**

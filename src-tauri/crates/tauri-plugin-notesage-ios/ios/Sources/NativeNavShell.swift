@@ -142,6 +142,22 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
 
   var isPresenting: Bool { nav != nil }
 
+  /// The view every floating overlay must live in.
+  ///
+  /// `webView.superview` used to be the answer, and it stopped being one the
+  /// moment the stack took the web view in: the web view's superview is now
+  /// whichever `ScreenController` is on top, which changes on every push. An
+  /// island added there is inside one screen — it slides away with a push,
+  /// sits under the report, and worse, `bringSubviewToFront` on a host that
+  /// lives in the OLD container silently does nothing, stranding it behind the
+  /// whole stack. That is the read-aloud player disappearing (Peter,
+  /// 2026-09-07): the bar and islands are peers, not relatives.
+  private(set) weak var chromeContainer: UIView?
+
+  /// The stack's own view, for overlays that must be inserted above the
+  /// content rather than merely added to the container.
+  var navView: UIView? { nav?.view }
+
   /// The screen the web layer should be rendering — the top of the stack.
   var topScreenId: String? { (nav?.topViewController as? ScreenController)?.screenId }
 
@@ -190,6 +206,7 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     ])
     nav.didMove(toParent: parent)
     self.nav = nav
+    self.chromeContainer = container
 
     root.attachLive(webView)
     liveHost = root
@@ -216,6 +233,7 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     nav.view.removeFromSuperview()
     nav.removeFromParent()
     self.nav = nil
+    self.chromeContainer = nil
     liveHost = nil
     ChromeManager.shared.bringChromeToFront()
   }

@@ -1,3 +1,5 @@
+import { TOP_INSET } from "./nav-shell-state";
+
 /**
  * Give an HTML report the same screen-edge clearance every other document type
  * gets, by injecting padding INTO the document.
@@ -26,8 +28,9 @@
  * and passes literal pixels.
  */
 
-/** Chrome allowance above and below, matching `CONTENT_INSETS` in Chrome.tsx. */
-const TOP_CHROME_REM = 3.75;
+/** Bottom chrome allowance, matching `CONTENT_INSETS` in Chrome.tsx. The top
+ *  one is not a constant — it depends on whether the native navigation bar is
+ *  up, so it comes from `TOP_INSET` (see `nav-shell-state`). */
 const BOTTOM_CHROME_REM = 4.25;
 
 /**
@@ -43,7 +46,7 @@ export function measureReaderInsets(): { top: number; bottom: number } {
   const probe = document.createElement("div");
   probe.style.cssText =
     "position:absolute;visibility:hidden;pointer-events:none;" +
-    `padding-top:calc(${TOP_CHROME_REM}rem + env(safe-area-inset-top));` +
+    `padding-top:${TOP_INSET};` +
     `padding-bottom:calc(${BOTTOM_CHROME_REM}rem + env(safe-area-inset-bottom));`;
   document.body.appendChild(probe);
   const style = getComputedStyle(probe);

@@ -416,61 +416,25 @@ contract, or it will drop gestures:
    so neither commits the edge Delete nobody completed, and neither arms a
    suppression no click will consume.
 
-## Swipe in from the left edge to leave a document
+## Leaving a document is the system's pop
 
-The gesture iOS gives every navigation stack, which a web view has to supply
-for itself (`useEdgeSwipeBack`; Peter, 2026-09-05: *"I want right swipe in a
-document to close it and go back to inbox"*). It starts ONLY within 24 pt of
-the leading edge, which is what keeps it out of the way of everything else
-the reader does horizontally — a wide table scrolling inside itself, text
-selection, the speech highlight. Rightward only: a leftward drag from the
-edge is someone reaching for something else and must never close their
-document. It commits on 96 pt of travel OR on a fast flick, timed from the
-AXIS LOCK rather than from touchdown, so a finger that rests on the edge
-while reading and then throws is not counted as slow.
+The shell runs inside a real `UINavigationController` (PRD
+`docs/prds/2026-09-06-ios-native-navigation.md`), so the swipe in from the
+leading edge is UIKit's own interactive pop — with its parallax, its
+rubber-banding, its cancel-halfway, and the screen underneath revealed live
+because the stack keeps a snapshot of it. Nothing in the web layer
+participates.
 
-**Only a lift finishes it.** A cancel is an interruption by definition, and
-capture loss arrives without the lift that normally precedes it, which is the
-same thing — and this strip is precisely where the OS's own interactive-pop
-gesture lives, so having the touch taken away mid-swipe is the expected case
-here rather than a corner one. Committing on either would close the document
-on a gesture nobody finished. Same rule as a list row's edge action.
-
-**A captured report needs its own strip, and on device that strip is
-NATIVE.** On iOS an HTML report is presented in its own `WKWebView` above the
-app's (ADR 0010), so nothing in the app's web view is ever under the finger:
-instrumenting the JS strip on a presented report logged not one
-`pointerdown`. The gesture was not failing, it was never arriving — swipe
-worked in notes and never in articles, which are exactly the documents people
-read longest (Peter, build 54). `ReportWebView.swift` therefore lays its own
-transparent 24 pt `UIView` over the report's leading edge and hangs a
-`UIPanGestureRecognizer` on it. A recogniser attached to the report web view
-instead was tried first and never fired: WebKit's own recognisers claimed the
-drag and turned it into a text selection. A view that is simply in front has
-nothing to arbitrate — the touch begins in the strip, so UIKit delivers the
-whole drag there even once the finger is over the document. The report
-follows the finger with the same resisted curve, commits on the same 96 pt /
-500 pt-per-second thresholds, and reports the finished gesture to the reader
-as a `notesage:report` `back` event; leaving stays the app's decision (an
-unsaved draft to persist, a folder to return to), so the report never
-dismisses itself. `src/components/mobile/__tests__/report-swipe-back-contract.test.ts`
-locks the event name and the thresholds across the two languages — there is
-no XCTest target for the plugin (issue #933), and a rename on either side
-would fail silently as "the swipe stopped working".
-
-The cost is the one the JS strip already carries (#931): a stationary tap in
-that 24 pt band does not reach the document. Reports carry body padding, so
-the band is nearly always margin, and iOS reserves its own leading edge for
-the interactive pop for the same reason.
-
-Off iOS — desktop dev, the vitest suite, a build without the plugin — the
-report still renders in a sandboxed iframe, and the JS strip described above
-is what serves it: a finger on an opaque-origin frame produces no pointer
-events out in the app, so a transparent 24 pt strip over the frame's leading
-edge carries the reader's own handlers, below the islands (z-40) and above
-the frame. It captures the pointer on POINTERDOWN, not at the axis lock: once
-the finger moves right it is over the frame, and a move the strip does not
-receive is a gesture that dies halfway with the page left mid-slide.
+It used to. Two hand-built recognisers served this before the stack existed —
+a JS strip over the app's own web view (`useEdgeSwipeBack`) and, because a
+captured report is presented in a SEPARATE `WKWebView` above the app's
+(ADR 0010) where no app element is ever under the finger, a second native
+strip inside `ReportWebView.swift`. Both are gone. Keeping either would have
+put two recognisers over the same 24 pt of screen, which is exactly how the
+web strip came to swallow touches the system wanted (#947 → #950); and
+neither could do what the system does for free, which is show the list moving
+behind the article as it slides away — the thing that made the old gesture
+feel wrong even once it worked.
 
 **Every list row swipes, whatever it looks like.** The action set is built
 once, by `entrySwipeActions` in `FileRow.tsx`, and used by both list rows —

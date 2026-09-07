@@ -35,7 +35,6 @@ import { Button } from "@/components/ui/button";
 import { setBinaryData, clearBinaryData } from "@/lib/binary-cache";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { useNativeChrome } from "./useNativeChrome";
-import { useNavShellPresented } from "./nav-shell-state";
 import { withFindAgent } from "./html-find-agent";
 import { withLinkAgent } from "./html-link-agent";
 import { withSpeechAgent } from "./html-speech-agent";
@@ -45,7 +44,6 @@ import { splitSpeechParagraphs } from "./speech-text";
 import { documentToSpeechText } from "./speech-text";
 import { SpeechPlayerBar } from "./SpeechPlayerBar";
 import { RecordingBar } from "./RecordingBar";
-import { EDGE_WIDTH, useEdgeSwipeBack } from "./useEdgeSwipeBack";
 import { formatElapsed, pauseRecording, resumeRecording, stopRecording } from "@/lib/recording-controller";
 import { useSpeechPlayer } from "@/hooks/useSpeechPlayer";
 import { measureReaderInsets, withReaderInsets, withWideContentGuard } from "./html-insets";
@@ -652,13 +650,6 @@ export function Reader() {
   // Declared HERE, with the other hooks, not beside the markup it decorates:
   // this component returns early when there is no open document, and a hook
   // below that is a hook React sometimes does not see.
-  // With the native navigation shell up, leaving a document is the system's
-  // interactive pop — so the reader's own edge-swipe stands down. Two gestures
-  // over the same 24pt is how the web strip came to swallow touches the system
-  // wanted: one navigation system, not two negotiating.
-  const navShellOwnsBack = useNavShellPresented();
-  const swipeBack = useEdgeSwipeBack(backAction);
-  const swipeHandlers = navShellOwnsBack ? {} : swipeBack.handlers;
 
   // "Update from source" (#829) — only offered for a capture that still knows
   // where it came from.
@@ -1425,20 +1416,6 @@ export function Reader() {
     if (!hasNativeReport) return;
     const onReport = (e: Event) => {
       const detail = (e as CustomEvent<{ type?: string; href?: string; fraction?: number }>).detail;
-      if (detail?.type === "back") {
-        // The left-edge swipe, reported by the report's OWN web view.
-        //
-        // `useEdgeSwipeBack` cannot serve this document: its 24 pt strip lives
-        // in the app's web view, and a presented report sits ABOVE that view,
-        // so a finger on an article never reaches the strip at all —
-        // instrumenting it on a presented report logged not one `pointerdown`
-        // (Peter, build 54: swipe right does not close an article). The
-        // recogniser is native (`ReportWebView.swift`); leaving is still this
-        // side's decision, which is why it arrives as an event rather than the
-        // report dismissing itself.
-        backAction();
-        return;
-      }
       if (detail?.type === "crashed") {
         // Its own content process, so a report can die alone. Say so — a blank
         // rectangle is indistinguishable from an empty document.
@@ -1561,26 +1538,7 @@ export function Reader() {
   if (!openDoc) return null;
 
   return (
-    <div
-      className="view-enter relative h-full w-full bg-background"
-      {...swipeHandlers}
-      style={{
-        // BOTH halves of the swipe contract, or the gesture drops (see
-        // docs/features/mobile.md). The row gesture has had `pan-y` since it
-        // shipped; this surface never did, and got away with it only because
-        // an interrupted drag used to commit anyway. Now that only a lift
-        // commits — as it must, or a cancelled swipe closes the document —
-        // WebKit deciding mid-drag that it owns the gesture kills it
-        // outright. `pan-y` is what stops WebKit deciding: vertical scrolling
-        // stays the browser's, horizontal is ours.
-        touchAction: "pan-y",
-        transform: swipeBack.offset ? `translateX(${swipeBack.offset}px)` : undefined,
-        // Only while the finger is down. A transition during the drag would
-        // lag behind it; one on release is what springs the page back when
-        // the swipe did not go far enough to count.
-        transition: swipeBack.dragging ? "none" : "transform 220ms cubic-bezier(0.25, 0.8, 0.35, 1)",
-      }}
-    >
+    <div className="view-enter relative h-full w-full bg-background">
       {/* Fallback transport for builds with no native chrome (desktop dev,
           the vitest harness). On device the player is drawn by the chrome
           overlay instead — a React island portals to document.body and would
@@ -1709,35 +1667,6 @@ export function Reader() {
             onLoad={() => setHtmlShownUrl(state.url)}
             className="h-full w-full border-0 transition-opacity duration-150"
             style={{ opacity: htmlShownUrl === state.url ? 1 : 0 }}
-          />
-          {/* The swipe-back handlers on the reader root never see a finger
-              that lands on a captured report: the iframe is a separate
-              document on an opaque origin, and its pointer events do not
-              cross back out. Reports are exactly the documents people read
-              longest, so the gesture cannot be the one that stops working
-              there. This transparent strip sits over the frame's leading
-              edge and carries the same handlers.
-
-              It captures on pointerDOWN rather than at the axis lock: once
-              the finger moves right it is over the frame, and a move the
-              strip does not receive is a gesture that dies halfway with the
-              page left mid-slide. Below the islands (z-40), above the
-              frame. */}
-          <div
-            data-testid="reader-edge-swipe-strip"
-            className="absolute inset-y-0 left-0 z-30"
-            // Same contract as the root: without `pan-y` WebKit claims the
-            // horizontal drag and cancels ours.
-            style={{ width: EDGE_WIDTH, touchAction: "pan-y" }}
-            {...swipeHandlers}
-            onPointerDown={(e) => {
-              try {
-                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-              } catch {
-                // jsdom, and any view without capture.
-              }
-              if (!navShellOwnsBack) swipeBack.handlers.onPointerDown(e);
-            }}
           />
         </div>
       ) : (
