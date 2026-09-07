@@ -170,7 +170,7 @@ export function planLibraryMigration(
     if (evicted) {
       leftBehind.push({
         name: evicted[1],
-        reason: `${evicted[1]} has not been downloaded from iCloud yet — open it once, then migrate again`,
+        reason: `has not been downloaded from iCloud yet — open it once, then migrate again`,
       });
       continue;
     }
@@ -195,7 +195,7 @@ export function planLibraryMigration(
     // `.git`, `.editorconfig` and friends that no previous run ever touched
     // — a silent scope change is not a fix.
     if (entry.name.startsWith(".")) {
-      leftBehind.push({ name: entry.name, reason: `${entry.name} is not part of the library` });
+      leftBehind.push({ name: entry.name, reason: `is not part of the library` });
       continue;
     }
 
@@ -433,7 +433,7 @@ export async function runLibraryMigration(
               stranded = true;
               report.leftBehind.push({
                 name: `${step.from}/${evicted[1]}`,
-                reason: `${evicted[1]} has not been downloaded from iCloud yet — open it once, then migrate again`,
+                reason: `has not been downloaded from iCloud yet — open it once, then migrate again`,
               });
               continue;
             }

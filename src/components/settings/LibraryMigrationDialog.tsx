@@ -198,6 +198,15 @@ export function LibraryMigrationDialog({
         // already taken, invisible to a listing read literally.
         const materialised = await materialiseLibrary([oldRoot, newRoot], {
           ...materialiseDeps(),
+          // Bounded, not indefinite. An unbounded wait sounds kinder, but a
+          // file that will never arrive — deleted on another device, an
+          // account out of space — leaves someone watching a bar that will
+          // not move, with no way to find out which file it is except a
+          // button whose label does not promise an answer. Five minutes of
+          // one-second sweeps, then the same screen the Stop button reaches:
+          // what is missing, and Check again. Nothing is lost by stopping —
+          // the downloads carry on in iCloud's own time.
+          maxSweeps: 300,
           onProgress: (arrived, total) => {
             if (!cancelled) setPhase({ kind: "materialising", arrived, total });
           },
@@ -600,7 +609,14 @@ export function LibraryMigrationDialog({
                 <p className="text-muted-foreground">{t("settings.libraryMoveCollisions")}</p>
                 <ul className="list-disc pl-5 text-muted-foreground">
                   {phase.plan.leftBehind.map((l) => (
-                    <li key={l.name}>{l.reason}</li>
+                    // Name AND reason. Every reason is a fragment with the
+                    // name as its subject — `kept as "X" — a project of the
+                    // same name already existed` on its own does not say
+                    // WHICH project, and `could not be written (…)` does not
+                    // say what.
+                    <li key={l.name}>
+                      <span className="text-foreground">{l.name}</span> {l.reason}
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -645,7 +661,9 @@ export function LibraryMigrationDialog({
                 <p className="text-muted-foreground">{t("settings.libraryMoveLeftBehind")}</p>
                 <ul className="list-disc pl-5 text-muted-foreground">
                   {phase.report.leftBehind.map((l) => (
-                    <li key={l.name}>{l.reason}</li>
+                    <li key={l.name}>
+                      <span className="text-foreground">{l.name}</span> {l.reason}
+                    </li>
                   ))}
                 </ul>
               </div>
