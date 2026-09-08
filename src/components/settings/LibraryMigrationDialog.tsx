@@ -441,10 +441,19 @@ export function LibraryMigrationDialog({
                     },
                   ]
                 : []),
-              ...sidecarScan.unreadable.map((name) => ({
-                name,
-                reason: t("settings.libraryMoveSidecarUnreadable"),
-              })),
+              // ONE line, not one per file. Eight identical paragraphs about
+              // `path-2235c037.json` tell somebody nothing they can act on and
+              // make a successful move read like a disaster.
+              ...(sidecarScan.unreadable.length > 0
+                ? [
+                    {
+                      name: t("settings.libraryMoveSidecarName"),
+                      reason: t("settings.libraryMoveSidecarUnreadable", {
+                        count: String(sidecarScan.unreadable.length),
+                      }),
+                    },
+                  ]
+                : []),
               ...(markerFailure
                 ? [
                     {

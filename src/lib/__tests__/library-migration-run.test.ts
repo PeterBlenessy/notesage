@@ -234,26 +234,74 @@ describe("reading a root for planning", () => {
 });
 
 describe("finding the comment sidecars", () => {
-  it("names the ones it cannot re-key instead of dropping them silently", async () => {
+  it("names what it cannot re-key, and ONLY what holds something", async () => {
     // The key IS a hash of the document path, so a sidecar that cannot be
-    // re-keyed leaves every comment on that note unreachable once the note
-    // moves — bytes intact, which is what makes it read as loss.
+    // re-keyed leaves the comments on that note unreachable once the note
+    // moves — bytes intact, which is what makes it read as loss. That is worth
+    // saying. An empty file and a file that was already corrupt are not: a
+    // real library produced eight such lines after a successful move, of which
+    // only half meant anything.
     setMockInvokeHandler("path_exists", () => true);
     setMockInvokeHandler("list_directory", () => [
       { name: "path-aaa.json", path: "/n/.notesage/comments/path-aaa.json", is_directory: false, hidden: false },
       { name: "path-bbb.json", path: "/n/.notesage/comments/path-bbb.json", is_directory: false, hidden: false },
       { name: "path-ccc.json", path: "/n/.notesage/comments/path-ccc.json", is_directory: false, hidden: false },
+      { name: "path-ddd.json", path: "/n/.notesage/comments/path-ddd.json", is_directory: false, hidden: false },
     ]);
     setMockInvokeHandler("read_file", (args) => {
       const name = String(args?.path ?? "");
       if (name.endsWith("path-aaa.json")) return JSON.stringify({ originalPath: "/old/a.md" });
-      if (name.endsWith("path-bbb.json")) return JSON.stringify({ comments: [] }); // no originalPath
-      throw new Error("unreadable");
+      if (name.endsWith("path-bbb.json")) return JSON.stringify({ comments: [] }); // empty
+      if (name.endsWith("path-ddd.json")) return JSON.stringify([{ id: "1", body: "real" }]);
+      throw new Error("unreadable"); // ccc: corrupt before any migration
     });
 
     const scan = await collectSidecarFilePaths("/n");
     expect(scan.paths).toEqual(["/old/a.md"]);
-    expect(scan.unreadable).toEqual(["path-bbb.json", "path-ccc.json"]);
+    expect(scan.unreadable).toEqual(["path-ddd.json"]);
+  });
+
+  it("says nothing about a sidecar with no comments in it", async () => {
+    // Peter's real library produced EIGHT alarming lines after a successful
+    // move; three were `[]` — files with no comments at all. A warning about
+    // nothing teaches people the report cries wolf, on the one screen where it
+    // must not.
+    setMockInvokeHandler("path_exists", () => true);
+    setMockInvokeHandler("list_directory", () => [
+      { name: "path-aaaa1111.json", path: "/n/.notesage/comments/path-aaaa1111.json", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("read_file", () => "[]");
+
+    await expect(collectSidecarFilePaths("/n")).resolves.toEqual({ paths: [], unreadable: [] });
+  });
+
+  it("says nothing about a sidecar that was already corrupt", async () => {
+    // Nothing reads a sidecar except to copy it, so one that will not parse
+    // was unreadable long before any migration. Blaming the move for a fault
+    // it did not cause and cannot fix is noise.
+    setMockInvokeHandler("path_exists", () => true);
+    setMockInvokeHandler("list_directory", () => [
+      { name: "path-bbbb2222.json", path: "/n/.notesage/comments/path-bbbb2222.json", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("read_file", () => '\\[ { "documentId": "path-bbbb2222" } ]');
+
+    await expect(collectSidecarFilePaths("/n")).resolves.toEqual({ paths: [], unreadable: [] });
+  });
+
+  it("still names a legacy sidecar that HOLDS comments", async () => {
+    // The one case that is a real gap: comments exist, and the file records no
+    // document to move them to. Quietly dropping this would be the silent
+    // failure every other guard in this feature exists to prevent.
+    setMockInvokeHandler("path_exists", () => true);
+    setMockInvokeHandler("list_directory", () => [
+      { name: "path-cccc3333.json", path: "/n/.notesage/comments/path-cccc3333.json", is_directory: false, hidden: false },
+    ]);
+    setMockInvokeHandler("read_file", () => JSON.stringify([{ id: "1", body: "why is this important?" }]));
+
+    await expect(collectSidecarFilePaths("/n")).resolves.toEqual({
+      paths: [],
+      unreadable: ["path-cccc3333.json"],
+    });
   });
 
   it("treats a missing comments directory as nothing to do, not a fault", async () => {
