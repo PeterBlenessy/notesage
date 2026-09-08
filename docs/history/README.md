@@ -232,3 +232,4 @@ Chronological log of major implementation milestones and changes.
 | 226 | [Release v0.56.3](226-release-v0.56.3.md) | Fixes an app that could start up and never show its window. |
 | 227 | [Release v0.56.4](227-release-v0.56.4.md) | The Inbox is always in the sidebar, and recordings get a place of their own. |
 | 228 | [Release v0.57.0](228-release-v0.57.0.md) | Your synced library can move into Notesage's own iCloud folder, and every device follows it there. |
+| 229 | [Release v0.57.1](229-release-v0.57.1.md) | The library move explains what it is, where to find it, and why it is sometimes not offered. |

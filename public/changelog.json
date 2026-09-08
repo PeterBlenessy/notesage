@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "0.57.1",
+      "date": "2026-09-08",
+      "previousVersion": "0.57.0",
+      "sections": {
+        "fixes": [
+          "**The library move tells you what it is and where to find it.** Turning it on in Labs previously gave no confirmation and no next step, and the thing it unlocks lives in a different part of Settings. The Labs entry now says what the move is for and where to go — Settings → Projects → Library.",
+          "**The Library section explains why the move is not on offer.** It used to show an empty space, whether your Mac was not ready, the move was already done, or there was nothing to move. Each of those now says which it is. The common one on a second Mac: Notesage's own iCloud folder is made by the iPhone app and brought over by iCloud, so until it arrives there is nothing to move into — and the app now tells you that instead of appearing broken.",
+          "**Your library's location is named before its path is shown.** \"iCloud Drive/Notesage\" is where it is; the long folder path underneath is which folder exactly. The path alone was doing the explaining, and it cannot."
+        ]
+      }
+    },
+    {
       "version": "0.57.0",
       "date": "2026-09-08",
       "previousVersion": "0.56.4",
