@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.57.2",
+      "date": "2026-09-08",
+      "previousVersion": "0.57.1",
+      "sections": {
+        "fixes": [
+          "**Notesage can open its own iCloud folder without you granting anything.** Moving your library there used to fail with a permissions error, and the only way round it was giving Notesage Full Disk Access — a sweeping permission, just to read one folder that belongs to it. The Mac app now claims that folder the way the iPhone app does. If you granted Full Disk Access for this, you can take it away again.",
+          "**The Library section says when something is blocking it, instead of showing an error code.** If the folder ever cannot be opened, it explains what that means rather than printing `Operation not permitted (os error 1)`."
+        ]
+      }
+    },
+    {
       "version": "0.57.1",
       "date": "2026-09-08",
       "previousVersion": "0.57.0",
