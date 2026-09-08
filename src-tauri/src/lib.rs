@@ -532,6 +532,7 @@ pub fn run() {
             read_library_marker,
             migrate_library_entry,
             list_evicted_placeholders,
+            library_container_access,
             telemetry_apply_consent,
             agent_resolve_binary,
             agent_install,

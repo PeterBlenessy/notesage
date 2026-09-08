@@ -193,6 +193,29 @@ describe("why the migration is or is not offered", () => {
     ).toBe("already-migrated");
   });
 
+  it("distinguishes a container it cannot READ from one that is not there", () => {
+    // The failure Peter hit: the folder is created by the iPhone and synced
+    // down, so it exists on a Mac macOS will not let read it. Reporting that
+    // as "no container" would send somebody to wait for a folder already
+    // sitting on their disk; the remedy is Full Disk Access, not patience.
+    expect(migrationOfferState({ ...base, containerAccess: "denied" })).toBe("container-denied");
+    expect(migrationOfferState({ ...base, containerAccess: "ready" })).toBe("offer");
+  });
+
+  it("treats an unasked access question as readable", () => {
+    // `resolveSyncedLibraryRoot` shares these inputs and has no reason to
+    // probe; only the migration offer does.
+    expect(migrationOfferState(base)).toBe("offer");
+  });
+
+  it("answers the access question before anything that needs to read", () => {
+    // A denial breaks the marker read too, so a denied container with no
+    // readable marker must not come back as "not migrated yet".
+    expect(
+      migrationOfferState({ ...base, containerAccess: "denied", cloudDocsHasContent: false }),
+    ).toBe("container-denied");
+  });
+
   it("says there is nothing to move when the old folder is empty", () => {
     expect(migrationOfferState({ ...base, cloudDocsHasContent: false })).toBe("nothing-to-move");
   });

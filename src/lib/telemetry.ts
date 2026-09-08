@@ -300,7 +300,8 @@ export type MigrationOfferStateProp =
   | "no-icloud"
   | "no-container"
   | "already-migrated"
-  | "nothing-to-move";
+  | "nothing-to-move"
+  | "container-denied";
 
 export type TelemetryEvent = keyof TelemetryEventProps;
 
