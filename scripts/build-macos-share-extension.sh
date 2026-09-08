@@ -164,12 +164,36 @@ done
 # claiming a seal that no longer matches its contents, and the extension simply
 # never loads — with no error anyone sees.
 if [ -n "$IDENTITY" ]; then
+  # The provisioning profile goes in BEFORE the app is signed. It is what lets
+  # macOS honour the iCloud entitlements below: `iCloud~com~notesage~app` is a
+  # TCC-protected container opened only to an app that can prove it owns it,
+  # and without the profile the Mac app can see that folder and not read a byte
+  # of it. The alternative was asking every user for Full Disk Access — a
+  # permanent, revocable, far too broad grant to read one folder the app
+  # already owns.
+  #
+  # Long-lived by nature (Developer ID profiles run ~18 years), but tied to the
+  # signing CERTIFICATE: rotating that means regenerating this file with
+  # `scripts/macos-provisioning-profile.sh`.
+  PROFILE="$SRC/Notesage_macOS_DeveloperID.provisionprofile"
+  if [ -f "$PROFILE" ]; then
+    echo "==> Embedding provisioning profile"
+    cp "$PROFILE" "$APP/Contents/embedded.provisionprofile"
+    APP_ENTITLEMENTS="$SRC/App-DeveloperID.entitlements"
+  else
+    # A local build without the profile still has to work. It signs with the
+    # entitlements that need no profile, and simply has no iCloud access —
+    # which the app already detects and explains.
+    echo "==> No provisioning profile; signing without iCloud entitlements" >&2
+    APP_ENTITLEMENTS="$REPO/src-tauri/Entitlements.plist"
+  fi
+
   echo "==> Signing extension then app as: $IDENTITY"
   codesign --force --timestamp --options runtime \
     --entitlements "$SRC/ShareExtension.entitlements" \
     --sign "$IDENTITY" "$APPEX"
   codesign --force --timestamp --options runtime \
-    --entitlements "$REPO/src-tauri/Entitlements.plist" \
+    --entitlements "$APP_ENTITLEMENTS" \
     --sign "$IDENTITY" "$APP"
 
   # Verify rather than trust. A share extension that fails to load produces no
