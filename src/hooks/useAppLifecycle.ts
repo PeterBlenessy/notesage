@@ -515,6 +515,12 @@ export async function reloadTrees() {
       settings.setICloudNotesagePath(icloudNotesagePath);
       settings.setLibraryRootKind(resolved.kind);
       log.info("startup", `Library root: ${resolved.kind} at ${icloudNotesagePath}`);
+      // The denominator for retiring the container migration. Every other
+      // event about it counts people who ACTED; this counts the population
+      // that has not, which is the only number that can say whether the
+      // migration path is still needed. Once per launch, and the path is
+      // never sent — only which of the two kinds of root it was.
+      track("library_root_kind", { kind: resolved.kind ?? "none" });
     }
   } catch {
     // Expected: iCloud path unavailable on non-Apple systems or when iCloud is not set up

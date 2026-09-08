@@ -82,6 +82,43 @@ export function resolveSyncedLibraryRoot(inputs: LibraryRootInputs): ResolvedLib
 }
 
 /**
+ * Why a migration is, or is not, on offer here.
+ *
+ * A boolean was not enough. Four different situations all produced "no", and
+ * the UI showed the same nothing for each — so somebody who turned the flag
+ * on could not tell an unfinished feature from a Mac that simply is not
+ * eligible yet, which is exactly what happened. Each case has a different
+ * answer and a different thing the person might do about it, so each gets a
+ * name.
+ */
+export type MigrationOfferState =
+  /** Everything is in place; the move can be offered. */
+  | "offer"
+  /** iCloud sync is off, or there is no iCloud Drive folder to move from. */
+  | "no-icloud"
+  /**
+   * Notesage's own iCloud folder is not on this Mac. It is created by the
+   * app — the iPhone makes it on first run — and this Mac deliberately never
+   * creates it: an unentitled Mac that made the directory anyway would
+   * produce a folder that never syncs.
+   */
+  | "no-container"
+  /** The move has already been performed, here or on another device. */
+  | "already-migrated"
+  /** The old folder is empty, so there is nothing to move. */
+  | "nothing-to-move";
+
+export function migrationOfferState(inputs: LibraryRootInputs): MigrationOfferState {
+  if (!inputs.cloudDocsRoot) return "no-icloud";
+  if (!inputs.containerRoot) return "no-container";
+  // Before "nothing to move": a completed migration is why the old folder is
+  // empty, and "there is nothing to move" would read as a fault.
+  if (inputs.marker?.migratedFrom) return "already-migrated";
+  if (!inputs.cloudDocsHasContent) return "nothing-to-move";
+  return "offer";
+}
+
+/**
  * Is there a migration to offer on this Mac?
  *
  * Only when both roots exist, the old one still holds something, and no
@@ -89,12 +126,7 @@ export function resolveSyncedLibraryRoot(inputs: LibraryRootInputs): ResolvedLib
  * nothing to move.
  */
 export function libraryMigrationAvailable(inputs: LibraryRootInputs): boolean {
-  return Boolean(
-    inputs.containerRoot &&
-      inputs.cloudDocsRoot &&
-      inputs.cloudDocsHasContent &&
-      !inputs.marker?.migratedFrom,
-  );
+  return migrationOfferState(inputs) === "offer";
 }
 
 /**

@@ -63,9 +63,14 @@ export function LabsSettings() {
             key={id}
             label={spec.summary}
             description={
-              <span className="flex items-center gap-2">
-                <StageBadge stage={spec.stage} />
-                <span>Added in {spec.introducedIn}</span>
+              <span className="flex flex-col gap-1">
+                <span className="flex items-center gap-2">
+                  <StageBadge stage={spec.stage} />
+                  <span>Added in {spec.introducedIn}</span>
+                </span>
+                {/* A flag that only reveals a control elsewhere has to say so
+                    here, or turning it on looks like nothing happened. */}
+                {spec.details && <span>{spec.details}</span>}
               </span>
             }
             htmlFor={`flag-${id}`}

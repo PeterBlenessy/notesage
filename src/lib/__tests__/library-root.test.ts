@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   libraryMigrationAvailable,
+  migrationOfferState,
   resolveSyncedLibraryRoot,
   type LibraryRootInputs,
 } from "@/lib/library-root";
@@ -131,5 +132,68 @@ describe("when to offer the migration", () => {
     expect(
       libraryMigrationAvailable(inputs({ cloudDocsRoot: CLOUDDOCS, cloudDocsHasContent: true })),
     ).toBe(false);
+  });
+});
+
+describe("why the migration is or is not offered", () => {
+  // A boolean produced the same blank row for four different situations, so
+  // somebody who had just turned the flag on could not tell a broken feature
+  // from a Mac that is not eligible. Each answer is now nameable.
+  const base = {
+    containerRoot: "/container",
+    cloudDocsRoot: "/clouddocs",
+    marker: null,
+    cloudDocsHasContent: true,
+  };
+
+  it("offers the move when both roots exist and the old one has content", () => {
+    expect(migrationOfferState(base)).toBe("offer");
+  });
+
+  it("says iCloud is off when there is no CloudDocs root at all", () => {
+    expect(migrationOfferState({ ...base, cloudDocsRoot: null })).toBe("no-icloud");
+  });
+
+  it("says the container has not arrived when it does not exist", () => {
+    // The common case on a second Mac: the folder is made by the iPhone and
+    // brought here by iCloud, and this Mac deliberately never creates it.
+    expect(migrationOfferState({ ...base, containerRoot: null })).toBe("no-container");
+  });
+
+  it("says it is already done when the marker records a migration", () => {
+    expect(
+      migrationOfferState({
+        ...base,
+        marker: {
+          version: 1,
+          kind: "container",
+          createdBy: "ios",
+          createdAt: "2026-09-01T10:00:00.000Z",
+          migratedFrom: "com~apple~CloudDocs/Notesage",
+        },
+      }),
+    ).toBe("already-migrated");
+  });
+
+  it("prefers 'already done' over 'nothing to move' for a migrated Mac", () => {
+    // A completed migration is WHY the old folder is empty. Reporting that as
+    // "there is nothing to move" reads as a fault rather than success.
+    expect(
+      migrationOfferState({
+        ...base,
+        cloudDocsHasContent: false,
+        marker: {
+          version: 1,
+          kind: "container",
+          createdBy: "macos",
+          createdAt: "2026-09-01T10:00:00.000Z",
+          migratedFrom: "com~apple~CloudDocs/Notesage",
+        },
+      }),
+    ).toBe("already-migrated");
+  });
+
+  it("says there is nothing to move when the old folder is empty", () => {
+    expect(migrationOfferState({ ...base, cloudDocsHasContent: false })).toBe("nothing-to-move");
   });
 });
