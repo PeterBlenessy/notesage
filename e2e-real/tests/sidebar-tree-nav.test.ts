@@ -62,8 +62,19 @@ async function addFixtureProject(): Promise<void> {
     );
 }
 
+/**
+ * THIS spec's project row, not merely the first one.
+ *
+ * Specs share one long-lived app, so the sidebar can hold projects other
+ * specs registered. `$('[data-row-type="project"]')` returned whichever came
+ * first, which is how this spec started asserting against another spec's
+ * fixture. The source of that particular leak is fixed too, but a selector
+ * that names what it wants cannot be broken by the next one.
+ */
 function projectRow() {
-    return browser.$(`[data-row-type="project"]`);
+    // By the row's own accessible name — no new production attribute needed,
+    // and it fails loudly if the label ever stops naming the project.
+    return browser.$(`[data-row-type="project"][aria-label*="${PROJECT_BASENAME}"]`);
 }
 
 async function isExpanded(): Promise<boolean> {

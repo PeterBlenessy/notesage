@@ -110,12 +110,24 @@ describe('Inbox (desktop)', () => {
   });
 
   after(async () => {
-    await exec(() => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const w = window as any;
-      w.__E2E_INBOX_STORE__.getState().closeInbox();
-      w.__E2E_INBOX_STORE__.setState({ rootOverride: null, lastDestination: null, items: [], dir: null, activeItem: null });
-    });
+    await exec(
+      (p: string) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const w = window as any;
+        w.__E2E_INBOX_STORE__.getState().closeInbox();
+        w.__E2E_INBOX_STORE__.setState({ rootOverride: null, lastDestination: null, items: [], dir: null, activeItem: null });
+        // The project this spec registered, taken back out. Specs share ONE
+        // long-lived app, so a project left in the workspace store is still
+        // in the sidebar for every spec that runs afterwards — and a spec
+        // that reaches for "the project row" gets this one. That is what made
+        // `sidebar-tree-nav` fail on first attempt and pass on the
+        // orchestrator's retry, where the app is fresh: a leak whose only
+        // symptom was a retry that CI counted as success.
+        const ws = w.__E2E_WORKSPACE_STORE__?.getState();
+        if (ws?.removeProject) ws.removeProject(p);
+      },
+      project,
+    );
     if (failed) console.log('KEEPING temp library for inspection:', root);
     else fs.rmSync(root, { recursive: true, force: true });
   });

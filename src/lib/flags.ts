@@ -21,6 +21,16 @@ export interface FlagSpec {
   stage: FlagStage;
   /** One line, user-facing. This is the Labs panel's description. */
   summary: string;
+  /**
+   * What to do next, when a flag does not act on its own.
+   *
+   * Most flags change behaviour the moment they are on and need nothing here.
+   * A flag that merely REVEALS a control somewhere else needs this or it is a
+   * dead end: the switch reports success, nothing visibly happens, and the
+   * user has no way to tell an unfinished feature from one they have not
+   * found yet.
+   */
+  details?: string;
   /** App version the flag was introduced in — the clock for the graduation
    *  review (three releases without enough signal → explicit decision). */
   introducedIn: string;
@@ -51,6 +61,12 @@ export const FLAGS = {
   "icloud-container-library": {
     stage: "experimental",
     summary: "Keep the synced library in Notesage's own iCloud folder",
+    details:
+      "Your synced notes currently live in a folder inside iCloud Drive. This " +
+      "moves them into the folder iCloud gives Notesage itself, which the " +
+      "iPhone app can open without you having to find and pick it. Nothing " +
+      "moves until you say so: turn this on, then open Settings → Projects, " +
+      "where the Library section explains what it found and offers the move.",
     introducedIn: "0.57.0",
     default: false,
   },

@@ -50,6 +50,7 @@ import {
 import { executeRenameTransaction } from "@/lib/rename-transaction";
 import { applyProjectMoved } from "@/lib/project-moved";
 import { lockLibraryRoots, unlockLibraryRoots } from "@/lib/library-lock";
+import { librarySizeBucket, track, trackLabsFeatureUsed } from "@/lib/telemetry";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useSettingsStore } from "@/stores/settings-store";
@@ -236,6 +237,11 @@ export function LibraryMigrationDialog({
         });
         if (cancelled) return;
         if (materialised.pending.length > 0) {
+          // The one gate that can stop a willing user. Nothing else would say
+          // whether it is a formality or a wall in practice.
+          track("library_migration_blocked", {
+            size: librarySizeBucket(materialised.pending.length),
+          });
           setPhase({
             kind: "blocked",
             pending: materialised.pending,
@@ -279,6 +285,12 @@ export function LibraryMigrationDialog({
       // into either root while the files are moving and the stored paths
       // still point at the old one — see `library-lock.ts`. Released in
       // `finally`, so a thrown migration cannot leave the app unable to save.
+      // Used, not merely enabled — the distinction the flag registry's
+      // graduation decision turns on.
+      trackLabsFeatureUsed("icloud-container-library");
+      track("library_migration_started", {
+        size: librarySizeBucket(plan.steps.length),
+      });
       lockLibraryRoots([oldRoot, newRoot]);
       let undoRecordFailure: string | null = null;
       try {
@@ -397,6 +409,14 @@ export function LibraryMigrationDialog({
           useSettingsStore.getState().setLibraryRootKind("container");
         }
 
+        track("library_migration_finished", {
+          outcome: achievedNothing
+            ? "nothing_moved"
+            : report.failed.length > 0
+              ? "partial"
+              : "complete",
+        });
+
         setPhase({
           kind: "done",
           undo: undoRecord,
@@ -514,6 +534,10 @@ export function LibraryMigrationDialog({
         if (homeDir && report.failed.length === 0) {
           await discardUndoRecord(homeDir, record.id, undoStoreDeps());
         }
+
+        track("library_migration_undone", {
+          outcome: report.failed.length > 0 ? "partial" : "complete",
+        });
 
         setPhase({
           kind: "undone",

@@ -228,6 +228,47 @@ export interface TelemetryEventProps {
   /** A flagged feature was actually USED, not merely enabled. */
   labs_feature_used: { flag: string };
   /**
+   * Which library root this launch resolved to. Once per launch.
+   *
+   * The DENOMINATOR for retiring the container migration. Every other event
+   * here counts people who acted; this one counts the population that has not,
+   * which is the only number that can answer "is it safe to delete the
+   * migration path yet?". A fleet whose launches are all `container` has
+   * finished moving; while `clouddocs` is still being reported, someone has a
+   * library the code still has to be able to move.
+   *
+   * Known limit, worth stating rather than discovering later: usage telemetry
+   * defaults on only for people with a Labs flag enabled, so this measures the
+   * opted-in population, not everyone. It cannot see a user who never turned
+   * the flag on — and those are precisely the users who have not migrated.
+   * Cross-check against release download counts, which need no consent.
+   */
+  library_root_kind: { kind: "container" | "clouddocs" | "none" };
+  /**
+   * Why the migration is or is not on offer, for someone who has the flag on.
+   * Once per session, from the Settings row.
+   *
+   * The complement to the event above: that one says where the fleet IS, this
+   * one says what is stopping the people who tried. A wall of `no-container`
+   * means the feature is unreachable for reasons the user cannot act on, which
+   * is a different problem from nobody wanting it.
+   */
+  library_migration_state: { state: MigrationOfferStateProp };
+  /**
+   * The pre-flight refused to start because files were still in iCloud.
+   *
+   * Worth its own event: this gate is the one part of the design that can stop
+   * a willing user, and nothing else would tell us whether it is a formality
+   * or a wall in practice.
+   */
+  library_migration_blocked: { size: LibrarySizeBucket };
+  /** The plan was confirmed and the move began. */
+  library_migration_started: { size: LibrarySizeBucket };
+  /** How the move ended. `nothing_moved` is a failure, not an empty library. */
+  library_migration_finished: { outcome: MigrationOutcome };
+  /** Somebody put their library back — the strongest signal a move was wrong. */
+  library_migration_undone: { outcome: MigrationOutcome };
+  /**
    * Which decoder read an audio file for transcription (#803).
    *
    * Exists to answer a question we deliberately did not guess at: symphonia is
@@ -248,7 +289,39 @@ export interface TelemetryEventProps {
 }
 
 /** Allowed event names. */
+/**
+ * Mirror of `MigrationOfferState` in `library-root.ts`, restated here rather
+ * than imported so the taxonomy stays a closed set this module owns — the
+ * PII/cardinality contract is checked against THIS file. A drift is caught by
+ * the assignment at the call site.
+ */
+export type MigrationOfferStateProp =
+  | "offer"
+  | "no-icloud"
+  | "no-container"
+  | "already-migrated"
+  | "nothing-to-move";
+
 export type TelemetryEvent = keyof TelemetryEventProps;
+
+/**
+ * Coarse size of a library being moved. Bucketed rather than counted: the
+ * question is "does this work at the sizes people actually have", and an exact
+ * file count is both higher-cardinality and closer to identifying than it is
+ * useful.
+ */
+export type LibrarySizeBucket = "empty" | "1-10" | "11-50" | "51-200" | "200+";
+
+export function librarySizeBucket(items: number): LibrarySizeBucket {
+  if (items <= 0) return "empty";
+  if (items <= 10) return "1-10";
+  if (items <= 50) return "11-50";
+  if (items <= 200) return "51-200";
+  return "200+";
+}
+
+/** How a migration, or its undo, ended. */
+export type MigrationOutcome = "complete" | "partial" | "nothing_moved";
 
 /** Coarse OS bucket for `app_launched` — never the full UA string. */
 export type OsBucket = "macos" | "windows" | "linux" | "other";
