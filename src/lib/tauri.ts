@@ -71,6 +71,9 @@ export interface LibraryMarker {
   migratedBy?: string;
 }
 
+/** See `tauriApi.libraryContainerAccess`. */
+export type ContainerAccess = "missing" | "denied" | "ready";
+
 export interface SyncSettings {
   version: number;
   icloudEnabled: boolean;
@@ -1179,6 +1182,15 @@ export const tauriApi = {
    * that is MISSING (not of the `.name.icloud` stub standing in for it).
    * Backs the migration's materialise-first pre-flight.
    */
+  /**
+   * Whether this Mac can actually READ Notesage's iCloud folder — not merely
+   * whether it exists. The folder is created by the iPhone and synced down,
+   * so it can be present on a Mac that macOS will not let read it.
+   */
+  async libraryContainerAccess(): Promise<ContainerAccess> {
+    return await invoke<ContainerAccess>("library_container_access");
+  },
+
   async listEvictedPlaceholders(root: string): Promise<string[]> {
     return await invoke<string[]>("list_evicted_placeholders", { root });
   },

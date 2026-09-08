@@ -56,12 +56,20 @@ export function LibraryMigrationRow({
     }
     void (async () => {
       try {
-        const [icloudRoot, containerRoot] = await Promise.all([
+        const [icloudRoot, containerRoot, containerAccess] = await Promise.all([
           tauriApi.getICloudPath(),
           tauriApi.getLibraryContainerPath(),
+          tauriApi.libraryContainerAccess(),
         ]);
         const cloudDocsRoot = icloudRoot ? `${icloudRoot}/Notesage` : null;
-        const marker = containerRoot ? await tauriApi.readLibraryMarker(containerRoot) : null;
+        // The marker read is itself one of the things a denial breaks, so it
+        // is only attempted once access is known to be there. Asking anyway
+        // and catching would report the denial as "no marker" — which reads
+        // as "not migrated yet", the wrong answer with the wrong remedy.
+        const marker =
+          containerRoot && containerAccess === "ready"
+            ? await tauriApi.readLibraryMarker(containerRoot)
+            : null;
         let cloudDocsHasContent = false;
         if (cloudDocsRoot) {
           try {
@@ -76,6 +84,7 @@ export function LibraryMigrationRow({
           cloudDocsRoot,
           marker,
           cloudDocsHasContent,
+          containerAccess,
         });
         if (cancelled) return;
         setOffer(state);
@@ -157,4 +166,5 @@ const HINT_KEY = {
   "no-container": "settings.libraryOfferNoContainer",
   "already-migrated": "settings.libraryOfferAlreadyMigrated",
   "nothing-to-move": "settings.libraryOfferNothingToMove",
+  "container-denied": "settings.libraryOfferDenied",
 } as const;

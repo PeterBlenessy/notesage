@@ -22,6 +22,7 @@ const CONTAINER = "/Users/x/Library/Mobile Documents/iCloud~com~notesage~app/Doc
 /** The three filesystem answers the row's eligibility check depends on. */
 function seed(over: {
   container?: string | null;
+  access?: "missing" | "denied" | "ready";
   icloud?: string | null;
   migrated?: boolean;
   oldHasContent?: boolean;
@@ -45,6 +46,9 @@ function seed(over: {
   );
   setMockInvokeHandler("list_directory", () =>
     over.oldHasContent === false ? [] : [{ name: "Welcome.md", path: "x", is_directory: false, hidden: false }],
+  );
+  setMockInvokeHandler("library_container_access", () =>
+    over.access ?? (over.container === null ? "missing" : "ready"),
   );
   setMockInvokeHandler("path_exists", () => false);
 }
@@ -102,6 +106,35 @@ describe("the synced-library settings row", () => {
       expect(screen.getByText(/already in Notesage's own iCloud folder/)).toBeTruthy(),
     );
     expect(screen.queryByText("Move…")).toBeNull();
+  });
+
+  it("tells you to grant Full Disk Access when macOS is blocking the folder", async () => {
+    // The folder is THERE — the iPhone made it and iCloud synced it down —
+    // and macOS refuses the read. Before this, the app offered the move on
+    // the strength of the folder existing and died on the first real read
+    // with an errno.
+    seed({ access: "denied" });
+    render();
+
+    await waitFor(() => expect(screen.getByText(/Full Disk Access/)).toBeTruthy());
+    expect(screen.queryByText("Move…")).toBeNull();
+    // And not the "hasn't arrived yet" text, which has the wrong remedy.
+    expect(screen.queryByText(/has not reached this Mac yet/)).toBeNull();
+  });
+
+  it("does not read the marker through a folder it cannot read", async () => {
+    // The marker read fails under a denial too, and catching it would report
+    // "no marker" — which reads as "not migrated yet".
+    let markerReads = 0;
+    seed({ access: "denied" });
+    setMockInvokeHandler("read_library_marker", () => {
+      markerReads += 1;
+      return null;
+    });
+    render();
+
+    await waitFor(() => expect(screen.getByText(/Full Disk Access/)).toBeTruthy());
+    expect(markerReads).toBe(0);
   });
 
   it("says iCloud is off when there is no synced library at all", async () => {

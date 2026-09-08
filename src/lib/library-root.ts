@@ -26,6 +26,12 @@ export interface LibraryRootInputs {
   /** The container's marker, or null when there is none. */
   marker: LibraryMarker | null;
   /**
+   * Whether this Mac can READ the container, as opposed to merely seeing it.
+   * Absent means "not checked", which is treated as readable so callers that
+   * only resolve the root (rather than offering a migration) need not ask.
+   */
+  containerAccess?: "missing" | "denied" | "ready";
+  /**
    * Whether the CloudDocs folder has anything in it. `.DS_Store` does not
    * count — Finder leaves one behind in a folder a person merely opened, and
    * treating that as "there is a library here" would strand a phone-first
@@ -106,11 +112,26 @@ export type MigrationOfferState =
   /** The move has already been performed, here or on another device. */
   | "already-migrated"
   /** The old folder is empty, so there is nothing to move. */
-  | "nothing-to-move";
+  | "nothing-to-move"
+  /**
+   * The container is there and macOS will not let this Mac read it.
+   *
+   * A state of its own, and the one that cost the most to diagnose. It is not
+   * "no container" — saying that would send somebody to wait for a folder
+   * that is already sitting on their disk. The Mac app carries no iCloud
+   * entitlement (only the iOS app declares the container), so macOS guards
+   * it; Full Disk Access is the way through, and it is the user who has to
+   * grant it.
+   */
+  | "container-denied";
 
 export function migrationOfferState(inputs: LibraryRootInputs): MigrationOfferState {
   if (!inputs.cloudDocsRoot) return "no-icloud";
   if (!inputs.containerRoot) return "no-container";
+  // Before every question that needs to READ the container — the marker most
+  // of all. Those reads fail under a denial, and their failure would be
+  // reported as some other state entirely.
+  if (inputs.containerAccess === "denied") return "container-denied";
   // Before "nothing to move": a completed migration is why the old folder is
   // empty, and "there is nothing to move" would read as a fault.
   if (inputs.marker?.migratedFrom) return "already-migrated";

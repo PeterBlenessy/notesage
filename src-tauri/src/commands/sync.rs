@@ -674,8 +674,26 @@ fn walk_evicted_placeholders(
     first_only: bool,
     out: &mut Vec<PathBuf>,
 ) -> Result<(), String> {
-    let entries = std::fs::read_dir(dir)
-        .map_err(|e| format!("Could not read {} to check for undownloaded files: {e}", dir.display()))?;
+    let entries = std::fs::read_dir(dir).map_err(|e| {
+        // Named, because this one has an answer the user can act on. macOS
+        // guards Notesage's own iCloud folder from a Mac app that carries no
+        // iCloud entitlement, and Full Disk Access is the way through — an
+        // errno sends somebody looking for a bug that is not there.
+        if e.kind() == std::io::ErrorKind::PermissionDenied {
+            // Two different causes, and the message must not pick one: macOS
+            // guarding Notesage's own iCloud folder from a Mac app with no
+            // iCloud entitlement (Full Disk Access is the way through), or an
+            // ordinary folder whose permissions are wrong, where that advice
+            // would send somebody to the wrong screen. State the fact, name
+            // the likely remedy, and say which case it applies to.
+            format!(
+                "macOS would not let Notesage read {}. If that is Notesage's own iCloud folder, give Notesage Full Disk Access in System Settings › Privacy & Security and reopen it; otherwise check that folder's permissions.",
+                dir.display()
+            )
+        } else {
+            format!("Could not read {} to check for undownloaded files: {e}", dir.display())
+        }
+    })?;
     for entry in entries {
         let entry = entry
             .map_err(|e| format!("Could not read an entry in {}: {e}", dir.display()))?;
@@ -707,6 +725,47 @@ fn walk_evicted_placeholders(
         }
     }
     Ok(())
+}
+
+/// Whether this Mac can actually USE Notesage's iCloud folder.
+///
+/// Presence is not access, and the difference is not academic: the folder is
+/// created by the iPhone and synced down, so `is_dir()` succeeds on a Mac that
+/// macOS will not let read a single byte of it. The app offered a migration on
+/// the strength of that and failed on the first real read, with an errno.
+///
+/// The Mac app is signed for direct distribution and carries no iCloud
+/// entitlement — only the iOS app declares the container — so macOS guards the
+/// directory. Full Disk Access is the user-grantable way through, which is
+/// what this detects: not "is it there" but "did a read succeed".
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ContainerAccess {
+    /// No container on this Mac. The iPhone creates it; iCloud brings it here.
+    Missing,
+    /// It is there and macOS refuses to let us read it.
+    Denied,
+    /// Readable.
+    Ready,
+}
+
+#[tauri::command]
+pub async fn library_container_access() -> Result<ContainerAccess, String> {
+    let Some(path) = library_container_path() else {
+        return Ok(ContainerAccess::Missing);
+    };
+    let dir = PathBuf::from(path);
+    tokio::task::spawn_blocking(move || match std::fs::read_dir(&dir) {
+        Ok(_) => ContainerAccess::Ready,
+        // Every failure to read is `Denied`, not just `PermissionDenied`. The
+        // caller's question is "can the migration use this folder", and the
+        // answer to that is no for an I/O error just as much as for a TCC
+        // refusal — and reporting one of them as "ready" would put us back to
+        // finding out during the move.
+        Err(_) => ContainerAccess::Denied,
+    })
+    .await
+    .map_err(|e| format!("Could not check access to the iCloud folder: {e}"))
 }
 
 /// Every undownloaded file under a library root, absolute paths.
@@ -970,7 +1029,12 @@ mod tests {
             std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
 
             let err = result.expect_err("an unreadable subtree must not read as clean");
-            assert!(err.contains("Could not read"), "unexpected error: {err}");
+            // The wording differs for a refusal (it names the remedy); what
+            // must hold is that it FAILED rather than reporting no stubs.
+            assert!(
+                err.contains("would not let Notesage read") || err.contains("Could not read"),
+                "unexpected error: {err}"
+            );
         }
     }
 
@@ -1050,7 +1114,12 @@ mod tests {
             std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755)).unwrap();
 
             let err = result.expect_err("an unreadable subtree must not read as clean");
-            assert!(err.contains("Could not read"), "unexpected error: {err}");
+            // The wording differs for a refusal (it names the remedy); what
+            // must hold is that it FAILED rather than reporting no stubs.
+            assert!(
+                err.contains("would not let Notesage read") || err.contains("Could not read"),
+                "unexpected error: {err}"
+            );
         }
     }
 
