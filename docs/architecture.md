@@ -179,6 +179,7 @@ note-sage/
 │   ├── update-coverage-baseline.js # Generate coverage-baseline.json from Istanbul output
 │   ├── contrast-audit.ts   # WCAG contrast audit for design-system palette (`pnpm audit:contrast`)
 │   ├── perf-ci-guard.mjs   # Classifies perf-suite failures — fails CI on a benchmark that crashed, tolerates one that merely overran
+│   ├── generate-licenses.mjs # Third-party notice list from the npm + cargo manifests → `src/generated/third-party-licenses.json` (`pnpm licenses:generate`)
 │   ├── build-macos-share-extension.sh # Compiles the macOS Share Extension + embeds it in a .app (signs inside-out)
 │   ├── macos-release-embed.sh # Release-time embed + rebuild of every derived artifact (dmg, updater tarball, .sig) with verification
 │   ├── spikes/             # De-risking spike harnesses (e.g. pi-seatbelt-spike.sh)
