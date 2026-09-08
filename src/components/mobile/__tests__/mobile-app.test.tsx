@@ -1865,7 +1865,10 @@ describe("native pull-to-refresh (issue #620)", () => {
     fireEvent(window, new CustomEvent("notesage:chrome", { detail: { id: "refresh" } }));
     await waitFor(() => expect(resolveList).not.toBeNull());
 
-    expect(document.querySelector(".animate-spin")).toBeNull();
+    // Exhaustive over a category on purpose — the claim is "no spinner
+    // ANYWHERE", not "this one element is absent" — so it stays a class
+    // query, and a counting one so that is legible (#936).
+    expect(document.querySelectorAll(".animate-spin").length).toBe(0);
     resolveList!([]);
   });
 });
