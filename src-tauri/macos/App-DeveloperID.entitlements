@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The Mac app's FINAL entitlements — the ones it carries once the release
+  pipeline has embedded `Contents/embedded.provisionprofile` and re-signed.
+
+  Why a second file rather than adding these to `Entitlements.plist`:
+  `tauri-bundler` signs and notarises the .app before this pipeline sees it,
+  and at that point no profile is embedded. An entitlement not backed by a
+  profile is at best ignored and at worst a notarisation failure, so the first
+  pass keeps the entitlements it has always had and the iCloud claim is added
+  in the same step that puts the profile in place. See
+  `scripts/build-macos-share-extension.sh`.
+
+  These MUST stay a subset of what the profile grants. The profile
+  (`Notesage_macOS_DeveloperID.provisionprofile`, Developer ID / MAC_APP_DIRECT
+  for `com.notesage.app`) grants `icloud-services = *`; `CloudDocuments` is the
+  only one this app uses, and asking for less than you are given is the right
+  direction to be wrong in. `scripts/macos-release-embed.sh` verifies the pair
+  rather than trusting it.
+
+  What this buys: `~/Library/Mobile Documents/iCloud~com~notesage~app` is a
+  TCC-protected container that macOS opens only to the app that can prove it
+  owns it. Without these keys the Mac app can SEE that folder (the iPhone
+  creates it and iCloud syncs it down) and cannot read a byte — the failure
+  Peter hit on v0.57.1, whose only workaround was granting Full Disk Access.
+  That is a permanent, revocable, wildly over-broad grant to read one folder
+  the app already owns. With them, there is nothing to grant.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+
+    <!-- Ties the signature to the profile; macOS refuses the iCloud keys
+         below without it. -->
+    <key>com.apple.application-identifier</key>
+    <string>M39TDQ2D7L.com.notesage.app</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>M39TDQ2D7L</string>
+
+    <!-- The same container the iOS app declares, which is the point: one
+         library both apps can open without anybody picking a folder. -->
+    <key>com.apple.developer.icloud-container-identifiers</key>
+    <array>
+        <string>iCloud.com.notesage.app</string>
+    </array>
+    <key>com.apple.developer.ubiquity-container-identifiers</key>
+    <array>
+        <string>iCloud.com.notesage.app</string>
+    </array>
+    <key>com.apple.developer.icloud-services</key>
+    <array>
+        <string>CloudDocuments</string>
+    </array>
+    <key>com.apple.developer.icloud-container-environment</key>
+    <string>Production</string>
+</dict>
+</plist>

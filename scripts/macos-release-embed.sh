@@ -99,6 +99,36 @@ APPEX="$APP/Contents/PlugIns/NotesageShare.appex"
 [ -d "$APPEX" ] || die "extension missing after embed: $APPEX"
 codesign --verify --strict "$APPEX" || die "extension is not validly signed"
 
+# --- 1b. the iCloud entitlement, verified rather than assumed -----------------
+#
+# This is the difference between an app that opens its own iCloud folder and
+# one that asks every user for Full Disk Access to read it. The failure mode is
+# silent — an app signed without the entitlement launches, runs, and only fails
+# when somebody tries to use their library — so it is checked here, where a
+# failure stops the release, rather than discovered by a user.
+step "Verifying iCloud entitlement and provisioning profile"
+[ -f "$APP/Contents/embedded.provisionprofile" ] \
+  || die "no embedded.provisionprofile in the bundle — macOS will refuse the iCloud entitlements"
+
+SIGNED_ENTS="$WORK/signed-entitlements.plist"
+codesign -d --entitlements :- "$APP" > "$SIGNED_ENTS" 2>/dev/null \
+  || die "could not read the signed entitlements back from $APP"
+grep -q "com.apple.developer.icloud-container-identifiers" "$SIGNED_ENTS" \
+  || die "the signed app carries no iCloud container entitlement (see $SIGNED_ENTS)"
+grep -q "iCloud.com.notesage.app" "$SIGNED_ENTS" \
+  || die "the signed app's iCloud entitlement does not name iCloud.com.notesage.app"
+
+# The profile has to actually grant what the signature claims. A profile for
+# the wrong App ID, or one whose capabilities were changed in the developer
+# portal, produces a bundle that signs and notarises and then cannot touch the
+# container at runtime.
+security cms -D -i "$APP/Contents/embedded.provisionprofile" > "$WORK/profile.plist" 2>/dev/null \
+  || die "could not decode the embedded provisioning profile"
+/usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.developer.icloud-container-identifiers" \
+  "$WORK/profile.plist" 2>/dev/null | grep -q "iCloud.com.notesage.app" \
+  || die "the embedded profile does not grant the iCloud container the signature claims"
+echo "    iCloud container entitlement present, and granted by the profile"
+
 # --- 2. re-notarise ------------------------------------------------------------
 #
 # The ticket tauri-action stapled belongs to the pre-embed bundle. Gatekeeper
