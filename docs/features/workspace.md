@@ -66,6 +66,149 @@ The workspace tree is exposed through the flat `QuietSidebar` (`src/components/s
 - Cloud badge icon on synced files and folders in sidebar
 - "Configure then apply" pattern: toggles update pending state, Apply button triggers migration
 
+**Two possible synced roots, and the marker that decides (2026-09-06).**
+
+A synced library can now live in either of two places: today's
+`iCloud Drive/Notesage` — a plain folder in Apple's generic
+`com~apple~CloudDocs` container, which the Mac created with ordinary file
+I/O — or **Notesage's own iCloud container**,
+`iCloud~com~notesage~app/Documents`, which only Notesage can write and which
+the phone can therefore create without asking anyone to pick a folder.
+
+Both can exist at once — during a migration they must — so which is live
+cannot be read off the directories. A marker file answers it:
+`<root>/.notesage/library.json`, written by whichever device created the
+library and extended by a migration with `migratedFrom` / `migratedAt` /
+`migratedBy`. `resolveSyncedLibraryRoot` (`src/lib/library-root.ts`) applies
+four branches in order, at every startup:
+
+1. a container whose marker records `migratedFrom` → the container, wherever
+   the migration was performed;
+2. a marked container with the old folder empty → the container (a
+   phone-first library this Mac is joining);
+3. an old folder with content → the old folder, which is the branch every
+   current user takes and is deliberately untouched;
+4. a container and no old library → the container.
+
+`.DS_Store` does not count as content: Finder leaves one in any folder
+someone opened, and counting it would pin a phone-first user to an empty
+root. The result lands in `icloudNotesagePath` — which every consumer already
+reads — plus `libraryRootKind` for the Settings copy. **Neither is
+persisted**: both are re-derived each launch, because a remembered root is a
+lie the moment another device moves the library.
+
+**Following is not flagged; MIGRATING is.** A Mac that finds a migrated
+container uses it, since the alternative is showing a library people have
+moved away from. Performing a migration — moving everyone's files, which
+re-uploads the library through iCloud and has no undo — is behind the
+`icloud-container-library` Labs flag. Settings → Projects → Library shows the
+resolved root and, when the flag is on and there is something to move, offers
+it. The dialog shows the plan first: counts, and every collision with the
+rule that will be applied.
+
+| Entry | Rule on collision |
+| --- | --- |
+| `Inbox/` | Merged item by item; a taken name gets the phone's `name-1.ext` dedupe. |
+| `Inbox/.notesage/reading-progress.json` | Merged by the existing sidecar rules (progress moves forward, tombstones win by time), never overwritten — both devices have been writing it. |
+| `.notesage/pins.json` | Union of the pinned paths. |
+| `.notesage/sync-settings.json` | Dropped: it is per-device. |
+| Folder of the same name, only one a project | Merged into the destination; the project's `.notesage/` travels with it. |
+| Folder of the same name, both projects | Both kept — the source becomes `<name> (from iCloud Drive)` and is listed in the report. Two projects' metadata are never merged. |
+| Loose file of the same name | Deduped. |
+
+The move is **resumable**: a step whose source is already gone counts as
+done, so re-planning over what remains reaches the same end state. A failing
+step does not abort the run — a library half in each place with no record of
+which half is worse than finishing and reporting the gap.
+
+**Nothing is moved that is not on this Mac.** Before the plan is even built,
+both roots are walked for `.icloud` placeholders
+(`list_evicted_placeholders`), each one is asked for
+(`icloud_ensure_downloaded`), and the move **refuses to start** until they
+have all arrived, naming what is missing. This is the only path to true data
+loss the review found: iCloud can take a file's bytes back between the
+per-entry guard and the rename, and moving the resulting stub into a container
+that does not own its content leaves a reference its owner may purge. Waiting
+until nothing is evicted removes the race rather than narrowing it; the
+per-entry guard in `sync.rs` stays as the backstop for anything evicted
+mid-run. The wait shows progress and can be cancelled — on a large library
+over iCloud it can take a long time, and cancelling stops the waiting, not the
+downloads. `src/lib/library-materialise.ts`.
+
+**A move can be undone.** Not a backup — a reversal. The runner records every
+relocation and stashes the few things a merge destroys, and
+`src/lib/library-migration-undo.ts` replays that record backwards: moves in
+reverse order (so a directory is never taken back while its children are still
+in it), then the stashed files to the root each came from. The record is
+written to `~/.notesage/migrations/<id>.json` — outside both roots, because
+both are moving — before the bookkeeping and the marker, since every step after
+the run can fail and a record written last is missing in exactly the cases
+somebody wants it. It survives a restart: the moment someone realises the
+result is wrong is more likely to be the next morning than the next minute.
+
+The offer appears twice: in the report a move produces, and afterwards in
+Settings → Projects → Library, which reads the record back off disk — a move
+made yesterday is still reversible today. A run in which **nothing** moved is
+not recorded at all: writing the marker would point every device at a container
+holding nothing, and since the offer to migrate also tests the marker, there
+would be no way back inside the app.
+
+Undo is itself a migration: same lock, same `migration*` write entry points,
+same partial-failure reporting. It repoints the stored paths through the same
+routine the forward run uses (roots swapped, renames inverted — derived from
+the record's own moves so the two cannot disagree), and clears `migratedFrom`
+from the marker, or every device keeps resolving the library to a container the
+files have just left. A partially applied record is kept so it can be re-run;
+only a clean undo spends it. It cannot help if bytes were destroyed in the
+cloud or something outside the app changed a file — materialise-first is what
+closes that; the undo closes regret. Design:
+`docs/design/migration-safety.md`.
+
+**The library is held while it moves** (`src/lib/library-lock.ts`). There is
+no natural quiescence: the editor autosaves on a debounce, the Inbox store
+flushes `reading-progress.json`, the recordings scanner writes manifests, an
+agent may be mid-task — and the stored paths are only rewritten AFTER every
+move, so for the whole run every writer is still aimed at the old root. Since
+`write_file` CREATES a missing file rather than failing, an autosave arriving
+after its note has moved would recreate that note at the abandoned root with
+the newest edit in it. Both roots are therefore locked and every mutating
+file operation refuses paths inside them for the duration. The migration's
+own writes use the separate `migration*` entry points in `tauri.ts` rather
+than an exemption flag — a flag would have to be set around each awaited
+call, and anything else running during that await would be exempt too.
+
+**Nothing is trusted that can be checked.** Every environment answer this
+feature depends on fails CLOSED, because iCloud is transiently unavailable by
+nature and each of these once failed open:
+
+| Check | What a swallowed failure did |
+| --- | --- |
+| Listing the source root | An unreachable library read as an empty one: zero steps, a "successful" run, the marker written, and the app pointed at an empty container for ever. |
+| Listing an `Inbox/` that exists | No Inbox steps planned, so every captured article stays behind while the report says it completed. |
+| `.notesage` project detection | A project demoted to a plain folder — and same-named plain folders are MERGED, combining metadata that must never meet. |
+| Listing a merge destination | Deduping against nothing, planning every child straight onto what is already there. |
+| The evicted-file walk (`sync.rs`) | An unreadable subtree read as "no stubs, safe to move", and `count_files` cannot cover for it: a placeholder copies as a placeholder, so the count matches. |
+| The comments directory | Every sidecar orphaned, silently. |
+
+A destination placeholder counts as a name already taken: an undownloaded
+file is on disk only as `.name.icloud`, so reading the listing literally
+missed the collision entirely — in exactly the case this feature is for, a
+Mac joining a library whose contents have not all come down yet.
+
+**The result is verified against the disk.** The report is what the runner
+believes; afterwards the old root and its `Inbox/` are re-read and anything
+unexplained — not debris, not deliberately left, not a step that already
+failed loudly — is named. This also catches what arrives in the window
+between planning and confirming, which belongs to no step at all. A re-read
+that fails is itself reported rather than passing for a clean bill of health.
+
+**Paths are rewritten in the same pass.** Projects, pins, recents, the open
+document and the path-keyed comment sidecars all store absolute paths; a
+library that moved without them comes back with an empty sidebar, no pins and
+orphaned comments, with all the data still on disk — which is exactly what
+makes it look like loss. Sidecars are re-keyed rather than moved, because
+their filename is a hash of the document's path.
+
 **iCloud project auto-discovery:**
 
 - On startup, scans iCloud Notesage folder for projects synced from other machines
@@ -148,6 +291,10 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 | `src/components/sidebar/quiet/FolderPeek.tsx` | Inline `→`-expand one-level peek on a focused project/folder row |
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |
 | `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler (routes by `externalChangeDiffReview`) |
+| `src/lib/library-lock.ts` | Holds both roots while the library moves; every mutating file op checks it |
+| `src/lib/library-materialise.ts` | Materialise-first pre-flight — walks both roots for `.icloud` stubs, asks iCloud for them, refuses to start until they arrive |
+| `src/lib/library-migration-undo.ts` | The undo record, its store under `~/.notesage/migrations/`, and the reversal |
+| `src/lib/__tests__/library-migration.rehearsal.test.ts` | The migration run against a real filesystem, end to end |
 | `src/hooks/useFileRenameSync.ts` | Rename sync: open-tab path rewrites, Save-Now toast, path-keyed sidecar migration |
 | `src/hooks/useFileWatcherIntegration.ts` | Auto-reload + toast display (OFF) / inline decorations + sticky action toast (ON) |
 | `src/lib/notifications.ts` | `toastExternalChange`, `toastExternalReload` — external-change toast helpers |

@@ -117,3 +117,17 @@ export function markMigrated(
     migratedBy: migration.by,
   };
 }
+
+/**
+ * Take the migration record back off a marker. Pure, like {@link markMigrated}.
+ *
+ * The undo has to do this or the marker outlives the thing it describes: the
+ * Mac's root resolution and the phone's `reconcile()` both read `migratedFrom`
+ * as "the library lives here now", so a container that has just been emptied
+ * would still win against the folder the files went back to — and every device
+ * would keep following it.
+ */
+export function clearMigrated(marker: LibraryMarker): LibraryMarker {
+  const { migratedFrom: _f, migratedAt: _a, migratedBy: _b, ...rest } = marker;
+  return rest;
+}

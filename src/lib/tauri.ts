@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { assertLibraryUnlocked } from "@/lib/library-lock";
 import type { AIProviderType } from './ai/types';
 import type { BackendTypographyPresets } from './typography-presets';
 import type { AcpListResult, AcpSessionResult } from './ai/acp-utils';
@@ -49,6 +50,25 @@ export interface WorktreeInfo {
   path: string;
   branch: string;
   is_main: boolean;
+}
+
+/**
+ * The library's self-description, at `<root>/.notesage/library.json`.
+ *
+ * Written by whichever device creates the library. It is what lets a Mac
+ * FOLLOW a migration it did not perform: a container carrying `migratedFrom`
+ * is the live library and the CloudDocs folder beside it is a leftover,
+ * which looking at the two directories could never establish on its own.
+ */
+export interface LibraryMarker {
+  version: 1;
+  kind: "container";
+  createdBy: "ios" | "macos";
+  createdAt: string;
+  migratedFrom?: string;
+  migratedAt?: string;
+  /** Device name, informational only. */
+  migratedBy?: string;
 }
 
 export interface SyncSettings {
@@ -807,7 +827,15 @@ export const tauriApi = {
     return await invoke<number[]>("read_binary_file", { path });
   },
 
+  // Every mutating file operation checks the library lock first. While a
+  // migration is moving the library, a write into it lands in a tree the app
+  // is halfway through relocating — and `write_file` CREATES a missing file
+  // rather than failing, so an autosave arriving after its note has moved
+  // silently recreates that note at the abandoned root with the newest edit
+  // in it. See `library-lock.ts`. The migration's own writes use the
+  // `migration*` entry points below, which deliberately do not check.
   async writeFile(path: string, content: string): Promise<void> {
+    assertLibraryUnlocked(path);
     await invoke("write_file", { path, content });
   },
 
@@ -820,14 +848,18 @@ export const tauriApi = {
   },
 
   async createFile(path: string): Promise<void> {
+    assertLibraryUnlocked(path);
     await invoke("create_file", { path });
   },
 
   async createDirectory(path: string): Promise<void> {
+    assertLibraryUnlocked(path);
     await invoke("create_directory", { path });
   },
 
   async renamePath(oldPath: string, newPath: string): Promise<void> {
+    assertLibraryUnlocked(oldPath);
+    assertLibraryUnlocked(newPath);
     await invoke("rename_path", { oldPath, newPath });
   },
 
@@ -836,11 +868,33 @@ export const tauriApi = {
   },
 
   async deletePath(path: string): Promise<void> {
+    assertLibraryUnlocked(path);
     await invoke("delete_path", { path });
+  },
+
+  /**
+   * The migration's own writes, which must work while the lock is held.
+   *
+   * Separate entry points rather than an exemption flag: a flag would have to
+   * be set around each awaited call, and anything else that ran during that
+   * await would be exempt too — the exact race the lock exists to close.
+   * Nothing but `library-migration-run.ts` should call these.
+   */
+  async migrationWriteFile(path: string, content: string): Promise<void> {
+    await invoke("write_file", { path, content });
+  },
+
+  async migrationDeletePath(path: string): Promise<void> {
+    await invoke("delete_path", { path });
+  },
+
+  async migrationCreateDirectory(path: string): Promise<void> {
+    await invoke("create_directory", { path });
   },
 
   /** Move to the Trash — recoverable, where `deletePath` is not. */
   async trashPath(path: string): Promise<void> {
+    assertLibraryUnlocked(path);
     await invoke("trash_path", { path });
   },
 
@@ -1089,6 +1143,44 @@ export const tauriApi = {
    */
   async icloudEnsureDownloaded(path: string): Promise<ICloudDownloadState> {
     return await invoke<ICloudDownloadState>("icloud_ensure_downloaded", { path });
+  },
+
+  /**
+   * Notesage's OWN iCloud container, if it exists — not Apple's generic
+   * `com~apple~CloudDocs`. `null` when the phone has not created it (or on a
+   * platform that has no such thing). Phase 2 never creates it: an unentitled
+   * Mac that made the directory anyway would get a folder that never syncs.
+   */
+  async getLibraryContainerPath(): Promise<string | null> {
+    return await invoke<string | null>("get_library_container_path");
+  },
+
+  /**
+   * A library's `.notesage/library.json`. `null` for a library that has none
+   * — which is the ordinary state of today's CloudDocs folder, not an error.
+   * A malformed marker also reads as `null`: "no marker" means "not
+   * migrated", and refusing to start over a hand-edited file would be worse.
+   */
+  async readLibraryMarker(root: string): Promise<LibraryMarker | null> {
+    return await invoke<LibraryMarker | null>("read_library_marker", { root });
+  },
+
+  /**
+   * Move ONE entry into the new library, returning where it landed. Never
+   * overwrites: a destination that exists is an error, so every collision is
+   * settled by the plan rather than by the order steps happened to run in.
+   */
+  async migrateLibraryEntry(src: string, dst: string): Promise<string> {
+    return await invoke<string>("migrate_library_entry", { src, dst });
+  },
+
+  /**
+   * Every undownloaded file under a library root, as the path of the file
+   * that is MISSING (not of the `.name.icloud` stub standing in for it).
+   * Backs the migration's materialise-first pre-flight.
+   */
+  async listEvictedPlaceholders(root: string): Promise<string[]> {
+    return await invoke<string[]>("list_evicted_placeholders", { root });
   },
 
   async readSyncSettings(notesagePath: string): Promise<SyncSettings | null> {

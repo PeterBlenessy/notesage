@@ -5,6 +5,9 @@ import { useWorkspaceStore } from '@/stores/workspace-store';
 import { tauriApi } from '@/lib/tauri';
 import { ProjectCard } from '../ProjectCard';
 import { SettingsGroup } from './SettingsGroup';
+import { LibraryMigrationRow } from '@/components/settings/LibraryMigrationRow';
+import { LibraryMigrationDialog } from '@/components/settings/LibraryMigrationDialog';
+import type { UndoRecord } from '@/lib/library-migration-undo';
 import { SettingsHint } from './SettingsHint';
 import { SettingsRow } from './SettingsRow';
 import { t } from '@/lib/i18n';
@@ -42,6 +45,14 @@ export function ProjectsSettings() {
     [projects],
   );
 
+  // Where the synced library is, and the offer to move it. Above the project
+  // cards because it is about all of them at once.
+  const [migrationOpen, setMigrationOpen] = useState(false);
+  const [migrationRoots, setMigrationRoots] = useState<{ from: string; to: string } | null>(null);
+  // Set only when the dialog is opened on a move already performed, so it
+  // offers to reverse that one instead of planning a new one.
+  const [resumeUndo, setResumeUndo] = useState<UndoRecord | undefined>(undefined);
+
   const gitEnabled = useSettingsStore((s) => s.gitEnabled);
   const setGitEnabled = useSettingsStore((s) => s.setGitEnabled);
   const [gitNotAvailable, setGitNotAvailable] = useState(false);
@@ -71,6 +82,37 @@ export function ProjectsSettings() {
 
   return (
     <>
+      <SettingsGroup label={t("settings.libraryGroup")}>
+        <LibraryMigrationRow
+          onUndo={(record) => {
+            // The record carries the two roots, so the dialog needs nothing
+            // discovered here.
+            setMigrationRoots({ from: record.oldRoot, to: record.newRoot });
+            setResumeUndo(record);
+            setMigrationOpen(true);
+          }}
+          onReview={async () => {
+            setResumeUndo(undefined);
+            const [icloudRoot, containerRoot] = await Promise.all([
+              tauriApi.getICloudPath(),
+              tauriApi.getLibraryContainerPath(),
+            ]);
+            if (!icloudRoot || !containerRoot) return;
+            setMigrationRoots({ from: `${icloudRoot}/Notesage`, to: containerRoot });
+            setMigrationOpen(true);
+          }}
+        />
+      </SettingsGroup>
+      {migrationRoots && (
+        <LibraryMigrationDialog
+          open={migrationOpen}
+          onOpenChange={setMigrationOpen}
+          oldRoot={migrationRoots.from}
+          newRoot={migrationRoots.to}
+          resumeUndo={resumeUndo}
+        />
+      )}
+
       {sortedProjects.length > 0 ? (
         <SettingsGroup label={t("settings.projectsGroup")} bare>
           <div className="py-2 space-y-2">
