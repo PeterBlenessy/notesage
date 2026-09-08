@@ -16,7 +16,16 @@ import { RECORDINGS_FOLDER_NAME } from "@/lib/notes-root";
  * breadcrumb island's permanent "Inbox" entry covers reaching it from depth.
  */
 export function InboxCard({ count, unread, onOpen }: { count?: number; unread?: number; onOpen: () => void }) {
-  return <PinnedFolderCard icon={Inbox} name={INBOX_FOLDER_NAME} count={count} badge={unread} onOpen={onOpen} />;
+  return (
+    <PinnedFolderCard
+      icon={Inbox}
+      name={INBOX_FOLDER_NAME}
+      count={count}
+      badge={unread}
+      badgeTestId="inbox-unread"
+      onOpen={onOpen}
+    />
+  );
 }
 
 /**
@@ -42,14 +51,19 @@ function PinnedFolderCard({
   name,
   count,
   badge,
+  badgeTestId,
   onOpen,
 }: {
   icon: LucideIcon;
   name: string;
   count?: number;
   /** Shown in the accent instead of the count when non-zero — the Inbox's
-   *  unread number. Recordings has nothing equivalent. */
+   *  unread number. Recordings has nothing equivalent yet. */
   badge?: number;
+  /** Test id for the badge, named by the CALLER: this card is shared, so a
+   *  hardcoded `inbox-unread` would hand the second card that needs a
+   *  badge a hook naming the wrong feature (#930). */
+  badgeTestId?: string;
   onOpen: () => void;
 }) {
   return (
@@ -88,7 +102,7 @@ function PinnedFolderCard({
         {badge !== undefined && badge > 0 ? (
           <span
             className="shrink-0 text-[length:calc(1.0625rem*var(--ns-a11y-scale,1))] tabular-nums text-[var(--color-accent-primary)]"
-            data-testid="inbox-unread"
+            data-testid={badgeTestId}
           >
             {badge}
           </span>
