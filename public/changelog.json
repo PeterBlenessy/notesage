@@ -1,6 +1,23 @@
 {
   "releases": [
     {
+      "version": "0.57.0",
+      "date": "2026-09-08",
+      "previousVersion": "0.56.4",
+      "sections": {
+        "features": [
+          "**Move your synced library into Notesage's own iCloud folder.** Until now a synced library lived in a normal folder in iCloud Drive, which meant your iPhone had to ask you to go and find it. Notesage's own iCloud folder is one both apps already know, so nothing has to be pointed at anything. Turn on \"Keep the synced library in Notesage's own iCloud folder\" in Settings → Labs, then look under Settings → Projects → Library.",
+          "**You see the whole plan before anything moves.** How many projects, Inbox items and files, and every name that already exists on the other side with what will happen to it. Two projects with the same name are kept side by side and never merged into one — combining two projects' settings and comments is not something that can be taken back.",
+          "**Nothing moves until it is really on your Mac.** iCloud keeps files you have not opened in a while in the cloud, leaving only a stand-in on disk. Moving one of those is how a file gets lost, so Notesage fetches them all first and will not start until they have arrived — with progress, and a way to stop waiting and see which ones are holding things up.",
+          "**Move it back.** Every move can be undone, and the offer is still there the next morning — not only while the window is open. Moving back puts every file where it was; anything you have changed since stays as it is now.",
+          "**Your other devices follow.** A Mac or iPhone that finds the library has moved simply uses the new place. No setting to change, no folder to pick, nothing to confirm."
+        ],
+        "improvements": [
+          "**Settings says where your synced library actually is** — the place and the full path, under Settings → Projects → Library. Worth having now that there is more than one place it can be."
+        ]
+      }
+    },
+    {
       "version": "0.56.4",
       "date": "2026-09-07",
       "previousVersion": "0.56.3",
