@@ -129,6 +129,56 @@ security cms -D -i "$APP/Contents/embedded.provisionprofile" > "$WORK/profile.pl
   || die "the embedded profile does not grant the iCloud container the signature claims"
 echo "    iCloud container entitlement present, and granted by the profile"
 
+# The profile must cover the certificate that SIGNED this app.
+#
+# This is the check whose absence shipped v0.57.2 as an app that would not
+# open. Everything else passed: the signature was valid, notarised and
+# Gatekeeper-approved, the entitlements were right, the profile granted them.
+# The profile simply named a different Developer ID certificate than CI signs
+# with, and macOS answers that by SIGKILLing the process at exec.
+codesign -d --extract-certificates="$WORK/appcert" "$APP" 2>/dev/null \
+  || die "could not extract the signing certificate from $APP"
+SIGNER_SHA="$(openssl x509 -inform DER -in "$WORK/appcert0" -noout -fingerprint -sha1 \
+  | sed 's/.*=//; s/://g')"
+python3 - "$APP/Contents/embedded.provisionprofile" "$SIGNER_SHA" <<'PYEOF' \
+  || die "the embedded profile does not cover the certificate this app was signed with — the app would be killed at launch"
+import hashlib, plistlib, re, sys
+blob = open(sys.argv[1], "rb").read()
+pl = plistlib.loads(re.search(rb"<\?xml.*?</plist>", blob, re.S).group(0))
+want = sys.argv[2].upper()
+have = [hashlib.sha1(c).hexdigest().upper() for c in pl.get("DeveloperCertificates", [])]
+print(f"    signer {want[:16]}… ; profile covers {len(have)} certificate(s)")
+sys.exit(0 if want in have else 1)
+PYEOF
+
+# And then the only question that actually matters: does it RUN.
+#
+# Every check above inspects metadata. An app can pass all of them and still
+# be killed at exec — which is exactly what happened — so this launches the
+# thing and looks for the kernel killing it. A window never appears on a
+# headless runner and that is fine: the failure being caught here is SIGKILL
+# (137), not an unhappy UI.
+step "Launching the signed app to prove it is not killed at exec"
+"$APP/Contents/MacOS/notesage" >"$WORK/launch.log" 2>&1 &
+LAUNCH_PID=$!
+sleep 8
+if kill -0 "$LAUNCH_PID" 2>/dev/null; then
+  kill "$LAUNCH_PID" 2>/dev/null || true
+  wait "$LAUNCH_PID" 2>/dev/null || true
+  echo "    the app started and stayed up"
+else
+  wait "$LAUNCH_PID" 2>/dev/null
+  LAUNCH_STATUS=$?
+  if [ "$LAUNCH_STATUS" -eq 137 ]; then
+    tail -20 "$WORK/launch.log" >&2 || true
+    die "the signed app was KILLED at launch (137) — its entitlements are not honoured by the embedded profile"
+  fi
+  # Anything else is not this failure class. A headless runner can end a GUI
+  # process for its own reasons, and failing the release over that would be
+  # trading one silent breakage for a flaky pipeline.
+  echo "    the app exited with $LAUNCH_STATUS (not a signing kill; continuing)"
+fi
+
 # --- 2. re-notarise ------------------------------------------------------------
 #
 # The ticket tauri-action stapled belongs to the pre-embed bundle. Gatekeeper
