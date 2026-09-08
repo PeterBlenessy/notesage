@@ -1,4 +1,5 @@
 import { tauriApi } from "@/lib/tauri";
+import { log } from "@/lib/logger";
 import {
   mergeReadingProgress,
   parseReadingProgress,
@@ -138,14 +139,20 @@ export interface SidecarScan {
   /** Documents whose sidecar can be re-keyed. */
   paths: string[];
   /**
-   * Sidecars that cannot be re-keyed, by filename.
+   * Sidecars holding real comments that cannot be re-keyed, by filename.
    *
-   * Skipping them is right — a sidecar we cannot read is one we cannot move
+   * Skipping them is right — a sidecar we cannot place is one we cannot move
    * somewhere correct — but skipping them SILENTLY was not. The key is a hash
    * of the document's path, so once the document moves the key no longer
-   * matches and every comment on it is unreachable while the bytes sit on
-   * disk. That is indistinguishable from losing them, and the report has a
-   * `leftBehind` list precisely to name what did not come along.
+   * matches and the comments on it are unreachable while the bytes sit on
+   * disk.
+   *
+   * ONLY the ones that actually hold something. The first version reported
+   * every sidecar it could not read, which on a real library meant a wall of
+   * eight alarming lines of which three were EMPTY files (`[]` — nothing to
+   * lose) and one had been corrupt long before any migration ran. A warning
+   * about nothing is worse than no warning: it teaches people that the report
+   * cries wolf, on the one screen where it must not.
    */
   unreadable: string[];
 }
@@ -164,13 +171,26 @@ export async function collectSidecarFilePaths(notesRoot: string): Promise<Sideca
       continue;
     }
     try {
-      const parsed = JSON.parse(await tauriApi.readFile(`${dir}/${entry.name}`)) as {
-        originalPath?: unknown;
-      };
-      if (typeof parsed.originalPath === "string") paths.push(parsed.originalPath);
-      else unreadable.push(entry.name);
-    } catch {
+      const parsed = JSON.parse(await tauriApi.readFile(`${dir}/${entry.name}`)) as
+        | { originalPath?: unknown; comments?: unknown }
+        | unknown[];
+      if (!Array.isArray(parsed) && typeof parsed.originalPath === "string") {
+        paths.push(parsed.originalPath);
+        continue;
+      }
+      // The legacy shape: a bare array of comments, with no record of the
+      // document it belongs to. Nothing here can place it — but an EMPTY one
+      // is not a loss, it is a file with no comments in it.
+      const comments = Array.isArray(parsed) ? parsed : (parsed.comments ?? []);
+      if (Array.isArray(comments) && comments.length === 0) continue;
       unreadable.push(entry.name);
+    } catch {
+      // Corrupt, and corrupt BEFORE this migration — nothing here reads a
+      // sidecar except to copy it, so a file that will not parse was already
+      // unreadable to the app that owns it. Naming it in a migration report
+      // blames the move for a fault it did not cause and cannot fix, so it is
+      // logged instead of surfaced.
+      log.warn("migration", `unreadable comment sidecar, left alone: ${entry.name}`);
     }
   }
   return { paths, unreadable };
