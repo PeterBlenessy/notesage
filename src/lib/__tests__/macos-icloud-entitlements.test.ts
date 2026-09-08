@@ -75,6 +75,23 @@ describe("the Mac app's iCloud entitlements", () => {
     expect(profilePlist()).toContain(CONTAINER);
   });
 
+  it("covers every Developer ID certificate, not just one", () => {
+    // v0.57.2 shipped a profile built against ONE certificate — the newest by
+    // expiry — while CI signs with a different one. macOS refuses entitlements
+    // whose profile does not cover the signing certificate and kills the
+    // process at exec, so the app simply would not open. The signature was
+    // valid, notarised and Gatekeeper-approved throughout; only the pairing
+    // was wrong.
+    //
+    // A profile covering every Developer ID certificate cannot be wrong about
+    // which one CI used, and survives a rotation. This asserts the count
+    // rather than the identities: certificates come and go, "more than one" is
+    // the property that stops the mistake recurring.
+    const raw = readFileSync(PROFILE, "latin1");
+    const certs = (raw.match(/<data>/g) ?? []).length;
+    expect(certs, "the profile should carry several certificates").toBeGreaterThan(1);
+  });
+
   it("keeps the pre-profile entitlements free of iCloud", () => {
     // `Entitlements.plist` is what `tauri-bundler` signs with, before any
     // profile is embedded. An iCloud key there is an entitlement with nothing

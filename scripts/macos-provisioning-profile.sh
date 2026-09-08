@@ -87,11 +87,18 @@ devid = [c for c in certs["data"]
          if c["attributes"]["certificateType"] == "DEVELOPER_ID_APPLICATION"]
 if not devid:
     raise SystemExit("no Developer ID Application certificate on this account")
-# Newest first, and ONE of them: the API returns a 500 when several are
-# attached at once. The profile therefore covers the certificate the release
-# signs with, which is the newest — rotate the cert, re-run this.
+# EVERY Developer ID certificate, not the newest one.
+#
+# v0.57.2 shipped a profile built against the newest certificate by expiry;
+# CI signs with a different one. macOS refuses entitlements whose profile does
+# not cover the signing certificate and SIGKILLs the process at exec — the app
+# would not open at all. Nothing in the build noticed, because the signature
+# was valid, notarised and Gatekeeper-approved; only the pairing was wrong.
+#
+# Covering all of them also means rotating a certificate does not orphan the
+# profile. (An earlier attempt to attach several returned a 500; it was
+# transient, and the request is retried below rather than avoided.)
 devid.sort(key=lambda c: c["attributes"]["expirationDate"], reverse=True)
-cert = devid[0]
 
 name = "Notesage macOS Developer ID"
 # A profile of this name may already exist; Apple will not replace it, so the
@@ -102,12 +109,17 @@ for p in existing.get("data", []):
     if p["attributes"]["name"] == name:
         call(f"profiles/{p['id']}", "DELETE")
 
-st, res = call("profiles", "POST", {"data": {
+body = {"data": {
     "type": "profiles",
     "attributes": {"name": name, "profileType": "MAC_APP_DIRECT"},
     "relationships": {
         "bundleId": {"data": {"id": app["id"], "type": "bundleIds"}},
-        "certificates": {"data": [{"id": cert["id"], "type": "certificates"}]}}}})
+        "certificates": {"data": [{"id": c["id"], "type": "certificates"} for c in devid]}}}}
+for attempt in range(3):
+    st, res = call("profiles", "POST", body)
+    if st < 400:
+        break
+    time.sleep(2)
 if st >= 400:
     raise SystemExit(f"could not create the profile: {json.dumps(res)[:400]}")
 
@@ -119,8 +131,9 @@ pl = plistlib.loads(re.search(rb"<\?xml.*?</plist>", content, re.S).group(0))
 ents = pl.get("Entitlements", {})
 icloud = ents.get("com.apple.developer.icloud-container-identifiers")
 print(f"wrote {out} ({len(content)} bytes)")
-print(f"  certificate : {cert['attributes']['displayName']} "
-      f"(expires {cert['attributes']['expirationDate'][:10]})")
+for c in devid:
+    print(f"  certificate : {c['attributes']['displayName']} "
+          f"(expires {c['attributes']['expirationDate'][:10]})")
 print(f"  profile     : expires {str(pl.get('ExpirationDate'))[:10]}")
 print(f"  iCloud      : {icloud}")
 if not icloud:
