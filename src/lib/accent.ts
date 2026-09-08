@@ -3,7 +3,14 @@
  *
  * Three named accents: "orange", "blue", "system" (macOS NSColor.controlAccentColor).
  * "default" means no accent applied — `--accent` is unset and consumers fall back
- * to the neutral `--primary` via `var(--accent, var(--primary))`.
+ * to the neutral grey through `--color-accent-primary`, which globals.css defines
+ * as `var(--accent, var(--color-primary))`.
+ *
+ * Components MUST consume `--color-accent-primary` and never spell the chain
+ * inline. There is no `--primary`: an inline `var(--accent, var(--primary))`
+ * resolves, with no accent class, to an undefined custom property, which makes
+ * the whole declaration invalid at computed-value time — the affordance renders
+ * as nothing at all rather than as grey. Verified in Chromium; see #39.
  *
  * The accent class is applied to `<html>` (`document.documentElement`); the per-theme
  * oklch values come from the corresponding `.accent-*` rules in `globals.css`.
@@ -12,8 +19,7 @@
  * the `get_system_accent_color` Tauri command and pushed onto `--accent-system-value`
  * via `setSystemAccentValue`.
  *
- * No UI yet — task #6 will swap `var(--primary)` → `var(--accent, var(--primary))`
- * at the primary-affordance sites.
+ * The primary-affordance sites consume `--color-accent-primary`.
  */
 
 export type AccentName = 'default' | 'orange' | 'blue' | 'system';
