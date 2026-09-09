@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Privacy manifest — Notesage iOS Share Extension.
+
+  Separate from the app's on purpose: Apple requires a manifest per BUNDLE that
+  contains an executable using a required reason API, and an .appex is its own
+  bundle. It declares LESS than the app, because the extension does less — it
+  never touches disk space, since Recorder.swift is not one of its sources.
+
+  Kept beside the app's rather than shared, because both must be named
+  `PrivacyInfo.xcprivacy` inside their bundles and Xcode copies resources
+  without renaming them.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <!-- The extension links LibraryAccess.swift, which reads
+                 `.contentModificationDateKey` while listing the library — a
+                 folder the person granted through a document picker (3B52.1) —
+                 and file metadata inside the app group container (C617.1). -->
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>3B52.1</string>
+                <string>C617.1</string>
+            </array>
+        </dict>
+        <dict>
+            <!-- ShareViewController.swift and InboxState.swift read and write
+                 the App Group suite: the library grant the app stored, and the
+                 Inbox badge count the extension updates after a capture. -->
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>1C8F.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>
