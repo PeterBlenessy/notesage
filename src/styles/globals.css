@@ -306,7 +306,7 @@
    ============================================
    Optional UI accent applied to primary affordances (primary buttons, focus
    rings, dirty dots, link color in editor). Default: no class on <html>, so
-   `--accent` is unset and consumers fall back via `var(--accent, var(--primary))`
+   `--accent` is unset and consumers fall back through `--color-accent-primary`
    to today's neutral grey palette.
 
    Light-mode oklch values live in the base `.accent-*` rules below; dark-mode
