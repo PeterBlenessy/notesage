@@ -372,6 +372,29 @@ jobs:
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ReportWebView.swift
           swiftc -parse src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/NotesageIosPlugin.swift
 
+      - name: Type-check macOS Share Extension sources
+        # These were compiled by nothing until a release built them, which is
+        # how `ShareLibraryAccess.swift` — the file that decides where a
+        # shared article is written — went unchecked. Same bridging header as
+        # the iOS extension: both call the shared capture formatter over its
+        # C ABI.
+        run: |
+          set -euo pipefail
+          SDK="$(xcrun --sdk macosx --show-sdk-path)"
+          swiftc -typecheck -sdk "$SDK" -target arm64-apple-macos13.0 \
+            -import-objc-header src-tauri/ios/NotesageCapture.h \
+            src-tauri/macos/ShareLibraryAccess.swift \
+            src-tauri/macos/ShareCapture.swift \
+            src-tauri/macos/PageRenderer.swift \
+            src-tauri/macos/ShareViewController.swift
+
+      - name: Share Extension refuses a library that has moved away
+        # Runs the real rule against real paths — a trashed root (the 2026-09-09
+        # failure: a security-scoped bookmark follows the FILE, so it tracked the
+        # old library into iCloud's Trash and reported every capture as saved),
+        # a root that no longer exists, and a root the container superseded.
+        run: ./scripts/check-macos-share-library.sh
+
       # The Share Extension links this static library to call the shared
       # capture-note formatter. Building it here proves the C ABI compiles for
       # the device target and exports the symbols Swift expects — the Xcode
