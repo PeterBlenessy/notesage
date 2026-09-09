@@ -70,11 +70,25 @@ enum InboxState {
         // only question worth asking.
         let fm = FileManager.default
         var needsDownload = !fm.fileExists(atPath: url.path)
-        if !needsDownload,
-            let status = try? url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
-                .ubiquitousItemDownloadingStatus
-        {
-            needsDownload = status != .current
+        if !needsDownload {
+            do {
+                let status = try url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
+                    .ubiquitousItemDownloadingStatus
+                // No status at all means the file is not ubiquitous, and then
+                // existence really was the whole question.
+                needsDownload = status != nil && status != .current
+            } catch {
+                // ASKING can fail. Under I/O contention `resourceValues`
+                // throws rather than answering, and `try?` used to fold that
+                // into the same nil as "not an iCloud file" — which skipped
+                // the download and reverted this read to exactly the
+                // behaviour the frozen-badge bug came from, for that call.
+                //
+                // Unknown is treated as "may be missing": requesting a
+                // download for a file that is already here is a no-op, while
+                // skipping it on a placeholder is the bug.
+                needsDownload = true
+            }
         }
         if needsDownload {
             try? fm.startDownloadingUbiquitousItem(at: url)
