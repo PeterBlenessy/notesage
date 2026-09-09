@@ -29,9 +29,15 @@ function sourceFiles(dir: string): string[] {
 function definedCustomProperties(): Set<string> {
   const defined = new Set<string>();
   for (const file of sourceFiles(SRC)) {
-    const src = readFileSync(file, 'utf8');
-    for (const m of src.matchAll(/(--[a-zA-Z0-9-]+)['"`]?\s*:/g)) defined.add(m[1]);
-    for (const m of src.matchAll(/setProperty\(\s*['"`](--[a-zA-Z0-9-]+)/g)) defined.add(m[1]);
+    // Tests do not excuse production code, and a comment that merely NAMES a
+    // token (this file's own do) must not count as defining it — that would
+    // silently disarm the check below.
+    if (file.includes('__tests__')) continue;
+    for (const line of readFileSync(file, 'utf8').split('\n')) {
+      if (/^\s*(\*|\/\/)/.test(line)) continue;
+      for (const m of line.matchAll(/(--[a-zA-Z0-9-]+)['"`]?\s*:/g)) defined.add(m[1]);
+      for (const m of line.matchAll(/setProperty\(\s*['"`](--[a-zA-Z0-9-]+)/g)) defined.add(m[1]);
+    }
   }
   return defined;
 }
