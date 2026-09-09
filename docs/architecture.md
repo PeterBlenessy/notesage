@@ -312,7 +312,9 @@ All state stores use Zustand with the persist middleware for localStorage:
 
 **Rust coverage** uses `cargo-tarpaulin` or `cargo-llvm-cov` in CI. Neither is required locally — contributors run `cargo test` directly.
 
-**CI pipeline** (`.github/workflows/test.yml`) runs on push to `main` and PRs with three parallel jobs:
+**CI pipeline** (`.github/workflows/test.yml`) runs on **pull requests**, nightly at 03:00 UTC, on manual dispatch, and via `workflow_call` from the release. It does **not** run on push to `main`: `main` is protected with `strict: true` (a PR must be up to date before merging) and `enforce_admins: true`, so every commit that lands arrived through a PR whose last run tested the same tree — a post-merge repeat re-tested what had just been tested, at 48 job-minutes a merge. The nightly run is the replacement safety net; it catches drift that arrives without a commit (runner image rotation, a transitive dependency, an expiring credential) and carries the advisory checks that are too slow for every PR push.
+
+The jobs:
 
 1. **Frontend tests:** typecheck → unit tests with coverage → performance benchmarks (`PERF_BUDGET_MULTIPLIER=5`, timing-advisory) → perf guard (fails if a benchmark crashed rather than overran) → coverage regression check (PR only) → post coverage summary to PR via `vitest-coverage-report-action`. **`typecheck` runs `tsc --noEmit` over the test files too and is the first gate — a type error in a `*.test.ts` (or an untyped mock) fails the whole job before any test executes. `vitest` does not typecheck, so always run `pnpm typecheck` after touching test files, not just `pnpm test`.**
 2. **Playwright E2E:** install Chromium → run E2E specs → upload report on failure
@@ -320,6 +322,20 @@ All state stores use Zustand with the persist middleware for localStorage:
 4. **iOS Simulator Build** (macOS, only when `src-tauri/**`, `package.json` or the lockfile changed): `tauri ios init --ci` → the Share Extension integration script → `tauri ios build --target aarch64-sim --debug`. The one check that compiles the app's Rust for an iOS target; a required check since #883 (a desktop-only crate broke TestFlight build 42 while every other job stayed green).
 
 All jobs must pass for merge. Perf benchmark results uploaded as CI artifacts (14-day retention).
+
+**What runs where, and what is deliberately not on the PR path:**
+
+| Check | On a PR | Nightly / dispatch |
+| --- | --- | --- |
+| Unit tests with coverage, typecheck, contrast audit | yes | yes |
+| Playwright E2E, real Tauri E2E, Rust tests, iOS checks | yes (path-gated) | yes |
+| Perf benchmarks + the crash guard | yes (~53 s) | yes |
+| **Test isolation (shuffled file order)** | **no** | yes |
+| **`cargo audit`** | only when a lockfile moved | yes |
+
+The shuffled-order run is a second full pass of the suite (8m23s against the coverage run's 9m38s) that `continue-on-error` prevents from ever failing a build — it nearly doubled the longest job on every push while unable to block anything. It detects cross-file state coupling, which does not stop existing overnight, so it runs nightly. `cargo audit` tracks the lockfiles rather than the commit, and the nightly re-audit of an unchanged lockfile against a moving advisory database is how a new CVE actually reaches us.
+
+`test-perf-e2e.yml` ("Real-App Performance Tracking") stays post-merge on `main` — it measures real WKWebView startup and IPC timing that no PR job does — but is path-gated, so a docs-only merge no longer boots the app on a macOS runner to record a number that could not have changed.
 
 ### Performance Benchmarks
 
