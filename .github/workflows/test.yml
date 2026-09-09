@@ -388,6 +388,13 @@ jobs:
             src-tauri/macos/PageRenderer.swift \
             src-tauri/macos/ShareViewController.swift
 
+      - name: Inbox badge logic, against a real filesystem
+        # `InboxState.swift` decides the app icon badge and is compiled into
+        # the app, the background refresh and the Share Extension — and had no
+        # automated test of any kind (#933), while its sidecar read has been
+        # wrong twice in the same spot. Compiles the real source and runs it.
+        run: ./scripts/check-inbox-state.sh
+
       - name: Share Extension refuses a library that has moved away
         # Runs the real rule against real paths — a trashed root (the 2026-09-09
         # failure: a security-scoped bookmark follows the FILE, so it tracked the
