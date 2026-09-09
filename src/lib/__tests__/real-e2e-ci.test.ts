@@ -1,7 +1,12 @@
 // Regression-lock tests for real Tauri E2E CI plumbing (issue #254).
 //
 // Verifies that:
-// 1. test.yml has a push-to-main trigger so real-E2E runs after every merge.
+// 1. test.yml runs on pull_request and on a nightly schedule. It deliberately
+//    does NOT run on push to main: `main` is protected with `strict: true`
+//    and `enforce_admins: true`, so every commit that lands arrived through a
+//    PR whose last run tested the same tree — verified on four merges, the
+//    merged tree hash was identical to the PR head's every time. The nightly
+//    is what catches drift that arrives without a commit.
 // 2. test.yml has a `real-e2e-tests` job that runs on macos-26 (pinned —
 //    see the job-level test for the why).
 // 3. The job runs on pull_request events (required by branch protection)
@@ -12,8 +17,11 @@
 // 4. The job installs tauri-driver with cargo + actions/cache.
 // 5. The job runs `pnpm test:e2e-real-full`.
 // 6. The job uploads logs on failure for triage.
-// 7. release.yml's alpha-cut step verifies the real-E2E run on main
-//    was green within 24h.
+// 7. release.yml's alpha-cut step verifies real-E2E passed in the release's
+//    OWN run — i.e. against the tagged commit. This test previously locked in
+//    the reverse of (1), and that is exactly what it was for: dropping the
+//    push-to-main trigger silently broke a gate that hunted for a `test.yml`
+//    run on branch main, and this file failed rather than the next alpha cut.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
@@ -44,6 +52,7 @@ interface OnPushYaml {
 
 interface WorkflowOnYaml {
   push?: OnPushYaml;
+  schedule?: { cron?: string }[];
   pull_request?: { branches?: string[] };
   workflow_dispatch?: unknown;
   workflow_call?: unknown;
@@ -68,10 +77,32 @@ describe('Real E2E CI plumbing (#254)', () => {
   describe('test.yml — triggers', () => {
     const wf = loadWorkflow('test');
 
-    it('has a push trigger on the main branch', () => {
-      const pushOn = wf.on?.push;
-      expect(pushOn).toBeDefined();
-      expect(pushOn?.branches).toContain('main');
+    it('does NOT re-run the suite on push to main', () => {
+      // The post-merge run re-tested a tree that had just been tested: with
+      // `strict: true` a PR must be up to date before it merges, and squashing
+      // an up-to-date branch yields exactly that branch's tree. Checked on the
+      // merges of #967/#968/#969/#970 — merged tree hash identical to the PR
+      // head's in all four. `enforce_admins: true` means there is no other way
+      // onto main.
+      expect(wf.on?.push).toBeUndefined();
+    });
+
+    it('runs nightly, which is what replaces the post-merge run', () => {
+      // Not a like-for-like replacement — a better one. Re-running the same
+      // tree can only find what the PR run already found; the nightly finds
+      // what arrives WITHOUT a commit: a runner image rotation (#334), a
+      // transitive dependency, an expiring credential.
+      const schedule = wf.on?.schedule as { cron?: string }[] | undefined;
+      expect(schedule?.length).toBeGreaterThan(0);
+      expect(schedule?.[0]?.cron).toBeTruthy();
+    });
+
+    it('still runs on pull requests, where the merge gate lives', () => {
+      expect(wf.on?.pull_request).toBeDefined();
+    });
+
+    it('is callable by the release, which is the only run against a tagged tree', () => {
+      expect('workflow_call' in (wf.on ?? {})).toBe(true);
     });
   });
 
@@ -174,15 +205,21 @@ describe('Real E2E CI plumbing (#254)', () => {
       expect(alphaJob).toBeDefined();
     });
 
-    it('has a step that verifies the real-E2E run on main within 24h', () => {
+    it('verifies real-E2E passed in the release run itself, on the tagged commit', () => {
+      // Was: "a green real-E2E run on main within 24h", which looked up
+      // `test.yml` runs on branch `main`. Those stopped existing when the
+      // post-merge trigger was removed, so the gate would have failed every
+      // alpha cut. The replacement is stronger: the release runs the whole
+      // suite against the TAGGED tree via workflow_call, so the evidence is
+      // about the exact thing being shipped.
       const steps = alphaJob?.steps ?? [];
-      // The step should reference 'real' (as in real-e2e) and '24' (hours) in
-      // either its name or its script body.
-      const gatestep = steps.find((s) => {
-        const body = JSON.stringify(s).toLowerCase();
-        return body.includes('real') && body.includes('24');
+      const gateStep = steps.find((s) => {
+        const body = JSON.stringify(s);
+        return body.includes('Real Tauri E2E Tests') && body.includes('context.runId');
       });
-      expect(gatestep).toBeDefined();
+      expect(gateStep).toBeDefined();
+      // And it must NOT go looking for runs on a branch again.
+      expect(JSON.stringify(gateStep)).not.toContain('listWorkflowRuns');
     });
   });
 });

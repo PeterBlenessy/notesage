@@ -12,6 +12,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync, existsSync } from 'fs';
+import { parse as parseYaml } from 'yaml';
 import { resolve } from 'path';
 
 const ROOT = resolve(__dirname, '../../..');
@@ -125,8 +126,21 @@ describe('.github/workflows/test-perf-e2e.yml — artifact upload', () => {
 // ── test.yml — must NOT reference the new job (PR gate unchanged) ─────────────
 
 describe('.github/workflows/test.yml — PR gate unaffected', () => {
-  it('does not reference test-perf-e2e job', () => {
-    const content = readFile(TEST_WORKFLOW);
-    expect(content).not.toContain('test-perf-e2e');
+  it('does not run the perf-e2e job as part of the PR gate', () => {
+    // Checks the JOBS, not the file text. The substring form used to fail on a
+    // comment that merely named `test-perf-e2e.yml` while explaining where
+    // real-app perf tracking lives — a docs sentence is not a gate change, and
+    // a test that cannot tell them apart pushes people to delete the sentence.
+    const wf = parseYaml(readFile(TEST_WORKFLOW)) as {
+      jobs?: Record<string, { uses?: string; steps?: { uses?: string; run?: string }[] }>;
+    };
+    for (const [name, job] of Object.entries(wf.jobs ?? {})) {
+      expect(name).not.toContain('perf-e2e');
+      expect(job.uses ?? '').not.toContain('test-perf-e2e');
+      for (const step of job.steps ?? []) {
+        expect(step.uses ?? '').not.toContain('test-perf-e2e');
+        expect(step.run ?? '').not.toContain('test-perf-e2e');
+      }
+    }
   });
 });
