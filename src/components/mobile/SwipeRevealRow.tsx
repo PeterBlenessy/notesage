@@ -206,6 +206,20 @@ export function SwipeRevealRow({
     const delta = e.clientX - drag.startX;
     if (drag.axis === "undecided") {
       drag.axis = resolveDragAxis(delta, e.clientY - drag.startY);
+      if (drag.axis === "scroll") {
+        // Stop the watchdog when the gesture turns out to be a scroll.
+        //
+        // It can only ever act on a LOCKED drag, and this one never will be,
+        // so the timer left running could only no-op. The cost is that it
+        // would no-op four seconds after the finger LANDED rather than four
+        // seconds after the last event — since the guard at the top of this
+        // handler returns before `arm()` — which is a meaning nobody would
+        // guess from a timer called "stale", and a trap for the next change
+        // that widens what the watchdog acts on (#937).
+        if (staleRef.current) clearTimeout(staleRef.current);
+        staleRef.current = null;
+        return;
+      }
       if (drag.axis !== "swipe") return;
       drag.isDrag = true;
       // Capture the pointer so the row keeps receiving moves even if the
