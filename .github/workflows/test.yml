@@ -1,10 +1,25 @@
 name: Tests
 
+# WHEN THIS RUNS, AND WHY NOT ON EVERY MERGE
+#
+# `main` is protected with `strict: true` (a PR must be up to date before it
+# merges) AND `enforce_admins: true` (nobody, including the owner, can push
+# past it). So every commit that reaches `main` arrived through a PR whose
+# last run tested main's content plus that PR's — the same tree that lands.
+# Re-running the suite on `push: main` therefore re-tested a tree that had
+# just been tested, at 48 job-minutes a merge. That trigger is gone.
+#
+# What replaces it as the safety net is the nightly run below: it catches what
+# a per-merge repeat never could — drift that arrives without a commit (a
+# runner image rotation, a transitive dependency, an expiring credential) —
+# and it runs the advisory checks that are too slow to earn a place on every
+# PR push. Real-app performance on `main` keeps its own post-merge workflow
+# (`test-perf-e2e.yml`); it measures something no PR run does.
 on:
-  push:
-    branches: [main]   # post-merge regression catch + triggers real-E2E on main
   pull_request:
     branches: [main]
+  schedule:
+    - cron: '0 3 * * *' # 03:00 UTC — drift catch + the advisory checks
   workflow_dispatch: # Manual trigger from GitHub Actions UI
   workflow_call: # Allow release workflow to reuse these jobs
 
@@ -19,10 +34,16 @@ jobs:
     outputs:
       code: ${{ steps.filter.outputs.code }}
       native: ${{ steps.filter.outputs.native }}
+      deps: ${{ steps.filter.outputs.deps }}
     steps:
       - uses: actions/checkout@v6
+      # Only a pull request has a base to diff against. On a schedule, a manual
+      # dispatch or the release's `workflow_call` there is nothing to filter —
+      # every job's `if` falls through to `github.event_name != 'pull_request'`
+      # and runs, which is what those events want anyway.
       - uses: dorny/paths-filter@v3.0.3
         id: filter
+        if: github.event_name == 'pull_request'
         with:
           filters: |
             code:
@@ -42,6 +63,10 @@ jobs:
               - 'playwright.config.ts'
               - 'wdio.conf.ts'
               - 'index.html'
+              # A change to the pipeline itself is exactly when you want to
+              # watch the pipeline run — otherwise the only way to find out
+              # that a gating edit skips the wrong job is the next PR.
+              - '.github/workflows/test.yml'
             # What can break the PHONE build without touching the phone's
             # own sources: a Rust dependency, a Cargo feature, the plugin.
             # The simulator build below is a macOS job worth ~15 minutes, so
@@ -51,6 +76,15 @@ jobs:
               - 'package.json'
               - 'pnpm-lock.yaml'
               - '.github/workflows/test.yml'
+            # A dependency advisory is a property of the lockfiles, not of the
+            # commit that happens to be pushed. The audit runs when one of
+            # these moves, and nightly regardless — a new CVE against an
+            # unchanged lockfile is exactly what the nightly is for.
+            deps:
+              - 'src-tauri/Cargo.toml'
+              - 'src-tauri/Cargo.lock'
+              - 'package.json'
+              - 'pnpm-lock.yaml'
 
   frontend-tests:
     name: Frontend Tests & Coverage
@@ -136,6 +170,14 @@ jobs:
         # a signal to act on, not a red build on an unrelated PR — the same
         # reasoning as the perf step below. Promote to blocking once it has been
         # green for a while.
+        #
+        # NIGHTLY, NOT PER PUSH. It is a second full run of the suite — 8m23s
+        # against the coverage run's 9m38s, so it very nearly doubled the
+        # longest job on every PR push — while being unable to fail the build.
+        # What it detects is cross-file state coupling, which arrives with a
+        # commit but does not stop existing the next morning; catching it at
+        # 03:00 costs a few hours of latency and saves a full suite per push.
+        if: github.event_name != 'pull_request'
         continue-on-error: true
         run: pnpm vitest run --sequence.shuffle.files=true
 
@@ -513,7 +555,11 @@ jobs:
     name: Rust Dependency Audit (advisory)
     runs-on: ubuntu-latest
     needs: check-changes
-    if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
+    # Advisories track the lockfiles, not the commit. Elsewhere the gate is
+    # `code`, which every source change trips; here it is `deps`, plus the
+    # nightly run that re-audits an unchanged lockfile against a moving
+    # advisory database — which is how a new CVE actually reaches us.
+    if: needs.check-changes.outputs.deps == 'true' || github.event_name != 'pull_request'
     # Blocking as of 2026-07-05: the backend dependency tree was confirmed clean
     # (0 vulnerabilities — docs/audits/2026-07-05-dependencies.md), so this job
     # now fails on any RustSec *vulnerability*. `cargo audit` does NOT fail on
