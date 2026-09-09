@@ -491,7 +491,7 @@ export function FolderPeek({
                               "h-6 px-2 flex items-center gap-2.5 rounded-md cursor-default text-[12.5px] w-full",
                               "text-foreground/90 text-left truncate",
                               "hover:bg-muted/50 transition-colors duration-150",
-                              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+                              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent-primary)]",
                             )}
                           >
                             <Folder
@@ -565,7 +565,7 @@ export function FolderPeek({
                               "h-6 px-2 flex items-center gap-2.5 rounded-md cursor-default text-[12.5px] w-full",
                               "text-foreground/90 text-left truncate",
                               "hover:bg-muted/50 transition-colors duration-150",
-                              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+                              "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent-primary)]",
                             )}
                           >
                             {/* Live-test 2026-04-25 #152 — `FileIcon`

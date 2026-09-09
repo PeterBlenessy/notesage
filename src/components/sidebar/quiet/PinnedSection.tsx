@@ -275,7 +275,7 @@ function PinnedRowImpl({
           className={cn(
             "relative h-7 px-2 flex items-center gap-2 rounded-sm text-[13px] transition-colors duration-150",
             !isRenaming && "hover:bg-muted/50 cursor-default",
-            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
+            "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent-primary)] focus-visible:z-10",
             // Active row uses a neutral muted background (live-test
             // 2026-04-26 — the previous accent-fill was too distracting).
             // The accent is preserved on the icon so the active state
@@ -287,13 +287,13 @@ function PinnedRowImpl({
           {dropEdge === "above" && (
             <span
               aria-hidden="true"
-              className="absolute left-1 right-1 -top-px h-0.5 bg-[var(--accent,var(--primary))] rounded-full pointer-events-none"
+              className="absolute left-1 right-1 -top-px h-0.5 bg-[var(--color-accent-primary)] rounded-full pointer-events-none"
             />
           )}
           {dropEdge === "below" && (
             <span
               aria-hidden="true"
-              className="absolute left-1 right-1 -bottom-px h-0.5 bg-[var(--accent,var(--primary))] rounded-full pointer-events-none"
+              className="absolute left-1 right-1 -bottom-px h-0.5 bg-[var(--color-accent-primary)] rounded-full pointer-events-none"
             />
           )}
           <FileIcon
@@ -657,7 +657,7 @@ export function PinnedSection({ filter }: PinnedSectionProps) {
           // Empty-state hit box so users can drop even when nothing is pinned.
           visibleFiles.length === 0 && "min-h-[2rem]",
           containerActive &&
-            "ring-1 ring-dashed ring-[var(--accent,var(--primary))]",
+            "ring-1 ring-dashed ring-[var(--color-accent-primary)]",
         )}
       >
         {visibleFiles.map((path, visibleIndex) => {

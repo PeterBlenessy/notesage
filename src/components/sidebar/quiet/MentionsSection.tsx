@@ -202,7 +202,7 @@ export function MentionsSection({
                   "text-[13px] text-foreground cursor-default",
                   "hover:bg-muted/50 transition-colors",
                   "focus-visible:outline-none focus-visible:bg-muted/50",
-                  "focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
+                  "focus-visible:ring-1 focus-visible:ring-[var(--color-accent-primary)] focus-visible:z-10",
                 )}
               >
                 <TooltipProvider delayDuration={300}>

@@ -55,7 +55,7 @@ export function TitleBar(props: TitleBarProps) {
           role="status"
           aria-label="Unsaved changes"
           className="inline-block h-1.5 w-1.5 rounded-full"
-          style={{ background: "var(--accent, var(--primary))" }}
+          style={{ background: "var(--color-accent-primary)" }}
         />
       ) : null}
       <Button

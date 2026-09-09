@@ -155,7 +155,7 @@ export function ChildRow({
         !isRenaming && "hover:bg-muted/50 cursor-default",
         // Active document — name goes solid/medium, icon gets the accent below.
         isActive && "text-foreground font-medium",
-        "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))] focus-visible:z-10",
+        "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent-primary)] focus-visible:z-10",
       )}
     >
       <Icon

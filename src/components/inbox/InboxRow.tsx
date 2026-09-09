@@ -115,7 +115,7 @@ function InboxRowImpl({
         className={cn(
           "group/inbox-row relative grid items-center gap-x-3 rounded-lg px-3",
           condensed ? "grid-cols-[14px_40px_minmax(0,1fr)_auto] py-1.5" : "grid-cols-[14px_56px_minmax(0,1fr)_auto] py-2",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent-primary)]",
           selected ? "bg-muted" : "hover:bg-muted/50",
           cursor && !selected && "ring-1 ring-border",
         )}
