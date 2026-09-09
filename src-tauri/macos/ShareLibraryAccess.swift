@@ -162,14 +162,117 @@ enum ShareLibraryAccess {
     private static func defaultLibraryGuess() -> URL? {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let fm = FileManager.default
-        let container = home.appendingPathComponent(
-            "Library/Mobile Documents/iCloud~com~notesage~app/Documents")
-        if fm.fileExists(atPath: container.path) { return container }
+        if let container = containerRoot() { return container }
         let icloud = home.appendingPathComponent(
             "Library/Mobile Documents/com~apple~CloudDocs/Notesage")
         if fm.fileExists(atPath: icloud.path) { return icloud }
         let local = home.appendingPathComponent("Notesage")
         return fm.fileExists(atPath: local.path) ? local : home
+    }
+
+    /// Notesage's own iCloud container, when it exists on this Mac.
+    ///
+    /// Reached by path rather than through
+    /// `url(forUbiquityContainerIdentifier:)`, which blocks on first call and
+    /// would stall a share sheet. The path is stable, and the entitlement —
+    /// not the lookup — is what grants access.
+    private static func containerRoot() -> URL? {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/iCloud~com~notesage~app/Documents")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// The container, if this build can actually write to it.
+    ///
+    /// A signed release carries the iCloud container entitlement backed by
+    /// `Notesage_macOS_ShareExtension_DeveloperID.provisionprofile`, and an
+    /// entitled process opens its own ubiquity container with no user grant at
+    /// all — no picker, no bookmark, nothing that can go stale. That removes
+    /// the entire failure this file exists to guard against: a bookmark tracks
+    /// the FILE, so when the library migrated on 2026-09-08 the old grant
+    /// followed the abandoned root into the Trash and reported every capture
+    /// as saved (#975).
+    ///
+    /// Entitlement presence is not assumed — a local or unprofiled build has
+    /// none, and `fileExists` cannot tell "no container" from "no permission".
+    /// The probe is a real write into the container's own `.notesage`
+    /// directory, because that is the operation whose failure matters. When it
+    /// fails, this returns nil and the user-granted bookmark path takes over
+    /// exactly as before.
+    private static func writableContainerRoot() -> URL? {
+        guard let container = containerRoot() else { return nil }
+        let probeDir = container.appendingPathComponent(".notesage")
+        let probe = probeDir.appendingPathComponent(".share-extension-write-probe")
+        do {
+            try FileManager.default.createDirectory(at: probeDir, withIntermediateDirectories: true)
+            try Data().write(to: probe, options: .atomic)
+            try? FileManager.default.removeItem(at: probe)
+            return container
+        } catch {
+            NSLog("[notesage-share] container not writable (%@) — falling back to the granted folder",
+                  String(describing: error))
+            return nil
+        }
+    }
+
+    /// Has the library MOVED INTO the container? The marker the migration
+    /// writes says so: `migratedFrom` is present only on a library that was
+    /// relocated, and after that the container is the library.
+    ///
+    /// Read directly rather than through the app, because the extension runs
+    /// without it. A marker we cannot read or parse means "no migration
+    /// recorded" — the same as before there was one — which keeps a
+    /// hand-edited or half-written file from locking anybody out of sharing.
+    private static func libraryMigratedIntoContainer() -> Bool {
+        guard let container = containerRoot() else { return false }
+        let marker = container.appendingPathComponent(".notesage/library.json")
+        guard let data = try? Data(contentsOf: marker),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
+        let from = json["migratedFrom"] as? String
+        return !(from ?? "").isEmpty
+    }
+
+    /// Refuse a root that is no longer the library.
+    ///
+    /// A security-scoped bookmark tracks the FILE, not the path. When the
+    /// library migrated into the container, the old root went to
+    /// `~/Library/Mobile Documents/.Trash/Notesage` — and this extension's
+    /// bookmark followed it there, resolved cleanly, and reported every
+    /// capture as saved. Two articles shared on 2026-09-09 landed in the
+    /// Trash: invisible to the app, and on iCloud's ~30-day delete timer.
+    /// A write that succeeds into a folder nothing reads is worse than a
+    /// write that fails, because nothing asks the user to fix it.
+    ///
+    /// All three cases throw `.staleGrant`, which already tells the user the
+    /// library moved and re-opens the picker — and the picker already starts
+    /// at the container.
+    /// `internal` rather than `private` so it can be exercised directly —
+    /// there is no test target for this extension, and a rule this consequential
+    /// should be runnable against real paths rather than only reasoned about.
+    /// See `scripts/check-macos-share-library.swift`.
+    static func validateLiveLibrary(_ url: URL) throws {
+        // 1. In the Trash. Never the library, whatever the bookmark says.
+        if url.pathComponents.contains(".Trash") {
+            NSLog("[notesage-share] root resolved into the Trash: %@", url.path)
+            throw ShareLibraryError.staleGrant
+        }
+
+        // 2. Gone. Writing would recreate the folder somewhere nothing reads.
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
+            NSLog("[notesage-share] root no longer exists: %@", url.path)
+            throw ShareLibraryError.staleGrant
+        }
+
+        // 3. Superseded. The old root usually survives a migration as an empty
+        //    folder, and a capture filed there is lost just as quietly as one
+        //    filed in the Trash.
+        if libraryMigratedIntoContainer(), let container = containerRoot(),
+           !url.path.hasPrefix(container.path) {
+            NSLog("[notesage-share] root %@ was superseded by the container", url.path)
+            throw ShareLibraryError.staleGrant
+        }
     }
 
     // MARK: - Resolving
@@ -180,6 +283,19 @@ enum ShareLibraryAccess {
     /// outlives the security scope it was granted under, and the failure mode
     /// is a write that silently lands nowhere.
     private static func resolveRoot() throws -> URL {
+        // The container FIRST, when the library lives there and this build can
+        // write to it. It needs no grant, so it cannot be the stale one — and
+        // it is checked ahead of the bookmark precisely because a stale
+        // bookmark is the thing that silently wins otherwise.
+        //
+        // Gated on the marker rather than on the container merely existing: a
+        // Mac whose library is a plain `~/Notesage` may still have a container
+        // the phone created, and captures belong in the library the user
+        // actually reads.
+        if libraryMigratedIntoContainer(), let container = writableContainerRoot() {
+            return container
+        }
+
         guard let data = UserDefaults.standard.data(forKey: bookmarkKey) else {
             NSLog("[notesage-share] resolveRoot: no bookmark stored under %@", bookmarkKey)
             throw ShareLibraryError.notGranted
@@ -209,7 +325,38 @@ enum ShareLibraryAccess {
                 throw ShareLibraryError.staleGrant
             }
         }
+        // Resolving is not the same as still being the library — see the note
+        // on `validateLiveLibrary`.
+        try validateLiveLibrary(url)
         return url
+    }
+
+    /// Security scope around a root, for the two roots this can return.
+    ///
+    /// A bookmarked folder MUST have its scope opened or every write fails. A
+    /// root reached through the iCloud container entitlement has no scope to
+    /// open, and `startAccessingSecurityScopedResource()` answers false for
+    /// it — which the old `guard` read as a stale grant and turned into a
+    /// failed share. The two cases are told apart by which root came back, not
+    /// by the return value, because false is ambiguous.
+    struct Scope {
+        let url: URL?
+        var neededScope: Bool { url != nil }
+        func close() { url?.stopAccessingSecurityScopedResource() }
+    }
+
+    /// `internal` for the same reason as `validateLiveLibrary`: this is the
+    /// step that silently breaks every share if it gets the container case
+    /// wrong, and there is no test target to catch that.
+    static func openScope(_ root: URL) throws -> Scope {
+        // Entitled container: no scope needed, and none available.
+        if let container = containerRoot(), root.path == container.path {
+            return Scope(url: nil)
+        }
+        guard root.startAccessingSecurityScopedResource() else {
+            throw ShareLibraryError.staleGrant
+        }
+        return Scope(url: root)
     }
 
     // MARK: - Writing
@@ -222,10 +369,8 @@ enum ShareLibraryAccess {
     @discardableResult
     static func writeCapture(relPath: String, contents: String) throws -> String {
         let root = try resolveRoot()
-        guard root.startAccessingSecurityScopedResource() else {
-            throw ShareLibraryError.staleGrant
-        }
-        defer { root.stopAccessingSecurityScopedResource() }
+        let scope = try openScope(root)
+        defer { scope.close() }
 
         let target = root.appendingPathComponent(relPath)
         let folder = target.deletingLastPathComponent()
@@ -330,10 +475,8 @@ enum ShareLibraryAccess {
     @discardableResult
     static func writeDocument(from src: URL, suggestedName: String) throws -> String {
         let root = try resolveRoot()
-        guard root.startAccessingSecurityScopedResource() else {
-            throw ShareLibraryError.staleGrant
-        }
-        defer { root.stopAccessingSecurityScopedResource() }
+        let scope = try openScope(root)
+        defer { scope.close() }
 
         let inbox = root.appendingPathComponent("Inbox", isDirectory: true)
         try FileManager.default.createDirectory(at: inbox, withIntermediateDirectories: true)

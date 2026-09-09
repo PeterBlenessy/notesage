@@ -34,19 +34,31 @@ set -euo pipefail
 # ==============================================================================
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUT="$REPO/src-tauri/macos/Notesage_macOS_DeveloperID.provisionprofile"
-BUNDLE_ID="com.notesage.app"
+
+# BOTH profiles, every run. The app and the Share Extension are separate App
+# IDs and therefore need separate profiles, and the failure mode of
+# regenerating only one is silent: the extension keeps a profile that does not
+# cover the new certificate, macOS refuses its iCloud entitlements, and the
+# capture quietly goes back to needing a folder grant. Regenerating a profile
+# that did not need it costs nothing.
 
 KEY="$(ls "$HOME"/.appstoreconnect/private_keys/AuthKey_*.p8 2>/dev/null | head -1)"
 [ -n "$KEY" ] || { echo "No App Store Connect key in ~/.appstoreconnect/private_keys/" >&2; exit 1; }
 ISSUER_FILE="$HOME/.appstoreconnect/private_keys/issuer_id"
 [ -f "$ISSUER_FILE" ] || { echo "No issuer id at $ISSUER_FILE" >&2; exit 1; }
 
-KEY="$KEY" ISSUER="$(cat "$ISSUER_FILE")" OUT="$OUT" BUNDLE_ID="$BUNDLE_ID" python3 <<'PY'
+KEY="$KEY" ISSUER="$(cat "$ISSUER_FILE")" REPO="$REPO" python3 <<'PY'
 import base64, json, os, re, subprocess, time, urllib.request, plistlib
 
-key, issuer, out, bundle_id = (os.environ[k] for k in ("KEY", "ISSUER", "OUT", "BUNDLE_ID"))
+key, issuer, repo = (os.environ[k] for k in ("KEY", "ISSUER", "REPO"))
 kid = os.path.basename(key)[8:-3]
+
+TARGETS = [
+    ("com.notesage.app", "Notesage macOS Developer ID",
+     "Notesage_macOS_DeveloperID.provisionprofile"),
+    ("com.notesage.app.ShareExtension", "Notesage macOS Share Extension Developer ID",
+     "Notesage_macOS_ShareExtension_DeveloperID.provisionprofile"),
+]
 
 def b64u(d): return base64.urlsafe_b64encode(d).rstrip(b"=")
 si = (b64u(json.dumps({"alg": "ES256", "kid": kid, "typ": "JWT"}).encode()) + b"." +
@@ -78,9 +90,6 @@ def call(path, method="GET", body=None):
 st, ids = call("bundleIds?limit=200")
 if st >= 400:
     raise SystemExit(f"could not list bundle ids: {json.dumps(ids)[:300]}")
-app = next((d for d in ids["data"] if d["attributes"]["identifier"] == bundle_id), None)
-if not app:
-    raise SystemExit(f"no App ID {bundle_id} on this account")
 
 st, certs = call("certificates?limit=200")
 devid = [c for c in certs["data"]
@@ -100,45 +109,50 @@ if not devid:
 # transient, and the request is retried below rather than avoided.)
 devid.sort(key=lambda c: c["attributes"]["expirationDate"], reverse=True)
 
-name = "Notesage macOS Developer ID"
-# A profile of this name may already exist; Apple will not replace it, so the
-# old one goes first. Deleting a profile invalidates nothing already shipped —
-# the copy inside a released app keeps working.
 st, existing = call("profiles?limit=200&fields[profiles]=name")
-for p in existing.get("data", []):
-    if p["attributes"]["name"] == name:
-        call(f"profiles/{p['id']}", "DELETE")
 
-body = {"data": {
-    "type": "profiles",
-    "attributes": {"name": name, "profileType": "MAC_APP_DIRECT"},
-    "relationships": {
-        "bundleId": {"data": {"id": app["id"], "type": "bundleIds"}},
-        "certificates": {"data": [{"id": c["id"], "type": "certificates"} for c in devid]}}}}
-for attempt in range(3):
-    st, res = call("profiles", "POST", body)
-    if st < 400:
-        break
-    time.sleep(2)
-if st >= 400:
-    raise SystemExit(f"could not create the profile: {json.dumps(res)[:400]}")
+for bundle_id, name, filename in TARGETS:
+    out = os.path.join(repo, "src-tauri/macos", filename)
+    app = next((d for d in ids["data"] if d["attributes"]["identifier"] == bundle_id), None)
+    if not app:
+        raise SystemExit(f"no App ID {bundle_id} on this account")
 
-content = base64.b64decode(res["data"]["attributes"]["profileContent"])
-with open(out, "wb") as f:
-    f.write(content)
+    # A profile of this name may already exist; Apple will not replace it, so
+    # the old one goes first. Deleting a profile invalidates nothing already
+    # shipped — the copy inside a released app keeps working.
+    for p in existing.get("data", []):
+        if p["attributes"]["name"] == name:
+            call(f"profiles/{p['id']}", "DELETE")
 
-pl = plistlib.loads(re.search(rb"<\?xml.*?</plist>", content, re.S).group(0))
-ents = pl.get("Entitlements", {})
-icloud = ents.get("com.apple.developer.icloud-container-identifiers")
-print(f"wrote {out} ({len(content)} bytes)")
-for c in devid:
-    print(f"  certificate : {c['attributes']['displayName']} "
-          f"(expires {c['attributes']['expirationDate'][:10]})")
-print(f"  profile     : expires {str(pl.get('ExpirationDate'))[:10]}")
-print(f"  iCloud      : {icloud}")
-if not icloud:
-    raise SystemExit("the profile granted no iCloud container — check the App ID's capabilities")
-PY
+    body = {"data": {
+        "type": "profiles",
+        "attributes": {"name": name, "profileType": "MAC_APP_DIRECT"},
+        "relationships": {
+            "bundleId": {"data": {"id": app["id"], "type": "bundleIds"}},
+            "certificates": {"data": [{"id": c["id"], "type": "certificates"} for c in devid]}}}}
+    for attempt in range(3):
+        st, res = call("profiles", "POST", body)
+        if st < 400:
+            break
+        time.sleep(2)
+    if st >= 400:
+        raise SystemExit(f"could not create the profile for {bundle_id}: {json.dumps(res)[:400]}")
 
-echo
-echo "Commit the regenerated profile; the release pipeline embeds it."
+    content = base64.b64decode(res["data"]["attributes"]["profileContent"])
+    with open(out, "wb") as f:
+        f.write(content)
+
+    pl = plistlib.loads(re.search(rb"<\?xml.*?</plist>", content, re.S).group(0))
+    ents = pl.get("Entitlements", {})
+    icloud = ents.get("com.apple.developer.icloud-container-identifiers")
+    app_id = ents.get("com.apple.application-identifier")
+    print(f"wrote {out} ({len(content)} bytes)")
+    print(f"  app id      : {app_id}")
+    for c in devid:
+        print(f"  certificate : {c['attributes']['displayName']} "
+              f"(expires {c['attributes']['expirationDate'][:10]})")
+    print(f"  profile     : expires {str(pl.get('ExpirationDate'))[:10]}")
+    print(f"  iCloud      : {icloud}")
+    if not icloud:
+        raise SystemExit(f"the profile for {bundle_id} granted no iCloud container "
+                         "— check the App ID's capabilities")

@@ -209,6 +209,46 @@ orphaned comments, with all the data still on disk — which is exactly what
 makes it look like loss. Sidecars are re-keyed rather than moved, because
 their filename is a hash of the document's path.
 
+**The one path the migration CANNOT rewrite is the macOS Share Extension's.**
+The extension is sandboxed and holds its own security-scoped bookmark in its
+own container (see `src-tauri/macos/ShareLibraryAccess.swift` for why there is
+no App Group); a bookmark minted by the app is not resolvable by the
+extension, so the app has no way to hand it a new grant. Worse, a bookmark
+tracks the FILE rather than the path: when the migration moved the old root to
+`~/Library/Mobile Documents/.Trash/Notesage`, the extension's grant followed it
+there, resolved cleanly, and reported every capture as saved — two articles
+shared on 2026-09-09 landed in the Trash, invisible to the app and on iCloud's
+~30-day delete timer.
+
+The extension therefore validates the root it resolves before writing to it
+(`validateLiveLibrary`): a root inside a `.Trash`, a root that no longer
+exists, and a root the container's `library.json` says was migrated away from
+are all treated as a stale grant. That surfaces the existing "your library
+moved" message and re-opens the folder picker, which already defaults to the
+container. The rule is executed against real paths in CI by
+`scripts/check-macos-share-library.sh`.
+
+**And the grant is skipped entirely when the library is in the container.** The
+extension now carries the iCloud container entitlement itself, backed by its
+own `Notesage_macOS_ShareExtension_DeveloperID.provisionprofile` — a separate
+App ID from the app's, because the app's profile names `com.notesage.app`
+exactly rather than a wildcard. An entitled process opens its own ubiquity
+container with no user grant at all, so when the marker says the library
+migrated there, `resolveRoot` returns the container ahead of any bookmark:
+no picker, no bookmark, nothing that can go stale. The bookmark path survives
+for a library that is NOT in the container (a plain `~/Notesage`, or iCloud
+Drive before migrating), and for unsigned local builds, which have no
+entitlement — detected by a real write probe rather than assumed, because
+`fileExists` cannot tell "no container" from "no permission".
+
+One consequence worth knowing: a root reached through the entitlement has no
+security scope, and `startAccessingSecurityScopedResource()` answers false for
+it. `openScope` tells the two roots apart by which one came back rather than by
+that return value — reading false as a stale grant would have failed every
+capture. Both profiles are regenerated together by
+`scripts/macos-provisioning-profile.sh` and verified as a pair, by the same
+function, in `scripts/macos-release-embed.sh`.
+
 **iCloud project auto-discovery:**
 
 - On startup, scans iCloud Notesage folder for projects synced from other machines
