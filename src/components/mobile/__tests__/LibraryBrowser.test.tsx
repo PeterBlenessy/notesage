@@ -11,6 +11,7 @@ import {
 import { useMobileStore, resolveFolderView } from "@/stores/mobile-store";
 import { LibraryBrowser } from "@/components/mobile/LibraryBrowser";
 import type { FileEntry } from "@/lib/tauri";
+import { toast } from "sonner";
 
 interface CapturedChromeSpec {
   topRight?: {
@@ -602,5 +603,57 @@ describe("Recordings is pinned under the Inbox (2026-09-05)", () => {
     // is why the opener no longer has to decide whether to create. Creating
     // would have DEDUPED here and made "Recordings-1".
     expect(created).toEqual(["Recordings"]);
+  });
+});
+
+describe("Recordings card — a name already taken (#929)", () => {
+  /** Home, where the pinned cards live (`atHome` is an EMPTY folder stack). */
+  function atHome() {
+    setMockInvokeHandler("ios_set_chrome", () => null);
+    setMockInvokeHandler("ios_read_file", () => {
+      throw new Error("not found");
+    });
+    setMockInvokeHandler("ios_list_directory", () => [] as FileEntry[]);
+    useMobileStore.setState({ folderStack: [] });
+  }
+
+  const recordingsCard = () => screen.getByRole("button", { name: /Recordings/ });
+
+  it("refuses to navigate when Recordings is a file, and says why", async () => {
+    // `LibraryAccess.swift` answers "exists and is not a folder", and the
+    // handler must toast and RETURN. The regression this pins: moving
+    // `jumpToFolder` out of the try, or dropping the early return from the
+    // catch, navigates into a path that is a file — an empty or broken folder
+    // view with the toast flashing past underneath. That is exactly the
+    // Critical from the first review of #924.
+    atHome();
+    setMockInvokeHandler("ios_ensure_directory", () => {
+      throw new Error("Recordings exists and is not a folder");
+    });
+    vi.mocked(toast.error).mockClear();
+
+    renderWithProviders(<LibraryBrowser />);
+    fireEvent.click(await waitFor(recordingsCard));
+
+    await waitFor(() => expect(vi.mocked(toast.error)).toHaveBeenCalled());
+    expect(String(vi.mocked(toast.error).mock.calls[0][0])).toContain("not a folder");
+    // The half that matters: still at Home, nothing pushed.
+    expect(useMobileStore.getState().folderStack).toEqual([]);
+  });
+
+  it("navigates when the folder can be ensured", async () => {
+    // The positive path, so the test above is pinning the REFUSAL rather than
+    // a card that never navigates at all.
+    atHome();
+    setMockInvokeHandler("ios_ensure_directory", () => "Recordings");
+    vi.mocked(toast.error).mockClear();
+
+    renderWithProviders(<LibraryBrowser />);
+    fireEvent.click(await waitFor(recordingsCard));
+
+    await waitFor(() =>
+      expect(useMobileStore.getState().folderStack.map((f) => f.relPath)).toContain("Recordings"),
+    );
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
   });
 });
