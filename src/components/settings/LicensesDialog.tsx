@@ -35,6 +35,15 @@ interface LicenseData {
  *  when this module first loaded. */
 const GROUP_ORDER: LicenseComponent["kind"][] = ["bundled", "npm", "cargo"];
 
+/**
+ * Rows rendered per group before "Show all". The Rust closure alone is a
+ * thousand crates; rendering every row on open would build ~10 000 DOM nodes
+ * in the WebView for a dialog whose common use is "find one package", which
+ * the search box answers instantly. Browsing the whole list stays one click
+ * away, per group.
+ */
+const ROWS_BEFORE_SHOW_ALL = 50;
+
 const GROUP_LABEL: Record<LicenseComponent["kind"], () => string> = {
   bundled: () => t("licenses.groupBundled"),
   npm: () => t("licenses.groupNpm"),
@@ -120,6 +129,7 @@ export function LicensesDialog({
   const [failed, setFailed] = useState(false);
   const [query, setQuery] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [showAll, setShowAll] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!open || data || failed) return;
@@ -170,7 +180,12 @@ export function LicensesDialog({
             />
             <Input
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                // A new filter is a new list — re-cap it rather than leave a
+                // group expanded from the previous search.
+                setShowAll({});
+              }}
               placeholder={t("licenses.searchPlaceholder")}
               aria-label={t("licenses.searchPlaceholder")}
               className="pl-8 h-8 text-sm"
@@ -196,18 +211,29 @@ export function LicensesDialog({
                     {group.label}
                   </h3>
                   <div className="space-y-1.5">
-                    {group.items.map((c) => {
-                      const key = `${c.kind}:${c.name}@${c.version}`;
-                      return (
-                        <ComponentRow
-                          key={key}
-                          component={c}
-                          text={c.textId ? (data?.texts[c.textId] ?? null) : null}
-                          expanded={expanded === key}
-                          onToggle={() => setExpanded(expanded === key ? null : key)}
-                        />
-                      );
-                    })}
+                    {(showAll[group.kind] ? group.items : group.items.slice(0, ROWS_BEFORE_SHOW_ALL)).map(
+                      (c) => {
+                        const key = `${c.kind}:${c.name}@${c.version}`;
+                        return (
+                          <ComponentRow
+                            key={key}
+                            component={c}
+                            text={c.textId ? (data?.texts[c.textId] ?? null) : null}
+                            expanded={expanded === key}
+                            onToggle={() => setExpanded(expanded === key ? null : key)}
+                          />
+                        );
+                      },
+                    )}
+                    {!showAll[group.kind] && group.items.length > ROWS_BEFORE_SHOW_ALL && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAll((prev) => ({ ...prev, [group.kind]: true }))}
+                        className="w-full rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground hover:bg-accent/50 transition-colors duration-150"
+                      >
+                        {t("licenses.showAll", { count: String(group.items.length) })}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

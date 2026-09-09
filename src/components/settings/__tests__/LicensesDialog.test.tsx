@@ -53,6 +53,21 @@ describe("LicensesDialog", () => {
     expect(screen.getByText("foliate-js")).toBeTruthy();
   });
 
+  it("caps a long group until asked for the rest", async () => {
+    const user = userEvent.setup();
+    await openDialog();
+    // The Rust closure is ~1000 crates; only the first 50 are built up front.
+    // Two groups are long enough to be capped: the npm closure and the crates.
+    const buttons = await screen.findAllByText(/Show all \d+/);
+    expect(buttons.length).toBe(2);
+    const before = document.querySelectorAll("[aria-expanded]").length;
+    await user.click(buttons[0]);
+    await waitFor(() =>
+      expect(document.querySelectorAll("[aria-expanded]").length).toBeGreaterThan(before),
+    );
+    expect(screen.getAllByText(/Show all \d+/).length).toBe(1);
+  });
+
   it("says so when nothing matches, rather than showing an empty panel", async () => {
     const user = userEvent.setup();
     await openDialog();
