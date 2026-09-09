@@ -9,6 +9,7 @@
     "dev": "vite",
     "build": "pnpm dlx tsx scripts/generate-changelog.ts && tsc && vite build",
     "generate-changelog": "pnpm dlx tsx scripts/generate-changelog.ts",
+    "licenses:generate": "node scripts/generate-licenses.mjs",
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:ios:init": "tauri ios init",
