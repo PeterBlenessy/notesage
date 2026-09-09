@@ -446,3 +446,40 @@ describe("axis locking", () => {
     expect(screen.getByRole("button", { name: "Share" })).toBeTruthy();
   });
 });
+
+describe("the abandonment watchdog and a scroll (#937)", () => {
+  it("stops running once the gesture resolves to a scroll", () => {
+    // The watchdog only ever acts on a locked drag, so a scroll-axis gesture
+    // could never be touched by it. Leaving the timer armed meant it survived
+    // as something that fires four seconds after TOUCHDOWN — the guard at the
+    // top of `onPointerMove` returns before `arm()`, so nothing postpones it
+    // — which is not what "stale" means anywhere else in this file.
+    vi.useFakeTimers();
+    try {
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={vi.fn()} />);
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 100, clientY: 100 });
+      expect(vi.getTimerCount()).toBeGreaterThan(0); // armed at touchdown
+      // Straight down: the axis resolves to scroll.
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 100, clientY: 160 });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps running for a swipe, which is what it is for", () => {
+    // The other half: clearing on the wrong axis would disarm the watchdog
+    // for exactly the gesture it exists to recover.
+    vi.useFakeTimers();
+    try {
+      renderWithProviders(<Row actions={[makeAction()]} onRowClick={vi.fn()} />);
+      const content = screen.getByText("row content");
+      fireEvent.pointerDown(content, { pointerId: 1, clientX: 200, clientY: 100 });
+      fireEvent.pointerMove(content, { pointerId: 1, clientX: 120, clientY: 100 });
+      expect(vi.getTimerCount()).toBeGreaterThan(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
