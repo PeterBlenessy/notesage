@@ -1,8 +1,46 @@
 // @vitest-environment node
 
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+
+const SRC = resolve(__dirname, '../..');
+
+/** Every hand-written source file under `src/`. */
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) {
+      if (entry === 'generated') continue;
+      out.push(...sourceFiles(path));
+    } else if (/\.(ts|tsx|css)$/.test(entry)) {
+      out.push(path);
+    }
+  }
+  return out;
+}
+
+/**
+ * Every custom property the app defines anywhere — in CSS, in a React inline
+ * style object (`'--x': value`), or via `setProperty('--x', …)`. A fallback is
+ * only safe if its token appears in here.
+ */
+function definedCustomProperties(): Set<string> {
+  const defined = new Set<string>();
+  for (const file of sourceFiles(SRC)) {
+    // Tests do not excuse production code, and a comment that merely NAMES a
+    // token (this file's own do) must not count as defining it — that would
+    // silently disarm the check below.
+    if (file.includes('__tests__')) continue;
+    for (const line of readFileSync(file, 'utf8').split('\n')) {
+      if (/^\s*(\*|\/\/)/.test(line)) continue;
+      for (const m of line.matchAll(/(--[a-zA-Z0-9-]+)['"`]?\s*:/g)) defined.add(m[1]);
+      for (const m of line.matchAll(/setProperty\(\s*['"`](--[a-zA-Z0-9-]+)/g)) defined.add(m[1]);
+    }
+  }
+  return defined;
+}
 
 const globals = readFileSync(resolve(__dirname, '../globals.css'), 'utf8');
 const editor = readFileSync(resolve(__dirname, '../editor.css'), 'utf8');
@@ -23,6 +61,38 @@ describe('CSS accent wiring (UI Refresh #6)', () => {
     const themeBlock = globals.match(/@theme(?:\s+static)?\s*\{([\s\S]*?)\n\}/);
     expect(themeBlock).toBeTruthy();
     expect(themeBlock![1]).not.toContain('--color-accent-primary');
+  });
+
+  it('never falls back to a custom property that nothing defines', () => {
+    // Not style policing — correctness. There is no `--primary` token, yet
+    // twelve components spelled `var(--accent, var(--primary))` inline. With no
+    // accent class — the DEFAULT — that resolves to an undefined custom
+    // property, and a var() that resolves to nothing makes the whole
+    // declaration invalid at computed-value time. Verified in Chromium:
+    //
+    //   box-shadow: 0 0 0 3px var(--accent, var(--primary))   -> computed `none`
+    //   background:            var(--accent, var(--primary))  -> transparent
+    //   ...same with var(--color-primary)                     -> the grey, as intended
+    //
+    // So those focus rings, the title bar's dirty dot and the sidebar's drop
+    // indicators drew NOTHING on the default accent, rather than the neutral
+    // grey the design system promises (#39). Consume `--color-accent-primary`.
+    const defined = definedCustomProperties();
+    const offenders: string[] = [];
+    for (const file of sourceFiles(SRC)) {
+      if (file.includes('__tests__')) continue;
+      readFileSync(file, 'utf8')
+        .split('\n')
+        .forEach((line, i) => {
+          if (/^\s*(\*|\/\/)/.test(line)) return; // a comment may name the trap
+          for (const m of line.matchAll(/var\(\s*--[a-zA-Z0-9-]+\s*,\s*var\(\s*(--[a-zA-Z0-9-]+)\s*\)/g)) {
+            if (!defined.has(m[1])) {
+              offenders.push(`${file.replace(/.*\/src\//, 'src/')}:${i + 1} falls back to ${m[1]}`);
+            }
+          }
+        });
+    }
+    expect(offenders, 'A var() fallback naming an undefined token renders nothing at all.').toEqual([]);
   });
 
   it('editor.css link colour resolves through --color-accent-primary', () => {

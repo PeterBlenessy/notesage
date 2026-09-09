@@ -80,7 +80,7 @@ function InboxCardImpl({
         onFocus={() => useInboxStore.getState().setCursor(item.path)}
         className={cn(
           "relative flex flex-col gap-2 rounded-xl p-2",
-          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--accent,var(--primary))]",
+          "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent-primary)]",
           selected ? "bg-muted" : "hover:bg-muted/50",
           cursor && !selected && "ring-1 ring-border",
         )}
