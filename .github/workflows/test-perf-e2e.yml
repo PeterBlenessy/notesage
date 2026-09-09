@@ -6,6 +6,19 @@ name: Real-App Performance Tracking (post-merge)
 on:
   push:
     branches: [main]
+    # Startup and IPC timing cannot move when nothing that runs moved. Without
+    # this, a docs-only or workflow-only merge still booted the real app on a
+    # macOS runner to measure a number that could not have changed — and every
+    # such reading is also noise in the baseline history it appends to.
+    paths:
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'e2e-real/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'vite.config.ts'
+      - 'index.html'
+      - '.github/workflows/test-perf-e2e.yml'
 
 jobs:
   perf-e2e:
