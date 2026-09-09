@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Loader2,
   RefreshCw,
+  Scale,
   ScrollText,
   Trash2,
 } from 'lucide-react';
@@ -53,6 +54,7 @@ import { useEditorStore } from '@/stores/editor-store';
 import { useLocalAIStore } from '@/stores/local-ai-store';
 import type { UpdateState } from '@/hooks/useAutoUpdate';
 import { ChangelogDialog } from '../ChangelogDialog';
+import { LicensesDialog } from '../LicensesDialog';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsRow } from './SettingsRow';
 import { t } from '@/lib/i18n';
@@ -194,6 +196,7 @@ export function SystemSettings({
   );
 
   const [changelogOpen, setChangelogOpen] = useState(false);
+  const [licensesOpen, setLicensesOpen] = useState(false);
   const [logPath, setLogPath] = useState<string | null>(null);
   const [logSize, setLogSize] = useState<number | null>(null);
 
@@ -247,6 +250,25 @@ export function SystemSettings({
           }
         />
         <ChangelogDialog open={changelogOpen} onOpenChange={setChangelogOpen} />
+        {/* The notices for everything we ship (#949). Most of those licences
+            require the notice to travel with the distributed copy, so this
+            row is an obligation rather than a courtesy — and it reads from a
+            bundled, generated list, so it works with no network. */}
+        <SettingsRow
+          label={t("settings.licenses")}
+          description={t("settings.licensesDesc")}
+          control={
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setLicensesOpen(true)}
+            >
+              <Scale className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
+              {t("licenses.title")}
+            </Button>
+          }
+        />
+        <LicensesDialog open={licensesOpen} onOpenChange={setLicensesOpen} />
         <SettingsRow
           label={t("settings.checkUpdates")}
           description={
