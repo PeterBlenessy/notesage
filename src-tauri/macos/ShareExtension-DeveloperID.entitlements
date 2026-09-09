@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The Share Extension's FINAL entitlements — the ones it carries once
+  `Contents/embedded.provisionprofile` is in place inside the .appex.
+
+  Why a second file, mirroring App-DeveloperID.entitlements: an entitlement
+  not backed by a profile is at best ignored and at worst a signing failure,
+  so a build with no profile signs with `ShareExtension.entitlements` (the
+  sandbox and file grants, which need none) and this one is used only when the
+  profile is embedded in the same step.
+
+  What this buys, and why it matters more here than anywhere else.
+
+  Without it the extension can only reach the library through a
+  security-scoped bookmark the user grants by hand. That grant tracks the
+  FILE, not the path — so when the library migrated into the container on
+  2026-09-08 the bookmark followed the old root into iCloud's Trash, resolved
+  cleanly, and reported every capture as saved. Two articles landed on a
+  30-day delete timer (#975).
+
+  With these keys the extension opens `iCloud~com~notesage~app/Documents`
+  because it owns it, exactly as the app does. No picker, no bookmark, nothing
+  to go stale. The picker survives only for a library that is NOT in the
+  container (a plain `~/Notesage`, or iCloud Drive before migrating).
+
+  These MUST stay a subset of what the profile grants
+  (`Notesage_macOS_ShareExtension_DeveloperID.provisionprofile`, Developer ID /
+  MAC_APP_DIRECT for `com.notesage.app.ShareExtension`, which grants
+  `icloud-services = *`). `scripts/macos-release-embed.sh` verifies the pair
+  rather than trusting it.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- An app extension is sandboxed regardless of the host app, which is
+         what made the bookmark dance necessary in the first place. -->
+    <key>com.apple.security.app-sandbox</key>
+    <true/>
+    <!-- Fetching the page to extract an article. -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- Still needed: a library outside the container is still reached by a
+         user-granted folder, and that grant still has to survive a relaunch. -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <key>com.apple.security.files.bookmarks.app-scope</key>
+    <true/>
+
+    <!-- Ties the signature to the profile; macOS refuses the iCloud keys
+         below without it. -->
+    <key>com.apple.application-identifier</key>
+    <string>M39TDQ2D7L.com.notesage.app.ShareExtension</string>
+    <key>com.apple.developer.team-identifier</key>
+    <string>M39TDQ2D7L</string>
+
+    <!-- The same container the app and the iOS app declare, which is the
+         point: one library every one of them can open without anybody picking
+         a folder. -->
+    <key>com.apple.developer.icloud-container-identifiers</key>
+    <array>
+        <string>iCloud.com.notesage.app</string>
+    </array>
+    <key>com.apple.developer.ubiquity-container-identifiers</key>
+    <array>
+        <string>iCloud.com.notesage.app</string>
+    </array>
+    <key>com.apple.developer.icloud-services</key>
+    <array>
+        <string>CloudDocuments</string>
+    </array>
+    <key>com.apple.developer.icloud-container-environment</key>
+    <string>Production</string>
+</dict>
+</plist>

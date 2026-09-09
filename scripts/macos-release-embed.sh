@@ -107,41 +107,62 @@ codesign --verify --strict "$APPEX" || die "extension is not validly signed"
 # when somebody tries to use their library — so it is checked here, where a
 # failure stops the release, rather than discovered by a user.
 step "Verifying iCloud entitlement and provisioning profile"
-[ -f "$APP/Contents/embedded.provisionprofile" ] \
-  || die "no embedded.provisionprofile in the bundle — macOS will refuse the iCloud entitlements"
 
-SIGNED_ENTS="$WORK/signed-entitlements.plist"
-codesign -d --entitlements :- "$APP" > "$SIGNED_ENTS" 2>/dev/null \
-  || die "could not read the signed entitlements back from $APP"
-grep -q "com.apple.developer.icloud-container-identifiers" "$SIGNED_ENTS" \
-  || die "the signed app carries no iCloud container entitlement (see $SIGNED_ENTS)"
-grep -q "iCloud.com.notesage.app" "$SIGNED_ENTS" \
-  || die "the signed app's iCloud entitlement does not name iCloud.com.notesage.app"
+# The app and the extension are separate App IDs with separate profiles, and
+# both must pair correctly — the extension's is what lets it write a capture
+# into the container without a folder grant. Checked by one function so the two
+# cannot drift: the moment they are verified differently, one of them is
+# verified less.
+verify_icloud_pairing() {
+  local target="$1" label="$2" profile="$3" tag="$4"
 
-# The profile has to actually grant what the signature claims. A profile for
-# the wrong App ID, or one whose capabilities were changed in the developer
-# portal, produces a bundle that signs and notarises and then cannot touch the
-# container at runtime.
-security cms -D -i "$APP/Contents/embedded.provisionprofile" > "$WORK/profile.plist" 2>/dev/null \
-  || die "could not decode the embedded provisioning profile"
-/usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.developer.icloud-container-identifiers" \
-  "$WORK/profile.plist" 2>/dev/null | grep -q "iCloud.com.notesage.app" \
-  || die "the embedded profile does not grant the iCloud container the signature claims"
-echo "    iCloud container entitlement present, and granted by the profile"
+  [ -f "$profile" ] \
+    || die "no embedded.provisionprofile in the $label — macOS will refuse the iCloud entitlements"
 
-# The profile must cover the certificate that SIGNED this app.
-#
-# This is the check whose absence shipped v0.57.2 as an app that would not
-# open. Everything else passed: the signature was valid, notarised and
-# Gatekeeper-approved, the entitlements were right, the profile granted them.
-# The profile simply named a different Developer ID certificate than CI signs
-# with, and macOS answers that by SIGKILLing the process at exec.
-codesign -d --extract-certificates="$WORK/appcert" "$APP" 2>/dev/null \
-  || die "could not extract the signing certificate from $APP"
-SIGNER_SHA="$(openssl x509 -inform DER -in "$WORK/appcert0" -noout -fingerprint -sha1 \
-  | sed 's/.*=//; s/://g')"
-python3 - "$APP/Contents/embedded.provisionprofile" "$SIGNER_SHA" <<'PYEOF' \
-  || die "the embedded profile does not cover the certificate this app was signed with — the app would be killed at launch"
+  local ents="$WORK/signed-entitlements-$tag.plist"
+  codesign -d --entitlements :- "$target" > "$ents" 2>/dev/null \
+    || die "could not read the signed entitlements back from the $label"
+  grep -q "com.apple.developer.icloud-container-identifiers" "$ents" \
+    || die "the signed $label carries no iCloud container entitlement (see $ents)"
+  grep -q "iCloud.com.notesage.app" "$ents" \
+    || die "the signed $label's iCloud entitlement does not name iCloud.com.notesage.app"
+
+  # The profile has to actually grant what the signature claims. A profile for
+  # the wrong App ID, or one whose capabilities were changed in the developer
+  # portal, produces a bundle that signs and notarises and then cannot touch
+  # the container at runtime.
+  security cms -D -i "$profile" > "$WORK/profile-$tag.plist" 2>/dev/null \
+    || die "could not decode the $label's embedded provisioning profile"
+  /usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.developer.icloud-container-identifiers" \
+    "$WORK/profile-$tag.plist" 2>/dev/null | grep -q "iCloud.com.notesage.app" \
+    || die "the $label's embedded profile does not grant the iCloud container the signature claims"
+
+  # The profile's App ID must be the one this bundle actually is. The app's
+  # profile names `com.notesage.app` exactly, so handing it to the extension
+  # would pass every check above and be refused at runtime.
+  local want_id
+  want_id="$(/usr/libexec/PlistBuddy -c "Print :com.apple.application-identifier" "$ents" 2>/dev/null || true)"
+  local profile_id
+  profile_id="$(/usr/libexec/PlistBuddy -c "Print :Entitlements:com.apple.application-identifier" \
+    "$WORK/profile-$tag.plist" 2>/dev/null || true)"
+  [ -n "$want_id" ] && [ "$want_id" = "$profile_id" ] \
+    || die "the $label is signed as '${want_id:-?}' but its profile is for '${profile_id:-?}'"
+  echo "    $label: iCloud entitlement present, granted by a profile for $profile_id"
+
+  # The profile must cover the certificate that SIGNED this bundle.
+  #
+  # This is the check whose absence shipped v0.57.2 as an app that would not
+  # open. Everything else passed: the signature was valid, notarised and
+  # Gatekeeper-approved, the entitlements were right, the profile granted them.
+  # The profile simply named a different Developer ID certificate than CI signs
+  # with, and macOS answers that by SIGKILLing the process at exec.
+  codesign -d --extract-certificates="$WORK/cert-$tag" "$target" 2>/dev/null \
+    || die "could not extract the signing certificate from the $label"
+  local signer_sha
+  signer_sha="$(openssl x509 -inform DER -in "$WORK/cert-${tag}0" -noout -fingerprint -sha1 \
+    | sed 's/.*=//; s/://g')"
+  python3 - "$profile" "$signer_sha" <<'PYEOF' \
+    || die "the $label's profile does not cover the certificate it was signed with — it would be killed at launch"
 import hashlib, plistlib, re, sys
 blob = open(sys.argv[1], "rb").read()
 pl = plistlib.loads(re.search(rb"<\?xml.*?</plist>", blob, re.S).group(0))
@@ -150,6 +171,10 @@ have = [hashlib.sha1(c).hexdigest().upper() for c in pl.get("DeveloperCertificat
 print(f"    signer {want[:16]}… ; profile covers {len(have)} certificate(s)")
 sys.exit(0 if want in have else 1)
 PYEOF
+}
+
+verify_icloud_pairing "$APP" "app" "$APP/Contents/embedded.provisionprofile" "app"
+verify_icloud_pairing "$APPEX" "Share Extension" "$APPEX/Contents/embedded.provisionprofile" "appex"
 
 # And then the only question that actually matters: does it RUN.
 #

@@ -65,6 +65,47 @@ if migrated {
     check("a plain folder", plain, shouldThrow: false)
 }
 
+// The container needs no security scope, and asking for one answers false —
+// which the code this replaced read as a stale grant and turned into a failed
+// share for every capture. Told apart by which root came back, not by that
+// return value.
+if fm.fileExists(atPath: container.path) {
+    do {
+        let scope = try ShareLibraryAccess.openScope(container)
+        let ok = !scope.neededScope
+        if !ok { failures += 1 }
+        print("\(ok ? "ok  " : "FAIL") the container opens with no security scope")
+        scope.close()
+    } catch {
+        failures += 1
+        print("FAIL the container should not need a security scope — \(error)")
+    }
+}
+
+// A folder that is not the container must take the BOOKMARK branch, whatever
+// that branch then decides.
+//
+// Deliberately not asserted as "refused": whether
+// `startAccessingSecurityScopedResource()` answers false for an arbitrary URL
+// depends on the sandbox, and this harness is unsandboxed, where it is a no-op
+// that returns true. (Found by running it — the first version of this case
+// asserted a refusal and failed here while being correct in the extension.)
+// What holds in both worlds is which branch was taken, so that is what is
+// checked: the wrong answer is succeeding with no scope, which would mean a
+// random folder was mistaken for the container.
+do {
+    let scope = try ShareLibraryAccess.openScope(plain)
+    if scope.neededScope {
+        print("ok   a non-container folder goes through the security scope")
+    } else {
+        failures += 1
+        print("FAIL a non-container folder was treated as the entitled container")
+    }
+    scope.close()
+} catch {
+    print("ok   a non-container folder is refused without a usable scope")
+}
+
 if failures > 0 {
     FileHandle.standardError.write("\(failures) check(s) failed\n".data(using: .utf8)!)
     exit(1)
