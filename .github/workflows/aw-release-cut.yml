@@ -168,6 +168,12 @@ jobs:
           # was red but has since been FIXED (latest run green) cuts fine; a
           # currently-red / flaky-red main is refused. The release PR re-runs
           # Real-E2E as the real merge gate, so this is just the early filter.
+          #
+          # Since the post-merge Tests run was removed, the runs this finds on
+          # `main` are the NIGHTLY ones (a schedule fires on the default
+          # branch). The 24h window still holds, and the meaning shifts from
+          # "the last merge was green" to "last night was green" — still an
+          # early filter, still refusing a stale or red main.
           one_day_ago=$(date -u -d '1 day ago' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null \
             || date -u -v-1d +%Y-%m-%dT%H:%M:%SZ)
           latest_run=$(gh api "repos/${{ github.repository }}/actions/workflows/test.yml/runs?branch=main&status=completed&per_page=20" \
