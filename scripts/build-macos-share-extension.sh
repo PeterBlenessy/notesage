@@ -188,9 +188,24 @@ if [ -n "$IDENTITY" ]; then
     APP_ENTITLEMENTS="$REPO/src-tauri/Entitlements.plist"
   fi
 
+  # The extension needs its OWN profile: it is a separate App ID, and the
+  # app's profile names `com.notesage.app` exactly, not a wildcard. With it the
+  # extension opens the iCloud container because it owns it; without it the
+  # only route to the library is a user-granted folder bookmark, which is what
+  # followed the old library into the Trash on 2026-09-08 (#975).
+  EXT_PROFILE="$SRC/Notesage_macOS_ShareExtension_DeveloperID.provisionprofile"
+  if [ -f "$EXT_PROFILE" ]; then
+    echo "==> Embedding Share Extension provisioning profile"
+    cp "$EXT_PROFILE" "$APPEX/Contents/embedded.provisionprofile"
+    EXT_ENTITLEMENTS="$SRC/ShareExtension-DeveloperID.entitlements"
+  else
+    echo "==> No extension profile; signing the extension without iCloud entitlements" >&2
+    EXT_ENTITLEMENTS="$SRC/ShareExtension.entitlements"
+  fi
+
   echo "==> Signing extension then app as: $IDENTITY"
   codesign --force --timestamp --options runtime \
-    --entitlements "$SRC/ShareExtension.entitlements" \
+    --entitlements "$EXT_ENTITLEMENTS" \
     --sign "$IDENTITY" "$APPEX"
   codesign --force --timestamp --options runtime \
     --entitlements "$APP_ENTITLEMENTS" \
