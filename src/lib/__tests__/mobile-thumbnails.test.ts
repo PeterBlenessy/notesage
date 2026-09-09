@@ -24,6 +24,18 @@ vi.mock("@/lib/markdown-render", () => ({
     renderMarkdownFragmentMock(markdown, theme),
 }));
 
+// The disk cache's failure logging is the point of #927 — it shipped doing
+// nothing for two builds because a rejection was swallowed — so `log.warn`
+// has to be observable here, not a no-op.
+const logWarnMock = vi.fn<(scope: string, message: string) => void>();
+vi.mock("@/lib/logger", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/logger")>();
+  return {
+    ...actual,
+    log: { ...actual.log, warn: (scope: string, msg: string) => logWarnMock(scope, msg) },
+  };
+});
+
 const renderPdfThumbnailDataUrlMock = vi.fn<(bytes: Uint8Array) => Promise<string>>();
 vi.mock("@/lib/mobile-pdf-thumbnail", () => ({
   renderPdfThumbnailDataUrl: (bytes: Uint8Array) => renderPdfThumbnailDataUrlMock(bytes),
@@ -63,6 +75,9 @@ beforeEach(() => {
   iosThumbnailMock.mockRejectedValue(new Error("only available on iOS"));
   renderMarkdownFragmentMock.mockReset();
   renderPdfThumbnailDataUrlMock.mockReset();
+  logWarnMock.mockReset();
+  iosThumbCacheGetMock.mockReset();
+  iosThumbCachePutMock.mockReset();
   // jsdom has no createObjectURL — stub it the same way image-compress.test.ts does.
   vi.stubGlobal("URL", {
     ...URL,
@@ -578,6 +593,53 @@ describe("the disk cache keeps a picture across launches", () => {
     const [key, base64] = iosThumbCachePutMock.mock.calls[0];
     expect(key).toMatch(/^[0-9a-f]{64}$/);
     expect(base64.length).toBeGreaterThan(0);
+  });
+
+  it("says so when a disk-cache READ fails, instead of failing quietly", async () => {
+    // The whole point of the fix (#927): the first cut of this cache wrote
+    // nothing for two builds because a rejection was swallowed exactly here.
+    // A later inner try/catch inside `diskCached` would restore that bug with
+    // every other test still green — this is the one that would notice.
+    iosThumbCacheGetMock.mockRejectedValue(new Error("disk on fire"));
+    iosReadBinaryMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+
+    const result = await getThumbnail(entry({ name: "photo.png" }), { theme: "light" });
+
+    // Still produces a picture: a broken cache must not break the reader.
+    expect(result.kind).toBe("image");
+    const warned = logWarnMock.mock.calls.filter(([, msg]) => msg.includes("read failed"));
+    expect(warned.length).toBeGreaterThan(0);
+    expect(warned[0][0]).toBe("thumbnails");
+    expect(warned[0][1]).toContain("disk on fire");
+  });
+
+  it("says so when a disk-cache WRITE fails", async () => {
+    // Best effort for the user — the picture is already on screen — but a
+    // write that always fails means the cache is doing nothing, which is
+    // invisible from the outside.
+    iosThumbCachePutMock.mockRejectedValue(new Error("no space"));
+    iosReadBinaryMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+
+    const result = await getThumbnail(entry({ name: "photo.png" }), { theme: "light" });
+
+    expect(result.kind).toBe("image");
+    await vi.waitFor(() => {
+      const warned = logWarnMock.mock.calls.filter(([, msg]) => msg.includes("write failed"));
+      expect(warned.length).toBeGreaterThan(0);
+      expect(warned[0][1]).toContain("no space");
+    });
+  });
+
+  it("stays silent on an ordinary miss", async () => {
+    // The other half of the property: logging that fired on every miss would
+    // be noise, and would stop anyone reading the warnings that matter. The
+    // default mocks above are a clean miss.
+    iosReadBinaryMock.mockResolvedValue(new Uint8Array([1, 2, 3]));
+
+    await getThumbnail(entry({ name: "photo.png" }), { theme: "light" });
+    await vi.waitFor(() => expect(iosThumbCachePutMock).toHaveBeenCalled());
+
+    expect(logWarnMock.mock.calls.filter(([, m]) => m.includes("disk cache"))).toEqual([]);
   });
 
   it("refuses to cache a file with no modification time", async () => {
