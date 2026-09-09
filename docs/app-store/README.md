@@ -26,6 +26,7 @@ that only the store submission needs.
 | Privacy policy URL | — | ✅ *(if collecting data — we don't)* | ✅ |
 | Age rating questionnaire | — | — | ✅ |
 | Category | — | — | ✅ |
+| Privacy manifest (`PrivacyInfo.xcprivacy`) | ✅ *(in the build)* | ✅ | ✅ |
 
 **For internal testing — up to 100 devices on your own team, which is what
 you want first — there is no review and no marketing material at all.** You
@@ -42,6 +43,19 @@ else in this folder is for later.
 | [`listing.md`](listing.md) | Name, subtitle, description, keywords, category, URLs |
 | [`screenshots.md`](screenshots.md) | Required sizes and the shot list |
 | [`age-rating.md`](age-rating.md) | Age-rating questionnaire answers, including the one genuine judgement call |
+
+## Privacy manifest
+
+Not a copy question — it ships **in the build**, one per bundle, and it is
+already wired: `src-tauri/ios/privacy/app/` and `.../privacy/share/`, copied
+into the app and the Share Extension by `integrate-share-extension.py`.
+
+Worth knowing because the failure mode is quiet: an upload that uses a
+required-reason API without declaring it gets an **ITMS-91053** warning email,
+not a rejection — right up until the store submission, which is refused. So a
+missing manifest is invisible for as long as you only use TestFlight.
+`src/lib/__tests__/ios-privacy-manifest.test.ts` ties each declared category to
+the code that calls the API, so adding one without declaring it fails CI.
 
 ## Open decisions (Peter)
 

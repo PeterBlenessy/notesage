@@ -117,6 +117,13 @@ SHARE_TARGET = {
         {"path": "../../ios/share-preprocess.js", "buildPhase": "resources"},
         {"path": "../../ios/ShareResources/en.lproj", "buildPhase": "resources", "type": "folder"},
         {"path": "../../ios/ShareResources/sv.lproj", "buildPhase": "resources", "type": "folder"},
+        # Privacy manifest (required since 2024-05-01). Per BUNDLE, not per
+        # app: an .appex containing an executable that uses a required reason
+        # API needs its own. It must land in the bundle named exactly
+        # `PrivacyInfo.xcprivacy`, and Xcode copies resources without
+        # renaming, which is why the app's and the extension's live in
+        # separate directories rather than as two differently-named files.
+        {"path": "../../ios/privacy/share/PrivacyInfo.xcprivacy", "buildPhase": "resources"},
     ],
     # NO "info" key on purpose.
     #
@@ -186,6 +193,20 @@ def patch_project_yml() -> None:
     deps = app.setdefault("dependencies", [])
     if not any(d.get("target") == "NotesageShare" for d in deps):
         deps.append({"target": "NotesageShare"})
+
+    # The app's own privacy manifest, re-applied here because `tauri ios init`
+    # regenerates project.yml and would otherwise drop it. Without it App Store
+    # Connect refuses the upload — but only at submission; before that Apple
+    # merely emails an ITMS-91053 warning, so a missing manifest looks exactly
+    # like a working one for as long as you only use TestFlight.
+    app_sources = app.setdefault("sources", [])
+    if not any(
+        isinstance(e, dict) and str(e.get("path", "")).endswith("privacy/app/PrivacyInfo.xcprivacy")
+        for e in app_sources
+    ):
+        app_sources.append(
+            {"path": "../../ios/privacy/app/PrivacyInfo.xcprivacy", "buildPhase": "resources"}
+        )
 
     # Xcode warns when an extension's CFBundleShortVersionString differs from
     # its containing app's, and App Store Connect rejects the pair outright.

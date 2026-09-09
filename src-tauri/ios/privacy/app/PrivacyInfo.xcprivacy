@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Privacy manifest — Notesage iOS app.
+
+  Required since 1 May 2024: an app that uses a "required reason" API without
+  declaring it in a privacy manifest is not accepted by App Store Connect. The
+  upload does not fail loudly before that point — Apple emails an ITMS-91053
+  warning — so a missing manifest looks exactly like a working one until the
+  submission.
+
+  A manifest is needed per BUNDLE that contains an executable using these APIs,
+  which is why the Share Extension has its own beside this one. macOS is out of
+  scope: Apple's rule covers iOS, iPadOS, tvOS, visionOS and watchOS.
+
+  Every reason below is the narrowest Apple code that matches a real call site.
+  Reason strings and their exact meanings come from
+  developer.apple.com/documentation/bundleresources/app-privacy-configuration.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- No tracking, no collection. Matches docs/app-store/app-privacy.md,
+         which is defensible rather than aspirational: the Sentry and Aptabase
+         crates are gated off the iOS target in Cargo.toml, so no telemetry
+         client is compiled into this binary at all. -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array/>
+
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <dict>
+            <!-- LibraryAccess.swift reads `.contentModificationDateKey` when
+                 listing a folder, and the reader displays it as the "modified"
+                 label on every row. The library is a folder the person picked
+                 in a document picker, hence 3B52.1; the recorder's staging
+                 files live in the app's own container, hence C617.1. -->
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>3B52.1</string>
+                <string>C617.1</string>
+            </array>
+        </dict>
+        <dict>
+            <!-- Recorder.swift refuses to start a recording when
+                 `volumeAvailableCapacityForImportantUsage` is under 200 MB and
+                 surfaces `lowDiskSpace`. E174.1 is exactly that: check whether
+                 there is sufficient disk space to write files, behaving
+                 differently in a way that is observable to users. -->
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>E174.1</string>
+            </array>
+        </dict>
+        <dict>
+            <!-- Every defaults access on iOS goes through the App Group suite
+                 (LibraryAccess.swift, InboxState.swift) so the app and the
+                 Share Extension can see the same grant and Inbox state. That
+                 is 1C8F.1; CA92.1 would be the wrong code, since it explicitly
+                 excludes information other extensions can read. -->
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>1C8F.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>
