@@ -77,14 +77,20 @@ Bump the version, generate a changelog, and create a release history entry.
 
    After updating, regenerate `public/changelog.json` with `pnpm generate-changelog` and sanity-check a few bullets in the JSON to confirm the tone reads right.
 
-8. **Run performance baseline:**
+8. **Refresh the third-party notice list if dependencies changed:**
+   - If any commit since the last tag touched `package.json`, `pnpm-lock.yaml`, `src-tauri/Cargo.toml` or `src-tauri/Cargo.lock`, run `pnpm licenses:generate` and commit the result.
+   - Most of the licences Notesage ships under require the notice to travel with the distributed copy, so a stale list is an obligation missed, not a cosmetic lag (#949). The list is generated, not maintained, precisely so this is one command.
+   - Run it on macOS: the generator lists what is unpacked for the platform it ships for.
+   - No diff means nothing changed — that is the expected outcome most releases.
+
+9. **Run performance baseline:**
    - Run `pnpm test:perf` — all synthetic benchmarks must pass within budget.
    - **Real-world startup measurement** requires the user's help: ask them to start the app in dev mode (`pnpm tauri dev`), refresh the page, and paste the `[perf:*]` console logs. You cannot capture these yourself — the app runs in a Tauri WebView, not a headless browser.
    - Once the user provides the logs, extract the key metrics and append a dated entry to `docs/performance-baseline.md` under "Startup Performance" with the new version and commit hash. Include: `phase1-ready`, `startup ready`, `tree refresh`, `skills total`, and any metric that changed significantly.
    - Never overwrite previous entries — the history is the point.
    - If any metric regressed >20% from the previous entry, flag it to the user before proceeding.
 
-9. **Present the release for review:**
+10. **Present the release for review:**
    - Show the version change
    - Show the changelog summary
    - Show the files that were modified
