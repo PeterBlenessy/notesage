@@ -162,14 +162,79 @@ enum ShareLibraryAccess {
     private static func defaultLibraryGuess() -> URL? {
         let home = FileManager.default.homeDirectoryForCurrentUser
         let fm = FileManager.default
-        let container = home.appendingPathComponent(
-            "Library/Mobile Documents/iCloud~com~notesage~app/Documents")
-        if fm.fileExists(atPath: container.path) { return container }
+        if let container = containerRoot() { return container }
         let icloud = home.appendingPathComponent(
             "Library/Mobile Documents/com~apple~CloudDocs/Notesage")
         if fm.fileExists(atPath: icloud.path) { return icloud }
         let local = home.appendingPathComponent("Notesage")
         return fm.fileExists(atPath: local.path) ? local : home
+    }
+
+    /// Notesage's own iCloud container, when it exists on this Mac.
+    private static func containerRoot() -> URL? {
+        let url = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Mobile Documents/iCloud~com~notesage~app/Documents")
+        return FileManager.default.fileExists(atPath: url.path) ? url : nil
+    }
+
+    /// Has the library MOVED INTO the container? The marker the migration
+    /// writes says so: `migratedFrom` is present only on a library that was
+    /// relocated, and after that the container is the library.
+    ///
+    /// Read directly rather than through the app, because the extension runs
+    /// without it. A marker we cannot read or parse means "no migration
+    /// recorded" — the same as before there was one — which keeps a
+    /// hand-edited or half-written file from locking anybody out of sharing.
+    private static func libraryMigratedIntoContainer() -> Bool {
+        guard let container = containerRoot() else { return false }
+        let marker = container.appendingPathComponent(".notesage/library.json")
+        guard let data = try? Data(contentsOf: marker),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return false }
+        let from = json["migratedFrom"] as? String
+        return !(from ?? "").isEmpty
+    }
+
+    /// Refuse a root that is no longer the library.
+    ///
+    /// A security-scoped bookmark tracks the FILE, not the path. When the
+    /// library migrated into the container, the old root went to
+    /// `~/Library/Mobile Documents/.Trash/Notesage` — and this extension's
+    /// bookmark followed it there, resolved cleanly, and reported every
+    /// capture as saved. Two articles shared on 2026-09-09 landed in the
+    /// Trash: invisible to the app, and on iCloud's ~30-day delete timer.
+    /// A write that succeeds into a folder nothing reads is worse than a
+    /// write that fails, because nothing asks the user to fix it.
+    ///
+    /// All three cases throw `.staleGrant`, which already tells the user the
+    /// library moved and re-opens the picker — and the picker already starts
+    /// at the container.
+    /// `internal` rather than `private` so it can be exercised directly —
+    /// there is no test target for this extension, and a rule this consequential
+    /// should be runnable against real paths rather than only reasoned about.
+    /// See `scripts/check-macos-share-library.swift`.
+    static func validateLiveLibrary(_ url: URL) throws {
+        // 1. In the Trash. Never the library, whatever the bookmark says.
+        if url.pathComponents.contains(".Trash") {
+            NSLog("[notesage-share] root resolved into the Trash: %@", url.path)
+            throw ShareLibraryError.staleGrant
+        }
+
+        // 2. Gone. Writing would recreate the folder somewhere nothing reads.
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else {
+            NSLog("[notesage-share] root no longer exists: %@", url.path)
+            throw ShareLibraryError.staleGrant
+        }
+
+        // 3. Superseded. The old root usually survives a migration as an empty
+        //    folder, and a capture filed there is lost just as quietly as one
+        //    filed in the Trash.
+        if libraryMigratedIntoContainer(), let container = containerRoot(),
+           !url.path.hasPrefix(container.path) {
+            NSLog("[notesage-share] root %@ was superseded by the container", url.path)
+            throw ShareLibraryError.staleGrant
+        }
     }
 
     // MARK: - Resolving
@@ -209,6 +274,9 @@ enum ShareLibraryAccess {
                 throw ShareLibraryError.staleGrant
             }
         }
+        // Resolving is not the same as still being the library — see the note
+        // on `validateLiveLibrary`.
+        try validateLiveLibrary(url)
         return url
     }
 
