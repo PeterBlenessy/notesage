@@ -1102,7 +1102,7 @@ struct GlassRecorder: View {
 /// device, build 51: "during recording I don't get the progress line
 /// displayed").
 ///
-/// Sampled HERE, natively, twenty times a second. Pushing that across the JS
+/// Sampled HERE, natively, ten times a second. Pushing that across the JS
 /// bridge would be 20 messages a second for decoration, and the bridge is
 /// asleep with the screen locked while the recorder is still running.
 struct RecordingWave: View {
@@ -1126,7 +1126,7 @@ struct RecordingWave: View {
     // stretch reads as a dotted line and a phrase reads as distinct strokes.
     // 2pt marks with 3pt gaps is that proportion.
     //
-    // And the sample rate: 20 Hz over a 1.7-second window means neighbouring
+    // And the sample rate: 20 Hz over a 1.7-second window meant neighbouring
     // marks are nearly the same value, which is what smooths the shape into
     // an envelope. Playback draws a whole recording, where adjacent marks
     // differ. Sampling at 10 Hz over 20 marks — two seconds — gives the same
@@ -1143,8 +1143,20 @@ struct RecordingWave: View {
       }
     }
     // Trailing, so a half-filled history hugs the right edge and the newest
-    // sample is always in the same place.
-    .frame(width: 104, height: Self.height, alignment: .trailing)
+    // sample is always in the same place — and so that when the strip is
+    // narrower than its samples, what falls off is the OLDEST end.
+    //
+    // `maxWidth`, not `width`: the restyled island is about 310pt of content
+    // against the ~230pt it replaced, and the hosting view caps it at
+    // `container.widthAnchor - 24`. An iPhone SE at 351pt still fits, but an
+    // iPad Slide Over at ~320pt does not, and with a fixed width the shortfall
+    // is taken out of the elapsed time and the two buttons — the parts that
+    // are function rather than decoration. Yielding here, with a negative
+    // layout priority so this is the FIRST thing asked to shrink, keeps the
+    // controls whole and simply draws fewer marks.
+    .frame(maxWidth: 104, minHeight: Self.height, maxHeight: Self.height, alignment: .trailing)
+    .clipped()
+    .layoutPriority(-1)
     // Keyed on `paused`: SwiftUI cancels and restarts this when it changes,
     // so a paused recording stops sampling entirely instead of waking twenty
     // times a second to do nothing.
