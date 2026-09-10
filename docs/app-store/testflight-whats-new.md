@@ -26,15 +26,15 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Two recording fixes, and one needs your ears.
+Two recording fixes. One question for you.
 
 FIXED
-• Tapping record while an article is read aloud no longer ends the reading
-when the recording fails to start. Your place is kept.
+• A recording that fails to start no longer ends the article being read aloud.
+Verified: forced a failure, the reading carried on and kept its place.
 • The level trace no longer squeezes the timer and buttons on a narrow screen.
 
 TRY
-• Listen to a saved article, then tap record: it should start and the reading
-should stop cleanly. A simulator cannot check that one.
-• Watch the trace for a minute — should the bars slide along, or stay put and
-change height? Say which reads better.
+• Record a minute and watch the moving trace. Should the bars slide along, or
+stay in place and change height? Both are defensible; say which reads better.
+• Otherwise just use it as usual — anything different from build 59 is a
+regression worth reporting.
