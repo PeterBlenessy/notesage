@@ -22,17 +22,6 @@ Reversible + cheap → act, then report. Otherwise → ask first.
 
 **Review/audit mode:** when asked to review, investigate, or audit, report findings only — don't act on them (even reversible edits) until told to proceed.
 
-## Tech Stack
-
-| Layer | Technology | Version |
-| --- | --- | --- |
-| Desktop shell | Tauri | v2 (latest stable) |
-| Frontend | React 19+ + TypeScript 5+ | Latest |
-| Editor | Tiptap v2 (wraps ProseMirror) | Latest |
-| UI Components | shadcn/ui (Radix + Tailwind v4) | Latest |
-| State | Zustand with persist | Latest |
-| Package manager | pnpm | Latest |
-
 ## Code Conventions
 
 - **Language:** All code, comments, variables in English
@@ -50,41 +39,28 @@ Reversible + cheap → act, then report. Otherwise → ask first.
 
 | Need | Read |
 | --- | --- |
-| Core architecture, tech stack, project structure | @docs/architecture.md |
-| UI/UX requirements, typography, colors, component specs | @docs/design-system.md |
-| Overview, roadmap, quality gates | @docs/product-description.md |
-| Tauri command signatures, IPC patterns | @docs/tauri-commands.md |
-| All keyboard shortcuts | @docs/keyboard-shortcuts.md |
-| Implementation history | @docs/history/ |
-| Product requirements | @docs/prds/ |
+| Core architecture, tech stack, project structure | docs/architecture.md |
+| UI/UX requirements, typography, colors, component specs | docs/design-system.md |
+| Overview, roadmap, quality gates | docs/product-description.md |
+| Tauri command signatures, IPC patterns | docs/tauri-commands.md |
+| All keyboard shortcuts | docs/keyboard-shortcuts.md |
+| Implementation history | docs/history/ |
+| Product requirements | docs/prds/ |
 | AI dev-process pipeline (issue → triage → refine → slice → tdd → PR → retrospect), label state machine, skills + workflows | docs/agentic-workflow.md |
 
 **Feature-specific docs (read when working on that area):**
 
 | Feature area | Read |
 | --- | --- |
-| Editor, find, tags, formatting | @docs/features/editor.md |
-| Editor internals (ProseMirror, decorations, extensions) | @docs/features/editor-architecture.md |
-| AI providers, connections, routing, local AI, completions | @docs/features/ai-providers.md |
-| Chat, agents, skills, MCP, delegation, research, voice | @docs/features/ai-workflows.md |
-| EPUB, PDF export, DOCX, viewers | @docs/features/document-formats.md |
-| Projects, file tree, iCloud, git, external changes | @docs/features/workspace.md |
+| Editor, find, tags, formatting | docs/features/editor.md |
+| Editor internals (ProseMirror, decorations, extensions) | docs/features/editor-architecture.md |
+| AI providers, connections, routing, local AI, completions | docs/features/ai-providers.md |
+| Chat, agents, skills, MCP, delegation, research, voice | docs/features/ai-workflows.md |
+| EPUB, PDF export, DOCX, viewers | docs/features/document-formats.md |
+| Projects, file tree, iCloud, git, external changes | docs/features/workspace.md |
 | Automations (triggers, steps, agent-step provider & permissions, builder) | docs/features/automations.md |
 | iOS mobile app (read-only reader + share capture) | docs/features/mobile.md |
 | Inbox on the desktop (read-later list, filing, the shared reading-progress sidecar) | docs/features/inbox.md |
-
-## Development Lifecycle
-
-| Command | Purpose |
-| --- | --- |
-| `/prd <feature>` | Create a Product Requirements Document |
-| `/plan-tasks <prd-or-feature>` | Break down into implementation tasks |
-| `/impl <task>` | Implementation guidance with relevant context |
-| `/verify <prd-or-feature>` | Verify against PRD and quality gates |
-| `/release <patch\|minor\|major>` | Prepare a release with version bump |
-| `/review-code` | Code review against conventions |
-| `/review-ui` | Design review against design system |
-| `/test` | Run full test suite |
 
 ## Performance Tracking
 
@@ -95,14 +71,6 @@ After any work that touches startup, skills, tree loading, editor rendering, or 
 3. **Record new measurements** — append a dated entry to the "Startup Performance" section in `docs/performance-baseline.md` with the commit hash. Never overwrite previous entries — the history is the point.
 
 Key metrics to capture: `phase1-ready` (tools visible), `startup ready`, `tree refresh`, `skills total`, and any metric that changed significantly.
-
-## Quick Start
-
-```bash
-pnpm install        # Install dependencies
-pnpm tauri dev      # Run dev server
-pnpm tauri build    # Build for production
-```
 
 ## Backend (Rust/Tauri)
 
