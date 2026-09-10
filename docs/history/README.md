@@ -234,3 +234,4 @@ Chronological log of major implementation milestones and changes.
 | 228 | [Release v0.57.0](228-release-v0.57.0.md) | Your synced library can move into Notesage's own iCloud folder, and every device follows it there. |
 | 229 | [Release v0.57.1](229-release-v0.57.1.md) | The library move explains what it is, where to find it, and why it is sometimes not offered. |
 | 230 | [Release v0.57.3](230-release-v0.57.3.md) | Moving your library into Notesage's own iCloud folder no longer asks you for anything. |
+| 231 | [Release v0.58.0](231-release-v0.58.0.md) | Shared links stop landing in iCloud's Trash after a library move, and the app lists the open-source projects inside it. |

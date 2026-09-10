@@ -1,6 +1,22 @@
 {
   "releases": [
     {
+      "version": "0.58.0",
+      "date": "2026-09-10",
+      "previousVersion": "0.57.3",
+      "sections": {
+        "features": [
+          "**Notesage lists every open-source project it includes.** Settings → System → About → \"Open source projects\" opens a searchable list of the 1,500-odd components inside the app, each row expanding to the full licence text, with who wrote it. It is entirely offline — the list ships with the app rather than being fetched — and it is grouped so you can see what is bundled with the app versus what it builds on."
+        ],
+        "fixes": [
+          "**Sharing a link no longer files it somewhere you cannot see it.** If your library had moved — into Notesage's own iCloud folder, or anywhere else — the share sheet kept writing to where the library used to be, which iCloud had put in its Trash. Every capture said \"saved\" and none of them arrived. Sharing now checks that the folder it is about to write to is still your library, and if it is not, it says your library moved and offers to point at the new one. **If you shared anything after moving your library, look in iCloud Drive's Trash — iCloud deletes it about 30 days on.**",
+          "**Sharing to Notesage no longer asks you to pick your library folder.** When your library lives in Notesage's own iCloud folder, the share sheet opens it directly, because that folder belongs to Notesage. No picker, no permission to grant, and nothing that can go stale the next time the library moves. Picking a folder still applies to a library kept anywhere else.",
+          "**Keyboard focus is visible again on a default install.** With the accent colour left at Default, the focus outline on every sidebar row and both Inbox rows drew nothing at all, as did the unsaved-changes dot in the title bar and the lines that show where a dragged file will land. All of them are back.",
+          "**The library move stops warning about files it did not harm.** A successful move ended with eight alarming lines about comments that \"could not be moved\" — half of them about comment files that were empty or had been unreadable long before. The report now mentions only the real gap, in one line, and says plainly that nothing was deleted."
+        ]
+      }
+    },
+    {
       "version": "0.57.3",
       "date": "2026-09-08",
       "previousVersion": "0.57.1",
