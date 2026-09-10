@@ -1256,7 +1256,7 @@ export function LibraryBrowser() {
       {!nativeChrome && (
         <Island corner="top-right">
           <ChromeButton
-            label={viewMode === "gallery" ? "Switch to list view" : "Switch to gallery view"}
+            label={viewMode === "gallery" ? t("a11y.switchToList") : t("a11y.switchToGallery")}
             onClick={() => setViewMode(viewMode === "gallery" ? "list" : "gallery")}
           >
             {viewMode === "gallery" ? (
@@ -1266,7 +1266,7 @@ export function LibraryBrowser() {
             )}
           </ChromeButton>
           <ChromeButton
-            label={sortMode === "name" ? "Sort by modified date" : "Sort by name"}
+            label={sortMode === "name" ? t("a11y.sortByModified") : t("a11y.sortByName")}
             onClick={() => setSortMode(sortMode === "name" ? "modified" : "name")}
           >
             {sortMode === "name" ? (
@@ -1304,7 +1304,7 @@ export function LibraryBrowser() {
               }
             }}
           >
-            <ChromeButton label="Back" onClick={() => goBack()}>
+            <ChromeButton label={t("a11y.back")} onClick={() => goBack()}>
               <ChevronLeft strokeWidth={1.5} className="h-5 w-5" />
             </ChromeButton>
           </div>
@@ -1371,7 +1371,7 @@ export function LibraryBrowser() {
             />
             <div
               role="menu"
-              aria-label="Create"
+              aria-label={t("a11y.createMenu")}
               className="island-glass morph-from-button fixed right-3 z-50 min-w-44 rounded-2xl py-1"
               style={{ bottom: "max(4.25rem, calc(3.5rem + env(safe-area-inset-bottom)))" }}
             >
@@ -1385,7 +1385,7 @@ export function LibraryBrowser() {
                 }}
               >
                 <FolderPlus strokeWidth={1.5} className="h-4 w-4 text-muted-foreground" />
-                New Folder
+                {t("menu.newFolder")}
               </button>
             </div>
           </>,
@@ -1405,7 +1405,7 @@ export function LibraryBrowser() {
                 way Chrome.tsx's Island does for its portaled content. */}
             <div
               role="menu"
-              aria-label="Jump to folder"
+              aria-label={t("a11y.jumpToFolder")}
               className="island-glass morph-from-button fixed left-3 z-50 min-w-44 rounded-2xl py-1"
               data-a11y-scale={menuA11yProps["data-a11y-scale"]}
               data-a11y-bold={menuA11yProps["data-a11y-bold"]}
@@ -1456,13 +1456,13 @@ function EmptyFolder() {
         className="mt-3 text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground"
         style={{ fontWeight: "max(500, var(--ns-a11y-weight, 400))" }}
       >
-        Nothing here yet
+        {t("folder.emptyTitle")}
       </p>
       <p
         className="mt-1 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground"
         style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
       >
-        This folder is empty.
+        {t("folder.emptyBody")}
       </p>
     </div>
   );

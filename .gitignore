@@ -92,3 +92,6 @@ tests/fixtures/speech/
 # SwiftPM build dir from a local `swift build` on the iOS plugin package.
 # Generated, ~2000 files including vendored checkouts.
 src-tauri/crates/tauri-plugin-notesage-ios/ios/.build/
+
+# Python bytecode from the iOS integration script
+__pycache__/

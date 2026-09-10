@@ -406,7 +406,7 @@ export function Reader() {
       const target = remote ? null : resolveRelativeLink(relPath, href);
 
       if (!remote && !target) {
-        toast.error("This link points outside your library");
+        toast.error(t("reader.linkOutsideLibrary"));
         return;
       }
 
@@ -428,24 +428,24 @@ export function Reader() {
       // Share instead, which copies the file out the way sharing already does.
       const items = target
         ? [
-            { id: "here", title: "Open here" },
-            { id: "share", title: "Share…" },
+            { id: "here", title: t("reader.openHere") },
+            { id: "share", title: t("reader.shareEllipsis") },
           ]
         : [
-            { id: "browser", title: "Open in browser" },
-            { id: "copy", title: "Copy link" },
+            { id: "browser", title: t("reader.openInBrowser") },
+            { id: "copy", title: t("reader.copyLink") },
           ];
 
       const chosen = await iosContextMenu({ title: href, items }).catch(() => null);
       if (chosen === "here") openHere();
       else if (chosen === "share" && target) {
-        void iosShareFile(target).catch(() => toast.error("Couldn't share that file"));
+        void iosShareFile(target).catch(() => toast.error(t("reader.shareFileFailed")));
       } else if (chosen === "browser") {
         void openUrl(href).catch(() => toast.error(t("reader.openLinkFailed")));
       } else if (chosen === "copy") {
         void writeText(href)
-          .then(() => toast.success("Link copied"))
-          .catch(() => toast.error("Couldn't copy the link"));
+          .then(() => toast.success(t("reader.linkCopied")))
+          .catch(() => toast.error(t("reader.copyLinkFailed")));
       }
     },
     [relPath, openLinkedDocument],
@@ -1003,7 +1003,7 @@ export function Reader() {
               id: "edit",
               icon: "square.and.pencil",
               menu: [
-                { id: "share", title: "Share", icon: "square.and.arrow.up" },
+                { id: "share", title: t("reader.share"), icon: "square.and.arrow.up" },
                 { id: "move", title: t("reader.move"), icon: "folder" },
                 // Also here, not only in the read-only branch below: an
                 // editable note's overflow is a LONG-PRESS on the pencil, so
@@ -1367,7 +1367,7 @@ export function Reader() {
       if (href.startsWith("#")) return; // in-page anchors: no-op in v1
       const target = resolveRelativeLink(relPath, href);
       if (!target) {
-        toast.error("This link points outside your library");
+        toast.error(t("reader.linkOutsideLibrary"));
         return;
       }
       // A link followed from a note is a step on a trail, same as one followed
@@ -1507,7 +1507,8 @@ export function Reader() {
           const frame = document.createElement("iframe");
           frame.src = `htmlpreview://localhost/${id}`;
           frame.setAttribute("sandbox", "");
-          frame.title = "Mermaid diagram";
+          // VoiceOver reads this as the frame's name (#989).
+          frame.title = t("a11y.mermaidDiagram");
           frame.style.cssText =
             "display:block;width:100%;border:0;" +
             (ratio ? `aspect-ratio:${ratio[1]}/${ratio[2]}` : "height:20rem");
@@ -1717,15 +1718,15 @@ export function Reader() {
 
         {state.status === "unsupported" && (
           <ReaderMessage icon={FileQuestion} title={t("reader.unsupported")}>
-            {name.split(".").pop()?.toUpperCase()} files aren't viewable in the
-            mobile app yet — open it on your Mac.
+            {t("reader.unsupportedBody", {
+              ext: name.split(".").pop()?.toUpperCase() ?? "",
+            })}
           </ReaderMessage>
         )}
 
         {state.status === "too-large" && (
           <ReaderMessage icon={FileWarning} title={t("reader.tooLarge")}>
-            This file is {formatBytes(state.sizeBytes)} — too large to preview
-            safely in Notesage.
+            {t("reader.tooLargeBody", { size: formatBytes(state.sizeBytes) })}
             <Button
               variant="outline"
               size="sm"
@@ -1734,7 +1735,7 @@ export function Reader() {
                 void iosShareFile(relPath).catch((err) => toast.error(t("action.shareFailed", { error: String(err) })));
               }}
             >
-              Share instead
+              {t("reader.shareInstead")}
             </Button>
           </ReaderMessage>
         )}

@@ -208,6 +208,37 @@ def patch_project_yml() -> None:
             {"path": "../../ios/privacy/app/PrivacyInfo.xcprivacy", "buildPhase": "resources"}
         )
 
+    # Localized usage descriptions (#990). The system permission alert takes
+    # its body from the bundle, not from the app's own `t()` tables — iOS asks
+    # before any JavaScript has run and knows nothing about them — so a Swedish
+    # phone showed a Swedish title over an English explanation of why the app
+    # wants the microphone. That is the sentence that decides whether someone
+    # grants it.
+    #
+    # `type: folder` and `buildPhase: resources`, exactly as the extension's
+    # .lproj folders are wired: the directories must land in the bundle intact
+    # for iOS to resolve a localization, and it is also what makes the app
+    # declare the languages App Store Connect lists.
+    # The languages are whatever is on disk, NOT a list repeated here: a second
+    # copy of the locale set drifts from `SUPPORTED_LOCALES` in
+    # `src/lib/i18n.ts` the first time a third language is added, and the
+    # symptom would be a bundle that declares fewer languages than the app
+    # speaks — which also feeds App Store Connect's Languages list and the
+    # `navigator.language` the WebView reads. `ios-usage-descriptions.test.ts`
+    # asserts the directory covers every supported locale.
+    app_resources = REPO / "src-tauri" / "ios" / "AppResources"
+    lprojs = sorted(p.name for p in app_resources.glob("*.lproj"))
+    if not lprojs:
+        # Silent would mean a bundle with no localized permission prompts and a
+        # green build — the failure mode this file exists to prevent elsewhere.
+        # The extension's .lproj are hardcoded paths that xcodegen would fail
+        # on; deriving these from disk buys flexibility and owes a check.
+        sys.exit(f"no .lproj under {app_resources} — iOS permission prompts would ship English-only")
+    for lproj in lprojs:
+        path = f"../../ios/AppResources/{lproj}"
+        if not any(isinstance(e, dict) and e.get("path") == path for e in app_sources):
+            app_sources.append({"path": path, "buildPhase": "resources", "type": "folder"})
+
     # Xcode warns when an extension's CFBundleShortVersionString differs from
     # its containing app's, and App Store Connect rejects the pair outright.
     #

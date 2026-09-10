@@ -25,7 +25,7 @@ export function BrowserError({ message, onRetry }: { message: string; onRetry: (
         className="mt-3 text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground"
         style={{ fontWeight: "max(500, var(--ns-a11y-weight, 400))" }}
       >
-        Couldn't open this folder
+        {t("browser.errorTitle")}
       </p>
       <p
         className="mt-1 max-w-xs text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground break-words"
