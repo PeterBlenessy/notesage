@@ -25,13 +25,15 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Version 0.54.0 — siffran flyttas för att det här är första bygget Apple
-godtar för insändning, inte för att något nytt har landat.
+Två rättningar för inspelning, en behöver dina öron.
 
-Allt sedan bygge 58 är osynligt: den integritetsmanifest Apple kräver för att
-appen ska få skickas in alls, och två interna städningar utan effekt på det du
-ser.
+FIXAT
+• Att trycka på spela in medan en artikel läses upp avslutar inte längre
+uppläsningen när inspelningen misslyckas. Din plats behålls.
+• Nivåkurvan tränger inte undan tiden och knapparna på en smal skärm.
 
 PROVA
-• Använd den precis som du använde bygge 58. Beter sig något annorlunda är det
-en regression i det här bygget — säg till.
+• Lyssna på en sparad artikel och tryck spela in: den ska starta och
+uppläsningen sluta snyggt. Det kan en simulator inte kontrollera.
+• Titta på kurvan en minut — ska staplarna glida åt sidan, eller stå still och
+ändra höjd? Säg vilken som läses bäst.
