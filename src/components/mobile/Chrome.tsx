@@ -4,6 +4,7 @@ import { Search, X, ChevronUp, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useA11yPrefs, a11yRootProps } from "./useNativeChrome";
 import { TOP_INSET } from "./nav-shell-state";
+import { t } from "@/lib/i18n";
 
 /**
  * iOS 26-style chrome for the mobile shell (issue #581): floating glass
@@ -221,7 +222,7 @@ export function SearchIsland({
       <Island corner="bottom-center">
         <button
           type="button"
-          aria-label="Search"
+          aria-label={t("a11y.search")}
           onClick={() => setOpen(true)}
           {...liquidPressHandlers()}
           className="liquid-press flex h-10 items-center gap-2 rounded-full px-4 text-muted-foreground hover:text-foreground"
@@ -250,15 +251,15 @@ export function SearchIsland({
           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
             {matches.current}/{matches.total}
           </span>
-          <ChromeButton label="Previous match" onClick={matches.onPrev}>
+          <ChromeButton label={t("a11y.previousMatch")} onClick={matches.onPrev}>
             <ChevronUp strokeWidth={1.5} className="h-4 w-4" />
           </ChromeButton>
-          <ChromeButton label="Next match" onClick={matches.onNext}>
+          <ChromeButton label={t("a11y.nextMatch")} onClick={matches.onNext}>
             <ChevronDown strokeWidth={1.5} className="h-4 w-4" />
           </ChromeButton>
         </>
       )}
-      <ChromeButton label="Close search" onClick={close}>
+      <ChromeButton label={t("a11y.closeSearch")} onClick={close}>
         <X strokeWidth={1.5} className="h-4 w-4" />
       </ChromeButton>
     </Island>

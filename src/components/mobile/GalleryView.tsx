@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import type { EntryActionContext } from "@/lib/mobile-entry-actions";
 import { GalleryCard } from "./GalleryCard";
 import { cancelPendingThumbnails } from "@/lib/mobile-thumbnails";
+import { t } from "@/lib/i18n";
 
 interface GalleryViewProps {
   entries: FileEntry[];
@@ -40,7 +41,7 @@ export function GalleryView({
     <div
       className={condensed ? "grid grid-cols-4 gap-x-2 gap-y-3 px-3 pb-4" : "grid grid-cols-3 gap-x-3 gap-y-5 px-3 pb-4"}
       role="list"
-      aria-label="Notes gallery"
+      aria-label={t("a11y.notesGallery")}
     >
       {entries.map((entry) => (
         <GalleryCard

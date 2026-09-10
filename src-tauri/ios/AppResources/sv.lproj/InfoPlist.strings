@@ -1,0 +1,3 @@
+/* Användningsbeskrivningar för appen (#990). Se en.lproj för varför de ligger
+   här och inte bara i project.yml. */
+"NSMicrophoneUsageDescription" = "Notesage spelar in möten och röstanteckningar som du själv startar. Inspelningarna stannar i ditt bibliotek.";

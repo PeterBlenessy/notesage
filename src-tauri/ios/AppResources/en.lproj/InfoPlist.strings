@@ -1,0 +1,11 @@
+/* Usage descriptions for the app target (#990).
+
+   These live here rather than only in project.yml because a usage description
+   is the sentence that decides whether someone grants a permission, and iOS
+   reads it from the bundle's localisation — not from the app's own `t()`
+   tables, which the system dialog knows nothing about.
+
+   The English text must stay identical to the value
+   `integrate-share-extension.py` writes into the target's Info.plist: that
+   value is the fallback for every language without a .lproj here. */
+"NSMicrophoneUsageDescription" = "Notesage records meetings and voice notes you start yourself. Recordings stay in your library.";
