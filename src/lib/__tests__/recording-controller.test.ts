@@ -39,7 +39,7 @@ describe("recording-controller — the recorder belongs to the app", () => {
     expect(useMobileStore.getState().recording.status).toBe("idle");
   });
 
-  it("starts natively and stops a running read-aloud first — one owner of the audio session", async () => {
+  it("leaves a running read-aloud alone — the native side hands the session over, and only once recording exists (#932)", async () => {
     let started = 0;
     let speechStopped = 0;
     setMockInvokeHandler("ios_recording_start", () => {
@@ -55,8 +55,11 @@ describe("recording-controller — the recorder belongs to the app", () => {
     });
     await startRecording("sv");
     expect(started).toBe(1);
-    expect(speechStopped).toBe(1);
-    expect(useMobileStore.getState().speech).toBeNull();
+    // The point of the fix: stopping speech from here made a failed start —
+    // `lowDiskSpace` on a near-full phone — destroy the reading before the
+    // recorder had attempted anything, with nothing left to resume.
+    expect(speechStopped).toBe(0);
+    expect(useMobileStore.getState().speech).not.toBeNull();
     expect(useMobileStore.getState().recording.status).toBe("recording");
     // A second start while recording is a no-op.
     await startRecording();

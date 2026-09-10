@@ -599,7 +599,10 @@ export type IosSpeechEvent =
   /** The word about to be spoken: UTF-16 range within paragraph `index`'s
    *  text. Not every voice reports these. */
   | { event: "range"; index: number; location: number; length: number }
-  | { event: "finished" };
+  /** `reason` is `"ended"` when the article ran out and `"yielded"` when the
+   *  app stopped it to hand the audio session to a recording — the reader's
+   *  place must survive the second (#932). Absent on builds older than that. */
+  | { event: "finished"; reason?: "ended" | "yielded" };
 
 /**
  * Start (or restart) reading an article aloud.

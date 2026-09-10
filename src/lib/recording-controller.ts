@@ -13,7 +13,6 @@ import {
 } from "@/lib/ios-api";
 import { t } from "@/lib/i18n";
 import { useMobileStore } from "@/stores/mobile-store";
-import { stopSpeech } from "@/lib/speech-controller";
 
 /**
  * The recorder belongs to the app, not to a screen: it keeps running while
@@ -76,8 +75,16 @@ export async function syncRecordingState(): Promise<void> {
 export async function startRecording(language?: string | null): Promise<void> {
   const store = useMobileStore.getState();
   if (store.recording.status !== "idle") return;
-  // One owner of the audio session: a running article stops first.
-  if (store.speech) stopSpeech();
+  // The article is NOT stopped here. One owner of the audio session still
+  // holds, but the hand-over belongs to the native side, which performs it
+  // only once the checks that can fail without the session have passed
+  // (#932). Stopping speech here made every one of those failures — a
+  // near-full phone being the ordinary one — tear down the reading before
+  // anything had been attempted: `SpeechPlayer.stop()` clears the paragraph
+  // array, so there was nothing left to resume and the listener's place was
+  // gone. When native does stop speech it emits `finished`, which the speech
+  // controller already follows into the store, so the session still clears
+  // itself — just not before the recording exists.
   try {
     // The lock screen and Control Center show this while the app is away.
     await iosRecordingStart(language, {

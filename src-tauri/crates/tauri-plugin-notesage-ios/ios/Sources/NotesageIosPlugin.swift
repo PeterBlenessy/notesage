@@ -763,8 +763,8 @@ class NotesageIosPlugin: Plugin {
         SpeechPlayer.shared.onPlayingChanged = { [weak self] playing in
           self?.emitSpeech(["event": "playing", "playing": playing])
         }
-        SpeechPlayer.shared.onFinished = { [weak self] in
-          self?.emitSpeech(["event": "finished"])
+        SpeechPlayer.shared.onFinished = { [weak self] reason in
+          self?.emitSpeech(["event": "finished", "reason": reason])
         }
         // Word boundaries, for the highlight in the article view. A few per
         // second at reading speed — the same bridge, the same JSON shape.

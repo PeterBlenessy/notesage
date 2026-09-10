@@ -84,6 +84,28 @@ describe("speech-controller (read aloud belongs to the app)", () => {
     expect(useMobileStore.getState().speechPositions["Inbox/q3.html"]).toBe(0);
   });
 
+  it("a hand-over to recording retires the session but KEEPS the place (#932)", async () => {
+    await startSpeech({ relPath: "Inbox/q3.html", name: "q3.html", text: "one\n\ntwo\n\nthree", title: "T" });
+    await flush();
+    emit({ event: "progress", index: 2, total: 3 });
+    expect(useMobileStore.getState().speechPositions["Inbox/q3.html"]).toBe(2);
+    // Native stops speech to take the audio session for a recording. The
+    // article did not end — resetting to the top here would lose the reader's
+    // position on every successful recording start, which is the harm #932
+    // exists to prevent.
+    emit({ event: "finished", reason: "yielded" });
+    expect(useMobileStore.getState().speech).toBeNull();
+    expect(useMobileStore.getState().speechPositions["Inbox/q3.html"]).toBe(2);
+  });
+
+  it("an article that genuinely ends still starts the next listen from the top", async () => {
+    await startSpeech({ relPath: "Inbox/q3.html", name: "q3.html", text: "one\n\ntwo\n\nthree", title: "T" });
+    await flush();
+    emit({ event: "progress", index: 2, total: 3 });
+    emit({ event: "finished", reason: "ended" });
+    expect(useMobileStore.getState().speechPositions["Inbox/q3.html"]).toBe(0);
+  });
+
   it("starting a second article replaces the first; the first keeps its position", async () => {
     await startSpeech({ relPath: "Inbox/a.html", name: "a.html", text: "a one\n\na two", title: "A" });
     await flush();
