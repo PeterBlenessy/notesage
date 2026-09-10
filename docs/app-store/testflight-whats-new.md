@@ -26,13 +26,15 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Version 0.54.0 — the number moves because this is the first build Apple will
-accept for submission, not because anything new landed.
+Two recording fixes, and one needs your ears.
 
-Everything since build 58 is invisible: the privacy manifest Apple requires
-before an app can be submitted at all, and two internal tidy-ups with no
-effect on what you see.
+FIXED
+• Tapping record while an article is read aloud no longer ends the reading
+when the recording fails to start. Your place is kept.
+• The level trace no longer squeezes the timer and buttons on a narrow screen.
 
 TRY
-• Use it exactly as you used build 58. Anything that behaves differently is a
-regression in this build — please say so.
+• Listen to a saved article, then tap record: it should start and the reading
+should stop cleanly. A simulator cannot check that one.
+• Watch the trace for a minute — should the bars slide along, or stay put and
+change height? Say which reads better.
