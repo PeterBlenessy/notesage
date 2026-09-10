@@ -25,10 +25,13 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-En layoutfix ovanpå bygge 57.
+Version 0.54.0 — siffran flyttas för att det här är första bygget Apple
+godtar för insändning, inte för att något nytt har landat.
 
-FIXAT
-• Avsnittsrubriker ("Senaste", "Alla anteckningar") ligger nu direkt under titelfältet i stället för en rad för långt ner — och glider inte längre över den första artikeln i sin egen grupp.
+Allt sedan bygge 58 är osynligt: den integritetsmanifest Apple kräver för att
+appen ska få skickas in alls, och två interna städningar utan effekt på det du
+ser.
 
 PROVA
-• Öppna Inkorgen, rulla, och se var rubriken parkerar.
+• Använd den precis som du använde bygge 58. Beter sig något annorlunda är det
+en regression i det här bygget — säg till.
