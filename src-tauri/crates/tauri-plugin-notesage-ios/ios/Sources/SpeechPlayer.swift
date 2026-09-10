@@ -59,7 +59,12 @@ private let MAX_VOTING_PARAGRAPHS = 60
     /// Distinct from `onProgress(count, count)`: position and liveness are
     /// different facts, and collapsing them left the transport stuck showing
     /// Pause forever after an article finished.
-    @objc public var onFinished: (() -> Void)?
+    ///
+    /// The parameter is the REASON it is over, and it is load-bearing: a
+    /// natural end starts the next listen from the top, while a stop the app
+    /// performed to hand the audio session to a recording must keep the
+    /// reader's place (#932).
+    @objc public var onFinished: ((String) -> Void)?
 
     /// The word about to be spoken: paragraph index plus the UTF-16 range
     /// within that paragraph's text (the utterance string is the paragraph
@@ -153,7 +158,20 @@ private let MAX_VOTING_PARAGRAPHS = 60
         onPlayingChanged?(true)
     }
 
-    @objc public func stop() {
+    /// The JS entry point (`ios_speech_stop`) and nothing else.
+    ///
+    /// `"ended"` is the destructive answer — it tells the frontend to start the
+    /// next listen from the top — and it is right HERE only because the JS
+    /// caller retires its own session before invoking this, so the `finished`
+    /// handler bails before touching the position. Callers inside this module
+    /// must use `stop(reason:)` and say what happened; a new one that reaches
+    /// for this convenience gets the reader's place wiped with no diagnostic.
+    @objc public func stop() { stop(reason: "ended") }
+
+    /// `reason` rides the `finished` event to the frontend. Anything that
+    /// stops speech on the user’s behalf rather than because the article ran
+    /// out should name itself, or the reader loses their place.
+    func stop(reason: String) {
         let wasLive = !paragraphs.isEmpty
         resetQueue()
         // Hand the lock screen back. Targets accumulate on the shared command
@@ -166,7 +184,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
         AudioSessionArbiter.shared.release(.speech)
         // Tell the frontend playback is over, so the transport can go away
         // instead of sitting there showing Pause for an article that ended.
-        if wasLive { onFinished?() }
+        if wasLive { onFinished?(reason) }
     }
 
     /// Tear down the utterance queue and the lock-screen entry, WITHOUT
@@ -192,7 +210,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
         if next < 0 {
             index = 0
         } else if next >= paragraphs.count {
-            stop()
+            stop(reason: "ended")
             return
         } else {
             index = next
@@ -620,7 +638,7 @@ extension SpeechPlayer: AVSpeechSynthesizerDelegate {
         // setRate() call stopSpeaking, which fires didCancel rather than
         // didFinish — so auto-advance cannot double-step past a paragraph.
         guard index + 1 < paragraphs.count else {
-            stop()
+            stop(reason: "ended")
             return
         }
         index += 1

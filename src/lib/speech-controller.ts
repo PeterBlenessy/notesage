@@ -91,10 +91,16 @@ export function startSpeechEvents(): () => void {
       store.setSpeech({ playing: event.playing });
       return;
     }
-    // finished: the article ended (or was stopped natively). Retire the
-    // session instead of leaving a Pause for something silent, and start the
-    // NEXT listen from the top rather than the end.
-    store.rememberSpeechPosition(session.relPath, 0);
+    // finished: retire the session instead of leaving a Pause for something
+    // silent.
+    //
+    // Whether the place is kept depends on WHY it finished. An article that
+    // ran out starts the next listen from the top. One the app stopped to
+    // take the audio session for a recording has not been read to the end —
+    // resetting it there would lose the reader's position on every recording
+    // start, which is the harm #932 exists to prevent, merely moved from the
+    // failing path to the succeeding one.
+    if (event.reason !== "yielded") store.rememberSpeechPosition(session.relPath, 0);
     store.setSpeech(null);
   });
 }

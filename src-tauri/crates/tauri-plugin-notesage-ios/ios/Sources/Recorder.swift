@@ -120,72 +120,237 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + Recorder.startTimeout) {
                 guard !answered else { return }
                 os_log("start timed out", log: Recorder.logger, type: .error)
+                // By role, deliberately: this fires only when no start has
+                // been adopted (the success path latches `answered` in the
+                // same turn it adopts, so it cannot interleave), and the only
+                // `.recording` claim that can exist here is this attempt's own
+                // — taken by an `engage` still wedged inside AudioToolbox.
                 AudioSessionArbiter.shared.release(.recording)
                 answer(.failure(RecorderError.ioError("the recorder did not start")))
             }
-            // Hand the session over from a running article HERE, on the main
-            // thread, BEFORE the worker starts. Stopping speech tears down the
-            // synthesizer, its paragraph array and the now-playing entry —
-            // all main-thread state that the recorder's worker queue must not
-            // touch. The arbiter's `claim` below therefore only arbitrates.
-            DispatchQueue.main.async {
-                AudioSessionArbiter.shared.yieldSpeechForRecording()
-                Recorder.work.async {
-                    do {
-                        let (rec, dir) = try self.prepare()
-                        DispatchQueue.main.async {
-                            // A timed-out start that returns late is thrown away.
-                            guard !answered else {
-                                rec.stop()
-                                try? FileManager.default.removeItem(at: dir)
-                                return
-                            }
-                            self.adopt(rec, dir: dir, language: language)
-                            answer(.success(()))
+            // Two phases, and the split is the point (#932).
+            //
+            // A playing article is stopped by `yieldSpeechForRecording`, which
+            // clears the paragraph array — so if the start then fails, there is
+            // nothing left to resume and the listener's place is gone. It used
+            // to be called here, before anything had been attempted, which made
+            // every failure below cost someone their reading: `lowDiskSpace` on
+            // a near-full phone is the ordinary case.
+            //
+            // So everything that can fail WITHOUT the audio session runs first,
+            // while speech still owns it. The article stops only once the last
+            // answerable question has been answered.
+            //
+            // This holds only because the JS caller no longer stops speech
+            // itself before invoking the recorder — it did, which made this
+            // hand-over a no-op on every real start (`owner` was already not
+            // `.speech`) and the split pointless. See `startRecording` in
+            // `src/lib/recording-controller.ts`, whose test pins it.
+            Recorder.work.async {
+                do {
+                    let dir = try self.stage()
+                    DispatchQueue.main.async {
+                        // A timed-out start that returns late is thrown away —
+                        // and the article is still playing, so nothing to undo
+                        // beyond the empty directory.
+                        // To the worker, like every other staging cleanup: this
+                        // branch is reachable only after the watchdog fired,
+                        // which is exactly when re-entering the filesystem on
+                        // main is how the watchdog's purpose gets undone.
+                        guard !answered else {
+                            return Recorder.work.async { self.discardStaging(dir) }
                         }
-                    } catch {
-                        answer(.failure(error))
+                        // The hand-over, on the main thread: stopping speech
+                        // tears down the synthesizer, its paragraph array and
+                        // the now-playing entry, all main-thread state the
+                        // worker queue must not touch. The arbiter's `claim`
+                        // below therefore only arbitrates.
+                        AudioSessionArbiter.shared.yieldSpeechForRecording()
+                        Recorder.work.async {
+                            do {
+                                let (rec, claim) = try self.engage(dir: dir)
+                                DispatchQueue.main.async {
+                                    guard !answered else { return self.abandon(rec, dir: dir, claim: claim) }
+                                    // Latch HERE, in the same main-queue turn
+                                    // as `adopt`, and call `completion`
+                                    // directly rather than through `answer`.
+                                    //
+                                    // `answer` only *enqueues* the latch, so
+                                    // going through it would leave a window:
+                                    // `adopt` sets `.recording`, starts the
+                                    // tick, registers the remote commands and
+                                    // emits `started` — and if the 8-second
+                                    // deadline passes during that, the
+                                    // watchdog block is already ready and runs
+                                    // BEFORE the enqueued latch. It would then
+                                    // see `answered == false`, release the
+                                    // session under a running recorder and
+                                    // answer failure: JS shows "recording
+                                    // failed" after having been told it
+                                    // started, while the tick keeps emitting
+                                    // and `stop()` refuses to run because
+                                    // `state` was reset to `.idle` — a
+                                    // recording that cannot be stopped or
+                                    // saved until the process dies.
+                                    answered = true
+                                    self.adopt(rec, dir: dir, language: language)
+                                    completion(.success(()))
+                                }
+                            } catch {
+                                answer(.failure(error))
+                            }
+                        }
                     }
+                } catch {
+                    answer(.failure(error))
                 }
             }
         }
     }
 
-    /// Everything that talks to AudioToolbox, on the worker.
-    private func prepare() throws -> (AVAudioRecorder, URL) {
-        // An hour is ~30 MB; refusing at the start beats a truncation at
-        // minute ninety.
+    /// Phase one, on the worker: the checks that can be answered while a
+    /// playing article still owns the audio session. Nothing here claims,
+    /// activates or re-categorises the session, so a throw costs the caller a
+    /// failed recording and nothing else (#932).
+    ///
+    /// The disk check, a sweep of dead staging directories, and this attempt's
+    /// own directory live here — in that order, which `sweepStagedLeftovers`
+    /// depends on: it deletes audio-less directories, and the one created two
+    /// lines below is audio-less until `record()` runs. Building the
+    /// `AVAudioRecorder` deliberately does NOT: `init` configures an encoder
+    /// against the session's current input, and on a session still set to
+    /// `.playback` for speech — precisely the case this fix is about — it can
+    /// throw or hand back a recorder that then refuses to start. That is
+    /// device-only behaviour, unverifiable here, and getting it wrong would
+    /// break the exact path being fixed. The disk check is the failure people
+    /// actually hit (an hour is ~30 MB, and refusing at the start beats a
+    /// truncation at minute ninety), and it is the one that matters most.
+    private func stage() throws -> URL {
         if let free = try? Recorder.stagingRoot.deletingLastPathComponent()
             .resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
             .volumeAvailableCapacityForImportantUsage, free < 200 * 1024 * 1024
         {
             throw RecorderError.lowDiskSpace
         }
+        sweepStagedLeftovers()
+        let dir = Recorder.stagingRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        os_log("recorder staged at %{public}@", log: Recorder.logger, type: .info, dir.lastPathComponent)
+        return dir
+    }
+
+    /// Phase two, on the worker: take the session, build the recorder against
+    /// it, and start.
+    ///
+    /// The hand-over has already happened by the time this runs, so a failure
+    /// here HAS stopped a playing article. That window cannot be closed — you
+    /// cannot learn whether `record()` succeeds without first taking the
+    /// session away from speech — but the disk check, the commonest failure by
+    /// far, has already passed in `stage`.
+    ///
+    /// Returns the claim it took, so a late cleanup can name it rather than
+    /// releasing whatever happens to own the session by then.
+    private func engage(dir: URL) throws -> (AVAudioRecorder, AudioClaim) {
+        let claim: AudioClaim
         do {
             // The simulator's audio input deadlocks `record()` whatever the
             // category (AudioToolbox mix-engine lock, observed 2026-09-05 with
             // `.playAndRecord` and with plain `.record`): capture is verified
-            // on a device; the watchdog above keeps the simulator usable.
-            try AudioSessionArbiter.shared.claim(
+            // on a device; the watchdog in `start` keeps the simulator usable.
+            claim = try AudioSessionArbiter.shared.claim(
                 .recording, category: .playAndRecord, mode: .default,
                 options: [.allowBluetooth, .defaultToSpeaker])
         } catch {
             os_log("session claim failed: %{public}@", log: Recorder.logger, type: .error, String(describing: error))
+            // The staging directory exists by now. It would not be offered
+            // back as an orphan — `orphans()` requires an `audio.m4a`, and
+            // nothing has created one yet — but an empty directory per failed
+            // start accumulates in the container with nothing to clear it.
+            discardStaging(dir)
             throw error
         }
-        let dir = Recorder.stagingRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let url = dir.appendingPathComponent("audio.m4a")
-        let rec = try AVAudioRecorder(url: url, settings: Recorder.settings)
-        os_log("recorder ready at %{public}@", log: Recorder.logger, type: .info, dir.lastPathComponent)
+        let rec: AVAudioRecorder
+        do {
+            rec = try AVAudioRecorder(url: dir.appendingPathComponent("audio.m4a"), settings: Recorder.settings)
+        } catch {
+            AudioSessionArbiter.shared.release(.recording, claim: claim)
+            discardStaging(dir)
+            throw error
+        }
         guard rec.record() else {
             os_log("AVAudioRecorder.record() returned false", log: Recorder.logger, type: .error)
-            AudioSessionArbiter.shared.release(.recording)
-            try? FileManager.default.removeItem(at: dir)
+            AudioSessionArbiter.shared.release(.recording, claim: claim)
+            discardStaging(dir)
             throw RecorderError.ioError("the recorder did not start")
         }
         rec.isMeteringEnabled = true
-        return (rec, dir)
+        return (rec, claim)
+    }
+
+    /// Throw away a running recorder the caller no longer wants — the late
+    /// return of a start that already timed out.
+    ///
+    /// The release names `claim`, not just the `.recording` role, because by
+    /// the time this runs the user may have tapped record again and a SECOND
+    /// start may be live: releasing by role would deactivate that recording's
+    /// session while the UI still showed it running, and `stop()` would hand
+    /// back a truncated file. A superseded claim releases nothing.
+    ///
+    /// The `stop()` goes back to the worker: this runs only after the
+    /// 8-second watchdog has fired, which means AudioToolbox has already
+    /// misbehaved once, and re-entering it on the main thread is how the
+    /// watchdog's whole purpose — keeping the UI alive through exactly that —
+    /// gets undone.
+    private func abandon(_ rec: AVAudioRecorder, dir: URL, claim: AudioClaim) {
+        Recorder.work.async {
+            rec.stop()
+            AudioSessionArbiter.shared.release(.recording, claim: claim)
+            self.discardStaging(dir)
+        }
+    }
+
+    /// Remove staging directories that hold no audio at all.
+    ///
+    /// The two phases are separated by two queue hops, so a jetsam or a force
+    /// quit in that window leaves a directory behind — and an audio-less one is
+    /// invisible to every existing sweeper: `orphans()` skips anything without
+    /// an `audio.m4a`, and `discardOrphan` removes only by name. Nothing else
+    /// reads `stagingRoot`, so they would accumulate for the life of the
+    /// install.
+    ///
+    /// Safe to run here, and the safety is entirely in the ordering: this
+    /// happens BEFORE the attempt creates its own directory, and `start` has
+    /// already moved `state` off `.idle`, so no live recording and no live
+    /// staging directory can exist to sweep. The audio-less directories it can
+    /// see are all dead.
+    ///
+    /// One guard deliberately absent: a check against the finalizing set. A
+    /// bundle on its way into the library still HAS its `audio.m4a` —
+    /// `finalizeRecording` copies and only removes the staging directory once
+    /// both writes have succeeded — so the file check above already excludes
+    /// it, and a second guard would only suggest it does not.
+    ///
+    /// `Recorder.shared.stagingDir` is likewise not consulted: it is
+    /// unsynchronized main-thread state, this runs on the worker, and the
+    /// ordering above already makes it `nil`. Reading it would add a
+    /// cross-thread access to answer a question that cannot be yes.
+    private func sweepStagedLeftovers() {
+        guard let dirs = try? FileManager.default.contentsOfDirectory(
+            at: Recorder.stagingRoot, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles])
+        else { return }
+        for dir in dirs where !FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("audio.m4a").path)
+        {
+            os_log("sweeping staged leftover %{public}@", log: Recorder.logger, type: .info, dir.lastPathComponent)
+            try? FileManager.default.removeItem(at: dir)
+        }
+    }
+
+    /// Remove a staging directory that will never hold a recording. Never
+    /// touches the session: the callers either have not claimed it or have
+    /// released their own claim already.
+    private func discardStaging(_ dir: URL) {
+        try? FileManager.default.removeItem(at: dir)
     }
 
     /// The recorder is running: take it on (main thread).
