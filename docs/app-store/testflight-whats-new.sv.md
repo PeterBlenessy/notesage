@@ -25,15 +25,14 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Två rättningar för inspelning. En fråga till dig.
+Svenska där det var engelska, två rättningar för inspelning, och en fråga.
 
 FIXAT
+• Den svenska appen är svensk igen: mikrofonfrågan, tomma mappar, länkmenyn
+och etiketterna som VoiceOver läser upp.
 • En inspelning som inte startar avslutar inte längre artikeln som läses upp.
-Verifierat: framtvingade ett fel, uppläsningen fortsatte och behöll sin plats.
 • Nivåkurvan tränger inte undan tiden och knapparna på en smal skärm.
 
 PROVA
 • Spela in en minut och titta på kurvan. Ska staplarna glida åt sidan, eller
-stå still och ändra höjd? Båda går att försvara; säg vilken som läses bäst.
-• Använd den annars som vanligt — något som skiljer sig från bygge 59 är en
-regression värd att rapportera.
+stå still och ändra höjd? Säg vilken som läses bäst.

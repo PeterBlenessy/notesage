@@ -26,15 +26,14 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Two recording fixes. One question for you.
+Swedish where it was English, two recording fixes, and one question.
 
 FIXED
+• The Swedish app is Swedish again: the microphone prompt, empty folders, the
+link menu, and the labels VoiceOver reads.
 • A recording that fails to start no longer ends the article being read aloud.
-Verified: forced a failure, the reading carried on and kept its place.
 • The level trace no longer squeezes the timer and buttons on a narrow screen.
 
 TRY
-• Record a minute and watch the moving trace. Should the bars slide along, or
-stay in place and change height? Both are defensible; say which reads better.
-• Otherwise just use it as usual — anything different from build 59 is a
-regression worth reporting.
+• Record a minute and watch the trace. Should the bars slide along, or stay in
+place and change height? Say which reads better.
