@@ -1651,6 +1651,31 @@ than of the template.</p>";
     }
 
     #[test]
+    fn a_shared_sections_anchor_survives_capture() {
+        // Sharing `…/economic-index#state-usage` names ONE section. The
+        // capture is of the whole page either way, but the anchor is the only
+        // record of which part the person meant — it must reach the note and
+        // the article header, not be normalised away.
+        let note = build_capture_note(
+            &input("https://www.anthropic.com/economic-index#state-usage", Some("T")),
+            "2026-06-28T10:14:00Z",
+        );
+        assert!(
+            note.contents.contains("source_url: \"https://www.anthropic.com/economic-index#state-usage\""),
+            "fragment lost from frontmatter: {}",
+            note.contents
+        );
+
+        let article = Article::new(Some("T".to_string()), "body".to_string(), "<p>body</p>".to_string());
+        let doc = build_article_html_document(
+            &article,
+            Some("T"),
+            "https://www.anthropic.com/economic-index#state-usage",
+        );
+        assert!(doc.contains("#state-usage"), "fragment lost from the article header");
+    }
+
+    #[test]
     fn body_contains_url_then_selection() {
         let mut i = input("https://example.com/a", None);
         i.selection_text = Some("a quoted passage".to_string());
