@@ -44,6 +44,12 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
     private var nowPlayingTitle: String?
     private var nowPlayingSubtitle: String?
     private var observersInstalled = false
+    /// The last metered level and when it was taken — see `currentLevel()`.
+    /// Main-thread only, like every other caller of `updateMeters()`.
+    private var meteredLevel: (level: Double, at: CFTimeInterval)?
+    /// A fifth of the trace's 0.1 s sampling interval — see `currentLevel()`
+    /// for why half of it was not enough margin.
+    private static let meterCacheWindow: CFTimeInterval = 0.02
     /// Native → JS: `notesage:recording` events.
     var onEvent: (([String: Any]) -> Void)?
 
@@ -589,7 +595,7 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
 
     /// Metered peak power mapped 0…1 (−60 dB and below is silence).
     ///
-    /// Internal, not private: the island's live trace samples this ~20 times a
+    /// Internal, not private: the island's live trace samples this 10 times a
     /// second, which is far too often to push across the JS bridge — and the
     /// bridge is asleep with the screen locked anyway, while the recorder is
     /// not.
@@ -611,11 +617,36 @@ final class Recorder: NSObject, AVAudioRecorderDelegate {
     /// only a genuinely loud passage fills the bar. The dynamics are then
     /// visible as differences in height, which is the entire point of
     /// drawing a level at all.
+    /// Two callers ask for this number: the 1 Hz tick that feeds the JS event,
+    /// and the island's trace, which samples at 10 Hz while it is on screen.
+    /// Each used to drive its own `updateMeters()` for the same instant.
+    ///
+    /// Briefly cached rather than plumbed between them, because their
+    /// lifetimes differ in a way that matters: the trace exists only while the
+    /// island is visible and unpaused, whereas the tick keeps running with the
+    /// screen locked and the app backgrounded. Reading the trace's last sample
+    /// from the tick — the obvious de-duplication — would emit a level of zero
+    /// for every recording made with the phone in a pocket.
+    ///
+    /// The window is a fifth of the trace's 0.1 s interval, not half of it: a
+    /// repeating `Timer` reschedules from its ORIGINAL fire dates, so a
+    /// main-thread hitch — scrolling an article while recording, which is why
+    /// that timer runs in `.common` mode — can delay one fire and leave the
+    /// next only a fraction of an interval behind it. At 0.05 s a 0.04 s gap
+    /// would have served the same sample twice and drawn a duplicated bar. The
+    /// two callers this exists to collapse land microseconds apart, so the
+    /// narrower window costs nothing.
     func currentLevel() -> Double {
         guard let recorder, state == .recording else { return 0 }
+        let now = CACurrentMediaTime()
+        if let cached = meteredLevel, now - cached.at < Recorder.meterCacheWindow {
+            return cached.level
+        }
         recorder.updateMeters()
         let db = Double(recorder.averagePower(forChannel: 0))
-        return Recorder.levelHeight(db: db)
+        let level = Recorder.levelHeight(db: db)
+        meteredLevel = (level: level, at: now)
+        return level
     }
 
     /// Pure, so the curve can be reasoned about (and checked) without a mic.
