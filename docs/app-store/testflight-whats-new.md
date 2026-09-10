@@ -26,10 +26,13 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-A layout fix on top of build 57.
+Version 0.54.0 — the number moves because this is the first build Apple will
+accept for submission, not because anything new landed.
 
-FIXED
-• Section headings ("Recent", "All notes") now sit right under the title bar instead of a row too low — and no longer slide over the first article in their own group.
+Everything since build 58 is invisible: the privacy manifest Apple requires
+before an app can be submitted at all, and two internal tidy-ups with no
+effect on what you see.
 
 TRY
-• Open the Inbox, scroll, and watch where the heading parks.
+• Use it exactly as you used build 58. Anything that behaves differently is a
+regression in this build — please say so.
