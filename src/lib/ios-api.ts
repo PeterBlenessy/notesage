@@ -157,6 +157,25 @@ export interface IosChromeStatus {
   busy?: boolean;
 }
 
+/**
+ * Turn the native browsing surface on, and hand it its section-header
+ * strings (#1000).
+ *
+ * The strings travel from here rather than living in a `.strings` file so
+ * there is ONE localisation source. A second table drifts from `t()`, and the
+ * drift shows up as an English header in a Swedish app — which is what #989
+ * was, and it took three builds to notice.
+ *
+ * Rejects on a build with no native layer, like every other call here;
+ * callers treat rejection as "keep rendering the web browser".
+ */
+export function iosSetLibraryBrowsing(args: {
+  enabled: boolean;
+  strings?: Record<string, string>;
+}): Promise<void> {
+  return invoke("ios_set_library_browsing", { args });
+}
+
 export function iosSetChrome(spec: {
   topLeft?: IosChromeItem;
   topRight?: IosChromeItem;

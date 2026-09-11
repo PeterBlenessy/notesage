@@ -1,0 +1,205 @@
+//
+//  Exercise the folder ordering: the sort, and the five grouping modes.
+//
+//  This is the first piece of the native browsing surface, and it is the piece
+//  most worth testing without a device: an ordering is wrong in ways a
+//  screenshot does not show. A folder that shuffles between two identical
+//  reads, a pinned folder that does not appear under Pinned, a month bucket in
+//  the wrong place — all of those look like a working screen.
+//
+//  There is no XCTest target in this repo and adding one would mean a second
+//  build system in CI, so this follows `check-inbox-state.sh` and
+//  `check-chrome-column.sh`: compile the real source, assert against it, exit
+//  non-zero on a failure. `LibraryOrdering.swift` imports Foundation and
+//  nothing else precisely so this can run on macOS.
+//
+//  The cases come from the behaviour `LibraryBrowser.tsx` had, including the
+//  two that its comments record as having been wrong once.
+//
+//  Named main.swift because Swift allows top-level code in that file only.
+//
+
+import Foundation
+
+var failures = 0
+
+func check(_ name: String, _ actual: some Equatable, _ expected: some Equatable) {
+    let ok = "\(actual)" == "\(expected)"
+    print("\(ok ? "ok  " : "FAIL") \(name)\(ok ? "" : "  — got \(actual), want \(expected)")")
+    if !ok { failures += 1 }
+}
+
+let DAY: Double = 86_400
+/// A fixed "now" so the date buckets are testable without waiting for tomorrow.
+let NOW: Double = 1_757_500_000  // 2026-09-10-ish
+
+func file(_ name: String, _ path: String? = nil, age days: Double = 0) -> LibraryEntry {
+    LibraryEntry(name: name, path: path ?? name, isDirectory: false, modified: NOW - days * DAY)
+}
+func dir(_ name: String, _ path: String? = nil) -> LibraryEntry {
+    LibraryEntry(name: name, path: path ?? name, isDirectory: true, modified: NOW)
+}
+
+func names(_ sections: [LibrarySection]) -> [String] { sections.flatMap { $0.items.map(\.name) } }
+func keys(_ sections: [LibrarySection]) -> [String] { sections.map(\.key) }
+
+// A month title the assertions can predict, standing in for the screen's
+// locale-aware one.
+let monthTitle: (Double) -> String = { ts in
+    let c = Calendar(identifier: .gregorian).dateComponents(
+        [.year, .month], from: Date(timeIntervalSince1970: ts))
+    return String(format: "%04d-%02d", c.year ?? 0, c.month ?? 0)
+}
+
+// MARK: - Sorting
+
+let mixed = [file("beta.md"), dir("Zeta"), file("Alpha.md"), dir("apple")]
+
+check(
+    "by name: folders first, then case-insensitive",
+    sortLibraryEntries(mixed, by: .name).map(\.name),
+    ["apple", "Zeta", "Alpha.md", "beta.md"]
+)
+
+check(
+    "by modified: newest first, folders NOT hoisted",
+    sortLibraryEntries(
+        [file("old.md", age: 10), dir("Folder"), file("new.md", age: 1)], by: .modified
+    ).map(\.name),
+    ["Folder", "new.md", "old.md"]
+)
+
+// A folder that reshuffles between two identical reads reads as a bug, and
+// `sorted(by:)` is not stable — so ties fall back to the path.
+let ties = [file("same.md", "b/same.md", age: 3), file("same.md", "a/same.md", age: 3)]
+check(
+    "ties break on path, so the order is stable",
+    sortLibraryEntries(ties, by: .modified).map(\.path),
+    ["a/same.md", "b/same.md"]
+)
+check(
+    "…and by name too",
+    sortLibraryEntries(ties, by: .name).map(\.path),
+    ["a/same.md", "b/same.md"]
+)
+
+// MARK: - Grouping: none
+
+check(
+    "none: one untitled section holding everything",
+    keys(groupLibraryEntries(mixed, context: .init(group: .none, now: NOW), monthTitle: monthTitle)),
+    ["all"]
+)
+check(
+    "none: no title",
+    groupLibraryEntries(mixed, context: .init(group: .none, now: NOW), monthTitle: monthTitle)[0]
+        .titleKey ?? "nil",
+    "nil"
+)
+
+// MARK: - Grouping: pinned
+
+// The one recorded regression: pinning a FOLDER wrote to pins.json and then
+// changed nothing on screen, because folders were hoisted out before this ran.
+let pinnedCtx = LibraryOrderingContext(group: .pinned, pinned: ["apple", "beta.md"], now: NOW)
+let pinnedSections = groupLibraryEntries(mixed, context: pinnedCtx, monthTitle: monthTitle)
+check("pinned: sections in order", keys(pinnedSections), ["pinned", "folders", "other"])
+check(
+    "pinned: a pinned FOLDER appears under Pinned, not under Folders",
+    pinnedSections[0].items.map(\.name).contains("apple"),
+    true
+)
+check(
+    "pinned: the unpinned folder stays under Folders",
+    pinnedSections[1].items.map(\.name),
+    ["Zeta"]
+)
+check("pinned: the rest are files", pinnedSections[2].items.map(\.name), ["Alpha.md"])
+
+check(
+    "pinned: an empty Pinned section is dropped, not shown empty",
+    keys(groupLibraryEntries(mixed, context: .init(group: .pinned, now: NOW), monthTitle: monthTitle)),
+    ["folders", "other"]
+)
+
+// MARK: - Grouping: recent
+
+let recentCtx = LibraryOrderingContext(group: .recent, recentlyRead: ["Alpha.md"], now: NOW)
+let recentSections = groupLibraryEntries(mixed, context: recentCtx, monthTitle: monthTitle)
+check("recent: folders keep their own leading section", recentSections[0].key, "folders")
+check("recent: read files lift to the top", recentSections[1].items.map(\.name), ["Alpha.md"])
+check("recent: the rest follow", recentSections[2].items.map(\.name), ["beta.md"])
+
+// MARK: - Grouping: type
+
+let typed = [
+    file("a.md"), file("b.pdf"), file("c.png"), file("d.txt"),
+    file("e.html"), file("f.mp3"), file("g.docx"), file("h.bin"), dir("Folder"),
+]
+let typeSections = groupLibraryEntries(
+    typed, context: .init(group: .type, now: NOW), monthTitle: monthTitle)
+check(
+    "type: a fixed reading order, so a folder does not reshuffle as its mix changes",
+    keys(typeSections),
+    ["folders", "markdown", "text", "pdf", "image", "media", "doc", "html", "other"]
+)
+check("type: kinds map as classifyFile does", LibraryFileKind.of("x.HEIC"), LibraryFileKind.image)
+check("type: an exported report is html, not text", LibraryFileKind.of("r.htm"), LibraryFileKind.html)
+check("type: source files are text", LibraryFileKind.of("main.swift"), LibraryFileKind.text)
+check("type: unknown sinks to other", LibraryFileKind.of("x.zzz"), LibraryFileKind.other)
+check("type: no extension is other", LibraryFileKind.of("Makefile"), LibraryFileKind.other)
+
+// MARK: - Grouping: date
+
+let dated = [
+    file("today.md", age: 0),
+    file("threeDays.md", age: 3),
+    file("lastMonth.md", age: 40),
+    file("older.md", age: 400),
+    dir("Folder"),
+]
+let dateSections = groupLibraryEntries(
+    dated, context: .init(group: .date, now: NOW), monthTitle: monthTitle)
+check("date: folders lead", dateSections[0].key, "folders")
+check(
+    "date: the last week is one section, not one per day",
+    dateSections[1].items.map(\.name).sorted(),
+    ["threeDays.md", "today.md"]
+)
+check("date: then months", dateSections.count, 4)
+check(
+    "date: newest month before oldest",
+    (dateSections[2].titleLiteral ?? "") > (dateSections[3].titleLiteral ?? ""),
+    true
+)
+check(
+    "date: a month section is titled literally, not by key",
+    dateSections[2].titleKey ?? "nil",
+    "nil"
+)
+
+// An entry the filesystem gave no date sinks rather than claiming today.
+let undated = [LibraryEntry(name: "nodate.md", path: "nodate.md", isDirectory: false, modified: nil)]
+let undatedSections = groupLibraryEntries(
+    undated, context: .init(group: .date, now: NOW), monthTitle: monthTitle)
+check(
+    "date: an undated entry does not land in the last week",
+    undatedSections.first?.key != "recent",
+    true
+)
+
+// MARK: - Empty
+
+check(
+    "an empty folder produces one empty section, not a crash",
+    groupLibraryEntries([], context: .init(group: .none, now: NOW), monthTitle: monthTitle).count,
+    1
+)
+check(
+    "an empty folder groups to nothing at all",
+    groupLibraryEntries([], context: .init(group: .date, now: NOW), monthTitle: monthTitle).count,
+    0
+)
+
+print(failures == 0 ? "\nall good" : "\n\(failures) failed")
+exit(failures == 0 ? 0 : 1)

@@ -14,6 +14,7 @@ import { RecoverRecordingSheet } from "@/components/mobile/RecoverRecordingSheet
 import { startRecordingEvents, syncRecordingState } from "@/lib/recording-controller";
 import { Reader } from "@/components/mobile/Reader";
 import { useNativeNavShell } from "@/components/mobile/useNativeNavShell";
+import { useNativeLibrary } from "@/components/mobile/useNativeLibrary";
 import { HomeFolders } from "@/components/mobile/HomeFolders";
 import { useInlineSweep } from "@/components/mobile/useInlineSweep";
 import { SweepIndicator } from "@/components/mobile/SweepIndicator";
@@ -35,6 +36,11 @@ export function MobileApp() {
   // one screen — a hook living inside `LibraryBrowser` would unmount the
   // moment a document opened, which is exactly when the stack has work to do.
   useNativeNavShell(grantState === "granted");
+  // Folder browsing moves to a native screen (#1000). `LibraryBrowser` keeps
+  // running — it still declares the chrome, which is already native — but
+  // draws no rows when this answers true.
+  const nativeLibrary = useNativeLibrary(grantState === "granted");
+  const folderDepth = useMobileStore((s) => s.folderStack.length);
   const homeEditorOpen = useMobileStore((s) => s.homeEditorOpen);
   const refreshGrant = useMobileStore((s) => s.refreshGrant);
 
@@ -152,7 +158,16 @@ export function MobileApp() {
         ) : grantState === "granted" ? (
           // Keyed by path: a document switch REMOUNTS the reader, so per-doc
           // state (find query, marks, refs) can never leak between documents.
-          homeEditorOpen ? <HomeFolders /> : openDoc ? <Reader key={openDoc.relPath} /> : <LibraryBrowser />
+          homeEditorOpen ? (
+            <HomeFolders />
+          ) : openDoc ? (
+            <Reader key={openDoc.relPath} />
+          ) : (
+            // Home is still the web layer's (see `NavShellPresenter.present`):
+            // it is synthesised cards, not a listing. Only a pushed folder is
+            // drawn natively, so only there does this stop rendering rows.
+            <LibraryBrowser nativeContent={nativeLibrary && folderDepth > 0} />
+          )
         ) : (
           <Onboarding />
         )}

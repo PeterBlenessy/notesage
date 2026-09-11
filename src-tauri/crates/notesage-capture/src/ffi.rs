@@ -27,7 +27,7 @@ use crate::{
     build_article_html_document, build_article_note, build_capture_note,
     build_card_html_document, build_video_note, extract_page_card,
     build_x_article_note, build_x_note, document_fallback_name, enrich_x_article,
-    extract_article, extract_meta_title,
+    article_card_meta, extract_article, extract_meta_title,
     filename_from_content_disposition, is_x_chrome_title, linked_document_for_content_type,
     meaningful_title, oembed_url, parse_oembed, parse_x_post, timestamps, viewer_document_url,
     x_syndication_url, Article, CaptureInput, XPost,
@@ -563,6 +563,41 @@ pub unsafe extern "C" fn notesage_capture_disposition_filename(
         match opt_str(header).and_then(|h| filename_from_content_disposition(&h)) {
             Some(name) => into_c_string(name),
             None => std::ptr::null_mut(),
+        }
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
+/// A saved article's list-row fields, as JSON, or NULL when the document is
+/// not a capture.
+///
+/// Added for the native browsing surface (#1000): a folder screen draws
+/// article rows — title, site, reading time, excerpt — and the parser that
+/// produces them already exists here. Reimplementing it in Swift would be a
+/// second source of truth for the capture format, which
+/// `pipeline_contract.rs` exists to prevent.
+///
+/// JSON rather than a struct across the boundary: the shape is four optional
+/// strings and a number, it is read once per row, and a repr(C) struct would
+/// need its own free function and its own drop discipline for each field.
+///
+/// Caller frees with notesage_capture_string_free().
+#[no_mangle]
+pub unsafe extern "C" fn notesage_capture_article_card_meta(html: *const c_char) -> *mut c_char {
+    catch_unwind(AssertUnwindSafe(|| {
+        let html = match opt_str(html) {
+            Some(value) => value,
+            None => return std::ptr::null_mut(),
+        };
+        let meta = match article_card_meta(&html) {
+            Some(meta) => meta,
+            // Not a capture. NULL rather than an empty object, so the caller
+            // can tell "no metadata" from "a capture with no title".
+            None => return std::ptr::null_mut(),
+        };
+        match serde_json::to_string(&meta) {
+            Ok(json) => into_c_string(json),
+            Err(_) => std::ptr::null_mut(),
         }
     }))
     .unwrap_or(std::ptr::null_mut())

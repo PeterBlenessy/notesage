@@ -62,6 +62,12 @@ char *notesage_capture_video_contents(const char *url,
 /// (og:title / twitter:title / <title>) when the sharer's title is missing or
 /// is merely the URL again — which is what YouTube and friends hand over.
 /// Caller frees with notesage_capture_string_free().
+/// A saved article's list-row fields as JSON — `{ "title", "excerpt",
+/// "minutes", "site", "sourceUrl" }`, each nullable — or NULL when the
+/// document is not a capture (#1000, the native folder screen's article
+/// rows). Caller frees with notesage_capture_string_free().
+char *notesage_capture_article_card_meta(const char *html);
+
 char *notesage_capture_rel_path_from_html(const char *url,
                                           const char *title,
                                           const char *html);

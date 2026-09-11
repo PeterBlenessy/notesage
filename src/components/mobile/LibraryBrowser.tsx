@@ -6,8 +6,8 @@ import { iosListDirectory, iosCreateDirectory, iosEnsureDirectory, iosTextPrompt
 import { toast } from "sonner";
 import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-store";
 import { stopSpeech, toggleSpeech } from "@/lib/speech-controller";
-import type { EntryActionContext } from "@/lib/mobile-entry-actions";
-import { FileRow, classifyFile } from "./FileRow";
+import { presentEntryMenu, type EntryActionContext } from "@/lib/mobile-entry-actions";
+import { FileRow, classifyFile, entrySwipeActions } from "./FileRow";
 import { ArticleRow } from "./ArticleRow";
 import { GalleryView } from "./GalleryView";
 import { InboxCard, RecordingsCard } from "./InboxCard";
@@ -42,7 +42,7 @@ type LoadState =
  * Mobile library browser — push-navigation list over the granted folder
  * (PRD task #13). Folders push a level; files open the reader.
  */
-export function LibraryBrowser() {
+export function LibraryBrowser({ nativeContent = false }: { nativeContent?: boolean } = {}) {
   const libraryName = useMobileStore((s) => s.libraryName);
   const folderStack = useMobileStore((s) => s.folderStack);
   const enterFolder = useMobileStore((s) => s.enterFolder);
@@ -537,6 +537,40 @@ export function LibraryBrowser() {
     },
   };
 
+  // A long press on a NATIVE row (#1000). The menu itself is already native
+  // (`EntryContextMenu`), but its ROWS — which apply to this entry, and what
+  // each one does — are assembled here, by `mobile-entry-actions.ts`. So the
+  // native screen asks rather than rebuilding them, and there stays one
+  // source of truth for the menu's contents.
+  useEffect(() => {
+    if (!nativeContent) return;
+    const onShell = (event: Event) => {
+      const detail = (event as CustomEvent<{ type?: string; kind?: string; relPath?: string }>)
+        .detail;
+      if (detail?.type !== "open" || !detail.relPath) return;
+      const kind = detail.kind ?? "";
+      if (kind !== "menu" && !kind.startsWith("swipe:")) return;
+      if (state.status !== "ready") return;
+      const entry = state.entries.find((e) => e.path === detail.relPath);
+      if (!entry) return;
+      if (kind === "menu") {
+        // No rect: the native screen knows where the row is, but the morph
+        // origin is a nicety and a missing one simply centres the menu.
+        void presentEntryMenu(entry, undefined, actionContext);
+        return;
+      }
+      // A swipe. The native side drew the gesture; the ACTION is the same one
+      // the web rows use, found by id rather than reimplemented — so Share's
+      // temp-copy and Delete's confirmation both still happen.
+      const id = kind.slice("swipe:".length);
+      entrySwipeActions(entry, actionContext, () => void load(true))
+        .find((a) => a.id === id)
+        ?.onSelect();
+    };
+    window.addEventListener("notesage:nav-shell", onShell);
+    return () => window.removeEventListener("notesage:nav-shell", onShell);
+  });
+
   const promptName = useCallback(async (title: string): Promise<string | null> => {
     try {
       return await iosTextPrompt(title, t("action.name"), t("action.create"));
@@ -923,6 +957,13 @@ export function LibraryBrowser() {
           the translucent top/bottom chrome (Apple Notes / Quiet Composer
           pattern, issue #581). The large title lives IN the content, so it
           scrolls away like Notes' does. */}
+      {/* Content, unless the native folder screen is drawing it (#1000).
+          This component keeps RUNNING when it is: it still declares the
+          chrome (the search island, the "+", the view menu), which is already
+          native and is not the browsing surface. It just draws no rows, so
+          the two layers never both paint — the fault behind every bug of
+          2026-09-11. */}
+      {!nativeContent && (
       <div
         key={screenKey}
         ref={scrollerRef}
@@ -1194,6 +1235,7 @@ export function LibraryBrowser() {
             );
           })()}
       </div>
+      )}
 
       {/* Pull-to-refresh indicator.
 

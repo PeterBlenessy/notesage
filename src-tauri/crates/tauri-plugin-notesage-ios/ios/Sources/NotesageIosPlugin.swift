@@ -92,6 +92,12 @@ struct MoveArgs: Decodable {
   let destDir: String
 }
 
+struct LibraryBrowsingArgs: Decodable {
+  let enabled: Bool
+  /// Message key → already-localised string, for section headers.
+  let strings: [String: String]?
+}
+
 struct ThumbnailArgs: Decodable {
   let relPath: String
   let maxPixel: Double
@@ -1306,6 +1312,24 @@ class NotesageIosPlugin: Plugin {
   struct NavTitleArgs: Decodable { let title: String? }
   struct NavRenderedArgs: Decodable { let screenId: String }
   struct NavActionArgs: Decodable { let item: ChromeItemSpec? }
+
+  /// Turn the native browsing surface on, and hand it the strings it needs.
+  ///
+  /// The table comes from the frontend rather than a `.strings` file so there
+  /// is ONE localisation source. A second table would drift from `t()`, and
+  /// the drift would show up as an English header in a Swedish app — the
+  /// failure #989 was, which took three builds to notice.
+  @objc public func setLibraryBrowsing(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(LibraryBrowsingArgs.self)
+      DispatchQueue.main.async {
+        LibraryBrowsing.shared.enabled = args.enabled
+        let table = args.strings ?? [:]
+        LibraryBrowsing.shared.localize = { key in table[key] ?? key }
+        invoke.resolve()
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
 
   @objc public func navShellPresent(_ invoke: Invoke) {
     do {
