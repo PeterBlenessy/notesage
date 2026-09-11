@@ -368,6 +368,8 @@ jobs:
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/AudioOwner.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/SpeechPlayer.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ChromeColumn.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ThumbnailCache.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ArticleMeta.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryOrdering.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryCells.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryBrowsing.swift \

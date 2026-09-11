@@ -322,7 +322,18 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
         _ entry: LibraryEntry, condensed: Bool, progress: Double, recentlyRead: Bool
     ) {
         representedPath = entry.path
-        titleLabel.text = entry.name
+
+        // A saved article shows what it IS, not what it is called: its title,
+        // its publisher and how long it takes to read. `Some-Article.html`
+        // tells a reader nothing (#836). Read from the cache during
+        // configuration so a reused cell never flashes the filename first;
+        // `applyArticle` fills it in later on a miss.
+        let article =
+            ArticleMetaReader.isCandidate(entry.name)
+            ? (ArticleMetaReader.cached(entry.path, modified: entry.modified) ?? nil)
+            : nil
+
+        titleLabel.text = article?.title ?? entry.name
         // Unread weight — 600 against 400, the Mail convention minus the
         // ornament. A dot beside every row was clutter (2026-09-05).
         let unread = !entry.isDirectory && progress <= 0 && !recentlyRead
@@ -330,7 +341,10 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
             unread
             ? .preferredFont(forTextStyle: .body).withWeight(.semibold)
             : .preferredFont(forTextStyle: .body)
-        subtitleLabel.text = entry.isDirectory ? nil : Self.dateText(entry.modified)
+        subtitleLabel.text =
+            entry.isDirectory
+            ? nil
+            : (article.map(Self.articleLine) ?? Self.dateText(entry.modified))
         subtitleLabel.isHidden = entry.isDirectory || condensed
         progressBar.isHidden = progress <= 0 || progress >= 1
         progressBar.progress = Float(progress)
@@ -346,6 +360,21 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
     func showIcon(for entry: LibraryEntry) {
         tile.contentMode = .center
         tile.image = UIImage(systemName: librarySymbol(for: entry))
+    }
+
+    /// Fill in metadata that arrived after the cell was configured.
+    func applyArticle(_ meta: ArticleMeta, for rel: String) {
+        guard representedPath == rel else { return }
+        if let title = meta.title { titleLabel.text = title }
+        subtitleLabel.text = Self.articleLine(meta)
+    }
+
+    /// "The Guardian · 7 min" — publisher and reading time, whichever exist.
+    private static func articleLine(_ meta: ArticleMeta) -> String? {
+        var parts: [String] = []
+        if let site = meta.site, !site.isEmpty { parts.append(site) }
+        if let minutes = meta.minutes, minutes > 0 { parts.append("\(minutes) min") }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
     }
 
     private static func dateText(_ modified: Double?) -> String? {
