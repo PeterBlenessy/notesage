@@ -42,6 +42,20 @@ const listeners = new Set<() => void>();
  */
 export const TOP_INSET = "var(--ns-top-inset, calc(3.75rem + env(safe-area-inset-top)))";
 
+/**
+ * Mark the document while the native stack owns screen transitions.
+ *
+ * Same reasoning as `writeTopInset` above: the fact belongs in the cascade
+ * rather than threaded through every screen as a prop. There is one consumer
+ * today — the `.view-enter` zoom — and the reason it must be a rule and not a
+ * conditional in `LibraryBrowser` is that the NEXT screen to reach for
+ * `view-enter` would otherwise have to remember this, and would not.
+ */
+function writeNavShellFlag(value: boolean): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.dataset.navShell = value ? "true" : "false";
+}
+
 function writeTopInset(value: boolean): void {
   if (typeof document === "undefined") return;
   document.documentElement.style.setProperty(
@@ -57,6 +71,7 @@ export function setNavShellPresented(value: boolean): void {
   // state — the common one — never written at all, which is survivable today
   // only because `TOP_INSET` carries a fallback.
   writeTopInset(value);
+  writeNavShellFlag(value);
   if (presented === value) return;
   presented = value;
   for (const listener of listeners) listener();
