@@ -99,6 +99,36 @@ final class ScreenController: UIViewController {
     ])
   }
 
+  /// Put a NATIVE screen in this controller.
+  ///
+  /// The alternative to `attachLive`, and the point of the native browsing
+  /// surface (#1000): a folder screen draws itself and stays drawn. It is
+  /// never handed to another controller, so it needs no snapshot, no freeze
+  /// and no thaw — which is why none of the four bugs of 2026-09-11 can reach
+  /// it. Only the reader still borrows the single live web view.
+  func attachNative(_ child: UIViewController) {
+    nativeChild?.willMove(toParent: nil)
+    nativeChild?.view.removeFromSuperview()
+    nativeChild?.removeFromParent()
+    nativeChild = child
+    addChild(child)
+    child.view.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(child.view)
+    NSLayoutConstraint.activate([
+      child.view.topAnchor.constraint(equalTo: view.topAnchor),
+      child.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      child.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      child.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+    ])
+    child.didMove(toParent: self)
+  }
+
+  /// The native screen this controller holds, if it holds one.
+  private(set) var nativeChild: UIViewController?
+  /// Whether this screen draws itself. A screen that does needs none of the
+  /// snapshot machinery below.
+  var isNative: Bool { nativeChild != nil }
+
   /// Freeze what is on screen right now, so this controller keeps showing it
   /// after the live view has moved on.
   func freeze(from webView: WKWebView) {
@@ -187,6 +217,13 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
 
     let root = ScreenController(screenId: "", title: rootTitle)
     let nav = UINavigationController(rootViewController: root)
+    // Routed here rather than from the screens themselves: this is the only
+    // object holding the web view, so it is the only one that can speak to the
+    // frontend. A screen that emitted for itself would need its own copy.
+    LibraryBrowsing.shared.onOpen = { [weak self] kind, rel in
+      self?.dispatch(
+        "open", detail: "{ kind: \(Self.jsonString(kind)), relPath: \(Self.jsonString(rel)) }")
+    }
     nav.delegate = self
     nav.navigationBar.prefersLargeTitles = false
     nav.view.translatesAutoresizingMaskIntoConstraints = false
@@ -208,8 +245,13 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     self.nav = nav
     self.chromeContainer = container
 
-    root.attachLive(webView)
-    liveHost = root
+    if LibraryBrowsing.shared.enabled {
+      root.loadViewIfNeeded()
+      root.attachNative(LibraryBrowsing.shared.makeScreen(rel: "", title: rootTitle ?? ""))
+    } else {
+      root.attachLive(webView)
+      liveHost = root
+    }
     applyMenu(to: root)
     ChromeManager.shared.bringChromeToFront()
     return true
@@ -247,7 +289,7 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
   /// the screen being left looking like itself while that happens.
   func prepare() {
     dispatchPrecondition(condition: .onQueue(.main))
-    guard let webView, let host = liveHost else { return }
+    guard let webView, let host = liveHost, !host.isNative else { return }
     host.freeze(from: webView)
   }
 
@@ -256,6 +298,17 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     guard let nav, let webView else { return }
     let screen = ScreenController(screenId: screenId, title: title)
     applyMenu(to: screen)
+    // A document still borrows the single live web view — the reader is the
+    // one thing the web layer still renders. A FOLDER draws itself, and so is
+    // never handed the web view at all: nothing to move, nothing to freeze,
+    // nothing to thaw (#1000).
+    if LibraryBrowsing.shared.enabled && !screenId.hasPrefix("doc:") {
+      screen.loadViewIfNeeded()
+      screen.attachNative(
+        LibraryBrowsing.shared.makeScreen(rel: screenId, title: title ?? ""))
+      nav.pushViewController(screen, animated: animated)
+      return
+    }
     // The web view moves in BEFORE the push, not after: the animator captures
     // the incoming view's layout as the animation starts, and re-parenting a
     // view into it mid-flight is how a screen ends up sliding in with its
@@ -281,9 +334,11 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     guard let nav, let webView, let root = nav.viewControllers.first as? ScreenController else {
       return
     }
-    root.attachLive(webView)
-    root.thaw()
-    liveHost = root
+    if !root.isNative {
+      root.attachLive(webView)
+      root.thaw()
+      liveHost = root
+    }
     nav.popToRootViewController(animated: false)
   }
 
