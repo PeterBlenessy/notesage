@@ -89,6 +89,19 @@ links and documents. PRD:
   entirely in `mobileChrome` mode), screen actions top-right (Share; library
   re-pick on the folder root), search bottom-center. Islands portal to
   `document.body` with `position: fixed` — chrome, never page content.
+- **The bottom-centre column — one owner, four occupants (#995).** The search
+  pill, the read-aloud transport, the recording island and a passive status
+  line all land in the same strip above the home indicator, and each one that
+  was positioned by whoever happened to draw it eventually landed on top of
+  another: search over the recorder's Stop, so a recording could be started and
+  not stopped (build 50); the web sweep indicator under the search pill,
+  unreadable before it vanished (build 60); the player and search both pinned
+  at the same offset. `ChromeOverlay.layoutBottomColumn` is now the ONLY thing
+  that positions anything there, stacking them search → transport → status
+  (interactive lowest, where a thumb reaches; passive highest). On the web side
+  `useNativeChrome` is the only thing that declares them, so a fifth occupant
+  cannot be added without the arbiter seeing it — app-global status arrives
+  through `chrome-status.ts` rather than through any one screen's spec.
 - **Search everywhere, bottom-center.** The folder view filters filenames; a
   collapsed island shows passive status (item count / PDF page indicator,
   Files-style). Documents get find-in-document: markdown/text via the shared
@@ -194,6 +207,19 @@ links and documents. PRD:
   keep the plain icon row. The tile is 72pt at rest and 40pt condensed — the
   same two sizes as the article row, so a screenshot and the saved article
   above it are one shape — and fixed, so a late thumbnail never reflows rows.
+
+  **Thumbnails are prefetched a screen ahead** (`useVisibleSoon`, shared by the
+  gallery cards and both row kinds). Generation is asynchronous wherever it
+  happens — QuickLook off-thread for previewables, comrak for notes — so the
+  only way a picture is on screen when its row arrives is to have started it
+  before the row did. The gallery used to ask at the viewport edge and the list
+  rows did not gate at all: every row asked the moment it mounted, which at a
+  concurrency of two is an ORDERING problem rather than a burst, since a row
+  twenty screens down then waited behind hundreds of jobs for rows nobody was
+  looking at. Both now watch one viewport in each direction and latch, so
+  scrolling back never re-queues work. The lead is deliberately one screen and
+  not several: the limiter still runs two at a time, so a deeper lead makes
+  nothing arrive sooner and only fills the queue with cards nobody reaches.
 
   Documents (PDF/EPUB/file shares) skip the picker and store immediately in
   `Inbox/` with their original names, streamed via `loadFileRepresentation`.
@@ -1233,9 +1259,13 @@ them left the transport showing Pause forever after an article ended, and
 `playing` is the only way a lock-screen or Control Centre pause reaches the
 frontend at all — those bypass it entirely.
 
-**The player owns the bottom-centre slot exclusively.** The search island and
-the report's find button live there too, so both are suppressed while playback
-runs; find is one tap away again the moment it stops.
+**The player SHARES the bottom-centre slot, which has one owner.** It used to
+claim the slot exclusively, and the search island and the report's find button
+were suppressed for the duration — a workaround for a collision rather than a
+decision about what a reader needs, since wanting to search an article you are
+listening to is entirely ordinary. `ChromeOverlay.layoutBottomColumn` now
+stacks every occupant of that strip (see "The bottom-centre column" below), so
+the transport and find can both be on screen.
 
 **The transport is drawn by the NATIVE chrome, not React.** A captured article
 is presented in a separate native web view that sits ABOVE the app's own
@@ -1348,6 +1378,10 @@ bad voice" and falls back — selection is verifiable, audible output is not.
 | `src/components/mobile/HomeFolders.tsx` | Edit Home — a switch per root folder |
 | `src/components/mobile/AllFoldersRow.tsx` | The last row on Home: pushes the full root listing as a level |
 | `src/components/mobile/HomeHint.tsx` | The one-time line under a not-yet-curated Home |
+| `…/ios/Sources/ChromeOverlay.swift` | The native chrome overlay. `layoutBottomColumn` is the single owner of the bottom-centre slot — nothing else positions anything there |
+| `src/components/mobile/useNativeChrome.ts` | The single web-side declaration point for that chrome; merges the app-global status into every push |
+| `src/components/mobile/chrome-status.ts` | The app-global passive status line (the background sweep's), which belongs to no one screen |
+| `src/components/mobile/useVisibleSoon.ts` | "Seen, or about to be" — the one-screen lead that makes thumbnails a prefetch rather than a lazy load |
 | `src/components/mobile/BrowserStates.tsx` | The listing's skeleton and error states, shared by the browser and Edit Home |
 | `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/InboxState.swift` | The Inbox's disk truth (names, unread count, seen set, preferences) — app, background task and Share Extension |
 | `src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/Notifier.swift` | The one notification delegate: status, the prompt, the badge, the "new in Inbox" banner, the tap route |

@@ -226,6 +226,22 @@ describe("resilience", () => {
 });
 
 describe("the passive indicator", () => {
+  // The indicator draws in two different places depending on whether this
+  // build has a native chrome layer, so every test has to say which world it
+  // is in. See `SweepIndicator`'s own doc comment, and #995.
+  beforeEach(async () => {
+    const { setNativeChromeAnswer } = await import("../useNativeChrome");
+    const { resetChromeStatus } = await import("../chrome-status");
+    setNativeChromeAnswer(false); // no native layer: the web island is it
+    resetChromeStatus();
+  });
+  afterEach(async () => {
+    const { setNativeChromeAnswer } = await import("../useNativeChrome");
+    const { resetChromeStatus } = await import("../chrome-status");
+    setNativeChromeAnswer(null);
+    resetChromeStatus();
+  });
+
   it("shows nothing when no sweep is running", async () => {
     const { SweepIndicator } = await import("../SweepIndicator");
     const { render } = await import("@testing-library/react");
@@ -262,6 +278,84 @@ describe("the passive indicator", () => {
     render(<SweepIndicator progress={{ active: true, done: 0, total: 2 }} />);
 
     expect(screen.getByRole("status").getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("draws no web island on a build that has native chrome", async () => {
+    // #995: this component used to render `<Island corner="bottom-center">`
+    // unconditionally, which is the same strip of screen the NATIVE search
+    // island occupies. Neither knew the other existed, so the pill appeared
+    // underneath it and was gone before it could be read.
+    const { setNativeChromeAnswer } = await import("../useNativeChrome");
+    setNativeChromeAnswer(true);
+    const { SweepIndicator } = await import("../SweepIndicator");
+    const { render } = await import("@testing-library/react");
+
+    const { container } = render(
+      <SweepIndicator progress={{ active: true, done: 1, total: 4 }} />,
+    );
+    expect(container.textContent).toBe("");
+    expect(document.body.querySelector('[class*="island"]')).toBeNull();
+  });
+
+  it("draws nothing at all until the native layer has answered", async () => {
+    // `null` is "nobody has asked yet". Guessing wrong for the frame or two
+    // before the first screen declares its chrome means either a pill in the
+    // wrong place or two pills; neither is worth it for a whisper.
+    const { setNativeChromeAnswer } = await import("../useNativeChrome");
+    setNativeChromeAnswer(null);
+    const { SweepIndicator } = await import("../SweepIndicator");
+    const { render } = await import("@testing-library/react");
+
+    const { container } = render(
+      <SweepIndicator progress={{ active: true, done: 1, total: 4 }} />,
+    );
+    expect(container.textContent).toBe("");
+  });
+
+  it("publishes the line for the native column whichever world it is in", async () => {
+    // The publish is what the native layer reads, so it must not be gated on
+    // the answer — the sweep can start before the first screen has declared.
+    const { setNativeChromeAnswer } = await import("../useNativeChrome");
+    const { useChromeStatus } = await import("../chrome-status");
+    const { SweepIndicator } = await import("../SweepIndicator");
+    const { render, renderHook } = await import("@testing-library/react");
+
+    for (const answer of [true, false, null] as const) {
+      setNativeChromeAnswer(answer);
+      const view = render(<SweepIndicator progress={{ active: true, done: 1, total: 4 }} />);
+      const { result } = renderHook(() => useChromeStatus());
+      expect(result.current?.label, `answer=${answer}`).toMatch(/2 of 4/);
+      expect(result.current?.busy).toBe(true);
+      view.unmount();
+    }
+  });
+
+  it("clears the line when the sweep finishes, so the pill goes away", async () => {
+    const { useChromeStatus } = await import("../chrome-status");
+    const { SweepIndicator } = await import("../SweepIndicator");
+    const { render, renderHook } = await import("@testing-library/react");
+
+    const view = render(<SweepIndicator progress={{ active: true, done: 0, total: 2 }} />);
+    const { result, rerender } = renderHook(() => useChromeStatus());
+    expect(result.current).not.toBeNull();
+
+    view.rerender(<SweepIndicator progress={{ active: false, done: 2, total: 2 }} />);
+    rerender();
+    expect(result.current).toBeNull();
+  });
+
+  it("clears the line when it unmounts, so a closed screen leaves no pill", async () => {
+    const { useChromeStatus } = await import("../chrome-status");
+    const { SweepIndicator } = await import("../SweepIndicator");
+    const { render, renderHook } = await import("@testing-library/react");
+
+    const view = render(<SweepIndicator progress={{ active: true, done: 0, total: 2 }} />);
+    const { result, rerender } = renderHook(() => useChromeStatus());
+    expect(result.current).not.toBeNull();
+
+    view.unmount();
+    rerender();
+    expect(result.current).toBeNull();
   });
 });
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { ChevronRight, Folder, FileText, FileImage, FileType, FileCode, File, FilePlay, FileAudio, Share, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
+import { useVisibleSoon } from "./useVisibleSoon";
 import type { FileEntry } from "@/lib/tauri";
 import { iosShareFile, iosDeleteFile } from "@/lib/ios-api";
 import { ListenButton } from "./ListenButton";
@@ -267,6 +268,12 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext, c
   const folder = useFolderAppearance(entry);
   const Icon = entry.is_directory ? folder.Icon : iconFor(entry);
   const wantsThumbnail = rowWantsThumbnail(entry);
+  // A screen ahead, not on mount. Every row used to ask the moment it
+  // rendered, which at a concurrency of two is an ORDERING problem rather
+  // than a burst: in a folder of five hundred files, a row twenty screens
+  // down waited behind four hundred and eighty jobs for rows nobody was
+  // looking at. See `useVisibleSoon`.
+  const [thumbRef, visibleSoon] = useVisibleSoon<HTMLButtonElement>(wantsThumbnail);
   const tile = !entry.is_directory;
   const large = tile && !condensed;
   const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(null);
@@ -276,7 +283,7 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext, c
   const progress = useMobileStore((s) => s.readingProgress[entry.path] ?? 0);
   const unread = isUnreadRow(entry.path, opened, progress);
   useEffect(() => {
-    if (!wantsThumbnail) return;
+    if (!wantsThumbnail || !visibleSoon) return;
     let cancelled = false;
     // Same theme rule as the gallery card and the article row: a rendered
     // thumbnail is keyed on the theme in effect now.
@@ -295,7 +302,7 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext, c
     // caller that maps or spreads its entries would otherwise refetch every
     // thumbnail on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wantsThumbnail, entry.path, entry.name, entry.modified]);
+  }, [wantsThumbnail, visibleSoon, entry.path, entry.name, entry.modified]);
   const picture = thumbnail && (thumbnail.kind === "image" || thumbnail.kind === "pdf") ? thumbnail.url : null;
   // Hold for the full menu — iOS itself offers both swipe AND hold on a list
   // row (Files, Notes), and hold is the only way to reach Rename/Pin here.
@@ -307,6 +314,7 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext, c
   return (
     <SwipeRevealRow actions={actions}>
       <button
+        ref={thumbRef}
         type="button"
         onClick={() => onActivate(entry)}
         {...longPress}

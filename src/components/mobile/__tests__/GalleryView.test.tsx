@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@/test/tauri-mock";
 import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
-import { fireEvent, waitFor } from "@testing-library/react";
+import { act, fireEvent, waitFor } from "@testing-library/react";
 import { renderWithProviders, screen } from "@/test/component-harness";
 import { setMockInvokeHandler } from "@/test/tauri-mock";
 import { clearFolderAppearanceCache } from "@/lib/folder-appearance-cache";
@@ -34,8 +34,11 @@ class FakeIntersectionObserver {
   static instances: FakeIntersectionObserver[] = [];
   callback: IntersectionObserverCallback;
   observed: Element[] = [];
-  constructor(callback: IntersectionObserverCallback) {
+  /** Captured so a test can assert the LEAD — the margin is the prefetch. */
+  options: IntersectionObserverInit | undefined;
+  constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
     this.callback = callback;
+    this.options = options;
     FakeIntersectionObserver.instances.push(this);
   }
   observe(el: Element) {
@@ -233,13 +236,35 @@ describe("GalleryView (#633)", () => {
       o.observed.includes(aCardEl),
     )!;
     expect(observerForA).toBeTruthy();
-    observerForA.trigger(aCardEl, true);
+    // `act`: intersecting now sets React state rather than calling
+    // `getThumbnail` straight from the observer callback, so the effect that
+    // reads it has to be flushed.
+    act(() => observerForA.trigger(aCardEl, true));
 
     expect(getThumbnailMock).toHaveBeenCalledTimes(1);
     expect(getThumbnailMock).toHaveBeenCalledWith(
       expect.objectContaining({ name: "a.md" }),
       { theme: "light" },
     );
+  });
+
+  it("watches a screen beyond the viewport, so the thumbnail is already in flight", () => {
+    // The prefetch IS the margin. Without it a card asks for its thumbnail at
+    // the moment it scrolls into view, and since generation is asynchronous
+    // the picture necessarily lands after the card — which is what made
+    // thumbnails visibly fill in behind the grid.
+    renderWithProviders(
+      <GalleryView
+        actionContext={noopActions}
+        entries={[entry({ name: "a.md" })]}
+        currentFolderName="Ideas"
+        theme="light"
+        onActivate={() => {}}
+      />,
+    );
+
+    const observer = FakeIntersectionObserver.instances[0];
+    expect(observer.options?.rootMargin).toBe("100% 0px");
   });
 
   it("never requests a thumbnail for a directory card, even once visible", () => {

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { ArticleCardMeta } from "@/lib/ios-api";
 import { articleMetaFor } from "@/lib/article-meta-cache";
 import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
+import { useVisibleSoon } from "./useVisibleSoon";
 import { useMobileStore } from "@/stores/mobile-store";
 import { cn } from "@/lib/utils";
 import { FileRow, entrySwipeActions, iconFor, THUMBNAIL_SLOT, type FileRowProps } from "./FileRow";
@@ -66,8 +67,11 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
     };
   }, [entry.path, entry.modified]);
 
+  // A screen ahead, like the gallery and the plain row — see `useVisibleSoon`.
+  const [thumbRef, visibleSoon] = useVisibleSoon<HTMLDivElement>(meta != null);
+
   useEffect(() => {
-    if (!meta) return;
+    if (!meta || !visibleSoon) return;
     let cancelled = false;
     // Same theme rule as the gallery card: the thumbnail is RENDERED in a
     // theme, so it is keyed on the one in effect now.
@@ -78,7 +82,7 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
     return () => {
       cancelled = true;
     };
-  }, [meta, entry.path, entry.name]);
+  }, [meta, visibleSoon, entry.path, entry.name]);
 
   // Known NOT to be a capture: the plain row — at the SAME density. The
   // flag is destructured off `props` above, so it has to be handed on by
@@ -104,6 +108,7 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
         contain another, and a `div[role=button]` around a real button is the
         nested-interactive pattern assistive tech handles inconsistently. */}
     <div
+      ref={thumbRef}
       className={cn(
         // `relative`, because the Listen control floats over this row rather
         // than sitting beside it — see `ListenButton`. The row keeps its full

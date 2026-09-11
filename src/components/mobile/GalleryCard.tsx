@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useFolderAppearance } from "./useFolderAppearance";
 import { t } from "@/lib/i18n";
 import { ListenButton } from "./ListenButton";
@@ -8,6 +8,7 @@ import { presentEntryMenu, type EntryActionContext } from "@/lib/mobile-entry-ac
 import { useLongPress } from "./useLongPress";
 import { classifyFile, formatModified, iconFor } from "./FileRow";
 import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
+import { useVisibleSoon } from "./useVisibleSoon";
 import { isUnreadRow } from "./reading-progress";
 import { useMobileStore } from "@/stores/mobile-store";
 
@@ -54,43 +55,25 @@ export function GalleryCard({
   const longPress = useLongPress((rect) => {
     void presentEntryMenu(entry, rect, actionContext);
   });
-  const rootRef = useRef<HTMLDivElement | null>(null);
+  // A screen AHEAD of the viewport, not at its edge: the generation is
+  // asynchronous either way, so the only way a thumbnail is there when the
+  // card arrives is to have started it before the card did. Starting at the
+  // edge is why they visibly landed after the grid had drawn.
+  const [rootRef, visibleSoon] = useVisibleSoon<HTMLDivElement>(!entry.is_directory);
   const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(
     entry.is_directory ? { kind: "icon" } : null,
   );
 
   useEffect(() => {
-    if (entry.is_directory) return;
-    const el = rootRef.current;
-    if (!el) return;
+    if (entry.is_directory || !visibleSoon) return;
     let cancelled = false;
-    const load = () => {
-      void getThumbnail(entry, { theme }).then((result) => {
-        if (!cancelled) setThumbnail(result);
-      });
-    };
-    // Feature-detect: real WKWebView always has IntersectionObserver. The
-    // fallback (fetch immediately) only matters for environments without it.
-    if (typeof IntersectionObserver === "undefined") {
-      load();
-      return () => {
-        cancelled = true;
-      };
-    }
-    const observer = new IntersectionObserver((observed) => {
-      for (const item of observed) {
-        if (item.isIntersecting) {
-          load();
-          observer.disconnect();
-        }
-      }
+    void getThumbnail(entry, { theme }).then((result) => {
+      if (!cancelled) setThumbnail(result);
     });
-    observer.observe(el);
     return () => {
       cancelled = true;
-      observer.disconnect();
     };
-    // `theme` IS a dependency, despite the cost of re-observing.
+    // `theme` IS a dependency, despite the cost of re-fetching.
     //
     // It used to be excluded to avoid re-triggering every card's observer on a
     // theme flip. But the thumbnail is RENDERED in a theme, so excluding it
@@ -99,10 +82,10 @@ export function GalleryCard({
     // child-first) cached a light thumbnail in a dark app for the whole
     // session, which is what Peter saw.
     //
-    // Re-observing is bounded: only cards actually in view regenerate, the
-    // shared limiter still caps concurrency at two, and `getThumbnail` is now
-    // keyed by theme so the other theme's work is not thrown away.
-  }, [entry.path, entry.is_directory, theme]);
+    // Re-fetching is bounded: only cards already near the viewport
+    // regenerate, the shared limiter still caps concurrency at two, and
+    // `getThumbnail` is keyed by theme so the other theme's work survives.
+  }, [entry.path, entry.is_directory, theme, visibleSoon]);
 
   const Icon = iconFor(entry);
   const folder = useFolderAppearance(entry);
