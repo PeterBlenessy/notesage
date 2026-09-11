@@ -1354,6 +1354,43 @@ class NotesageIosPlugin: Plugin {
     } catch { invoke.reject(String(describing: error)) }
   }
 
+  struct LibraryViewArgs: Decodable {
+    let relPath: String
+    let layout: String
+    let condensed: Bool
+    let sort: String
+    let group: String
+  }
+
+  /// How a folder is shown — list or gallery, density, sort, group (#1000).
+  ///
+  /// Pushed rather than read, because the "…" menu that sets it is declared
+  /// by the web layer. Build 64 shipped with the native screen reading these
+  /// from `UserDefaults` once at construction and nothing ever writing them,
+  /// so every one of the four was inert.
+  @objc public func setLibraryView(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(LibraryViewArgs.self)
+      DispatchQueue.main.async {
+        var settings = LibraryViewSettings()
+        settings.layout = LibraryViewSettings.Layout(rawValue: args.layout) ?? .list
+        settings.condensed = args.condensed
+        settings.sort = LibrarySortMode(rawValue: args.sort) ?? .name
+        settings.group = LibraryGroupMode(rawValue: args.group) ?? .none
+        LibraryBrowsing.shared.setView(settings, for: args.relPath)
+        invoke.resolve()
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  /// The library changed under the native screens — re-read them (#1000).
+  @objc public func reloadLibraryScreens(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      LibraryBrowsing.shared.reloadScreens()
+      invoke.resolve()
+    }
+  }
+
   @objc public func navShellPresent(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(NavPresentArgs.self)

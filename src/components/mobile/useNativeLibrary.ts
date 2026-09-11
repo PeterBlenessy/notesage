@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { log } from "@/lib/logger";
-import { iosSetLibraryBrowsing, iosSetLibrarySpeech } from "@/lib/ios-api";
+import { iosSetLibraryBrowsing, iosSetLibrarySpeech, iosSetLibraryView } from "@/lib/ios-api";
 import { t, getLocale, type MessageKey } from "@/lib/i18n";
 import { toggleSpeech } from "@/lib/speech-controller";
-import { useMobileStore } from "@/stores/mobile-store";
+import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-store";
+import { HOME_KEY } from "@/lib/home-file";
 
 /**
  * Hand folder browsing to the native surface (#1000).
@@ -150,4 +151,46 @@ export function useNativeLibrarySpeech(live: boolean): void {
     // rows exactly as they were.
     void iosSetLibrarySpeech({ relPath, playing, fraction, recording }).catch(() => {});
   }, [live, relPath, playing, index, total, recording]);
+}
+
+/**
+ * Keep the native folder screen showing what the "…" menu says (#1000).
+ *
+ * The menu is still the web layer's, and it writes `folderViews` in the
+ * store. Build 64 stopped there: the native screen read its settings from
+ * `UserDefaults` once when it was constructed, nothing ever wrote them, and
+ * nothing told a live screen they had changed — so list/gallery, density,
+ * sort and group were ALL inert, not just the two that were noticed first.
+ *
+ * One way, like the speech session: the menu owns the choice, the native
+ * screen owns the drawing.
+ */
+export function useNativeLibraryView(live: boolean): void {
+  // FOUR primitive selectors, not one returning `resolveFolderView(...)`.
+  // That builds a fresh object on every call, so zustand sees a new value
+  // each render and re-renders forever — "Maximum update depth exceeded",
+  // which on a device is a hang rather than a message.
+  const screenKey = useMobileStore((s) => screenKeyOf(s.folderStack));
+  const layout = useMobileStore((s) => resolveFolderView(s, screenKeyOf(s.folderStack)).viewMode);
+  const density = useMobileStore(
+    (s) => resolveFolderView(s, screenKeyOf(s.folderStack)).listDensity,
+  );
+  const sort = useMobileStore((s) => resolveFolderView(s, screenKeyOf(s.folderStack)).sortMode);
+  const group = useMobileStore((s) => resolveFolderView(s, screenKeyOf(s.folderStack)).groupMode);
+
+  useEffect(() => {
+    if (!live) return;
+    // Home is the web layer's own screen and has no native folder screen to
+    // tell — `screenKeyOf` gives it HOME_KEY rather than a folder path.
+    if (!screenKey || screenKey === HOME_KEY) return;
+    void iosSetLibraryView({
+      relPath: screenKey,
+      layout,
+      condensed: density === "condensed",
+      sort,
+      group,
+    }).catch((err) => {
+      log.warn("native-library", `view push failed: ${String(err)}`);
+    });
+  }, [live, screenKey, layout, density, sort, group]);
 }

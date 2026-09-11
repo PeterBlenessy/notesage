@@ -69,6 +69,10 @@ final class LibraryBrowsing: LibraryFolderHost {
     /// popped off the stack must not be kept alive by a subscription.
     private var speechObservers = NSHashTable<AnyObject>.weakObjects()
 
+    /// The folder screens currently on the stack, by relative path. Weak
+    /// values: a popped screen must not be kept alive by this.
+    private let screens = NSMapTable<NSString, LibraryFolderScreen>.strongToWeakObjects()
+
     private var pinnedCache: (paths: Set<String>, at: Date)?
     private var progressCache: (values: [String: Double], at: Date)?
     private var recents: Set<String> = []
@@ -121,8 +125,22 @@ final class LibraryBrowsing: LibraryFolderHost {
 
     @MainActor
     func makeScreen(rel: String, title: String) -> LibraryFolderScreen {
-        LibraryFolderScreen(
+        let screen = LibraryFolderScreen(
             relPath: rel, title: title, settings: settings(for: rel), host: self)
+        screens.setObject(screen, forKey: rel as NSString)
+        return screen
+    }
+
+    /// The user changed how a folder is shown. Persist it — so pushing that
+    /// folder again starts the same way — and tell the screen if it is open.
+    ///
+    /// This is pushed from the web layer because the "…" menu that sets it is
+    /// still declared there. Nothing is DECIDED here or there twice: the menu
+    /// owns the choice, this owns the drawing.
+    @MainActor
+    func setView(_ settings: LibraryViewSettings, for rel: String) {
+        setSettings(settings, for: rel)
+        screens.object(forKey: rel as NSString)?.apply(settings: settings)
     }
 
     /// Forget the cached sidecars — after a delete, a rename, or a return from
@@ -130,6 +148,24 @@ final class LibraryBrowsing: LibraryFolderHost {
     func invalidate() {
         pinnedCache = nil
         progressCache = nil
+    }
+
+    /// Something changed the library: a note or folder created, a row deleted
+    /// or renamed, a sweep finishing. Re-read every folder screen on the
+    /// stack.
+    ///
+    /// Build 64 had no route for this at all. A native screen re-read itself
+    /// only in `viewWillAppear` or on pull-to-refresh, so deleting a row left
+    /// it sitting on screen and a new note did not appear until you left the
+    /// folder and came back. The web layer does the mutating, so the web
+    /// layer says when.
+    @MainActor
+    func reloadScreens() {
+        invalidate()
+        ArticleMeta.clearCache()
+        for key in screens.keyEnumerator().allObjects.compactMap({ $0 as? NSString }) {
+            screens.object(forKey: key)?.reloadFromHost()
+        }
     }
 
     // MARK: Read-aloud

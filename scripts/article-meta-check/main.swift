@@ -193,6 +193,36 @@ ArticleMeta.clearCache()
 check("clearing forgets everything",
     ArticleMeta.peek("Inbox/capture.html", modified: 1) == nil)
 
+print("which rows a speech change redraws")
+let inList: (String) -> Bool = { ["a.html", "b.html"].contains($0) }
+
+// THE BUILD 64 CRASH. While one article plays, every paragraph pushes a state
+// whose previous and current path are the same row. Passing that identifier
+// to `reconfigureItems` twice raises NSInternalInconsistencyException —
+// "supplied item identifiers are not unique" — and the app died a second or
+// two after Listen was pressed, from the list and from the reader alike.
+check("the same row twice is named ONCE",
+    ArticleMeta.rowsNeedingRedraw(previous: "a.html", current: "a.html", present: inList)
+        == ["a.html"])
+check("two different rows are both named",
+    ArticleMeta.rowsNeedingRedraw(previous: "a.html", current: "b.html", present: inList)
+        == ["a.html", "b.html"])
+check("starting from nothing names just the new row",
+    ArticleMeta.rowsNeedingRedraw(previous: nil, current: "a.html", present: inList)
+        == ["a.html"])
+check("stopping names just the old row",
+    ArticleMeta.rowsNeedingRedraw(previous: "a.html", current: nil, present: inList)
+        == ["a.html"])
+check("nothing playing, nothing to redraw",
+    ArticleMeta.rowsNeedingRedraw(previous: nil, current: nil, present: inList).isEmpty)
+// A row in another folder is not in THIS list; naming it is also an invalid
+// snapshot, just a different one.
+check("a row this folder does not hold is skipped",
+    ArticleMeta.rowsNeedingRedraw(previous: "elsewhere.html", current: "a.html", present: inList)
+        == ["a.html"])
+check("both absent yields nothing",
+    ArticleMeta.rowsNeedingRedraw(previous: "x.html", current: "y.html", present: inList).isEmpty)
+
 print("")
 if failures == 0 {
     print("article meta: all checks passed")

@@ -198,6 +198,37 @@ export function iosSetLibrarySpeech(args: {
   return invoke("ios_set_library_speech", { args });
 }
 
+/**
+ * How a folder is shown on the native browsing surface (#1000): list or
+ * gallery, density, sort, group.
+ *
+ * Pushed rather than read, because the "…" menu that sets these is still
+ * declared by the web layer. Build 64 shipped with the native screen reading
+ * them from `UserDefaults` once at construction and nothing ever writing
+ * them, so all four were inert — gallery, condensed, sort and group alike.
+ */
+export function iosSetLibraryView(args: {
+  relPath: string;
+  layout: "list" | "gallery";
+  condensed: boolean;
+  sort: "name" | "modified";
+  group: "none" | "pinned" | "recent" | "date" | "type";
+}): Promise<void> {
+  return invoke("ios_set_library_view", { args });
+}
+
+/**
+ * Re-read every native folder screen, after the web layer changed the library
+ * — a note or folder created, a row deleted or renamed, a sweep finishing.
+ *
+ * Build 64 had no route for this: a native screen re-read itself only in
+ * `viewWillAppear` or on pull-to-refresh, so a deleted row stayed on screen
+ * and a new note did not appear until you left the folder and came back.
+ */
+export function iosReloadLibraryScreens(): Promise<void> {
+  return invoke("ios_reload_library_screens");
+}
+
 export function iosSetChrome(spec: {
   topLeft?: IosChromeItem;
   topRight?: IosChromeItem;

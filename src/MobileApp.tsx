@@ -14,7 +14,11 @@ import { RecoverRecordingSheet } from "@/components/mobile/RecoverRecordingSheet
 import { startRecordingEvents, syncRecordingState } from "@/lib/recording-controller";
 import { Reader } from "@/components/mobile/Reader";
 import { useNativeNavShell } from "@/components/mobile/useNativeNavShell";
-import { useNativeLibrary, useNativeLibrarySpeech } from "@/components/mobile/useNativeLibrary";
+import {
+  useNativeLibrary,
+  useNativeLibrarySpeech,
+  useNativeLibraryView,
+} from "@/components/mobile/useNativeLibrary";
 import { HomeFolders } from "@/components/mobile/HomeFolders";
 import { useInlineSweep } from "@/components/mobile/useInlineSweep";
 import { SweepIndicator } from "@/components/mobile/SweepIndicator";
@@ -44,6 +48,9 @@ export function MobileApp() {
   // listener that only exists while some panel is open is the PR #474
   // regression class.
   useNativeLibrarySpeech(nativeLibrary);
+  // The "…" menu is still declared by the web layer; this is what makes the
+  // native screen obey it.
+  useNativeLibraryView(nativeLibrary);
 
   const folderDepth = useMobileStore((s) => s.folderStack.length);
   const homeEditorOpen = useMobileStore((s) => s.homeEditorOpen);

@@ -25,19 +25,18 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-De två sakerna som saknades i förra bygget.
+Rättningar för det du hittade i 64.
 
-NYTT
-• En sparad artikel visar sin egen titel, varifrån den kommer och hur lång tid
-den tar att läsa — med textens första rad under, i stället för ett filnamn
-gjort av ett datum.
-• Lyssna finns igen, på en rad och på ett galerikort: ett tryck spelar upp
-texten utan att öppna den, och en ring fylls medan den läses.
-
-KÄNT, INTE KLART
-• Hem är fortfarande den gamla skärmen.
+RÄTTAT
+• Lyssna kraschar inte längre appen. Att spela en artikel — från en rad, ett
+kort eller läsaren — dödade den efter en sekund eller två.
+• Vymenyn fungerar: Galleri, Kompakt, sortering och gruppering hade ingen
+effekt på en mapp. Alla fyra gör det nu.
+• En raderad rad försvinner, och en ny anteckning dyker upp, utan att du
+behöver lämna mappen och komma tillbaka.
 
 PROVA
-• Öppna Inkorgen och titta på något du sparat från webben — titel, sajt och
-minuter, i lista och galleri.
-• Tryck Lyssna, lämna mappen, kom tillbaka: spelas än, visar än Paus.
+• Spela en artikel och låt den fortsätta medan du bläddrar, öppnar den,
+kommer tillbaka.
+• Växla Galleri/Lista och Kompakt, sortera på datum, gruppera på typ — i en
+mapp med både anteckningar och sparade sidor.

@@ -217,5 +217,21 @@ check("speakable: not a pdf", libraryIsSpeakable(file("a.pdf")), false)
 check("speakable: not an image", libraryIsSpeakable(file("a.png")), false)
 check("speakable: not a folder", libraryIsSpeakable(dir("Notes")), false)
 
+
+// How a folder screen refreshes after its view settings changed. Getting this
+// wrong is a CRASH, not a cosmetic slip: `reconfigureItems` keeps the existing
+// cell and insists on its original registration, so using it across a
+// list↔gallery switch raises "Attempted to dequeue a cell for a different
+// registration". Build 65's first attempt died exactly there.
+check("refresh: list to gallery rebuilds the cells",
+    libraryRefreshKind(layoutChanged: true, densityChanged: false), LibraryRefreshKind.reload)
+check("refresh: density alone reconfigures them",
+    libraryRefreshKind(layoutChanged: false, densityChanged: true), LibraryRefreshKind.reconfigure)
+check("refresh: both at once still rebuilds, never reconfigures",
+    libraryRefreshKind(layoutChanged: true, densityChanged: true), LibraryRefreshKind.reload)
+// Sort and group move items; the snapshot expresses that by itself.
+check("refresh: sort or group needs neither",
+    libraryRefreshKind(layoutChanged: false, densityChanged: false), LibraryRefreshKind.none)
+
 print(failures == 0 ? "\nall good" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

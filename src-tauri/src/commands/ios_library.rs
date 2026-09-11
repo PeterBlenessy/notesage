@@ -906,6 +906,41 @@ pub async fn ios_set_library_speech(
     }
 }
 
+/// How a folder is shown on the native browsing surface (#1000). `args` is
+/// `{ relPath, layout, condensed, sort, group }`. Pushed because the "…" menu
+/// that sets it is still declared by the web layer.
+#[tauri::command]
+pub async fn ios_set_library_view(
+    app: tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::set_library_view(&app, args).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, args);
+        Err("ios_set_library_view is only available on iOS".into())
+    }
+}
+
+/// Re-read every native folder screen, after the web layer changed the
+/// library — a note or folder created, a row deleted or renamed, a sweep
+/// finishing (#1000).
+#[tauri::command]
+pub async fn ios_reload_library_screens(app: tauri::AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::reload_library_screens(&app).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = &app;
+        Err("ios_reload_library_screens is only available on iOS".into())
+    }
+}
+
 /// Native navigation shell (`native-shell` Labs flag) — the mobile shell as a
 /// real `UINavigationController` rooted at Home. PRD:
 /// `docs/prds/2026-09-06-ios-native-navigation.md`.
@@ -1723,6 +1758,20 @@ mod ios_impl {
     ) -> Result<(), String> {
         app.notesage_ios()
             .set_library_speech(args)
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn set_library_view(
+        app: &AppHandle, args: serde_json::Value,
+    ) -> Result<(), String> {
+        app.notesage_ios()
+            .set_library_view(args)
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn reload_library_screens(app: &AppHandle) -> Result<(), String> {
+        app.notesage_ios()
+            .reload_library_screens()
             .map_err(|e| e.to_string())
     }
 

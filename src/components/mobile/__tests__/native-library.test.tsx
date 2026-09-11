@@ -26,12 +26,21 @@ interface SpeechArgs {
   recording: boolean;
 }
 const setSpeechMock = vi.fn((_args: SpeechArgs) => Promise.resolve());
+interface ViewArgs {
+  relPath: string;
+  layout: string;
+  condensed: boolean;
+  sort: string;
+  group: string;
+}
+const setViewMock = vi.fn((_args: ViewArgs) => Promise.resolve());
 const toggleSpeechMock = vi.fn((_entry: { path: string; name: string }) => {});
 
 vi.mock("@/lib/ios-api", () => ({
   iosSetLibraryBrowsing: (args: { enabled: boolean; strings?: Record<string, string> }) =>
     setBrowsingMock(args),
   iosSetLibrarySpeech: (args: SpeechArgs) => setSpeechMock(args),
+  iosSetLibraryView: (args: ViewArgs) => setViewMock(args),
 }));
 
 vi.mock("@/lib/speech-controller", () => ({
@@ -39,7 +48,11 @@ vi.mock("@/lib/speech-controller", () => ({
 }));
 
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { useNativeLibrary, useNativeLibrarySpeech } from "@/components/mobile/useNativeLibrary";
+import {
+  useNativeLibrary,
+  useNativeLibrarySpeech,
+  useNativeLibraryView,
+} from "@/components/mobile/useNativeLibrary";
 import { useMobileStore } from "@/stores/mobile-store";
 import { setLocale } from "@/lib/i18n";
 
@@ -54,6 +67,15 @@ beforeEach(() => {
   setBrowsingMock.mockResolvedValue(undefined);
   setSpeechMock.mockReset();
   setSpeechMock.mockResolvedValue(undefined);
+  setViewMock.mockReset();
+  setViewMock.mockResolvedValue(undefined);
+  useMobileStore.setState({
+    folderViews: [],
+    viewMode: "list",
+    listDensity: "comfortable",
+    sortMode: "name",
+    groupMode: "none",
+  });
   toggleSpeechMock.mockReset();
   useMobileStore.setState({ folderStack: [], openDoc: null, docStack: [] });
 });
@@ -306,5 +328,102 @@ describe("useNativeLibrarySpeech", () => {
     await waitFor(() => expect(setSpeechMock).toHaveBeenCalled());
     // Nothing to assert beyond "it did not throw" — an unhandled rejection
     // here would take the whole shell down.
+  });
+});
+
+describe("useNativeLibraryView", () => {
+  /**
+   * Build 64 shipped with the native screen reading its settings from
+   * `UserDefaults` once at construction, nothing ever writing them, and
+   * nothing telling a live screen they had changed. All four — list/gallery,
+   * density, sort, group — were inert. These pin the push that fixes it.
+   */
+  it("says nothing while the native surface is not live", () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "Inbox", name: "Inbox" }] });
+    renderHook(() => useNativeLibraryView(false));
+    expect(setViewMock).not.toHaveBeenCalled();
+  });
+
+  it("says nothing on Home, which has no native folder screen", async () => {
+    useMobileStore.setState({ folderStack: [] });
+    renderHook(() => useNativeLibraryView(true));
+    await Promise.resolve();
+    expect(setViewMock).not.toHaveBeenCalled();
+  });
+
+  it("pushes the open folder's settings", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "Inbox", name: "Inbox" }] });
+    renderHook(() => useNativeLibraryView(true));
+    await waitFor(() => expect(setViewMock).toHaveBeenCalled());
+    expect(setViewMock.mock.calls[0][0]).toEqual({
+      relPath: "Inbox",
+      layout: "list",
+      condensed: false,
+      sort: "name",
+      group: "none",
+    });
+  });
+
+  it("pushes gallery when the menu switches to it", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "Inbox", name: "Inbox" }] });
+    const { rerender } = renderHook(() => useNativeLibraryView(true));
+    await waitFor(() => expect(setViewMock).toHaveBeenCalled());
+
+    act(() => useMobileStore.getState().setViewMode("gallery"));
+    rerender();
+    await waitFor(() =>
+      expect(setViewMock.mock.calls[setViewMock.mock.calls.length - 1][0].layout).toBe("gallery"),
+    );
+  });
+
+  it("pushes condensed as a boolean, not the web's word", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "Inbox", name: "Inbox" }] });
+    const { rerender } = renderHook(() => useNativeLibraryView(true));
+    await waitFor(() => expect(setViewMock).toHaveBeenCalled());
+
+    act(() => useMobileStore.getState().setListDensity("condensed"));
+    rerender();
+    await waitFor(() =>
+      expect(setViewMock.mock.calls[setViewMock.mock.calls.length - 1][0].condensed).toBe(true),
+    );
+  });
+
+  it("pushes sort and group, which were just as dead as the two that got noticed", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "Inbox", name: "Inbox" }] });
+    const { rerender } = renderHook(() => useNativeLibraryView(true));
+    await waitFor(() => expect(setViewMock).toHaveBeenCalled());
+
+    act(() => useMobileStore.getState().setSortMode("modified"));
+    rerender();
+    await waitFor(() =>
+      expect(setViewMock.mock.calls[setViewMock.mock.calls.length - 1][0].sort).toBe("modified"),
+    );
+
+    act(() => useMobileStore.getState().setGroupMode("type"));
+    rerender();
+    await waitFor(() =>
+      expect(setViewMock.mock.calls[setViewMock.mock.calls.length - 1][0].group).toBe("type"),
+    );
+  });
+
+  it("follows the folder, so each level gets its own settings", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "Inbox", name: "Inbox" }] });
+    const { rerender } = renderHook(() => useNativeLibraryView(true));
+    await waitFor(() => expect(setViewMock).toHaveBeenCalled());
+
+    act(() =>
+      useMobileStore.setState({
+        folderStack: [
+          { relPath: "Inbox", name: "Inbox" },
+          { relPath: "Inbox/Deep", name: "Deep" },
+        ],
+      }),
+    );
+    rerender();
+    await waitFor(() =>
+      expect(setViewMock.mock.calls[setViewMock.mock.calls.length - 1][0].relPath).toBe(
+        "Inbox/Deep",
+      ),
+    );
   });
 });
