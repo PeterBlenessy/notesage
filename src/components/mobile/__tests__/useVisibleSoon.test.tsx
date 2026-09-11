@@ -43,9 +43,10 @@ class FakeObserver {
 }
 
 /** Attach the hook's ref to a real node, the way a component would. */
-function mount(enabled = true) {
+function mount(enabled = true, wrapper?: HTMLElement) {
   const node = document.createElement("div");
-  document.body.appendChild(node);
+  (wrapper ?? document.body).appendChild(node);
+  if (wrapper && !wrapper.parentElement) document.body.appendChild(wrapper);
   const view = renderHook(({ on }: { on: boolean }) => useVisibleSoon<HTMLDivElement>(on), {
     initialProps: { on: enabled },
   });
@@ -100,6 +101,23 @@ describe("useVisibleSoon", () => {
     expect(view.result.current[1]).toBe(true);
     // …and it stopped watching once it had its answer.
     expect(FakeObserver.instances[0].disconnected).toBe(true);
+  });
+
+  it("measures the lead against the scroll container the row lives in", () => {
+    // `rootMargin` expands the ROOT's rect and NOTHING else — clipping by an
+    // ancestor with `overflow` is applied on top, unexpanded. The library list
+    // lives in an `absolute inset-0 overflow-y-auto` box, so observing against
+    // the viewport would have given a lead that could never apply: the hook
+    // would have looked like a prefetch and fetched at the edge like before.
+    const scroller = document.createElement("div");
+    scroller.style.overflowY = "auto";
+    mount(true, scroller);
+    expect(FakeObserver.instances[0].options?.root).toBe(scroller);
+  });
+
+  it("falls back to the viewport when nothing above it scrolls", () => {
+    mount();
+    expect(FakeObserver.instances[0].options?.root ?? null).toBeNull();
   });
 
   it("observes nothing while disabled — a directory card never asks", () => {

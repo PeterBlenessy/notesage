@@ -17,6 +17,32 @@ import { useCallback, useEffect, useRef, useState } from "react";
 const LEAD = "100% 0px";
 
 /**
+ * The scroll container a row actually lives in, or `null` for the viewport.
+ *
+ * **`rootMargin` expands the ROOT's rect and nothing else.** Clipping by an
+ * ancestor with `overflow` is applied on top, unexpanded — so with the default
+ * root (the viewport) a row scrolled out of a nested scroller is clipped to
+ * zero and never intersects, however generous the margin. The library list
+ * lives in exactly such a box (`[data-testid="library-scroller"]`, an
+ * `absolute inset-0 overflow-y-auto`), so a lead measured against the viewport
+ * would have been inert: the hook would have looked like a prefetch, tested
+ * like a prefetch, and fetched at the edge like before.
+ *
+ * Found by reading the scroll structure after the fact, not by a test — a fake
+ * observer records whatever `rootMargin` it is handed without ever applying
+ * it, so no unit test on this hook could have caught it.
+ */
+function scrollParent(node: Element): Element | null {
+  let el: Element | null = node.parentElement;
+  while (el) {
+    const style = getComputedStyle(el);
+    if (/(auto|scroll|overlay)/.test(style.overflowY + style.overflow)) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
+/**
  * Has this element been seen, or is it about to be?
  *
  * Latches: once true it stays true and the observer disconnects. A thumbnail
@@ -70,7 +96,7 @@ export function useVisibleSoon<T extends Element>(
           observerRef.current = null;
           setVisible(true);
         },
-        { rootMargin: LEAD },
+        { root: scrollParent(node), rootMargin: LEAD },
       );
       observer.observe(node);
       observerRef.current = observer;
