@@ -33,9 +33,9 @@ NEW
 so coming back cannot blink, jump or go black — those were all the same fault,
 and it is gone rather than patched.
 • Swipe a row for Share and Delete.
-• Saved articles show their title and "publisher · N min" again.
 
 KNOWN, NOT DONE
+• A saved article shows its filename, not its title and reading time.
 • No Listen button on a row yet. Home is unchanged.
 
 TRY

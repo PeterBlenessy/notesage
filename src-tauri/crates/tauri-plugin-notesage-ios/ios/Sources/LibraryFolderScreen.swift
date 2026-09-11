@@ -293,7 +293,6 @@ final class LibraryFolderScreen: UIViewController {
                 progress: self.host?.progress(for: path) ?? 0,
                 recentlyRead: self.host?.recentlyRead().contains(path) ?? false)
             self.thumbnails.load(entry, into: cell)
-            self.loadArticleMeta(for: entry, into: cell)
         }
         let gridCell = UICollectionView.CellRegistration<LibraryGridCell, String> {
             [weak self] cell, _, path in
@@ -330,28 +329,6 @@ final class LibraryFolderScreen: UIViewController {
         }
         dataSource.supplementaryViewProvider = { collectionView, kind, indexPath in
             collectionView.dequeueConfiguredReusableSupplementary(using: headerReg, for: indexPath)
-        }
-    }
-
-    /// Fill in a saved article's title and byline.
-    ///
-    /// Only for a capture, and only on a cache miss — `configure` already read
-    /// what was known, so a row that has been drawn before never flashes its
-    /// filename first. Off the main thread because a capture is 200–800 KB and
-    /// the parser needs all of it (the source footer is at the end).
-    private func loadArticleMeta(for entry: LibraryEntry, into cell: LibraryListCell) {
-        guard ArticleMetaReader.isCandidate(entry.name),
-            ArticleMetaReader.cached(entry.path, modified: entry.modified) == nil
-        else { return }
-        let rel = entry.path
-        let modified = entry.modified
-        DispatchQueue.global(qos: .utility).async { [weak cell] in
-            guard let meta = ArticleMetaReader.read(rel, modified: modified) else { return }
-            DispatchQueue.main.async {
-                // Same reuse guard as the thumbnail: the cell may be drawing a
-                // different file by now.
-                cell?.applyArticle(meta, for: rel)
-            }
         }
     }
 

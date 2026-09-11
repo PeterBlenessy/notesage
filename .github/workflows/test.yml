@@ -358,8 +358,15 @@ jobs:
           # stayed as it was. Same shape as #606: the newest native code is
           # the least exercised, and a list of filenames only covers what
           # someone remembered to add to it.
-          swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios16.0 \
-            -import-objc-header src-tauri/ios/NotesageCapture.h \
+          # NO bridging header here, deliberately. These files are the PLUGIN
+        # Swift package, which has none and does not link the capture
+        # staticlib — only the app/extension target does (`src-tauri/ios/`,
+        # checked above). Passing the header made this check more permissive
+        # than the real build: `ArticleMeta.swift` called
+        # `notesage_capture_article_card_meta`, type-checked green here, and
+        # then failed the iOS Simulator Build, which is the job that compiles
+        # the package as the app actually does (2026-09-11).
+        swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios16.0 \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryAccess.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/InboxState.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/RecordingLibrary.swift \
@@ -369,7 +376,6 @@ jobs:
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/SpeechPlayer.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ChromeColumn.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ThumbnailCache.swift \
-            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ArticleMeta.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryOrdering.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryCells.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryBrowsing.swift \

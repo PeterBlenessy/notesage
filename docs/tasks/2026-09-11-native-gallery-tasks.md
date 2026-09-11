@@ -37,8 +37,11 @@ Shipped in build 63, and verified on the simulator rather than reasoned about:
 
 Not done, and not claimed:
 
-- ✅ Article rows — title and "publisher · N min", read through
-  `article_card_meta` over the C ABI so the capture format keeps one parser.
+- ❌ Article rows. `notesage_capture_article_card_meta` IS exported over the
+  C ABI, but the plugin Swift package cannot call it: the bridging header and
+  the capture staticlib belong to the app/extension target (`src-tauri/ios/`),
+  not the package. It needs the capability injected the way `localize` and
+  `onOpen` are, which is a cross-target change and not a quick one.
 - ❌ No Listen control on a row.
 - ❌ Home is still the web layer's — it is synthesised cards, not a listing.
 - ❌ The folder is listed TWICE: once natively, and once by `LibraryBrowser`

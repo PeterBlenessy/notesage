@@ -32,9 +32,9 @@ NYTT
 du kommer tillbaka kan det inte blinka, hoppa eller bli svart — allt det var
 samma fel, och det är borta i stället för lappat.
 • Svep på en rad för Dela och Radera.
-• Sparade artiklar visar titel och "utgivare · N min" igen.
 
 KÄNT, INTE KLART
+• En sparad artikel visar filnamnet, inte titel och lästid.
 • Ingen Lyssna-knapp på raden än. Hem är oförändrat.
 
 PROVA
