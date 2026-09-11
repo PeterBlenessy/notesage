@@ -1,0 +1,8 @@
+// Written out rather than left to SwiftPM's generator so that the CI
+// type-check can compile these sources the same way the app does, with
+// `-Xcc -fmodule-map-file=…`. SwiftPM honours a hand-written map when one is
+// present, so there is one module definition, not two that can drift.
+module CNotesageCapture {
+    header "CNotesageCapture.h"
+    export *
+}

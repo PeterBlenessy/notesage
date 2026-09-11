@@ -143,16 +143,16 @@ recorded decision not to.
 
 **View and layout**
 - [ ] List and gallery, per folder, remembered (`folderViews`)
-- [ ] Density: normal / condensed — 3 cards across vs 4, 72pt vs 40pt tiles
+- [x] Density: normal — 3 cards across, 72pt tiles. Condensed not yet photographed.
 - [ ] Sort: name, modified
 - [ ] Group: none, pinned, recent, date, type — **five modes**, with sticky headers
 - [ ] Scroll position per folder, restored on return
 
 **Rows and cards**
-- [ ] Thumbnails: markdown render, QuickLook, generic icon; fixed slot so a late one never reflows (`FileRow.test.tsx`, `GalleryView.test.tsx`)
-- [ ] Article rows: title, site, reading time, progress line, excerpt (`ArticleRow.test.tsx`)
-- [ ] Unread weight — 600 vs 400, no badge (`ArticleRow.test.tsx`, `reading-progress.test.ts`)
-- [ ] Listen button, in place, without opening the row (`ListenButton.test.tsx`)
+- [x] Thumbnails: markdown render, QuickLook, generic icon; fixed slot so a late one never reflows (`FileRow.test.tsx`, `GalleryView.test.tsx`)
+- [x] Article rows: title, site, reading time, progress line, excerpt (`ArticleRow.test.tsx`) — the standfirst is ONE line natively, not two, to keep the row height absolute
+- [x] Unread weight — 600 vs 400, no badge (`ArticleRow.test.tsx`, `reading-progress.test.ts`)
+- [x] Listen button, in place, without opening the row (`ListenButton.test.tsx`) — drawn on rows and cards, idle/playing/ring all photographed. The TAP itself is unit-tested on the JS side but has not been pressed on a device: the Mac's screen was locked, so the simulator had no window to tap.
 - [ ] Inbox card with unread count (`InboxCard.test.tsx`, `inbox-name.test.tsx`)
 
 **Interaction**
@@ -176,10 +176,18 @@ pattern — cells, data source, thumbnail hand-off, context-menu wiring,
 `folderViews` in `UserDefaults` — against the smallest surface. If the
 approach is wrong, we learn it here for 276 lines.
 
-**2. List rows.** `FileRow` + `ArticleRow` + `SwipeRevealRow` (1,042 lines).
-Swipe actions are the genuinely hard part and have the largest test suite;
-`UISwipeActionsConfiguration` gives them, but the row layouts are detailed
-(two densities × two row kinds × progress lines × unread weight).
+**2. List rows.** ✅ largely done, ahead of order — `FileRow` + `ArticleRow` +
+`SwipeRevealRow` (1,042 lines). Swipe actions turned out to be the easy part
+(`UISwipeActionsConfiguration` gives them outright); the article row was the
+work. Done: both densities, both row kinds, progress lines, unread weight,
+the article's own title with `site · 4 min` and its standfirst, and the
+floating Listen disc with its progress ring. Outstanding: the Listen control
+on a GALLERY card, which the web has and the native card does not yet.
+
+The one deliberate divergence is the standfirst: one line, not the web's two,
+because the native row's height is ABSOLUTE. Self-sizing is what let the web
+list jump when a late read changed a row's shape, and not jumping is the
+reason this screen exists.
 
 **3. The browser shell.** `LibraryBrowser` (1,515 lines): grouping, sort,
 filter, pull-to-refresh. Largest, but by this point the cells exist and the

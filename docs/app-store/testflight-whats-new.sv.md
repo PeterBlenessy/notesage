@@ -25,19 +25,19 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Mappar ritas nu nativt. Det här är den riktiga lösningen, inte en lappning.
+De två sakerna som saknades i förra bygget.
 
 NYTT
-• En mapp är en nativ skärm. Den rivs inte när du öppnar ett dokument, så när
-du kommer tillbaka kan det inte blinka, hoppa eller bli svart — allt det var
-samma fel, och det är borta i stället för lappat.
-• Svep på en rad för Dela och Radera.
+• En sparad artikel visar sin egen titel, varifrån den kommer och hur lång tid
+den tar att läsa — med textens första rad under, i stället för ett filnamn
+gjort av ett datum.
+• Lyssna finns igen, på en rad och på ett galerikort: ett tryck spelar upp
+texten utan att öppna den, och en ring fylls medan den läses.
 
 KÄNT, INTE KLART
-• En sparad artikel visar filnamnet, inte titel och lästid.
-• Ingen Lyssna-knapp på raden än. Hem är oförändrat.
+• Hem är fortfarande den gamla skärmen.
 
 PROVA
-• Öppna och stäng dokument inifrån en mapp, många gånger, snabbt. Allt som
-blinkar, hoppar eller blir svart vill jag helst höra om.
-• Svep på rader, håll in rader, skrolla en stor mapp.
+• Öppna Inkorgen och titta på något du sparat från webben — titel, sajt och
+minuter, i lista och galleri.
+• Tryck Lyssna, lämna mappen, kom tillbaka: spelas än, visar än Paus.

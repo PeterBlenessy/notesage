@@ -72,6 +72,21 @@ enum LibraryFileKind: String, CaseIterable {
     }
 }
 
+/// Can this be read aloud (#833)?
+///
+/// By EXTENSION, not by `LibraryFileKind`, and deliberately so: `.text` also
+/// covers `.json`, `.rs` and `.log`, and offering to read a stack trace aloud
+/// is not a feature. Prose only — notes, plain text, and a saved article.
+///
+/// The same set as `isSpeakable` in `FileRow.tsx` plus the `.html` the
+/// article row and the gallery card already offer it on. The two must agree:
+/// a control that appears in the list and not in the gallery is a bug report.
+func libraryIsSpeakable(_ entry: LibraryEntry) -> Bool {
+    guard !entry.isDirectory else { return false }
+    let ext = (entry.name as NSString).pathExtension.lowercased()
+    return ["md", "markdown", "txt", "text", "html", "htm"].contains(ext)
+}
+
 /// Everything the ordering needs about one entry. A projection of
 /// `FileEntryDTO`, so the logic can be exercised without a library.
 struct LibraryEntry: Equatable {

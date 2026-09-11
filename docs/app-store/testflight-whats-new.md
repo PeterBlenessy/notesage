@@ -26,19 +26,19 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Folders are drawn natively now. This is the real fix, not another patch.
+The two things missing from the last build.
 
 NEW
-• A folder is a native screen. It is not taken down when you open a document,
-so coming back cannot blink, jump or go black — those were all the same fault,
-and it is gone rather than patched.
-• Swipe a row for Share and Delete.
+• A saved article shows its own title, where it came from and how long it
+takes to read — with the first line of the piece under it, instead of a
+filename made of a date.
+• Listen is back, on a row and on a gallery card: one tap plays the piece
+without opening it, and a ring fills as it is read.
 
 KNOWN, NOT DONE
-• A saved article shows its filename, not its title and reading time.
-• No Listen button on a row yet. Home is unchanged.
+• Home is still the old screen.
 
 TRY
-• Open and close documents from inside a folder, many times, fast. Anything
-that blinks, jumps or goes black is what I most want to hear about.
-• Swipe rows, long-press rows, scroll a big folder.
+• Open the Inbox and look at anything you saved from the web — title, site
+and minutes, in list and in gallery.
+• Tap Listen, leave the folder, come back: still playing, still Pause.

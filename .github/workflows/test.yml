@@ -359,15 +359,24 @@ jobs:
           # the least exercised, and a list of filenames only covers what
           # someone remembered to add to it.
           #
-          # NO bridging header here, deliberately. These files are the PLUGIN
-          # Swift package, which has none and does not link the capture
-          # staticlib — only the app/extension target does (`src-tauri/ios/`,
-          # checked above). Passing the header made this check more permissive
-          # than the real build: `ArticleMeta.swift` called
-          # `notesage_capture_article_card_meta`, type-checked green here, and
-          # then failed the iOS Simulator Build, which is the job that compiles
-          # the package as the app actually does (2026-09-11).
+          # NO bridging header here, deliberately. That header belongs to the
+          # app/extension target (`src-tauri/ios/`, checked above), and passing
+          # it made this check more permissive than the real build:
+          # `ArticleMeta.swift` called `notesage_capture_article_card_meta`,
+          # type-checked green here, and then failed the iOS Simulator Build,
+          # which is the job that compiles the package as the app actually does
+          # (2026-09-11).
+          #
+          # What the package DOES get is its own C target, `CNotesageCapture` —
+          # two declarations and no implementation. The definitions come from
+          # the app's Rust static library, which already carries every
+          # `notesage_capture_*` export and which the app target already links.
+          # Passing the module map here is not a loosening: it is exactly what
+          # SwiftPM gives these sources in the real build, and nothing else.
+          CAPTURE_INC=src-tauri/crates/tauri-plugin-notesage-ios/ios/CNotesageCapture/include
           swiftc -typecheck -sdk "$SDK" -target arm64-apple-ios16.0 \
+            -Xcc -fmodule-map-file="$CAPTURE_INC/module.modulemap" \
+            -Xcc -I"$CAPTURE_INC" \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryAccess.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/InboxState.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/RecordingLibrary.swift \
@@ -378,6 +387,7 @@ jobs:
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ChromeColumn.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ThumbnailCache.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryOrdering.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ArticleMeta.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryCells.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryBrowsing.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryFolderScreen.swift \
@@ -409,6 +419,16 @@ jobs:
         # month bucket out of order. Ported from LibraryBrowser.tsx and kept
         # UIKit-free so it runs here rather than needing a device.
         run: ./scripts/check-library-ordering.sh
+
+      - name: A saved article's row — reading line, header decode, caching
+        # The row says what the article IS rather than what its file is
+        # called (#836, now native). Three failures here are invisible on a
+        # screenshot and were all real risks: "0 of 4 min left" on an article
+        # you have barely started, a field renamed on one side of the C ABI
+        # decoding to nil in silence, and a cache that cannot tell "read it,
+        # not a capture" from "not read yet" — which re-reads every plain page
+        # in the Inbox on every scroll.
+        run: ./scripts/check-article-meta.sh
 
       - name: Bottom-centre column stacking
         # Where the search pill, the transport, the recorder and the status

@@ -22,6 +22,22 @@
 import Foundation
 import UIKit
 
+/// What read-aloud is doing, as a row needs to draw it.
+struct LibrarySpeechState: Equatable {
+    /// The document being read, or `nil` when nothing is.
+    var relPath: String?
+    var playing = false
+    /// 0…1 for the ring around the disc; 0 before the first progress event.
+    var fraction: Double = 0
+    /// The recorder holds the audio session, so Listen is unavailable
+    /// everywhere at once — one owner, as on the web side.
+    var recording = false
+}
+
+protocol LibrarySpeechObserver: AnyObject {
+    func speechChanged(from previous: LibrarySpeechState, to current: LibrarySpeechState)
+}
+
 /// Reads the two shared sidecars, cached per read-through so a folder of
 /// several hundred rows does not re-parse them per cell.
 final class LibraryBrowsing: LibraryFolderHost {
@@ -35,10 +51,23 @@ final class LibraryBrowsing: LibraryFolderHost {
     /// Called with a screen id when the user taps something. Set by
     /// `NavShellPresenter`, which owns the only route back to the web layer.
     var onOpen: ((_ kind: String, _ relPath: String) -> Void)?
-    /// Resolves a message key. Set by the plugin from the frontend's table, so
-    /// there is ONE localisation source rather than a second `.strings` file
-    /// that drifts from it.
-    var localize: ((String) -> String)?
+    /// The frontend's message table, pushed across when the surface is turned
+    /// on. Held as the table rather than behind a resolver closure because
+    /// some of what the screen draws is a TEMPLATE, not a finished string —
+    /// the reading line interpolates `{total}` itself — and a closure that
+    /// only ever did `table[key] ?? key` hid that.
+    ///
+    /// One localisation source, by construction: a second `.strings` file
+    /// would drift from `t()`, and the drift shows up as an English header in
+    /// a Swedish app, which is what #989 was and took three builds to notice.
+    var strings: [String: String] = [:]
+
+    /// What read-aloud is doing, pushed over from the web controller. Rows
+    /// draw it; nothing here changes it.
+    private(set) var speech = LibrarySpeechState()
+    /// Screens that want telling when it changes. Weak, because a screen
+    /// popped off the stack must not be kept alive by a subscription.
+    private var speechObservers = NSHashTable<AnyObject>.weakObjects()
 
     private var pinnedCache: (paths: Set<String>, at: Date)?
     private var progressCache: (values: [String: Double], at: Date)?
@@ -103,6 +132,24 @@ final class LibraryBrowsing: LibraryFolderHost {
         progressCache = nil
     }
 
+    // MARK: Read-aloud
+
+    func observeSpeech(_ observer: LibrarySpeechObserver) {
+        speechObservers.add(observer)
+    }
+
+    func setSpeech(_ state: LibrarySpeechState) {
+        // Progress events arrive per paragraph, and each one would otherwise
+        // redraw a row for an unchanged picture. Only a real change is worth
+        // a reconfigure.
+        guard state != speech else { return }
+        let previous = speech
+        speech = state
+        for case let observer as LibrarySpeechObserver in speechObservers.allObjects {
+            observer.speechChanged(from: previous, to: state)
+        }
+    }
+
     func noteRead(_ rel: String) {
         recents.insert(rel)
         UserDefaults.standard.set(Array(recents), forKey: "notesage.recentlyRead")
@@ -126,6 +173,15 @@ final class LibraryBrowsing: LibraryFolderHost {
     func swipeAction(_ id: String, for rel: String) {
         onOpen?("swipe:\(id)", rel)
     }
+
+    func toggleListen(for rel: String) {
+        // Asked, not done. `toggleSpeech` converts the document to speech
+        // text, resumes from the stored position and handles the failure
+        // toast — none of which is a folder screen's business.
+        onOpen?("listen", rel)
+    }
+
+    func speechState() -> LibrarySpeechState { speech }
 
     func pinnedPaths() -> Set<String> {
         if let cache = pinnedCache, Date().timeIntervalSince(cache.at) < Self.ttl {
@@ -176,6 +232,16 @@ final class LibraryBrowsing: LibraryFolderHost {
         // Falls back to the key rather than to English: a visible `section.pinned`
         // is a bug report, where a silently English header in a Swedish app is
         // the thing nobody notices for three builds (#989).
-        localize?(key) ?? key
+        strings[key] ?? key
+    }
+
+    func articleTemplates() -> ArticleMeta.Templates? {
+        // Absent rather than guessed. These arrive with their `{total}` /
+        // `{left}` placeholders still in them, so a missing key would put a
+        // literal brace on the row; the plain file row is the better failure.
+        guard let minutes = strings["list.minutes"], let left = strings["list.minutesLeft"],
+            let read = strings["list.read"]
+        else { return nil }
+        return ArticleMeta.Templates(minutes: minutes, minutesLeft: left, read: read)
     }
 }

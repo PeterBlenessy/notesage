@@ -52,6 +52,17 @@ protocol LibraryFolderHost: AnyObject {
     func progress(for rel: String) -> Double
     /// Resolve a section title key against the localisation table.
     func localized(_ key: String) -> String
+    /// The reading-time templates, with their placeholders intact. `nil`
+    /// while the string table has not arrived, which is the cue to draw the
+    /// plain row rather than one with `{total} min` showing.
+    func articleTemplates() -> ArticleMeta.Templates?
+    /// Start, pause or resume reading a document aloud (#833). The host asks
+    /// the web controller rather than playing anything itself.
+    func toggleListen(for rel: String)
+    /// What read-aloud is doing right now.
+    func speechState() -> LibrarySpeechState
+    /// Ask to be told when that changes.
+    func observeSpeech(_ observer: LibrarySpeechObserver)
 }
 
 /// How this folder is displayed. Per folder, remembered by the host.
@@ -65,7 +76,7 @@ struct LibraryViewSettings: Equatable {
 
 // MARK: - The screen
 
-final class LibraryFolderScreen: UIViewController {
+final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
     /// Relative to the library root; `""` is the root itself.
     let relPath: String
     private weak var host: LibraryFolderHost?
@@ -133,6 +144,8 @@ final class LibraryFolderScreen: UIViewController {
         collectionView.addGestureRecognizer(longPress)
 
         configureDataSource()
+        // Weakly held by the host, so popping this screen unsubscribes it.
+        host?.observeSpeech(self)
         reload()
     }
 
@@ -282,6 +295,94 @@ final class LibraryFolderScreen: UIViewController {
         return UICollectionViewCompositionalLayout(section: section)
     }
 
+    // MARK: Read aloud
+
+    /// The disc's accessibility label, which is also its state in words:
+    /// "Listen" to start, then Pause / Resume for the document being read.
+    private func listenLabel(for entry: LibraryEntry) -> String {
+        guard let host else { return "" }
+        if host.speechState().recording { return host.localized("recording.inProgress") }
+        guard host.speechState().relPath == entry.path else { return host.localized("action.listen") }
+        return host.localized(
+            host.speechState().playing ? "reader.listenPause" : "reader.listenResume")
+    }
+
+    @objc private func listenTapped(_ sender: ListenDisc) {
+        // Walk up to the cell rather than trusting an index: the disc is a
+        // subview of a REUSED cell, and a stored index path goes stale the
+        // moment the list re-sorts.
+        var view: UIView? = sender
+        while let current = view,
+            !(current is LibraryListCell), !(current is LibraryGridCell)
+        {
+            view = current.superview
+        }
+        let path =
+            (view as? LibraryListCell)?.listenPath ?? (view as? LibraryGridCell)?.listenPath
+        guard let path else { return }
+        host?.toggleListen(for: path)
+    }
+
+    /// Redraw only the rows whose control actually changed — the one that was
+    /// playing and the one that now is. Reconfiguring the whole list on every
+    /// paragraph would be a full pass per progress event.
+    func speechChanged(from previous: LibrarySpeechState, to current: LibrarySpeechState) {
+        guard let dataSource else { return }
+        var snapshot = dataSource.snapshot()
+        // A change to `recording` disables every control at once, so that one
+        // really does touch all of them.
+        let affected: [String]
+        if previous.recording != current.recording {
+            affected = snapshot.itemIdentifiers
+        } else {
+            affected = [previous.relPath, current.relPath]
+                .compactMap { $0 }
+                .filter { snapshot.indexOfItem($0) != nil }
+        }
+        guard !affected.isEmpty else { return }
+        snapshot.reconfigureItems(affected)
+        dataSource.apply(snapshot, animatingDifferences: false)
+    }
+
+    // MARK: Article rows
+
+    /// The article lines for a row, from whatever is already known — never a
+    /// disk read, because this runs during cell configuration.
+    ///
+    /// `nil` for anything that is not a saved article, which is the plain
+    /// file row. A candidate whose read has not landed yet still gets article
+    /// text (titled from the filename) so the row never changes shape.
+    private func articleText(for entry: LibraryEntry) -> ArticleRowText? {
+        guard !entry.isDirectory, ArticleMeta.isCandidate(entry.path),
+            let templates = host?.articleTemplates()
+        else { return nil }
+        let known = ArticleMeta.peek(entry.path, modified: entry.modified)
+        // Read, and definitively not a capture: an exported report, a plain
+        // `.html`. That row is the ordinary one.
+        if case .some(.none) = known { return nil }
+        return ArticleMeta.rowText(
+            name: entry.name, meta: known ?? nil,
+            progress: host?.progress(for: entry.path) ?? 0, templates: templates)
+    }
+
+    /// Ask for the header if it is not already known, and redraw the one row
+    /// when it lands. Reconfiguring rather than reloading: the item is
+    /// unchanged, only what it draws is, so the cell keeps its place and no
+    /// animation runs.
+    private func loadArticleMeta(for entry: LibraryEntry) {
+        guard !entry.isDirectory, ArticleMeta.isCandidate(entry.path),
+            ArticleMeta.peek(entry.path, modified: entry.modified) == nil
+        else { return }
+        let path = entry.path
+        ArticleMeta.load(path, modified: entry.modified) { [weak self] _ in
+            guard let self, let dataSource = self.dataSource else { return }
+            var snapshot = dataSource.snapshot()
+            guard snapshot.indexOfItem(path) != nil else { return }
+            snapshot.reconfigureItems([path])
+            dataSource.apply(snapshot, animatingDifferences: false)
+        }
+    }
+
     // MARK: Cells
 
     private func configureDataSource() {
@@ -291,8 +392,17 @@ final class LibraryFolderScreen: UIViewController {
             cell.configure(
                 entry, condensed: self.settings.condensed,
                 progress: self.host?.progress(for: path) ?? 0,
-                recentlyRead: self.host?.recentlyRead().contains(path) ?? false)
+                recentlyRead: self.host?.recentlyRead().contains(path) ?? false,
+                article: self.articleText(for: entry))
+            cell.configureListen(
+                entry, speech: self.host?.speechState() ?? LibrarySpeechState(),
+                label: self.listenLabel(for: entry))
+            // Re-registered on every configuration: a reused cell would
+            // otherwise still be wired to the row it used to show.
+            cell.listen.removeTarget(self, action: nil, for: .touchUpInside)
+            cell.listen.addTarget(self, action: #selector(self.listenTapped(_:)), for: .touchUpInside)
             self.thumbnails.load(entry, into: cell)
+            self.loadArticleMeta(for: entry)
         }
         let gridCell = UICollectionView.CellRegistration<LibraryGridCell, String> {
             [weak self] cell, _, path in
@@ -301,6 +411,11 @@ final class LibraryFolderScreen: UIViewController {
                 entry, condensed: self.settings.condensed,
                 progress: self.host?.progress(for: path) ?? 0,
                 recentlyRead: self.host?.recentlyRead().contains(path) ?? false)
+            cell.configureListen(
+                entry, speech: self.host?.speechState() ?? LibrarySpeechState(),
+                label: self.listenLabel(for: entry))
+            cell.listen.removeTarget(self, action: nil, for: .touchUpInside)
+            cell.listen.addTarget(self, action: #selector(self.listenTapped(_:)), for: .touchUpInside)
             self.thumbnails.load(entry, into: cell)
         }
 

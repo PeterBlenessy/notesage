@@ -201,5 +201,21 @@ check(
     0
 )
 
+
+// What can be read aloud (#833). By EXTENSION, not by kind: `.text` also
+// covers `.json`, `.rs` and `.log`, and offering to read a stack trace aloud
+// is not a feature. Must agree with `isSpeakable` in FileRow.tsx, plus the
+// `.html` the article row and the gallery card already offer it on.
+check("speakable: a note", libraryIsSpeakable(file("a.md")), true)
+check("speakable: plain text", libraryIsSpeakable(file("a.txt")), true)
+check("speakable: a saved article", libraryIsSpeakable(file("a.html")), true)
+check("speakable: case does not matter", libraryIsSpeakable(file("A.MD")), true)
+check("speakable: not json", libraryIsSpeakable(file("a.json")), false)
+check("speakable: not source", libraryIsSpeakable(file("a.swift")), false)
+check("speakable: not a log", libraryIsSpeakable(file("a.log")), false)
+check("speakable: not a pdf", libraryIsSpeakable(file("a.pdf")), false)
+check("speakable: not an image", libraryIsSpeakable(file("a.png")), false)
+check("speakable: not a folder", libraryIsSpeakable(dir("Notes")), false)
+
 print(failures == 0 ? "\nall good" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

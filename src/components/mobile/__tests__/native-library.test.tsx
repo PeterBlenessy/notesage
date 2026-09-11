@@ -19,14 +19,27 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 const setBrowsingMock = vi.fn((_args: { enabled: boolean; strings?: Record<string, string> }) =>
   Promise.resolve(),
 );
+interface SpeechArgs {
+  relPath: string | null;
+  playing: boolean;
+  fraction: number;
+  recording: boolean;
+}
+const setSpeechMock = vi.fn((_args: SpeechArgs) => Promise.resolve());
+const toggleSpeechMock = vi.fn((_entry: { path: string; name: string }) => {});
 
 vi.mock("@/lib/ios-api", () => ({
   iosSetLibraryBrowsing: (args: { enabled: boolean; strings?: Record<string, string> }) =>
     setBrowsingMock(args),
+  iosSetLibrarySpeech: (args: SpeechArgs) => setSpeechMock(args),
+}));
+
+vi.mock("@/lib/speech-controller", () => ({
+  toggleSpeech: (entry: { path: string; name: string }) => toggleSpeechMock(entry),
 }));
 
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { useNativeLibrary } from "@/components/mobile/useNativeLibrary";
+import { useNativeLibrary, useNativeLibrarySpeech } from "@/components/mobile/useNativeLibrary";
 import { useMobileStore } from "@/stores/mobile-store";
 import { setLocale } from "@/lib/i18n";
 
@@ -39,6 +52,9 @@ function fireOpen(kind: string, relPath: string) {
 beforeEach(() => {
   setBrowsingMock.mockReset();
   setBrowsingMock.mockResolvedValue(undefined);
+  setSpeechMock.mockReset();
+  setSpeechMock.mockResolvedValue(undefined);
+  toggleSpeechMock.mockReset();
   useMobileStore.setState({ folderStack: [], openDoc: null, docStack: [] });
 });
 afterEach(() => setLocale("en"));
@@ -94,6 +110,35 @@ describe("useNativeLibrary", () => {
       expect(strings[key], `missing ${key}`).toBeTruthy();
       expect(strings[key], `${key} was handed over as its own key`).not.toBe(key);
     }
+  });
+
+  it("hands the reading-time messages over as TEMPLATES, placeholders intact", async () => {
+    // The numbers are only known in Swift, so what crosses has to be the
+    // template — "{left} of {total} min left" — not a resolved string. Calling
+    // `t()` with variables here would look harmless and would silently ship
+    // rows reading "0 of 0 min left", so the braces are the assertion.
+    renderHook(() => useNativeLibrary(true));
+    await waitFor(() => expect(setBrowsingMock).toHaveBeenCalled());
+    const strings = setBrowsingMock.mock.calls[0][0].strings ?? {};
+
+    expect(strings["list.minutes"]).toContain("{total}");
+    expect(strings["list.minutesLeft"]).toContain("{left}");
+    expect(strings["list.minutesLeft"]).toContain("{total}");
+    // "Read" has no placeholder — it is a finished string, and it still has
+    // to travel, or a finished article shows nothing where its state goes.
+    expect(strings["list.read"]).toBeTruthy();
+  });
+
+  it("translates the templates without resolving them", async () => {
+    setLocale("sv");
+    renderHook(() => useNativeLibrary(true));
+    await waitFor(() => expect(setBrowsingMock).toHaveBeenCalled());
+    const strings = setBrowsingMock.mock.calls[0][0].strings ?? {};
+    // Swedish word order differs — "5 av 10 min kvar" — which is exactly why
+    // Swift interpolates a translated template rather than assembling the
+    // line itself.
+    expect(strings["list.minutesLeft"]).toBe("{left} av {total} min kvar");
+    expect(strings["list.read"]).toBe("Läst");
   });
 
   it("hands over the ACTIVE language, and again when it changes", async () => {
@@ -154,6 +199,34 @@ describe("useNativeLibrary", () => {
     expect(useMobileStore.getState().folderStack).toEqual([]);
   });
 
+  it("routes a Listen tap to the speech controller, not to opening the row", async () => {
+    const { result } = renderHook(() => useNativeLibrary(true));
+    await waitFor(() => expect(result.current).toBe(true));
+
+    act(() => fireOpen("listen", "Inbox/Alpha.html"));
+    expect(toggleSpeechMock).toHaveBeenCalledWith({ path: "Inbox/Alpha.html", name: "Alpha.html" });
+    // Pressing Listen must not also open the article — the whole point of the
+    // control is reading without opening (#833).
+    expect(useMobileStore.getState().openDoc).toBeNull();
+  });
+
+  it("hands over the Listen control's three states", async () => {
+    renderHook(() => useNativeLibrary(true));
+    await waitFor(() => expect(setBrowsingMock).toHaveBeenCalled());
+    const strings = setBrowsingMock.mock.calls[0][0].strings ?? {};
+    // These are the disc's accessibility label, which is the only thing a
+    // screen reader has to go on.
+    for (const key of [
+      "action.listen",
+      "reader.listenPause",
+      "reader.listenResume",
+      "recording.inProgress",
+    ]) {
+      expect(strings[key], `missing ${key}`).toBeTruthy();
+      expect(strings[key], `${key} was handed over as its own key`).not.toBe(key);
+    }
+  });
+
   it("removes its listener on unmount", async () => {
     const { result, unmount } = renderHook(() => useNativeLibrary(true));
     await waitFor(() => expect(result.current).toBe(true));
@@ -161,5 +234,77 @@ describe("useNativeLibrary", () => {
 
     act(() => fireOpen("folder", "Projects"));
     expect(useMobileStore.getState().folderStack).toEqual([]);
+  });
+});
+
+describe("useNativeLibrarySpeech", () => {
+  it("says nothing while the native surface is not live", () => {
+    renderHook(() => useNativeLibrarySpeech(false));
+    expect(setSpeechMock).not.toHaveBeenCalled();
+  });
+
+  it("pushes the idle state so the rows start from something", async () => {
+    renderHook(() => useNativeLibrarySpeech(true));
+    await waitFor(() => expect(setSpeechMock).toHaveBeenCalled());
+    expect(setSpeechMock.mock.calls[0][0]).toEqual({
+      relPath: null,
+      playing: false,
+      fraction: 0,
+      recording: false,
+    });
+  });
+
+  it("pushes what is playing, and the ring's fraction", async () => {
+    const { rerender } = renderHook(() => useNativeLibrarySpeech(true));
+    await waitFor(() => expect(setSpeechMock).toHaveBeenCalled());
+
+    act(() => {
+      useMobileStore.setState({
+        speech: {
+          relPath: "Inbox/Alpha.html",
+          title: "Alpha",
+          playing: true,
+          index: 3,
+          total: 12,
+          rate: 1,
+          language: "en",
+        },
+      });
+    });
+    rerender();
+
+    await waitFor(() => {
+      const last = setSpeechMock.mock.calls[setSpeechMock.mock.calls.length - 1][0];
+      expect(last.relPath).toBe("Inbox/Alpha.html");
+      expect(last.playing).toBe(true);
+      // The same count the Reader's transport shows: paragraph 4 of 12. Both
+      // surfaces are visible at once, so they have to agree.
+      expect(last.fraction).toBeCloseTo(4 / 12);
+    });
+  });
+
+  it("reports a recording, because it disables every control at once", async () => {
+    const { rerender } = renderHook(() => useNativeLibrarySpeech(true));
+    await waitFor(() => expect(setSpeechMock).toHaveBeenCalled());
+
+    act(() => {
+      useMobileStore.setState({
+        recording: { ...useMobileStore.getState().recording, status: "recording" },
+      });
+    });
+    rerender();
+
+    await waitFor(() => {
+      const last = setSpeechMock.mock.calls[setSpeechMock.mock.calls.length - 1][0];
+      expect(last.recording).toBe(true);
+    });
+  });
+
+  it("survives a build with no native speech command", async () => {
+    setSpeechMock.mockRejectedValue(new Error("only available on iOS"));
+    renderHook(() => useNativeLibrarySpeech(true));
+    await waitFor(() => expect(setSpeechMock).toHaveBeenCalled());
+    // Nothing to assert beyond "it did not throw" — an unhandled rejection
+    // here would take the whole shell down.
   });
 });

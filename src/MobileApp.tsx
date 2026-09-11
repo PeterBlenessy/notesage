@@ -14,7 +14,7 @@ import { RecoverRecordingSheet } from "@/components/mobile/RecoverRecordingSheet
 import { startRecordingEvents, syncRecordingState } from "@/lib/recording-controller";
 import { Reader } from "@/components/mobile/Reader";
 import { useNativeNavShell } from "@/components/mobile/useNativeNavShell";
-import { useNativeLibrary } from "@/components/mobile/useNativeLibrary";
+import { useNativeLibrary, useNativeLibrarySpeech } from "@/components/mobile/useNativeLibrary";
 import { HomeFolders } from "@/components/mobile/HomeFolders";
 import { useInlineSweep } from "@/components/mobile/useInlineSweep";
 import { SweepIndicator } from "@/components/mobile/SweepIndicator";
@@ -40,6 +40,11 @@ export function MobileApp() {
   // running — it still declares the chrome, which is already native — but
   // draws no rows when this answers true.
   const nativeLibrary = useNativeLibrary(grantState === "granted");
+  // Mounted at the root beside it, never inside a collapsible surface — a
+  // listener that only exists while some panel is open is the PR #474
+  // regression class.
+  useNativeLibrarySpeech(nativeLibrary);
+
   const folderDepth = useMobileStore((s) => s.folderStack.length);
   const homeEditorOpen = useMobileStore((s) => s.homeEditorOpen);
   const refreshGrant = useMobileStore((s) => s.refreshGrant);
