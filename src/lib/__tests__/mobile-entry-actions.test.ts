@@ -7,6 +7,8 @@ import { useMobileStore } from "@/stores/mobile-store";
 vi.mock("@/lib/mobile-thumbnails", () => ({
   getThumbnail: vi.fn(async () => ({ kind: "markdown", html: "<p>rendered</p>" })),
   evictThumbnail: vi.fn(),
+  peekThumbnail: () => null,
+  currentThumbnailTheme: () => "light" as const,
 }));
 
 vi.mock("@/lib/ios-api", () => ({

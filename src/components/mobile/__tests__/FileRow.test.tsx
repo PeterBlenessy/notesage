@@ -8,6 +8,8 @@ import { FileRow, formatModified, classifyFile, iconFor, rowWantsThumbnail, isSp
 const getThumbnailMock = vi.fn();
 vi.mock("@/lib/mobile-thumbnails", () => ({
   getThumbnail: (...args: unknown[]) => getThumbnailMock(...args),
+  peekThumbnail: () => null,
+  currentThumbnailTheme: () => "light" as const,
 }));
 
 beforeEach(() => {

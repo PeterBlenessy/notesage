@@ -334,6 +334,52 @@ async function buildThumbnail(
  */
 const cache = new Map<string, Promise<ThumbnailResult>>();
 
+/**
+ * The same results, already settled, readable WITHOUT awaiting.
+ *
+ * `cache` holds promises, and a resolved promise cannot be read synchronously —
+ * so a row that remounts with its thumbnail already generated still had to
+ * paint empty, wait a microtask, and fill in. That was invisible while rows
+ * asked on mount. It stopped being invisible the moment they asked on
+ * intersection instead: the observer delivers a frame or more later, so coming
+ * back from a reader flashed a whole list of blank tiles before the pictures
+ * popped in — the blink got WORSE, in the change meant to cure it (Peter,
+ * device, build 61).
+ *
+ * A row can now read what is already known during render and never blank at
+ * all. Kept in step with `cache` at every write, eviction and reset, since two
+ * caches that disagree are worse than one that is slow.
+ */
+const settled = new Map<string, ThumbnailResult>();
+
+/**
+ * What is already known for this file, or `null` if nothing is.
+ *
+ * For initialising state during render: no promise, no effect, no frame.
+ * A `null` means "not generated yet", never "no thumbnail" — an entry with
+ * nothing to show resolves to `{ kind: "icon" }`, which is a real answer.
+ */
+/**
+ * The theme a thumbnail generated right now would be rendered in.
+ *
+ * Three call sites read this off the documentElement with the same one-liner;
+ * a fourth that spelled it differently would key its cache differently and
+ * miss every entry the others wrote.
+ */
+export function currentThumbnailTheme(): "light" | "dark" {
+  return typeof document !== "undefined" &&
+    document.documentElement.classList.contains("dark")
+    ? "dark"
+    : "light";
+}
+
+export function peekThumbnail(
+  entry: FileEntry,
+  opts: { theme: "light" | "dark" },
+): ThumbnailResult | null {
+  return settled.get(cacheKey(opts.theme, entry.path)) ?? null;
+}
+
 function cacheKey(theme: "light" | "dark", path: string): string {
   return `${theme}:${path}`;
 }
@@ -497,11 +543,18 @@ export function getThumbnail(
     if (err instanceof ThumbnailCancelled) {
       void releaseEntry(cache.get(key));
       cache.delete(key);
+      settled.delete(key);
       return { kind: "icon" } as ThumbnailResult;
     }
     throw err;
   });
   cache.set(key, promise);
+  // Record the settled value so the next render can read it without awaiting.
+  // Only for entries still in the cache: a folder left mid-generation evicts
+  // its key, and re-adding it here would resurrect a released blob URL.
+  void promise.then((result) => {
+    if (cache.get(key) === promise) settled.set(key, result);
+  });
   return promise;
 }
 
@@ -521,6 +574,7 @@ export function evictThumbnail(path: string): void {
     const key = cacheKey(theme, path);
     void releaseEntry(cache.get(key));
     cache.delete(key);
+    settled.delete(key);
   }
 }
 
@@ -528,4 +582,5 @@ export function evictThumbnail(path: string): void {
 export function resetThumbnailCache(): void {
   for (const entry of cache.values()) void releaseEntry(entry);
   cache.clear();
+  settled.clear();
 }

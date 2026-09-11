@@ -48,6 +48,7 @@ import {
   resetThumbnailCache,
   evictThumbnail,
   cancelPendingThumbnails,
+  peekThumbnail,
 } from "@/lib/mobile-thumbnails";
 
 function entry(overrides: Partial<FileEntry> & { name: string }): FileEntry {
@@ -354,6 +355,72 @@ describe("native-first thumbnails (QLThumbnailGenerator)", () => {
  * request can beat ThemeProvider's effect and cache a LIGHT thumbnail for the
  * session; and a theme flip left every generated thumbnail in the old theme.
  */
+describe("peekThumbnail — what a row can paint without waiting (#994 follow-up)", () => {
+  /**
+   * `cache` holds PROMISES, and a resolved promise cannot be read
+   * synchronously, so a row remounting with its thumbnail already generated
+   * still had to paint empty and fill in a microtask later. That was invisible
+   * while rows asked on mount. It stopped being invisible the moment they
+   * asked on INTERSECTION instead — the observer delivers a frame or more
+   * later, so returning from a reader flashed a whole list of blank tiles.
+   * The blink got worse in the change meant to cure it (device, build 61).
+   */
+  it("is null before anything has been generated", () => {
+    expect(peekThumbnail(entry({ name: "a.md" }), { theme: "light" })).toBeNull();
+  });
+
+  it("returns the generated thumbnail, with no await", async () => {
+    iosReadFileMock.mockResolvedValue("# hi");
+    renderMarkdownFragmentMock.mockResolvedValue("<p>x</p>");
+
+    const built = await getThumbnail(entry({ name: "a.md" }), { theme: "light" });
+    // Synchronous: this is what a row reads during render.
+    expect(peekThumbnail(entry({ name: "a.md" }), { theme: "light" })).toEqual(built);
+  });
+
+  it("is null while generation is still in flight", async () => {
+    // A row must not be told "nothing here" as though that were an answer —
+    // it means "not yet", and the row keeps its placeholder.
+    let release: (v: string) => void = () => {};
+    iosReadFileMock.mockReturnValue(new Promise<string>((r) => { release = r; }));
+    renderMarkdownFragmentMock.mockResolvedValue("<p>x</p>");
+
+    const pending = getThumbnail(entry({ name: "slow.md" }), { theme: "light" });
+    expect(peekThumbnail(entry({ name: "slow.md" }), { theme: "light" })).toBeNull();
+    release("# hi");
+    await pending;
+    expect(peekThumbnail(entry({ name: "slow.md" }), { theme: "light" })).not.toBeNull();
+  });
+
+  it("answers per theme, like the cache it mirrors", async () => {
+    iosReadFileMock.mockResolvedValue("# hi");
+    renderMarkdownFragmentMock.mockImplementation(async (_md, theme) => `<p>${theme}</p>`);
+
+    await getThumbnail(entry({ name: "a.md" }), { theme: "light" });
+    expect(peekThumbnail(entry({ name: "a.md" }), { theme: "light" })).not.toBeNull();
+    // Two caches that disagree would be worse than one that is slow.
+    expect(peekThumbnail(entry({ name: "a.md" }), { theme: "dark" })).toBeNull();
+  });
+
+  it("forgets a file the sweep rewrote, so the stale picture is not painted", async () => {
+    iosReadFileMock.mockResolvedValue("# hi");
+    renderMarkdownFragmentMock.mockResolvedValue("<p>x</p>");
+
+    await getThumbnail(entry({ name: "a.md" }), { theme: "light" });
+    evictThumbnail("a.md");
+    expect(peekThumbnail(entry({ name: "a.md" }), { theme: "light" })).toBeNull();
+  });
+
+  it("forgets everything on reset", async () => {
+    iosReadFileMock.mockResolvedValue("# hi");
+    renderMarkdownFragmentMock.mockResolvedValue("<p>x</p>");
+
+    await getThumbnail(entry({ name: "a.md" }), { theme: "light" });
+    resetThumbnailCache();
+    expect(peekThumbnail(entry({ name: "a.md" }), { theme: "light" })).toBeNull();
+  });
+});
+
 describe("thumbnails are cached per theme", () => {
   it("regenerates for the other theme rather than reusing", async () => {
     iosReadFileMock.mockResolvedValue("# hi");
