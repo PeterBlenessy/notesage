@@ -50,12 +50,31 @@ final class ThumbnailLoader {
     /// never blanks first. That exact omission is what made the blink worse
     /// rather than better on the web side (build 61).
     func cached(_ rel: String) -> UIImage? {
-        if let image = memory.object(forKey: rel as NSString) { return image }
-        guard let data = ThumbnailCache.get(Self.key(rel)), let image = UIImage(data: data) else {
+        let key = Self.cacheKey(rel, dark: Self.isDark)
+        if let image = memory.object(forKey: key as NSString) { return image }
+        guard let data = ThumbnailCache.get(key), let image = UIImage(data: data) else {
             return nil
         }
-        memory.setObject(image, forKey: rel as NSString)
+        memory.setObject(image, forKey: key as NSString)
         return image
+    }
+
+    /// Whether the app is in dark mode right now. Read per request rather than
+    /// captured: a note preview is drawn in these colours, and one cached
+    /// under the wrong theme lasts the whole session.
+    private static var isDark: Bool {
+        UITraitCollection.current.userInterfaceStyle == .dark
+    }
+
+    private static func cacheKey(_ rel: String, dark: Bool) -> String {
+        isNote(rel) ? noteKey(rel, dark: dark) : key(rel)
+    }
+
+    /// Which pipeline a file goes through. A note is DRAWN by us; everything
+    /// else QuickLook renders better than we could.
+    private static func isNote(_ rel: String) -> Bool {
+        let kind = LibraryFileKind.of(rel)
+        return kind == .markdown || kind == .text
     }
 
     func prefetch(_ entry: LibraryEntry) {
@@ -88,15 +107,99 @@ final class ThumbnailLoader {
     }
 
     private static func key(_ rel: String) -> String {
-        // The theme is part of the key on the web side because a markdown
-        // thumbnail is RENDERED in a theme. A QuickLook picture is not, so
-        // only the rendered kinds will need a theme suffix when they land.
+        // A QuickLook picture is theme-independent; a note preview is DRAWN in
+        // the app's colours, so it carries the theme. Same reasoning as the
+        // web cache's `theme:path` key, and the same failure if it is left
+        // out: a light preview cached in a dark app for the whole session.
         "ql:\(rel)"
+    }
+
+    private static func noteKey(_ rel: String, dark: Bool) -> String {
+        "note:\(dark ? "dark" : "light"):\(rel)"
+    }
+
+    /// How many lines of a note its preview shows. The same ten the web
+    /// pipeline used — enough to recognise the note, cheap to draw.
+    private static let previewLines = 10
+
+    /// Draw a note's first lines, in the app's colours.
+    ///
+    /// NOT QuickLook. QuickLook renders a `.md` file as a white page of raw
+    /// text, which in a dark app is a stack of glaring white tiles — and the
+    /// web pipeline did not do that either: it rendered the source through
+    /// comrak in the app's theme.
+    ///
+    /// This draws the SOURCE rather than rendered markdown, which is the one
+    /// place the native surface is currently poorer than the web one. Going
+    /// through comrak means an HTML render per cell, and a `WKWebView` per
+    /// cell at three-across is the obvious wrong answer; doing it properly
+    /// needs an offscreen renderer and a measurement, and that is a follow-up
+    /// rather than a guess. Source text in the right colours beats a white
+    /// rectangle today.
+    private func drawNotePreview(_ rel: String, size: CGSize, dark: Bool) -> UIImage? {
+        guard let raw = try? LibraryAccess.readFile(rel) else { return nil }
+        var body = raw
+        // Strip a leading YAML frontmatter block, mirroring the web preview.
+        if body.hasPrefix("---\n"), let end = body.range(of: "\n---", range: body.index(body.startIndex, offsetBy: 3)..<body.endIndex) {
+            body = String(body[end.upperBound...])
+        }
+        let text = body.split(separator: "\n", omittingEmptySubsequences: false)
+            .prefix(Self.previewLines)
+            .joined(separator: "\n")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return nil }
+
+        let traits = UITraitCollection(userInterfaceStyle: dark ? .dark : .light)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { context in
+            UIColor.secondarySystemBackground.resolvedColor(with: traits).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.lineBreakMode = .byTruncatingTail
+            // Sized against the IMAGE, not the tile. The preview is rendered
+            // at `maxPixel` (240) and shown at 40–72pt, so a font chosen for
+            // the tile arrives about a third of its intended size — the first
+            // attempt used 7pt and landed at roughly 2pt, a grey smudge. Ten
+            // lines across 240px is ~24px a line, so ~17px is the size that
+            // fills the tile the way the web preview did.
+            let inset: CGFloat = size.width / 16
+            (text as NSString).draw(
+                in: CGRect(
+                    x: inset, y: inset,
+                    width: size.width - inset * 2, height: size.height - inset * 2),
+                withAttributes: [
+                    .font: UIFont.systemFont(ofSize: size.width / 14),
+                    .foregroundColor: UIColor.label.resolvedColor(with: traits),
+                    .paragraphStyle: paragraph,
+                ])
+        }
     }
 
     private func start(_ rel: String, completion: ((UIImage) -> Void)? = nil) {
         guard !inFlight.contains(rel) else { return }
         inFlight.insert(rel)
+
+        if Self.isNote(rel) {
+            let dark = Self.isDark
+            let size = CGSize(width: Self.maxPixel, height: Self.maxPixel)
+            // Off the main thread: it is a file read plus a text render, and
+            // this runs for every note in the folder.
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let image = self?.drawNotePreview(rel, size: size, dark: dark)
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    let wasCancelled = !self.inFlight.contains(rel)
+                    self.inFlight.remove(rel)
+                    guard let image else { return }
+                    let key = Self.cacheKey(rel, dark: dark)
+                    self.memory.setObject(image, forKey: key as NSString)
+                    if let data = image.pngData() { ThumbnailCache.put(key, data) }
+                    if !wasCancelled { completion?(image) }
+                }
+            }
+            return
+        }
+
         LibraryAccess.thumbnail(rel, maxPixel: Self.maxPixel) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { return }
@@ -108,8 +211,9 @@ final class ThumbnailLoader {
                 guard case .success(let data) = result, let image = UIImage(data: data) else {
                     return
                 }
-                self.memory.setObject(image, forKey: rel as NSString)
-                ThumbnailCache.put(Self.key(rel), data)
+                let key = Self.cacheKey(rel, dark: Self.isDark)
+                self.memory.setObject(image, forKey: key as NSString)
+                ThumbnailCache.put(key, data)
                 if !wasCancelled { completion?(image) }
             }
         }

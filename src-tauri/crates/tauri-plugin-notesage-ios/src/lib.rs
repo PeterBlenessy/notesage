@@ -528,6 +528,14 @@ impl<R: Runtime> NotesageIos<R> {
         self.call("setChrome", spec)
     }
 
+    /// Turn the native browsing surface on or off, and hand it the localised
+    /// section-header strings (#1000). The table travels from the frontend so
+    /// there is one localisation source rather than a `.strings` file that
+    /// drifts from `t()`.
+    pub fn set_library_browsing(&self, args: serde_json::Value) -> Result<()> {
+        self.call("setLibraryBrowsing", args)
+    }
+
     /// Show an exported HTML report in its own bridge-less WKWebView, instead
     /// of the sandboxed `htmlpreview://` iframe (#606, ADR 0010).
     pub fn present_report(&self, html: &str, inset_top: f64, inset_bottom: f64) -> Result<()> {

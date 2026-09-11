@@ -119,6 +119,14 @@ final class LibraryBrowsing: LibraryFolderHost {
         onOpen?("document", rel)
     }
 
+    func presentMenu(for rel: String) {
+        onOpen?("menu", rel)
+    }
+
+    func swipeAction(_ id: String, for rel: String) {
+        onOpen?("swipe:\(id)", rel)
+    }
+
     func pinnedPaths() -> Set<String> {
         if let cache = pinnedCache, Date().timeIntervalSince(cache.at) < Self.ttl {
             return cache.paths

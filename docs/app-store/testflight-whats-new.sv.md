@@ -25,16 +25,19 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Bygge 61 gjorde blinkningen värre. Det här tar tillbaka det.
+Mappar ritas nu nativt. Det här är den riktiga lösningen, inte en lappning.
 
-FIXAT
-• Att gå tillbaka från en artikel visar inte längre listan med tomma rutor som
-fylls i efteråt. Bygge 61 flyttade inläsningen av miniatyrer till ett läge som
-kom för sent; det som redan är känt ritas nu direkt.
+NYTT
+• En mapp är en nativ skärm. Den rivs inte längre när du öppnar ett dokument,
+så när du kommer tillbaka kan det inte blinka, hoppa eller bli svart — allt
+det var samma fel, och det är borta i stället för lappat.
+• Svep på en rad för Dela och Radera.
+
+KÄNT, INTE KLART ÄN
+• En sparad artikel visar filnamnet, inte titel och lästid.
+• Ingen Lyssna-knapp på raden än. Hem är oförändrat.
 
 PROVA
-• Öppna en artikel och gå tillbaka, flera gånger, i en mapp med bilder. Listan
-ska komma tillbaka precis som du lämnade den — inga tomma rutor, ingen andra
-lista ovanpå den första.
-• Skrolla snabbt i en stor mapp, lista och galleri, för att se att bilderna
-fortfarande hinner med.
+• Öppna och stäng dokument inifrån en mapp, många gånger, snabbt. Allt som
+blinkar, hoppar eller blir svart vill jag helst höra om.
+• Svep på rader. Håll in rader. Skrolla en stor mapp.

@@ -37,6 +37,13 @@ protocol LibraryFolderHost: AnyObject {
     /// Hand a document to the reader — the one thing still rendered by the
     /// web layer.
     func openDocument(_ rel: String)
+    /// Raise the entry menu. The rows and what they do are assembled by
+    /// `mobile-entry-actions.ts`, so this asks rather than rebuilds them.
+    func presentMenu(for rel: String)
+    /// Run a swipe action. `id` is `share` or `delete`; what each DOES —
+    /// including the delete confirmation — lives in `entrySwipeActions`, and
+    /// is asked for rather than reimplemented.
+    func swipeAction(_ id: String, for rel: String)
     /// Paths pinned in `.notesage/pins.json`.
     func pinnedPaths() -> Set<String>
     /// Paths read recently on this device.
@@ -78,6 +85,11 @@ final class LibraryFolderScreen: UIViewController {
     private let refreshControl = UIRefreshControl()
 
     private let thumbnails = ThumbnailLoader()
+    /// Generation counter. `viewWillAppear` reloads on every return from a
+    /// document, and a pull-to-refresh can land on top of one — two reads of
+    /// the same folder resolving out of order would put the older listing on
+    /// screen. The web version carries the same counter for the same reason.
+    private var loadGeneration = 0
 
     init(relPath: String, title: String, settings: LibraryViewSettings, host: LibraryFolderHost) {
         self.relPath = relPath
@@ -115,6 +127,10 @@ final class LibraryFolderScreen: UIViewController {
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
         ])
+
+        let longPress = UILongPressGestureRecognizer(
+            target: self, action: #selector(longPressed))
+        collectionView.addGestureRecognizer(longPress)
 
         configureDataSource()
         reload()
@@ -159,6 +175,8 @@ final class LibraryFolderScreen: UIViewController {
     /// return from a document.
     private func reload() {
         let rel = relPath
+        loadGeneration += 1
+        let generation = loadGeneration
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let listed = (try? LibraryAccess.listDirectory(rel)) ?? []
             // Hidden entries are excluded outright — internal machinery and
@@ -172,7 +190,7 @@ final class LibraryFolderScreen: UIViewController {
                         modified: $0.modified)
                 }
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, generation == self.loadGeneration else { return }
                 self.refreshControl.endRefreshing()
                 self.entries = visible
                 self.byPath = Dictionary(visible.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
@@ -332,18 +350,80 @@ extension LibraryFolderScreen: UICollectionViewDelegate {
         }
     }
 
-    /// Long press — the same menu the web rows used, which was already native.
+    /// Long press.
+    ///
+    /// NOT a `UIContextMenuConfiguration`: the app's menu is
+    /// `EntryContextMenu`, a full-screen controller with its own morph-from-
+    /// the-row animation, and it is already reached from the list rows and the
+    /// gallery cards. Building a second, system-shaped menu here would be two
+    /// menus for one gesture — the mistake this whole surface exists to stop.
+    ///
+    /// It is raised through the web layer rather than called directly because
+    /// the ROWS of the menu (Share, Pin, Delete, Rename, and which apply to
+    /// this entry) are assembled by `mobile-entry-actions.ts`, along with what
+    /// each one does. Duplicating that here would be a second source of truth
+    /// for the menu's contents.
     func collectionView(
         _ collectionView: UICollectionView,
         contextMenuConfigurationForItemsAt indexPaths: [IndexPath],
         point: CGPoint
     ) -> UIContextMenuConfiguration? {
-        guard let indexPath = indexPaths.first, entry(at: indexPath) != nil else { return nil }
-        // Handled by `EntryContextMenu`'s own presentation, which is a
-        // full-screen controller rather than a `UIContextMenu` — keeping one
-        // menu implementation matters more than using the system affordance
-        // here, since the same menu is reached from three places.
-        return nil
+        nil
+    }
+
+    @objc private func longPressed(_ gesture: UILongPressGestureRecognizer) {
+        guard gesture.state == .began else { return }
+        let point = gesture.location(in: collectionView)
+        guard
+            let indexPath = collectionView.indexPathForItem(at: point),
+            let entry = entry(at: indexPath)
+        else { return }
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        host?.presentMenu(for: entry.path)
+    }
+}
+
+extension LibraryFolderScreen {
+    /// Swipe to Share or Delete.
+    ///
+    /// `UISwipeActionsConfiguration` gives the gesture, the rubber-banding and
+    /// the full-swipe commit for free — the web layer needed 414 lines
+    /// (`SwipeRevealRow.tsx`) to approximate them. What it does NOT give is
+    /// what the actions mean: Share copies to a temp file first, Delete
+    /// confirms before committing because a full swipe is easy to trigger by
+    /// accident (#680). Both live in `entrySwipeActions`, so both are asked
+    /// for here rather than written twice.
+    ///
+    /// `performsFirstActionWithFullSwipe` is FALSE for exactly that reason: a
+    /// full swipe would otherwise fire Share without the row ever being read.
+    func collectionView(
+        _ collectionView: UICollectionView,
+        trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath
+    ) -> UISwipeActionsConfiguration? {
+        guard let entry = entry(at: indexPath), !entry.isDirectory else { return nil }
+        let host = self.host
+
+        let share = UIContextualAction(style: .normal, title: host?.localized("action.share")) {
+            _, _, done in
+            host?.swipeAction("share", for: entry.path)
+            done(true)
+        }
+        share.image = UIImage(systemName: "square.and.arrow.up")
+
+        let remove = UIContextualAction(
+            style: .destructive, title: host?.localized("action.delete")
+        ) { _, _, done in
+            host?.swipeAction("delete", for: entry.path)
+            // `false`: the row stays until the web layer confirms and the
+            // listing is re-read. Reporting success here would animate the row
+            // away before the confirmation dialog had even been answered.
+            done(false)
+        }
+        remove.image = UIImage(systemName: "trash")
+
+        let config = UISwipeActionsConfiguration(actions: [remove, share])
+        config.performsFirstActionWithFullSwipe = false
+        return config
     }
 }
 

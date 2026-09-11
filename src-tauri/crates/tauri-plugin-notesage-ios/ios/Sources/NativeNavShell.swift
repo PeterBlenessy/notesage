@@ -245,13 +245,13 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     self.nav = nav
     self.chromeContainer = container
 
-    if LibraryBrowsing.shared.enabled {
-      root.loadViewIfNeeded()
-      root.attachNative(LibraryBrowsing.shared.makeScreen(rel: "", title: rootTitle ?? ""))
-    } else {
-      root.attachLive(webView)
-      liveHost = root
-    }
+    // The ROOT stays web even with native browsing on. Home is not a folder
+    // listing — it is the Inbox card, the Recordings card and the chosen
+    // folders, all synthesised by the web layer — so a native screen there
+    // would replace it with the raw root directory. Home is step 4 of #1000;
+    // until then the root is the one screen the web layer still draws.
+    root.attachLive(webView)
+    liveHost = root
     applyMenu(to: root)
     ChromeManager.shared.bringChromeToFront()
     return true
@@ -468,6 +468,37 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     // here, so this is a no-op), a completed pop, and a CANCELLED pop — where
     // the child is shown again and still holds the live view.
     guard liveHost !== screen else { return }
+
+    // A NATIVE screen must not be handed the web view — it draws itself, and
+    // attaching the web view over it would cover the folder with whatever the
+    // reader last rendered.
+    //
+    // The web view still needs a home, though. A `WKWebView` outside the view
+    // hierarchy has its rendering and its timers throttled by the system, and
+    // the web layer is not idle while a folder is on screen: it declares the
+    // chrome, runs the background image sweep, and answers the taps this
+    // screen sends it. So it goes back where it started — in the container,
+    // BENEATH the navigation stack — where it is live but covered.
+    guard !screen.isNative else {
+      if let container = chromeContainer, let navView = nav?.view {
+        webView.removeFromSuperview()
+        webView.translatesAutoresizingMaskIntoConstraints = false
+        container.insertSubview(webView, belowSubview: navView)
+        NSLayoutConstraint.activate([
+          webView.topAnchor.constraint(equalTo: container.topAnchor),
+          webView.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+          webView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+          webView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+      }
+      liveHost = nil
+      // Still tell the web layer the pop happened: it owns navigation state,
+      // and a document that stays "open" in the store after its screen is gone
+      // is how Back stops working.
+      dispatch("didPop", detail: "{ screenId: \(Self.jsonString(screen.screenId)) }")
+      return
+    }
+
     screen.attachLive(webView)
     liveHost = screen
     // The screen is showing its snapshot; tell the web layer to draw itself

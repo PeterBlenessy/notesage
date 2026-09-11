@@ -1,4 +1,4 @@
-# Tasks: Native gallery (step 1 of the native browsing surface)
+# Tasks: Native folder screen (step 1 of the native browsing surface)
 
 PRD: [2026-09-11-native-browsing-surface](../prds/2026-09-11-native-browsing-surface.md)
 Issue: #1000
@@ -13,6 +13,37 @@ beside the web one behind a flag, is verified at parity on device, and only
 then does the web one go.
 
 ---
+
+## Progress (2026-09-11)
+
+Shipped in build 63, and verified on the simulator rather than reasoned about:
+
+- ✅ `LibraryOrdering.swift` — sort + five grouping modes, 28 assertions run on
+  macOS by `scripts/check-library-ordering.sh`, in CI. Both regressions the
+  TypeScript learned the hard way are pinned and fail when reintroduced.
+- ✅ `LibraryFolderScreen` — native screen, list and gallery layouts, diffable
+  data source, sticky headers, prefetch, pull-to-refresh, swipe, long-press.
+- ✅ `LibraryCells` — rows, cards, headers, and a thumbnail loader that draws
+  note previews natively in the app's colours (QuickLook renders a `.md` as a
+  white page, which is a wall of glare in a dark app).
+- ✅ `LibraryBrowsing` — pins and progress from the shared sidecars, recents in
+  `UserDefaults`.
+- ✅ The bridge, and `useNativeLibrary` with 10 tests.
+- ✅ **The premise, verified:** Home → folder → document → back captured frame
+  by frame. The return is ONE transition frame with the folder fully drawn
+  underneath — rows, thumbnails, dates, item count — and it comes back at
+  identical pixel density to before it was left. No blank, no black, no zoom.
+  The screen was never unmounted, so there is nothing to re-render.
+
+Not done, and not claimed:
+
+- ❌ Article rows still show the filename. `notesage_capture_article_card_meta`
+  is exported over the C ABI for this and is not yet wired to the cell.
+- ❌ No Listen control on a row.
+- ❌ Home is still the web layer's — it is synthesised cards, not a listing.
+- ❌ The folder is listed TWICE: once natively, and once by `LibraryBrowser`
+  so the menu and swipe handlers can find the entry. That goes when the
+  browser shell moves (step 3).
 
 ## 0. The shape
 

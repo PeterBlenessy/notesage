@@ -868,6 +868,24 @@ pub async fn ios_set_chrome(app: tauri::AppHandle, spec: serde_json::Value) -> R
     }
 }
 
+/// Turn the native browsing surface on, and give it its section-header
+/// strings (#1000). `args` is `{ enabled: bool, strings?: { key: value } }`.
+#[tauri::command]
+pub async fn ios_set_library_browsing(
+    app: tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::set_library_browsing(&app, args).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, args);
+        Err("ios_set_library_browsing is only available on iOS".into())
+    }
+}
+
 /// Native navigation shell (`native-shell` Labs flag) — the mobile shell as a
 /// real `UINavigationController` rooted at Home. PRD:
 /// `docs/prds/2026-09-06-ios-native-navigation.md`.
@@ -1670,6 +1688,14 @@ mod ios_impl {
 
     pub async fn set_chrome(app: &AppHandle, spec: serde_json::Value) -> Result<(), String> {
         app.notesage_ios().set_chrome(spec).map_err(|e| e.to_string())
+    }
+
+    pub async fn set_library_browsing(
+        app: &AppHandle, args: serde_json::Value,
+    ) -> Result<(), String> {
+        app.notesage_ios()
+            .set_library_browsing(args)
+            .map_err(|e| e.to_string())
     }
 
     pub async fn present_report(

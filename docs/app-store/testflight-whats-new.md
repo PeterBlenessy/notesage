@@ -26,15 +26,19 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Build 61 made the blink worse. This undoes that.
+Folders are drawn natively now. This is the real fix, not another patch.
 
-FIXED
-• Coming back from an article no longer shows the list with empty tiles that
-fill in afterwards. Build 61 moved thumbnail loading to a point that arrived
-too late; what is already known is now drawn straight away.
+NEW
+• A folder is a native screen. It is no longer taken down when you open a
+document, so coming back cannot blink, jump or go black — those were all the
+same fault, and it is gone rather than patched.
+• Swipe a row for Share and Delete.
+
+KNOWN, NOT DONE YET
+• A saved article shows its filename, not its title and reading time.
+• No Listen button on a row yet. Home is unchanged.
 
 TRY
-• Open an article and go back, several times, in a folder with pictures. The
-list should come back exactly as you left it — no empty squares, no second
-list appearing over the first.
-• Scroll a big folder fast, list and gallery, to check pictures still keep up.
+• Open and close documents from inside a folder, many times, fast. Anything
+that blinks, jumps or goes black is what I most want to hear about.
+• Swipe rows. Long-press rows. Scroll a big folder.
