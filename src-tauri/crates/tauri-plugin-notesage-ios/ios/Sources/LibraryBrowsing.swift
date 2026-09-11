@@ -162,7 +162,14 @@ final class LibraryBrowsing: LibraryFolderHost {
     @MainActor
     func reloadScreens() {
         invalidate()
-        ArticleMeta.clearCache()
+        // NOT `ArticleMeta.clearCache()`. That cache is keyed by path AND
+        // modification time, so a rewritten file already misses it — clearing
+        // only throws away entries that are still correct. It made every
+        // article row fall back to its placeholder and re-read an 800 KB
+        // capture from disk on every refresh, and because playback writes
+        // reading progress (which refreshes the browser), a row visibly lost
+        // its title line and excerpt a moment after Listen was pressed and
+        // then got them back. Build 65.
         for key in screens.keyEnumerator().allObjects.compactMap({ $0 as? NSString }) {
             screens.object(forKey: key)?.reloadFromHost()
         }

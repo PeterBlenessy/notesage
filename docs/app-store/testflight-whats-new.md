@@ -26,17 +26,13 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Fixes for what you found in 64.
+One more from 65.
 
 FIXED
-• Listen no longer crashes the app. Playing an article — from a row, a card
-or the reader — killed it a second or two in.
-• The view menu works: Gallery, Compact, sorting and grouping all had no
-effect on a folder. All four now do.
-• A deleted row disappears, and a new note shows up, without leaving the
-folder and coming back.
+• A saved article's row no longer twitches when you press Listen. It briefly
+lost its site and reading time, showed the file's date instead, and dropped
+the summary line — which moved the title.
 
 TRY
-• Play an article and leave it running while you browse, open it, come back.
-• Switch Gallery/List and Compact, sort by date, group by type — in a folder
-with a mix of notes and saved pages.
+• Press Listen on a saved article in a list, and watch the row itself:
+nothing but the button should change.
