@@ -26,17 +26,15 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-The blink is gone, the mystery pill is readable, and thumbnails keep up.
+Build 61 made the blink worse. This undoes that.
 
 FIXED
-• Closing an article no longer makes the screen blink before the list returns.
-• The status that flashed behind the search pill now sits above it, readable.
-• Settings is Swedish throughout, explanations included.
-• "1 server", not "1 servers".
-
-IMPROVED
-• Thumbnails are fetched a screen ahead of where you are.
+• Coming back from an article no longer shows the list with empty tiles that
+fill in afterwards. Build 61 moved thumbnail loading to a point that arrived
+too late; what is already known is now drawn straight away.
 
 TRY
-• Open an article, go back, watch the list return. Any blink left?
-• Scroll a big folder fast, list and gallery. Do pictures keep up?
+• Open an article and go back, several times, in a folder with pictures. The
+list should come back exactly as you left it — no empty squares, no second
+list appearing over the first.
+• Scroll a big folder fast, list and gallery, to check pictures still keep up.
