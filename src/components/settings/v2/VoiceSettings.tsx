@@ -22,7 +22,7 @@ export function VoiceSettings() {
   return (
     <SettingsGroup
       label={t("settings.transcription")}
-      description="Whisper models for transcribing meeting recordings. Models run on-device — audio never leaves your machine."
+      description={t("voice.desc")}
       bare
     >
       <div className="py-2">

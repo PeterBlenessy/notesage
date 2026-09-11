@@ -40,9 +40,7 @@ export function LabsSettings() {
     return (
       <SettingsGroup label={t("settings.labs")}>
         <SettingsHint>
-          Nothing experimental is in flight right now. Features appear here
-          while they are being tried out, and disappear once they are finished
-          and turned on for everyone.
+          {t("labs.emptyState")}
         </SettingsHint>
       </SettingsGroup>
     );
@@ -52,10 +50,7 @@ export function LabsSettings() {
     <>
       <SettingsGroup label={t("settings.labs")}>
         <SettingsHint>
-          Features still being worked on. They may change, misbehave, or
-          disappear. Turning any of them on also switches on usage and crash
-          reporting — that is how we tell whether a feature is ready to keep —
-          and you can turn that back off in Privacy at any time.
+          {t("labs.intro")}
         </SettingsHint>
 
         {entries.map(([id, spec]) => (
@@ -66,7 +61,7 @@ export function LabsSettings() {
               <span className="flex flex-col gap-1">
                 <span className="flex items-center gap-2">
                   <StageBadge stage={spec.stage} />
-                  <span>Added in {spec.introducedIn}</span>
+                  <span>{t("labs.addedIn", { version: spec.introducedIn })}</span>
                 </span>
                 {/* A flag that only reveals a control elsewhere has to say so
                     here, or turning it on looks like nothing happened. */}
@@ -92,7 +87,7 @@ export function LabsSettings() {
             description={t("settings.turnOffLabsDesc")}
             control={
               <Button variant="outline" size="sm" onClick={() => resetAll()}>
-                Reset
+                {t("appearance.reset")}
               </Button>
             }
           />

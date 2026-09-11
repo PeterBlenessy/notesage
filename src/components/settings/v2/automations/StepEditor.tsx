@@ -13,12 +13,14 @@ import {
 import type { AutomationStep } from '@/lib/automations/types';
 import { TokenInput } from './TokenInput';
 import type { TokenOption } from './VariablePicker';
-import { t } from '@/lib/i18n';
+import { t, type MessageKey } from '@/lib/i18n';
 
-const STEP_META: Record<AutomationStep['type'], { icon: typeof Bot; label: string }> = {
-  agent: { icon: Bot, label: 'Agent task' },
-  document: { icon: FileText, label: 'Create / append note' },
-  notify: { icon: Bell, label: 'Notify' },
+// Labels are keys, resolved at render: this record is built at module load, so
+// a `t()` here would capture the language that happened to be active at import.
+const STEP_META: Record<AutomationStep['type'], { icon: typeof Bot; labelKey: MessageKey }> = {
+  agent: { icon: Bot, labelKey: "step.agentTask" },
+  document: { icon: FileText, labelKey: "step.createNote" },
+  notify: { icon: Bell, labelKey: "step.notify" },
 };
 
 export function StepEditor({
@@ -53,7 +55,7 @@ export function StepEditor({
     <div className="rounded-md border border-border p-3 space-y-3">
       <div className="flex items-center gap-2">
         <Icon className="size-4 text-muted-foreground" strokeWidth={1.5} />
-        <span className="text-sm font-medium">{meta.label}</span>
+        <span className="text-sm font-medium">{t(meta.labelKey)}</span>
         {showId && (
           <div className="flex items-center gap-1">
             <span className="text-xs text-muted-foreground">id</span>
@@ -113,10 +115,8 @@ export function StepEditor({
             placeholder={t("automation.promptPlaceholder")}
           />
           <p className="text-xs text-muted-foreground">
-            Runs on your <span className="font-medium">{t("automation.agentTasks")}</span> provider (Settings → AI
-            Providers → routing). Tool calls are auto-approved within the automation&apos;s scope, so
-            the run never stops to ask — keep file work in-scope and pre-allow any domains the agent
-            needs.
+            {t("step.runsOnYour")} <span className="font-medium">{t("automation.agentTasks")}</span>{" "}
+            {t("step.providerRouting")}
           </p>
         </>
       )}
@@ -197,7 +197,7 @@ export function StepEditor({
             }}
             className="text-xs text-muted-foreground transition-colors duration-150 hover:text-[var(--color-destructive)]"
           >
-            Remove condition
+            {t("step.removeCondition")}
           </button>
         </div>
       ) : (
@@ -206,7 +206,7 @@ export function StepEditor({
           onClick={() => setShowIf(true)}
           className="text-xs text-muted-foreground transition-colors duration-150 hover:text-foreground"
         >
-          + Add a condition
+          {t("step.addCondition")}
         </button>
       )}
     </div>

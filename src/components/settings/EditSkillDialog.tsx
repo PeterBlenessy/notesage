@@ -131,7 +131,7 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
                 className={cn('h-3 w-3 transition-transform duration-150', !advancedOpen && '-rotate-90')}
                 strokeWidth={1.5}
               />
-              Advanced options
+              {t("dlg.advancedOptions")}
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="space-y-4 pt-3">
@@ -168,7 +168,7 @@ export function EditSkillDialog({ skill, open, onOpenChange }: {
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>{t("skill.cancel")}</Button>
           <Button onClick={handleSave} disabled={saving || !description.trim()}>
-            {saving ? 'Saving...' : 'Save'}
+            {saving ? t("common.saving") : t("conns.save")}
           </Button>
         </DialogFooter>
       </DialogContent>

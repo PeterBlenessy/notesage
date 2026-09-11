@@ -35,7 +35,7 @@ export function ApiKeyForm({
       {showBaseUrl && (
         <div className="space-y-1.5">
           <Label className="text-sm">
-            Base URL
+            {t("apikey.baseUrl")}
             {isOpenAICompatible && <span className="text-destructive ml-1">*</span>}
           </Label>
           <Input

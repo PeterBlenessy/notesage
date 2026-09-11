@@ -31,8 +31,7 @@ export function ArmDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Arm “{automation?.name}”?</AlertDialogTitle>
           <AlertDialogDescription>
-            This automation writes files, so it stays disarmed until you review it. Arming lets it
-            run unattended; editing it later re-prompts.
+            {t("autos.armExplain")}
           </AlertDialogDescription>
         </AlertDialogHeader>
 
@@ -64,7 +63,7 @@ export function ArmDialog({
               onClose();
             }}
           >
-            Review &amp; arm
+            {t("arm.title")}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

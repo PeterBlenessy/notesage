@@ -77,7 +77,7 @@ export function McpCatalog({ open, onOpenChange, onSelectItem }: McpCatalogProps
         <DialogHeader>
           <DialogTitle>{t("mcp.browseCatalog")}</DialogTitle>
           <DialogDescription>
-            Pick a server to add — its command and required settings are filled in for you.
+            {t("cat.intro")}
           </DialogDescription>
         </DialogHeader>
 
@@ -112,13 +112,12 @@ export function McpCatalog({ open, onOpenChange, onSelectItem }: McpCatalogProps
               />
               <p className="text-sm text-muted-foreground mt-2">{t("mcp.catalogEmpty")}</p>
               <p className="text-xs text-muted-foreground mt-1">
-                Curated servers will appear here. For now, use “Add” to enter a server manually,
-                or “Import” to bring one in from another app.
+                {t("mcpc.emptyState")}
               </p>
             </div>
           ) : filtered.length === 0 ? (
             <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-              No servers match “{query}”
+              {t("cat.noMatch", { query })}
             </p>
           ) : (
             <div className="space-y-1.5 py-1">
@@ -145,7 +144,7 @@ function CatalogCard({ item, onSelect }: { item: McpCatalogItem; onSelect: () =>
           {item.official && (
             <Badge variant="secondary" className={badgeClass}>
               <ShieldCheck className="h-2.5 w-2.5" strokeWidth={1.5} />
-              Official
+              {t("cat.official")}
             </Badge>
           )}
           <Badge variant="secondary" className={badgeClass}>
@@ -154,7 +153,7 @@ function CatalogCard({ item, onSelect }: { item: McpCatalogItem; onSelect: () =>
             ) : (
               <TerminalSquare className="h-2.5 w-2.5" strokeWidth={1.5} />
             )}
-            {isRemote ? 'Remote' : 'Local'}
+            {isRemote ? t("common.remote") : t("conns.local")}
           </Badge>
           {item.category && (
             <Badge variant="outline" className={cn(badgeClass, 'text-muted-foreground')}>
@@ -166,7 +165,7 @@ function CatalogCard({ item, onSelect }: { item: McpCatalogItem; onSelect: () =>
         <div className="mt-1 flex flex-wrap items-center gap-1">
           {noKey ? (
             <Badge variant="outline" className={cn(badgeClass, 'text-muted-foreground')}>
-              No API key
+              {t("cat.noApiKey")}
             </Badge>
           ) : (
             item.required_env.map((e) => (
@@ -184,7 +183,7 @@ function CatalogCard({ item, onSelect }: { item: McpCatalogItem; onSelect: () =>
             onClick={() => openUrl(item.homepage!).catch(() => {})}
           >
             <ExternalLink className="h-3 w-3" strokeWidth={1.5} />
-            Learn more
+            {t("cat.learnMore")}
           </Button>
         )}
       </div>

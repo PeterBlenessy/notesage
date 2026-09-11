@@ -33,48 +33,48 @@ export function getInstallGuide(binary: string): SetupGuide {
   switch (binary) {
     case 'claude-agent-acp':
       return {
-        title: 'Install Claude Code',
+        title: t("install.claudeCode"),
         steps: [
-          { label: 'Install Node.js if you don\'t have it', url: 'https://nodejs.org' },
-          { label: 'Run in your terminal:', command: 'npm install -g @agentclientprotocol/claude-agent-acp' },
-          { label: 'Requires a Claude Pro or Max subscription', url: 'https://anthropic.com/claude' },
+          { label: t("install.nodejs"), url: 'https://nodejs.org' },
+          { label: t("install.runInTerminal"), command: 'npm install -g @agentclientprotocol/claude-agent-acp' },
+          { label: t("install.needsClaudeSub"), url: 'https://anthropic.com/claude' },
         ],
       };
     case 'codex-acp':
     case 'codex':
       return {
-        title: 'Install OpenAI Codex',
+        title: t("install.codex"),
         steps: [
-          { label: 'Install Node.js if you don\'t have it', url: 'https://nodejs.org' },
-          { label: 'Run in your terminal:', command: 'npm install -g @agentclientprotocol/codex-acp' },
-          { label: 'Requires a ChatGPT Plus or Pro subscription' },
+          { label: t("install.nodejs"), url: 'https://nodejs.org' },
+          { label: t("install.runInTerminal"), command: 'npm install -g @agentclientprotocol/codex-acp' },
+          { label: t("install.needsChatgptSub") },
         ],
       };
     case 'copilot':
       return {
-        title: 'Install GitHub Copilot CLI',
+        title: t("install.copilotCli"),
         steps: [
-          { label: 'Install Node.js if you don\'t have it', url: 'https://nodejs.org' },
-          { label: 'Run in your terminal:', command: 'npm install -g @github/copilot' },
-          { label: 'Requires a GitHub Copilot subscription', url: 'https://github.com/features/copilot' },
+          { label: t("install.nodejs"), url: 'https://nodejs.org' },
+          { label: t("install.runInTerminal"), command: 'npm install -g @github/copilot' },
+          { label: t("install.needsCopilotSub"), url: 'https://github.com/features/copilot' },
         ],
       };
     case 'gemini':
       return {
-        title: 'Install Google Gemini CLI',
+        title: t("install.geminiCli"),
         steps: [
-          { label: 'Install Node.js if you don\'t have it', url: 'https://nodejs.org' },
-          { label: 'Run in your terminal:', command: 'npm install -g @google/gemini-cli' },
-          { label: 'Free with a Google account', url: 'https://github.com/google-gemini/gemini-cli' },
+          { label: t("install.nodejs"), url: 'https://nodejs.org' },
+          { label: t("install.runInTerminal"), command: 'npm install -g @google/gemini-cli' },
+          { label: t("install.geminiFree"), url: 'https://github.com/google-gemini/gemini-cli' },
         ],
       };
     case 'copilot-language-server':
       return {
-        title: 'Install Copilot Language Server',
+        title: t("install.copilotLsp"),
         steps: [
-          { label: 'Install Node.js if you don\'t have it', url: 'https://nodejs.org' },
-          { label: 'Run in your terminal:', command: 'npm install -g @github/copilot-language-server' },
-          { label: 'Requires a GitHub Copilot subscription', url: 'https://github.com/features/copilot' },
+          { label: t("install.nodejs"), url: 'https://nodejs.org' },
+          { label: t("install.runInTerminal"), command: 'npm install -g @github/copilot-language-server' },
+          { label: t("install.needsCopilotSub"), url: 'https://github.com/features/copilot' },
         ],
       };
     default:
@@ -91,37 +91,37 @@ export function getAuthGuide(binary: string): SetupGuide {
   switch (binary) {
     case 'claude-agent-acp':
       return {
-        title: 'Sign in to Claude',
+        title: t("signin.claude"),
         steps: [
-          { label: 'Run in your terminal:', command: 'claude auth login' },
-          { label: 'A browser window will open for sign-in', note: 'Requires Claude Pro or Max subscription' },
+          { label: t("install.runInTerminal"), command: 'claude auth login' },
+          { label: t("signin.browserOpens"), note: t("signin.needsClaudeSub") },
         ],
       };
     case 'codex-acp':
     case 'codex':
       return {
-        title: 'Sign in to OpenAI',
+        title: t("signin.openai"),
         steps: [
-          { label: 'Run in your terminal:', command: 'codex login --device-auth' },
-          { note: 'Requires ChatGPT Plus or Pro subscription' },
+          { label: t("install.runInTerminal"), command: 'codex login --device-auth' },
+          { note: t("signin.needsChatgptSub") },
         ],
       };
     case 'copilot':
       return {
-        title: 'Sign in to GitHub',
+        title: t("signin.github"),
         steps: [
-          { label: 'Run in your terminal:', command: 'copilot auth login' },
-          { note: 'Requires a GitHub Copilot subscription' },
+          { label: t("install.runInTerminal"), command: 'copilot auth login' },
+          { note: t("install.needsCopilotSub") },
         ],
       };
     case 'gemini':
       return {
-        title: 'Sign in to Google',
+        title: t("signin.google"),
         steps: [
-          { label: 'Option 1 — Run Gemini CLI to sign in via browser:', command: 'cd /tmp && gemini' },
-          { note: 'Choose "Sign in with Google" when prompted, complete sign-in in browser, then close the terminal session' },
-          { label: 'Option 2 — Use an API key:', command: 'export GEMINI_API_KEY=your-key-here' },
-          { note: 'Get a free API key from', url: 'https://aistudio.google.com/apikey' },
+          { label: t("signin.geminiOption1"), command: 'cd /tmp && gemini' },
+          { note: t("signin.geminiBrowserNote") },
+          { label: t("signin.geminiOption2"), command: 'export GEMINI_API_KEY=your-key-here' },
+          { note: t("signin.geminiKeyFrom"), url: 'https://aistudio.google.com/apikey' },
         ],
       };
     default:

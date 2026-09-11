@@ -7,8 +7,10 @@ import {
   type IosChromePlayer,
   type IosChromeRecorder,
   type IosChromeSearch,
+  type IosChromeStatus,
 } from "@/lib/ios-api";
 import { useNavShellPresented } from "./nav-shell-state";
+import { useChromeStatus } from "./chrome-status";
 
 export interface NativeChromeSpec {
   topLeft?: IosChromeItem;
@@ -23,7 +25,29 @@ export interface NativeChromeSpec {
    *  a recording runs — the two never coexist. */
   bottomRecorder?: IosChromeRecorder;
   search?: IosChromeSearch;
+  /** Passive app-global status. NOT set by callers — `useNativeChrome` fills
+   *  it from `chrome-status.ts`, because it belongs to the app rather than to
+   *  any one screen. It is a field of this type all the same: the type is
+   *  where the slot's occupants are written down, and one that is passed
+   *  across the bridge but absent here is one nobody arbitrates. */
+  bottomStatus?: IosChromeStatus;
 }
+
+/**
+ * The bottom-centre slot's four occupants, and who decides where they go.
+ *
+ * `search`, `bottomCenter` (the read-aloud transport), `bottomRecorder` and
+ * the app-global status line all land in the same strip of screen. None of
+ * them can see the others from here, so NONE of them is positioned here:
+ * `ChromeOverlay.layoutBottomColumn` stacks all four, and it is the only
+ * thing that may. Twice now an occupant was positioned by whoever rendered it
+ * and landed on top of another — search over the recorder's Stop button
+ * (build 50), the web sweep indicator under the search pill (build 60, #995).
+ *
+ * The status line is merged in below rather than being a field of
+ * `NativeChromeSpec`, because it is app-global and the spec is per-screen.
+ * See `chrome-status.ts`.
+ */
 
 /**
  * Declare native Liquid Glass chrome (real SwiftUI buttons hosted over the
@@ -48,6 +72,33 @@ export interface NativeChromeSpec {
  */
 let nativeChromeAnswered: boolean | null = null;
 
+/**
+ * Has the native chrome layer answered, and what did it say?
+ *
+ * `null` until the first screen has declared its chrome. For a surface that
+ * is not itself a screen — the sweep indicator — the three states matter:
+ * `true` means the native layer draws the bottom-centre column and a web
+ * island there would collide with it, `false` means there is no native layer
+ * and the web island is the only chrome there will be, and `null` means the
+ * question has not been asked yet and the honest answer is to draw nothing
+ * for the frame or two until it has.
+ */
+export function nativeChromeStatus(): boolean | null {
+  return nativeChromeAnswered;
+}
+
+/**
+ * Test seam: set (or with no argument, forget) the memoised answer.
+ *
+ * A test that renders a chrome-aware surface on its own has to say which
+ * world it is in, because the behaviour genuinely differs: with a native
+ * layer the bottom-centre column is drawn natively and a web island there
+ * would collide with it; without one the web island is the only chrome.
+ */
+export function setNativeChromeAnswer(answer: boolean | null = null): void {
+  nativeChromeAnswered = answer;
+}
+
 export function useNativeChrome(
   spec: NativeChromeSpec,
   actions: Record<string, (value?: string) => void>,
@@ -65,8 +116,13 @@ export function useNativeChrome(
   // see `nav-shell-state`.
   const navShell = useNavShellPresented();
 
+  // App-global, so it is not part of the caller's spec — see the note above
+  // `NativeChromeSpec`. Folded into `specKey` so a change re-declares the
+  // chrome exactly like any other part of the shape.
+  const status = useChromeStatus();
+
   // Re-declare only when the SHAPE changes, not on every render.
-  const specKey = JSON.stringify(spec);
+  const specKey = JSON.stringify({ ...spec, bottomStatus: status ?? undefined });
   useEffect(() => {
     let cancelled = false;
     const full = JSON.parse(specKey) as NativeChromeSpec;

@@ -139,6 +139,24 @@ export interface IosChromeBreadcrumb {
   menu?: Array<{ id: string; title: string; icon?: string; selected?: boolean }>;
 }
 
+/**
+ * A passive line of status in the bottom-centre column.
+ *
+ * No controls, never tappable — the native host takes no touches at all, so
+ * it can never swallow one meant for a control beneath it. Native for the
+ * reason every other bottom-centre occupant is: the slot has exactly one
+ * owner, `ChromeOverlay.layoutBottomColumn`, which stacks the search pill,
+ * the transport and this without any of them knowing about the others.
+ * Drawn as a React island it had no such knowledge, and the search pill sat
+ * straight on top of it (#995).
+ */
+export interface IosChromeStatus {
+  /** Already localised and already formatted — the frontend owns wording. */
+  label: string;
+  /** Show the spinner. Defaults to true; informational status sets false. */
+  busy?: boolean;
+}
+
 export function iosSetChrome(spec: {
   topLeft?: IosChromeItem;
   topRight?: IosChromeItem;
@@ -147,6 +165,15 @@ export function iosSetChrome(spec: {
   bottomRight?: IosChromeItem;
   /** Read-aloud transport (#833). */
   bottomCenter?: IosChromePlayer;
+  /** The recording island; takes the transport's rung while a recording runs.
+   *  Absent from this type until 2026-09-11 — `useNativeChrome` passes a
+   *  variable rather than an object literal, so excess-property checking
+   *  never ran and the field rode across the bridge undeclared. The contract
+   *  is the one place the slots are written down; a missing one is how a
+   *  fifth occupant gets added without anybody arbitrating it. */
+  bottomRecorder?: IosChromeRecorder;
+  /** Passive status, highest in the bottom-centre column. */
+  bottomStatus?: IosChromeStatus;
   search?: IosChromeSearch;
 }): Promise<void> {
   return invoke("ios_set_chrome", { spec });

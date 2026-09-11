@@ -52,8 +52,14 @@ function walk(dir, out = []) {
 }
 
 // Two or more words of prose, or one capitalised word of 4+ chars.
+//
+// The character after the separator admits `(` as well as alphanumerics: a
+// parenthesised qualifier is a normal way to label a choice — `Local
+// (command)`, `Remote (URL)`, `Auto (all)` — and requiring an alphanumeric
+// there made every one of them invisible, inside a directory certified at
+// hard zero.
 const PROSE =
-  /^[A-Z][A-Za-z]{2,}(?:[ ,'’\-—:.!?][A-Za-z0-9][A-Za-z0-9 ,'’\-—:.!?%()]*)?$/;
+  /^[A-Z][A-Za-z]{2,}(?:[ ,'’\-—:.!?][A-Za-z0-9(][A-Za-z0-9 ,'’\-—:.!?%()]*)?$/;
 const SKIP = /^(true|false|null|undefined|px|rem|auto|none|div|span|button)$/i;
 
 /**
@@ -79,7 +85,62 @@ const BRANDS = new Set([
   "iCloud Drive",
   "Markdown",
   "JSON",
+  // Endonyms: a language picker shows each language its own name, in every
+  // locale. "Svenska" is not translated into Swedish.
+  "English",
+  "Svenska",
+  "Cursor",
+  "Claude Desktop",
+  "VS Code",
 ]);
+
+/**
+ * Model names, which are product names and stay as they are.
+ *
+ * A list would be unmaintainable — the catalog gains models constantly — so
+ * this matches the FAMILY, which is the part that is a proper noun.
+ * `ModelSelectionForm.tsx` alone carries 35 of them, and counting those as
+ * untranslated both inflates the ceiling and invites someone to "translate"
+ * GPT-5.1 Codex Mini.
+ */
+const MODEL_FAMILY =
+  /^(Claude|GPT|Gemini|Llama|Mistral|Qwen|DeepSeek|Phi|Gemma|Grok|Codex|Copilot|Whisper|Goose|Ollama)\b/;
+
+/** Function words a product name never contains but a sentence always does. */
+const PROSE_WORD =
+  /\b(is|are|was|were|the|an?|to|of|for|and|or|in|on|at|with|your|you|this|that|it|its|will|can|could|not|no|has|have|been|from|by|when|while|after|before|than|then|needs?|use|using)\b/i;
+
+/**
+ * Is this a model name, or a SENTENCE that happens to start with one?
+ *
+ * The family prefix alone was too greedy: "Whisper model is downloading…" and
+ * "Copilot needs to be signed in" both open with a family name and were
+ * silently exempted from the audit — a whole class of user-visible text
+ * hidden by a rule meant to exempt thirty-five product names. A name is short,
+ * carries no sentence punctuation and no function words, and every one of its
+ * tokens starts with a capital, a digit, or punctuation (`(Preview)`).
+ */
+function looksLikeModelName(t) {
+  if (!MODEL_FAMILY.test(t)) return false;
+  if (PROSE_WORD.test(t)) return false;
+  if (/[,;:!?]|\.\s/.test(t)) return false;
+  const tokens = t.split(/\s+/);
+  return tokens.length <= 6 && tokens.every((w) => /^[^a-z]*[A-Z0-9]/.test(w));
+}
+
+/**
+ * A Tailwind class list, not a sentence.
+ *
+ * The expression-prop rule reads every literal inside `prop={…}`, and a
+ * `description={<div className="flex flex-col gap-0.5">…}` puts a class list
+ * exactly where a sentence would be. Two or more lowercase tokens carrying a
+ * hyphen, colon or bracket is the shape; prose that happens to be all
+ * lowercase ("in your project or") has none.
+ */
+function looksLikeClassNames(t) {
+  if (!/^[a-z0-9\s:\-[\]/.%()]+$/.test(t)) return false;
+  return t.split(/\s+/).filter((w) => /[-:[]/.test(w)).length >= 2;
+}
 
 /**
  * Is this string something a user reads, rather than an id, a path or a class?
@@ -91,9 +152,15 @@ const BRANDS = new Set([
  */
 function looksTranslatable(s) {
   const t = s.trim();
-  if (t.length < 4 || t.length > 120) return false;
+  // The upper bound is a sanity rail against minified blobs and data URIs, not
+  // a judgement about prose: at 120 it hid the longest sentences in the app —
+  // the explanatory paragraphs under a settings toggle, which are exactly the
+  // text a Swedish reader most needs and the hardest to notice untranslated.
+  if (t.length < 4 || t.length > 400) return false;
   if (SKIP.test(t)) return false;
   if (BRANDS.has(t)) return false;
+  if (looksLikeModelName(t)) return false;
+  if (looksLikeClassNames(t)) return false;
   if (!/[A-Za-z]/.test(t)) return false;
   if (/^[a-z-]+$/.test(t)) return false; // css class / kebab id
   if (/^\w+\.\w+/.test(t)) return false; // file.ext, obj.prop
@@ -143,15 +210,29 @@ function findingsIn(file, findings) {
     if (looksTranslatable(cleaned)) findings.push({ file, line: at(node), kind, text: cleaned });
   };
 
-  /** Is this literal an argument to `t(...)`? Then it is a key, not prose. */
+  
+/** Is this text inside an element that marks its content as not-prose? */
+function inCodeElement(node) {
+  const parent = node.parent;
+  if (!parent || !ts.isJsxElement(parent)) return false;
+  const tag = parent.openingElement.tagName.getText();
+  return tag === "code" || tag === "pre" || tag === "kbd";
+}
+
+/** Is this literal an argument to `t(...)`? Then it is a key, not prose. */
   const isTranslationKey = (node) =>
     ts.isCallExpression(node.parent) &&
     ts.isIdentifier(node.parent.expression) &&
     node.parent.expression.text === "t";
 
   const visit = (node) => {
-    // 1. JSX text — the wrapped prose that started all this.
-    if (ts.isJsxText(node) && node.text.trim()) push(node, "jsx-text", node.text);
+    // 1. JSX text — the wrapped prose that started all this. Text inside
+    //    `<code>`, `<pre>` or `<kbd>` is excluded: `git init`, a path, a key
+    //    combination. Those elements exist precisely to say "this is not
+    //    prose", and translating what they hold would break the instruction.
+    if (ts.isJsxText(node) && node.text.trim() && !inCodeElement(node)) {
+      push(node, "jsx-text", node.text);
+    }
 
     // 2. Text-bearing attributes, whether the value is a literal or an
     //    expression: `label="x"`, `label={cond ? "a" : "b"}`. A parser makes
@@ -169,7 +250,38 @@ function findingsIn(file, findings) {
       }
     }
 
-    // 3. Object-literal titles and `.title =` assignments — the native menus,
+    // 3. String literals inside a JSX expression CHILD:
+    //    `<Button>{saving ? 'Saving…' : 'Save'}</Button>`. Rule 1 sees only
+    //    JsxText, and a ternary between two labels is not text — it is code —
+    //    so this whole idiom was invisible. It is the commonest way a button
+    //    or a status line says two things, and it is why two directories this
+    //    audit certified at HARD ZERO still rendered English.
+    //
+    //    The walk stops at any nested JSX: an element inside the expression
+    //    reaches the visitor on its own and is handled by rules 1 and 2, so
+    //    descending here would count its text twice.
+    if (
+      ts.isJsxExpression(node) &&
+      node.expression &&
+      node.parent &&
+      (ts.isJsxElement(node.parent) || ts.isJsxFragment(node.parent)) &&
+      !inCodeElement(node)
+    ) {
+      const walkChild = (n) => {
+        if (
+          ts.isJsxElement(n) ||
+          ts.isJsxSelfClosingElement(n) ||
+          ts.isJsxFragment(n)
+        ) {
+          return;
+        }
+        if (ts.isStringLiteral(n) && !isTranslationKey(n)) push(n, "jsx-child", n.text);
+        ts.forEachChild(n, walkChild);
+      };
+      walkChild(node.expression);
+    }
+
+    // 4. Object-literal titles and `.title =` assignments — the native menus,
     //    action sheets and accessible names, which are not JSX at all.
     if (
       ts.isPropertyAssignment(node) &&
@@ -188,7 +300,7 @@ function findingsIn(file, findings) {
       push(node.right, "object-title", node.right.text);
     }
 
-    // 4. Toasts — user-facing by definition.
+    // 5. Toasts — user-facing by definition.
     if (
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
@@ -207,7 +319,7 @@ function findingsIn(file, findings) {
 }
 
 /** Keys whose value is shown to a user when they appear in an object. */
-const OBJECT_TEXT_KEYS = ["title", "label", "confirmLabel", "ariaLabel"];
+const OBJECT_TEXT_KEYS = ["title", "label", "confirmLabel", "ariaLabel", "note", "hint", "caption"];
 
 /** @returns {{file: string, line: number, kind: string, text: string}[]} */
 export function scan(root = "src") {

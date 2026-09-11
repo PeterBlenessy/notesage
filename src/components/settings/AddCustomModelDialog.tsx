@@ -84,7 +84,7 @@ function VerdictLine({
   if (!verdict && !caps) {
     return (
       <div className="text-[10px] tabular-nums text-muted-foreground/50">
-        Can't estimate — unknown size
+        {t("custom.cantEstimate")}
       </div>
     );
   }
@@ -96,12 +96,12 @@ function VerdictLine({
             <span className="text-[10px] tabular-nums text-muted-foreground">{verdict}</span>
           ) : (
             <span className="text-[10px] tabular-nums text-muted-foreground/50">
-              Can't estimate — unknown size
+              {t("custom.cantEstimate")}
             </span>
           )}
           {blocked && (
             <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">
-              {fit?.reasons[0] ?? "Won't run"}
+              {fit?.reasons[0] ?? t("custom.wontRun")}
             </span>
           )}
           {caps?.has_fim_tokens && (
@@ -111,7 +111,7 @@ function VerdictLine({
           )}
           {caps?.has_tool_template && (
             <span className="text-[9px] font-medium px-1 py-px rounded bg-muted text-muted-foreground">
-              Tools
+              {t("custom.badgeTools")}
             </span>
           )}
         </div>
@@ -127,7 +127,7 @@ function VerdictLine({
         )}
         {(caps?.has_fim_tokens || caps?.has_tool_template) && (
           <p className="mt-1 text-[11px] text-muted-foreground">
-            FIM / Tools verified from the model header.
+            {t("custom.verifiedFromHeader")}
           </p>
         )}
       </TooltipContent>
@@ -422,7 +422,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
       <DialogTrigger asChild>
         <Button variant="outline" size="sm" className="gap-1.5">
           <Plus className="h-3.5 w-3.5" />
-          Add model
+          {t("custom.addModel")}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-lg overflow-hidden">
@@ -430,7 +430,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
         <DialogHeader>
           <DialogTitle className="text-sm">{t("model.addModel")}</DialogTitle>
           <DialogDescription className="text-xs">
-            Search Hugging Face for GGUF models or paste a direct download URL.
+            {t("custom.searchHint")}
           </DialogDescription>
         </DialogHeader>
 
@@ -441,14 +441,14 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
             className={`flex-1 text-xs font-medium py-1.5 rounded-sm transition-colors ${tab === 'search' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             <Search className="inline h-3 w-3 mr-1 -mt-px" strokeWidth={1.5} />
-            Search Hugging Face
+            {t("custom.searchHf")}
           </button>
           <button
             onClick={() => setTab('url')}
             className={`flex-1 text-xs font-medium py-1.5 rounded-sm transition-colors ${tab === 'url' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
           >
             <Link className="inline h-3 w-3 mr-1 -mt-px" strokeWidth={1.5} />
-            Paste URL
+            {t("custom.pasteUrl")}
           </button>
         </div>
 
@@ -500,20 +500,20 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                   onClick={() => { setSelectedRepo(null); setRepoDetails(null); }}
                   className="text-xs text-muted-foreground hover:text-foreground transition-colors shrink-0"
                 >
-                  &larr; Back to results
+                  {t("custom.backToResults")}
                 </button>
 
                 {/* Model info card — fixed, not scrolled */}
                 <div className="rounded-lg border border-border p-3 space-y-1.5 shrink-0">
                   <div className="text-sm font-medium">{selectedRepo.model_name}</div>
                   {selectedRepo.base_model && (
-                    <div className="text-[10px] text-muted-foreground">Base: {selectedRepo.base_model}</div>
+                    <div className="text-[10px] text-muted-foreground">{t("custom.baseModel", { name: selectedRepo.base_model })}</div>
                   )}
                   <div className="text-[10px] text-muted-foreground">
                     {selectedRepo.author}
                     {selectedRepo.license && <> &middot; {selectedRepo.license}</>}
                     {selectedRepo.architecture && <> &middot; {selectedRepo.architecture}</>}
-                    {selectedRepo.context_length && <> &middot; {(selectedRepo.context_length / 1024).toFixed(0)}K context</>}
+                    {selectedRepo.context_length && <> &middot; {t("custom.kContext", { k: (selectedRepo.context_length / 1024).toFixed(0) })}</>}
                     {selectedRepo.total_size && <> &middot; ~{formatBytes(selectedRepo.total_size)}</>}
                   </div>
                   <div className="flex flex-wrap gap-1 pt-0.5">
@@ -525,7 +525,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                 </div>
 
                 <p className="text-[10px] text-muted-foreground shrink-0">
-                  Pick a size variant. Smaller files run faster but with lower quality. Q4_K_M offers the best balance.
+                  {t("custom.pickVariant")}
                 </p>
 
                 {/* File list — scrollable */}
@@ -552,19 +552,19 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                             key={file.filename}
                             onClick={() => handleAddFromSearch(file)}
                             disabled={loading || blocked}
-                            title={blocked ? fit?.reasons[0] ?? "Won't run on this Mac" : undefined}
+                            title={blocked ? fit?.reasons[0] ?? t("custom.wontRun") : undefined}
                             className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-md border border-border/50 text-left hover:bg-muted transition-colors disabled:cursor-not-allowed ${
                               blocked ? 'opacity-60 hover:bg-transparent' : ''
                             } ${loading ? 'disabled:opacity-50' : ''}`}
                           >
                             <div className="min-w-0 flex-1 space-y-0.5">
                               <div className="text-xs font-medium truncate">
-                                {file.quantization !== 'Unknown' ? file.quantization : file.filename.replace('.gguf', '')}
+                                {file.quantization !== t("common.unknown") ? file.quantization : file.filename.replace('.gguf', '')}
                               </div>
                               <div className="text-[10px] text-muted-foreground truncate">
                                 {file.size_bytes > 0 && <>{formatBytes(file.size_bytes)} &middot; ~{formatBytes(Math.round(file.size_bytes * 1.1))} RAM</>}
-                                {file.size_bytes > 0 && file.quantization !== 'Unknown' && <> &middot; </>}
-                                {file.quantization !== 'Unknown' && <span className="opacity-60">{file.filename}</span>}
+                                {file.size_bytes > 0 && file.quantization !== t("common.unknown") && <> &middot; </>}
+                                {file.quantization !== t("common.unknown") && <span className="opacity-60">{file.filename}</span>}
                               </div>
                               <VerdictLine fit={fit} caps={caps} />
                             </div>
@@ -604,7 +604,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                         </div>
                         <div className="text-[10px] text-muted-foreground truncate">
                           {result.architecture && <>{result.architecture}</>}
-                          {result.context_length && <> &middot; {(result.context_length / 1024).toFixed(0)}K context</>}
+                          {result.context_length && <> &middot; {t("custom.kContext", { k: (result.context_length / 1024).toFixed(0) })}</>}
                           {result.total_size && <> &middot; ~{formatBytes(result.total_size)}</>}
                           {result.license && <> &middot; {result.license}</>}
                         </div>
@@ -634,12 +634,12 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                   })}
                   {!searching && query.trim().length >= 2 && filteredResults.length === 0 && (
                     <p className="text-xs text-muted-foreground text-center py-4">
-                      {searchResults.length > 0 ? 'No models match the active filters.' : 'No GGUF models found. Try a different search term.'}
+                      {searchResults.length > 0 ? t("custom.noMatch") : t("custom.noGguf")}
                     </p>
                   )}
                   {!searching && query.trim().length < 2 && (
                     <p className="text-xs text-muted-foreground text-center py-4">
-                      Type at least 2 characters to search.
+                      {t("custom.typeTwo")}
                     </p>
                   )}
                 </div>
@@ -670,7 +670,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
                 />
               </div>
               <p className="text-[10px] text-muted-foreground">
-                Use Q4_K_M quantization for the best size/quality balance.
+                {t("custom.useQ4")}
               </p>
             </div>
             <Button
@@ -679,7 +679,7 @@ export function AddCustomModelDialog({ onAdded }: { onAdded: () => void }) {
               className="w-full"
               size="sm"
             >
-              {loading ? 'Adding...' : 'Add model'}
+              {loading ? t("common.adding") : t("custom.addModel")}
             </Button>
           </div>
         )}

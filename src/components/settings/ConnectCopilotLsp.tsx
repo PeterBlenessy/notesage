@@ -269,7 +269,7 @@ export function ConnectCopilotLsp({
         <div className="flex items-center gap-2.5 py-3">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
           <span className="text-sm text-muted-foreground">
-            Checking for copilot-language-server...
+            {t("copilot.checking")}
           </span>
         </div>
       )}
@@ -277,12 +277,12 @@ export function ConnectCopilotLsp({
       {phase === 'not_installed' && (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            {option.label} wasn't found on your system. Follow the steps below to install it.
+            {t("copilot.notFoundSteps", { name: option.label })}
           </p>
           <SetupGuideView guide={getInstallGuide('copilot-language-server')} />
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
-              Back
+              {t("connect.back")}
             </Button>
             <Button
               variant="outline"
@@ -292,7 +292,7 @@ export function ConnectCopilotLsp({
               className="flex-1"
             >
               <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${retrying ? 'animate-spin' : ''}`} strokeWidth={1.5} />
-              Retry
+              {t("connect.retry")}
             </Button>
           </div>
         </div>
@@ -309,7 +309,7 @@ export function ConnectCopilotLsp({
         <div className="space-y-3">
           <div className="p-3 rounded-lg bg-muted/50 border border-border text-center">
             <p className="text-xs text-muted-foreground mb-2">
-              Enter this code on GitHub:
+              {t("copilot.enterCode")}
             </p>
             <div className="flex items-center justify-center gap-2">
               <span className="text-2xl font-mono font-bold tracking-widest">
@@ -328,12 +328,12 @@ export function ConnectCopilotLsp({
               </button>
             </div>
             <p className="text-xs text-muted-foreground mt-2">
-              {copied ? 'Copied!' : 'Copied to clipboard — click icon to copy again'}
+              {copied ? t("common.copied") : t("copilot.copiedHint")}
             </p>
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
-              Back
+              {t("connect.back")}
             </Button>
             <Button
               variant="outline"
@@ -347,11 +347,11 @@ export function ConnectCopilotLsp({
               className="flex-1"
             >
               <CopilotIcon className="h-3.5 w-3.5 mr-1.5" />
-              Open GitHub
+              {t("copilot.openGithub")}
             </Button>
           </div>
           <p className="text-xs text-muted-foreground text-center">
-            Waiting for authentication...
+            {t("copilot.waiting")}
           </p>
         </div>
       )}
@@ -359,7 +359,7 @@ export function ConnectCopilotLsp({
       {phase === 'connected' && (
         <div className="flex items-center gap-2.5 py-3">
           <Check className="h-4 w-4 text-green-500" strokeWidth={2} />
-          <span className="text-sm font-medium">Connected!</span>
+          <span className="text-sm font-medium">{t("connect.connected")}</span>
         </div>
       )}
 
@@ -370,7 +370,7 @@ export function ConnectCopilotLsp({
               <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" strokeWidth={1.5} />
               <div>
                 <p className="text-sm font-medium text-destructive">
-                  Connection failed
+                  {t("copilot.failed")}
                 </p>
                 {error && (
                   <p className="text-xs text-destructive/80 mt-1 break-words">
@@ -382,7 +382,7 @@ export function ConnectCopilotLsp({
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
-              Back
+              {t("connect.back")}
             </Button>
             <Button
               variant="outline"
@@ -392,7 +392,7 @@ export function ConnectCopilotLsp({
               className="flex-1"
             >
               <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${retrying ? 'animate-spin' : ''}`} strokeWidth={1.5} />
-              Retry
+              {t("connect.retry")}
             </Button>
           </div>
         </div>

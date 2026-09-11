@@ -40,8 +40,13 @@ describe('viewport cache wiring — SystemSettings.tsx', () => {
 
   it('renders a "Clear viewport cache" button inside the Performance SettingsGroup', () => {
     const src = readSrc('src/components/settings/v2/SystemSettings.tsx');
-    // The label text must be present somewhere in the file
-    expect(src).toContain('Clear viewport cache');
+    // The label reaches the UI through `t()` now (#991), so the source carries
+    // the KEY and `i18n.ts` carries the words. Asserting the English literal
+    // here would fail the day the settings panel was translated, which is not
+    // a regression in the wiring this test exists to lock.
+    expect(src).toContain('t("sys.clearViewport")');
+    const table = readSrc('src/lib/i18n.ts');
+    expect(table).toContain('"sys.clearViewport": "Clear viewport cache"');
   });
 
   it('uses AlertDialog for the destructive clear-cache confirmation', () => {

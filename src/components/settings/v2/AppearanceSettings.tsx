@@ -22,7 +22,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { track, trackSettingToggle } from '@/lib/telemetry';
 import type { AccentName } from '@/lib/accent';
 import type { Locale } from '@/lib/i18n';
-import { t } from '@/lib/i18n';
+import { t, type MessageKey } from '@/lib/i18n';
 import type { QuietChromeTargets } from '@/lib/quiet-chrome-presets';
 import { cn } from '@/lib/utils';
 import { useLocale } from '@/lib/useLocale';
@@ -31,25 +31,32 @@ import { useLocale } from '@/lib/useLocale';
 // Constants (duplicated from SettingsDialog — small, lifting is a follow-up)
 // ---------------------------------------------------------------------------
 
-const TINT_PRESETS: ReadonlyArray<{ label: string; hue: number; chroma: number }> = [
-  { label: 'Neutral', hue: 0, chroma: 0 },
-  { label: 'Warm', hue: 60, chroma: 12 },
-  { label: 'Sepia', hue: 55, chroma: 18 },
-  { label: 'Rose', hue: 10, chroma: 10 },
-  { label: 'Sage', hue: 145, chroma: 8 },
-  { label: 'Ocean', hue: 230, chroma: 8 },
-  { label: 'Lavender', hue: 290, chroma: 8 },
+// `labelKey`, not `label`: these arrays are module scope, and `t()` evaluated
+// here would freeze the language at import — the frozen-nav trap
+// `settings-i18n.test.tsx` documents. The key is resolved at render.
+const TINT_PRESETS: ReadonlyArray<{ labelKey: MessageKey; hue: number; chroma: number }> = [
+  { labelKey: 'appearance.tintNeutral', hue: 0, chroma: 0 },
+  { labelKey: 'appearance.tintWarm', hue: 60, chroma: 12 },
+  { labelKey: 'appearance.tintSepia', hue: 55, chroma: 18 },
+  { labelKey: 'appearance.tintRose', hue: 10, chroma: 10 },
+  { labelKey: 'appearance.tintSage', hue: 145, chroma: 8 },
+  { labelKey: 'appearance.tintOcean', hue: 230, chroma: 8 },
+  { labelKey: 'appearance.tintLavender', hue: 290, chroma: 8 },
 ];
 
-const THEME_OPTIONS = [
-  { value: 'light' as const, label: 'Light', Icon: Sun },
-  { value: 'dark' as const, label: 'Dark', Icon: Moon },
-  { value: 'system' as const, label: 'System', Icon: Monitor },
+const THEME_OPTIONS: ReadonlyArray<{
+  value: 'light' | 'dark' | 'system';
+  labelKey: MessageKey;
+  Icon: typeof Sun;
+}> = [
+  { value: 'light', labelKey: 'appearance.themeLight', Icon: Sun },
+  { value: 'dark', labelKey: 'appearance.themeDark', Icon: Moon },
+  { value: 'system', labelKey: 'appearance.themeSystem', Icon: Monitor },
 ];
 
 interface AccentOption {
   value: AccentName;
-  label: string;
+  labelKey: MessageKey;
   /** CSS color string used for the swatch dot. */
   swatch: string;
 }
@@ -59,16 +66,19 @@ interface AccentOption {
 // Material Deep Orange 500 / Material Blue 700 — see design-system.md
 // "Accent Token Guardrails".
 const ACCENT_OPTIONS: ReadonlyArray<AccentOption> = [
-  { value: 'default', label: 'Default', swatch: 'var(--color-foreground)' },
-  { value: 'orange', label: 'Orange', swatch: 'oklch(68% 0.21 37)' },
-  { value: 'blue', label: 'Blue', swatch: 'oklch(56% 0.16 253)' },
-  { value: 'system', label: 'System', swatch: 'var(--accent-system-value, oklch(68% 0.21 37))' },
+  { value: 'default', labelKey: 'appearance.accentDefault', swatch: 'var(--color-foreground)' },
+  { value: 'orange', labelKey: 'appearance.accentOrange', swatch: 'oklch(68% 0.21 37)' },
+  { value: 'blue', labelKey: 'appearance.accentBlue', swatch: 'oklch(56% 0.16 253)' },
+  { value: 'system', labelKey: 'appearance.accentSystem', swatch: 'var(--accent-system-value, oklch(68% 0.21 37))' },
 ];
 
-const QUIET_CHROME_PRESET_OPTIONS = [
-  { value: 'relaxed' as const, label: 'Relaxed' },
-  { value: 'default' as const, label: 'Default' },
-  { value: 'aggressive' as const, label: 'Aggressive' },
+const QUIET_CHROME_PRESET_OPTIONS: ReadonlyArray<{
+  value: 'relaxed' | 'default' | 'aggressive';
+  labelKey: MessageKey;
+}> = [
+  { value: 'relaxed', labelKey: 'appearance.quietRelaxed' },
+  { value: 'default', labelKey: 'appearance.quietDefault' },
+  { value: 'aggressive', labelKey: 'appearance.quietAggressive' },
 ];
 
 // `docHead` is intentionally absent — the DocHead element was removed in
@@ -77,14 +87,14 @@ const QUIET_CHROME_PRESET_OPTIONS = [
 // settings-migration safety, but the row no longer renders.
 const QUIET_CHROME_OVERRIDE_ROWS: ReadonlyArray<{
   key: keyof QuietChromeTargets;
-  label: string;
+  labelKey: MessageKey;
 }> = [
-  { key: 'toolbar', label: 'Toolbar' },
-  { key: 'status', label: 'Status bar' },
-  { key: 'titlebar', label: 'Title bar' },
-  { key: 'cmdbar', label: 'Command bar (minimized)' },
-  { key: 'sidebar', label: 'Sidebar' },
-  { key: 'orb', label: 'Agent orb' },
+  { key: 'toolbar', labelKey: 'appearance.chromeToolbar' },
+  { key: 'status', labelKey: 'appearance.chromeStatus' },
+  { key: 'titlebar', labelKey: 'appearance.chromeTitlebar' },
+  { key: 'cmdbar', labelKey: 'appearance.chromeCmdbar' },
+  { key: 'sidebar', labelKey: 'appearance.chromeSidebar' },
+  { key: 'orb', labelKey: 'appearance.chromeOrb' },
 ];
 
 // ---------------------------------------------------------------------------
@@ -219,7 +229,7 @@ export function AppearanceSettings() {
             <Segmented
               dataTestId="appearance-language"
               options={[
-                { value: 'system', label: 'System', ariaLabel: 'Follow the system language' },
+                { value: 'system', label: t("appearance.langSystem"), ariaLabel: t("appearance.langSystemAria") },
                 { value: 'en', label: 'English', ariaLabel: 'English' },
                 { value: 'sv', label: 'Svenska', ariaLabel: 'Svenska' },
               ]}
@@ -247,10 +257,10 @@ export function AppearanceSettings() {
                 label: (
                   <>
                     <o.Icon className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    <span>{o.label}</span>
+                    <span>{t(o.labelKey)}</span>
                   </>
                 ),
-                ariaLabel: o.label,
+                ariaLabel: t(o.labelKey),
               }))}
               value={theme}
               onChange={(v) => { setTheme(v); track("setting_changed", { setting: "theme", value: v }); }}
@@ -273,10 +283,10 @@ export function AppearanceSettings() {
                       className="h-2.5 w-2.5 rounded-full border border-border shrink-0"
                       style={{ backgroundColor: o.swatch }}
                     />
-                    <span>{o.label}</span>
+                    <span>{t(o.labelKey)}</span>
                   </>
                 ),
-                ariaLabel: o.label,
+                ariaLabel: t(o.labelKey),
               }))}
               value={accent}
               onChange={(v) => { setAccent(v); track("setting_changed", { setting: "accent", value: v }); }}
@@ -312,11 +322,10 @@ export function AppearanceSettings() {
         <div className="px-0 py-3 space-y-2">
           <div>
             <span className="text-[13px] font-medium text-foreground">
-              Color tint
+              {t("appearance.colorTint")}
             </span>
             <p className="text-[12px] text-muted-foreground mt-0.5 leading-relaxed">
-              Add a subtle color wash to the interface. Neutral keeps the
-              palette strictly greyscale.
+              {t("appearance.colorTintHint")}
             </p>
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -329,7 +338,7 @@ export function AppearanceSettings() {
                     tintChroma === preset.chroma;
               return (
                 <button
-                  key={preset.label}
+                  key={preset.labelKey}
                   type="button"
                   aria-pressed={isActive}
                   onClick={() => {
@@ -355,7 +364,7 @@ export function AppearanceSettings() {
                           : `oklch(70% 0.08 ${preset.hue})`,
                     }}
                   />
-                  {preset.label}
+                  {t(preset.labelKey)}
                 </button>
               );
             })}
@@ -386,7 +395,7 @@ export function AppearanceSettings() {
                     aria-label={t("settings.resetTint")}
                   >
                     <RotateCcw className="h-3 w-3" strokeWidth={1.5} />
-                    Reset
+                    {t("appearance.reset")}
                   </button>
                 </div>
               }
@@ -417,7 +426,7 @@ export function AppearanceSettings() {
       {/* ── Quiet chrome ─────────────────────────────────────────── */}
       <SettingsGroup
         label={t("settings.quietChrome")}
-        description="Fade chrome elements (toolbar, status bar, document header, sidebar, agent orb) while you type. The composer is never faded."
+        description={t("appearance.fadeDesc")}
       >
         <SettingsRow
           label={t("settings.preset")}
@@ -427,8 +436,8 @@ export function AppearanceSettings() {
               dataTestId="appearance-quiet-chrome"
               options={QUIET_CHROME_PRESET_OPTIONS.map((o) => ({
                 value: o.value,
-                label: o.label,
-                ariaLabel: o.label,
+                label: t(o.labelKey),
+                ariaLabel: t(o.labelKey),
               }))}
               value={quietChromePreset === 'custom' ? 'default' : quietChromePreset}
               onChange={(v) => { setQuietChromePreset(v); track("setting_changed", { setting: "quiet_preset", value: v }); }}
@@ -440,12 +449,12 @@ export function AppearanceSettings() {
         />
 
         {showQuietChromeAdvanced
-          ? QUIET_CHROME_OVERRIDE_ROWS.map(({ key, label }) => {
+          ? QUIET_CHROME_OVERRIDE_ROWS.map(({ key, labelKey }) => {
               const id = `appearance-quiet-chrome-${key}`;
               return (
                 <SettingsRow
                   key={key}
-                  label={`Fade ${label.toLowerCase()}`}
+                  label={t("appearance.fadeTarget", { target: t(labelKey).toLowerCase() })}
                   htmlFor={id}
                   control={
                     <Switch
@@ -465,7 +474,7 @@ export function AppearanceSettings() {
            *  hiding it reclaims vertical space for the document. */}
         <SettingsRow
           label={t("settings.showTitleBar")}
-          description="Show the document name, unsaved-changes dot, and close button at the top of the editor. Off reclaims the vertical space (the filename still shows in the sidebar and status bar)."
+          description={t("appearance.titleBarDesc")}
           htmlFor="appearance-show-title-bar"
           control={
             <Switch
@@ -483,7 +492,7 @@ export function AppearanceSettings() {
            *  (Bear / Craft chrome aesthetic). */}
         <SettingsRow
           label={t("settings.translucentChrome")}
-          description="Title bar and status bar use a frosted-glass background; the document scrolls beneath them. Off by default."
+          description={t("appearance.transparentChromeHint")}
           htmlFor="appearance-quiet-chrome-transparent"
           control={
             <Switch
@@ -522,8 +531,8 @@ export function AppearanceSettings() {
           label={t("settings.topTags")}
           description={
             sidebarTagsCap === 0
-              ? 'Hidden — drag the slider above 0 to show the Tags section.'
-              : 'Maximum tags shown, sorted by usage. Set to 0 to hide.'
+              ? t("appearance.tagsHidden")
+              : t("appearance.tagsCapHint")
           }
           control={
             <div className="w-[180px]">
@@ -544,8 +553,8 @@ export function AppearanceSettings() {
           label={t("settings.topMentions")}
           description={
             sidebarMentionsCap === 0
-              ? 'Hidden — drag the slider above 0 to show the Mentions section.'
-              : 'Maximum mentions shown, sorted by usage. Set to 0 to hide.'
+              ? t("appearance.mentionsHidden")
+              : t("appearance.mentionsCapHint")
           }
           control={
             <div className="w-[180px]">

@@ -70,7 +70,7 @@ export function ConnectionUsageDetail({ connection }: { connection: Connection }
       <PopoverContent side="left" align="start" className="w-72 p-3">
         {!snapshot ? (
           <p className="text-[12px] text-muted-foreground leading-relaxed">
-            No usage reported yet — data appears after chatting with this provider.
+            {t("usage.noneYet")}
           </p>
         ) : (
           <div className="divide-y divide-border">
@@ -140,7 +140,7 @@ export function ConnectionUsageDetail({ connection }: { connection: Connection }
 
             {/* Provenance + freshness footer */}
             <p className="text-[12px] text-muted-foreground pt-2">
-              {snapshot.source === 'acp' ? 'Reported by agent' : 'Estimated locally'}
+              {snapshot.source === 'acp' ? t("usage.reportedByAgent") : t("usage.estimatedLocally")}
               {` · ${formatSavedShort(now - snapshot.updatedAt)} ago`}
             </p>
           </div>

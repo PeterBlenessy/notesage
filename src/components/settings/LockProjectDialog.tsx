@@ -67,22 +67,21 @@ export function LockProjectDialog({ open, onOpenChange, projectPath, projectName
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Lock className="h-4 w-4" strokeWidth={1.5} aria-hidden="true" />
-            Lock project to provider
+            {t("lock.title")}
           </DialogTitle>
           <DialogDescription>
-            Only the selected provider will be allowed to access &ldquo;{projectName}&rdquo;.
-            All other AI providers will be refused. You can unlock at any time in Folder Settings.
+            {t("lock.body", { project: projectName })}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4 py-2">
           <div className="space-y-2">
             <Label htmlFor="lock-connection" className="text-sm font-medium">
-              Provider
+              {t("lock.provider")}
             </Label>
             {interactiveConnections.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                No providers available. Add a connection in Settings first.
+                {t("lock.noProviders")}
               </p>
             ) : (
               <Select value={selectedConnectionId} onValueChange={setSelectedConnectionId}>
@@ -114,7 +113,7 @@ export function LockProjectDialog({ open, onOpenChange, projectPath, projectName
 
           <div className="space-y-2">
             <Label htmlFor="lock-reason" className="text-sm font-medium">
-              Reason <span className="text-xs font-normal text-muted-foreground">(optional)</span>
+              {t("lock.reason")} <span className="text-xs font-normal text-muted-foreground">(optional)</span>
             </Label>
             <Textarea
               id="lock-reason"
@@ -125,30 +124,28 @@ export function LockProjectDialog({ open, onOpenChange, projectPath, projectName
               className="text-sm resize-none"
             />
             <p className="text-xs text-muted-foreground">
-              Shown to you in project settings and when a lock conflict occurs.
+              {t("lock.reasonHint")}
             </p>
           </div>
 
           <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <p className="font-medium text-foreground">{t("lock.hardEnforcement")}</p>
             <p className="mt-1">
-              Every send path (chat, resend, comment delegation, inline action) will be refused
-              unless it targets the selected provider. The lock cannot be bypassed without unlocking
-              from Folder Settings.
+              {t("lock.consequences")}
             </p>
           </div>
         </div>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button
             onClick={handleLock}
             disabled={!selectedConnectionId || interactiveConnections.length === 0}
           >
             <Lock className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-            Lock project
+            {t("lock.lockProject")}
           </Button>
         </DialogFooter>
       </DialogContent>

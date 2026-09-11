@@ -328,7 +328,7 @@ export function TokenInput({
                 className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-muted"
               >
                 <X className="size-3.5" strokeWidth={1.5} />
-                Remove
+                {t("mcpc.remove")}
               </button>
               {tokensRef.current.length > 0 && (
                 <>

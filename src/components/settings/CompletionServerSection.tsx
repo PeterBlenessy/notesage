@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
+import { t } from '@/lib/i18n';
 
 /**
  * Settings panel for the dedicated FIM (`/infill`) completion server (item #8
@@ -74,11 +75,11 @@ export function CompletionServerSection() {
       <div className="flex items-center gap-2">
         <Zap className="h-3.5 w-3.5 text-muted-foreground" />
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          Code completion server
+          {t("comp.title")}
         </h3>
         {isRunning && (
           <Badge variant="secondary" className="h-4 px-1.5 text-[10px]">
-            running · port {completionServerPort}
+            {t("comp.runningPort", { port: completionServerPort ?? 0 })}
           </Badge>
         )}
         {isError && (
@@ -89,10 +90,8 @@ export function CompletionServerSection() {
       </div>
 
       <p className="text-[11px] leading-relaxed text-muted-foreground">
-        Run a second llama-server (no <code>--jinja</code>) dedicated to{' '}
-        <code>/infill</code> code completion. Lets the main chat model keep
-        tool calling while inline completions get native FIM from a
-        code-specialist model. Costs the extra model&apos;s RAM/VRAM.
+        {t("comp.introA")} <code>--jinja</code>{t("comp.introB")}{' '}
+        <code>/infill</code> {t("comp.introC")}
       </p>
 
       <div className="flex items-center gap-2">
@@ -105,8 +104,8 @@ export function CompletionServerSection() {
             <SelectValue
               placeholder={
                 noDownloadedFimModels
-                  ? 'No FIM-capable models downloaded'
-                  : 'Pick a FIM-capable model'
+                  ? t("comp.noFimModels")
+                  : t("comp.pickFim")
               }
             />
           </SelectTrigger>
@@ -127,7 +126,7 @@ export function CompletionServerSection() {
             onClick={handleStop}
           >
             <Square className="mr-1 h-3 w-3" />
-            Stop
+            {t("comp.stop")}
           </Button>
         ) : (
           <Button
@@ -140,12 +139,12 @@ export function CompletionServerSection() {
             {isStarting ? (
               <>
                 <Loader2 className="mr-1 h-3 w-3 animate-spin" />
-                Starting
+                {t("comp.starting")}
               </>
             ) : (
               <>
                 <Play className="mr-1 h-3 w-3" />
-                Start
+                {t("localai.start")}
               </>
             )}
           </Button>
@@ -158,9 +157,8 @@ export function CompletionServerSection() {
 
       <Separator className="opacity-50" />
       <p className="text-[10px] leading-relaxed text-muted-foreground">
-        When stopped, FIM falls back to the main server&apos;s{' '}
-        <code>/infill</code> → chat fallback (the previous behaviour). Only
-        downloaded models with FIM support are listed.
+        {t("comp.stoppedHintA")}{' '}
+        <code>/infill</code> {t("comp.stoppedHintB")}
       </p>
     </div>
   );

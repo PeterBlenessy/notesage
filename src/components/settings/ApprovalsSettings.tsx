@@ -43,10 +43,10 @@ function ConnectionCell({
       <Tooltip>
         <TooltipTrigger asChild>
           <span className="cursor-default italic text-muted-foreground">
-            Unknown ({short})
+            {t("appr.unknownConn", { id: short })}
           </span>
         </TooltipTrigger>
-        <TooltipContent>Deleted connection · {connectionId}</TooltipContent>
+        <TooltipContent>{t("appr.deletedConnection", { id: connectionId })}</TooltipContent>
       </Tooltip>
     );
   }
@@ -221,16 +221,14 @@ export function ApprovalsSettings() {
             <Label className="text-sm font-semibold">{t("approvals.title")}</Label>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Review and revoke persisted &quot;Always allow&quot; approvals. Scoped by tool,
-            connection, and project.
+            {t("appr.intro")}
           </p>
         </div>
 
         {isEmpty ? (
           <div className="rounded-lg border border-border px-4 py-6 text-center">
             <p className="text-sm text-muted-foreground">
-              No persisted approvals yet. Approvals you grant with &quot;Allow always&quot; will
-              appear here.
+              {t("appr.empty")}
             </p>
           </div>
         ) : (
@@ -254,9 +252,9 @@ export function ApprovalsSettings() {
                   variant="outline"
                   size="xs"
                   onClick={() => handleRevokeAllForConnection(connId)}
-                  aria-label={`Revoke all for ${connectionLabel(connId)}`}
+                  aria-label={t("appr.revokeAllFor", { name: connectionLabel(connId) })}
                 >
-                  Revoke all for {connectionLabel(connId)}
+                  {t("appr.revokeAllFor", { name: connectionLabel(connId) })}
                 </Button>
               ))}
               {allScopeProjects.map((projectRoot) => (
@@ -265,9 +263,9 @@ export function ApprovalsSettings() {
                   variant="outline"
                   size="xs"
                   onClick={() => handleRevokeAllForProject(projectRoot)}
-                  aria-label={`Revoke all for ${projectRoot}`}
+                  aria-label={t("appr.revokeAllFor", { name: projectRoot })}
                 >
-                  Revoke all for {basenameFromPath(projectRoot)}
+                  {t("appr.revokeAllFor", { name: basenameFromPath(projectRoot) })}
                 </Button>
               ))}
             </div>
@@ -331,7 +329,7 @@ export function ApprovalsSettings() {
                             <div className="flex items-center justify-end gap-1.5">
                               {isLegacy && (
                                 <span className="inline-flex items-center whitespace-nowrap px-1.5 py-px rounded-full text-[10px] font-medium bg-muted text-muted-foreground border border-border">
-                                  legacy, broad
+                                  {t("appr.legacyBroad")}
                                 </span>
                               )}
                               <Tooltip>
@@ -361,7 +359,7 @@ export function ApprovalsSettings() {
             {domainRows.length > 0 && (
               <div className="space-y-2">
                 <Label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                  Network domains
+                  {t("appr.networkDomains")}
                 </Label>
                 <div className="rounded-lg border border-border overflow-hidden">
                   <table className="w-full text-[11px]">

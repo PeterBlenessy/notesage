@@ -367,6 +367,7 @@ jobs:
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/RecordingManifest.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/AudioOwner.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/SpeechPlayer.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ChromeColumn.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ChromeOverlay.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/NativeNavShell.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ReportWebView.swift
@@ -387,6 +388,15 @@ jobs:
             src-tauri/macos/ShareCapture.swift \
             src-tauri/macos/PageRenderer.swift \
             src-tauri/macos/ShareViewController.swift
+
+      - name: Bottom-centre column stacking
+        # Where the search pill, the transport, the recorder and the status
+        # line sit relative to each other. Wrong three times, twice reaching a
+        # device (search over the recorder's Stop in build 50; the sweep
+        # indicator behind the search island in build 60, #995) — and until
+        # now untestable, because it lived inside a file that imports UIKit and
+        # could only be seen on a device with a granted library.
+        run: ./scripts/check-chrome-column.sh
 
       - name: Inbox badge logic, against a real filesystem
         # `InboxState.swift` decides the app icon badge and is compiled into

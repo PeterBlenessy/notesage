@@ -156,7 +156,16 @@ export function LibraryBrowser() {
   const sortMode = useMobileStore((s) => resolveFolderView(s, screenKey).sortMode);
   const groupMode = useMobileStore((s) => resolveFolderView(s, screenKey).groupMode);
 
-  const [state, setState] = useState<LoadState>({ status: "loading" });
+  const rememberListing = useMobileStore((s) => s.rememberListing);
+  // Seeded from the cache, not from `loading`: this component is REMOUNTED
+  // every time a document is closed (`MobileApp` swaps it for the reader), so
+  // a fresh `loading` threw away the very list the reader was opened from and
+  // flashed a skeleton for the frame it took to read the folder again (#994).
+  // The listing is still re-read below — it is just no longer blanked first.
+  const [state, setState] = useState<LoadState>(() => {
+    const cached = useMobileStore.getState().listingCache[currentRelPath];
+    return cached ? { status: "ready", entries: cached } : { status: "loading" };
+  });
   const [query, setQuery] = useState("");
 
   // Generation counter: rapid folder navigation can resolve listings out of
@@ -169,7 +178,19 @@ export function LibraryBrowser() {
     // current listing on screen instead of flashing back to the skeleton —
     // the native UIRefreshControl already shows its own spinner for the
     // duration, so there is no busy state to track here.
-    if (!viaRefresh) setState({ status: "loading" });
+    // Show what is known about THIS folder while the read runs.
+    //
+    // Suppressing the skeleton is not enough on its own: the `useState`
+    // initializer runs only on mount, so navigating to an already-visited
+    // folder (going back to a parent, always cached) would leave the PREVIOUS
+    // folder's entries on screen under the new folder's title and count — the
+    // same stale-listing-under-a-new-breadcrumb the `loadIdRef` generation
+    // counter above exists to prevent. So seed from this path's cache when
+    // there is one, and only fall back to the skeleton when there is not.
+    const cached = useMobileStore.getState().listingCache[currentRelPath];
+    if (!viaRefresh) {
+      setState(cached ? { status: "ready", entries: cached } : { status: "loading" });
+    }
     try {
       const entries = await iosListDirectory(currentRelPath);
       if (loadIdRef.current !== loadId) return;
@@ -179,6 +200,7 @@ export function LibraryBrowser() {
       // must not be one tap away in the browser.
       const visible = entries.filter((e) => !e.hidden && !e.name.startsWith("."));
       setState({ status: "ready", entries: visible });
+      rememberListing(currentRelPath, visible);
       // What the Mac read (or listened to) shows here: merge the shared
       // sidecar into the local store whenever the Inbox is listed.
       if (currentRelPath === INBOX_NAME) void pullInboxProgress();
@@ -193,7 +215,7 @@ export function LibraryBrowser() {
       if (loadIdRef.current !== loadId) return;
       setState({ status: "error", message: String(err) });
     }
-  }, [currentRelPath, loadHomeFolders, refreshUnread]);
+  }, [currentRelPath, loadHomeFolders, refreshUnread, rememberListing]);
 
   // Notification status on mount and on every return to the foreground —
   // the user may have just come back from the Settings app.

@@ -132,20 +132,20 @@ export function AutomationForm({
 
   const tokensFor = (index: number): TokenOption[] => {
     const opts: TokenOption[] = [
-      { token: '{{today}}', label: "today's date" },
-      { token: '{{now}}', label: 'current date-time' },
+      { token: '{{today}}', label: t("auto.varToday") },
+      { token: '{{now}}', label: t("auto.varNow") },
     ];
     // Trigger-payload tokens — depend on the trigger kind (the runner populates
     // these on the run context; surface them so they're not undiscoverable).
-    const t = draft.trigger;
-    if (t.type === 'file' || (t.type === 'workflow' && t.event === 'document-saved')) {
-      opts.push({ token: '{{trigger.file}}', label: 'triggering file' });
+    const trigger = draft.trigger;
+    if (trigger.type === 'file' || (trigger.type === 'workflow' && trigger.event === 'document-saved')) {
+      opts.push({ token: '{{trigger.file}}', label: t("auto.varFile") });
     }
-    if (t.type === 'workflow' && t.event === 'agent-task-complete') {
-      opts.push({ token: '{{trigger.output}}', label: 'agent task output' });
+    if (trigger.type === 'workflow' && trigger.event === 'agent-task-complete') {
+      opts.push({ token: '{{trigger.output}}', label: t("auto.varAgentOut") });
     }
-    if (t.type === 'workflow' && t.event === 'transcription-done') {
-      opts.push({ token: '{{trigger.transcriptPath}}', label: 'transcript path' });
+    if (trigger.type === 'workflow' && trigger.event === 'transcription-done') {
+      opts.push({ token: '{{trigger.transcriptPath}}', label: t("auto.varTranscript") });
     }
     for (let i = 0; i < index; i++) {
       const s = draft.steps[i];
@@ -215,7 +215,7 @@ export function AutomationForm({
     return (
       <div className="space-y-4">
         <p className="text-sm text-muted-foreground">
-          Start from a recipe — pick one to pre-fill, then tweak. Or build your own.
+          {t("auto.recipeIntro")}
         </p>
         <div className="grid gap-2 sm:grid-cols-2">
           {RECIPES.map((r) => (
@@ -244,12 +244,12 @@ export function AutomationForm({
             className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-border p-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
           >
             <Plus className="size-4" strokeWidth={1.5} />
-            Start from scratch
+            {t("auto.fromScratch")}
           </button>
         </div>
         <div className="flex justify-end border-t border-border pt-3">
           <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
+            {t("common.cancel")}
           </Button>
         </div>
       </div>
@@ -265,7 +265,7 @@ export function AutomationForm({
           className="-ml-1 flex items-center gap-1 rounded px-1 text-xs text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           <ChevronLeft className="size-3.5" strokeWidth={1.5} />
-          Recipes
+          {t("auto.recipes")}
         </button>
       )}
 
@@ -273,7 +273,7 @@ export function AutomationForm({
       <div className="grid gap-4 sm:grid-cols-[1fr_13rem]">
         <div className="space-y-1.5">
           <Label htmlFor="auto-name" className="text-xs font-medium">
-            Name
+            {t("conn.name")}
           </Label>
           <Input
             id="auto-name"
@@ -358,7 +358,7 @@ export function AutomationForm({
               />
               <div className="flex items-center justify-between gap-3">
                 <Label htmlFor="weekdays-only" className="text-xs text-muted-foreground">
-                  Only run on weekdays (Mon–Fri)
+                  {t("auto.weekdaysOnly")}
                 </Label>
                 <Switch
                   id="weekdays-only"
@@ -402,7 +402,7 @@ export function AutomationForm({
               </div>
               <div className="flex items-center gap-2">
                 <Label htmlFor="trigger-path" className="w-20 shrink-0 text-xs text-muted-foreground">
-                  Folder
+                  {t("auto.folder")}
                 </Label>
                 <Input
                   id="trigger-path"
@@ -432,7 +432,7 @@ export function AutomationForm({
               </div>
               <div className="flex items-center gap-2">
                 <Label htmlFor="trigger-glob" className="w-20 shrink-0 text-xs text-muted-foreground">
-                  Matching
+                  {t("auto.matching")}
                 </Label>
                 <Input
                   id="trigger-glob"
@@ -470,7 +470,7 @@ export function AutomationForm({
               {triggerEvent(draft.trigger) === 'document-saved' && (
                 <div className="flex items-center gap-2">
                   <Label htmlFor="wf-glob" className="w-20 shrink-0 text-xs text-muted-foreground">
-                    Matching
+                    {t("auto.matching")}
                   </Label>
                   <Input
                     id="wf-glob"
@@ -499,7 +499,7 @@ export function AutomationForm({
             <DropdownMenuTrigger asChild>
               <Button type="button" variant="outline" size="sm" className="h-8 gap-1 text-xs">
                 <Plus className="size-3.5" strokeWidth={1.5} />
-                Add step
+                {t("auto.addStep")}
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-72">
@@ -515,7 +515,7 @@ export function AutomationForm({
                 <div className="flex flex-col">
                   <span>{t("automation.stepWriteNote")}</span>
                   <span className="text-xs text-muted-foreground">
-                    Write or append to a markdown file
+                    {t("auto.writeStepHint")}
                   </span>
                 </div>
               </DropdownMenuItem>
@@ -534,7 +534,7 @@ export function AutomationForm({
           <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center">
             <p className="text-sm text-muted-foreground">{t("automation.noSteps")}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              Add a step to define what this automation does.
+              {t("auto.addStepHint")}
             </p>
           </div>
         ) : (
@@ -591,7 +591,7 @@ export function AutomationForm({
             </div>
             <div className="space-y-1">
               <Label htmlFor="max-runs" className="text-xs text-muted-foreground">
-                Max runs / day
+                {t("auto.maxRuns")}
               </Label>
               <Input
                 id="max-runs"
@@ -610,7 +610,7 @@ export function AutomationForm({
             </div>
             <div className="space-y-1">
               <Label htmlFor="max-steps" className="text-xs text-muted-foreground">
-                Max steps / run
+                {t("auto.maxSteps")}
               </Label>
               <Input
                 id="max-steps"
@@ -635,13 +635,13 @@ export function AutomationForm({
 
       <div className="flex items-center justify-end gap-2 border-t border-border pt-4">
         <Button type="button" variant="ghost" onClick={onClose}>
-          Cancel
+          {t("common.cancel")}
         </Button>
         <Button type="button" variant="outline" disabled={saving} onClick={() => void handleSave(false)}>
-          Save
+          {t("conns.save")}
         </Button>
         <Button type="button" disabled={saving} onClick={() => void handleSave(true)}>
-          {needsArming(draft) ? 'Save, arm & run' : 'Save & run'}
+          {needsArming(draft) ? t("autos.saveArmRun") : t("autos.saveRun")}
         </Button>
       </div>
     </div>

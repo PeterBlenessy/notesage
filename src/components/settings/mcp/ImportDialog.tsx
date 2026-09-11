@@ -187,7 +187,7 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           {selectedSource && loading && (
             <div className="flex items-center justify-center py-8">
               <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
-              <span className="text-sm text-muted-foreground ml-2">Scanning...</span>
+              <span className="text-sm text-muted-foreground ml-2">{t("imp.scanning")}</span>
             </div>
           )}
 
@@ -200,7 +200,7 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
                 className="mt-2"
                 onClick={() => setSelectedSource(null)}
               >
-                Try another source
+                {t("imp.tryAnother")}
               </Button>
             </div>
           )}
@@ -208,8 +208,7 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           {selectedSource && !loading && discoveredServers.length > 0 && (
             <div className="space-y-2">
               <p className="text-sm text-muted-foreground">
-                Found {discoveredServers.length} server{discoveredServers.length !== 1 ? 's' : ''}.
-                Select which to import:
+                {t("imp.foundServers", { count: discoveredServers.length })}
               </p>
               <div className="space-y-1.5 max-h-64 overflow-y-auto thin-scrollbar">
                 {discoveredServers.map((server) => (
@@ -237,15 +236,15 @@ export function ImportDialog({ open, onOpenChange }: { open: boolean; onOpenChan
         <DialogFooter>
           {selectedSource && (
             <Button variant="outline" onClick={() => setSelectedSource(null)}>
-              Back
+              {t("connect.back")}
             </Button>
           )}
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           {selectedSource && discoveredServers.length > 0 && (
             <Button onClick={handleImport} disabled={importing || selectedIds.size === 0}>
-              {importing ? 'Importing...' : `Import ${selectedIds.size} Server${selectedIds.size !== 1 ? 's' : ''}`}
+              {importing ? t("common.importing") : `Import ${selectedIds.size} Server${selectedIds.size !== 1 ? 's' : ''}`}
             </Button>
           )}
         </DialogFooter>

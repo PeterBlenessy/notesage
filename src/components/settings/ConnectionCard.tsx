@@ -390,7 +390,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
               <span
                 className={`text-sm font-medium truncate min-w-0 ${isRenamable ? 'cursor-pointer hover:underline decoration-muted-foreground/40' : ''}`}
                 onDoubleClick={isRenamable ? startRename : undefined}
-                title={isRenamable ? 'Double-click to rename' : connection.label}
+                title={isRenamable ? t("project.doubleClickRename") : connection.label}
               >
                 {connection.label}
               </span>
@@ -403,7 +403,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
                 agent connections; a paid/plan signal may join it in Phase 3. */}
             {connection.freeAccount && (
               <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0">
-                Free account
+                {t("card.freeAccount")}
               </span>
             )}
           </div>
@@ -437,18 +437,18 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
             {connection.authMethod === 'agent_managed' && connection.sandboxEnabled !== false && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0 flex items-center gap-0.5" title={t("conn.sandboxEnabled")}>
                 <Shield className="h-2.5 w-2.5" strokeWidth={2} />
-                Sandbox
+                {t("card.sandbox")}
               </span>
             )}
             {connection.networkSandboxEnabled && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0 flex items-center gap-0.5" title={t("conn.networkRestrictionEnabled")}>
                 <Globe className="h-2.5 w-2.5" strokeWidth={2} />
-                Network
+                {t("card.network")}
               </span>
             )}
             {connection.binarySource === 'managed' && (
               <span className="text-[10px] px-1.5 py-0.5 rounded-sm bg-muted/60 text-muted-foreground shrink-0" title={t("conn.installedByNotesage")}>
-                Managed
+                {t("card.managed")}
               </span>
             )}
             {/* The INSTALLED version, always, whenever it is known.
@@ -469,7 +469,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
                 className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground shrink-0"
                 title={`v${updateAvailable.latestVersion} is available upstream but not yet tested with Notesage — it will install when a Notesage update includes it.`}
               >
-                Update held back
+                {t("card.updateHeld")}
               </span>
             )}
             {updateAvailable && updateAvailable.hasUpdate && !updateAvailable.heldBack && (
@@ -608,10 +608,9 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
         <AlertDialog open={uninstallOpen} onOpenChange={setUninstallOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Uninstall {connection.label}?</AlertDialogTitle>
+              <AlertDialogTitle>{t("card.uninstallTitle", { name: connection.label })}</AlertDialogTitle>
               <AlertDialogDescription>
-                The binary will be removed; your connection settings remain.
-                You can reinstall it any time from this connection card.
+              {t("card.uninstallBody")}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -628,7 +627,7 @@ export function ConnectionCard({ connection, onConfigure, onDisconnect, updateAv
                 {uninstalling ? (
                   <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" strokeWidth={1.5} />
                 ) : null}
-                Uninstall
+                {t("card.uninstall")}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

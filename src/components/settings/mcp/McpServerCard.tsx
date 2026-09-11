@@ -30,6 +30,7 @@ import { useMcpOperations } from '@/hooks/useMcpOperations';
 import { cn } from '@/lib/utils';
 import { ToolRow } from './ToolRow';
 import { AddEditServerDialog } from './AddEditServerDialog';
+import { t } from '@/lib/i18n';
 
 // ---------------------------------------------------------------------------
 // Status helpers
@@ -166,7 +167,7 @@ export function McpServerCard({ server }: { server: McpServerEntry }) {
                 {sourceLabel(server.source)}
               </Badge>
               <Badge variant="secondary" className="text-xs px-1.5 py-0">
-                {isRemote ? 'Remote' : 'Local'}
+                {isRemote ? t("common.remote") : t("conns.local")}
               </Badge>
             </div>
             {server.error && (
@@ -184,18 +185,18 @@ export function McpServerCard({ server }: { server: McpServerEntry }) {
                 {server.status !== 'running' && (
                   <DropdownMenuItem onClick={() => startServer(server)}>
                     <Play className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                    Start
+                    {t("localai.start")}
                   </DropdownMenuItem>
                 )}
                 {server.status === 'running' && (
                   <DropdownMenuItem onClick={() => stopServer(server.id)}>
                     <Square className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                    Stop
+                    {t("comp.stop")}
                   </DropdownMenuItem>
                 )}
                 <DropdownMenuItem onClick={() => restartServer(server.id)}>
                   <RotateCcw className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                  Restart
+                  {t("localai.restart")}
                 </DropdownMenuItem>
                 {isRemote && (
                   <>
@@ -206,18 +207,18 @@ export function McpServerCard({ server }: { server: McpServerEntry }) {
                     </DropdownMenuItem>
                     <DropdownMenuItem onClick={handleSignOut}>
                       <LogOut className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                      Sign out
+                      {t("mcpc.signOut")}
                     </DropdownMenuItem>
                   </>
                 )}
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={() => setEditOpen(true)}>
                   <Wrench className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                  Edit
+                  {t("skills.edit")}
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={handleRemove}>
                   <Trash2 className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                  Remove
+                  {t("mcpc.remove")}
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -236,7 +237,7 @@ export function McpServerCard({ server }: { server: McpServerEntry }) {
                 className={cn('h-3 w-3 transition-transform duration-150', !toolsExpanded && '-rotate-90')}
                 strokeWidth={1.5}
               />
-              Tools
+              {t("custom.badgeTools")}
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="px-3 pb-2.5 space-y-1">

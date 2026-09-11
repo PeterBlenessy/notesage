@@ -290,7 +290,7 @@ export function ConnectionConfigDialog({
       >
         <DialogHeader className="px-7 pt-7 pb-3 border-b border-border">
           <DialogTitle className="text-[20px] font-semibold tracking-tight">
-            Configure {connection.label}
+            {t("cfg.configureName", { name: connection.label })}
           </DialogTitle>
         </DialogHeader>
 
@@ -378,7 +378,7 @@ export function ConnectionConfigDialog({
                     ) : null;
                   })()}
                   <p className="text-[10px] text-muted-foreground">
-                    Applied when starting a new chat session
+                    {t("cfg.appliedOnNewSession")}
                   </p>
                 </div>
               )}
@@ -472,11 +472,11 @@ export function ConnectionConfigDialog({
               className="text-xs text-muted-foreground hover:text-foreground transition-colors mr-auto"
               onClick={handleResetDefaults}
             >
-              Reset to defaults
+              {t("cfg.resetDefaults")}
             </button>
           )}
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button onClick={handleSave}>{t("conn.save")}</Button>
         </DialogFooter>

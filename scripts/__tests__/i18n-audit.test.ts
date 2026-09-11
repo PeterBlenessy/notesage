@@ -45,6 +45,27 @@ const CASES: Record<string, string> = {
   // Proper nouns are not translatable in any language; counting them forever
   // makes the ratchet fail on unrelated work.
   "brands.tsx": 'export const L = () => (\n  <span>Anthropic</span>\n);\n',
+  // A literal inside a JSX expression CHILD. Rule 1 reads JsxText, and a
+  // ternary between two labels is code — so the commonest way a button says
+  // two things was invisible, inside a directory certified at hard zero.
+  "jsxchild.tsx":
+    'export const M = () => (\n  <Button>{saving ? "Saving…" : "Add Server"}</Button>\n);\n',
+  // ...but the JSX INSIDE such an expression is reached by the visitor on its
+  // own, so descending into it would count the same text twice.
+  "jsxchild-nested.tsx":
+    'export const N = () => (\n  <div>{items.map(() => (\n    <span aria-label="Switch to list view">Nothing here yet</span>\n  ))}</div>\n);\n',
+  // The explanatory paragraph under a settings toggle: the longest prose in
+  // the app, and the text a translator most needs. A 120-character cap hid
+  // every one of them.
+  "long.tsx":
+    'export const O = () => (\n  <SettingsRow description="When on, remote images and fonts are stripped before rendering across every path, so a document can never quietly report back to the site it came from." />\n);\n',
+  // A sentence that merely STARTS with a model family is not a product name.
+  // A parenthesised qualifier is how a picker labels a choice, and the prose
+  // rule demanded an alphanumeric right after the first word.
+  "paren-qualifier.tsx":
+    'export const Q = () => (\n  <>\n    <Label>Icon (emoji)</Label>\n    <span>Local (command)</span>\n  </>\n);\n',
+  "modelish.tsx":
+    'export const P = () => (\n  <>\n    <p>Whisper model is downloading in the background</p>\n    <span>Claude Sonnet 4.6</span>\n  </>\n);\n',
 };
 
 beforeAll(() => {
@@ -67,6 +88,12 @@ describe("i18n audit detects every shape it claims to", () => {
     ["text after a string containing /*", "Only run on weekdays"],
     ["a single word wearing an ellipsis", "Saving…"],
     ["a toast that is one word and an ellipsis", "Transcribing…"],
+    ["a literal in a JSX expression child", "Add Server"],
+    ["the in-progress half of a button ternary", "Saving…"],
+    ["a sentence longer than 120 characters", "remote images and fonts are stripped"],
+    ["a sentence that opens with a model family", "Whisper model is downloading"],
+    ["a label with a parenthesised qualifier", "Icon (emoji)"],
+    ["a picker option with a parenthesised qualifier", "Local (command)"],
   ])("sees %s", (_name, needle) => {
     expect(texts().some((t) => t.includes(needle))).toBe(true);
   });
@@ -80,6 +107,21 @@ describe("i18n audit detects every shape it claims to", () => {
 
   it("does not report a brand name nobody can translate", () => {
     expect(texts().some((t) => t === "Anthropic")).toBe(false);
+  });
+
+  it("does not report a model name", () => {
+    expect(texts().some((t) => t === "Claude Sonnet 4.6")).toBe(false);
+  });
+
+  it("counts JSX nested inside an expression child exactly once", () => {
+    const all = scan(dir) as { file: string; text: string }[];
+    const nested = all.filter((f) => f.file.endsWith("jsxchild-nested.tsx"));
+    // The text node and the aria-label, one each — not doubled by the
+    // expression-child walk also descending into the element.
+    expect(nested.map((f) => f.text).sort()).toEqual([
+      "Nothing here yet",
+      "Switch to list view",
+    ]);
   });
 
   it("reports each finding once", () => {

@@ -137,6 +137,27 @@ struct ChromeRecorderSpec: Decodable, Equatable {
   let interruptedLabel: String?
 }
 
+/// A passive line of status in the bottom-centre column — the background
+/// image sweep's "Saving 3 of 12 for offline", and whatever joins it.
+///
+/// Passive is the whole contract: it has no controls, it is never tappable,
+/// and its hosting view has `isUserInteractionEnabled = false` so it can
+/// never swallow a touch meant for the content or for a control beneath it.
+///
+/// It is native for the reason every other bottom-centre occupant is: the
+/// slot has exactly one owner and that owner is here. As a React island it
+/// was drawn by the web layer with no knowledge of the native islands'
+/// geometry, so the search pill sat straight on top of it — a "mini
+/// notification or pill, I could not tell what it said" (Peter, device,
+/// build 60, #995).
+struct ChromeStatusSpec: Decodable, Equatable {
+  /// Already-localised and already-formatted. The frontend owns wording and
+  /// pluralisation; this draws it.
+  let label: String
+  /// Show the spinner. A status that is merely informational sets this false.
+  let busy: Bool?
+}
+
 struct ChromeSpec: Decodable, Equatable {
   let topLeft: ChromeItemSpec?
   let topRight: ChromeItemSpec?
@@ -147,6 +168,7 @@ struct ChromeSpec: Decodable, Equatable {
   /// compose button.
   let bottomRight: ChromeItemSpec?
   let bottomCenter: ChromePlayerSpec?
+  let bottomStatus: ChromeStatusSpec?
   let search: ChromeSearchSpec?
 }
 
@@ -199,14 +221,38 @@ final class ChromeManager {
     setPlayer(spec.bottomRecorder == nil ? spec.bottomCenter : nil, over: webView)
     setRecorder(spec.bottomRecorder, over: webView)
     setSearch(spec.search, over: webView)
-    // The recorder and the search island are both bottom-centre, and search
-    // is deliberately raised above everything (`bringChromeToFront`), so on a
-    // screen that has both, search sat exactly on top of Pause and Stop:
-    // a recording could be started and then not stopped (Peter, device,
-    // build 50). The player already yields the slot to a recording; search
-    // cannot, because filtering a folder while recording is reasonable. So
-    // they stack — the recorder rides above the search pill.
-    recorderBottom?.constant = spec.search == nil ? -10 : -(10 + searchIslandHeight + 8)
+    setStatus(spec.bottomStatus, over: webView)
+    layoutBottomColumn()
+  }
+
+  // MARK: - The bottom-centre column
+
+  private static let columnInset = ChromeColumnMetrics.inset
+
+  /// Apply the column layout to the live constraints.
+  ///
+  /// **This is the single owner of the bottom-centre slot, and nothing else
+  /// may position anything there.** The stacking ORDER and the arithmetic live
+  /// in `ChromeColumn.swift`, which imports no UI framework and is therefore
+  /// exercised on macOS by `scripts/check-chrome-column.sh` — the offsets are
+  /// the part that has been wrong three times, and they are the part that can
+  /// be tested without a device. What is left here is only the wiring.
+  private func layoutBottomColumn() {
+    // One rung for both: `apply` guarantees at most one of them exists.
+    let transportHost = recorderHost ?? playerHost
+    let offsets = bottomColumnOffsets(
+      hasSearch: searchHost != nil,
+      hasTransport: transportHost != nil,
+      hasStatus: statusHost != nil
+    )
+
+    if searchHost != nil { searchBottom?.constant = -offsets.search }
+    if recorderHost != nil {
+      recorderBottom?.constant = -offsets.transport
+    } else if playerHost != nil {
+      playerBottom?.constant = -offsets.transport
+    }
+    if statusHost != nil { statusBottom?.constant = -offsets.status }
   }
 
   /// Lift every chrome host back above whatever was just inserted over the
@@ -260,6 +306,7 @@ final class ChromeManager {
     if let playerHost { container.bringSubviewToFront(playerHost.view) }
     if let recorderHost { container.bringSubviewToFront(recorderHost.view) }
     if let searchHost { container.bringSubviewToFront(searchHost.view) }
+    if let statusHost { container.bringSubviewToFront(statusHost.view) }
   }
 
   private var breadcrumbHost: UIHostingController<AnyView>?
@@ -328,6 +375,7 @@ final class ChromeManager {
     guard let spec else {
       playerHost?.view.removeFromSuperview()
       playerHost = nil
+      playerBottom = nil
       return
     }
     let view = AnyView(GlassPlayer(spec: spec) { [weak self] id in self?.emit(id, value: nil) })
@@ -351,11 +399,17 @@ final class ChromeManager {
     // hit-testing to its own frame, so it must be no taller than the controls
     // or it swallows taps meant for the document beneath (the corner-button
     // lesson, #581).
+    // Against the keyboard guide, which rests on the bottom safe area while
+    // the keyboard is down — so this is where it has always sat — and tracks
+    // the keyboard's top edge when it is up. Every member of the column hangs
+    // off the same guide, which is what lets `layoutBottomColumn` stack them.
+    let bottom = host.view.bottomAnchor.constraint(
+      equalTo: container.keyboardLayoutGuide.topAnchor, constant: -Self.columnInset)
+    playerBottom = bottom
     NSLayoutConstraint.activate([
-      host.view.bottomAnchor.constraint(
-        equalTo: container.safeAreaLayoutGuide.bottomAnchor, constant: -10),
+      bottom,
       host.view.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-      host.view.heightAnchor.constraint(equalToConstant: 66),
+      host.view.heightAnchor.constraint(equalToConstant: Self.transportHeight),
       // Never wider than the screen: a strip that overshoots clips its end
       // buttons and loses the capsule's rounded ends off-screen.
       host.view.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -24),
@@ -370,11 +424,18 @@ final class ChromeManager {
   }
 
   /// Height of the collapsed search island, mirrored from its own constraint
-  /// below so the recorder can sit clear of it.
-  private static let searchIslandHeightValue: CGFloat = 50
+  /// below so the rest of the column can sit clear of it.
+  private static let searchIslandHeightValue = ChromeColumnMetrics.searchHeight
   private var searchIslandHeight: CGFloat { Self.searchIslandHeightValue }
+  /// Height of the transport islands. The player and the recorder are the
+  /// same shape and the same size on purpose (see `GlassRecorder`).
+  private static let transportHeight = ChromeColumnMetrics.transportHeight
   private var recorderBottom: NSLayoutConstraint?
   private var recorderHost: UIHostingController<AnyView>?
+  private var playerBottom: NSLayoutConstraint?
+  private var searchBottom: NSLayoutConstraint?
+  private var statusBottom: NSLayoutConstraint?
+  private var statusHost: UIHostingController<AnyView>?
 
   private func setRecorder(_ spec: ChromeRecorderSpec?, over webView: WKWebView) {
     guard let container = chromeContainer(for: webView) else { return }
@@ -399,12 +460,12 @@ final class ChromeManager {
     // bottom safe area with the keyboard down, so nothing moves in the common
     // case, and neither island ends up under a keyboard in the rare one.
     let bottom = host.view.bottomAnchor.constraint(
-      equalTo: container.keyboardLayoutGuide.topAnchor, constant: -10)
+      equalTo: container.keyboardLayoutGuide.topAnchor, constant: -Self.columnInset)
     recorderBottom = bottom
     NSLayoutConstraint.activate([
       bottom,
       host.view.centerXAnchor.constraint(equalTo: container.centerXAnchor),
-      host.view.heightAnchor.constraint(equalToConstant: 66),
+      host.view.heightAnchor.constraint(equalToConstant: Self.transportHeight),
       host.view.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -24),
     ])
     host.view.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
@@ -412,11 +473,70 @@ final class ChromeManager {
     recorderHost = host
   }
 
+  /// The search island's place in the column, remembered so
+  /// `layoutBottomColumn` can move it. A helper rather than an inline
+  /// constraint because it is built inside an `activate([...])` literal.
+  private func searchBottomConstraint(
+    host: UIHostingController<AnyView>, container: UIView
+  ) -> NSLayoutConstraint {
+    // keyboardLayoutGuide rests on the bottom safe area when the keyboard
+    // is down and tracks its top edge when up — native keyboard avoidance,
+    // no JS bridge involved.
+    let bottom = host.view.bottomAnchor.constraint(
+      equalTo: container.keyboardLayoutGuide.topAnchor, constant: -Self.columnInset)
+    searchBottom = bottom
+    return bottom
+  }
+
+  /// Height of the passive status pill.
+  private static let statusHeight: CGFloat = 34
+
+  private func setStatus(_ spec: ChromeStatusSpec?, over webView: WKWebView) {
+    guard let container = chromeContainer(for: webView) else { return }
+    guard let spec else {
+      statusHost?.view.removeFromSuperview()
+      statusHost = nil
+      statusBottom = nil
+      return
+    }
+    let view = AnyView(GlassStatus(spec: spec))
+    if let host = statusHost, host.view.superview != nil {
+      // The label changes on every swept document — swap the root view in
+      // place so the pill does not re-run its appear transition each tick.
+      host.rootView = view
+      host.view.invalidateIntrinsicContentSize()
+      container.bringSubviewToFront(host.view)
+      return
+    }
+    let host = UIHostingController(rootView: view)
+    host.view.backgroundColor = .clear
+    host.view.translatesAutoresizingMaskIntoConstraints = false
+    // THE point of a passive pill: a hosting view clips hit-testing to its
+    // own frame and does NOT pass touches through its empty regions (#586's
+    // dead create button was exactly this). A status line that ate a tap
+    // would be strictly worse than no status line, so it takes none.
+    host.view.isUserInteractionEnabled = false
+    container.addSubview(host.view)
+    let bottom = host.view.bottomAnchor.constraint(
+      equalTo: container.keyboardLayoutGuide.topAnchor, constant: -Self.columnInset)
+    statusBottom = bottom
+    NSLayoutConstraint.activate([
+      bottom,
+      host.view.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+      host.view.heightAnchor.constraint(equalToConstant: Self.statusHeight),
+      host.view.widthAnchor.constraint(lessThanOrEqualTo: container.widthAnchor, constant: -24),
+    ])
+    host.view.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+    host.view.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+    statusHost = host
+  }
+
   private func setSearch(_ spec: ChromeSearchSpec?, over webView: WKWebView) {
     guard let container = chromeContainer(for: webView) else { return }
     guard let spec else {
       searchHost?.view.removeFromSuperview()
       searchHost = nil
+      searchBottom = nil
       searchWidthCancellable = nil
       searchCollapsedConstraints = []
       searchExpandedConstraints = []
@@ -455,8 +575,7 @@ final class ChromeManager {
       // keyboardLayoutGuide rests on the bottom safe area when the keyboard
       // is down and tracks its top edge when up — native keyboard avoidance,
       // no JS bridge involved.
-      host.view.bottomAnchor.constraint(
-        equalTo: container.keyboardLayoutGuide.topAnchor, constant: -10),
+      searchBottomConstraint(host: host, container: container),
       host.view.heightAnchor.constraint(equalToConstant: Self.searchIslandHeightValue),
     ])
     searchCollapsedConstraints = [
@@ -1050,6 +1169,44 @@ struct GlassPlayer: View {
 /// Red dot · elapsed · pause/resume · stop, with a faint level bar under the
 /// time. Nothing of ours on the lock screen while recording: iOS's own red
 /// microphone indicator is the affordance there.
+/// The passive status pill — a spinner and a line of text, nothing else.
+///
+/// Deliberately the quietest surface in the app: it appears while background
+/// work runs and disappears when it finishes. No controls, nothing to
+/// dismiss, and the library stays entirely usable, which is the point of
+/// doing the work in the background at all. It exists because silence is
+/// worse than a whisper: without it, a user who shares an article and opens
+/// the app straight away watches a document change under them — the thumbnail
+/// redraws, the file grows — with no explanation.
+///
+/// Smaller type and secondary colour than the transports, because it is not a
+/// control and must not read as one.
+struct GlassStatus: View {
+  let spec: ChromeStatusSpec
+
+  var body: some View {
+    HStack(spacing: 7) {
+      if spec.busy ?? true {
+        ProgressView()
+          .controlSize(.mini)
+      }
+      Text(spec.label)
+        .font(.footnote)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 6)
+    .modifier(GlassIslandSurface())
+    // One VoiceOver element reading the whole pill, announced politely
+    // rather than interrupting: it is information, not an interruption.
+    .accessibilityElement(children: .combine)
+    .accessibilityLabel(spec.label)
+    .accessibilityAddTraits(.updatesFrequently)
+  }
+}
+
 struct GlassRecorder: View {
   let spec: ChromeRecorderSpec
   let emit: (String) -> Void

@@ -22,7 +22,7 @@ interface Finding {
  * When you translate a batch: run `node scripts/i18n-audit.mjs src`, put the
  * new number here, and note it in the commit. Only ever move it down.
  *
- * RAISED ONCE, on 2026-09-10, from 376 to 1407 — the only legitimate reason to
+ * RAISED ONCE, on 2026-09-10, from 376 to 1407, then DOWN to 917 as the settings panel was translated — the only legitimate reason to
  * raise it: the DETECTOR got better, not the app worse. Its JSX rule required
  * the `>` and the `<` on one line, so every text node Prettier had wrapped —
  * which is every element with a className of any length — was invisible. Four
@@ -70,28 +70,56 @@ interface Finding {
  * PR adding a provider fail a test whose only sound remedy this comment
  * forbids.
  *
+ * RAISED AGAIN, on 2026-09-11, from 917 to 1032, for the same reason and none
+ * other: three more blind spots closed, so the number now counts text that was
+ * always there. Review found all three, none of them by reading the tool:
+ *
+ *   - A string literal inside a JSX expression CHILD —
+ *     `<Button>{saving ? 'Saving…' : 'Save'}</Button>`. Rule 1 reads JsxText,
+ *     and a ternary between two labels is code, not text. That idiom is how
+ *     most buttons in this app say two things, and it is why a directory this
+ *     file certified at HARD ZERO was still rendering English.
+ *   - A 120-character cap in `looksTranslatable`, which excluded exactly the
+ *     longest sentences in the app: the explanatory paragraph under a settings
+ *     toggle. Thirty of those were invisible. The cap is now 400 — a rail
+ *     against data URIs, not a judgement about prose.
+ *   - `MODEL_NAME`, which exempted anything STARTING with a model family, so
+ *     "Whisper model is downloading…" was read as a product name. It now has
+ *     to look like a name: short, no function words, no sentence punctuation.
+ *   - `PROSE`, which required an alphanumeric after the first word's
+ *     separator, so every parenthesised qualifier — `Local (command)`,
+ *     `Remote (URL)`, `Auto (720px)`, `Icon (emoji)` — read as not-prose.
+ *
  * A ceiling that cannot see the thing it counts is worse than no ceiling: it
  * reports success while the work goes backwards. Move it DOWN from here.
  */
-const CEILING = 1407;
+const CEILING = 1038;
 
 /**
  * Directories that ARE finished. These get a hard zero — once an area is fully
  * translated it must not silently regress when someone adds a control there.
  *
- * `src/components/settings` was here and has been REMOVED, which is not a
- * regression in that code: the detector that certified it could not see a text
- * node Prettier had wrapped, and with that fixed the area holds 232
- * untranslated strings across 50 files — `Tools` on a badge, `Add model` on a
- * button, whole sentences of help text. It was never at zero; it was measured
- * by something looking the other way. Tracked in #991, and it goes back in
- * this list when `node scripts/i18n-audit.mjs src/components/settings` prints
- * nothing.
+ * Both entries are here on measurement, not on memory. `src/components/mobile`
+ * and `src/components/settings` each audit at 0 against the current detector —
+ * the one that reads the whole syntax tree, sees a literal inside a JSX
+ * expression child, and has no length cap worth speaking of.
  *
- * `src/components/mobile` is added on the opposite evidence: it audits at 0
- * with the fixed detector.
+ * `src/components/settings` has now been certified twice and been wrong once.
+ * The first certification was made by a detector that could not see a text node
+ * Prettier had wrapped; fixing that exposed 232 strings the promise had been
+ * covering. The second was made by one that could not see
+ * `{saving ? 'Saving…' : 'Save'}` or any sentence over 120 characters; fixing
+ * that exposed 114 more, including every explanatory paragraph in
+ * `SystemSettings`. Both times the code had not regressed — the instrument had
+ * been looking the other way, and the hard zero said so with confidence.
+ *
+ * So: this list is a claim about the DETECTOR as much as about the directory.
+ * When you add an entry, the honest question is not "is this area translated?"
+ * but "what shape of user-visible text can this scanner still not see?" —
+ * `scripts/__tests__/i18n-audit.test.ts` plants one file per shape precisely so
+ * the answer is testable rather than asserted. #991.
  */
-const COMPLETED = ['src/components/mobile'];
+const COMPLETED = ['src/components/mobile', 'src/components/settings'];
 
 describe('i18n coverage', () => {
   it('does not grow the untranslated-string count', () => {
@@ -131,10 +159,10 @@ describe('i18n coverage', () => {
     // doing its job — it would let a whole panel's worth of English back in
     // unnoticed. Keep it within 10 of reality.
     //
-    // Tightened from 25 while #991 is open: `src/components/settings` lost its
-    // hard zero when the detector learned to see the 232 strings it had been
-    // certified without, so the ratchet is the ONLY thing guarding that area
-    // now, and 25 strings of slack is most of a panel.
+    // Tightened from 25 and kept there: `src/components/settings` has now had
+    // its hard zero broken twice by a better detector, so the ratchet is what
+    // catches the next shape of text neither guard can see yet, and 25 strings
+    // of slack is most of a panel.
     const findings = scan('src') as Finding[];
     expect(
       CEILING - findings.length,

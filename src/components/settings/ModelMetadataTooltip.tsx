@@ -130,7 +130,7 @@ export function ModelMetadataTooltip({
               }}
             >
               <ExternalLink className="h-3 w-3" strokeWidth={1.5} />
-              View on Hugging Face
+              {t("modelmeta.viewOnHf")}
             </button>
           )}
 

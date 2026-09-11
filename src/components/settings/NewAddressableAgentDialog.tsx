@@ -124,7 +124,7 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
             />
             {slug && (
               <p className="text-xs text-muted-foreground">
-                File: <code className="text-xs">~/.notesage/agents/{slug}.md</code>
+                {t("agentdlg.file")} <code className="text-xs">~/.notesage/agents/{slug}.md</code>
               </p>
             )}
           </div>
@@ -156,7 +156,7 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
                 className={cn('h-3 w-3 transition-transform duration-150', !advancedOpen && '-rotate-90')}
                 strokeWidth={1.5}
               />
-              Advanced options
+              {t("dlg.advancedOptions")}
             </CollapsibleTrigger>
             <CollapsibleContent>
               <div className="space-y-4 pt-3">
@@ -169,7 +169,7 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
                     className="font-mono text-sm"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Restrict which tools/skills this agent can use. Leave empty for no restrictions.
+                    {t("agentdlg.restrictHint")}
                   </p>
                 </div>
 
@@ -182,7 +182,7 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
                     className="font-mono text-sm"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Preferred model. Matched against available connections.
+                    {t("agentdlg.modelHint")}
                   </p>
                 </div>
 
@@ -218,10 +218,10 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
+            {t("common.cancel")}
           </Button>
           <Button onClick={handleSave} disabled={saving || !name.trim() || !description.trim()}>
-            {saving ? 'Creating...' : 'Create'}
+            {saving ? t("common.creating") : t("skills.create")}
           </Button>
         </DialogFooter>
       </DialogContent>

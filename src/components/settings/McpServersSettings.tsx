@@ -81,11 +81,11 @@ export function McpServersSettings() {
           <div className="flex items-center gap-1.5">
             <Button variant="ghost" size="sm" onClick={() => setCatalogOpen(true)}>
               <Boxes className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
-              Catalog
+              {t("mcps.catalog")}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => setImportOpen(true)}>
               <Download className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
-              Import
+              {t("mcps.import")}
             </Button>
             <Button variant="ghost" size="sm" onClick={() => { setPrefill(undefined); setAddOpen(true); }}>
               <Plus className="h-3.5 w-3.5 mr-1" strokeWidth={1.5} />
@@ -115,7 +115,7 @@ export function McpServersSettings() {
           </div>
         </div>
         <p className="text-xs text-muted-foreground mt-1">
-          Connect external tool servers via the Model Context Protocol
+          {t("mcps.intro")}
         </p>
       </div>
 
@@ -123,7 +123,7 @@ export function McpServersSettings() {
         <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
           <p className="text-sm text-muted-foreground">{t("mcp.noServers")}</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Browse the catalog, add a server manually, or import from Claude Desktop, Cursor, or VS Code
+            {t("mcps.emptyHint")}
           </p>
         </div>
       ) : (

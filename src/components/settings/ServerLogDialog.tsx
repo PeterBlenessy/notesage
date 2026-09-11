@@ -68,15 +68,14 @@ export function ServerLogDialog() {
       <DialogTrigger asChild>
         <Button variant="ghost" size="sm" className="h-7 text-xs gap-1.5">
           <ScrollText className="h-3 w-3" strokeWidth={1.5} />
-          Server log
+          {t("srvlog.title")}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>{t("serverLog.title")}</DialogTitle>
           <DialogDescription>
-            Recent output from the local inference engine. Useful when a local agent stops
-            before finishing — look for messages about context size or the KV cache.
+            {t("slog.intro")}
           </DialogDescription>
         </DialogHeader>
 
@@ -84,8 +83,8 @@ export function ServerLogDialog() {
           {lines.length === 0 ? (
             <p className="p-4 text-xs text-muted-foreground">
               {loading
-                ? 'Reading…'
-                : 'Nothing logged yet. The log is cleared each time the server starts.'}
+                ? t("slog.reading")
+                : t("slog.empty")}
             </p>
           ) : (
             <pre className="p-3 text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-words">
@@ -111,7 +110,7 @@ export function ServerLogDialog() {
               ) : (
                 <Copy className="h-3 w-3" strokeWidth={1.5} />
               )}
-              {copied ? 'Copied' : 'Copy'}
+              {copied ? t("common.copiedPlain") : t("common.copy")}
             </Button>
             <Button
               variant="ghost"
@@ -124,7 +123,7 @@ export function ServerLogDialog() {
                 className={`h-3 w-3 ${loading ? 'animate-spin' : ''}`}
                 strokeWidth={1.5}
               />
-              Refresh
+              {t("common.refresh")}
             </Button>
           </div>
         </div>

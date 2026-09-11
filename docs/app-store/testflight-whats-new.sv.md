@@ -25,14 +25,17 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Svenska där det var engelska, två rättningar för inspelning, och en fråga.
+Blinkningen är borta, den mystiska pillen går att läsa, miniatyrerna hinner med.
 
 FIXAT
-• Den svenska appen är svensk igen: mikrofonfrågan, tomma mappar, länkmenyn
-och etiketterna som VoiceOver läser upp.
-• En inspelning som inte startar avslutar inte längre artikeln som läses upp.
-• Nivåkurvan tränger inte undan tiden och knapparna på en smal skärm.
+• Att stänga en artikel får inte längre skärmen att blinka innan listan kommer.
+• Statusen som blinkade förbi bakom sökpillen ligger nu ovanför den, läsbar.
+• Inställningar är svenska rakt igenom, förklaringarna med.
+• "1 server", inte "1 servrar".
+
+FÖRBÄTTRAT
+• Miniatyrbilder hämtas en skärm i förväg.
 
 PROVA
-• Spela in en minut och titta på kurvan. Ska staplarna glida åt sidan, eller
-stå still och ändra höjd? Säg vilken som läses bäst.
+• Öppna en artikel, gå tillbaka, titta när listan kommer. Blinkar det?
+• Skrolla snabbt i en stor mapp, lista och galleri. Hinner bilderna med?

@@ -12,6 +12,7 @@ import { PROVIDER_OPTIONS } from '@/lib/ai/connections';
 import type { Connection, ProviderOption } from '@/lib/ai/connections';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { toast } from 'sonner';
+import { t } from '@/lib/i18n';
 
 /**
  * Resolve the `ProviderOption` that drives the install/auth flow for an existing
@@ -95,7 +96,7 @@ export function ReauthDialog({
         <DialogHeader className="px-4 pt-4 pr-10">
           <DialogTitle className="text-sm">Re-authenticate {connection.label}</DialogTitle>
           <DialogDescription className="text-xs">
-            Sign in again to restore access to {connection.label}.
+            {t("reauth.body", { name: connection.label })}
           </DialogDescription>
         </DialogHeader>
         {isLsp ? (
