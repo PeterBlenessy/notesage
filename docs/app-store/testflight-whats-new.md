@@ -29,16 +29,16 @@ people testing something that already shipped.
 Folders are drawn natively now. This is the real fix, not another patch.
 
 NEW
-• A folder is a native screen. It is no longer taken down when you open a
-document, so coming back cannot blink, jump or go black — those were all the
-same fault, and it is gone rather than patched.
+• A folder is a native screen. It is not taken down when you open a document,
+so coming back cannot blink, jump or go black — those were all the same fault,
+and it is gone rather than patched.
 • Swipe a row for Share and Delete.
+• Saved articles show their title and "publisher · N min" again.
 
-KNOWN, NOT DONE YET
-• A saved article shows its filename, not its title and reading time.
+KNOWN, NOT DONE
 • No Listen button on a row yet. Home is unchanged.
 
 TRY
 • Open and close documents from inside a folder, many times, fast. Anything
 that blinks, jumps or goes black is what I most want to hear about.
-• Swipe rows. Long-press rows. Scroll a big folder.
+• Swipe rows, long-press rows, scroll a big folder.

@@ -37,8 +37,8 @@ Shipped in build 63, and verified on the simulator rather than reasoned about:
 
 Not done, and not claimed:
 
-- ❌ Article rows still show the filename. `notesage_capture_article_card_meta`
-  is exported over the C ABI for this and is not yet wired to the cell.
+- ✅ Article rows — title and "publisher · N min", read through
+  `article_card_meta` over the C ABI so the capture format keeps one parser.
 - ❌ No Listen control on a row.
 - ❌ Home is still the web layer's — it is synthesised cards, not a listing.
 - ❌ The folder is listed TWICE: once natively, and once by `LibraryBrowser`

@@ -28,16 +28,16 @@ folk att testa sådant som redan är ute.
 Mappar ritas nu nativt. Det här är den riktiga lösningen, inte en lappning.
 
 NYTT
-• En mapp är en nativ skärm. Den rivs inte längre när du öppnar ett dokument,
-så när du kommer tillbaka kan det inte blinka, hoppa eller bli svart — allt
-det var samma fel, och det är borta i stället för lappat.
+• En mapp är en nativ skärm. Den rivs inte när du öppnar ett dokument, så när
+du kommer tillbaka kan det inte blinka, hoppa eller bli svart — allt det var
+samma fel, och det är borta i stället för lappat.
 • Svep på en rad för Dela och Radera.
+• Sparade artiklar visar titel och "utgivare · N min" igen.
 
-KÄNT, INTE KLART ÄN
-• En sparad artikel visar filnamnet, inte titel och lästid.
+KÄNT, INTE KLART
 • Ingen Lyssna-knapp på raden än. Hem är oförändrat.
 
 PROVA
 • Öppna och stäng dokument inifrån en mapp, många gånger, snabbt. Allt som
 blinkar, hoppar eller blir svart vill jag helst höra om.
-• Svep på rader. Håll in rader. Skrolla en stor mapp.
+• Svep på rader, håll in rader, skrolla en stor mapp.
