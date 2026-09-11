@@ -26,19 +26,17 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-The two things missing from the last build.
+Fixes for what you found in 64.
 
-NEW
-• A saved article shows its own title, where it came from and how long it
-takes to read — with the first line of the piece under it, instead of a
-filename made of a date.
-• Listen is back, on a row and on a gallery card: one tap plays the piece
-without opening it, and a ring fills as it is read.
-
-KNOWN, NOT DONE
-• Home is still the old screen.
+FIXED
+• Listen no longer crashes the app. Playing an article — from a row, a card
+or the reader — killed it a second or two in.
+• The view menu works: Gallery, Compact, sorting and grouping all had no
+effect on a folder. All four now do.
+• A deleted row disappears, and a new note shows up, without leaving the
+folder and coming back.
 
 TRY
-• Open the Inbox and look at anything you saved from the web — title, site
-and minutes, in list and in gallery.
-• Tap Listen, leave the folder, come back: still playing, still Pause.
+• Play an article and leave it running while you browse, open it, come back.
+• Switch Gallery/List and Compact, sort by date, group by type — in a folder
+with a mix of notes and saved pages.
