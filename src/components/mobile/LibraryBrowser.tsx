@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronLeft, FolderOpen, Plus, FolderPlus, ArrowDownAZ, Clock, LayoutGrid, List, SlidersHorizontal } from "lucide-react";
 import type { FileEntry } from "@/lib/tauri";
-import { iosListDirectory, iosCreateDirectory, iosEnsureDirectory, iosTextPrompt, iosQuickLook, iosOpenSettings } from "@/lib/ios-api";
+import { iosListDirectory, iosCreateDirectory, iosEnsureDirectory, iosTextPrompt, iosQuickLook, iosOpenSettings, iosReloadLibraryScreens } from "@/lib/ios-api";
 import { toast } from "sonner";
 import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-store";
 import { stopSpeech, toggleSpeech } from "@/lib/speech-controller";
@@ -211,6 +211,14 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
       // the root (its card) is listed. Only the Inbox listing marks its
       // items as seen — Home shows a number, not the items.
       if (currentRelPath === "" || currentRelPath === INBOX_NAME) void refreshUnread(currentRelPath === INBOX_NAME);
+      // Tell the native folder screens to re-read too (#1000). Only on a
+      // REFRESH: the first load of a folder is the native screen's own read,
+      // and every mutation — create, delete, rename, a sweep finishing —
+      // arrives here with `viaRefresh`. Without this a deleted row stayed on
+      // screen and a new note did not appear until you left and came back,
+      // because a native screen re-read itself only in `viewWillAppear`.
+      // Rejection is expected off iOS and means there is nothing to tell.
+      if (viaRefresh) void iosReloadLibraryScreens().catch(() => {});
     } catch (err) {
       if (loadIdRef.current !== loadId) return;
       setState({ status: "error", message: String(err) });

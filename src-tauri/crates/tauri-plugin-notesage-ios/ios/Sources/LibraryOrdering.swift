@@ -72,6 +72,36 @@ enum LibraryFileKind: String, CaseIterable {
     }
 }
 
+/// How a folder screen must refresh itself after its view settings changed.
+///
+/// The distinction is not cosmetic, it is a crash. `reconfigureItems` keeps
+/// the EXISTING cell and insists on the registration it was created with, so
+/// using it across a list↔gallery switch — where the provider now answers
+/// with a different cell class — raises:
+///
+///   "Attempted to dequeue a cell for a different registration or reuse
+///    identifier than the existing cell when reconfiguring an item"
+///
+/// which is how build 65's first attempt died the moment Gallery was chosen.
+/// A density change keeps the same cell class and only alters what it draws,
+/// so there `reconfigure` is right — and necessary, because a diffable data
+/// source will not redraw an item whose identity did not move.
+enum LibraryRefreshKind: Equatable {
+    /// Sort or group only: the snapshot already says everything.
+    case none
+    /// Same cells, different contents — density.
+    case reconfigure
+    /// Different cell class — list↔gallery.
+    case reload
+}
+
+func libraryRefreshKind(layoutChanged: Bool, densityChanged: Bool) -> LibraryRefreshKind {
+    // Layout wins: when both changed, the cells are being replaced anyway.
+    if layoutChanged { return .reload }
+    if densityChanged { return .reconfigure }
+    return .none
+}
+
 /// Can this be read aloud (#833)?
 ///
 /// By EXTENSION, not by `LibraryFileKind`, and deliberately so: `.text` also

@@ -163,12 +163,35 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
 
     func apply(settings next: LibraryViewSettings) {
         guard next != settings else { return }
-        let layoutChanged = next.layout != settings.layout || next.condensed != settings.condensed
+        let refresh = libraryRefreshKind(
+            layoutChanged: next.layout != settings.layout,
+            densityChanged: next.condensed != settings.condensed)
         settings = next
-        if layoutChanged {
+        if refresh != .none {
             collectionView.setCollectionViewLayout(makeLayout(), animated: true)
         }
+        // Sort and group change WHICH items are where, and the snapshot says
+        // that on its own.
         rebuildSections(animated: true)
+
+        guard let dataSource else { return }
+        var snapshot = dataSource.snapshot()
+        guard !snapshot.itemIdentifiers.isEmpty else { return }
+        switch refresh {
+        case .none:
+            break
+        case .reconfigure:
+            // Same cell class, different contents: a 40pt tile instead of 72,
+            // no date line. A diffable data source will not redraw an item
+            // whose identity did not move, so this is what makes condensed
+            // actually look condensed.
+            snapshot.reconfigureItems(snapshot.itemIdentifiers)
+            dataSource.apply(snapshot, animatingDifferences: false)
+        case .reload:
+            // A DIFFERENT cell class. Reconfiguring here is the crash quoted
+            // in `libraryRefreshKind`; the cells have to be built afresh.
+            dataSource.applySnapshotUsingReloadData(snapshot)
+        }
     }
 
     func apply(filter next: String) {
@@ -186,6 +209,10 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
     /// Re-read the folder. Off the main thread, because a directory of several
     /// hundred entries on an iCloud path is not instant and this runs on every
     /// return from a document.
+    /// Re-read this folder because something outside changed it. Named apart
+    /// from `reload()` so the host is not reaching into a private.
+    func reloadFromHost() { reload() }
+
     private func reload() {
         let rel = relPath
         loadGeneration += 1
@@ -335,9 +362,12 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
         if previous.recording != current.recording {
             affected = snapshot.itemIdentifiers
         } else {
-            affected = [previous.relPath, current.relPath]
-                .compactMap { $0 }
-                .filter { snapshot.indexOfItem($0) != nil }
+            // Deduplicated, and that is the whole point rather than
+            // tidiness — see `rowsNeedingRedraw`, which is where the rule and
+            // its regression test live. Build 64 crashed here.
+            affected = ArticleMeta.rowsNeedingRedraw(
+                previous: previous.relPath, current: current.relPath,
+                present: { snapshot.indexOfItem($0) != nil })
         }
         guard !affected.isEmpty else { return }
         snapshot.reconfigureItems(affected)

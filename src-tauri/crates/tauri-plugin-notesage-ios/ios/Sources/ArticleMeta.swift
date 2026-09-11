@@ -126,6 +126,27 @@ enum ArticleMeta {
             excerpt: meta?.excerpt)
     }
 
+    /// Which rows a speech-state change has to redraw.
+    ///
+    /// Pure, and lifted out of the screen so it can be checked on macOS —
+    /// because the bug it encodes crashed the app in build 64 and a
+    /// screenshot could never have caught it. While one article plays, every
+    /// paragraph pushes a state whose previous and current path are the SAME
+    /// row; handing that identifier to `reconfigureItems` twice is an invalid
+    /// snapshot and UIKit raises `NSInternalInconsistencyException`:
+    /// "supplied item identifiers are not unique".
+    ///
+    /// `present` is what the list actually holds — a row that has been
+    /// scrolled out of the data source must not be named either.
+    static func rowsNeedingRedraw(
+        previous: String?, current: String?, present: (String) -> Bool
+    ) -> [String] {
+        var seen = Set<String>()
+        return [previous, current]
+            .compactMap { $0 }
+            .filter { present($0) && seen.insert($0).inserted }
+    }
+
     // MARK: Parsing
 
     /// Hand the document to the capture crate's reader. `nil` means "not one

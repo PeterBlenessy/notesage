@@ -542,6 +542,16 @@ impl<R: Runtime> NotesageIos<R> {
         self.call("setLibrarySpeech", args)
     }
 
+    /// How a folder is shown — list/gallery, density, sort, group (#1000).
+    pub fn set_library_view(&self, args: serde_json::Value) -> Result<()> {
+        self.call("setLibraryView", args)
+    }
+
+    /// Re-read every native folder screen after the library changed (#1000).
+    pub fn reload_library_screens(&self) -> Result<()> {
+        self.call("reloadLibraryScreens", ())
+    }
+
     /// Show an exported HTML report in its own bridge-less WKWebView, instead
     /// of the sandboxed `htmlpreview://` iframe (#606, ADR 0010).
     pub fn present_report(&self, html: &str, inset_top: f64, inset_bottom: f64) -> Result<()> {
