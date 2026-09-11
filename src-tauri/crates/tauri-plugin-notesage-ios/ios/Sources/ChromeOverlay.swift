@@ -227,57 +227,32 @@ final class ChromeManager {
 
   // MARK: - The bottom-centre column
 
-  /// Vertical gap between two stacked islands.
-  private static let columnGap: CGFloat = 8
-  /// Gap between the lowest island and the bottom safe area / keyboard.
-  private static let columnInset: CGFloat = 10
+  private static let columnInset = ChromeColumnMetrics.inset
 
-  /// Assign every bottom-centre island its place in one stack.
+  /// Apply the column layout to the live constraints.
   ///
-  /// **This function is the single owner of the bottom-centre slot, and
-  /// nothing else may position anything there.** Four things want it — the
-  /// search pill, the read-aloud transport, the recording island, and a
-  /// passive status line — and every time one of them was positioned on its
-  /// own, it landed on top of another:
-  ///
-  ///   - search drawn over the recorder's Pause and Stop, so a recording
-  ///     could be started and not stopped (build 50);
-  ///   - the web layer's sweep indicator drawn under the search pill, showing
-  ///     something unreadable for a moment (build 60, #995);
-  ///   - the player and the search pill both pinned at `-10`, which collides
-  ///     the moment an article is being read aloud with find-in-document open.
-  ///
-  /// Each of those was fixed where it was noticed, with its own arithmetic.
-  /// The arithmetic is here now, once.
-  ///
-  /// Order, from the bottom edge upward:
-  ///
-  ///   1. **search** — lowest, because it is the one a thumb reaches for most
-  ///      and because it is the only one that expands into a keyboard.
-  ///   2. **player / recorder** — the transport. The two never coexist (the
-  ///      audio session has one owner), so they share a rung.
-  ///   3. **status** — passive, so it floats highest: nothing is lost if a
-  ///      finger never reaches it, and everything below stays tappable.
+  /// **This is the single owner of the bottom-centre slot, and nothing else
+  /// may position anything there.** The stacking ORDER and the arithmetic live
+  /// in `ChromeColumn.swift`, which imports no UI framework and is therefore
+  /// exercised on macOS by `scripts/check-chrome-column.sh` — the offsets are
+  /// the part that has been wrong three times, and they are the part that can
+  /// be tested without a device. What is left here is only the wiring.
   private func layoutBottomColumn() {
-    var offset = Self.columnInset
-
-    if searchHost != nil {
-      searchBottom?.constant = -offset
-      offset += searchIslandHeight + Self.columnGap
-    }
-
     // One rung for both: `apply` guarantees at most one of them exists.
-    if recorderHost != nil {
-      recorderBottom?.constant = -offset
-      offset += Self.transportHeight + Self.columnGap
-    } else if playerHost != nil {
-      playerBottom?.constant = -offset
-      offset += Self.transportHeight + Self.columnGap
-    }
+    let transportHost = recorderHost ?? playerHost
+    let offsets = bottomColumnOffsets(
+      hasSearch: searchHost != nil,
+      hasTransport: transportHost != nil,
+      hasStatus: statusHost != nil
+    )
 
-    if statusHost != nil {
-      statusBottom?.constant = -offset
+    if searchHost != nil { searchBottom?.constant = -offsets.search }
+    if recorderHost != nil {
+      recorderBottom?.constant = -offsets.transport
+    } else if playerHost != nil {
+      playerBottom?.constant = -offsets.transport
     }
+    if statusHost != nil { statusBottom?.constant = -offsets.status }
   }
 
   /// Lift every chrome host back above whatever was just inserted over the
@@ -450,11 +425,11 @@ final class ChromeManager {
 
   /// Height of the collapsed search island, mirrored from its own constraint
   /// below so the rest of the column can sit clear of it.
-  private static let searchIslandHeightValue: CGFloat = 50
+  private static let searchIslandHeightValue = ChromeColumnMetrics.searchHeight
   private var searchIslandHeight: CGFloat { Self.searchIslandHeightValue }
   /// Height of the transport islands. The player and the recorder are the
   /// same shape and the same size on purpose (see `GlassRecorder`).
-  private static let transportHeight: CGFloat = 66
+  private static let transportHeight = ChromeColumnMetrics.transportHeight
   private var recorderBottom: NSLayoutConstraint?
   private var recorderHost: UIHostingController<AnyView>?
   private var playerBottom: NSLayoutConstraint?
