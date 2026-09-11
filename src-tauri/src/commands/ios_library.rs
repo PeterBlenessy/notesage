@@ -886,6 +886,26 @@ pub async fn ios_set_library_browsing(
     }
 }
 
+/// Tell the native rows what read-aloud is doing (#833, native rows).
+/// `args` is `{ relPath: string|null, playing: bool, fraction: f64,
+/// recording: bool }`. State flows one way: the web controller still owns
+/// playback, the native row only draws it and reports taps.
+#[tauri::command]
+pub async fn ios_set_library_speech(
+    app: tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::set_library_speech(&app, args).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, args);
+        Err("ios_set_library_speech is only available on iOS".into())
+    }
+}
+
 /// Native navigation shell (`native-shell` Labs flag) — the mobile shell as a
 /// real `UINavigationController` rooted at Home. PRD:
 /// `docs/prds/2026-09-06-ios-native-navigation.md`.
@@ -1695,6 +1715,14 @@ mod ios_impl {
     ) -> Result<(), String> {
         app.notesage_ios()
             .set_library_browsing(args)
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn set_library_speech(
+        app: &AppHandle, args: serde_json::Value,
+    ) -> Result<(), String> {
+        app.notesage_ios()
+            .set_library_speech(args)
             .map_err(|e| e.to_string())
     }
 

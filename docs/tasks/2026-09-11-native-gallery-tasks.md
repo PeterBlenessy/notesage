@@ -37,16 +37,85 @@ Shipped in build 63, and verified on the simulator rather than reasoned about:
 
 Not done, and not claimed:
 
-- ❌ Article rows. `notesage_capture_article_card_meta` IS exported over the
-  C ABI, but the plugin Swift package cannot call it: the bridging header and
-  the capture staticlib belong to the app/extension target (`src-tauri/ios/`),
-  not the package. It needs the capability injected the way `localize` and
-  `onOpen` are, which is a cross-target change and not a quick one.
-- ❌ No Listen control on a row.
 - ❌ Home is still the web layer's — it is synthesised cards, not a listing.
 - ❌ The folder is listed TWICE: once natively, and once by `LibraryBrowser`
   so the menu and swipe handlers can find the entry. That goes when the
   browser shell moves (step 3).
+
+## Progress (2026-09-11, after build 63)
+
+Two of build 63's three gaps closed.
+
+- ✅ **Article rows.** A saved article shows its own title, `site · 4 min`
+  and its standfirst instead of a timestamped filename.
+
+  Build 63's note said the plugin package "cannot call" the C ABI because the
+  bridging header and the capture staticlib belong to the app target. The
+  staticlib half was **wrong**, and checking it rather than believing it is
+  what unblocked this: the app's Rust library depends on the capture crate,
+  and `nm -gU libtauri_app_lib.a` shows all twenty `#[no_mangle]` exports
+  present — in an archive the app target already links. Only a DECLARATION was
+  missing.
+
+  So there is now a `CNotesageCapture` target in `ios/Package.swift`: two
+  function declarations, an empty `shim.c`, and no implementation. A build
+  without it is a hard `#error` rather than a silent fall back to filenames.
+
+  `ArticleMeta.swift` parses nothing — it reads the file, hands the HTML to
+  the crate's own reader and decodes the JSON. The cache is keyed by
+  path@mtime and distinguishes "read it, not a capture" from "not read yet",
+  which is what stops every plain `.html` being re-read on every scroll.
+
+  The row keeps its ABSOLUTE height. The standfirst gets one line, not the
+  web's two, because self-sizing is what let the web list jump when a late
+  read changed a row's shape — and a row that never reflows is the point of
+  this screen.
+
+- ✅ **Listen on a row.** The floating 36pt glass disc is back, with the
+  progress ring, over the row's right edge — reserving no width, as on the
+  web (a 72pt column cost titles a third of the screen in build 50).
+
+  Playback is still the web controller's. State flows one way — session in
+  via `ios_set_library_speech`, taps out as a `listen` event — so there is no
+  second answer to "where was I". What can be read aloud is decided by
+  extension, not by `LibraryFileKind`: `.text` also covers `.json` and source
+  files, and offering to read a stack trace aloud is not a feature.
+
+- ✅ `scripts/check-article-meta.sh` — 45 assertions on macOS, in CI. Verified
+  to fail on both regressions it exists for: the truncation that produces
+  "0 of 4 min left", and a field renamed out of camelCase, which would decode
+  to nil in silence.
+- ✅ Ten more assertions in `check-library-ordering.sh` pinning what can be
+  read aloud against `isSpeakable` in `FileRow.tsx`.
+- ✅ Seven more frontend tests, including that the reading-time messages cross
+  as TEMPLATES with `{total}` intact — resolving them here would look harmless
+  and ship rows reading "0 of 0 min left".
+
+Verified on the simulator, not reasoned about — photographed at each step:
+
+- The Inbox as a native list: the article row showing **its own title**,
+  `anthropic.com · 4 min`, and its standfirst, beside six note rows still
+  showing filenames and dates.
+- The Listen disc idle on every speakable row, then playing: pushing a speech
+  session moved ONLY the article's disc to Pause and drew its quarter ring.
+  That is `ios_set_library_speech` → `LibraryBrowsing.setSpeech` →
+  `speechChanged` → a targeted `reconfigureItems`, end to end.
+- The same in the gallery, three across, with the badge on each card's corner.
+
+Not pressed on a device: the tap itself. The Mac's screen was locked, so the
+Simulator had no window to click — see [[simulator-needs-an-unlocked-mac]].
+The JS half of that path is unit-tested; the native half is a target/action on
+a control.
+
+**The cost of this session was not the code.** Three build cycles went into
+debugging a probe that was never in the binary: `tauri ios build
+--target aarch64-sim` printed `** BUILD SUCCEEDED **` and left the PREVIOUS
+`.app` in place, because the xcarchive directory was not empty. I concluded in
+turn that a Tauri command was rejecting and that the library grant had been
+wiped. Both were fiction. The memory now says to `stat` the app binary's mtime
+before forming any theory at all.
+
+Still open after this: Home, and the double listing.
 
 ## 0. The shape
 

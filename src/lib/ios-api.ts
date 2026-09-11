@@ -176,6 +176,28 @@ export function iosSetLibraryBrowsing(args: {
   return invoke("ios_set_library_browsing", { args });
 }
 
+/**
+ * Tell the native rows what read-aloud is doing (#833, native rows).
+ *
+ * The native folder screen draws the Listen control, but playback is still
+ * the web controller's: it owns which document a position belongs to, the
+ * document→speech-text conversion and the resume bookkeeping. So state flows
+ * one way — session in, taps out — and there is no second player.
+ *
+ * `null` means nothing is playing. `recording` disables the control outright:
+ * one owner of the audio session, so there is no listening while the recorder
+ * runs.
+ */
+export function iosSetLibrarySpeech(args: {
+  relPath: string | null;
+  playing: boolean;
+  /** 0…1 for the ring around the disc; 0 before the first progress event. */
+  fraction: number;
+  recording: boolean;
+}): Promise<void> {
+  return invoke("ios_set_library_speech", { args });
+}
+
 export function iosSetChrome(spec: {
   topLeft?: IosChromeItem;
   topRight?: IosChromeItem;

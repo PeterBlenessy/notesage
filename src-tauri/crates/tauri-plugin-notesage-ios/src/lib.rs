@@ -536,6 +536,12 @@ impl<R: Runtime> NotesageIos<R> {
         self.call("setLibraryBrowsing", args)
     }
 
+    /// What read-aloud is doing, for the Listen control a native row draws
+    /// (#833). One way: playback stays with the web controller.
+    pub fn set_library_speech(&self, args: serde_json::Value) -> Result<()> {
+        self.call("setLibrarySpeech", args)
+    }
+
     /// Show an exported HTML report in its own bridge-less WKWebView, instead
     /// of the sandboxed `htmlpreview://` iframe (#606, ADR 0010).
     pub fn present_report(&self, html: &str, inset_top: f64, inset_bottom: f64) -> Result<()> {

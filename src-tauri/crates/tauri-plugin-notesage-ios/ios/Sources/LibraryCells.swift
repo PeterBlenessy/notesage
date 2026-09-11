@@ -246,6 +246,125 @@ func librarySymbol(for entry: LibraryEntry) -> String {
     }
 }
 
+// MARK: - Listen
+
+/// The read-aloud control on a row (#833): headphones to start, then Pause /
+/// Play for the document being read, with a ring around the edge filling as
+/// it is read.
+///
+/// It FLOATS over the row's right edge and reserves no width. It used to be a
+/// 72pt column, which is a third of the text on a 393pt screen — titles that
+/// had fitted on one line wrapped onto two (Peter, device, build 50). What it
+/// covers, it covers as glass, so the words behind it stay visibly words.
+///
+/// The hit area is 44pt, Apple's minimum, around a 36pt disc — through the
+/// button's own bounds, not through layout, so the row costs nothing for it.
+final class ListenDisc: UIControl {
+    /// A row's disc is 36pt with a 44pt hit area — Apple's minimum, taken
+    /// through the control's bounds rather than through layout, so the row
+    /// costs nothing for it. A gallery card's badge is smaller: 28pt over a
+    /// ~120pt card at three across, where 36 covers a third of the picture.
+    /// Both sizes are the web's (`ListenButton`'s `size: "row" | "card"`).
+    enum Size {
+        case row, card
+
+        var diameter: CGFloat { self == .row ? 36 : 28 }
+        var extent: CGFloat { self == .row ? 44 : 34 }
+        var glyph: CGFloat { self == .row ? 15 : 12 }
+    }
+
+    private let size: Size
+
+    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterial))
+    private let icon = UIImageView()
+    private let ring = CAShapeLayer()
+
+    var fraction: Double = 0 { didSet { setNeedsLayout() } }
+
+    init(size: Size = .row) {
+        self.size = size
+        super.init(frame: .zero)
+
+        blur.isUserInteractionEnabled = false
+        blur.layer.cornerRadius = size.diameter / 2
+        blur.clipsToBounds = true
+        blur.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(blur)
+
+        icon.contentMode = .center
+        icon.tintColor = .label
+        icon.isUserInteractionEnabled = false
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(icon)
+
+        ring.fillColor = nil
+        ring.strokeColor = UIColor.label.cgColor
+        ring.lineWidth = 2
+        ring.lineCap = .round
+        layer.addSublayer(ring)
+
+        NSLayoutConstraint.activate([
+            blur.centerXAnchor.constraint(equalTo: centerXAnchor),
+            blur.centerYAnchor.constraint(equalTo: centerYAnchor),
+            blur.widthAnchor.constraint(equalToConstant: size.diameter),
+            blur.heightAnchor.constraint(equalToConstant: size.diameter),
+            icon.centerXAnchor.constraint(equalTo: centerXAnchor),
+            icon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            widthAnchor.constraint(equalToConstant: size.extent),
+            heightAnchor.constraint(equalToConstant: size.extent),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// - Parameters:
+    ///   - state: what read-aloud is doing, app-wide.
+    ///   - isThisDocument: whether it is doing it to THIS row's document.
+    func apply(_ state: LibrarySpeechState, isThisDocument: Bool, label: String) {
+        let symbol: String
+        if isThisDocument {
+            symbol = state.playing ? "pause.fill" : "play.fill"
+        } else {
+            symbol = "headphones"
+        }
+        icon.image = UIImage(
+            systemName: symbol,
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: size.glyph, weight: .medium))
+        // One owner of the audio session: no listening while a recording runs.
+        isEnabled = !state.recording
+        alpha = state.recording ? 0.4 : 1
+        fraction = isThisDocument ? state.fraction : 0
+        accessibilityLabel = label
+        accessibilityTraits = .button
+        isAccessibilityElement = true
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        let inset = (size.extent - size.diameter) / 2 + ring.lineWidth / 2
+        let rect = bounds.insetBy(dx: inset, dy: inset)
+        guard fraction > 0, rect.width > 0 else {
+            ring.path = nil
+            return
+        }
+        // From twelve o'clock, clockwise — the direction a progress ring is
+        // read, which is not the direction CoreGraphics counts angles in.
+        let path = UIBezierPath(
+            arcCenter: CGPoint(x: rect.midX, y: rect.midY),
+            radius: rect.width / 2,
+            startAngle: -.pi / 2,
+            endAngle: -.pi / 2 + 2 * .pi * CGFloat(min(1, max(0, fraction))),
+            clockwise: true)
+        ring.path = path.cgPath
+    }
+
+    override func tintColorDidChange() {
+        super.tintColorDidChange()
+        ring.strokeColor = UIColor.label.cgColor
+    }
+}
+
 // MARK: - List row
 
 final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
@@ -254,9 +373,22 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
     private let tile = UIImageView()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
+    /// The standfirst of a saved article (#836). One line, not the web row's
+    /// two: the row height here is ABSOLUTE, and keeping it so is the whole
+    /// reason a returning folder cannot reflow. A second line would have to
+    /// come from self-sizing, and self-sizing is what made the web list jump
+    /// when a late read changed a row's shape.
+    private let excerptLabel = UILabel()
     private let progressBar = UIProgressView(progressViewStyle: .default)
     private let separator = UIView()
     private var tileSize: NSLayoutConstraint!
+    /// Read-aloud, floating over the row's right edge. Shown only for
+    /// documents that can be read — a folder has nothing to say.
+    let listen = ListenDisc()
+    /// What the disc would act on. Held separately from `representedPath`
+    /// because a tap must never be attributed to a row the cell has since
+    /// been reused for.
+    private(set) var listenPath: String?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -276,12 +408,18 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
         subtitleLabel.textColor = .secondaryLabel
         subtitleLabel.numberOfLines = 1
 
+        excerptLabel.font = .preferredFont(forTextStyle: .subheadline)
+        excerptLabel.adjustsFontForContentSizeCategory = true
+        excerptLabel.textColor = .secondaryLabel
+        excerptLabel.numberOfLines = 1
+
         progressBar.progressTintColor = .label
         progressBar.trackTintColor = .quaternaryLabel
 
         separator.backgroundColor = .separator
 
-        let text = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel, progressBar])
+        let text = UIStackView(
+            arrangedSubviews: [titleLabel, subtitleLabel, excerptLabel, progressBar])
         text.axis = .vertical
         text.spacing = 2
         text.alignment = .fill
@@ -292,8 +430,13 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
         row.alignment = .center
         row.translatesAutoresizingMaskIntoConstraints = false
         separator.translatesAutoresizingMaskIntoConstraints = false
+        listen.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(row)
         contentView.addSubview(separator)
+        // Added AFTER the row, so it floats over the text rather than beside
+        // it. The text stack keeps the full width and simply passes behind
+        // the glass.
+        contentView.addSubview(listen)
 
         tileSize = tile.widthAnchor.constraint(equalToConstant: 72)
         NSLayoutConstraint.activate([
@@ -306,6 +449,8 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
             separator.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             separator.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             separator.heightAnchor.constraint(equalToConstant: 1 / UIScreen.main.scale),
+            listen.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
+            listen.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
         ])
     }
 
@@ -315,15 +460,36 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         representedPath = nil
+        listenPath = nil
         tile.image = nil
     }
 
+    /// Draw the Listen control for this row, or hide it.
+    ///
+    /// `nil` speech means the host has not been given a state yet, which is
+    /// the same as nothing playing. A folder, and anything that cannot be
+    /// read aloud, has no control at all rather than a disabled one — an
+    /// affordance that never does anything is worse than none.
+    func configureListen(_ entry: LibraryEntry, speech: LibrarySpeechState, label: String) {
+        let readable = libraryIsSpeakable(entry)
+        listen.isHidden = !readable
+        listenPath = readable ? entry.path : nil
+        guard readable else { return }
+        listen.apply(speech, isThisDocument: speech.relPath == entry.path, label: label)
+    }
+
     func configure(
-        _ entry: LibraryEntry, condensed: Bool, progress: Double, recentlyRead: Bool
+        _ entry: LibraryEntry, condensed: Bool, progress: Double, recentlyRead: Bool,
+        article: ArticleRowText? = nil
     ) {
         representedPath = entry.path
 
-        titleLabel.text = entry.name
+        // A saved article shows what it IS, not what it is called: the
+        // capture's own title, its site and how long it takes to read (#836).
+        // The filename is a timestamp and a slug, which told the reader
+        // nothing — build 63 shipped with exactly that and it was the first
+        // thing to fix.
+        titleLabel.text = article?.title ?? entry.name
         // Unread weight — 600 against 400, the Mail convention minus the
         // ornament. A dot beside every row was clutter (2026-09-05).
         let unread = !entry.isDirectory && progress <= 0 && !recentlyRead
@@ -331,8 +497,15 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
             unread
             ? .preferredFont(forTextStyle: .body).withWeight(.semibold)
             : .preferredFont(forTextStyle: .body)
-        subtitleLabel.text = entry.isDirectory ? nil : Self.dateText(entry.modified)
-        subtitleLabel.isHidden = entry.isDirectory || condensed
+        // An article's second line is `site · 4 min` — the date it was
+        // clipped is the least interesting thing about it. Everything else
+        // keeps the modified date.
+        subtitleLabel.text = article?.subtitle ?? (entry.isDirectory ? nil : Self.dateText(entry.modified))
+        subtitleLabel.isHidden = entry.isDirectory || (article == nil && condensed)
+        // Condensed is one line per row, so the standfirst goes — the same
+        // rule the web row follows.
+        excerptLabel.text = condensed ? nil : article?.excerpt
+        excerptLabel.isHidden = condensed || article?.excerpt == nil
         progressBar.isHidden = progress <= 0 || progress >= 1
         progressBar.progress = Float(progress)
         // The slot is FIXED, so a late picture never reflows the row.
@@ -366,6 +539,11 @@ final class LibraryGridCell: UICollectionViewCell, LibraryThumbnailCell {
 
     private let picture = UIImageView()
     private let titleLabel = UILabel()
+    /// Read-aloud, as a badge on the thumbnail's corner rather than a
+    /// floating disc — a card has no right edge to spare. Same control, same
+    /// states; the web card places it identically.
+    let listen = ListenDisc(size: .card)
+    private(set) var listenPath: String?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -387,8 +565,14 @@ final class LibraryGridCell: UICollectionViewCell, LibraryThumbnailCell {
         stack.spacing = 6
         stack.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(stack)
+        listen.translatesAutoresizingMaskIntoConstraints = false
+        // Over the picture's bottom-trailing corner, after the stack so it
+        // sits above it.
+        contentView.addSubview(listen)
 
         NSLayoutConstraint.activate([
+            listen.trailingAnchor.constraint(equalTo: picture.trailingAnchor, constant: 4),
+            listen.bottomAnchor.constraint(equalTo: picture.bottomAnchor, constant: 4),
             stack.topAnchor.constraint(equalTo: contentView.topAnchor),
             stack.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
@@ -404,7 +588,20 @@ final class LibraryGridCell: UICollectionViewCell, LibraryThumbnailCell {
     override func prepareForReuse() {
         super.prepareForReuse()
         representedPath = nil
+        listenPath = nil
         picture.image = nil
+    }
+
+    /// Draw the Listen badge for this card, or hide it — same rule as the
+    /// list row, so a note offers the control in the list and in the gallery
+    /// or in neither. A control that appears in one view and not the other is
+    /// a bug report.
+    func configureListen(_ entry: LibraryEntry, speech: LibrarySpeechState, label: String) {
+        let readable = libraryIsSpeakable(entry)
+        listen.isHidden = !readable
+        listenPath = readable ? entry.path : nil
+        guard readable else { return }
+        listen.apply(speech, isThisDocument: speech.relPath == entry.path, label: label)
     }
 
     func configure(

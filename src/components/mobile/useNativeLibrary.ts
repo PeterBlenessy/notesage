@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
-import { iosSetLibraryBrowsing } from "@/lib/ios-api";
+import { log } from "@/lib/logger";
+import { iosSetLibraryBrowsing, iosSetLibrarySpeech } from "@/lib/ios-api";
 import { t, getLocale, type MessageKey } from "@/lib/i18n";
+import { toggleSpeech } from "@/lib/speech-controller";
 import { useMobileStore } from "@/stores/mobile-store";
 
 /**
@@ -49,7 +51,20 @@ const SECTION_KEYS: MessageKey[] = [
   // DOES still lives in `entrySwipeActions`.
   "action.share",
   "action.delete",
+  // The Listen control's three states, which are also its accessibility
+  // label — the only thing a screen reader has to go on.
+  "action.listen",
+  "reader.listenPause",
+  "reader.listenResume",
+  "recording.inProgress",
 ];
+
+/** Messages the native row interpolates rather than shows as they are: the
+ *  reading line is "{left} of {total} min left", and the numbers are only
+ *  known in Swift. `t()` with no variables returns the template with its
+ *  placeholders intact, which is exactly what has to cross — so the Swedish
+ *  word order travels with the Swedish string instead of being assumed. */
+const TEMPLATE_KEYS: MessageKey[] = ["list.minutes", "list.minutesLeft", "list.read"];
 
 export function useNativeLibrary(active: boolean): boolean {
   const [live, setLive] = useState(false);
@@ -60,14 +75,23 @@ export function useNativeLibrary(active: boolean): boolean {
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
-    const strings = Object.fromEntries(SECTION_KEYS.map((key) => [key, t(key)]));
+    const strings = Object.fromEntries(
+      [...SECTION_KEYS, ...TEMPLATE_KEYS].map((key) => [key, t(key)]),
+    );
     iosSetLibraryBrowsing({ enabled: true, strings })
       .then(() => {
         if (!cancelled) setLive(true);
       })
-      .catch(() => {
+      .catch((err) => {
         // No native layer, or a build without this command: the web browser
         // keeps rendering, exactly as before.
+        //
+        // LOGGED, not swallowed. A bare `.catch(() => {})` here cost a whole
+        // build cycle: the native surface staying off looks exactly like a
+        // flag being off, and there was nothing anywhere saying which. The
+        // nav shell learned the same thing one PRD earlier — see the comment
+        // on `present failed` in `useNativeNavShell`.
+        log.warn("native-library", `enable failed: ${String(err)}`);
         if (!cancelled) setLive(false);
       });
     return () => {
@@ -87,6 +111,11 @@ export function useNativeLibrary(active: boolean): boolean {
       // and the store's refs carry a display name alongside the path.
       const name = detail.relPath.split("/").pop() ?? detail.relPath;
       if (detail.kind === "folder") enterFolder({ relPath: detail.relPath, name });
+      // Read aloud: the native row draws the control, this still does the
+      // work — document→speech text, resuming from the stored position, the
+      // failure toast. A second player would be a second answer to "where
+      // was I".
+      else if (detail.kind === "listen") toggleSpeech({ path: detail.relPath, name });
       else openDocument({ relPath: detail.relPath, name });
     };
     window.addEventListener("notesage:nav-shell", onShell);
@@ -94,4 +123,31 @@ export function useNativeLibrary(active: boolean): boolean {
   }, [live, enterFolder, openDocument]);
 
   return live;
+}
+
+/**
+ * Keep the native rows' Listen controls in step with playback (#833).
+ *
+ * Split from the hook above because it subscribes to state that changes
+ * several times a minute, and `useNativeLibrary`'s own effect must not re-run
+ * on every paragraph. State flows ONE way: out to the native rows, which draw
+ * it and report taps. Nothing native decides anything about playback.
+ */
+export function useNativeLibrarySpeech(live: boolean): void {
+  const relPath = useMobileStore((s) => s.speech?.relPath ?? null);
+  const playing = useMobileStore((s) => s.speech?.playing ?? false);
+  const index = useMobileStore((s) => s.speech?.index ?? 0);
+  const total = useMobileStore((s) => s.speech?.total ?? 0);
+  // One owner of the audio session: no listening while a recording runs.
+  const recording = useMobileStore((s) => s.recording.status !== "idle");
+
+  useEffect(() => {
+    if (!live) return;
+    // The same count the Reader's transport shows ("4 / 12"): both surfaces
+    // are visible at once, so they have to agree.
+    const fraction = total > 0 ? Math.min(1, (index + 1) / total) : 0;
+    // Rejection is not a failure here: a build without the command keeps the
+    // rows exactly as they were.
+    void iosSetLibrarySpeech({ relPath, playing, fraction, recording }).catch(() => {});
+  }, [live, relPath, playing, index, total, recording]);
 }

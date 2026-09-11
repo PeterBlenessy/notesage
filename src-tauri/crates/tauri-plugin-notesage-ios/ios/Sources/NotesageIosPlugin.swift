@@ -1324,8 +1324,31 @@ class NotesageIosPlugin: Plugin {
       let args = try invoke.parseArgs(LibraryBrowsingArgs.self)
       DispatchQueue.main.async {
         LibraryBrowsing.shared.enabled = args.enabled
-        let table = args.strings ?? [:]
-        LibraryBrowsing.shared.localize = { key in table[key] ?? key }
+        LibraryBrowsing.shared.strings = args.strings ?? [:]
+        invoke.resolve()
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
+  struct LibrarySpeechArgs: Decodable {
+    let relPath: String?
+    let playing: Bool
+    let fraction: Double
+    let recording: Bool
+  }
+
+  /// What read-aloud is doing, so a native row can draw its Listen control
+  /// (#833). One way on purpose: playback belongs to the web controller,
+  /// which knows which document a position belongs to and persists it. A
+  /// second player here would be a second answer to "where was I".
+  @objc public func setLibrarySpeech(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(LibrarySpeechArgs.self)
+      DispatchQueue.main.async {
+        LibraryBrowsing.shared.setSpeech(
+          LibrarySpeechState(
+            relPath: args.relPath, playing: args.playing, fraction: args.fraction,
+            recording: args.recording))
         invoke.resolve()
       }
     } catch { invoke.reject(String(describing: error)) }
