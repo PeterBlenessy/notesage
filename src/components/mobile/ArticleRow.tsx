@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import type { ArticleCardMeta } from "@/lib/ios-api";
 import { articleMetaFor } from "@/lib/article-meta-cache";
-import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
+import {
+  getThumbnail,
+  peekThumbnail,
+  currentThumbnailTheme,
+  type ThumbnailResult,
+} from "@/lib/mobile-thumbnails";
 import { useVisibleSoon } from "./useVisibleSoon";
 import { useMobileStore } from "@/stores/mobile-store";
 import { cn } from "@/lib/utils";
@@ -45,7 +50,11 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
     void presentEntryMenu(entry, rect, props.actionContext);
   });
   const [meta, setMeta] = useState<ArticleCardMeta | null | undefined>(undefined);
-  const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(null);
+  // Already known, read during render — a row coming back from the reader
+  // must not blank first (#994 follow-up).
+  const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(() =>
+    peekThumbnail(entry, { theme: currentThumbnailTheme() }),
+  );
   const progress = useMobileStore((s) => s.readingProgress[entry.path] ?? 0);
   const opened = useMobileStore((s) => s.inboxOpened);
   // Weight, not a badge: a dot beside every thumbnail was clutter (Peter,
@@ -67,15 +76,24 @@ export function ArticleRow({ condensed, ...props }: FileRowProps & { condensed: 
     };
   }, [entry.path, entry.modified]);
 
-  // A screen ahead, like the gallery and the plain row — see `useVisibleSoon`.
-  const [thumbRef, visibleSoon] = useVisibleSoon<HTMLDivElement>(meta != null);
+  // A screen ahead, like the gallery and the plain row, and not armed at all
+  // for a row that already has its picture — see `useVisibleSoon`.
+  const [thumbRef, visibleSoon] = useVisibleSoon<HTMLDivElement>(
+    meta != null && thumbnail === null,
+  );
 
   useEffect(() => {
-    if (!meta || !visibleSoon) return;
-    let cancelled = false;
+    if (!meta) return;
     // Same theme rule as the gallery card: the thumbnail is RENDERED in a
     // theme, so it is keyed on the one in effect now.
-    const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+    const theme = currentThumbnailTheme();
+    const known = peekThumbnail(entry, { theme });
+    if (known) {
+      setThumbnail(known);
+      return;
+    }
+    if (!visibleSoon) return;
+    let cancelled = false;
     void getThumbnail(entry, { theme }).then((thumb) => {
       if (!cancelled) setThumbnail(thumb);
     });

@@ -7,7 +7,7 @@ import type { FileEntry } from "@/lib/tauri";
 import { presentEntryMenu, type EntryActionContext } from "@/lib/mobile-entry-actions";
 import { useLongPress } from "./useLongPress";
 import { classifyFile, formatModified, iconFor } from "./FileRow";
-import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
+import { getThumbnail, peekThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
 import { useVisibleSoon } from "./useVisibleSoon";
 import { isUnreadRow } from "./reading-progress";
 import { useMobileStore } from "@/stores/mobile-store";
@@ -55,17 +55,32 @@ export function GalleryCard({
   const longPress = useLongPress((rect) => {
     void presentEntryMenu(entry, rect, actionContext);
   });
+  // Whatever is ALREADY known, read during render — no promise, no effect, no
+  // frame. A card coming back from a reader has its thumbnail from the last
+  // time it was on screen, and waiting on an observer to ask for it again is
+  // what turned a remount into a list of blank tiles (#994 follow-up).
+  const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(() =>
+    entry.is_directory ? { kind: "icon" } : peekThumbnail(entry, { theme }),
+  );
   // A screen AHEAD of the viewport, not at its edge: the generation is
   // asynchronous either way, so the only way a thumbnail is there when the
   // card arrives is to have started it before the card did. Starting at the
-  // edge is why they visibly landed after the grid had drawn.
-  const [rootRef, visibleSoon] = useVisibleSoon<HTMLDivElement>(!entry.is_directory);
-  const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(
-    entry.is_directory ? { kind: "icon" } : null,
+  // edge is why they visibly landed after the grid had drawn. Not armed at all
+  // for a card that already has its picture.
+  const [rootRef, visibleSoon] = useVisibleSoon<HTMLDivElement>(
+    !entry.is_directory && thumbnail === null,
   );
 
   useEffect(() => {
-    if (entry.is_directory || !visibleSoon) return;
+    if (entry.is_directory) return;
+    // A theme flip invalidates what we have, so re-read for the new theme
+    // before deciding whether anything needs fetching.
+    const known = peekThumbnail(entry, { theme });
+    if (known) {
+      setThumbnail(known);
+      return;
+    }
+    if (!visibleSoon) return;
     let cancelled = false;
     void getThumbnail(entry, { theme }).then((result) => {
       if (!cancelled) setThumbnail(result);

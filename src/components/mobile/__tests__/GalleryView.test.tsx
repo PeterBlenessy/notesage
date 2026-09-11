@@ -26,6 +26,8 @@ const getThumbnailMock = vi.fn();
 vi.mock("@/lib/mobile-thumbnails", () => ({
   getThumbnail: (...args: unknown[]) => getThumbnailMock(...args),
   cancelPendingThumbnails: vi.fn(),
+  peekThumbnail: () => null,
+  currentThumbnailTheme: () => "light" as const,
 }));
 
 /** A controllable fake — real WKWebView has IntersectionObserver; jsdom does

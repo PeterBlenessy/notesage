@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { ChevronRight, Folder, FileText, FileImage, FileType, FileCode, File, FilePlay, FileAudio, Share, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { getThumbnail, type ThumbnailResult } from "@/lib/mobile-thumbnails";
+import {
+  getThumbnail,
+  peekThumbnail,
+  currentThumbnailTheme,
+  type ThumbnailResult,
+} from "@/lib/mobile-thumbnails";
 import { useVisibleSoon } from "./useVisibleSoon";
 import type { FileEntry } from "@/lib/tauri";
 import { iosShareFile, iosDeleteFile } from "@/lib/ios-api";
@@ -268,26 +273,41 @@ export function FileRow({ entry, active, onActivate, onChanged, actionContext, c
   const folder = useFolderAppearance(entry);
   const Icon = entry.is_directory ? folder.Icon : iconFor(entry);
   const wantsThumbnail = rowWantsThumbnail(entry);
+  const tile = !entry.is_directory;
+  const large = tile && !condensed;
+  // Whatever is already known, read during render. A row remounting with its
+  // thumbnail generated must not blank first: gating the FETCH on visibility
+  // without this is what made the blink worse rather than better (#994
+  // follow-up).
+  const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(() =>
+    wantsThumbnail ? peekThumbnail(entry, { theme: currentThumbnailTheme() }) : null,
+  );
   // A screen ahead, not on mount. Every row used to ask the moment it
   // rendered, which at a concurrency of two is an ORDERING problem rather
   // than a burst: in a folder of five hundred files, a row twenty screens
   // down waited behind four hundred and eighty jobs for rows nobody was
-  // looking at. See `useVisibleSoon`.
-  const [thumbRef, visibleSoon] = useVisibleSoon<HTMLButtonElement>(wantsThumbnail);
-  const tile = !entry.is_directory;
-  const large = tile && !condensed;
-  const [thumbnail, setThumbnail] = useState<ThumbnailResult | null>(null);
+  // looking at. Not armed for a row that already has its picture. See
+  // `useVisibleSoon`.
+  const [thumbRef, visibleSoon] = useVisibleSoon<HTMLButtonElement>(
+    wantsThumbnail && thumbnail === null,
+  );
   // The same unread weight the article row uses: an Inbox holding a PDF and a
   // saved page should not tell you about one and stay silent about the other.
   const opened = useMobileStore((s) => s.inboxOpened);
   const progress = useMobileStore((s) => s.readingProgress[entry.path] ?? 0);
   const unread = isUnreadRow(entry.path, opened, progress);
   useEffect(() => {
-    if (!wantsThumbnail || !visibleSoon) return;
-    let cancelled = false;
+    if (!wantsThumbnail) return;
     // Same theme rule as the gallery card and the article row: a rendered
     // thumbnail is keyed on the theme in effect now.
-    const theme = document.documentElement.classList.contains("dark") ? "dark" : "light";
+    const theme = currentThumbnailTheme();
+    const known = peekThumbnail(entry, { theme });
+    if (known) {
+      setThumbnail(known);
+      return;
+    }
+    if (!visibleSoon) return;
+    let cancelled = false;
     void getThumbnail(entry, { theme })
       .then((thumb) => {
         if (!cancelled) setThumbnail(thumb);

@@ -10,6 +10,8 @@ import { useMobileStore } from "@/stores/mobile-store";
 const getThumbnailMock = vi.fn();
 vi.mock("@/lib/mobile-thumbnails", () => ({
   getThumbnail: (...args: unknown[]) => getThumbnailMock(...args),
+  peekThumbnail: () => null,
+  currentThumbnailTheme: () => "light" as const,
 }));
 
 const toggle = vi.fn();
