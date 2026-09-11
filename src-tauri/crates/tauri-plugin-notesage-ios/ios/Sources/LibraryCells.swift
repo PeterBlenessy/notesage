@@ -500,12 +500,23 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
         // An article's second line is `site · 4 min` — the date it was
         // clipped is the least interesting thing about it. Everything else
         // keeps the modified date.
-        subtitleLabel.text = article?.subtitle ?? (entry.isDirectory ? nil : Self.dateText(entry.modified))
-        subtitleLabel.isHidden = entry.isDirectory || (article == nil && condensed)
+        //
+        // The two lines below are RESERVED for an article row even when their
+        // text is not known yet, and that is the point rather than tidiness:
+        // the text stack is centred in a fixed-height row, so a line that
+        // appears later shifts the title up. Falling back to the modified
+        // date was worse still — the row showed one fact and then swapped it
+        // for another. A space holds the line without saying anything.
+        let isArticle = article != nil
+        subtitleLabel.text =
+            isArticle
+            ? (article?.subtitle ?? " ")
+            : (entry.isDirectory ? nil : Self.dateText(entry.modified))
+        subtitleLabel.isHidden = entry.isDirectory || (!isArticle && condensed)
         // Condensed is one line per row, so the standfirst goes — the same
         // rule the web row follows.
-        excerptLabel.text = condensed ? nil : article?.excerpt
-        excerptLabel.isHidden = condensed || article?.excerpt == nil
+        excerptLabel.text = condensed ? nil : (isArticle ? (article?.excerpt ?? " ") : nil)
+        excerptLabel.isHidden = condensed || !isArticle
         progressBar.isHidden = progress <= 0 || progress >= 1
         progressBar.progress = Float(progress)
         // The slot is FIXED, so a late picture never reflows the row.

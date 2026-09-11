@@ -25,18 +25,13 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Rättningar för det du hittade i 64.
+En till från 65.
 
 RÄTTAT
-• Lyssna kraschar inte längre appen. Att spela en artikel — från en rad, ett
-kort eller läsaren — dödade den efter en sekund eller två.
-• Vymenyn fungerar: Galleri, Kompakt, sortering och gruppering hade ingen
-effekt på en mapp. Alla fyra gör det nu.
-• En raderad rad försvinner, och en ny anteckning dyker upp, utan att du
-behöver lämna mappen och komma tillbaka.
+• En sparad artikels rad hoppar inte längre när du trycker Lyssna. Den tappade
+kort sajt och lästid, visade filens datum i stället, och tappade
+sammanfattningsraden — vilket flyttade titeln.
 
 PROVA
-• Spela en artikel och låt den fortsätta medan du bläddrar, öppnar den,
-kommer tillbaka.
-• Växla Galleri/Lista och Kompakt, sortera på datum, gruppera på typ — i en
-mapp med både anteckningar och sparade sidor.
+• Tryck Lyssna på en sparad artikel i en lista och titta på själva raden:
+inget utom knappen ska ändras.
