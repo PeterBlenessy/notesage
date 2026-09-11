@@ -26,14 +26,17 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Swedish where it was English, two recording fixes, and one question.
+The blink is gone, the mystery pill is readable, and thumbnails keep up.
 
 FIXED
-• The Swedish app is Swedish again: the microphone prompt, empty folders, the
-link menu, and the labels VoiceOver reads.
-• A recording that fails to start no longer ends the article being read aloud.
-• The level trace no longer squeezes the timer and buttons on a narrow screen.
+• Closing an article no longer makes the screen blink before the list returns.
+• The status that flashed behind the search pill now sits above it, readable.
+• Settings is Swedish throughout, explanations included.
+• "1 server", not "1 servers".
+
+IMPROVED
+• Thumbnails are fetched a screen ahead of where you are.
 
 TRY
-• Record a minute and watch the trace. Should the bars slide along, or stay in
-place and change height? Say which reads better.
+• Open an article, go back, watch the list return. Any blink left?
+• Scroll a big folder fast, list and gallery. Do pictures keep up?
