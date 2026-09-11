@@ -25,17 +25,16 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Blinkningen är borta, den mystiska pillen går att läsa, miniatyrerna hinner med.
+Bygge 61 gjorde blinkningen värre. Det här tar tillbaka det.
 
 FIXAT
-• Att stänga en artikel får inte längre skärmen att blinka innan listan kommer.
-• Statusen som blinkade förbi bakom sökpillen ligger nu ovanför den, läsbar.
-• Inställningar är svenska rakt igenom, förklaringarna med.
-• "1 server", inte "1 servrar".
-
-FÖRBÄTTRAT
-• Miniatyrbilder hämtas en skärm i förväg.
+• Att gå tillbaka från en artikel visar inte längre listan med tomma rutor som
+fylls i efteråt. Bygge 61 flyttade inläsningen av miniatyrer till ett läge som
+kom för sent; det som redan är känt ritas nu direkt.
 
 PROVA
-• Öppna en artikel, gå tillbaka, titta när listan kommer. Blinkar det?
-• Skrolla snabbt i en stor mapp, lista och galleri. Hinner bilderna med?
+• Öppna en artikel och gå tillbaka, flera gånger, i en mapp med bilder. Listan
+ska komma tillbaka precis som du lämnade den — inga tomma rutor, ingen andra
+lista ovanpå den första.
+• Skrolla snabbt i en stor mapp, lista och galleri, för att se att bilderna
+fortfarande hinner med.
