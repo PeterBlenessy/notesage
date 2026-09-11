@@ -449,7 +449,7 @@ export function LibraryMigrationDialog({
                     {
                       name: t("settings.libraryMoveSidecarName"),
                       reason: t("settings.libraryMoveSidecarUnreadable", {
-                        count: String(sidecarScan.unreadable.length),
+                        count: sidecarScan.unreadable.length,
                       }),
                     },
                   ]
@@ -673,7 +673,7 @@ export function LibraryMigrationDialog({
             {phase.pending.length > 10 && (
               <p className="text-muted-foreground">
                 {t("settings.libraryMoveBlockedMore", {
-                  count: String(phase.pending.length - 10),
+                  count: phase.pending.length - 10,
                 })}
               </p>
             )}
@@ -737,12 +737,12 @@ export function LibraryMigrationDialog({
             </p>
             {phase.report.renamed > 0 && (
               <p className="text-muted-foreground">
-                {t("settings.libraryMoveRenamed", { count: String(phase.report.renamed) })}
+                {t("settings.libraryMoveRenamed", { count: phase.report.renamed })}
               </p>
             )}
             {phase.report.failed.length > 0 && (
               <p className="text-[var(--color-destructive)]">
-                {t("settings.libraryMoveFailed", { count: String(phase.report.failed.length) })}
+                {t("settings.libraryMoveFailed", { count: phase.report.failed.length })}
               </p>
             )}
             {phase.report.leftBehind.length > 0 && (
@@ -764,7 +764,7 @@ export function LibraryMigrationDialog({
           <p className="text-sm">
             {t("settings.libraryUndoOffer", {
               when: new Date(phase.record.at).toLocaleString(),
-              count: String(phase.record.moves.length),
+              count: phase.record.moves.length,
             })}
           </p>
         )}
@@ -778,11 +778,11 @@ export function LibraryMigrationDialog({
 
         {phase.kind === "undone" && (
           <div className="space-y-2 text-sm">
-            <p>{t("settings.libraryUndoRestored", { count: String(phase.report.restored) })}</p>
+            <p>{t("settings.libraryUndoRestored", { count: phase.report.restored })}</p>
             {phase.report.failed.length > 0 && (
               <div className="space-y-1">
                 <p className="text-[var(--color-destructive)]">
-                  {t("settings.libraryUndoFailed", { count: String(phase.report.failed.length) })}
+                  {t("settings.libraryUndoFailed", { count: phase.report.failed.length })}
                 </p>
                 <ul className="list-disc pl-5 text-muted-foreground">
                   {phase.report.failed.map((f) => (

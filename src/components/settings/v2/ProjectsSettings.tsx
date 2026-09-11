@@ -139,9 +139,9 @@ export function ProjectsSettings() {
         {gitNotAvailable && (
           <SettingsHint tone="warning" title={t("projectsSettings.gitNotInstalled")}>
             <p>
-              Install it from{' '}
+              {t("projs.installFrom")}{' '}
               <span className="font-medium text-foreground">git-scm.com</span>{' '}
-              or via Homebrew:
+              {t("projs.orHomebrew")}
             </p>
             <pre className="rounded bg-muted px-2 py-1.5 font-mono text-[11px] select-all mt-1">
               brew install git

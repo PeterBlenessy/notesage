@@ -33,7 +33,7 @@ function CapabilityBadge({
 }) {
   return (
     <span
-      title={verified ? undefined : 'Unverified — from catalog metadata, not the model header'}
+      title={verified ? undefined : t("modelcard.unverified")}
       className={`text-[10px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground ${
         verified ? '' : 'opacity-60 border border-dotted border-border-strong'
       }`}
@@ -158,7 +158,7 @@ export function ModelCard({
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top">
-                  {isActive ? 'Stop the model first' : 'Delete model file'}
+                  {isActive ? t("mcard.stopFirst") : t("mcard.deleteFile")}
                 </TooltipContent>
               </Tooltip>
               {model.is_custom && !isActive && (
@@ -210,8 +210,8 @@ export function ModelCard({
                 </TooltipTrigger>
                 <TooltipContent side="top">
                   {blocked
-                    ? fit?.reasons[0] ?? "Won't run on this Mac"
-                    : 'Download model'}
+                    ? fit?.reasons[0] ?? t("mcard.wontRunMac")
+                    : t("mcard.download")}
                 </TooltipContent>
               </Tooltip>
               <Tooltip>
@@ -245,7 +245,7 @@ export function ModelCard({
             </span>
             {isActive && model.downloaded && (
               <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-primary/10 text-primary">
-                Active
+                {t("modelcard.active")}
               </span>
             )}
             {model.is_custom && (
@@ -255,7 +255,7 @@ export function ModelCard({
           {/* Hardware-fit verdict line — sits just under the size line. */}
           {checking ? (
             <div className="mt-0.5 text-[10px] tabular-nums text-muted-foreground/60">
-              Checking…
+              {t("modelcard.checking")}
             </div>
           ) : verdict ? (
             <Tooltip>
@@ -268,14 +268,14 @@ export function ModelCard({
                     <span
                       className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-destructive/10 text-destructive"
                     >
-                      {fit?.reasons[0] ?? "Won't run"}
+                      {fit?.reasons[0] ?? t("custom.wontRun")}
                     </span>
                   )}
                 </div>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-[260px]">
                 <p className="text-xs">
-                  {display?.detail ?? 'Estimated before download — sharpens once the model runs.'}
+                  {display?.detail ?? t("mcard.estimatedBefore")}
                 </p>
                 {blocked && fit && fit.reasons.length > 0 && (
                   <ul className="mt-1 text-[11px] text-muted-foreground list-disc pl-3.5 space-y-0.5">

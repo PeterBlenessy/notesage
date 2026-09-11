@@ -245,7 +245,7 @@ export function SystemSettings({
               onClick={() => setChangelogOpen(true)}
             >
               <ScrollText className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-              View Changelog
+              {t("sys.viewChangelog")}
             </Button>
           }
         />
@@ -275,7 +275,7 @@ export function SystemSettings({
             updateState?.updateInfo
               ? `Update available: v${updateState.updateInfo.version}`
               : updateState?.status === 'checking'
-              ? 'Checking for updates…'
+              ? t("sys.checkingUpdates")
               : updateState?.status === 'error'
               ? friendlyUpdateError(updateState.error)
               : `Last checked: ${formatRelativeTime(lastUpdateCheck)}`
@@ -328,12 +328,12 @@ export function SystemSettings({
 
       <SettingsGroup
         label={t("settings.telemetry")}
-        description="Anonymous usage analytics and crash reports. No document content, file contents, or AI prompts are ever sent. Alpha builds default these on; stable builds default them off — your choice here overrides the default."
+        description={t("sys.telemetryDesc")}
         searchKeywords={['telemetry', 'analytics', 'crash', 'sentry', 'privacy', 'aptabase']}
       >
         <SettingsRow
           label={t("settings.usageAnalytics")}
-          description="Share anonymous feature-usage events so the maintainer can see which features are used and prune what isn't."
+          description={t("sys.usageTelemetry")}
           htmlFor="telemetry-usage"
           control={
             <Switch
@@ -346,7 +346,7 @@ export function SystemSettings({
         />
         <SettingsRow
           label={t("settings.crashReports")}
-          description="Share anonymous crash and error reports grouped by version so regressions can be fixed without a manual report."
+          description={t("sys.crashTelemetry")}
           htmlFor="telemetry-crash"
           control={
             <Switch
@@ -370,7 +370,7 @@ export function SystemSettings({
                 openUrl(TELEMETRY_DOC_URL).catch(() => {});
               }}
             >
-              View
+              {t("sys.view")}
             </Button>
           }
         />
@@ -487,7 +487,7 @@ export function SystemSettings({
       >
         <SettingsRow
           label={t("settings.allowScripts")}
-          description="When on, inline and same-directory scripts execute in an isolated iframe. Forms and event handlers are included when scripts are enabled. Scripts cannot access Tauri IPC or host storage. Off by default — only enable for local HTML files you trust."
+          description={t("sys.htmlScriptsDesc")}
           htmlFor="html-viewer-allow-scripts"
           control={
             <Switch
@@ -499,7 +499,7 @@ export function SystemSettings({
         />
         <SettingsRow
           label={t("settings.blockExternal")}
-          description="When on, remote images, stylesheets, and fonts (URLs starting with http:// or https://) are stripped before rendering across all render paths. Inline styles, data: URIs, and relative-path resources are unaffected."
+          description={t("sys.blockExternalDesc")}
           htmlFor="html-viewer-block-external"
           control={
             <Switch
@@ -517,7 +517,7 @@ export function SystemSettings({
       >
         <SettingsRow
           label={t("settings.loadRemoteImages")}
-          description="When on, link-preview cards load the preview image and favicon from the linked page. These come from the page itself, so loading them reveals your IP and that the document was opened to that site. Off by default — the card still shows the title, description, and site name."
+          description={t("sys.linkPreviewDesc")}
           htmlFor="link-preview-remote-images"
           control={
             <Switch
@@ -544,7 +544,7 @@ export function SystemSettings({
         />
         <SettingsRow
           label={t("settings.fileHoverPreview")}
-          description="Show a small popover with the first lines of a file when hovering its row in the sidebar. Folder hover previews are unaffected."
+          description={t("sys.filePreviewDesc")}
           htmlFor="sidebar-file-preview"
           control={
             <Switch
@@ -562,7 +562,7 @@ export function SystemSettings({
       >
         <SettingsRow
           label={t("settings.instantLoadPreview")}
-          description="Show a quick HTML preview of the document while the editor hydrates in the background. Disable to mount the editor directly — slightly slower first paint on large docs but no preview/editor swap."
+          description={t("sys.instantPreviewDesc")}
           htmlFor="instant-load-preview"
           control={
             <Switch
@@ -574,20 +574,20 @@ export function SystemSettings({
         />
         <SettingsRow
           label={t("settings.viewportCache")}
-          description="Previously viewed large documents are cached to IndexedDB for instant first paint on cold start. Clear this cache to free disk space or force a fresh load."
+          description={t("sys.viewportCacheDesc")}
           control={
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5">
                   <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                  Clear viewport cache
+                  {t("sys.clearViewport")}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
                   <AlertDialogTitle>{t("system.clearViewportCacheQuestion")}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    This removes all cached viewport snapshots from IndexedDB. The next cold open of each file will rebuild the cache automatically.
+                    {t("sys.clearCacheBody")}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -600,7 +600,7 @@ export function SystemSettings({
                       });
                     }}
                   >
-                    Clear cache
+                    {t("sys.clearCache")}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -691,8 +691,7 @@ export function SystemSettings({
                   <AlertDialogHeader>
                     <AlertDialogTitle>{t("system.clearLogFilesQuestion")}</AlertDialogTitle>
                     <AlertDialogDescription>
-                      This will permanently delete all diagnostic log data.
-                      This action cannot be undone.
+                      {t("sys.clearLogsBody")}
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
@@ -708,7 +707,7 @@ export function SystemSettings({
                         }
                       }}
                     >
-                      Clear Logs
+                      {t("sys.clearLogs")}
                     </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
@@ -777,7 +776,7 @@ export function SystemSettings({
               }}
             >
               <Download className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-              Export
+              {t("sys.export")}
             </Button>
           }
         />

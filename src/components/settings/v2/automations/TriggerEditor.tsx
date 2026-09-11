@@ -118,7 +118,7 @@ export function TriggerEditor({
 
         {freq === 'hourly' && (
           <>
-            <Label className="text-xs text-muted-foreground">at minute</Label>
+            <Label className="text-xs text-muted-foreground">{t("trig.atMinute")}</Label>
             <Input
               type="number"
               min={0}
@@ -165,7 +165,7 @@ export function TriggerEditor({
 
       <div className="flex items-center justify-between gap-3">
         <Label htmlFor="trigger-catchup" className="text-xs text-muted-foreground">
-          Catch up runs missed while Notesage was closed
+          {t("trig.catchUp")}
         </Label>
         <Switch id="trigger-catchup" checked={catchUp} onCheckedChange={onCatchUpChange} />
       </div>

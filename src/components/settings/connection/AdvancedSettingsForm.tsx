@@ -70,7 +70,7 @@ export function AdvancedSettingsForm({
             />
           </div>
           <p className="text-[11px] text-muted-foreground leading-relaxed">
-            Restricts agent file system access. The agent can only write to your project folders, temp directories, and its own config. Sensitive directories like ~/.ssh and ~/.aws are always blocked.
+            {t("adv.sandboxExplain")}
           </p>
           {sandboxEnabled && extraWritablePaths.length > 0 && (
             <div className="space-y-1 pt-1">
@@ -135,7 +135,7 @@ export function AdvancedSettingsForm({
               />
             </div>
             <p className="text-[11px] text-muted-foreground leading-relaxed">
-              Routes all agent network traffic through a local proxy that filters by domain. Only approved domains can be reached. Requests to unknown domains require your explicit approval before they go through.
+              {t("adv.networkExplain")}
             </p>
             {networkSandbox && (
               <div className="pt-1 space-y-1">
@@ -147,8 +147,7 @@ export function AdvancedSettingsForm({
                   />
                 </div>
                 <p className="text-[10px] text-muted-foreground leading-relaxed">
-                  Blocks direct network at the OS level. Disable if agents
-                  fail to start.
+                  {t("adv.kernelDenyHint")}
                 </p>
               </div>
             )}
@@ -190,7 +189,7 @@ export function AdvancedSettingsForm({
                   <div className="space-y-1">
                     <div className="flex items-center justify-between gap-3">
                       <p className="text-[11px] font-medium text-foreground">
-                        Allow telemetry
+                        {t("adv.allowTelemetry")}
                       </p>
                       <Switch
                         checked={telemetryEnabled}
@@ -198,9 +197,7 @@ export function AdvancedSettingsForm({
                       />
                     </div>
                     <p className="text-[10px] text-muted-foreground leading-relaxed">
-                      Allow known telemetry endpoints. Providers may use
-                      additional domains — unknown domains will prompt
-                      for approval.
+                      {t("adv.telemetryHint")}
                     </p>
                   </div>
                   <Separator />

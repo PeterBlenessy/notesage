@@ -119,12 +119,12 @@ function AutomationItem({
                     className="cursor-pointer gap-1 text-[11px] text-muted-foreground hover:text-foreground"
                   >
                     <AlertTriangle className="size-3" strokeWidth={1.5} />
-                    Needs arming
+                    {t("autos.needsArming")}
                   </Badge>
                 </button>
               </TooltipTrigger>
               <TooltipContent side="top">
-                Contains a write step — click to review &amp; arm it.
+                {t("autos.armTooltip")}
               </TooltipContent>
             </Tooltip>
           )}
@@ -137,7 +137,7 @@ function AutomationItem({
           >
             <span className={cn('size-1.5 rounded-full', STATUS_DOT[lastRun.status])} />
             <span className="text-xs text-muted-foreground">
-              Last run {lastRun.status} · history
+              {t("autos.lastRunStatus", { status: lastRun.status })}
             </span>
           </button>
         )}
@@ -202,7 +202,7 @@ function AutomationItem({
           <AlertDialogHeader>
             <AlertDialogTitle>Delete “{automation.name}”?</AlertDialogTitle>
             <AlertDialogDescription>
-              This permanently removes the automation file. This can’t be undone.
+              {t("autos.deleteBody")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -212,7 +212,7 @@ function AutomationItem({
                 void remove(automation.sourcePath);
               }}
             >
-              Delete
+              {t("skills.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -262,7 +262,7 @@ export function AutomationsSettings() {
     <TooltipProvider delayDuration={300}>
       <SettingsGroup
         label={t("settings.automationsGroup")}
-        description="Run agents, scripts, and notes on a schedule or in response to events. Automations run while Notesage is open or in the menu bar."
+        description={t("autos.desc")}
       >
         <SettingsRow
           label={t("settings.enableAutomations")}
@@ -283,13 +283,13 @@ export function AutomationsSettings() {
           <div className="mb-1 flex justify-end">
             <Button size="sm" className="h-8 gap-1 text-xs" onClick={() => setFormTarget('new')}>
               <Plus className="size-3.5" strokeWidth={1.5} />
-              New automation
+              {t("autos.new")}
             </Button>
           </div>
           {automations.length === 0 ? (
             <p className="px-1 py-6 text-sm text-muted-foreground">
-              No automations yet. Click <span className="font-medium">{t("automation.new")}</span> — or add
-              a <code className="rounded bg-muted px-1 py-0.5 text-xs">.yaml</code> file under{' '}
+              {t("autos.emptyClick")} <span className="font-medium">{t("automation.new")}</span> {t("autos.emptyOrAdd")}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">.yaml</code> {t("autos.emptyFileUnder")}{' '}
               <code className="rounded bg-muted px-1 py-0.5 text-xs">.notesage/automations/</code>.
             </p>
           ) : (
@@ -332,15 +332,14 @@ export function AutomationsSettings() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("automation.reliablyQuestion")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Automations only fire while Notesage is running. Enabling{' '}
-              <strong>{t("automation.startAtLogin")}</strong> and <strong>{t("automation.closeToTray")}</strong> keeps it
-              quietly available so scheduled runs aren’t missed.
+              {t("autos.reliablyIntro")}{' '}
+              <strong>{t("automation.startAtLogin")}</strong> {t("autos.and")} <strong>{t("automation.closeToTray")}</strong> {t("autos.reliablyTail")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("automation.notNow")}</AlertDialogCancel>
             <AlertDialogAction onClick={() => void enableReliability()}>
-              Enable both
+              {t("autos.enableBoth")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -350,11 +349,10 @@ export function AutomationsSettings() {
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>
-              {formTarget && formTarget !== 'new' ? 'Edit automation' : 'New automation'}
+              {formTarget && formTarget !== 'new' ? t("autos.editAutomation") : t("autos.newAutomation")}
             </DialogTitle>
             <DialogDescription>
-              Choose what triggers it, then the steps it runs. Saved as a YAML file you can edit or
-              share.
+              {t("autos.newIntro")}
             </DialogDescription>
           </DialogHeader>
           {formTarget !== null && (
@@ -368,7 +366,7 @@ export function AutomationsSettings() {
       <Dialog open={historyTarget !== null} onOpenChange={(open) => !open && setHistoryTarget(null)}>
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
           <DialogHeader>
-            <DialogTitle>{historyTarget?.name} — run history</DialogTitle>
+            <DialogTitle>{t("autos.runHistoryTitle", { name: historyTarget?.name ?? "" })}</DialogTitle>
           </DialogHeader>
           {historyTarget && <RunsHistory sourcePath={historyTarget.sourcePath} />}
         </DialogContent>

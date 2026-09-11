@@ -75,7 +75,7 @@ export function TranscriptionSettings() {
       <div className="space-y-3">
         <h3 className="text-sm font-medium">{t("voice.whisperModels")}</h3>
         <p className="text-xs text-muted-foreground">
-          OpenAI Whisper models used to transcribe meeting recordings on-device — your audio never leaves your machine. Models are downloaded from{' '}
+          {t("trans.whisperIntro")}{' '}
           <a
             href="https://huggingface.co/ggerganov/whisper.cpp"
             target="_blank"
@@ -84,7 +84,7 @@ export function TranscriptionSettings() {
           >
             Hugging Face
           </a>{' '}
-          in GGML format (whisper.cpp). Larger models are more accurate but slower.
+          {t("trans.ggmlHint")}
         </p>
 
         <div className="space-y-2">
@@ -125,7 +125,7 @@ export function TranscriptionSettings() {
                       <details className="mt-1 group/detail">
                         <summary className="text-xs text-muted-foreground/60 cursor-pointer list-none hover:text-muted-foreground transition-colors duration-150">
                           <span className="underline decoration-dotted underline-offset-2">
-                            About this model
+                            {t("trans.aboutModel")}
                           </span>
                         </summary>
                         <div className="mt-1.5 space-y-1 text-xs text-muted-foreground/70">
@@ -137,7 +137,7 @@ export function TranscriptionSettings() {
                           </p>
                           {model.download_url && (
                             <p className="break-all">
-                              Downloaded from{' '}
+                              {t("trans.downloadedFrom")}{' '}
                               <a
                                 href={model.download_url}
                                 target="_blank"
@@ -177,7 +177,7 @@ export function TranscriptionSettings() {
                     <>
                       <span className="flex items-center gap-1 text-xs text-muted-foreground">
                         <CheckCircle className="h-3.5 w-3.5" strokeWidth={1.5} />
-                        Downloaded
+                        {t("trans.downloaded")}
                       </span>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -189,14 +189,13 @@ export function TranscriptionSettings() {
                           <AlertDialogHeader>
                             <AlertDialogTitle>{t("voice.deleteModelQuestion")}</AlertDialogTitle>
                             <AlertDialogDescription>
-                              This will delete the '{model.name}' model ({formatSize(model.size_bytes)}).
-                              You can download it again later.
+                              {t("trans.deleteModelBody", { name: model.name, size: formatSize(model.size_bytes) })}
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>{t("voice.cancel")}</AlertDialogCancel>
                             <AlertDialogAction onClick={() => deleteModel(model.name)}>
-                              Delete
+                              {t("skills.delete")}
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>
@@ -210,7 +209,7 @@ export function TranscriptionSettings() {
                       onClick={() => downloadModel(model.name)}
                     >
                       <Download className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-                      Download
+                      {t("trans.download")}
                     </Button>
                   )}
                 </div>
@@ -233,7 +232,7 @@ export function TranscriptionSettings() {
           <div>
             <Label className="text-sm font-medium">{t("voice.transcriptionModel")}</Label>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Whisper model used to transcribe meeting recordings in the background
+              {t("trans.modelHint")}
             </p>
           </div>
           <Select
@@ -259,8 +258,7 @@ export function TranscriptionSettings() {
           <div>
             <Label className="text-sm font-medium">{t("voice.recordingLanguage")}</Label>
             <p className="text-xs text-muted-foreground mt-0.5">
-              Spoken language of your recordings. Defaults to your device language —
-              auto-detect is reliable for English but often wrong for other languages.
+              {t("trans.languageHint")}
             </p>
           </div>
           <Select value={speechLanguage} onValueChange={setSpeechLanguage}>
@@ -280,11 +278,11 @@ export function TranscriptionSettings() {
         {/* The one model/language pair that quietly produces bad output. */}
         {isLanguageMismatch(defaultModel, speechLanguage) && (
           <p className="text-xs text-muted-foreground px-4 -mt-1">
-            <span className="text-[var(--color-destructive)]">Note:</span>{' '}
-            {modelDisplayName(defaultModel)} is accurate in English but weak in other
-            languages — roughly one word in four on Swedish. For{' '}
-            {speechLanguage === 'auto' ? 'auto-detect' : speechLanguageLabel(speechLanguage)},
-            choose the quality model instead.
+            <span className="text-[var(--color-destructive)]">{t("trans.note")}</span>{' '}
+            {t("trans.mismatchWarning", {
+              model: modelDisplayName(defaultModel),
+              language: speechLanguage === 'auto' ? t("trans.autoDetect") : speechLanguageLabel(speechLanguage),
+            })}
           </p>
         )}
       </div>

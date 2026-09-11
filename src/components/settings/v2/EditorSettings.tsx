@@ -141,7 +141,7 @@ export function EditorSettings() {
     <>
       <SettingsGroup
         label={t("settings.typography")}
-        description="Default font, size, and line-height for the paragraph block. Per-heading overrides live in the editor typography popover."
+        description={t("ed.typographyDesc")}
       >
         <SettingsRow
           label={t("settings.fontFamily")}
@@ -239,10 +239,7 @@ export function EditorSettings() {
               On Attention
             </h4>
             <p className="m-0 mb-2">
-              The hardest part of thinking is not the thinking itself
-              but holding still long enough for a thought to arrive.
-              Distraction is rarely loud — it is almost always polite,
-              small, well-intended.
+              {t("ed.sampleParagraph")}
             </p>
             <div className="text-[11px] text-muted-foreground">
               Preview · {fontSize} px {currentFontLabel} ·{' '}
@@ -296,12 +293,9 @@ export function EditorSettings() {
           label={t("settings.reviewExternalDiff")}
           description={
             <>
-              When on, files modified on disk show inline diff decorations
-              and a sticky Accept / Reject toast. When off, changes
-              auto-reload silently with a 3-second info toast — applies to
-              both clean and dirty tabs (in-memory edits are overwritten).{' '}
+              {t("ed.externalDiffDesc")}{' '}
               <span className="text-muted-foreground/60">
-                Beta — may not preserve formatting perfectly.
+                {t("ed.betaFormatting")}
               </span>
             </>
           }
@@ -323,7 +317,7 @@ export function EditorSettings() {
             sense: ON = restricted (default), OFF = allow everywhere. */}
         <SettingsRow
           label={t("settings.restrictCompletions")}
-          description="When on (default), inline completions are suppressed for files outside the project selected in the command bar — your completion provider never sees unrelated files. Turn off to receive completions everywhere."
+          description={t("ed.completionScopeDesc")}
           htmlFor="restrict-completions-scope"
           control={
             <Switch
@@ -375,10 +369,10 @@ export function EditorSettings() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="full">{t("editorSettings.fullWidth")}</SelectItem>
-                <SelectItem value="auto">Auto (720px)</SelectItem>
+                <SelectItem value="auto">{t("ed.widthAuto")}</SelectItem>
                 <SelectItem value="a4">{pageLabel('a4', 'A4')}</SelectItem>
                 <SelectItem value="a5">{pageLabel('a5', 'A5')}</SelectItem>
-                <SelectItem value="letter">{pageLabel('letter', 'Letter')}</SelectItem>
+                <SelectItem value="letter">{pageLabel('letter', t("ed.pageLetter"))}</SelectItem>
               </SelectContent>
             </Select>
           }
@@ -405,18 +399,18 @@ export function EditorSettings() {
             label needs to sit beside its input. */}
         <div className="px-0 py-3">
           <span className="text-[13px] font-medium text-foreground">
-            Page margins
+            {t("ed.pageMargins")}
           </span>
           <p className="text-[12px] text-muted-foreground mt-0.5 leading-relaxed">
-            Set margins for each side independently ({unitLabel}).
+            {t("ed.marginsHint", { unit: unitLabel })}
           </p>
           <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-2">
             {(
               [
                 { label: 'Top', value: marginTop, setter: setMarginTop },
-                { label: 'Bottom', value: marginBottom, setter: setMarginBottom },
-                { label: 'Left', value: marginLeft, setter: setMarginLeft },
-                { label: 'Right', value: marginRight, setter: setMarginRight },
+                { label: t("ed.marginBottom"), value: marginBottom, setter: setMarginBottom },
+                { label: t("ed.marginLeft"), value: marginLeft, setter: setMarginLeft },
+                { label: t("ed.marginRight"), value: marginRight, setter: setMarginRight },
               ] as const
             ).map(({ label, value, setter }) => (
               <div key={label} className="flex items-center gap-2">

@@ -126,10 +126,10 @@ export function ChangelogDialog({ open, onOpenChange }: ChangelogDialogProps) {
       <DialogContent className="w-[864px] sm:max-w-[864px] h-[min(720px,calc(100vh-48px))] p-0 gap-0 overflow-hidden flex flex-col">
         <DialogHeader className="px-7 pt-7 pb-3 border-b border-border shrink-0">
           <DialogTitle className="text-[20px] font-semibold tracking-tight">
-            Changelog
+            {t("settings.changelog")}
           </DialogTitle>
           <DialogDescription className="mt-1 text-[13px] text-muted-foreground leading-relaxed">
-            Version history and release notes for Notesage.
+            {t("chg.subtitle")}
           </DialogDescription>
         </DialogHeader>
 
@@ -145,12 +145,12 @@ export function ChangelogDialog({ open, onOpenChange }: ChangelogDialogProps) {
             <div className="px-7 py-5 space-y-3">
               {loading && (
                 <p className="text-sm text-muted-foreground text-center py-8">
-                  Loading changelog…
+                  {t("chg.loading")}
                 </p>
               )}
               {!loading && (!changelog || changelog.releases.length === 0) && (
                 <p className="text-sm text-muted-foreground text-center py-8">
-                  No changelog available.
+                  {t("chg.none")}
                 </p>
               )}
               {changelog?.releases.map((release) => (

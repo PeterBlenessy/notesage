@@ -28,7 +28,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Shield, HeartPulse, Loader2, FolderOpen, ArrowUpDown, Check } from 'lucide-react';
 import { toast } from 'sonner';
-import { t } from '@/lib/i18n';
+import { t, type MessageKey } from '@/lib/i18n';
 
 type ModelSort = 'name' | 'size' | 'ram';
 
@@ -37,18 +37,20 @@ function formatBytes(bytes: number): string {
   return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
 }
 
-const CATEGORY_TABS: { value: ModelCategory; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'general', label: 'General' },
-  { value: 'code', label: 'Code' },
-  { value: 'reasoning', label: 'Reasoning' },
-  { value: 'downloaded', label: 'Downloaded' },
+// Both tables hold message KEYS, resolved at render. A `t()` at module scope
+// runs once at import and would pin the English text for the process lifetime.
+const CATEGORY_TABS: { value: ModelCategory; labelKey: MessageKey }[] = [
+  { value: 'all', labelKey: "localai.catAll" },
+  { value: 'general', labelKey: "localai.catGeneral" },
+  { value: 'code', labelKey: "localai.catCode" },
+  { value: 'reasoning', labelKey: "localai.catReasoning" },
+  { value: 'downloaded', labelKey: "localai.catDownloaded" },
 ];
 
-const SORT_OPTIONS: { value: ModelSort; label: string }[] = [
-  { value: 'ram', label: 'RAM' },
-  { value: 'size', label: 'Size' },
-  { value: 'name', label: 'Name' },
+const SORT_OPTIONS: { value: ModelSort; labelKey: MessageKey }[] = [
+  { value: 'ram', labelKey: "localai.sortRam" },
+  { value: 'size', labelKey: "localai.sortSize" },
+  { value: 'name', labelKey: "localai.sortName" },
 ];
 
 export function LocalAISettings() {
@@ -234,16 +236,14 @@ export function LocalAISettings() {
         <div>
           <h3 className="text-sm font-semibold">{t("localAi.title")}</h3>
           <p className="text-xs text-muted-foreground mt-1">
-            On-device inference — your data stays private
+            {t("localai.tagline")}
           </p>
         </div>
         <div className="mt-3 p-3 rounded-md border border-border bg-muted/30">
           <div className="flex items-start gap-2">
             <Shield className="h-3.5 w-3.5 text-muted-foreground mt-0.5 shrink-0" strokeWidth={1.5} />
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Local AI runs language models entirely on your Mac using the bundled llama.cpp engine with Metal GPU acceleration.
-              No API keys, no internet connection, and no data ever leaves your device. Download a model below, then add
-              Local AI as a connection in the Connections tab to start using it.
+              {t("localai.intro")}
             </p>
           </div>
         </div>
@@ -289,7 +289,7 @@ export function LocalAISettings() {
                       onClick={handleStartOrRestart}
                       disabled={!canStart}
                     >
-                      Start
+                      {t("localai.start")}
                     </Button>
                   </span>
                 </TooltipTrigger>
@@ -309,7 +309,7 @@ export function LocalAISettings() {
               disabled
             >
               <Loader2 className="h-3 w-3 animate-spin" strokeWidth={1.5} />
-              Starting...
+              {t("localai.starting")}
             </Button>
           )}
           {serverStatus === 'running' && (
@@ -320,7 +320,7 @@ export function LocalAISettings() {
                 className="h-7 text-xs gap-1.5"
                 onClick={handleStartOrRestart}
               >
-                Restart
+                {t("localai.restart")}
               </Button>
               <Button
                 variant="ghost"
@@ -334,7 +334,7 @@ export function LocalAISettings() {
                 ) : (
                   <HeartPulse className="h-3 w-3" strokeWidth={1.5} />
                 )}
-                Health check
+                {t("localai.healthCheck")}
               </Button>
             </>
           )}
@@ -349,7 +349,7 @@ export function LocalAISettings() {
         <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3">
           <p className="text-sm font-medium">{t("localAi.engineNotFound")}</p>
           <p className="text-xs text-muted-foreground mt-0.5">
-            The llama.cpp inference engine should be bundled with Notesage. Try reinstalling the app.
+            {t("localai.engineMissing")}
           </p>
         </div>
       )}
@@ -358,7 +358,7 @@ export function LocalAISettings() {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            Models
+            {t("localai.models")}
           </h4>
           <AddCustomModelDialog onAdded={refreshModels} />
         </div>
@@ -376,7 +376,7 @@ export function LocalAISettings() {
                     : 'text-muted-foreground hover:bg-muted'
                 }`}
               >
-                {tab.label}
+                {t(tab.labelKey)}
               </button>
             ))}
           </div>
@@ -384,7 +384,10 @@ export function LocalAISettings() {
             <DropdownMenuTrigger asChild>
               <button className="flex items-center gap-1 px-2 py-1 text-[11px] text-muted-foreground rounded-md hover:bg-muted transition-colors">
                 <ArrowUpDown className="h-3 w-3" strokeWidth={1.5} />
-                {SORT_OPTIONS.find((o) => o.value === sortBy)?.label}
+                {(() => {
+                  const active = SORT_OPTIONS.find((o) => o.value === sortBy);
+                  return active ? t(active.labelKey) : null;
+                })()}
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[100px]">
@@ -394,7 +397,7 @@ export function LocalAISettings() {
                   onClick={() => setSortBy(opt.value)}
                   className="text-xs gap-2"
                 >
-                  {opt.label}
+                  {t(opt.labelKey)}
                   {sortBy === opt.value && <Check className="h-3 w-3 ml-auto" strokeWidth={1.5} />}
                 </DropdownMenuItem>
               ))}
@@ -418,9 +421,7 @@ export function LocalAISettings() {
           <div className="min-w-0">
             <p className="text-xs font-medium">{t("localAi.offerShareCalibration")}</p>
             <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
-              After you've run a few local models, Notesage can offer to share their
-              measured speed on your Mac to help improve recommendations. Nothing is
-              ever sent automatically — you review and submit it yourself.
+              {t("localai.shareIntro")}
             </p>
           </div>
           <Switch
@@ -436,11 +437,11 @@ export function LocalAISettings() {
               onClick={restoreDefaults}
               className="text-[10px] text-muted-foreground hover:text-foreground hover:underline transition-colors"
             >
-              Restore {hiddenModelIds.length} hidden model{hiddenModelIds.length !== 1 ? 's' : ''}
+              {t("localai.restoreHidden", { count: hiddenModelIds.length })}
             </button>
             )}
           <p className="text-[10px] text-muted-foreground">
-            Models stored in ~/.notesage/models/llm/
+            {t("localai.storedIn")}
           </p>
           <Button
             variant="ghost"

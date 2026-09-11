@@ -24,16 +24,19 @@ import { tauriApi } from "@/lib/tauri";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { GitStatus } from "@/lib/tauri";
-import { t } from "@/lib/i18n";
+import { t, type MessageKey } from "@/lib/i18n";
 import { useLocale } from "@/lib/useLocale";
 
-const STATUS_CONFIG: Record<GitStatus, { label: string; color: string; tooltip: string }> = {
-  modified: { label: "M", color: "text-muted-foreground/50", tooltip: t("git.modified") },
-  added: { label: "A", color: "text-muted-foreground/50", tooltip: t("git.added") },
-  untracked: { label: "U", color: "text-muted-foreground/50", tooltip: t("git.untracked") },
-  deleted: { label: "D", color: "text-muted-foreground/50", tooltip: t("git.deleted") },
-  renamed: { label: "R", color: "text-muted-foreground/50", tooltip: t("git.renamed") },
-  conflicted: { label: "C", color: "text-muted-foreground/50", tooltip: t("git.conflicted") },
+// The tooltip is a message KEY, resolved at render. This record is built once
+// at module load, so a `t()` here would keep whatever language was active at
+// import time even after the user switches.
+const STATUS_CONFIG: Record<GitStatus, { label: string; color: string; tooltipKey: MessageKey }> = {
+  modified: { label: "M", color: "text-muted-foreground/50", tooltipKey: "git.modified" },
+  added: { label: "A", color: "text-muted-foreground/50", tooltipKey: "git.added" },
+  untracked: { label: "U", color: "text-muted-foreground/50", tooltipKey: "git.untracked" },
+  deleted: { label: "D", color: "text-muted-foreground/50", tooltipKey: "git.deleted" },
+  renamed: { label: "R", color: "text-muted-foreground/50", tooltipKey: "git.renamed" },
+  conflicted: { label: "C", color: "text-muted-foreground/50", tooltipKey: "git.conflicted" },
 };
 
 interface CommitDialogProps {
@@ -240,7 +243,7 @@ export function CommitDialog({ open, onOpenChange, repoPath, preSelectedFiles }:
                             </span>
                           </TooltipTrigger>
                           <TooltipContent side="right">
-                            {config.tooltip}
+                            {t(config.tooltipKey)}
                           </TooltipContent>
                         </Tooltip>
                       </TooltipProvider>

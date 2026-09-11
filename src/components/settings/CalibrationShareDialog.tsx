@@ -107,11 +107,10 @@ export function CalibrationShareDialog({
         <DialogHeader className="px-7 pt-7 pb-3 border-b border-border shrink-0">
           <DialogTitle className="text-[20px] font-semibold tracking-tight flex items-center gap-2">
             <Users className="h-5 w-5" strokeWidth={1.5} />
-            Share with the community
+            {t("calib.title")}
           </DialogTitle>
           <DialogDescription className="mt-1 text-[13px] text-muted-foreground leading-relaxed">
-            Contributing your measurements helps improve model recommendations
-            for everyone running local AI.
+            {t("calib.intro")}
           </DialogDescription>
         </DialogHeader>
 
@@ -122,32 +121,27 @@ export function CalibrationShareDialog({
                 <>
                   <div className="space-y-3 text-[13px] text-muted-foreground leading-relaxed">
                     <p>
-                      Your submission is a{' '}
+                      {t("calib.submissionIsA")}{' '}
                       <span className="font-medium text-foreground">
-                        public GitHub issue posted under your own GitHub
-                        account
+                        {t("calib.publicIssue")}
                       </span>
-                      , so it carries your GitHub handle. It is pseudonymous,
-                      not anonymous.
+                      {t("calib.pseudonymous")}
                     </p>
                     <p>
-                      It contains{' '}
+                      {t("calib.itContains")}{' '}
                       <span className="font-medium text-foreground">
-                        only the data shown below
+                        {t("calib.onlyBelow")}
                       </span>{' '}
-                      — your hardware specs, the model names you ran, and two
-                      performance numbers per model. No file paths, prompts,
-                      document content, or anything else is included.
+                      {t("calibration.scope")}
                     </p>
                     <p>
-                      Review the exact payload, then open GitHub to submit it
-                      yourself. Notesage never posts on your behalf.
+                      {t("calib.reviewFirst")}
                     </p>
                   </div>
 
                   <div>
                     <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1.5">
-                      Exactly what will be shared
+                      {t("calib.exactly")}
                     </div>
                     <ScrollArea className="max-h-64 rounded-md border border-border bg-muted">
                       <pre className="px-3 py-2.5 text-[12px] font-mono text-foreground whitespace-pre overflow-x-auto">
@@ -158,8 +152,7 @@ export function CalibrationShareDialog({
                 </>
               ) : (
                 <div className="py-8 text-center text-[13px] text-muted-foreground">
-                  No measurements yet. Run a local model a few times to gather
-                  calibration data, then come back to share it.
+                  {t("calib.noneYet")}
                 </div>
               )}
             </div>
@@ -172,21 +165,21 @@ export function CalibrationShareDialog({
             onClick={handleDontAskAgain}
             className="text-muted-foreground"
           >
-            Don&apos;t ask again
+            {t("calib.dontAsk")}
           </Button>
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:items-center">
             <Button variant="ghost" onClick={() => onOpenChange(false)}>
-              Maybe later
+              {t("calib.later")}
             </Button>
             <Button
               variant="outline"
               onClick={handleCopy}
               disabled={!hasData}
             >
-              Copy as markdown
+              {t("calib.copyMd")}
             </Button>
             <Button onClick={handleOpenGithub} disabled={!hasData}>
-              Open GitHub to share
+              {t("calib.openGithub")}
             </Button>
           </div>
         </DialogFooter>

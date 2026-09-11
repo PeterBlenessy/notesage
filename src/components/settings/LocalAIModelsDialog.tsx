@@ -8,6 +8,7 @@ import {
 } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { LocalAISettings } from './LocalAISettings';
+import { t } from '@/lib/i18n';
 
 interface LocalAIModelsDialogProps {
   open: boolean;
@@ -39,11 +40,10 @@ export function LocalAIModelsDialog({
         <DialogHeader className="px-7 pt-7 pb-3 border-b border-border shrink-0">
           <DialogTitle className="text-[20px] font-semibold tracking-tight flex items-center gap-2">
             <BrainCog className="h-5 w-5" strokeWidth={1.5} />
-            Local AI models
+            {t("localai.dialogTitle")}
           </DialogTitle>
           <DialogDescription className="mt-1 text-[13px] text-muted-foreground leading-relaxed">
-            Manage the bundled inference server, downloaded models, and
-            advanced runtime settings.
+            {t("localai.dialogBody")}
           </DialogDescription>
         </DialogHeader>
 

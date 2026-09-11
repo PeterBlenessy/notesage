@@ -1,6 +1,7 @@
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { cn } from '@/lib/utils';
 import { GooseAttribution } from './GooseAttribution';
+import { t } from '@/lib/i18n';
 
 /** Canonical pi project link — single source of truth for the attribution. */
 export const PI_REPO_URL = 'https://github.com/earendil-works/pi';
@@ -42,16 +43,14 @@ export function LocalAgentAttribution({
   if (compact) {
     return (
       <p className={cn('text-xs text-muted-foreground', className)}>
-        Powered by {link}, an open-source agent by Mario Zechner
+        {t("attr.poweredBy")} {link}{t("attr.piTail")}
       </p>
     );
   }
 
   return (
     <p className={cn('text-xs text-muted-foreground leading-relaxed', className)}>
-      This Local Agent is powered by {link}, an open-source agent by Mario
-      Zechner (earendil-works). It runs on your device against the bundled local
-      model — no cloud account or API key.
+      {t("attr.thisLocalAgentPoweredBy")} {link}{t("attr.piLongTail")}
     </p>
   );
 }

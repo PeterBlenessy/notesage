@@ -156,7 +156,7 @@ export function SettingsShell({
           {/* Required for Radix a11y — visually hidden title/description. */}
           <DialogPrimitive.Title className="sr-only">{t("common.settings")}</DialogPrimitive.Title>
           <DialogPrimitive.Description className="sr-only">
-            Configure Notesage preferences.
+            {t("shell.subtitle")}
           </DialogPrimitive.Description>
 
           {/* Left: nav column */}

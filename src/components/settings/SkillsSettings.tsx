@@ -82,7 +82,7 @@ function SkillCard({ skill, allSkills, onDelete, onMove, onEdit }: {
         )}
         {overriddenBy && (
           <p className="text-xs text-muted-foreground mt-1">
-            Overridden by {sourceLabel(overriddenBy.source)}
+            {t("skills.overriddenBy", { source: sourceLabel(overriddenBy.source) })}
           </p>
         )}
       </div>
@@ -98,26 +98,26 @@ function SkillCard({ skill, allSkills, onDelete, onMove, onEdit }: {
               {onEdit && (
                 <DropdownMenuItem onClick={() => onEdit(skill)}>
                   <Pencil className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                  Edit
+                  {t("skills.edit")}
                 </DropdownMenuItem>
               )}
               {skill.source === 'notesage-project' && onMove && (
                 <DropdownMenuItem onClick={() => onMove(skill, 'to-global')}>
                   <ArrowUpFromLine className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                  Move to Global
+                  {t("skills.moveGlobal")}
                 </DropdownMenuItem>
               )}
               {skill.source === 'notesage-global' && onMove && (
                 <DropdownMenuItem onClick={() => onMove(skill, 'to-project')}>
                   <ArrowDownToLine className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                  Move to Project
+                  {t("skills.moveProject")}
                 </DropdownMenuItem>
               )}
               {(onEdit || onMove) && onDelete && <DropdownMenuSeparator />}
               {onDelete && (
                 <DropdownMenuItem onClick={() => onDelete(skill)}>
                   <Trash2 className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                  Delete
+                  {t("skills.delete")}
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -219,7 +219,7 @@ function AgentCard({ agent, allAgents, onDelete, onMove, onEdit }: {
           )}
           {overriddenBy && (
             <p className="text-xs text-muted-foreground mt-1">
-              Overridden by {sourceLabel(overriddenBy.source)}
+              {t("skills.overriddenBy", { source: sourceLabel(overriddenBy.source) })}
             </p>
           )}
         </div>
@@ -236,26 +236,26 @@ function AgentCard({ agent, allAgents, onDelete, onMove, onEdit }: {
               {onEdit && (
                 <DropdownMenuItem onClick={() => onEdit(agent)}>
                   <Pencil className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                  Edit
+                  {t("skills.edit")}
                 </DropdownMenuItem>
               )}
               {agent.source === 'notesage-project' && onMove && (
                 <DropdownMenuItem onClick={() => onMove(agent, 'to-global')}>
                   <ArrowUpFromLine className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                  Move to Global
+                  {t("skills.moveGlobal")}
                 </DropdownMenuItem>
               )}
               {agent.source === 'notesage-global' && onMove && (
                 <DropdownMenuItem onClick={() => onMove(agent, 'to-project')}>
                   <ArrowDownToLine className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                  Move to Project
+                  {t("skills.moveProject")}
                 </DropdownMenuItem>
               )}
               {(onEdit || onMove) && onDelete && <DropdownMenuSeparator />}
               {onDelete && (
                 <DropdownMenuItem onClick={() => onDelete(agent)}>
                   <Trash2 className="h-3.5 w-3.5 mr-2" strokeWidth={1.5} />
-                  Delete
+                  {t("skills.delete")}
                 </DropdownMenuItem>
               )}
             </DropdownMenuContent>
@@ -488,7 +488,7 @@ export function SkillsSettings() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Discovered skills from your projects, global config, and connected providers
+            {t("skills.discoveredSkills")}
           </p>
         </div>
 
@@ -496,8 +496,8 @@ export function SkillsSettings() {
           <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
             <p className="text-sm text-muted-foreground">{t("skill.noSkills")}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Add skills to <code className="text-xs">.notesage/skills/</code> in your project
-              or <code className="text-xs">~/.notesage/skills/</code> globally
+              {t("skills.addSkillsTo")} <code className="text-xs">.notesage/skills/</code> {t("skills.inYourProject")}
+              <code className="text-xs">~/.notesage/skills/</code> {t("skills.globally")}
             </p>
           </div>
         ) : (
@@ -539,7 +539,7 @@ export function SkillsSettings() {
             </div>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Addressable AI agents from your projects, global config, and connected providers
+            {t("skills.discoveredAgents")}
           </p>
         </div>
 
@@ -547,8 +547,8 @@ export function SkillsSettings() {
           <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
             <p className="text-sm text-muted-foreground">{t("skill.noAgents")}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Add agent files to <code className="text-xs">.notesage/agents/</code> in your project
-              or <code className="text-xs">~/.notesage/agents/</code> globally
+              {t("skills.addAgentsTo")} <code className="text-xs">.notesage/agents/</code> {t("skills.inYourProject")}
+              <code className="text-xs">~/.notesage/agents/</code> {t("skills.globally")}
             </p>
           </div>
         ) : (
@@ -571,7 +571,7 @@ export function SkillsSettings() {
           <div>
             <Label className="text-sm font-semibold">{t("skill.agentInstructions")}</Label>
             <p className="text-xs text-muted-foreground mt-1">
-              Instruction files injected into AI context. Higher priority files take precedence.
+              {t("skills.instructionsHint")}
             </p>
           </div>
           <Button
@@ -589,8 +589,8 @@ export function SkillsSettings() {
           <div className="px-4 py-8 text-center rounded-lg border border-dashed border-border">
             <p className="text-sm text-muted-foreground">{t("skill.noAgentInstructions")}</p>
             <p className="text-xs text-muted-foreground mt-1">
-              Create <code className="text-xs">.notesage/agents.md</code> in your project
-              or <code className="text-xs">~/.notesage/agents.md</code> globally
+              {t("skills.create")} <code className="text-xs">.notesage/agents.md</code> {t("skills.inYourProject")}
+              <code className="text-xs">~/.notesage/agents.md</code> {t("skills.globally")}
             </p>
           </div>
         ) : (
@@ -631,7 +631,7 @@ export function SkillsSettings() {
                 className={cn('h-3 w-3 transition-transform duration-150', !instructionsExpanded && '-rotate-90')}
                 strokeWidth={1.5}
               />
-              Preview merged context
+              {t("skills.previewMerged")}
             </CollapsibleTrigger>
             <CollapsibleContent>
               <pre className="mt-2 p-3 rounded-lg bg-muted text-xs text-muted-foreground whitespace-pre-wrap max-h-48 overflow-y-auto thin-scrollbar">
@@ -650,7 +650,7 @@ export function SkillsSettings() {
       {/* Last scan info */}
       {lastScanTimestamp > 0 && (
         <p className="text-xs text-muted-foreground">
-          Last scanned: {new Date(lastScanTimestamp).toLocaleTimeString(formatLocale)}
+          {t("skills.lastScanned", { time: new Date(lastScanTimestamp).toLocaleTimeString(formatLocale) })}
         </p>
       )}
 

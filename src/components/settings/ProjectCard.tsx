@@ -469,7 +469,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                     cancellingRef.current = true;
                   }}
                   onClick={handleDescCancel}
-                  title="Cancel (Esc)"
+                  title={t("project.cancelEsc")}
                   className="h-7 w-7 shrink-0 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150"
                 >
                   <X className="h-3.5 w-3.5" strokeWidth={1.6} />
@@ -487,7 +487,7 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
                   onDoubleClick={() => setDescEditing(true)}
                   title={t("project.doubleClickEditDescription")}
                 >
-                  {metadata.description || 'No description'}
+                  {metadata.description || t("project.noDescription")}
                 </span>
                 <button
                   type="button"
@@ -511,46 +511,48 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
           <div className="flex items-center gap-1.5 flex-wrap">
             <ActionPill
               icon={Cloud}
-              label={isSynced ? 'iCloud · on' : 'iCloud · off'}
+              label={isSynced ? t("pcard.icloudOn") : t("pcard.icloudOff")}
               active={isSynced}
               onClick={handleIcloudPillClick}
               disabled={busy || !icloudAvailable}
               title={
                 !icloudAvailable
-                  ? 'iCloud is not available on this device'
+                  ? t("pcard.icloudUnavailable")
                   : isSynced
-                    ? 'Move project back to local library'
-                    : `Mirror project to ${syncedRootLabel}`
+                    ? t("pcard.moveBackLocal")
+                    : t("pcard.mirrorTo", { root: syncedRootLabel })
               }
             />
             <ActionPill
               icon={GitBranch}
-              label={isGitRepo ? 'Git · on' : 'Git · off'}
+              label={isGitRepo ? t("pcard.gitOn") : t("pcard.gitOff")}
               active={isGitRepo}
               onClick={handleGitPillClick}
               disabled={busy}
               title={
                 isGitRepo
-                  ? 'Git initialized — manage from the sidebar'
-                  : 'Initialize a git repository in this project'
+                  ? t("pcard.gitReady")
+                  : t("pcard.gitInit")
               }
             />
             <ActionPill
               icon={isLocked ? Lock : Unlock}
               label={
                 isLocked
-                  ? `Locked${
-                      lockedConnection ? ` · ${lockedConnection.label}` : ''
-                    }`
-                  : 'Lock provider'
+                  ? lockedConnection
+                    ? t("pcard.lockedTo", { name: lockedConnection.label })
+                    : t("pcard.locked")
+                  : t("pcard.lockProvider")
               }
               active={isLocked}
               onClick={handleLockPillClick}
               disabled={busy}
               title={
                 isLocked
-                  ? `Locked to ${lockedConnection?.label ?? metadata.aiLock?.connectionId}. Click to unlock.`
-                  : 'Lock chat to a single AI provider in this project'
+                  ? t("pcard.lockedToHint", {
+                      name: lockedConnection?.label ?? metadata.aiLock?.connectionId ?? '',
+                    })
+                  : t("pcard.lockHint")
               }
             />
           </div>
@@ -566,19 +568,19 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>
               {icloudConfirmOpen === 'enable'
-                ? 'Sync project to iCloud?'
-                : 'Move project back to local?'}
+                ? t("proj.syncToIcloudQ")
+                : t("proj.moveBackLocalQ")}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {icloudConfirmOpen === 'enable'
-                ? 'This will move the project folder to iCloud Drive. Other Macs signed into the same Apple ID will see this project once iCloud finishes syncing.'
-                : 'This will move the project folder back to your local Notesage library. iCloud will stop syncing it on other devices.'}
+                ? t("proj.syncToIcloudBody")
+                : t("proj.moveBackLocalBody")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("project.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={handleIcloudConfirm}>
-              {icloudConfirmOpen === 'enable' ? 'Move to iCloud' : 'Move to local'}
+              {icloudConfirmOpen === 'enable' ? t("proj.moveToIcloud") : t("proj.moveToLocal")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -590,14 +592,13 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("project.initGitQuestion")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Runs <code className="font-mono">git init</code> in the project
-              folder. You can then commit, branch, and push from the sidebar.
+              {t("pcard.gitInitRuns")} <code className="font-mono">git init</code> {t("pcard.gitInitBody")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("project.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={handleGitConfirm}>
-              Initialize
+              {t("pcard.initialize")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -612,13 +613,13 @@ export function ProjectCard({ projectPath, onPathChanged }: ProjectCardProps) {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("project.unlockProviderQuestion")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Chat in this project will be free to use any provider again.
+              {t("pcard.unlockBody")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("project.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={handleUnlockConfirm}>
-              Unlock
+              {t("proj.unlock")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

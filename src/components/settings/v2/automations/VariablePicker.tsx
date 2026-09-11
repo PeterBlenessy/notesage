@@ -35,7 +35,7 @@ export function VariablePicker({
           size="sm"
           className="h-7 gap-1 text-xs text-muted-foreground"
         >
-          Insert variable
+          {t("var.insert")}
           <ChevronDown className="size-3" strokeWidth={1.5} />
         </Button>
       </DropdownMenuTrigger>

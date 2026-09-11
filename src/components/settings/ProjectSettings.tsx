@@ -199,7 +199,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
       {!metadata ? (
         <div className="p-8 text-center border border-dashed border-border rounded-lg">
           <p className="text-sm text-muted-foreground">
-            Loading project metadata...
+            {t("proj.loadingMeta")}
           </p>
         </div>
       ) : (
@@ -209,7 +209,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
         <div>
           <Label className="text-sm font-semibold">{t("project.info")}</Label>
           <p className="text-xs text-muted-foreground mt-1">
-            Basic information about this project
+            {t("proj.basicInfo")}
           </p>
         </div>
 
@@ -218,10 +218,10 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
             className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
           >
             <Label htmlFor="project-name" className="text-sm font-medium">
-              Project Name
+              {t("proj.name")}
             </Label>
             <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-              Displayed in the sidebar header
+              {t("proj.nameHint")}
             </p>
             <div className="flex items-center gap-2">
               <Input
@@ -273,10 +273,10 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
             className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
           >
             <Label htmlFor="project-description" className="text-sm font-medium">
-              Description
+              {t("proj.description")}
             </Label>
             <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-              A short description of this project
+              {t("proj.descriptionHint")}
             </p>
             <Input
               id="project-description"
@@ -296,7 +296,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
         <div>
           <Label className="text-sm font-semibold">AI Overrides</Label>
           <p className="text-xs text-muted-foreground mt-1">
-            Override global AI settings for this project only
+            {t("proj.overrideAi")}
           </p>
         </div>
 
@@ -308,7 +308,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
             <div>
               <Label className="text-sm font-medium">{t("project.provider")}</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Override the global AI provider for this project
+                {t("proj.overrideProvider")}
               </p>
             </div>
             {connections.length === 0 ? (
@@ -321,7 +321,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                     className="h-auto p-0 text-xs"
                     onClick={onOpenAISettings}
                   >
-                    Set up in Settings
+                    {t("proj.setUpInSettings")}
                   </Button>
                 )}
               </div>
@@ -370,7 +370,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
             <div>
               <Label className="text-sm font-medium">{t("project.agent")}</Label>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Override the global AI agent for this project
+                {t("proj.overrideAgent")}
               </p>
             </div>
             <Select
@@ -417,10 +417,10 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
             className="px-4 py-3 rounded-lg border border-border hover:border-muted-foreground transition-colors duration-150"
           >
             <Label htmlFor="project-context" className="text-sm font-medium">
-              Project Context
+              {t("proj.context")}
             </Label>
             <p className="text-xs text-muted-foreground mt-0.5 mb-2">
-              Additional context prepended to all AI system messages for this project
+              {t("proj.contextHint")}
             </p>
             <Textarea
               id="project-context"
@@ -441,8 +441,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
         <div>
           <Label className="text-sm font-semibold">AI Provider Lock</Label>
           <p className="text-xs text-muted-foreground mt-1">
-            Hard-restrict this project to a single AI provider. Locked projects refuse to send to
-            any other provider — for chat, resend, comment delegation, and inline actions.
+            {t("proj.lockExplain")}
           </p>
         </div>
 
@@ -458,7 +457,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                   <Label className="text-sm font-medium">{t("project.locked")}</Label>
                 </div>
                 <p className="text-xs text-muted-foreground mt-1">
-                  This project is locked to{' '}
+                  {t("proj.lockedTo")}{' '}
                   <span className="font-medium text-foreground">
                     {lockedConnection?.label ?? aiLock.connectionId}
                   </span>
@@ -475,7 +474,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                 onClick={() => setUnlockDialogOpen(true)}
               >
                 <Unlock className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-                Unlock
+                {t("proj.unlock")}
               </Button>
             </div>
           ) : (
@@ -483,7 +482,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
               <div>
                 <Label className="text-sm font-medium">{t("project.notLocked")}</Label>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  Any configured provider can be used with this project.
+                  {t("proj.anyProvider")}
                 </p>
               </div>
               <Button
@@ -494,7 +493,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                 disabled={connections.length === 0}
               >
                 <Lock className="h-3.5 w-3.5" strokeWidth={1.5} aria-hidden="true" />
-                Lock to provider
+                {t("proj.lockToProvider")}
               </Button>
             </div>
           )}
@@ -516,8 +515,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
           <AlertDialogHeader>
             <AlertDialogTitle>{t("project.unlockQuestion")}</AlertDialogTitle>
             <AlertDialogDescription>
-              After unlocking, any configured AI provider can access this project again. You can
-              re-lock it at any time.
+              {t("proj.unlockBody")}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -536,7 +534,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
             <div>
               <Label className="text-sm font-semibold">{t("project.sync")}</Label>
               <p className="text-xs text-muted-foreground mt-1">
-                iCloud sync for this project
+                {t("proj.icloudSync")}
               </p>
             </div>
 
@@ -549,11 +547,11 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                     htmlFor="project-sync"
                     className="text-sm font-medium cursor-pointer"
                   >
-                    Sync to iCloud
+                    {t("proj.syncToIcloud")}
                   </Label>
                   <p className="text-xs text-muted-foreground mt-0.5">
                     {displaySynced
-                      ? "This project syncs across your Apple devices"
+                      ? t("proj.syncsAcrossDevices")
                       : `Enable to sync this project via ${syncedRootLabel}`
                     }
                   </p>
@@ -572,7 +570,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                   {applying ? (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      <span>Applying...</span>
+                      <span>{t("proj.applying")}</span>
                     </div>
                   ) : (
                     <>
@@ -584,7 +582,7 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                             simply false. */}
                         {pendingSync
                           ? `This project will be moved to ${syncedRootLabel}.`
-                          : "This project will be moved back to ~/Notesage."
+                          : t("proj.willMoveBack")
                         }
                       </p>
                       <div className="flex items-center gap-2 text-xs">
@@ -614,14 +612,14 @@ export function ProjectSettings({ projectPath, onPathChanged, onOpenAISettings }
                           className="h-7 text-xs"
                           onClick={() => setPendingSync(null)}
                         >
-                          Discard
+                          {t("proj.discard")}
                         </Button>
                         <Button
                           size="sm"
                           className="h-7 text-xs"
                           onClick={applySyncToggle}
                         >
-                          {pendingSync ? "Enable Sync" : "Disable Sync"}
+                          {pendingSync ? t("proj.enableSync") : t("proj.disableSync")}
                         </Button>
                       </div>
                     </>

@@ -1,5 +1,6 @@
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { cn } from '@/lib/utils';
+import { t } from '@/lib/i18n';
 
 /** Canonical Goose project link — single source of truth for the attribution.
  *  Goose was created by Block and donated to the Agentic AI Foundation (AAIF, a
@@ -38,16 +39,14 @@ export function GooseAttribution({
   if (compact) {
     return (
       <p className={cn('text-xs text-muted-foreground', className)}>
-        Powered by {link}, an open-source agent from the Agentic AI Foundation (AAIF)
+        {t("attr.poweredBy")} {link}{t("attr.gooseTail")}
       </p>
     );
   }
 
   return (
     <p className={cn('text-xs text-muted-foreground leading-relaxed', className)}>
-      The Local Agent is powered by {link}, an open-source agent from the
-      Agentic AI Foundation (AAIF). It runs on your device against the bundled
-      local model — no cloud account or API key.
+      {t("attr.localAgentPoweredBy")} {link}{t("attr.gooseLongTail")}
     </p>
   );
 }

@@ -184,7 +184,7 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
             </DropdownMenuTrigger>
           </TooltipTrigger>
           <TooltipContent side="top" className="text-xs">
-            {currentModel ? `Model: ${prettyModelName(currentModel)}` : 'Override model'}
+            {currentModel ? `Model: ${prettyModelName(currentModel)}` : t("routing.overrideModel")}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -200,7 +200,7 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
               <Sparkles className="h-3 w-3 shrink-0" strokeWidth={1.5} />
-              Recommended for your Mac
+              {t("routing.recommended")}
             </DropdownMenuLabel>
             {recommendedModels.map((m) => {
               const summary = fitSummary(fitById[m.id]);
@@ -222,7 +222,7 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
             })}
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="text-[11px] font-medium text-muted-foreground">
-              All downloaded models
+              {t("routing.allDownloaded")}
             </DropdownMenuLabel>
           </>
         )}
@@ -245,7 +245,7 @@ function ModelPopover({ useCase, connection }: { useCase: AICapability; connecti
         ))}
         {!loading && displayModels.length === 0 && !error && (
           <p className="px-2 py-1.5 text-[11px] text-muted-foreground italic">
-            No models available
+            {t("routing.noModels")}
           </p>
         )}
       </DropdownMenuContent>
@@ -300,7 +300,7 @@ export function UseCaseRoutingSettings() {
                   <SelectContent>
                     <SelectItem value={NONE}>
                       <span className="text-muted-foreground">
-                        Not configured
+                        {t("routing.notConfigured")}
                       </span>
                     </SelectItem>
                     {compatible.map((conn) => (

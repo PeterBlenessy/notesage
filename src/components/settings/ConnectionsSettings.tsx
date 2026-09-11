@@ -166,7 +166,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
       provider: 'local_ai',
       authMethod: 'local_bundled',
       status: 'expired',
-      label: 'Local AI',
+      label: t("conns.localAi"),
       credentials: { type: 'local_bundled' },
     });
     autoAssign(connectionId);
@@ -371,7 +371,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                   AI (bundled), then Ollama. */}
               <DropdownMenuGroup>
                 <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Local
+                  {t("conns.local")}
                 </DropdownMenuLabel>
                 {/* One entry per engine. The choice lives here rather than
                     inside the setup dialog: the user is already choosing what
@@ -392,17 +392,17 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                       />
                       <div className="flex-1 min-w-0">
                         <span className="text-sm font-medium flex items-center gap-1.5">
-                          <span className="truncate">Local agent using {e.name}</span>
+                          <span className="truncate">{t("conns.localAgentUsing", { name: e.name })}</span>
                           {e.beta && (
                             <span className="rounded-sm border border-border px-1 py-px text-[10px] font-medium uppercase tracking-wide text-muted-foreground shrink-0">
-                              Beta
+                              {t("conns.beta")}
                             </span>
                           )}
                         </span>
                         <span className="text-xs text-muted-foreground block truncate">
                           {configured
-                            ? 'Already set up'
-                            : 'Private AI — the model runs on your device, no API keys'}
+                            ? t("conns.alreadySetUp")
+                            : t("conns.privateAi")}
                         </span>
                         <span className="text-[10px] text-muted-foreground block truncate">
                           {e.attribution}
@@ -442,7 +442,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Subscription
+                  {t("conns.subscription")}
                 </DropdownMenuLabel>
                 {PROVIDER_OPTIONS.filter((o) => o.authMethod === 'agent_managed').map((option) => {
                   const alreadyConnected = connectedLabels.has(option.label);
@@ -468,7 +468,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  API Key
+                  {t("conns.apiKey")}
                 </DropdownMenuLabel>
                 {PROVIDER_OPTIONS.filter((o) => o.authMethod === 'api_key').map((option) => {
                   // openai_compatible allows multiple connections — skip dedup
@@ -503,7 +503,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
                 <DropdownMenuLabel className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                  Custom
+                  {t("conns.custom")}
                 </DropdownMenuLabel>
                 {/* Custom agents deliberately have no PROVIDER_OPTIONS entry —
                     managed install/update/allowlist surfaces must never match
@@ -516,7 +516,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
                   <div className="flex-1 min-w-0">
                     <span className="text-sm font-medium block truncate">{t("conn.customAgent")}</span>
                     <span className="text-xs text-muted-foreground block truncate">
-                      Bring your own ACP-compatible agent binary
+                      {t("conns.byoAgent")}
                     </span>
                   </div>
                 </DropdownMenuItem>
@@ -637,7 +637,7 @@ export function ConnectionsSettings({ onNavigateToTab }: { onNavigateToTab?: (ta
           </div>
           <p className="text-sm font-medium">{t("conn.noConnections")}</p>
           <p className="text-xs text-muted-foreground mt-1.5 max-w-[240px] mx-auto">
-            Connect an AI provider to enable chat, inline actions, and agent tasks. Use your existing subscription or an API key.
+            {t("conns.emptyIntro")}
           </p>
         </div>
       )}
@@ -766,7 +766,7 @@ function ConfigureForm({
 
       <div className="space-y-1">
         <Label className="text-xs text-muted-foreground">
-          {isApiKey ? 'API Key' : 'Server URL'}
+          {isApiKey ? t("conns.apiKey") : t("mcp.serverUrl")}
         </Label>
         <div className="flex gap-2">
           <div className="relative flex-1">
@@ -797,7 +797,7 @@ function ConfigureForm({
               className={`h-4 w-4 mr-1 transition-colors ${savedFlash ? 'text-[var(--color-accent-primary)]' : ''}`}
               strokeWidth={1.5}
             />
-            Save
+            {t("conns.save")}
           </Button>
         </div>
       </div>

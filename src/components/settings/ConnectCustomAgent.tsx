@@ -136,7 +136,7 @@ export function ConnectCustomAgent({
         <div className="rounded-lg border border-border bg-muted/40 p-2.5 space-y-2">
           <div className="flex items-center gap-1.5 text-xs font-medium">
             <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-            Connected
+            {t("custagent.connected")}
             {caps.agentVersion && (
               <span className="font-normal text-muted-foreground">v{caps.agentVersion}</span>
             )}
@@ -154,17 +154,17 @@ export function ConnectCustomAgent({
             </div>
           )}
           <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-            <span>{caps.supportsImages ? 'Images supported' : 'No image input'}</span>
+            <span>{caps.supportsImages ? t("connect.imagesYes") : t("connect.imagesNo")}</span>
             <span>
               {configOptions.length > 0
                 ? `${configOptions.length} config option${configOptions.length !== 1 ? 's' : ''}`
-                : 'No config options'}
+                : t("connect.noConfigOpts")}
             </span>
             {caps.supportsLoadSession && <span>{t("customAgent.sessionRestore")}</span>}
           </div>
         </div>
         <Button size="sm" className="w-full" onClick={() => onConnected(result.connectionId)}>
-          Done
+          {t("custagent.done")}
         </Button>
       </div>
     );
@@ -174,8 +174,7 @@ export function ConnectCustomAgent({
     <div className="p-4 space-y-3">
       <Header />
       <p className="text-xs text-muted-foreground">
-        Connect any agent that speaks the Agent Client Protocol over stdio. The binary is
-        probed before the connection is saved.
+        {t("custagent.intro")}
       </p>
 
       {error && (
@@ -187,7 +186,7 @@ export function ConnectCustomAgent({
           {errorDetail && (
             <Collapsible>
               <CollapsibleTrigger className="text-xs text-muted-foreground hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                Show details
+                {t("custagent.showDetails")}
               </CollapsibleTrigger>
               <CollapsibleContent>
                 <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted p-2 text-xs font-mono text-muted-foreground whitespace-pre-wrap">
@@ -201,7 +200,7 @@ export function ConnectCustomAgent({
 
       <div className="space-y-1">
         <Label htmlFor="custom-agent-label" className="text-xs text-muted-foreground">
-          Name
+          {t("conn.name")}
         </Label>
         <Input
           id="custom-agent-label"
@@ -217,7 +216,7 @@ export function ConnectCustomAgent({
 
       <div className="space-y-1">
         <Label htmlFor="custom-agent-binary" className="text-xs text-muted-foreground">
-          Binary path
+          {t("custagent.binaryPath")}
         </Label>
         <div className="flex gap-2">
           <Input
@@ -239,14 +238,14 @@ export function ConnectCustomAgent({
             aria-label={t("customAgent.browseBinary")}
           >
             <FolderOpen className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-            Browse
+            {t("custagent.browse")}
           </Button>
         </div>
       </div>
 
       <div className="space-y-1">
         <Label htmlFor="custom-agent-args" className="text-xs text-muted-foreground">
-          Arguments <span className="text-[10px]">(optional, space-separated)</span>
+          {t("mcp.arguments")} <span className="text-[10px]">{t("custagent.argsHint")}</span>
         </Label>
         <Input
           id="custom-agent-args"
@@ -271,7 +270,7 @@ export function ConnectCustomAgent({
             disabled={probing}
           >
             <Plus className="h-3 w-3 mr-1" strokeWidth={1.5} />
-            Add variable
+            {t("custagent.addVariable")}
           </Button>
         </div>
         {envRows.length > 0 && (
@@ -303,7 +302,7 @@ export function ConnectCustomAgent({
                     size="icon"
                     className="absolute right-0 top-0 h-8 w-8 text-muted-foreground hover:text-foreground transition-colors duration-150"
                     onClick={() => updateEnvRow(row.id, { show: !row.show })}
-                    aria-label={row.show ? 'Hide value' : 'Show value'}
+                    aria-label={row.show ? t("custagent.hideValue") : t("custagent.showValue")}
                     tabIndex={-1}
                   >
                     {row.show ? (
@@ -327,7 +326,7 @@ export function ConnectCustomAgent({
               </div>
             ))}
             <p className="text-[11px] text-muted-foreground">
-              Values are stored in the OS keychain, never on disk.
+              {t("custagent.keychainNote")}
             </p>
           </div>
         )}
@@ -342,10 +341,10 @@ export function ConnectCustomAgent({
 
       <div className="flex gap-2">
         <Button variant="ghost" size="sm" onClick={onBack} disabled={probing} className="flex-1">
-          Back
+          {t("connect.back")}
         </Button>
         <Button size="sm" onClick={handleSubmit} disabled={!canSubmit} className="flex-1">
-          Connect
+          {t("connect.connect")}
         </Button>
       </div>
     </div>

@@ -48,7 +48,7 @@ export function AISettings() {
           surface that non-bare groups paint. */}
       <SettingsGroup
         label={t("settings.connections")}
-        description="Connect to AI providers Notesage can talk to. Add subscription-based agents (Claude Code, Codex, Copilot, Gemini), API-key providers (Anthropic, OpenAI, OpenAI-compatible), or an Ollama server, and check for managed-agent updates from here."
+        description={t("ai.connectionsDesc")}
         bare
       >
         <div className="py-2">
@@ -61,7 +61,7 @@ export function AISettings() {
           matching Tool Calling / Project Scope below. */}
       <SettingsGroup
         label={t("settings.useCaseMapping")}
-        description="Pick which provider handles each use case — interactive chat, agent tasks, inline completions. New connections are auto-assigned to any slot they're compatible with."
+        description={t("ai.routingDesc")}
       >
         <UseCaseRoutingSettings />
       </SettingsGroup>
@@ -76,13 +76,11 @@ export function AISettings() {
           ---------------------------------------------------------------- */}
       <div data-section="permission-scopes">
         <h3 className="text-[11px] font-semibold tracking-wider uppercase text-foreground mb-1">
-          Permission scopes
+          {t("ai.permissionScopes")}
         </h3>
         <p className="text-[12px] text-muted-foreground mb-4 leading-relaxed">
-          What AI agents may access and do — tool-calling permissions, project
-          isolation, network reach, and persisted approvals. Maps to the
-          <code className="mx-1 text-[11px] font-mono">*Scope</code>types used
-          throughout the codebase.
+          {t("ai.permissionsIntro")}
+          <code className="mx-1 text-[11px] font-mono">*Scope</code>{t("ai.scopeTypesTail")}
         </p>
       </div>
 
@@ -93,7 +91,7 @@ export function AISettings() {
       >
         <SettingsRow
           label={t("settings.enableToolCalling")}
-          description="Allow models to autonomously call built-in tools — read/write files, execute skill scripts, and web search. Web search uses each provider's native backend where available (Anthropic, OpenAI); for local AI and Ollama, queries are sent to DuckDuckGo."
+          description={t("ai.toolCallingDesc")}
           htmlFor="ai-tool-calling-enabled"
           control={
             <Switch
@@ -128,14 +126,11 @@ export function AISettings() {
           label={t("settings.crossProjectMode")}
           description={
             <>
-              Exposes{' '}
+              {t("ai.exposes")}{' '}
               <span className="font-medium text-foreground">
-                all workspace folders
+                {t("ai.allWorkspaceFolders")}
               </span>{' '}
-              to the AI agent — disables project isolation. Only enable for
-              power-user workflows that explicitly need multi-project
-              visibility. A persistent banner appears in the command bar
-              while this is on.
+              {t("ai.crossProjectTail")}
             </>
           }
           htmlFor="cross-project-mode"
@@ -168,7 +163,7 @@ export function AISettings() {
       >
         <SettingsRow
           label={t("settings.maxConcurrentSessions")}
-          description="How many AI conversations can run at the same time. Further sends wait in a queue and start automatically as sessions finish. Lower this if your machine struggles with several agents at once."
+          description={t("ai.concurrencyDesc")}
           control={
             <div className="w-[180px]">
               <Slider
@@ -201,9 +196,7 @@ export function AISettings() {
       <SettingsGroup label={t("settings.networkSandbox")} bare>
         <SettingsHint title={t("settings.sandboxPerConnection")}>
           <p>
-            Open a connection above to set its filesystem sandbox, network
-            restriction, kernel enforcement, and domain allowlist. New agent
-            connections start with kernel enforcement on.
+            {t("ai.sandboxHint")}
           </p>
         </SettingsHint>
       </SettingsGroup>

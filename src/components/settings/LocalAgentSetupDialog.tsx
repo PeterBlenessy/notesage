@@ -29,7 +29,7 @@ import { LocalAgentAttribution } from './LocalAgentAttribution';
 import type { LocalAgentActiveStage } from '@/stores/local-ai-store';
 import { cn } from '@/lib/utils';
 import { log } from '@/lib/logger';
-import { t } from '@/lib/i18n';
+import { t, type MessageKey } from '@/lib/i18n';
 
 const GB = 1024 ** 3;
 
@@ -41,12 +41,13 @@ const ENGINE_AGENT_IDS: Record<'goose' | 'pi', string[]> = {
   pi: ['pi', 'notesage-acp-pi'],
 };
 
-/** Ordered active stages with user-facing labels. */
-const STAGES: { key: LocalAgentActiveStage; label: string }[] = [
-  { key: 'detecting', label: 'Check hardware' },
-  { key: 'downloading', label: 'Download agent + model' },
-  { key: 'configuring', label: 'Configure local agent' },
-  { key: 'verifying', label: 'Verify it responds' },
+/** Ordered active stages, labelled by message key. The array is built once at
+ *  module load, so a resolved `t()` here would freeze the English wording. */
+const STAGES: { key: LocalAgentActiveStage; labelKey: MessageKey }[] = [
+  { key: 'detecting', labelKey: "lagent.stepHardware" },
+  { key: 'downloading', labelKey: "lagent.stepDownload" },
+  { key: 'configuring', labelKey: "lagent.stepConfigure" },
+  { key: 'verifying', labelKey: "lagent.stepVerify" },
 ];
 
 const STAGE_ORDER: LocalAgentActiveStage[] = STAGES.map((s) => s.key);
@@ -59,13 +60,13 @@ const STAGE_ORDER: LocalAgentActiveStage[] = STAGES.map((s) => s.key);
 function failureHint(stage: LocalAgentActiveStage | undefined): string {
   switch (stage) {
     case 'downloading':
-      return 'The agent or model download didn’t finish — check your internet connection and try again.';
+      return t("lagent.hintDownload");
     case 'configuring':
-      return 'The local AI server didn’t start in time. Make sure a model is downloaded in Settings → Local AI, then try again.';
+      return t("lagent.hintConfigure");
     case 'verifying':
-      return 'The agent started but didn’t respond in time. Try again, or pick a smaller model in Settings → Local AI.';
+      return t("lagent.hintVerify");
     default:
-      return 'Try again.';
+      return t("lagent.hintDefault");
   }
 }
 
@@ -221,10 +222,10 @@ export function LocalAgentSetupDialog() {
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <ShieldCheck className="h-5 w-5 text-[var(--color-accent-primary)]" strokeWidth={1.5} />
-            Set up a private, on-device agent
+            {t("lagent.title")}
           </DialogTitle>
           <DialogDescription>
-            Runs an agent on your Mac against the bundled local model — no API keys, no cloud account.
+            {t("lagent.intro")}
           </DialogDescription>
         </DialogHeader>
 
@@ -238,13 +239,13 @@ export function LocalAgentSetupDialog() {
               disabled={running || toolModels.length === 0}
             >
               <SelectTrigger className="w-full">
-                <SelectValue placeholder={toolModels.length === 0 ? 'Loading models…' : 'Choose a model'} />
+                <SelectValue placeholder={toolModels.length === 0 ? t("lagent.loadingModels") : t("lagent.chooseModel")} />
               </SelectTrigger>
               <SelectContent>
                 {toolModels.map((m) => (
                   <SelectItem key={m.id} value={m.id}>
                     {m.name}
-                    {m.id === recommended ? ' · recommended' : ''}
+                    {m.id === recommended ? t("lagent.recommendedSuffix") : ''}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -252,7 +253,7 @@ export function LocalAgentSetupDialog() {
             {lowRam && (
               <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
                 <TriangleAlert className="h-3.5 w-3.5 mt-0.5 shrink-0" strokeWidth={1.5} />
-                Your Mac has under 8&nbsp;GB of memory — the agent may respond slowly or unreliably.
+                {t("lagent.lowMemory")}
               </p>
             )}
           </div>
@@ -272,7 +273,7 @@ export function LocalAgentSetupDialog() {
                     (state === 'active' || state === 'done') && 'text-foreground',
                   )}
                 >
-                  {s.label}
+                  {t(s.labelKey)}
                 </span>
                 {s.key === 'downloading' && state === 'active' && downloadProgress != null && (
                   <Progress value={downloadProgress} className="ml-auto w-24 h-1.5" />
@@ -293,18 +294,18 @@ export function LocalAgentSetupDialog() {
             <Button onClick={() => onOpenChange(false)}>{t("localAgent.done")}</Button>
           ) : running ? (
             <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Continue in background
+              {t("lagent.continueBg")}
             </Button>
           ) : (
             <>
               {isFailed && (
                 <Button variant="ghost" onClick={reset}>
                   <X className="h-4 w-4" strokeWidth={1.5} />
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
               )}
               <Button onClick={handleStart} disabled={!effectiveModel}>
-                {isFailed ? 'Retry' : 'Set up'}
+                {isFailed ? t("connect.retry") : t("common.setUp")}
               </Button>
             </>
           )}

@@ -331,7 +331,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{editServer ? 'Edit MCP Server' : 'Add MCP Server'}</DialogTitle>
+          <DialogTitle>{editServer ? t("mcps.editServer") : t("mcps.addServer")}</DialogTitle>
           <DialogDescription>{t("mcp.configureSubtitle")}</DialogDescription>
         </DialogHeader>
 
@@ -342,9 +342,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
               <AlertTitle>{t("mcp.requestedByExternalLink")}</AlertTitle>
               <AlertDescription className="space-y-2">
                 <p>
-                  This MCP server was requested by an external link. MCP servers
-                  run programs on your computer — review the command and arguments
-                  below before continuing. Only add servers from sources you trust.
+                  {t("mcps.deepLinkWarning")}
                 </p>
                 <label className="flex items-start gap-2 text-foreground">
                   <Checkbox
@@ -353,7 +351,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
                     className="mt-0.5"
                   />
                   <span className="text-xs">
-                    I&apos;ve reviewed this command and trust its source
+                    {t("mcpd.reviewed")}
                   </span>
                 </label>
               </AlertDescription>
@@ -362,19 +360,19 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground">{t("mcp.transport")}</Label>
             <div className="inline-flex rounded-lg border border-border p-0.5">
-              {(['stdio', 'http'] as const).map((t) => {
-                const active = transport === t;
+              {(['stdio', 'http'] as const).map((kind) => {
+                const active = transport === kind;
                 return (
                   <button
-                    key={t}
+                    key={kind}
                     type="button"
-                    onClick={() => setTransport(t)}
+                    onClick={() => setTransport(kind)}
                     className={cn(
                       'px-3 py-1 text-xs rounded-md transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
                       active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground'
                     )}
                   >
-                    {t === 'stdio' ? 'Local (command)' : 'Remote (URL)'}
+                    {kind === 'stdio' ? t("mcp.transportLocal") : t("mcp.transportRemote")}
                   </button>
                 );
               })}
@@ -392,7 +390,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
               />
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">
-                  Streamable HTTP endpoint. Authorize first if the server requires OAuth.
+                  {t("mcpd.httpHint")}
                 </p>
                 <Button
                   variant="outline"
@@ -408,7 +406,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
                   ) : (
                     <Lock className="h-3 w-3" strokeWidth={1.5} />
                   )}
-                  {oauthOk ? 'Authorized' : 'Authorize'}
+                  {oauthOk ? t("mcps.authorized") : t("mcps.authorize")}
                 </Button>
               </div>
             </div>
@@ -442,7 +440,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={isRemote ? 'Auto-derived from URL' : 'Auto-derived from command'}
+              placeholder={isRemote ? t("mcpd.autoFromUrl") : t("mcpd.autoFromCommand")}
               className="text-sm"
             />
           </div>
@@ -483,7 +481,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
                     next[i] = { ...next[i], value: e.target.value, stored: false };
                     setEnvPairs(next);
                   }}
-                  placeholder={pair.stored ? '•••••• (stored)' : pair.secret ? 'secret value' : 'value'}
+                  placeholder={pair.stored ? '•••••• (stored)' : pair.secret ? t("mcpd.secretValue") : 'value'}
                   className="font-mono text-xs flex-1"
                 />
                 <Button
@@ -493,9 +491,9 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
                     'h-6 w-6 p-0 shrink-0',
                     pair.secret ? 'text-foreground' : 'text-muted-foreground'
                   )}
-                  aria-label={pair.secret ? 'Stored in keychain' : 'Store in keychain'}
+                  aria-label={pair.secret ? t("mcpd.storedInKeychain") : t("mcpd.storeInKeychain")}
                   aria-pressed={!!pair.secret}
-                  title={pair.secret ? 'Secret — stored in the OS keychain' : 'Store this value in the OS keychain'}
+                  title={pair.secret ? t("mcpd.secretStored") : t("mcpd.storeThis")}
                   onClick={() => {
                     const next = [...envPairs];
                     next[i] = { ...next[i], secret: !next[i].secret, stored: false };
@@ -521,25 +519,25 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
           {validation.status === 'testing' && (
             <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={1.5} />
-              Testing connection…
+              {t("mcpd.testing")}
             </div>
           )}
           {validation.status === 'ok' && (
             <div className="rounded-lg border border-border bg-muted/40 p-2.5 space-y-1.5">
               <div className="flex items-center gap-1.5 text-xs font-medium">
                 <CheckCircle2 className="h-3.5 w-3.5" strokeWidth={1.5} />
-                Connected — {validation.result.tools.length} tool{validation.result.tools.length !== 1 ? 's' : ''}
+                {t("mcp.connectedTools", { count: validation.result.tools.length })}
               </div>
               {validation.result.tools.length > 0 && (
                 <div className="flex flex-wrap gap-1">
-                  {validation.result.tools.slice(0, 12).map((t) => (
-                    <Badge key={t.name} variant="secondary" className="h-4 px-1.5 text-xs font-normal font-mono">
-                      {t.name}
+                  {validation.result.tools.slice(0, 12).map((tool) => (
+                    <Badge key={tool.name} variant="secondary" className="h-4 px-1.5 text-xs font-normal font-mono">
+                      {tool.name}
                     </Badge>
                   ))}
                   {validation.result.tools.length > 12 && (
                     <span className="text-xs text-muted-foreground self-center">
-                      +{validation.result.tools.length - 12} more
+                      {t("mcp.moreTools", { count: validation.result.tools.length - 12 })}
                     </span>
                   )}
                 </div>
@@ -550,12 +548,12 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
             <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-2.5 space-y-1.5">
               <div className="flex items-start gap-1.5 text-xs font-medium text-destructive">
                 <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-px" strokeWidth={1.5} />
-                <span>{validation.result.error ?? 'The server failed to start'}</span>
+                <span>{validation.result.error ?? t("mcps.startFailed")}</span>
               </div>
               {validation.result.stderr_tail && (
                 <Collapsible>
                   <CollapsibleTrigger className="text-xs text-muted-foreground hover:text-foreground transition-colors rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring">
-                    Show details
+                    {t("custagent.showDetails")}
                   </CollapsibleTrigger>
                   <CollapsibleContent>
                     <pre className="mt-1 max-h-32 overflow-auto rounded bg-muted p-2 text-xs font-mono text-muted-foreground whitespace-pre-wrap">
@@ -568,7 +566,7 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
           )}
 
           <p className="text-xs text-muted-foreground">
-            Saved to ~/.notesage/mcp.json (global)
+            {t("mcpd.savedTo")}
           </p>
         </div>
 
@@ -584,14 +582,14 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
             ) : (
               <Wrench className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
             )}
-            Test
+            {t("mcpd.test")}
           </Button>
           <div className="flex gap-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button onClick={handleSave} disabled={saving || !hasRequiredFields || gateBlocked}>
-              {saving ? 'Saving...' : editServer ? 'Update' : 'Add Server'}
+              {saving ? t("common.saving") : editServer ? t("common.update") : t("mcps.addServerAction")}
             </Button>
           </div>
         </DialogFooter>

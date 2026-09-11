@@ -98,7 +98,7 @@ export function PromptsSettings() {
         <div>
           <Label className="text-sm font-semibold">{t("prompts.title")}</Label>
           <p className="text-xs text-muted-foreground mt-1">
-            Create reusable prompt templates for common AI tasks
+            {t("prompts.intro")}
           </p>
         </div>
       </div>
@@ -110,7 +110,7 @@ export function PromptsSettings() {
           <code className="px-1.5 py-0.5 rounded bg-muted text-xs font-mono">
             {'{{selection}}'}
           </code>{' '}
-          in your template to insert the selected text. For example:{' '}
+          {t("prompts.inTemplate")}{' '}
           <code className="px-1.5 py-0.5 rounded bg-muted text-xs font-mono">
             Translate the following to Spanish: {'{{selection}}'}
           </code>
@@ -123,7 +123,7 @@ export function PromptsSettings() {
           <div>
             <Label className="text-sm font-semibold">{t("prompts.yourPrompts")}</Label>
             <p className="text-xs text-muted-foreground mt-1">
-              Reusable templates that appear in the AI actions menu
+              {t("prompts.listHint")}
             </p>
           </div>
           <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
@@ -137,12 +137,12 @@ export function PromptsSettings() {
               <DialogHeader>
                 <DialogTitle>{t("prompts.create")}</DialogTitle>
                 <DialogDescription>
-                  Define a reusable prompt template for AI actions
+                  {t("prompts.defineHint")}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
-                  <Label htmlFor="prompt-icon">Icon (emoji)</Label>
+                  <Label htmlFor="prompt-icon">{t("prompts.iconEmoji")}</Label>
                   <Input
                     id="prompt-icon"
                     value={formData.icon}
@@ -175,13 +175,13 @@ export function PromptsSettings() {
                   <p className="text-xs text-muted-foreground">
                     Use{' '}
                     <code className="px-1 py-0.5 rounded bg-muted">{'{{selection}}'}</code>{' '}
-                    to insert the selected text
+                    {t("prompts.toInsert")}
                   </p>
                 </div>
               </div>
               <DialogFooter>
                 <Button variant="outline" onClick={closeDialog}>
-                  Cancel
+                  {t("common.cancel")}
                 </Button>
                 <Button onClick={handleCreatePrompt}>Add</Button>
               </DialogFooter>
@@ -225,7 +225,7 @@ export function PromptsSettings() {
                       </DialogHeader>
                       <div className="space-y-4 py-4">
                         <div className="space-y-2">
-                          <Label htmlFor="edit-prompt-icon">Icon (emoji)</Label>
+                          <Label htmlFor="edit-prompt-icon">{t("prompts.iconEmoji")}</Label>
                           <Input
                             id="edit-prompt-icon"
                             value={formData.icon}
@@ -263,7 +263,7 @@ export function PromptsSettings() {
                       </div>
                       <DialogFooter>
                         <Button variant="outline" onClick={closeDialog}>
-                          Cancel
+                          {t("common.cancel")}
                         </Button>
                         <Button onClick={handleUpdatePrompt}>{t("prompts.saveChanges")}</Button>
                       </DialogFooter>
@@ -285,7 +285,7 @@ export function PromptsSettings() {
           <div className="p-8 text-center border border-dashed border-border rounded-lg">
             <Sparkles className="h-12 w-12 mx-auto mb-3 text-muted-foreground/50" />
             <p className="text-sm text-muted-foreground">
-              No custom prompts yet. Create one to get started!
+              {t("prompts.empty")}
             </p>
           </div>
         )}
@@ -301,7 +301,7 @@ export function PromptsSettings() {
           <AlertDialogHeader>
             <AlertDialogTitle>{t("prompts.deleteQuestion")}</AlertDialogTitle>
             <AlertDialogDescription>
-              Delete &ldquo;{pendingPrompt?.name}&rdquo;? This cannot be undone.
+              {t("prompts.deleteBody", { name: pendingPrompt?.name ?? "" })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -310,7 +310,7 @@ export function PromptsSettings() {
               onClick={handleConfirmDelete}
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
             >
-              Delete
+              {t("skills.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

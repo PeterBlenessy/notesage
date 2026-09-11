@@ -248,7 +248,7 @@ export function ConnectAgent({
       className="flex-1"
     >
       <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${retrying ? 'animate-spin' : ''}`} strokeWidth={1.5} />
-      Retry
+      {t("connect.retry")}
     </Button>
   );
 
@@ -259,7 +259,7 @@ export function ConnectAgent({
         <span className="text-sm font-medium">{option.label}</span>
         {binarySource && phase === 'connected' && (
           <span className="text-[10px] text-muted-foreground px-1.5 py-0.5 rounded border border-border">
-            {binarySource === 'managed' ? 'Managed' : 'System'}
+            {binarySource === 'managed' ? t("card.managed") : t("connect.systemBinary")}
           </span>
         )}
       </div>
@@ -268,7 +268,7 @@ export function ConnectAgent({
         <div className="flex items-center gap-2.5 py-3">
           <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
           <span className="text-sm text-muted-foreground">
-            Checking for {binary}...
+            {t("connect.checkingFor", { binary })}
           </span>
         </div>
       )}
@@ -276,7 +276,7 @@ export function ConnectAgent({
       {phase === 'not_installed' && (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            {option.label} wasn't found on your system.
+            {t("connect.notFound", { name: option.label })}
           </p>
 
           {canManagedInstall && !showManualGuide && (
@@ -287,13 +287,13 @@ export function ConnectAgent({
                 className="w-full"
               >
                 <Download className="h-3.5 w-3.5 mr-1.5" strokeWidth={1.5} />
-                Install {option.label}
+                {t("connect.installName", { name: option.label })}
               </Button>
               <button
                 onClick={() => setShowManualGuide(true)}
                 className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer w-full text-center"
               >
-                or install manually
+                {t("connect.orManually")}
               </button>
             </>
           )}
@@ -306,7 +306,7 @@ export function ConnectAgent({
                   onClick={() => setShowManualGuide(false)}
                   className="text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer w-full text-center"
                 >
-                  or install automatically
+                  {t("connect.orAutomatically")}
                 </button>
               )}
             </>
@@ -314,7 +314,7 @@ export function ConnectAgent({
 
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
-              Back
+              {t("connect.back")}
             </Button>
             {retryButton}
           </div>
@@ -326,7 +326,7 @@ export function ConnectAgent({
           <div className="flex items-center gap-2.5">
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" strokeWidth={1.5} />
             <span className="text-sm text-muted-foreground">
-              {installProgress?.message || 'Preparing install...'}
+              {installProgress?.message || t("connect.preparing")}
             </span>
           </div>
           {installProgress && installProgress.total > 0 && (
@@ -374,7 +374,7 @@ export function ConnectAgent({
       {phase === 'not_authenticated' && (
         <div className="space-y-3">
           <p className="text-xs text-muted-foreground">
-            {option.label} is installed but needs sign-in.
+            {t("connect.needsSignIn", { name: option.label })}
           </p>
           {error && (
             <div className="p-2 rounded-lg bg-destructive/10 border border-destructive/20">
@@ -397,15 +397,15 @@ export function ConnectAgent({
               }
             }}
           >
-            Sign in to {option.label}
+            {t("connect.signInToName", { name: option.label })}
           </Button>
           <p className="text-[11px] text-muted-foreground text-center">
-            Opens a terminal window to complete sign-in. Click Retry when done.
+            {t("connect.terminalHint")}
           </p>
 
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
-              Back
+              {t("connect.back")}
             </Button>
             {retryButton}
           </div>
@@ -428,7 +428,7 @@ export function ConnectAgent({
             <span className="text-sm text-muted-foreground">{t("connectAgent.waitingForSignIn")}</span>
           </div>
           <p className="text-xs text-muted-foreground pl-6.5">
-            A browser window should open. Complete sign-in there, then return here.
+            {t("connect.browserHint")}
           </p>
         </div>
       )}
@@ -436,7 +436,7 @@ export function ConnectAgent({
       {phase === 'connected' && (
         <div className="flex items-center gap-2.5 py-3">
           <Check className="h-4 w-4 text-green-500" strokeWidth={2} />
-          <span className="text-sm font-medium">Connected!</span>
+          <span className="text-sm font-medium">{t("connect.connected")}</span>
         </div>
       )}
 
@@ -447,7 +447,7 @@ export function ConnectAgent({
               <AlertCircle className="h-4 w-4 text-destructive mt-0.5 shrink-0" strokeWidth={1.5} />
               <div>
                 <p className="text-sm font-medium text-destructive">
-                  {phase === 'error' && installProgress ? 'Install failed' : 'Connection failed'}
+                  {phase === 'error' && installProgress ? t("connect.installFailed") : t("copilot.failed")}
                 </p>
                 {error && (
                   <p className="text-xs text-destructive/80 mt-1 break-words">
@@ -459,7 +459,7 @@ export function ConnectAgent({
           </div>
           <div className="flex gap-2">
             <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
-              Back
+              {t("connect.back")}
             </Button>
             {retryButton}
           </div>
@@ -536,12 +536,12 @@ function EnvVarAuthForm({
         disabled={!allRequiredFilled}
         onClick={onSubmit}
       >
-        Connect
+        {t("connect.connect")}
       </Button>
 
       {method.link && (
         <p className="text-[11px] text-muted-foreground text-center">
-          Get yours at{' '}
+          {t("connect.getYoursAt")}{' '}
           <button
             className="inline-flex items-center gap-0.5 underline hover:text-foreground transition-colors cursor-pointer"
             onClick={() => window.open(method.link!, '_blank')}
@@ -573,15 +573,15 @@ function EnvVarAuthForm({
         className="w-full"
         onClick={onSignInWithTerminal}
       >
-        Sign in via Terminal
+        {t("connect.signInTerminal")}
       </Button>
       <p className="text-[11px] text-muted-foreground text-center">
-        Opens a terminal window to complete sign-in. Click Retry when done.
+        {t("connect.terminalHint")}
       </p>
 
       <div className="flex gap-2">
         <Button variant="ghost" size="sm" onClick={onBack} className="flex-1">
-          Back
+          {t("connect.back")}
         </Button>
       </div>
     </div>

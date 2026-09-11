@@ -91,9 +91,9 @@ export function SandboxActivitySettings() {
       <div className="flex items-center justify-between">
         <p className="text-[12px] text-muted-foreground">
           {failed
-            ? 'Could not read proxy status.'
+            ? t("sandbox.proxyUnreadable")
             : rows.length === 0
-              ? 'No sandboxed agents running.'
+              ? t("sandbox.noneRunning")
               : `${rows.length} sandboxed ${rows.length === 1 ? 'agent' : 'agents'} running.`}
         </p>
         <Button
@@ -110,7 +110,7 @@ export function SandboxActivitySettings() {
             strokeWidth={1.5}
             className={cn(loading && 'animate-spin')}
           />
-          Refresh
+          {t("common.refresh")}
         </Button>
       </div>
 
@@ -140,13 +140,13 @@ export function SandboxActivitySettings() {
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 pl-6 text-[11px] text-muted-foreground">
                 <span>
-                  Proxy port <span className="font-mono text-foreground/80">{port}</span>
+                  {t("sandbox.proxyPort")} <span className="font-mono text-foreground/80">{port}</span>
                 </span>
                 <span>
                   {status.sessionDomainCount} session-approved{' '}
                   {status.sessionDomainCount === 1 ? 'domain' : 'domains'}
                 </span>
-                <span>{status.allowedDomainCount} allowlisted at spawn</span>
+                <span>{t("sandbox.allowlistedAtSpawn", { count: status.allowedDomainCount })}</span>
               </div>
               <Collapsible>
                 <CollapsibleTrigger className="group mt-1 flex items-center gap-1 pl-6 text-[11px] text-muted-foreground transition-colors hover:text-foreground">
@@ -155,7 +155,7 @@ export function SandboxActivitySettings() {
                     strokeWidth={1.5}
                     className="transition-transform duration-150 group-data-[state=open]:rotate-90"
                   />
-                  Effective allowlist
+                  {t("sandbox.effectiveAllowlist")}
                   <span className="text-muted-foreground/60">({domains.length})</span>
                 </CollapsibleTrigger>
                 <CollapsibleContent>
@@ -172,7 +172,7 @@ export function SandboxActivitySettings() {
                     </ul>
                   ) : (
                     <p className="mt-1 pl-10 text-[11px] italic text-muted-foreground/70">
-                      No domains — kernel deny confines this agent to localhost.
+                      {t("sandbox.noDomains")}
                     </p>
                   )}
                 </CollapsibleContent>

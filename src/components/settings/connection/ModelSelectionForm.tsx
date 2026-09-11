@@ -27,24 +27,27 @@ import type { Connection, ReasoningEffort } from '@/lib/ai/connections';
 import { getAgentModels, prettyModelName } from '@/lib/ai/connections';
 import { tauriApi } from '@/lib/tauri';
 import { cn } from '@/lib/utils';
-import { t } from '@/lib/i18n';
+import { t, type MessageKey } from '@/lib/i18n';
 
 // --- Constants ---
 
-const TEMPERATURE_LABELS: { value: number; label: string }[] = [
-  { value: 0, label: 'Precise' },
-  { value: 0.5, label: 'Balanced' },
-  { value: 1.0, label: 'Creative' },
-  { value: 1.5, label: 'Experimental' },
-  { value: 2.0, label: 'Wild' },
+// Labels are held as message KEYS, not as resolved strings: this array is
+// built once at module load, so a `t()` here would freeze the English text
+// for the life of the process and never follow a language change.
+const TEMPERATURE_LABELS: { value: number; labelKey: MessageKey }[] = [
+  { value: 0, labelKey: "temp.precise" },
+  { value: 0.5, labelKey: "temp.balanced" },
+  { value: 1.0, labelKey: "temp.creative" },
+  { value: 1.5, labelKey: "temp.experimental" },
+  { value: 2.0, labelKey: "temp.wild" },
 ];
 
-function getTemperatureLabel(value: number): string {
-  if (value <= 0.25) return 'Precise';
-  if (value <= 0.75) return 'Balanced';
-  if (value <= 1.25) return 'Creative';
-  if (value <= 1.75) return 'Experimental';
-  return 'Wild';
+function temperatureLabelKey(value: number): MessageKey {
+  if (value <= 0.25) return "temp.precise";
+  if (value <= 0.75) return "temp.balanced";
+  if (value <= 1.25) return "temp.creative";
+  if (value <= 1.75) return "temp.experimental";
+  return "temp.wild";
 }
 
 export const MAX_TOKEN_PRESETS = [256, 512, 1024, 2048, 4096, 8192, 16384, 32768] as const;
@@ -71,13 +74,17 @@ export function formatTokenCount(tokens: number): string {
 export interface AgentModelOption {
   id: string;
   label: string;
+  /** Free text supplied by the agent at runtime — already in the agent's own words. */
   note?: string;
+  /** Note for a statically-listed model. A key, not a string: these tables are
+   *  built at module load, so a resolved `t()` would never follow a language change. */
+  noteKey?: MessageKey;
 }
 
 const COPILOT_MODELS: AgentModelOption[] = [
   { id: 'claude-sonnet-4.6', label: 'Claude Sonnet 4.6' },
   { id: 'claude-sonnet-4.5', label: 'Claude Sonnet 4.5' },
-  { id: 'claude-sonnet-4', label: 'Claude Sonnet 4', note: 'Default' },
+  { id: 'claude-sonnet-4', label: 'Claude Sonnet 4', noteKey: "model.noteDefault" },
   { id: 'claude-opus-4.6', label: 'Claude Opus 4.6' },
   { id: 'claude-opus-4.6-fast', label: 'Claude Opus 4.6 Fast' },
   { id: 'claude-opus-4.5', label: 'Claude Opus 4.5' },
@@ -98,21 +105,21 @@ const COPILOT_MODELS: AgentModelOption[] = [
 
 export const AGENT_KNOWN_MODELS: Record<string, AgentModelOption[]> = {
   'claude-agent-acp': [
-    { id: 'sonnet', label: 'Claude Sonnet', note: 'Default — fast and capable' },
-    { id: 'opus', label: 'Claude Opus', note: 'Most capable, slower' },
-    { id: 'haiku', label: 'Claude Haiku', note: 'Fastest, lightweight' },
+    { id: 'sonnet', label: 'Claude Sonnet', noteKey: "model.noteSonnet" },
+    { id: 'opus', label: 'Claude Opus', noteKey: "model.noteOpus" },
+    { id: 'haiku', label: 'Claude Haiku', noteKey: "model.noteHaiku" },
   ],
   'codex-acp': [
-    { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', note: 'Recommended — works with all account types' },
-    { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', note: 'Requires paid plan' },
-    { id: 'gpt-5.4', label: 'GPT-5.4', note: 'Latest flagship — requires paid plan' },
-    { id: 'o4-mini', label: 'o4-mini', note: 'Fast reasoning model' },
+    { id: 'gpt-5.2-codex', label: 'GPT-5.2 Codex', noteKey: "model.noteCodexRecommended" },
+    { id: 'gpt-5.3-codex', label: 'GPT-5.3 Codex', noteKey: "model.notePaidPlan" },
+    { id: 'gpt-5.4', label: 'GPT-5.4', noteKey: "model.noteFlagshipPaid" },
+    { id: 'o4-mini', label: 'o4-mini', noteKey: "model.noteFastReasoning" },
   ],
   'copilot': COPILOT_MODELS,
   'copilot-language-server': COPILOT_MODELS,
   'gemini': [
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', note: 'Default — most capable' },
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', note: 'Fast and efficient' },
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', noteKey: "model.noteGeminiPro" },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', noteKey: "model.noteGeminiFlash" },
   ],
 };
 
@@ -250,7 +257,7 @@ export function ModelSelectionForm({
             </Select>
           ) : (
             <p className="text-xs text-muted-foreground">
-              No models downloaded yet. Download one in the{' '}
+              {t("model.noneDownloaded")}{' '}
               {onNavigateToTab ? (
                 <button
                   className="underline hover:text-foreground transition-colors"
@@ -259,10 +266,10 @@ export function ModelSelectionForm({
                     onNavigateToTab('local-ai');
                   }}
                 >
-                  Local AI tab
+                  {t("model.localAiTab")}
                 </button>
               ) : (
-                'Local AI tab'
+                t("model.localAiTab")
               )}.
             </p>
           )}
@@ -285,7 +292,7 @@ export function ModelSelectionForm({
             displayModels = copilotModels.length > 0
               ? copilotModels.map((m) => ({ id: m.id, label: m.name }))
               : (AGENT_KNOWN_MODELS[agentBinary] ?? []);
-            defaultLabel = 'Server default';
+            defaultLabel = t("model.serverDefault");
           } else {
             // ACP agents: hardcoded list as base, enriched with dynamic models
             const knownModels = AGENT_KNOWN_MODELS[agentBinary] ?? [];
@@ -303,8 +310,8 @@ export function ModelSelectionForm({
 
             currentModel = getAgentModels(connection.id)?.currentModel ?? null;
             defaultLabel = currentModel
-              ? `Agent default (${prettyModelName(currentModel)})`
-              : 'Agent default';
+              ? t("model.agentDefaultNamed", { name: prettyModelName(currentModel) })
+              : t("model.agentDefault");
           }
 
           return (
@@ -325,7 +332,7 @@ export function ModelSelectionForm({
                       <span className="flex items-center gap-2">
                         <span>{prettyModelName(agentModel.id)}</span>
                         {currentModel === agentModel.id && (
-                          <span className="text-[10px] text-muted-foreground">(current)</span>
+                          <span className="text-[10px] text-muted-foreground">{t("model.current")}</span>
                         )}
                       </span>
                     </SelectItem>
@@ -334,7 +341,7 @@ export function ModelSelectionForm({
               </Select>
               {displayModels.length === 0 && (
                 <p className="text-[11px] text-muted-foreground italic">
-                  Send a message first to discover available models.
+                  {t("model.sendFirst")}
                 </p>
               )}
             </>
@@ -351,7 +358,9 @@ export function ModelSelectionForm({
                 <span className="truncate">
                   {model ? prettyModelName(model) : (
                     <span className="text-muted-foreground">
-                      {defaultModel ? `Default (${prettyModelName(defaultModel)})` : 'Select model\u2026'}
+                      {defaultModel
+                        ? t("model.defaultNamed", { name: prettyModelName(defaultModel) })
+                        : t("model.selectModel")}
                     </span>
                   )}
                 </span>
@@ -367,7 +376,7 @@ export function ModelSelectionForm({
                     onValueChange={onModelChange}
                     className="flex-1"
                   />
-                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label={modelsLoading ? "Loading models" : "Refresh models"} title={t("conn.refreshModels")} onClick={(e) => { e.stopPropagation(); onFetchModels(); }} disabled={modelsLoading}>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" aria-label={modelsLoading ? t("model.loading") : t("model.refresh")} title={t("conn.refreshModels")} onClick={(e) => { e.stopPropagation(); onFetchModels(); }} disabled={modelsLoading}>
                     {modelsLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   </Button>
                 </div>
@@ -410,8 +419,8 @@ export function ModelSelectionForm({
               <Label className="text-sm">{t("conn.creativity")}</Label>
               <span className="text-xs text-muted-foreground">
                 {temperature !== null
-                  ? `${getTemperatureLabel(temperature)} (${temperature.toFixed(1)})`
-                  : 'Default'}
+                  ? `${t(temperatureLabelKey(temperature))} (${temperature.toFixed(1)})`
+                  : t("model.default")}
               </span>
             </div>
             <Slider
@@ -421,9 +430,9 @@ export function ModelSelectionForm({
               className={cn(temperature === null && 'opacity-40')}
             />
             <div className="flex justify-between px-0.5">
-              {TEMPERATURE_LABELS.map((t) => (
-                <span key={t.value} className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors" onClick={() => onTemperatureChange(t.value)}>
-                  {t.label}
+              {TEMPERATURE_LABELS.map((stop) => (
+                <span key={stop.value} className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors" onClick={() => onTemperatureChange(stop.value)}>
+                  {t(stop.labelKey)}
                 </span>
               ))}
             </div>
@@ -434,8 +443,8 @@ export function ModelSelectionForm({
               <Label className="text-sm">{t("conn.responseLength")}</Label>
               <span className="text-xs text-muted-foreground">
                 {maxTokensIndex !== null
-                  ? `${formatTokenCount(MAX_TOKEN_PRESETS[maxTokensIndex])} tokens`
-                  : 'Default'}
+                  ? t("conn.tokensSuffix", { n: formatTokenCount(MAX_TOKEN_PRESETS[maxTokensIndex]) })
+                  : t("model.default")}
               </span>
             </div>
             <Slider
@@ -473,11 +482,11 @@ export function ModelSelectionForm({
             <Select value={String(gpuLayers)} onValueChange={(v) => onGpuLayersChange(Number(v))}>
               <SelectTrigger className="w-28 h-8 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="-1">Auto (all)</SelectItem>
+                <SelectItem value="-1">{t("model.layersAuto")}</SelectItem>
                 <SelectItem value="0">{t("conn.cpuOnly")}</SelectItem>
-                <SelectItem value="16">16 layers</SelectItem>
-                <SelectItem value="32">32 layers</SelectItem>
-                <SelectItem value="48">48 layers</SelectItem>
+                <SelectItem value="16">{t("model.layers", { n: 16 })}</SelectItem>
+                <SelectItem value="32">{t("model.layers", { n: 32 })}</SelectItem>
+                <SelectItem value="48">{t("model.layers", { n: 48 })}</SelectItem>
               </SelectContent>
             </Select>
           </div>
