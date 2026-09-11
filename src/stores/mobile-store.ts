@@ -217,6 +217,27 @@ interface MobileStore {
    * without end.
    */
   folderViews: FolderViewEntry[];
+  /** The last listing seen for a folder, keyed by relative path.
+   *
+   *  `LibraryBrowser` UNMOUNTS while a document is open — `MobileApp` renders
+   *  the reader in its place — so coming back mounted a fresh browser whose
+   *  state began at `loading`. The list the reader was opened from was thrown
+   *  away and re-read, and a local directory read takes about a frame, so the
+   *  skeleton showed just long enough to read as the whole screen blinking
+   *  (#994).
+   *
+   *  Session-only and deliberately not persisted: it exists to survive a
+   *  remount seconds later, not a relaunch, and a listing restored from disk
+   *  at startup would be a stale view of a synced folder.
+   *
+   *  Bounded to the `LISTING_CACHE_LIMIT` most recently read folders. Every
+   *  entry holds a whole directory listing, and a long browse through a large
+   *  library would otherwise keep one per folder ever opened for the life of
+   *  the session — memory spent on folders nobody is going back to. The value
+   *  is chosen against the thing the cache is for: returning from a reader to
+   *  the folder it was opened from, one or two levels up. */
+  listingCache: Record<string, FileEntry[]>;
+  rememberListing: (relPath: string, entries: FileEntry[]) => void;
   /**
    * Longest edge, in pixels, for images embedded by the background sweep —
    * or `"original"` to embed them untouched.
@@ -445,6 +466,13 @@ const MAX_READING_PROGRESS = 500;
 const MAX_READING_RESETS = 500;
 /** Folders that remember a view of their own; the oldest forgotten first. */
 const MAX_FOLDER_VIEWS = 200;
+/**
+ * Folder listings held for the remount that #994 fixed; least recently read
+ * evicted first. Each entry is a whole directory listing, so this is the one
+ * cache in this store whose cost scales with the SIZE of what it holds rather
+ * than the count — a library folder of several hundred files is one entry.
+ */
+const LISTING_CACHE_LIMIT = 24;
 
 export interface RecordingState {
   status: IosRecordingStatus;
@@ -568,6 +596,20 @@ export const useMobileStore = create<MobileStore>()(
       groupMode: "none",
       viewMode: "list",
       folderViews: [],
+      listingCache: {},
+      rememberListing: (relPath, entries) =>
+        set((st) => {
+          // Re-insert at the end so a re-read refreshes recency: object keys
+          // keep insertion order, which is the whole eviction mechanism here.
+          const next: Record<string, FileEntry[]> = { ...st.listingCache };
+          delete next[relPath];
+          next[relPath] = entries;
+          const keys = Object.keys(next);
+          for (const stale of keys.slice(0, Math.max(0, keys.length - LISTING_CACHE_LIMIT))) {
+            delete next[stale];
+          }
+          return { listingCache: next };
+        }),
       imageMaxPixel: 1600,
       imageQuality: 0.8,
       inlineImagesEnabled: true,
@@ -1078,6 +1120,10 @@ export const useMobileStore = create<MobileStore>()(
           libraryKind: null,
           icloudAvailable: false,
           folderStack: [],
+          // Cleared with everything else: `reset` runs when the grant is
+          // dropped or re-picked, and a listing cached from the PREVIOUS
+          // library would otherwise be rendered for the new one (#994).
+          listingCache: {},
           openDoc: null,
           docStack: [],
           recentlyRead: [],
