@@ -48,6 +48,19 @@ protocol LibraryFolderHost: AnyObject {
     /// including the delete confirmation — lives in `entrySwipeActions`, and
     /// is asked for rather than reimplemented.
     func swipeAction(_ id: String, for rel: String)
+    /// The folders chosen for Home, from `.notesage/home.json`. `nil` means
+    /// never curated, which is not the same as curated to nothing — see
+    /// `parseLibraryHome`.
+    func homeFolders() -> [String]?
+    /// Whether the "your folders are in All Folders" tip has been dismissed
+    /// on this device.
+    func homeHintDismissed() -> Bool
+    /// Dismiss it, for good.
+    func dismissHomeHint()
+    /// Unread items in the Inbox — the Inbox card's badge. Counted natively
+    /// by `InboxState`, which is also what badges the app icon, so the two
+    /// can never disagree.
+    func inboxUnread() -> Int
     /// Paths pinned in `.notesage/pins.json`.
     func pinnedPaths() -> Set<String>
     /// Paths read recently on this device.
@@ -90,6 +103,20 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
 
     private var sections: [LibrarySection] = []
     private var entries: [LibraryEntry] = []
+    /// Home's footer items, in order — the hint when it applies, then All
+    /// Folders. Held apart from `sections` because these are not entries.
+    private var homeTail: [String] = []
+
+    // Identifiers for Home's synthetic rows. A LEADING SLASH, because every
+    // real identifier is a path relative to the library root and none of them
+    // can start with one — so these can never collide with a file, however it
+    // is named. `home.json` uses the same trick for its own key.
+    private static let cardsSection = "/home.cards"
+    private static let tailSection = "/home.tail"
+    private static let inboxItem = "/home.inbox"
+    private static let recordingsItem = "/home.recordings"
+    private static let allFoldersItem = "/home.allFolders"
+    private static let hintItem = "/home.hint"
 
     private var collectionView: UICollectionView!
     private var dataSource: UICollectionViewDiffableDataSource<String, String>!
@@ -106,10 +133,22 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
     /// screen. The web version carries the same counter for the same reason.
     private var loadGeneration = 0
 
-    init(relPath: String, title: String, settings: LibraryViewSettings, host: LibraryFolderHost) {
+    /// Home is the root listing CURATED: two cards, the chosen folders, the
+    /// root's own files, and everything else behind All Folders.
+    ///
+    /// A flag rather than `relPath == ""`, because All Folders is ALSO the
+    /// root — it is the same folder shown uncurated, pushed on top of Home.
+    /// Deciding from the path would make the two indistinguishable.
+    let isHome: Bool
+
+    init(
+        relPath: String, title: String, settings: LibraryViewSettings,
+        host: LibraryFolderHost, isHome: Bool = false
+    ) {
         self.relPath = relPath
         self.settings = settings
         self.host = host
+        self.isHome = isHome
         super.init(nibName: nil, bundle: nil)
         self.title = title
     }
@@ -237,7 +276,7 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
                 .map {
                     LibraryEntry(
                         name: $0.name, path: $0.path, isDirectory: $0.is_directory,
-                        modified: $0.modified)
+                        modified: $0.modified, childCount: $0.child_count)
                 }
             DispatchQueue.main.async {
                 guard let self, generation == self.loadGeneration else { return }
@@ -277,16 +316,50 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
                         excerpt: meta?.excerpt))
             }
 
-        let sorted = sortLibraryEntries(matched, by: settings.sort)
+        // Home lists a SUBSET, and only while nothing is typed: a search is
+        // not curated, so a folder kept off Home is one query away rather than
+        // unreachable.
+        let curating = isHome && filter.isEmpty
+        let listable = curating ? libraryHomeEntries(matched, home: host.homeFolders()) : matched
+
+        let sorted = sortLibraryEntries(listable, by: settings.sort)
         let context = LibraryOrderingContext(
             sort: settings.sort, group: settings.group,
             pinned: host.pinnedPaths(), recentlyRead: host.recentlyRead())
         sections = groupLibraryEntries(sorted, context: context, monthTitle: Self.monthTitle)
+        // An empty folder still produces one empty section; Home would then
+        // draw a stray header above its cards.
+        sections = sections.filter { !$0.items.isEmpty }
+
+        if curating {
+            // The cards go ABOVE everything, in a fixed position no sort or
+            // grouping can reach — that is the whole point of a card.
+            sections.insert(
+                LibrarySection(key: Self.cardsSection, items: []), at: 0)
+            var tail: [String] = []
+            if libraryHomeHintApplies(
+                entries: entries, home: host.homeFolders(), dismissed: host.homeHintDismissed())
+            {
+                tail.append(Self.hintItem)
+            }
+            tail.append(Self.allFoldersItem)
+            sections.append(LibrarySection(key: Self.tailSection, items: []))
+            homeTail = tail
+        } else {
+            homeTail = []
+        }
 
         var snapshot = NSDiffableDataSourceSnapshot<String, String>()
         for section in sections {
             snapshot.appendSections([section.key])
-            snapshot.appendItems(section.items.map(\.path), toSection: section.key)
+            switch section.key {
+            case Self.cardsSection:
+                snapshot.appendItems([Self.inboxItem, Self.recordingsItem], toSection: section.key)
+            case Self.tailSection:
+                snapshot.appendItems(homeTail, toSection: section.key)
+            default:
+                snapshot.appendItems(section.items.map(\.path), toSection: section.key)
+            }
         }
         // What a row SAYS lives in sidecar files — reading progress, pins,
         // the read state — not in the entry list, and the identifiers here
@@ -336,15 +409,29 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
     /// selection. Swiping a row OPENED it (Peter, build 65), and build 63's
     /// notes claimed "swipe a row for Share and Delete", which was never true.
     private func makeLayout() -> UICollectionViewLayout {
-        UICollectionViewCompositionalLayout { [weak self] _, environment in
+        UICollectionViewCompositionalLayout { [weak self] index, environment in
             guard let self else { return nil }
+            // Home's cards and footer are rows whatever the listing is doing —
+            // a gallery of two cards and an "All Folders" tile is not a thing.
+            if index < self.sections.count,
+                self.sections[index].key == Self.cardsSection
+                    || self.sections[index].key == Self.tailSection
+            {
+                return self.makeListSection(environment, plain: true)
+            }
             return self.settings.layout == .list
                 ? self.makeListSection(environment)
                 : self.makeGallerySection()
         }
     }
 
-    private func makeListSection(_ environment: NSCollectionLayoutEnvironment)
+    /// `plain` is Home's own sections: no swipe actions — there is nothing to
+    /// share or delete about a card — and no sticky header, since they have no
+    /// title. Everything else about the geometry is shared, so a card sits on
+    /// the same grid as the rows under it.
+    private func makeListSection(
+        _ environment: NSCollectionLayoutEnvironment, plain: Bool = false
+    )
         -> NSCollectionLayoutSection
     {
         var config = UICollectionLayoutListConfiguration(appearance: .plain)
@@ -354,12 +441,14 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
         config.backgroundColor = .clear
         // The header is added below, as before, so it keeps `pinToVisibleBounds`.
         config.headerMode = .none
-        config.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
-            self?.trailingSwipeActions(at: indexPath)
+        if !plain {
+            config.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
+                self?.trailingSwipeActions(at: indexPath)
+            }
         }
         let section = NSCollectionLayoutSection.list(
             using: config, layoutEnvironment: environment)
-        section.boundarySupplementaryItems = [Self.stickyHeader()]
+        if !plain { section.boundarySupplementaryItems = [Self.stickyHeader()] }
         return section
     }
 
@@ -553,10 +642,58 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
             self.loadArticleMeta(for: entry)
         }
 
+        let cardCell = UICollectionView.CellRegistration<LibraryCardCell, String> {
+            [weak self] cell, _, item in
+            guard let self else { return }
+            let inbox = item == Self.inboxItem
+            let name = inbox ? libraryInboxFolder : libraryRecordingsFolder
+            // The count rides along on the listing (#684) rather than costing
+            // a second read. `nil` for a folder that does not exist yet, where
+            // a "0" would read as broken rather than empty.
+            let folder = self.entries.first { $0.isDirectory && $0.name == name }
+            // The FOLDER's own name, not a translated label — these are real
+            // directories on disk and the web cards show the same literal.
+            // Asking `localized` for a key that does not exist would render
+            // the key itself, which is the failure mode #989 was.
+            cell.configure(
+                symbol: inbox ? "tray" : "mic",
+                name: name,
+                count: folder?.childCount,
+                badge: inbox ? self.host?.inboxUnread() : nil)
+        }
+        let actionCell = UICollectionView.CellRegistration<LibraryActionCell, String> {
+            [weak self] cell, _, _ in
+            cell.configure(
+                symbol: "folder",
+                title: self?.host?.localized("home.allFolders") ?? "All Folders")
+        }
+        let hintCell = UICollectionView.CellRegistration<LibraryHintCell, String> {
+            [weak self] cell, _, _ in
+            cell.configure(text: self?.host?.localized("home.hint") ?? "") { [weak self] in
+                self?.host?.dismissHomeHint()
+                self?.rebuildSections(animated: true)
+            }
+        }
+
         dataSource = UICollectionViewDiffableDataSource<String, String>(
             collectionView: collectionView
         ) { [weak self] collectionView, indexPath, path in
             guard let self else { return UICollectionViewCell() }
+            // Home's own rows are not entries and never take the gallery
+            // shape: a card is a card whichever way the listing is drawn.
+            switch path {
+            case Self.inboxItem, Self.recordingsItem:
+                return collectionView.dequeueConfiguredReusableCell(
+                    using: cardCell, for: indexPath, item: path)
+            case Self.allFoldersItem:
+                return collectionView.dequeueConfiguredReusableCell(
+                    using: actionCell, for: indexPath, item: path)
+            case Self.hintItem:
+                return collectionView.dequeueConfiguredReusableCell(
+                    using: hintCell, for: indexPath, item: path)
+            default:
+                break
+            }
             switch self.settings.layout {
             case .list:
                 return collectionView.dequeueConfiguredReusableCell(
@@ -597,6 +734,26 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
 extension LibraryFolderScreen: UICollectionViewDelegate {
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         collectionView.deselectItem(at: indexPath, animated: true)
+        // Home's own rows first: they are not entries, so `entry(at:)` would
+        // simply return nil and the tap would go nowhere.
+        switch dataSource?.itemIdentifier(for: indexPath) {
+        case Self.inboxItem:
+            // Opening CREATES the folder when nothing has yet — the card is
+            // there from a fresh install, before anything has been shared.
+            host?.openFolder(libraryInboxFolder, title: libraryInboxFolder)
+            return
+        case Self.recordingsItem:
+            host?.openFolder(libraryRecordingsFolder, title: libraryRecordingsFolder)
+            return
+        case Self.allFoldersItem:
+            // The same folder as Home, shown uncurated, pushed on top of it.
+            host?.openFolder("", title: host?.localized("home.allFolders") ?? "All Folders")
+            return
+        case Self.hintItem:
+            return  // the × dismisses it; the row itself does nothing
+        default:
+            break
+        }
         guard let entry = entry(at: indexPath) else { return }
         if entry.isDirectory {
             host?.openFolder(entry.path, title: entry.name)

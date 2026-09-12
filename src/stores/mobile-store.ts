@@ -18,6 +18,7 @@ import {
   iosReadFile,
   iosWriteFile,
   iosEnsureDirectory,
+  iosReloadLibraryScreens,
   iosInboxUnreadCount,
   iosNotificationRequest,
   iosNotificationSetPrefs,
@@ -838,6 +839,12 @@ export const useMobileStore = create<MobileStore>()(
         await iosEnsureDirectory(".notesage");
         await iosWriteFile(HOME_FILE_REL_PATH, serializeHomeFileContent(next));
         set({ homeFolders: next });
+        // Home is a NATIVE screen now (#1000 step 4) and reads `home.json`
+        // itself, behind a short cache. Without this the folder you just
+        // chose appears only once some later `viewWillAppear` happens to fall
+        // outside that cache — which is indistinguishable from the menu row
+        // not working.
+        void iosReloadLibraryScreens().catch(() => {});
       },
 
       setRecording: (patch) => set((s) => ({ recording: { ...s.recording, ...patch } })),
@@ -1005,6 +1012,9 @@ export const useMobileStore = create<MobileStore>()(
         await iosEnsureDirectory(".notesage");
         await iosWriteFile(PINS_FILE_REL_PATH, serializePinsFileContent(next));
         set({ pinnedPaths: next });
+        // Same reason as `setOnHome`: the native rows read `pins.json`, and
+        // Group by pinned has to see the change that was just made.
+        void iosReloadLibraryScreens().catch(() => {});
       },
 
       rewritePath: async (from, to) => {

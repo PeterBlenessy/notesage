@@ -235,6 +235,21 @@ describe("useNativeLibrary", () => {
     expect(useMobileStore.getState().openDoc?.name).toBe("Alpha.md");
   });
 
+  it("opens the ROOT as a folder — All Folders on Home", async () => {
+    // The root's relative path is the empty string, which is FALSY. The
+    // guard used to be `!detail.relPath`, so every event about the root was
+    // dropped and Home's "All Folders" row did nothing at all.
+    const { result } = renderHook(() => useNativeLibrary(true));
+    await waitFor(() => expect(result.current).toBe(true));
+
+    act(() => fireOpen("folder", "", "All Folders"));
+    const stack = useMobileStore.getState().folderStack;
+    expect(stack).toHaveLength(1);
+    expect(stack[0]?.relPath).toBe("");
+    // The last segment of the root is "", so the row's own title is the name.
+    expect(stack[0]?.name).toBe("All Folders");
+  });
+
   it("does NOT open a document for a menu or a swipe", async () => {
     // The bare `else openDocument(...)` this replaces meant raising the entry
     // menu, or tapping ANY swipe action, also opened the document behind it.
