@@ -34,6 +34,7 @@ interface ViewArgs {
   group: string;
 }
 const setViewMock = vi.fn((_args: ViewArgs) => Promise.resolve());
+const setFilterMock = vi.fn((_args: { relPath: string; query: string }) => Promise.resolve());
 const toggleSpeechMock = vi.fn((_entry: { path: string; name: string }) => {});
 
 vi.mock("@/lib/ios-api", () => ({
@@ -41,6 +42,7 @@ vi.mock("@/lib/ios-api", () => ({
     setBrowsingMock(args),
   iosSetLibrarySpeech: (args: SpeechArgs) => setSpeechMock(args),
   iosSetLibraryView: (args: ViewArgs) => setViewMock(args),
+  iosSetLibraryFilter: (args: { relPath: string; query: string }) => setFilterMock(args),
 }));
 
 vi.mock("@/lib/speech-controller", () => ({
@@ -50,6 +52,7 @@ vi.mock("@/lib/speech-controller", () => ({
 import { renderHook, act, waitFor } from "@testing-library/react";
 import {
   useNativeLibrary,
+  useNativeLibraryFilter,
   useNativeLibrarySpeech,
   useNativeLibraryView,
 } from "@/components/mobile/useNativeLibrary";
@@ -424,6 +427,16 @@ describe("useNativeLibraryView", () => {
     expect(setViewMock.mock.calls[0][0].relPath).toBe("/home");
   });
 
+  it("pushes All Folders' settings — its key is the ROOT, the empty string", async () => {
+    // `""` is falsy, and the guard was `!screenKey`, so no view or density
+    // change ever reached the All Folders screen while Home and every named
+    // folder worked. Third time this shape has bitten in this file.
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
+    renderHook(() => useNativeLibraryView(true));
+    await waitFor(() => expect(setViewMock).toHaveBeenCalled());
+    expect(setViewMock.mock.calls[0][0].relPath).toBe("");
+  });
+
   it("pushes the open folder's settings", async () => {
     useMobileStore.setState({ folderStack: [{ relPath: "Inbox", name: "Inbox" }] });
     renderHook(() => useNativeLibraryView(true));
@@ -498,5 +511,32 @@ describe("useNativeLibraryView", () => {
         "Inbox/Deep",
       ),
     );
+  });
+});
+
+describe("useNativeLibraryFilter", () => {
+  beforeEach(() => setFilterMock.mockClear());
+
+  it("sends the query to the screen that is showing", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "Inbox", name: "Inbox" }] });
+    renderHook(() => useNativeLibraryFilter(true, "reading"));
+    await waitFor(() => expect(setFilterMock).toHaveBeenCalled());
+    expect(setFilterMock.mock.calls[0][0]).toEqual({ relPath: "Inbox", query: "reading" });
+  });
+
+  it("sends it for All Folders too, whose key is the empty root path", async () => {
+    // The guard was `!screenKey`, and `""` is falsy — so searching All Folders
+    // filtered nothing at all, silently. Same shape as the view push.
+    useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
+    renderHook(() => useNativeLibraryFilter(true, "essay"));
+    await waitFor(() => expect(setFilterMock).toHaveBeenCalled());
+    expect(setFilterMock.mock.calls[0][0]).toEqual({ relPath: "", query: "essay" });
+  });
+
+  it("says nothing when the native surface is off", async () => {
+    useMobileStore.setState({ folderStack: [{ relPath: "Inbox", name: "Inbox" }] });
+    renderHook(() => useNativeLibraryFilter(false, "x"));
+    await Promise.resolve();
+    expect(setFilterMock).not.toHaveBeenCalled();
   });
 });

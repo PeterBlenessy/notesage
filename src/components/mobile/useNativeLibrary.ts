@@ -218,7 +218,14 @@ export function useNativeLibraryView(live: boolean): void {
     // `screenKeyOf` names it. Skipping it here was right while Home was web,
     // and after it went native it meant the view menu was on screen at Home
     // and did nothing at all.
-    if (!screenKey) return;
+    // No truthiness test on a KEY. All Folders' key is the root's path, the
+    // empty string, which is falsy — so `!screenKey` skipped it and no view
+    // or density change ever reached that screen, while Home (`/home`) and
+    // every named folder worked. `screenKeyOf` always returns a string, so
+    // there is nothing here to guard against.
+    //
+    // Third time this exact shape has bitten: the root is "" and "" is falsy.
+    // See the `!detail.relPath` guard above, and the one in `LibraryBrowser`.
     void iosSetLibraryView({
       relPath: screenKey,
       layout,
@@ -246,7 +253,9 @@ export function useNativeLibraryFilter(live: boolean, query: string): void {
     // HOME_KEY passes through for the same reason it does in the view push:
     // Home is a native screen now, and searching it has to reach that screen
     // rather than stop here.
-    if (!live || !screenKey) return;
+    // Same reason as the view push above: `""` is All Folders, not "no
+    // screen". Searching there was dead for exactly this.
+    if (!live) return;
     void iosSetLibraryFilter({ relPath: screenKey, query }).catch((err) => {
       log.warn("native-library", `filter push failed: ${String(err)}`);
     });

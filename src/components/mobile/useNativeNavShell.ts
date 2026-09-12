@@ -1,3 +1,4 @@
+import { HOME_KEY } from "@/lib/home-file";
 import { useEffect, useRef, useState } from "react";
 
 import {
@@ -102,7 +103,7 @@ export function useNativeNavShell(active: boolean): void {
         // title is updated in place instead, below.
         await iosNavShellPresent(rootTitleRef.current);
         if (cancelled) return;
-        nativeStack.current = [{ id: "", title: rootTitleRef.current }];
+        nativeStack.current = [{ id: HOME_KEY, title: rootTitleRef.current }];
         // Only now: the chrome's top row stands down because the navigation
         // bar replaces it, and announcing that before the bar exists strips
         // the back button off a screen that then has no way out.
@@ -194,7 +195,7 @@ export function useNativeNavShell(active: boolean): void {
         // was toggled. Collapse to the root instead, the one state both sides
         // agree on without asking, and let the reconcile below push whatever
         // the store actually holds.
-        nativeStack.current = [{ id: "", title: rootTitleRef.current }];
+        nativeStack.current = [{ id: HOME_KEY, title: rootTitleRef.current }];
         void iosNavShellPopToRoot().catch(() => {});
         const store = useMobileStore.getState();
         applyingPop.current = true;

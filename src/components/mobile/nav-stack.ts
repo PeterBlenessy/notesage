@@ -14,9 +14,14 @@
  * check.
  */
 
+import { HOME_KEY } from "@/lib/home-file";
+
 export interface NavScreen {
-  /** Stable identity. `""` is Home; a folder is its relative path; a document
-   *  is `doc:<relPath>`; the Home editor is `home-editor`. */
+  /** Stable identity. `HOME_KEY` (`/home`) is Home; a folder is its relative
+   *  path — including `""` for All Folders, which is the root shown
+   *  uncurated; a document is `doc:<relPath>`; the Home editor is
+   *  `home-editor`. A leading slash cannot be a relative path, which is what
+   *  keeps Home and All Folders apart. */
   id: string;
   /** What the navigation bar shows. */
   title: string;
@@ -47,7 +52,14 @@ export function documentScreenId(relPath: string): string {
  * screen pushed from Home and nothing nests inside it.
  */
 export function deriveNavStack(input: NavStackInputs): NavScreen[] {
-  const screens: NavScreen[] = [{ id: "", title: input.rootTitle }];
+  // HOME_KEY, not "". Home and All Folders are BOTH the root — All Folders is
+  // the same folder shown uncurated — so giving Home the empty path made the
+  // two indistinguishable by id in the stack. `storeStateForScreen` then
+  // resolved a pop of All Folders to Home's index, collapsed `folderStack` to
+  // empty, and the web layer spent the whole time believing it was at Home:
+  // the view menu's changes landed on Home, and long press was dead because
+  // `folderDepth` was 0. One id, two screens, every symptom downstream.
+  const screens: NavScreen[] = [{ id: HOME_KEY, title: input.rootTitle }];
   if (input.homeEditorOpen) {
     screens.push({ id: "home-editor", title: input.homeEditorTitle });
     return screens;
@@ -113,7 +125,11 @@ export function storeStateForScreen(
   const index = screens.findIndex((s) => s.id === screenId);
   if (index < 0) return null;
   const above = screens.slice(0, index + 1);
-  const folders = above.filter((s) => s.id !== "" && s.id !== "home-editor" && !s.id.startsWith("doc:"));
+  // Home is not a folder level; All Folders IS one, and its id is the root's
+  // own path — the empty string. Excluding `""` here is what hid it.
+  const folders = above.filter(
+    (s) => s.id !== HOME_KEY && s.id !== "home-editor" && !s.id.startsWith("doc:"),
+  );
   const docs = above.filter((s) => s.id.startsWith("doc:"));
   return {
     folderDepth: folders.length,

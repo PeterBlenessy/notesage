@@ -1,3 +1,4 @@
+import { HOME_KEY } from "@/lib/home-file";
 import { describe, it, expect } from "vitest";
 
 import {
@@ -24,14 +25,14 @@ const folder = (relPath: string, name = relPath) => ({ relPath, name });
 
 describe("deriveNavStack", () => {
   it("is Home alone at the root", () => {
-    expect(deriveNavStack(base)).toEqual([{ id: "", title: "Notesage" }]);
+    expect(deriveNavStack(base)).toEqual([{ id: HOME_KEY, title: "Notesage" }]);
   });
 
   it("mirrors the folder trail, deepest last", () => {
     expect(
       deriveNavStack({ ...base, folderStack: [folder("Inbox"), folder("Inbox/2026", "2026")] }),
     ).toEqual([
-      { id: "", title: "Notesage" },
+      { id: HOME_KEY, title: "Notesage" },
       { id: "Inbox", title: "Inbox" },
       { id: "Inbox/2026", title: "2026" },
     ]);
@@ -43,7 +44,7 @@ describe("deriveNavStack", () => {
       folderStack: [folder("Inbox")],
       openDoc: folder("Inbox/note.md", "note.md"),
     });
-    expect(stack.map((s) => s.id)).toEqual(["", "Inbox", documentScreenId("Inbox/note.md")]);
+    expect(stack.map((s) => s.id)).toEqual([HOME_KEY, "Inbox", documentScreenId("Inbox/note.md")]);
   });
 
   it("keeps the link trail as real screens, so Back retraces it", () => {
@@ -66,7 +67,7 @@ describe("deriveNavStack", () => {
       homeEditorOpen: true,
       folderStack: [folder("Inbox")],
     });
-    expect(stack.map((s) => s.id)).toEqual(["", "home-editor"]);
+    expect(stack.map((s) => s.id)).toEqual([HOME_KEY, "home-editor"]);
   });
 
   it("gives a document a different id from a folder of the same path", () => {
@@ -80,14 +81,14 @@ describe("diffNavStack", () => {
   const screen = (id: string, title = id): NavScreen => ({ id, title });
 
   it("pushes what is new", () => {
-    expect(diffNavStack([screen("")], [screen(""), screen("Inbox")])).toEqual({
+    expect(diffNavStack([screen(HOME_KEY)], [screen(HOME_KEY), screen("Inbox")])).toEqual({
       pops: 0,
       pushes: [screen("Inbox")],
     });
   });
 
   it("pops what is gone", () => {
-    expect(diffNavStack([screen(""), screen("Inbox"), screen("Inbox/2026")], [screen("")])).toEqual({
+    expect(diffNavStack([screen(HOME_KEY), screen("Inbox"), screen("Inbox/2026")], [screen(HOME_KEY)])).toEqual({
       pops: 2,
       pushes: [],
     });
@@ -96,7 +97,7 @@ describe("diffNavStack", () => {
   it("pops and pushes when the branch changes", () => {
     // Jumping from one folder to another at the same depth is not a push.
     expect(
-      diffNavStack([screen(""), screen("Inbox")], [screen(""), screen("Recordings")]),
+      diffNavStack([screen(HOME_KEY), screen("Inbox")], [screen(HOME_KEY), screen("Recordings")]),
     ).toEqual({ pops: 1, pushes: [screen("Recordings")] });
   });
 
@@ -109,7 +110,7 @@ describe("diffNavStack", () => {
   });
 
   it("does nothing when nothing changed", () => {
-    const stack = [screen(""), screen("Inbox")];
+    const stack = [screen(HOME_KEY), screen("Inbox")];
     expect(diffNavStack(stack, [...stack])).toEqual({ pops: 0, pushes: [] });
   });
 });
@@ -131,7 +132,7 @@ describe("storeStateForScreen", () => {
   });
 
   it("reads the root as depth zero", () => {
-    expect(storeStateForScreen(stack, "")).toEqual({
+    expect(storeStateForScreen(stack, HOME_KEY)).toEqual({
       folderDepth: 0,
       docTrail: 0,
       closesDoc: true,
@@ -185,3 +186,36 @@ describe("a saved article's screen title", () => {
     expect(screens[screens.length - 1].title).toBe("Alpha.md");
   });
 });
+
+describe("Home and All Folders are both the root, and must not share an id", () => {
+  // They did, and everything downstream followed: a `didPop` for All Folders
+  // resolved to Home's index, `folderDepth` came back 0, and the web layer
+  // spent the whole time believing it was at Home — so the view menu's
+  // changes landed on Home and long press was dead on All Folders.
+  it("gives Home a key that cannot be a relative path", () => {
+    const screens = deriveNavStack({
+      folderStack: [{ relPath: "", name: "All Folders" }],
+      docStack: [],
+      openDoc: null,
+      homeEditorOpen: false,
+      rootTitle: "Notesage",
+      homeEditorTitle: "Edit Home",
+    });
+    expect(screens.map((s) => s.id)).toEqual([HOME_KEY, ""]);
+    expect(HOME_KEY.startsWith("/")).toBe(true);
+  });
+
+  it("counts All Folders as a folder level, and Home as none", () => {
+    const screens = deriveNavStack({
+      folderStack: [{ relPath: "", name: "All Folders" }],
+      docStack: [],
+      openDoc: null,
+      homeEditorOpen: false,
+      rootTitle: "Notesage",
+      homeEditorTitle: "Edit Home",
+    });
+    expect(storeStateForScreen(screens, HOME_KEY)?.folderDepth).toBe(0);
+    expect(storeStateForScreen(screens, "")?.folderDepth).toBe(1);
+  });
+});
+
