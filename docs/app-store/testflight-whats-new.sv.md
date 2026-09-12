@@ -25,15 +25,19 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Sökningen i en mapp söker på riktigt nu.
+Fastnålat och lästa-läget fungerar igen.
 
 RÄTTAT
-• Sökning i en mapp matchar det du SER på raden — en sparad artikels titel,
-dess sajt och dess sammanfattning — inte bara filnamnet. Att skriva ett ord ur
-en artikels titel dolde förut allt, eftersom filen bakom den är döpt efter ett
-datum.
-• Sökningen struntar också i accenter, så "andring" hittar "Ändringsdatum".
+• Gruppera efter fastnålat visar nu dina fastnålade artiklar och mappar. Förut
+hittade den ingenting, i ett bibliotek fullt av nålar, eftersom listan läste
+den delade nålfilen med fel namn på listan inuti.
+• Lästa-läget syns igen: stapeln under en påbörjad artikel, och "Läst" på en du
+läst klart. Samma orsak — filen lästes på fel sätt, och ett tomt resultat ser
+precis ut som "du har inte läst något".
 
 PROVA
-• Öppna en mapp med sparade artiklar, sök ett ord ur en titel du ser på
-skärmen, sedan ett ord ur sajten under. Båda ska hitta den.
+• Nåla fast en artikel eller en mapp på Macen, öppna sedan den mappen på
+telefonen och välj Gruppera efter fastnålat i …-menyn. Den ska ligga under
+FASTNÅLADE.
+• Läs halva en artikel på endera enheten, gå tillbaka till listan och leta
+efter stapeln under den.
