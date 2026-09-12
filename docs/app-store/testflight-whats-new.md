@@ -26,18 +26,17 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Pinned and reading progress work again.
+Reading progress, fixed twice over.
 
 FIXED
-• Group by pinned now shows your pinned articles and folders. It found nothing
-before, in a library full of pins, because the list read the shared pins file
-with the wrong name for the list inside it.
-• Reading progress shows again: the bar under a part-read article, and "Read"
-on one you finished. Same cause — the file was read the wrong way, and an
-empty result looks exactly like "you have not read anything".
+• The bar and "Read" appear as soon as you come back from an article. The
+list had the right number and never redrew the row.
+• On a phone the list could not read the progress file at all once iCloud had
+evicted it, so everything looked untouched. Same for your pins.
+• A saved article is named by its title in the gallery and in the reader, not
+by its filename.
 
 TRY
-• Pin an article or a folder on the Mac, then open that folder on the phone
-and choose Group by pinned from the … menu. It should sit under PINNED.
-• Read half an article on either device, go back to the list, and look for the
-bar under it.
+• Open an Inbox article, scroll about HALFWAY, go back. The bar should be
+there straight away — no relaunch.
+• Scrolling moves it. Listening saves your place but does not fill the bar.
