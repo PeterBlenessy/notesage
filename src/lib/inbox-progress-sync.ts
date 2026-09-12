@@ -1,4 +1,9 @@
-import { iosEnsureDirectory, iosReadFile, iosWriteFile } from "@/lib/ios-api";
+import {
+  iosEnsureDirectory,
+  iosReadFile,
+  iosReloadLibraryScreens,
+  iosWriteFile,
+} from "@/lib/ios-api";
 import { useMobileStore } from "@/stores/mobile-store";
 import { INBOX_FOLDER_NAME } from "@/lib/inbox";
 import {
@@ -149,6 +154,33 @@ export function scheduleInboxProgressPush(): void {
 }
 
 /**
+ * Write the pending progress NOW, and tell the native screens to re-read.
+ *
+ * The debounce exists so that scrolling does not write on every frame, and
+ * that is right while the reader is open. It is wrong at the moment the
+ * reader closes, because the folder screen re-reads the sidecar in
+ * `viewWillAppear` — which runs BEFORE the web layer even learns the document
+ * closed. A back tap therefore beat the 1.5 s timer every time: the number
+ * was correct on disk a moment later, and nothing read it again until the app
+ * was relaunched (Peter, builds 69–72: "not changing or showing up unless I
+ * restart the app").
+ *
+ * So the flush is followed by a reload rather than trusting the next
+ * `viewWillAppear` to come along. Awaited in order: the screens must re-read
+ * AFTER the write, or they read the same stale file a second time.
+ */
+export async function flushInboxProgress(): Promise<void> {
+  if (pushTimer !== null) {
+    clearTimeout(pushTimer);
+    pushTimer = null;
+  }
+  if (dirty.size === 0) return;
+  await pushInboxProgress();
+  // Rejection is expected off iOS and means there is nothing to tell.
+  await iosReloadLibraryScreens().catch(() => {});
+}
+
+/**
  * Watch the local store for Inbox-relevant changes and push them. Mounted
  * once at the app root — the listing unmounts the moment a document opens,
  * and reading is exactly when progress changes.
@@ -198,7 +230,14 @@ export function startInboxProgressSync(): () => void {
         queueMicrotask(() => useMobileStore.getState().markInboxOpened(opened));
       }
     }
+    // Closing the reader is the one moment the debounce must not apply — the
+    // folder screen is about to draw the row this progress belongs to.
+    const closed = prev.openDoc !== null && next.openDoc === null;
     prev = next;
+    if (closed) {
+      void flushInboxProgress();
+      return;
+    }
     if (changed) scheduleInboxProgressPush();
   });
   return () => {

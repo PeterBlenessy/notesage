@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 import { log } from "@/lib/logger";
 import {
   iosSetLibraryBrowsing,
@@ -145,6 +146,11 @@ export function useNativeLibrary(active: boolean): boolean {
       else if (detail.kind === "listen") toggleSpeech({ path: detail.relPath, name });
       else if (detail.kind === "document")
         openDocument({ relPath: detail.relPath, name, title });
+      // A card could not open its folder — the name is taken by something
+      // that is not a folder. The native side refuses to navigate; this says
+      // why, in the same words the web cards used.
+      else if (detail.kind === "folderFailed")
+        toast.error(t("action.createFolderFailed", { error: title ?? "" }));
       // Everything else is NOT ours. `menu` and `swipe:*` belong to
       // `LibraryBrowser`'s listener, which has the listing needed to find the
       // entry. This used to end in a bare `else openDocument(...)`, so

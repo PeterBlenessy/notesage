@@ -11,16 +11,12 @@ import { presentEntryMenu, type EntryActionContext } from "@/lib/mobile-entry-ac
 import { FileRow, classifyFile, entrySwipeActions } from "./FileRow";
 import { ArticleRow } from "./ArticleRow";
 import { GalleryView } from "./GalleryView";
-import { InboxCard, RecordingsCard } from "./InboxCard";
-import { AllFoldersRow } from "./AllFoldersRow";
-import { HomeHint } from "./HomeHint";
 import { NotificationPrePrompt } from "./NotificationPrePrompt";
 import { RecordingBar } from "./RecordingBar";
 import { formatElapsed, pauseRecording, resumeRecording, startRecording, stopRecording } from "@/lib/recording-controller";
 import { BrowserSkeleton, BrowserError } from "./BrowserStates";
 import { defaultHomeFolders } from "@/lib/home-file";
 import { RECORDINGS_FOLDER_NAME } from "@/lib/notes-root";
-import { Button } from "@/components/ui/button";
 import { Island, ChromeButton, SearchIsland, CONTENT_INSETS } from "./Chrome";
 import { TOP_INSET } from "./nav-shell-state";
 import { useNativeChrome, useA11yPrefs, a11yRootProps } from "./useNativeChrome";
@@ -56,22 +52,6 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
    * recording exists — an always-visible row that says "not found" would be
    * worse than no row at all.
    */
-  const openRecordings = useCallback(async () => {
-    // `ensureDirectory`, NOT `createDirectory`: the latter DEDUPES, so a
-    // second tap — or a root that already holds a *file* called Recordings —
-    // would quietly make "Recordings-1" and then navigate to the name that
-    // was never created. Ensure is idempotent, needs no "does it exist?"
-    // argument read from a render closure that a double tap makes stale, and
-    // refuses honestly when the name is taken by something that is not a
-    // folder.
-    try {
-      await iosEnsureDirectory(RECORDINGS_FOLDER_NAME);
-    } catch (err) {
-      toast.error(t("action.createFolderFailed", { error: String(err) }));
-      return;
-    }
-    jumpToFolder({ relPath: RECORDINGS_FOLDER_NAME, name: RECORDINGS_FOLDER_NAME });
-  }, [jumpToFolder]);
 
   /**
    * The Inbox, ensured the same way.
@@ -113,7 +93,6 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
   const homeFolders = useMobileStore((s) => s.homeFolders);
   const loadHomeFolders = useMobileStore((s) => s.loadHomeFolders);
   const setOnHomeInFile = useMobileStore((s) => s.setOnHome);
-  const homeHintDismissed = useMobileStore((s) => s.homeHintDismissed);
   const dismissHomeHint = useMobileStore((s) => s.dismissHomeHint);
   const openHomeEditor = useMobileStore((s) => s.openHomeEditor);
   const notifications = useMobileStore((s) => s.notifications);
@@ -121,7 +100,6 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
   const requestNotifications = useMobileStore((s) => s.requestNotifications);
   const setNotificationPref = useMobileStore((s) => s.setNotificationPref);
   const refreshUnread = useMobileStore((s) => s.refreshUnread);
-  const unreadInbox = useMobileStore((s) => s.unreadInbox);
   const prePromptDismissed = useMobileStore((s) => s.notificationPrePromptDismissed);
   const dismissNotificationPrePrompt = useMobileStore((s) => s.dismissNotificationPrePrompt);
   // Recording (recordings PRD): the island follows the store; the folder
@@ -1083,67 +1061,15 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
                 ? state.entries.filter((e) => e.name.toLowerCase().includes(query.toLowerCase()))
                 : state.entries,
             );
-            // Home is the root listing curated: the Inbox card (when the
-            // Inbox is on Home), the chosen folders, and the root's own
-            // files. Everything else waits under All Folders. A search
-            // looks through the whole root, so a hidden folder is one
-            // query away.
-            const curated = atHome && !query;
-            const inboxEntry = state.entries.find(
-              (e) => e.is_directory && e.name === INBOX_NAME,
-            );
-            // The Inbox card sits above whatever the listing shows, so no
-            // sort or grouping choice can move it — and it is excluded from
-            // the list below so the folder is not offered twice.
-            //
-            // ALWAYS there, whether or not the folder exists yet — the same
-            // rule as Recordings, and for the same reason. On a container
-            // install nothing creates `Inbox/` until something is shared, so
-            // gating the card on the folder meant a fresh install had no
-            // Inbox on Home at all until the first share (Peter, build 54:
-            // "I think inbox should be there from start just like
-            // recordings"). Opening it makes the folder.
-            const inboxCard = curated ? (
-              // The count rides along on the listing (#684) — no extra read.
-              <InboxCard
-                count={inboxEntry?.child_count}
-                unread={unreadInbox}
-                onOpen={() => void openInbox()}
-              />
-            ) : null;
-            // Recordings sits directly under the Inbox and is ALWAYS there,
-            // whether or not the folder exists yet: somewhere to look is
-            // more use than a card that appears only once you have guessed
-            // where your recordings went. Opening it creates the folder when
-            // the first recording has not already.
-            const recordingsEntry = state.entries.find(
-              (e) => e.is_directory && e.name === RECORDINGS_FOLDER_NAME,
-            );
-            const recordingsCard = curated ? (
-              <RecordingsCard
-                count={recordingsEntry?.child_count}
-                onOpen={() => void openRecordings()}
-              />
-            ) : null;
-            const listed = curated
-              ? visible.filter(
-                  (e) =>
-                    !e.is_directory ||
-                    (homeSet.has(e.path) &&
-                      e.name !== INBOX_NAME &&
-                      e.name !== RECORDINGS_FOLDER_NAME),
-                )
-              : visible;
-            const homeTail = curated ? (
-              <>
-                {homeFolders === null &&
-                  !homeHintDismissed &&
-                  state.entries.some((e) => e.is_directory && e.name !== INBOX_NAME) && (
-                    <HomeHint onDismiss={dismissHomeHint} />
-                  )}
-                <AllFoldersRow onOpen={() => enterFolder({ relPath: "", name: t("home.allFolders") })} />
-              </>
-            ) : null;
+            // Home draws itself natively (#1000 step 4) — the cards, the
+            // chosen folders, the hint and All Folders all live in
+            // `LibraryFolderScreen` now, and the curated subset is
+            // `libraryHomeEntries`. What is left here is the plain listing a
+            // browser shows when there is no native layer at all: the JSDOM
+            // suites and browser dev. On a device `setLibraryBrowsing` is a
+            // command in the same binary as the Swift that answers it, so it
+            // cannot be missing and this path is never taken.
+            const listed = visible;
             // Asked when it means something: on the Inbox, once it holds an
             // item, while iOS has not been asked, unless "Not now" was said.
             const prePrompt =
@@ -1156,30 +1082,7 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
                   onNotNow={dismissNotificationPrePrompt}
                 />
               ) : null;
-            if (state.entries.length === 0)
-              // Even here: an empty library is exactly where "where do
-              // recordings go?" is hardest to answer, and the card is the
-              // answer — tapping it makes the folder.
-              return (
-                <>
-                  {recordingsCard}
-                  <EmptyFolder />
-                </>
-              );
-            // "Nothing chosen yet" is about the HOME FILE, not about the
-            // pinned cards. It used to key off the Inbox card's absence,
-            // which worked only while that card was itself conditional; now
-            // that Inbox and Recordings are always pinned, keying on them
-            // would mean the invitation to choose folders never appeared.
-            if (curated && homeSet.size === 0 && listed.length === 0)
-              return (
-                <>
-                  {inboxCard}
-                  {recordingsCard}
-                  <HomeEmpty onChoose={openHomeEditor} />
-                  {homeTail}
-                </>
-              );
+            if (state.entries.length === 0) return <EmptyFolder />;
             if (visible.length === 0)
               return (
                 <p
@@ -1192,8 +1095,6 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
             if (viewMode === "gallery") {
               return (
                 <>
-                  {inboxCard}
-                  {recordingsCard}
                   {prePrompt}
                 <GalleryView
                   entries={listed}
@@ -1203,8 +1104,7 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
                   actionContext={actionContext}
                   condensed={listDensity === "condensed"}
                 />
-                  {homeTail}
-                </>
+                                  </>
               );
             }
             // Grouped rendering (#652): one <ul> per section with a sticky
@@ -1212,8 +1112,6 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
             // markup below has exactly one shape.
             return (
               <>
-                {inboxCard}
-                {recordingsCard}
                 {prePrompt}
                 {groupEntries(listed).map((section) => (
                   <section key={section.key}>
@@ -1251,8 +1149,7 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
                     </ul>
                   </section>
                 ))}
-                {homeTail}
-              </>
+                              </>
             );
           })()}
       </div>
@@ -1554,25 +1451,3 @@ function EmptyFolder() {
 }
 
 /** Home with nothing on it: the way to choose, and All Folders beneath. */
-function HomeEmpty({ onChoose }: { onChoose: () => void }) {
-  return (
-    <div className="flex flex-col items-center justify-center px-8 pb-6 pt-16 text-center">
-      <FolderOpen strokeWidth={1.25} className="h-8 w-8 text-muted-foreground" />
-      <p
-        className="mt-3 text-[length:calc(0.875rem*var(--ns-a11y-scale,1))] text-foreground"
-        style={{ fontWeight: "max(500, var(--ns-a11y-weight, 400))" }}
-      >
-        {t("home.emptyTitle")}
-      </p>
-      <p
-        className="mt-1 text-[length:calc(0.75rem*var(--ns-a11y-scale,1))] text-muted-foreground"
-        style={{ fontWeight: "var(--ns-a11y-weight, 400)" }}
-      >
-        {t("home.emptyBody")}
-      </p>
-      <Button variant="outline" size="sm" className="ios-press-row mt-4" onClick={onChoose}>
-        {t("home.chooseFolders")}
-      </Button>
-    </div>
-  );
-}

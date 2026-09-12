@@ -232,6 +232,10 @@ final class LibraryBrowsing: LibraryFolderHost {
         onOpen?("document", rel, title)
     }
 
+    func openFailed(_ rel: String, reason: String) {
+        onOpen?("folderFailed", rel, reason)
+    }
+
     func presentMenu(for rel: String) {
         onOpen?("menu", rel, nil)
     }

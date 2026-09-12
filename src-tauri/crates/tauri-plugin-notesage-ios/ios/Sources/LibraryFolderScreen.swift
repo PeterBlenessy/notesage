@@ -41,6 +41,8 @@ protocol LibraryFolderHost: AnyObject {
     /// nav bar says the same thing the row did. `nil` for anything whose row
     /// showed its file name.
     func openDocument(_ rel: String, title: String?)
+    /// A folder could not be opened, and why — the web layer owns the toast.
+    func openFailed(_ rel: String, reason: String)
     /// Raise the entry menu. The rows and what they do are assembled by
     /// `mobile-entry-actions.ts`, so this asks rather than rebuilds them.
     func presentMenu(for rel: String)
@@ -755,12 +757,10 @@ extension LibraryFolderScreen: UICollectionViewDelegate {
         // simply return nil and the tap would go nowhere.
         switch dataSource?.itemIdentifier(for: indexPath) {
         case Self.inboxItem:
-            // Opening CREATES the folder when nothing has yet — the card is
-            // there from a fresh install, before anything has been shared.
-            host?.openFolder(libraryInboxFolder, title: libraryInboxFolder)
+            openCardFolder(libraryInboxFolder)
             return
         case Self.recordingsItem:
-            host?.openFolder(libraryRecordingsFolder, title: libraryRecordingsFolder)
+            openCardFolder(libraryRecordingsFolder)
             return
         case Self.allFoldersItem:
             // The same folder as Home, shown uncurated, pushed on top of it.
@@ -777,6 +777,35 @@ extension LibraryFolderScreen: UICollectionViewDelegate {
         } else {
             host?.openDocument(entry.path, title: articleText(for: entry)?.title)
         }
+    }
+
+    /// Open one of Home's two cards, CREATING the folder if it is not there.
+    ///
+    /// Both cards are shown from a fresh install, before anything has been
+    /// shared or recorded, and on a container install nothing creates either
+    /// folder until then. Navigating to a folder that does not exist answers
+    /// "Couldn't open this folder — no such file", with a Retry that re-reads
+    /// the same missing path (Peter, build 54, on a clean install). The web
+    /// cards ensured the folder first; taking them native dropped that, and
+    /// the only reason it was not noticed is that every library used for
+    /// testing already had both.
+    ///
+    /// `ensureDirectory`, not `createDirectory`: the latter DEDUPES, so a
+    /// second tap would quietly make "Recordings-1" and navigate to a name
+    /// that was never created.
+    ///
+    /// A failure does NOT navigate. The name can be taken by something that
+    /// is not a folder, and entering it shows an empty or broken listing with
+    /// the explanation flashing past underneath — the Critical from the first
+    /// review of #924, pinned by a test the web cards had and these did not.
+    private func openCardFolder(_ name: String) {
+        do {
+            try LibraryAccess.ensureDirectory(name)
+        } catch {
+            host?.openFailed(name, reason: String(describing: error))
+            return
+        }
+        host?.openFolder(name, title: name)
     }
 
     /// Long press.
