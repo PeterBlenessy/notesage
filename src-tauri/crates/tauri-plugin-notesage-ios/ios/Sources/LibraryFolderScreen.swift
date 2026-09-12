@@ -178,7 +178,11 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
         // that on its own — but apply it WITHOUT animation when a layout
         // change follows, so the diff does not animate old-shaped cells into
         // the new metrics before the reload below replaces them.
-        rebuildSections(animated: refresh == .none)
+        // Never reconfigure from here when a refresh follows: the switch
+        // below is the one that knows whether the cell class is changing.
+        // Reconfiguring first crashes on a view switch — build 69.
+        rebuildSections(
+            animated: refresh == .none, reconfigure: libraryMayReconfigure(refresh))
 
         guard let dataSource else { return }
         var snapshot = dataSource.snapshot()
@@ -246,7 +250,17 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
         }
     }
 
-    private func rebuildSections(animated: Bool) {
+    /// `reconfigure` redraws the rows that survived the rebuild, for the
+    /// sidecar-driven text the snapshot cannot see change (see below).
+    ///
+    /// It MUST be false when the cell class is about to change. A view switch
+    /// asks UIKit to re-apply a configuration to cells that are about to be
+    /// replaced by a different class, which is the crash `libraryRefreshKind`
+    /// exists to prevent — and reintroducing it here, one caller away from
+    /// that comment, is what crashed build 69 on every list/gallery switch.
+    /// `apply(settings:)` does its own redraw straight afterwards and is the
+    /// one that knows which kind is safe.
+    private func rebuildSections(animated: Bool, reconfigure: Bool = true) {
         guard let host else { return }
         let matched =
             filter.isEmpty
@@ -288,9 +302,11 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
         //
         // Only items the data source already holds: reconfiguring one it has
         // never seen is not a reconfiguration.
-        let carried = Set(dataSource?.snapshot().itemIdentifiers ?? [])
-        let again = snapshot.itemIdentifiers.filter(carried.contains)
-        if !again.isEmpty { snapshot.reconfigureItems(again) }
+        if reconfigure {
+            let carried = Set(dataSource?.snapshot().itemIdentifiers ?? [])
+            let again = snapshot.itemIdentifiers.filter(carried.contains)
+            if !again.isEmpty { snapshot.reconfigureItems(again) }
+        }
         dataSource?.apply(snapshot, animatingDifferences: animated)
     }
 
