@@ -199,6 +199,23 @@ describe("useNativeLibrary", () => {
     expect(useMobileStore.getState().openDoc?.relPath).toBe("Inbox/Alpha.md");
   });
 
+  it("does NOT open a document for a menu or a swipe", async () => {
+    // The bare `else openDocument(...)` this replaces meant raising the entry
+    // menu, or tapping ANY swipe action, also opened the document behind it.
+    // Those kinds belong to `LibraryBrowser`'s listener, which has the listing
+    // needed to find the entry.
+    const { result } = renderHook(() => useNativeLibrary(true));
+    await waitFor(() => expect(result.current).toBe(true));
+
+    for (const kind of ["menu", "swipe:share", "swipe:delete"]) {
+      act(() => fireOpen(kind, "Inbox/Alpha.md"));
+      expect(useMobileStore.getState().openDoc, `${kind} opened the document`).toBeNull();
+    }
+    // An unknown kind is ignored too, rather than falling through to open.
+    act(() => fireOpen("something-new", "Inbox/Alpha.md"));
+    expect(useMobileStore.getState().openDoc).toBeNull();
+  });
+
   it("ignores nav-shell events that are not an open", async () => {
     const { result } = renderHook(() => useNativeLibrary(true));
     await waitFor(() => expect(result.current).toBe(true));

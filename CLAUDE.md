@@ -133,6 +133,12 @@ export PATH="/opt/homebrew/bin:$PATH"          # idb must find idb_companion
   verified here; say so rather than claiming it.
 - Screenshot BEFORE each step to establish state: the app restores its last
   open document on launch, so "tap the first row" can land somewhere else.
+- **Always pass the explicit UDID, never `booted`.** More than one simulator
+  can be booted at once (a build or `idb connect` can boot a second), and then
+  `xcrun simctl io booted screenshot` silently picks the wrong device — the
+  giveaway is a screenshot at an unexpected resolution. Use
+  `xcrun simctl io $UDID screenshot`, and `xcrun simctl list devices booted`
+  to check.
 
 **Before trusting any simulator screenshot, check the build actually landed.**
 `tauri ios build --target aarch64-sim` can print `** BUILD SUCCEEDED **` and

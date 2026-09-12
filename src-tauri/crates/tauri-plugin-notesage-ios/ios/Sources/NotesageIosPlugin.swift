@@ -1391,6 +1391,22 @@ class NotesageIosPlugin: Plugin {
     }
   }
 
+  struct LibraryFilterArgs: Decodable {
+    let relPath: String
+    let query: String
+  }
+
+  /// Filter-as-you-type for a native folder screen (#1000).
+  @objc public func setLibraryFilter(_ invoke: Invoke) {
+    do {
+      let args = try invoke.parseArgs(LibraryFilterArgs.self)
+      DispatchQueue.main.async {
+        LibraryBrowsing.shared.setFilter(args.query, for: args.relPath)
+        invoke.resolve()
+      }
+    } catch { invoke.reject(String(describing: error)) }
+  }
+
   @objc public func navShellPresent(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(NavPresentArgs.self)

@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { log } from "@/lib/logger";
-import { iosSetLibraryBrowsing, iosSetLibrarySpeech, iosSetLibraryView } from "@/lib/ios-api";
+import {
+  iosSetLibraryBrowsing,
+  iosSetLibraryFilter,
+  iosSetLibrarySpeech,
+  iosSetLibraryView,
+} from "@/lib/ios-api";
 import { t, getLocale, type MessageKey } from "@/lib/i18n";
 import { toggleSpeech } from "@/lib/speech-controller";
 import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-store";
@@ -117,7 +122,13 @@ export function useNativeLibrary(active: boolean): boolean {
       // failure toast. A second player would be a second answer to "where
       // was I".
       else if (detail.kind === "listen") toggleSpeech({ path: detail.relPath, name });
-      else openDocument({ relPath: detail.relPath, name });
+      else if (detail.kind === "document") openDocument({ relPath: detail.relPath, name });
+      // Everything else is NOT ours. `menu` and `swipe:*` belong to
+      // `LibraryBrowser`'s listener, which has the listing needed to find the
+      // entry. This used to end in a bare `else openDocument(...)`, so
+      // raising the entry menu or tapping ANY swipe action also opened the
+      // document behind it — which read as a tap passing through to the row
+      // and was blamed on the gesture for a while (build 65).
     };
     window.addEventListener("notesage:nav-shell", onShell);
     return () => window.removeEventListener("notesage:nav-shell", onShell);
@@ -193,4 +204,23 @@ export function useNativeLibraryView(live: boolean): void {
       log.warn("native-library", `view push failed: ${String(err)}`);
     });
   }, [live, screenKey, layout, density, sort, group]);
+}
+
+/**
+ * Filter-as-you-type on a native folder screen (#1000).
+ *
+ * The search island is native chrome, but its text arrives in the web layer
+ * first, so the screen has to be told. `apply(filter:)` has existed on the
+ * screen since the start with no caller at all, which meant typing filtered
+ * nothing while the PRD listed it as done.
+ */
+export function useNativeLibraryFilter(live: boolean, query: string): void {
+  const screenKey = useMobileStore((s) => screenKeyOf(s.folderStack));
+
+  useEffect(() => {
+    if (!live || !screenKey || screenKey === HOME_KEY) return;
+    void iosSetLibraryFilter({ relPath: screenKey, query }).catch((err) => {
+      log.warn("native-library", `filter push failed: ${String(err)}`);
+    });
+  }, [live, screenKey, query]);
 }

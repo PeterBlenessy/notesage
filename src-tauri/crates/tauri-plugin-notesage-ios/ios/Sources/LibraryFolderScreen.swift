@@ -171,8 +171,10 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
             collectionView.setCollectionViewLayout(makeLayout(), animated: true)
         }
         // Sort and group change WHICH items are where, and the snapshot says
-        // that on its own.
-        rebuildSections(animated: true)
+        // that on its own — but apply it WITHOUT animation when a layout
+        // change follows, so the diff does not animate old-shaped cells into
+        // the new metrics before the reload below replaces them.
+        rebuildSections(animated: refresh == .none)
 
         guard let dataSource else { return }
         var snapshot = dataSource.snapshot()
@@ -257,7 +259,7 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
             snapshot.appendSections([section.key])
             snapshot.appendItems(section.items.map(\.path), toSection: section.key)
         }
-        dataSource.apply(snapshot, animatingDifferences: animated)
+        dataSource?.apply(snapshot, animatingDifferences: animated)
     }
 
     /// A month header, in the device's language, with the year dropped inside
@@ -504,8 +506,14 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
         }
     }
 
+    /// The entry a row is showing, or `nil` when the index path no longer
+    /// names one — after a re-list, or before the data source exists.
     private func entry(at indexPath: IndexPath) -> LibraryEntry? {
-        dataSource.itemIdentifier(for: indexPath).flatMap { byPath[$0] }
+        // Guarded like every other use: `dataSource` is implicitly unwrapped
+        // and only assigned in `viewDidLoad`, and this is reachable from a
+        // gesture and from the prefetcher.
+        guard let dataSource else { return nil }
+        return dataSource.itemIdentifier(for: indexPath).flatMap { byPath[$0] }
     }
 }
 

@@ -143,6 +143,12 @@ final class LibraryBrowsing: LibraryFolderHost {
         screens.object(forKey: rel as NSString)?.apply(settings: settings)
     }
 
+    /// The search island's text, handed to the open screen for that folder.
+    @MainActor
+    func setFilter(_ query: String, for rel: String) {
+        screens.object(forKey: rel as NSString)?.apply(filter: query)
+    }
+
     /// Forget the cached sidecars — after a delete, a rename, or a return from
     /// the reader, where progress will have moved.
     func invalidate() {
