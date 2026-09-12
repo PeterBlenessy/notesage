@@ -25,18 +25,19 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Lästa-läget, rättat på två håll.
+Hem ritas nu av appen, och vyväxlingen kraschar inte längre.
 
 RÄTTAT
-• Stapeln och "Läst" syns direkt när du kommer tillbaka från en artikel.
-Listan hade rätt värde men ritade aldrig om raden.
-• På en telefon kunde listan inte läsa lägesfilen alls när iCloud rensat bort
-den, så allt såg orört ut. Samma för dina nålar.
-• En sparad artikel heter som sin titel i galleriet och i läsaren, inte som
-sitt filnamn.
+• Att växla mellan lista och galleri kraschade appen i bygge 69. Mitt fel —
+det är rättat och kraschen täcks nu av ett test.
+
+NYTT
+• Hem ritas av appen själv i stället för av webblagret: korten Inbox och
+Recordings, dina valda mappar och Alla mappar. Det ska se likadant ut och
+kännas snabbare.
 
 PROVA
-• Öppna en artikel i Inkorgen, bläddra HALVVÄGS, gå tillbaka. Stapeln ska
-ligga där direkt — ingen omstart.
-• Det är bläddrandet som flyttar den. Att lyssna sparar var du är men fyller
-inte stapeln.
+• Växla mellan lista och galleri några gånger, åt båda hållen, i en mapp och
+på Hem.
+• På Hem: öppna båda korten, tryck på Alla mappar och håll in en mapp där för
+att välja Visa på Hem — den ska dyka upp på Hem direkt.
