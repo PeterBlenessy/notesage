@@ -126,6 +126,41 @@ export PATH="/opt/homebrew/bin:$PATH"          # idb must find idb_companion
   is delivered instantaneously, UIKit reads it as a TAP, and a swipe across a
   list row opens the document instead of swiping it. ~0.4–0.5s with
   `--delta 4` behaves like a finger.
+- **Aim with the accessibility tree, not with a screenshot.**
+  `idb ui describe-all --udid $U` prints every element as JSON with an
+  `AXLabel`, a `type` and a `frame` in points. Resolve targets from it and tap
+  the frame's centre; do not measure a screenshot. A tap 40pt above the Listen
+  button opens the article instead of playing it, which is indistinguishable
+  from the Listen bug of build 43 — twenty minutes went into telling those
+  apart.
+
+  ```bash
+  /tmp/idbenv/bin/idb ui describe-all --udid $U | python3 -c '
+  import sys, json
+  for o in json.load(sys.stdin):
+      f = o["frame"]
+      print(o["type"], o.get("AXLabel"), f["x"], f["y"], f["width"], f["height"])'
+  ```
+
+- **The tree does NOT contain everything.** Two gaps have bitten, both silent:
+  - A **pushed** screen exposes neither its nav-bar Back button nor its
+    trailing `…`. Only the ROOT (Home) does. Automation that looks them up by
+    label finds nothing, does nothing, and reports success — which surfaced
+    two layers away as a "gallery" screenshot byte-identical to the list one.
+    Tap those two positions blind instead: `(40, 88)` and `(398, 84)`, placed
+    by the nav shell rather than by content.
+  - Home's rows are drawn by the React renderer (#1000 step 3), so they are
+    absent entirely; only the native chrome is there.
+
+  After any step that is supposed to change the screen, compare a screenshot
+  hash before and after. "The tap returned successfully" is not evidence.
+  The accessibility tree is a poor before/after signature — transient nodes
+  and sub-point coordinates differ between two reads of an identical screen.
+
+- **Clear app state the run itself set.** The folder search filter survives a
+  relaunch and applies to Home as well, so a run that ends on a search pose
+  leaves the next one facing "Nothing matches …" with no row to tap.
+
 - **Works:** taps, in-view pans (scrolling), text entry, hardware buttons.
 - **Does NOT work:** the system screen-edge pan. A swipe from `x=2` does not
   drive `interactivePopGestureRecognizer` — verified against the reader, whose
