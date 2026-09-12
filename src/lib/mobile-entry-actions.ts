@@ -321,6 +321,14 @@ export async function presentEntryMenu(
     isDirectory: entry.is_directory,
     sourceRect,
     items: entryMenuItems(entry, ctx),
-  }).catch(() => null);
+  }).catch((err) => {
+    // NOT swallowed. This rejects for reasons the user can act on — nothing
+    // to present over, another sheet already open — and a silent `null` makes
+    // a long press that raises no menu indistinguishable from a long press
+    // that was never noticed. That cost an hour of guessing when folders
+    // stopped offering "Show on Home".
+    toast.error(String(err));
+    return null;
+  });
   await runEntryAction(chosen, entry, ctx);
 }

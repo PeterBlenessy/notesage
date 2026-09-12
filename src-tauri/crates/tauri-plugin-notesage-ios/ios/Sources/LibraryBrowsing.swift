@@ -69,9 +69,23 @@ final class LibraryBrowsing: LibraryFolderHost {
     /// popped off the stack must not be kept alive by a subscription.
     private var speechObservers = NSHashTable<AnyObject>.weakObjects()
 
-    /// The folder screens currently on the stack, by relative path. Weak
-    /// values: a popped screen must not be kept alive by this.
-    private let screens = NSMapTable<NSString, LibraryFolderScreen>.strongToWeakObjects()
+    /// Every folder screen currently on the stack. Weak: a popped screen must
+    /// not be kept alive by this.
+    ///
+    /// A SET rather than a path→screen map, because two screens can show the
+    /// same folder: Home and All Folders are both the root. The map silently
+    /// held one of them, so a view or density change addressed to `""` reached
+    /// All Folders and never Home — the menu appeared to do nothing there.
+    /// Keying Home separately only moved the problem, since the web layer
+    /// addresses screens by path and has no other name for it.
+    private let screens = NSHashTable<LibraryFolderScreen>.weakObjects()
+
+    /// The live screens the web layer addresses as `key` — its own
+    /// `screenKeyOf`, so Home (`/home`) and All Folders (`""`) stay distinct
+    /// even though both show the root.
+    private func screens(for key: String) -> [LibraryFolderScreen] {
+        screens.allObjects.filter { $0.screenKey == key }
+    }
 
     private var homeCache: (folders: [String]?, at: Date)?
     private var pinnedCache: (paths: Set<String>, at: Date)?
@@ -127,11 +141,9 @@ final class LibraryBrowsing: LibraryFolderHost {
     @MainActor
     func makeScreen(rel: String, title: String, isHome: Bool = false) -> LibraryFolderScreen {
         let screen = LibraryFolderScreen(
-            relPath: rel, title: title, settings: settings(for: rel), host: self, isHome: isHome)
-        // Keyed so the host can push a filter or a setting at the right
-        // screen. Home and All Folders are both the root, so Home takes its
-        // own key rather than evicting the other from the table.
-        screens.setObject(screen, forKey: (isHome ? "/home" : rel) as NSString)
+            relPath: rel, title: title,
+            settings: settings(for: isHome ? "/home" : rel), host: self, isHome: isHome)
+        screens.add(screen)
         return screen
     }
 
@@ -144,13 +156,15 @@ final class LibraryBrowsing: LibraryFolderHost {
     @MainActor
     func setView(_ settings: LibraryViewSettings, for rel: String) {
         setSettings(settings, for: rel)
-        screens.object(forKey: rel as NSString)?.apply(settings: settings)
+        // Every screen showing this folder: Home and All Folders are the same
+        // folder seen two ways, and a view choice is about the folder.
+        for screen in screens(for: rel) { screen.apply(settings: settings) }
     }
 
     /// The search island's text, handed to the open screen for that folder.
     @MainActor
     func setFilter(_ query: String, for rel: String) {
-        screens.object(forKey: rel as NSString)?.apply(filter: query)
+        for screen in screens(for: rel) { screen.apply(filter: query) }
     }
 
     /// Forget the cached sidecars — after a delete, a rename, or a return from
@@ -181,9 +195,7 @@ final class LibraryBrowsing: LibraryFolderHost {
         // reading progress (which refreshes the browser), a row visibly lost
         // its title line and excerpt a moment after Listen was pressed and
         // then got them back. Build 65.
-        for key in screens.keyEnumerator().allObjects.compactMap({ $0 as? NSString }) {
-            screens.object(forKey: key)?.reloadFromHost()
-        }
+        for screen in screens.allObjects { screen.reloadFromHost() }
     }
 
     // MARK: Read-aloud

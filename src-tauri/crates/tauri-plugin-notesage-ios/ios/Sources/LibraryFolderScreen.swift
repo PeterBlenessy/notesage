@@ -141,6 +141,16 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
     /// Deciding from the path would make the two indistinguishable.
     let isHome: Bool
 
+    /// How the WEB layer addresses this screen when it pushes a view setting
+    /// or a filter — `screenKeyOf` in `mobile-store.ts`.
+    ///
+    /// Home answers to `/home`, not to its path. Home and All Folders are
+    /// both the root, and the web layer needs to tell them apart to remember
+    /// a view choice per screen; a leading slash cannot collide with a
+    /// relative path. Matching on `relPath` instead meant no view or density
+    /// change ever reached Home — the menu was there and did nothing.
+    var screenKey: String { isHome ? "/home" : relPath }
+
     init(
         relPath: String, title: String, settings: LibraryViewSettings,
         host: LibraryFolderHost, isHome: Bool = false
@@ -448,7 +458,14 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
         }
         let section = NSCollectionLayoutSection.list(
             using: config, layoutEnvironment: environment)
-        if !plain { section.boundarySupplementaryItems = [Self.stickyHeader()] }
+        if plain {
+            // The cards are two separate cards, not one block. The web Home
+            // had a gap between them and losing it made the Inbox and
+            // Recordings read as one control (Peter, build 70).
+            section.interGroupSpacing = 8
+        } else {
+            section.boundarySupplementaryItems = [Self.stickyHeader()]
+        }
         return section
     }
 

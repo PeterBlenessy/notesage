@@ -9,7 +9,6 @@ import {
 import { t, getLocale, type MessageKey } from "@/lib/i18n";
 import { toggleSpeech } from "@/lib/speech-controller";
 import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-store";
-import { HOME_KEY } from "@/lib/home-file";
 
 /**
  * Hand folder browsing to the native surface (#1000).
@@ -214,9 +213,12 @@ export function useNativeLibraryView(live: boolean): void {
 
   useEffect(() => {
     if (!live) return;
-    // Home is the web layer's own screen and has no native folder screen to
-    // tell — `screenKeyOf` gives it HOME_KEY rather than a folder path.
-    if (!screenKey || screenKey === HOME_KEY) return;
+    // HOME_KEY is passed through like any other: Home has a native screen of
+    // its own now (#1000 step 4) and answers to that key, exactly as
+    // `screenKeyOf` names it. Skipping it here was right while Home was web,
+    // and after it went native it meant the view menu was on screen at Home
+    // and did nothing at all.
+    if (!screenKey) return;
     void iosSetLibraryView({
       relPath: screenKey,
       layout,
@@ -241,7 +243,10 @@ export function useNativeLibraryFilter(live: boolean, query: string): void {
   const screenKey = useMobileStore((s) => screenKeyOf(s.folderStack));
 
   useEffect(() => {
-    if (!live || !screenKey || screenKey === HOME_KEY) return;
+    // HOME_KEY passes through for the same reason it does in the view push:
+    // Home is a native screen now, and searching it has to reach that screen
+    // rather than stop here.
+    if (!live || !screenKey) return;
     void iosSetLibraryFilter({ relPath: screenKey, query }).catch((err) => {
       log.warn("native-library", `filter push failed: ${String(err)}`);
     });

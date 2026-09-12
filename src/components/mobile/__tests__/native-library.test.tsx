@@ -412,11 +412,16 @@ describe("useNativeLibraryView", () => {
     expect(setViewMock).not.toHaveBeenCalled();
   });
 
-  it("says nothing on Home, which has no native folder screen", async () => {
+  it("pushes Home's settings too, under its own key", async () => {
+    // This used to assert the opposite — "says nothing on Home, which has no
+    // native folder screen" — and that premise expired when Home went native
+    // (#1000 step 4). Skipping the push left the view menu on screen at Home
+    // doing nothing at all. `/home` is `screenKeyOf`'s name for it, because
+    // Home and All Folders are both the root and remember their views apart.
     useMobileStore.setState({ folderStack: [] });
     renderHook(() => useNativeLibraryView(true));
-    await Promise.resolve();
-    expect(setViewMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(setViewMock).toHaveBeenCalled());
+    expect(setViewMock.mock.calls[0][0].relPath).toBe("/home");
   });
 
   it("pushes the open folder's settings", async () => {
