@@ -26,18 +26,17 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Home is native now, and the view switch no longer crashes.
+Home's menu and long press work now.
 
 FIXED
-• Switching between list and gallery crashed the app in build 69. Mine, and
-sorry — it is fixed and the crash is covered by a test now.
-
-NEW
-• Home is drawn by the app itself rather than the web layer: the Inbox and
-Recordings cards, your chosen folders, and All Folders. It should look the
-same and feel faster.
+• List, gallery and compact now take effect on Home. The menu was there and
+did nothing. Searching on Home was dead the same way.
+• Holding a folder under All Folders opens its menu again, so you can choose
+Show on Home. That is what the tip on Home tells you to do, and it was the one
+thing you could not do.
+• Inbox and Recordings have their gap back instead of reading as one block.
 
 TRY
-• Switch list and gallery a few times, both ways, in a folder and on Home.
-• On Home: open both cards, tap All Folders, and hold a folder there to choose
-Show on Home — it should appear on Home straight away.
+• On Home: switch list/gallery/compact, then search. The two cards and All
+Folders stay rows whichever you pick.
+• All Folders, hold a folder, Show on Home — it should appear on Home at once.
