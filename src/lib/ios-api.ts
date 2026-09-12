@@ -229,6 +229,18 @@ export function iosReloadLibraryScreens(): Promise<void> {
   return invoke("ios_reload_library_screens");
 }
 
+/**
+ * The filter text for a native folder screen (#1000).
+ *
+ * The search island is native but its TEXT arrives here first, so the screen
+ * has to be told. `LibraryFolderScreen.apply(filter:)` existed from the start
+ * and had no caller, which made typing in the island do nothing to a native
+ * folder while the PRD listed filter-as-you-type as done.
+ */
+export function iosSetLibraryFilter(args: { relPath: string; query: string }): Promise<void> {
+  return invoke("ios_set_library_filter", { args });
+}
+
 export function iosSetChrome(spec: {
   topLeft?: IosChromeItem;
   topRight?: IosChromeItem;

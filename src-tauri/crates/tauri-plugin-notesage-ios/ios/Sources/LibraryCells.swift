@@ -18,6 +18,7 @@
 //  survives launches, and cancelling work for a cell that has been reused.
 //
 
+import CryptoKit
 import UIKit
 
 // MARK: - Thumbnails
@@ -37,7 +38,13 @@ final class ThumbnailLoader {
     /// Kept in memory for the life of the screen so a scroll back up does not
     /// re-read the disk cache. Bounded by `NSCache`, which evicts under
     /// pressure rather than growing until the app is killed.
-    private let memory = NSCache<NSString, UIImage>()
+    /// SHARED across screens, not per-instance. A `ThumbnailLoader` belongs to
+    /// one `LibraryFolderScreen`, so a per-instance cache was empty every time
+    /// a folder was pushed again — which, with the disk cache refusing every
+    /// key (see `diskKey`), meant every thumbnail was regenerated on every
+    /// visit. `NSCache` evicts under pressure, so sharing it is bounded.
+    private static let memory = NSCache<NSString, UIImage>()
+    private var memory: NSCache<NSString, UIImage> { Self.memory }
 
     init() {
         // A few hundred thumbnails at 240pt is tens of megabytes; the count
@@ -50,22 +57,57 @@ final class ThumbnailLoader {
     /// never blanks first. That exact omission is what made the blink worse
     /// rather than better on the web side (build 61).
     func cached(_ rel: String) -> UIImage? {
-        let key = Self.cacheKey(rel, dark: Self.isDark)
-        if let image = memory.object(forKey: key as NSString) { return image }
-        guard let data = ThumbnailCache.get(key), let image = UIImage(data: data) else {
-            return nil
-        }
-        memory.setObject(image, forKey: key as NSString)
-        return image
+        // MEMORY ONLY. This runs inside the cell-registration closure, which
+        // UIKit calls on the main thread for every cell as it scrolls, and
+        // `ThumbnailCache.get` is a synchronous file read plus an mtime
+        // touch. The disk is consulted on the background queue in `start`
+        // instead, so a cold thumbnail costs a frame rather than a stutter.
+        memory.object(forKey: Self.cacheKey(rel, dark: Self.isDark) as NSString)
     }
 
     /// Whether the app is in dark mode right now. Read per request rather than
     /// captured: a note preview is drawn in these colours, and one cached
     /// under the wrong theme lasts the whole session.
+    /// The app's current appearance.
+    ///
+    /// `UITraitCollection.current` is only dependable inside a trait-aware
+    /// context (drawing, `resolvedColor(with:)`, `traitCollectionDidChange`),
+    /// and this is read from cell-registration closures and background
+    /// completions. The key window's trait collection is the app's actual
+    /// appearance and is valid to read anywhere on the main thread; the
+    /// `current` value is the fallback for a call before there is a window.
     private static var isDark: Bool {
-        UITraitCollection.current.userInterfaceStyle == .dark
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap(\.windows)
+            .first { $0.isKeyWindow }
+        let style = window?.traitCollection.userInterfaceStyle
+            ?? UITraitCollection.current.userInterfaceStyle
+        return style == .dark
     }
 
+    /// The DISK cache's key, which must be a bare hex digest.
+    ///
+    /// `ThumbnailCache.isValidKey` accepts only `[0-9a-f]` — deliberately, so
+    /// that no key can be "cleaned" into one that collides with another and
+    /// serves the wrong picture. The descriptive keys below (`ql:<path>`,
+    /// `note:dark:<path>`) contain `:`, `/`, `.` and capitals, so every one
+    /// of them was REFUSED: `get` missed every time and `put` silently did
+    /// nothing. The disk cache had never held a single entry for this surface
+    /// — every thumbnail was redrawn on each return to a folder and on each
+    /// launch, while the PRD and this file both claimed it survived launches.
+    ///
+    /// Hashing keeps the descriptive key as the thing we reason about and
+    /// gives the cache the shape it demands. Distinct from the web
+    /// pipeline's digests because the input strings differ.
+    private static func diskKey(_ rel: String, dark: Bool) -> String {
+        let descriptive = cacheKey(rel, dark: dark)
+        let digest = SHA256.hash(data: Data(descriptive.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// What the key MEANS — used for the in-memory cache, where any string
+    /// will do, and as the input to `diskKey`.
     private static func cacheKey(_ rel: String, dark: Bool) -> String {
         isNote(rel) ? noteKey(rel, dark: dark) : key(rel)
     }
@@ -179,6 +221,28 @@ final class ThumbnailLoader {
         guard !inFlight.contains(rel) else { return }
         inFlight.insert(rel)
 
+        // The disk cache, off the main thread, BEFORE regenerating anything:
+        // a hit here is a file read, a miss costs a failed open. Either way it
+        // must not happen in `cached()`, which runs per cell while scrolling.
+        let dark = Self.isDark
+        let disk = Self.diskKey(rel, dark: dark)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let data = ThumbnailCache.get(disk), let image = UIImage(data: data) else {
+                DispatchQueue.main.async { self?.generate(rel, completion: completion) }
+                return
+            }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let wasCancelled = !self.inFlight.contains(rel)
+                self.inFlight.remove(rel)
+                self.memory.setObject(image, forKey: Self.cacheKey(rel, dark: dark) as NSString)
+                if !wasCancelled { completion?(image) }
+            }
+        }
+    }
+
+    /// Draw or render the thumbnail, the disk having missed.
+    private func generate(_ rel: String, completion: ((UIImage) -> Void)? = nil) {
         if Self.isNote(rel) {
             let dark = Self.isDark
             let size = CGSize(width: Self.maxPixel, height: Self.maxPixel)
@@ -193,7 +257,9 @@ final class ThumbnailLoader {
                     guard let image else { return }
                     let key = Self.cacheKey(rel, dark: dark)
                     self.memory.setObject(image, forKey: key as NSString)
-                    if let data = image.pngData() { ThumbnailCache.put(key, data) }
+                    if let data = image.pngData() {
+                        ThumbnailCache.put(Self.diskKey(rel, dark: dark), data)
+                    }
                     if !wasCancelled { completion?(image) }
                 }
             }
@@ -213,7 +279,7 @@ final class ThumbnailLoader {
                 }
                 let key = Self.cacheKey(rel, dark: Self.isDark)
                 self.memory.setObject(image, forKey: key as NSString)
-                ThumbnailCache.put(key, data)
+                ThumbnailCache.put(Self.diskKey(rel, dark: Self.isDark), data)
                 if !wasCancelled { completion?(image) }
             }
         }

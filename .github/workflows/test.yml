@@ -393,7 +393,11 @@ jobs:
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryFolderScreen.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ChromeOverlay.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/NativeNavShell.swift \
-            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ReportWebView.swift
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ReportWebView.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/BackgroundRefresh.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/EntryContextMenu.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ImageInliner.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/Notifier.swift
           swiftc -parse src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/NotesageIosPlugin.swift
 
       - name: Type-check macOS Share Extension sources

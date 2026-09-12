@@ -941,6 +941,25 @@ pub async fn ios_reload_library_screens(app: tauri::AppHandle) -> Result<(), Str
     }
 }
 
+/// Filter-as-you-type for a native folder screen (#1000). `args` is
+/// `{ relPath, query }`. The search island is native, but its text reaches
+/// the web layer first, so the screen has to be told.
+#[tauri::command]
+pub async fn ios_set_library_filter(
+    app: tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<(), String> {
+    #[cfg(target_os = "ios")]
+    {
+        ios_impl::set_library_filter(&app, args).await
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (&app, args);
+        Err("ios_set_library_filter is only available on iOS".into())
+    }
+}
+
 /// Native navigation shell (`native-shell` Labs flag) — the mobile shell as a
 /// real `UINavigationController` rooted at Home. PRD:
 /// `docs/prds/2026-09-06-ios-native-navigation.md`.
@@ -1772,6 +1791,14 @@ mod ios_impl {
     pub async fn reload_library_screens(app: &AppHandle) -> Result<(), String> {
         app.notesage_ios()
             .reload_library_screens()
+            .map_err(|e| e.to_string())
+    }
+
+    pub async fn set_library_filter(
+        app: &AppHandle, args: serde_json::Value,
+    ) -> Result<(), String> {
+        app.notesage_ios()
+            .set_library_filter(args)
             .map_err(|e| e.to_string())
     }
 
