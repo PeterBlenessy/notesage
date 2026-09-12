@@ -484,3 +484,118 @@ func libraryHomeHintApplies(
     guard home == nil, !dismissed else { return false }
     return entries.contains { $0.isDirectory && $0.name != libraryInboxFolder }
 }
+
+// MARK: - Folder appearance
+
+/// A folder's custom look, set on the desktop (#140) and read here.
+///
+/// The desktop stores it in `<folder>/.notesage/project.json` as
+/// `{ "appearance": { "iconName", "colorIndex" } }` — a name from
+/// `CURATED_FOLDER_ICONS` and an index into `FOLDER_TAG_COLORS`. Both fields
+/// are independently optional: an icon alone, a colour alone, or both.
+///
+/// READ ONLY here. The phone shows what the Mac set; it does not offer a
+/// picker, so nothing writes this file and the Mac's other metadata in it is
+/// never at risk.
+struct LibraryFolderAppearance: Equatable {
+    /// An SF Symbol name, already mapped from the desktop's icon name.
+    var symbol: String?
+    /// 0…7, an index into `libraryFolderTagColors`.
+    var colorIndex: Int?
+
+    var isEmpty: Bool { symbol == nil && colorIndex == nil }
+}
+
+/// The desktop's 48 curated icon names, mapped to SF Symbols.
+///
+/// Hand-written because there is no mechanical correspondence: Lucide and SF
+/// Symbols are different vocabularies drawn by different people. A name with
+/// no good match is deliberately ABSENT rather than approximated — a folder
+/// showing the wrong picture is worse than one showing the default, and the
+/// default is what an absent entry yields.
+let librarySymbolForFolderIcon: [String: String] = [
+    // Personal / lifestyle
+    "Star": "star", "Heart": "heart", "Zap": "bolt", "Moon": "moon",
+    "Sun": "sun.max", "Cloud": "cloud", "Coffee": "cup.and.saucer",
+    "Music": "music.note",
+    // Reading / media
+    "Book": "book.closed", "BookOpen": "book", "Camera": "camera",
+    "Video": "video",
+    // Making
+    "Code": "chevron.left.forwardslash.chevron.right",
+    "Terminal": "terminal", "Cpu": "cpu", "Database": "cylinder.split.1x2",
+    // Place
+    "Globe": "globe", "Map": "map", "Navigation": "location",
+    "Compass": "safari",
+    // Work
+    "Briefcase": "briefcase", "Building": "building.2", "Home": "house",
+    "Archive": "archivebox",
+    // Nature
+    "Leaf": "leaf", "Trees": "tree", "Flame": "flame",
+    "Droplets": "drop",
+    // Numbers
+    "BarChart2": "chart.bar", "LineChart": "chart.xyaxis.line",
+    "PieChart": "chart.pie",
+    "TrendingUp": "chart.line.uptrend.xyaxis",
+    // Things
+    "ShoppingCart": "cart", "Tag": "tag", "Gift": "gift",
+    "Package": "shippingbox", "Puzzle": "puzzlepiece",
+    "Lightbulb": "lightbulb", "Rocket": "paperplane", "Shield": "shield",
+    // Talking
+    "Mail": "envelope", "Phone": "phone",
+    // Thinking
+    "Brain": "brain", "Bot": "cpu", "Sparkles": "sparkles", "Atom": "atom",
+    // Folders
+    "Folder": "folder", "FolderOpen": "folder",
+]
+
+/// The eight tag colours, as the desktop defines them in `globals.css`.
+///
+/// Converted from its OKLCH values once, here, rather than resolved at
+/// runtime: the phone has no CSS to read, and the numbers are a palette, not
+/// a preference. Light and dark are separate entries because the desktop
+/// lightens every colour for dark mode — a single value would be unreadable
+/// on one theme or the other, which is what the two contrast ratios in that
+/// file are about.
+let libraryFolderTagColors: [(light: (CGFloat, CGFloat, CGFloat), dark: (CGFloat, CGFloat, CGFloat))] = [
+    // Red
+    (light: (0.831, 0.047, 0.103), dark: (1.0, 0.402, 0.36)),
+    // Orange
+    (light: (0.843, 0.36, 0.0), dark: (0.99, 0.548, 0.272)),
+    // Yellow
+    (light: (0.614, 0.453, 0.0), dark: (0.881, 0.725, 0.26)),
+    // Green
+    (light: (0.0, 0.503, 0.103), dark: (0.33, 0.72, 0.358)),
+    // Teal
+    (light: (0.0, 0.504, 0.481), dark: (0.0, 0.726, 0.697)),
+    // Blue
+    (light: (0.0, 0.393, 0.727), dark: (0.295, 0.639, 0.97)),
+    // Purple
+    (light: (0.493, 0.292, 0.761), dark: (0.713, 0.535, 0.996)),
+    // Pink
+    (light: (0.745, 0.216, 0.61), dark: (0.951, 0.47, 0.808)),
+]
+
+/// Read a folder's appearance out of its `project.json`.
+///
+/// Tolerant in the same way every other sidecar reader here is: a missing
+/// file, malformed JSON, an unknown icon name or an index outside the palette
+/// all mean "no custom appearance", never an error. A folder that cannot be
+/// styled still lists.
+func parseLibraryFolderAppearance(_ json: String) -> LibraryFolderAppearance {
+    guard let data = json.data(using: .utf8),
+        let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let appearance = root["appearance"] as? [String: Any]
+    else { return LibraryFolderAppearance() }
+
+    var result = LibraryFolderAppearance()
+    if let name = appearance["iconName"] as? String {
+        result.symbol = librarySymbolForFolderIcon[name]
+    }
+    if let index = appearance["colorIndex"] as? Int,
+        index >= 0, index < libraryFolderTagColors.count
+    {
+        result.colorIndex = index
+    }
+    return result
+}

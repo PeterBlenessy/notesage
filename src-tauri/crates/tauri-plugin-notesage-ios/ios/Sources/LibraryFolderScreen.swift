@@ -50,6 +50,9 @@ protocol LibraryFolderHost: AnyObject {
     /// including the delete confirmation — lives in `entrySwipeActions`, and
     /// is asked for rather than reimplemented.
     func swipeAction(_ id: String, for rel: String)
+    /// A folder's custom icon and colour, set on the desktop (#140). Empty
+    /// for a file, and for a folder the Mac never styled.
+    func folderAppearance(for entry: LibraryEntry) -> LibraryFolderAppearance
     /// The folders chosen for Home, from `.notesage/home.json`. `nil` means
     /// never curated, which is not the same as curated to nothing — see
     /// `parseLibraryHome`.
@@ -639,7 +642,9 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
             // otherwise still be wired to the row it used to show.
             cell.listen.removeTarget(self, action: nil, for: .touchUpInside)
             cell.listen.addTarget(self, action: #selector(self.listenTapped(_:)), for: .touchUpInside)
-            self.thumbnails.load(entry, into: cell)
+            self.thumbnails.load(
+                entry, into: cell,
+                appearance: self.host?.folderAppearance(for: entry) ?? LibraryFolderAppearance())
             self.loadArticleMeta(for: entry)
         }
         let gridCell = UICollectionView.CellRegistration<LibraryGridCell, String> {
@@ -655,7 +660,9 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
                 label: self.listenLabel(for: entry))
             cell.listen.removeTarget(self, action: nil, for: .touchUpInside)
             cell.listen.addTarget(self, action: #selector(self.listenTapped(_:)), for: .touchUpInside)
-            self.thumbnails.load(entry, into: cell)
+            self.thumbnails.load(
+                entry, into: cell,
+                appearance: self.host?.folderAppearance(for: entry) ?? LibraryFolderAppearance())
             // Same read as the list cell's: without it a card would show its
             // filename until some list pass happened to warm the header.
             self.loadArticleMeta(for: entry)
