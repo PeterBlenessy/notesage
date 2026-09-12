@@ -25,13 +25,15 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-En till från 65.
+Det du hittade i 65, plus det en kodgranskning hittade.
 
 RÄTTAT
-• En sparad artikels rad hoppar inte längre när du trycker Lyssna. Den tappade
-kort sajt och lästid, visade filens datum i stället, och tappade
-sammanfattningsraden — vilket flyttade titeln.
+• Att svepa på en rad visar Dela och Radera. Det fungerade aldrig förut —
+svepet öppnade dokumentet i stället.
+• Radmenyn och svepknapparna öppnar inte längre dokumentet bakom sig.
+• Att skriva i sökfältet filtrerar mappen du är i.
+• Miniatyrer sparas mellan besök, så en mapp du öppnat förut ritas direkt.
+• En sparad artikels rad hoppar inte längre när du trycker Lyssna.
 
 PROVA
-• Tryck Lyssna på en sparad artikel i en lista och titta på själva raden:
-inget utom knappen ska ändras.
+• Svep rader åt vänster, använd Dela och Radera, och sök inne i en mapp.
