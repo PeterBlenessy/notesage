@@ -206,13 +206,21 @@ When context budget is tight, prioritise loading these rules from
 
 **Universal (load for every skill):**
 
+- `.claude/feedback/feedback_architect_decides_dont_ask.md` — Once strategy is agreed, implementation-shape decisions belong to the agent — don't hand them back as questions
 - `.claude/feedback/feedback_delete_old_skills.md` — Never ask the user to run commands or do mechanical steps — just do them yourself
+- `.claude/feedback/feedback_dont_argue_the_problem_away.md` — When the operator reports something broken or slower, find what changed — don't build a case that the current state is expected
+- `.claude/feedback/feedback_explain_before_destructive_git.md` — State what and why before reset, mid-flow branch switches, or chained git commands — don't ask for blind approval
 - `.claude/feedback/feedback_generic_voice.md` — Never name the operator, contributors, or individuals when writing rules, READMEs, skill prompts, or commit messages intended to live in the repo. The text must be copy-pasteable to another repo without rewording.
+- `.claude/feedback/feedback_preflight_checklists.md` — Consolidated checklists to run BEFORE committing, changing CI, releasing, arming auto-merge, or destructive git
+- `.claude/feedback/feedback_test_the_limit_before_asserting_it.md` — Before claiming something can't be done, isn't cached, or isn't installed — spend one command checking; it is a factual claim like any other
 - `.claude/feedback/feedback_write_feedback_to_repo.md` — When saving a memory in a project that has `.claude/feedback/`, behavioural-correction rules (anything that should change future behaviour on the same task class) MUST go in the repo so they're visible to AW agents and travel with the project. Local `~/.claude/projects/<project-slug>/memory/` is only for project-state memories (in-flight work, branch state, scratch notes).
 
 **Specific to `aw-refine`:**
 
 - `.claude/feedback/feedback_attach_docs_to_issue.md` — When a GitHub issue references docs files, ensure they are committed to the repo AND posted as collapsible comments on the issue
+- `.claude/feedback/feedback_confirm_interaction_model_first.md` — Name tap → outcome → where the user ends up, in one line, before building a control — a request naming the trigger rarely names the destination
 - `.claude/feedback/feedback_issue_titles_plain.md` — The repo follows Conventional Commits (`feat(area):`, `fix(area):`, etc.) for commit messages and PR titles, but ISSUE titles should remain plain descriptive — no verb-prefix, no scope. The verb prefix can be presumptuous at the issue stage (you don't yet know if it's a fix vs feat) and the type often drifts through triage/refine anyway.
+- `.claude/feedback/feedback_no_release_channels_use_flags.md` — Never propose a separate prerelease channel — unproven work goes behind an experimental flag, off by default
+- `.claude/feedback/feedback_prds_are_historical.md` — PRDs and history files are point-in-time records — when the design evolves, update the living docs instead of rewriting them
 
 <!-- END auto-generated -->

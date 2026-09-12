@@ -12,23 +12,34 @@ every skill loads the rule regardless of skill identity.
 
 ### all
 
+- [feedback_architect_decides_dont_ask.md](feedback_architect_decides_dont_ask.md) — Once strategy is agreed, implementation-shape decisions belong to the agent — don't hand them back as questions
 - [feedback_delete_old_skills.md](feedback_delete_old_skills.md) — Never ask the user to run commands or do mechanical steps — just do them yourself
+- [feedback_dont_argue_the_problem_away.md](feedback_dont_argue_the_problem_away.md) — When the operator reports something broken or slower, find what changed — don't build a case that the current state is expected
+- [feedback_explain_before_destructive_git.md](feedback_explain_before_destructive_git.md) — State what and why before reset, mid-flow branch switches, or chained git commands — don't ask for blind approval
 - [feedback_generic_voice.md](feedback_generic_voice.md) — Never name the operator, contributors, or individuals when writing rules, READMEs, skill prompts, or commit messages intended to live in the repo. The text must be copy-pasteable to another repo without rewording.
+- [feedback_preflight_checklists.md](feedback_preflight_checklists.md) — Consolidated checklists to run BEFORE committing, changing CI, releasing, arming auto-merge, or destructive git
+- [feedback_test_the_limit_before_asserting_it.md](feedback_test_the_limit_before_asserting_it.md) — Before claiming something can't be done, isn't cached, or isn't installed — spend one command checking; it is a factual claim like any other
 - [feedback_write_feedback_to_repo.md](feedback_write_feedback_to_repo.md) — When saving a memory in a project that has `.claude/feedback/`, behavioural-correction rules (anything that should change future behaviour on the same task class) MUST go in the repo so they're visible to AW agents and travel with the project. Local `~/.claude/projects/<project-slug>/memory/` is only for project-state memories (in-flight work, branch state, scratch notes).
 
 ### aw-triage
 
 - [feedback_aw_dep_upgrades.md](feedback_aw_dep_upgrades.md) — Don't route dep bumps / lint sweeps / mechanical changes through the AW pipeline — do them locally, batch-merge them
+- [feedback_check_reachability_before_splitting.md](feedback_check_reachability_before_splitting.md) — Before acting on a split-large-file task, check each branch is actually rendered — deleting dead code beats tidying it into more files
 - [feedback_issue_titles_plain.md](feedback_issue_titles_plain.md) — The repo follows Conventional Commits (`feat(area):`, `fix(area):`, etc.) for commit messages and PR titles, but ISSUE titles should remain plain descriptive — no verb-prefix, no scope. The verb prefix can be presumptuous at the issue stage (you don't yet know if it's a fix vs feat) and the type often drifts through triage/refine anyway.
+- [feedback_no_release_channels_use_flags.md](feedback_no_release_channels_use_flags.md) — Never propose a separate prerelease channel — unproven work goes behind an experimental flag, off by default
 
 ### aw-refine
 
 - [feedback_attach_docs_to_issue.md](feedback_attach_docs_to_issue.md) — When a GitHub issue references docs files, ensure they are committed to the repo AND posted as collapsible comments on the issue
+- [feedback_confirm_interaction_model_first.md](feedback_confirm_interaction_model_first.md) — Name tap → outcome → where the user ends up, in one line, before building a control — a request naming the trigger rarely names the destination
 - [feedback_issue_titles_plain.md](feedback_issue_titles_plain.md) — The repo follows Conventional Commits (`feat(area):`, `fix(area):`, etc.) for commit messages and PR titles, but ISSUE titles should remain plain descriptive — no verb-prefix, no scope. The verb prefix can be presumptuous at the issue stage (you don't yet know if it's a fix vs feat) and the type often drifts through triage/refine anyway.
+- [feedback_no_release_channels_use_flags.md](feedback_no_release_channels_use_flags.md) — Never propose a separate prerelease channel — unproven work goes behind an experimental flag, off by default
+- [feedback_prds_are_historical.md](feedback_prds_are_historical.md) — PRDs and history files are point-in-time records — when the design evolves, update the living docs instead of rewriting them
 
 ### aw-slice
 
 - [feedback_attach_docs_to_issue.md](feedback_attach_docs_to_issue.md) — When a GitHub issue references docs files, ensure they are committed to the repo AND posted as collapsible comments on the issue
+- [feedback_confirm_interaction_model_first.md](feedback_confirm_interaction_model_first.md) — Name tap → outcome → where the user ends up, in one line, before building a control — a request naming the trigger rarely names the destination
 - [feedback_task_done_format.md](feedback_task_done_format.md) — Use checkmark emoji in task title to mark done, never use checkbox syntax
 - [feedback_task_status_marks.md](feedback_task_status_marks.md) — In tasks files, mark a task 🚧 when work is kicked off (by me or a sub-agent), flip to ✅ when the work lands — both via git apply --cached to bypass the formatter.
 - [feedback_two_way_prd_tasks_links.md](feedback_two_way_prd_tasks_links.md) — Every PRD must link to its tasks file and every tasks file must link back to the PRD — maintain bidirectional references always
@@ -38,7 +49,10 @@ every skill loads the rule regardless of skill identity.
 - [feedback_add_tests.md](feedback_add_tests.md) — When verifying bug fixes with test cases, add them as proper vitest tests in the project instead of running ad-hoc scripts
 - [feedback_branch_protection_ci_required.md](feedback_branch_protection_ci_required.md) — main branch has protection rules — CI must pass before any PR can merge; never try to merge without waiting for checks
 - [feedback_check_before_workarounds.md](feedback_check_before_workarounds.md) — When a feature gap forces a choice between two options, surface the choice to the user — don't pick a workaround silently. The "obvious safe default" often isn't what the user wants.
+- [feedback_check_reachability_before_splitting.md](feedback_check_reachability_before_splitting.md) — Before acting on a split-large-file task, check each branch is actually rendered — deleting dead code beats tidying it into more files
+- [feedback_drive_interactive_repros_yourself.md](feedback_drive_interactive_repros_yourself.md) — When the project has a driver for the app, drive the scenario yourself — don't ask the operator to click around while you watch logs
 - [feedback_fix_all_test_failures.md](feedback_fix_all_test_failures.md) — Never dismiss local test failures as "pre-existing on main" — CI uses the same suite and will fail. Fix every failure that surfaces locally, regardless of cause.
+- [feedback_fix_the_whole_class_not_one_instance.md](feedback_fix_the_whole_class_not_one_instance.md) — Asked to fix a CLASS of problem, inventory ALL instances and fix them — never silently downgrade a known one to re-run-and-hope
 - [feedback_full_coverage.md](feedback_full_coverage.md) — When implementing a feature, cover ALL touch points completely. Never leave known gaps as "follow-ups" unless the user explicitly says so.
 - [feedback_functional_parity_vs_visual_parity.md](feedback_functional_parity_vs_visual_parity.md) — When wrapping existing functionality in a new UI shell, functional parity and visual parity are distinct gates — both mandatory, neither substitutes for the other.
 - [feedback_manage_branch_yourself.md](feedback_manage_branch_yourself.md) — When the work belongs on a specific branch, the agent must check / switch / create the branch via git, not tell the user to do it
@@ -54,80 +68,124 @@ every skill loads the rule regardless of skill identity.
 - [feedback_task_done_format.md](feedback_task_done_format.md) — Use checkmark emoji in task title to mark done, never use checkbox syntax
 - [feedback_task_status_marks.md](feedback_task_status_marks.md) — In tasks files, mark a task 🚧 when work is kicked off (by me or a sub-agent), flip to ✅ when the work lands — both via git apply --cached to bypass the formatter.
 - [feedback_test_before_promising.md](feedback_test_before_promising.md) — When a UI component doesn't work as expected, research and fix it instead of falling back to inferior alternatives
+- [feedback_verify_behaviour_not_metadata.md](feedback_verify_behaviour_not_metadata.md) — A chain of correct descriptions can describe something that does not work — the last gate must exercise the artefact
+- [feedback_verify_every_state_not_one.md](feedback_verify_every_state_not_one.md) — A toggle touching two layouts needs both layouts in both states, on data seeded with every format — not one screen
+- [feedback_verify_platform_ui_in_simulator_first.md](feedback_verify_platform_ui_in_simulator_first.md) — Run mobile UI changes in the simulator and drive the real user path before cutting a build — device time is the operator's only way to test
 - [feedback_verify_prod_dev.md](feedback_verify_prod_dev.md) — Always verify changes work in BOTH production builds and dev mode before saying they're safe
+- [feedback_verify_without_asking.md](feedback_verify_without_asking.md) — Never ask permission to run a simulator/device/app check — verification is the last step of the work, not a choice for the operator
 - [feedback_wysiwyg_exports.md](feedback_wysiwyg_exports.md) — Export styling must come from the editor, not template pickers. Templates are for document creation, not export.
 
 ### aw-review
 
+- [feedback_code_review_is_the_agents_gate.md](feedback_code_review_is_the_agents_gate.md) — Never ask the operator to glance at a diff or approve code on technical grounds — run the review, fix, report, ship
 - [feedback_code_review_mandatory_gate.md](feedback_code_review_mandatory_gate.md) — Bugs visible on a careful code reread must be caught before marking a task done. Tests are necessary, not sufficient. Applies to every task.
+- [feedback_fix_and_release_dont_check_in.md](feedback_fix_and_release_dont_check_in.md) — A bug report — or a green PR the agent authored — authorises review, fix, merge and release; asking partway is asking for permission already given
 - [feedback_full_coverage.md](feedback_full_coverage.md) — When implementing a feature, cover ALL touch points completely. Never leave known gaps as "follow-ups" unless the user explicitly says so.
 - [feedback_functional_parity_vs_visual_parity.md](feedback_functional_parity_vs_visual_parity.md) — When wrapping existing functionality in a new UI shell, functional parity and visual parity are distinct gates — both mandatory, neither substitutes for the other.
 - [feedback_outcome_shaped_criteria.md](feedback_outcome_shaped_criteria.md) — When a task's acceptance criteria name a file, line, function, or hook to modify, treat that as a *suggested* implementation — not the goal. The goal is the user-observable outcome. Verify the outcome before declaring done, even when the literal criteria are satisfied.
+- [feedback_ship_a_build_dont_ask_for_testing.md](feedback_ship_a_build_dont_ask_for_testing.md) — Platform work complete but unverified on device: merge it and cut a build — don't park a PR and report that it needs an on-device pass
 - [feedback_thorough_audit.md](feedback_thorough_audit.md) — When reviewing code or auditing a fix, the bar is whether the request has actually been satisfied. Paper-pass via "tests green + code looks right" is not enough; the review must compare the actual implementation against the actual asks (body + comments + reality).
+- [feedback_verify_behaviour_not_metadata.md](feedback_verify_behaviour_not_metadata.md) — A chain of correct descriptions can describe something that does not work — the last gate must exercise the artefact
+- [feedback_verify_every_state_not_one.md](feedback_verify_every_state_not_one.md) — A toggle touching two layouts needs both layouts in both states, on data seeded with every format — not one screen
+- [feedback_verify_platform_ui_in_simulator_first.md](feedback_verify_platform_ui_in_simulator_first.md) — Run mobile UI changes in the simulator and drive the real user path before cutting a build — device time is the operator's only way to test
+- [feedback_verify_without_asking.md](feedback_verify_without_asking.md) — Never ask permission to run a simulator/device/app check — verification is the last step of the work, not a choice for the operator
 
 ### aw-iterate
 
 - [feedback_branch_protection_ci_required.md](feedback_branch_protection_ci_required.md) — main branch has protection rules — CI must pass before any PR can merge; never try to merge without waiting for checks
 - [feedback_check_before_workarounds.md](feedback_check_before_workarounds.md) — When a feature gap forces a choice between two options, surface the choice to the user — don't pick a workaround silently. The "obvious safe default" often isn't what the user wants.
+- [feedback_fix_and_release_dont_check_in.md](feedback_fix_and_release_dont_check_in.md) — A bug report — or a green PR the agent authored — authorises review, fix, merge and release; asking partway is asking for permission already given
+- [feedback_fix_the_whole_class_not_one_instance.md](feedback_fix_the_whole_class_not_one_instance.md) — Asked to fix a CLASS of problem, inventory ALL instances and fix them — never silently downgrade a known one to re-run-and-hope
+- [feedback_land_prs_one_at_a_time.md](feedback_land_prs_one_at_a_time.md) — With strict status checks, arm auto-merge on ONE PR at a time — rebasing every behind branch re-runs the whole suite per merge
+- [feedback_release_from_the_default_branch.md](feedback_release_from_the_default_branch.md) — Every build ships from the default branch with everything merged first — never from an integration branch of open PRs
+- [feedback_ship_a_build_dont_ask_for_testing.md](feedback_ship_a_build_dont_ask_for_testing.md) — Platform work complete but unverified on device: merge it and cut a build — don't park a PR and report that it needs an on-device pass
 - [feedback_test_before_promising.md](feedback_test_before_promising.md) — When a UI component doesn't work as expected, research and fix it instead of falling back to inferior alternatives
+- [feedback_verify_after_rebase.md](feedback_verify_after_rebase.md) — A rebase can silently accept code that reverts or guards the fix — re-run the verification that proved it before pushing
+- [feedback_verify_without_asking.md](feedback_verify_without_asking.md) — Never ask permission to run a simulator/device/app check — verification is the last step of the work, not a choice for the operator
 
 ### aw-ci-repair
 
 - [feedback_fix_all_test_failures.md](feedback_fix_all_test_failures.md) — Never dismiss local test failures as "pre-existing on main" — CI uses the same suite and will fail. Fix every failure that surfaces locally, regardless of cause.
+- [feedback_verify_after_rebase.md](feedback_verify_after_rebase.md) — A rebase can silently accept code that reverts or guards the fix — re-run the verification that proved it before pushing
+
+### aw-retrospect
+
+- [feedback_prds_are_historical.md](feedback_prds_are_historical.md) — PRDs and history files are point-in-time records — when the design evolves, update the living docs instead of rewriting them
 
 ## Bucket counts
 
 | Bucket | Count | Loaded by AW skills? |
 |---|---|---|
-| `yes` | 29 | Yes — every skill that lists the rule in its `aw_applies_to` |
+| `yes` | 50 | Yes — every skill that lists the rule in its `aw_applies_to` |
 | `with-modification` | 3 | Yes — with the modification noted in the rule's `aw_note` |
 | `no` | 11 | No — interactive-only or out of AW scope |
-| **Total** | **43** | |
+| **Total** | **64** | |
 
 ## All rules (alphabetical)
 
 | File | Bucket | Skills | Description |
 |---|---|---|---|
 | [feedback_add_tests.md](feedback_add_tests.md) | `yes` | aw-tdd | When verifying bug fixes with test cases, add them as proper vitest tests in the project instead of running ad-hoc scripts |
+| [feedback_architect_decides_dont_ask.md](feedback_architect_decides_dont_ask.md) | `yes` | all | Once strategy is agreed, implementation-shape decisions belong to the agent — don't hand them back as questions |
 | [feedback_attach_docs_to_issue.md](feedback_attach_docs_to_issue.md) | `yes` | aw-refine, aw-slice | When a GitHub issue references docs files, ensure they are committed to the repo AND posted as collapsible comments on the issue |
 | [feedback_aw_dep_upgrades.md](feedback_aw_dep_upgrades.md) | `yes` | aw-triage | Don't route dep bumps / lint sweeps / mechanical changes through the AW pipeline — do them locally, batch-merge them |
 | [feedback_branch_protection_ci_required.md](feedback_branch_protection_ci_required.md) | `yes` | aw-tdd, aw-iterate | main branch has protection rules — CI must pass before any PR can merge; never try to merge without waiting for checks |
 | [feedback_channel_isolation_hard_guarantee.md](feedback_channel_isolation_hard_guarantee.md) | `no` | — | Channel isolation between Stable and Alpha release channels is a hard guarantee. Stable users must never receive alpha builds unless they explicitly opt in. Enforce at multiple layers. |
 | [feedback_check_before_workarounds.md](feedback_check_before_workarounds.md) | `with-modification` | aw-tdd, aw-iterate | When a feature gap forces a choice between two options, surface the choice to the user — don't pick a workaround silently. The "obvious safe default" often isn't what the user wants. |
+| [feedback_check_reachability_before_splitting.md](feedback_check_reachability_before_splitting.md) | `yes` | aw-triage, aw-tdd | Before acting on a split-large-file task, check each branch is actually rendered — deleting dead code beats tidying it into more files |
+| [feedback_code_review_is_the_agents_gate.md](feedback_code_review_is_the_agents_gate.md) | `yes` | aw-review | Never ask the operator to glance at a diff or approve code on technical grounds — run the review, fix, report, ship |
 | [feedback_code_review_mandatory_gate.md](feedback_code_review_mandatory_gate.md) | `yes` | aw-review | Bugs visible on a careful code reread must be caught before marking a task done. Tests are necessary, not sufficient. Applies to every task. |
+| [feedback_confirm_interaction_model_first.md](feedback_confirm_interaction_model_first.md) | `yes` | aw-refine, aw-slice | Name tap → outcome → where the user ends up, in one line, before building a control — a request naming the trigger rarely names the destination |
 | [feedback_delete_old_skills.md](feedback_delete_old_skills.md) | `yes` | all | Never ask the user to run commands or do mechanical steps — just do them yourself |
+| [feedback_dont_argue_the_problem_away.md](feedback_dont_argue_the_problem_away.md) | `yes` | all | When the operator reports something broken or slower, find what changed — don't build a case that the current state is expected |
 | [feedback_dont_revert_after_user_confirms.md](feedback_dont_revert_after_user_confirms.md) | `no` | — | Never remove an uncommitted fix because I think it's unnecessary — if the user reports "works now" with that code hot-loaded, the code IS necessary. Evidence beats reasoning. |
+| [feedback_drive_interactive_repros_yourself.md](feedback_drive_interactive_repros_yourself.md) | `yes` | aw-tdd | When the project has a driver for the app, drive the scenario yourself — don't ask the operator to click around while you watch logs |
+| [feedback_explain_before_destructive_git.md](feedback_explain_before_destructive_git.md) | `yes` | all | State what and why before reset, mid-flow branch switches, or chained git commands — don't ask for blind approval |
 | [feedback_fix_all_issues.md](feedback_fix_all_issues.md) | `yes` | — | Don't dismiss issues as "pre-existing" — if the user notices it, it needs fixing |
 | [feedback_fix_all_test_failures.md](feedback_fix_all_test_failures.md) | `yes` | aw-tdd, aw-ci-repair | Never dismiss local test failures as "pre-existing on main" — CI uses the same suite and will fail. Fix every failure that surfaces locally, regardless of cause. |
+| [feedback_fix_and_release_dont_check_in.md](feedback_fix_and_release_dont_check_in.md) | `yes` | aw-iterate, aw-review | A bug report — or a green PR the agent authored — authorises review, fix, merge and release; asking partway is asking for permission already given |
 | [feedback_fix_ci_always.md](feedback_fix_ci_always.md) | `yes` | — | Fix any CI failures encountered, whether pre-existing or new — never dismiss them as "not our problem |
+| [feedback_fix_the_whole_class_not_one_instance.md](feedback_fix_the_whole_class_not_one_instance.md) | `yes` | aw-tdd, aw-iterate | Asked to fix a CLASS of problem, inventory ALL instances and fix them — never silently downgrade a known one to re-run-and-hope |
 | [feedback_full_coverage.md](feedback_full_coverage.md) | `yes` | aw-tdd, aw-review | When implementing a feature, cover ALL touch points completely. Never leave known gaps as "follow-ups" unless the user explicitly says so. |
 | [feedback_functional_parity_vs_visual_parity.md](feedback_functional_parity_vs_visual_parity.md) | `yes` | aw-tdd, aw-review | When wrapping existing functionality in a new UI shell, functional parity and visual parity are distinct gates — both mandatory, neither substitutes for the other. |
 | [feedback_generic_voice.md](feedback_generic_voice.md) | `yes` | all | Never name the operator, contributors, or individuals when writing rules, READMEs, skill prompts, or commit messages intended to live in the repo. The text must be copy-pasteable to another repo without rewording. |
 | [feedback_issue_titles_plain.md](feedback_issue_titles_plain.md) | `yes` | aw-triage, aw-refine | The repo follows Conventional Commits (`feat(area):`, `fix(area):`, etc.) for commit messages and PR titles, but ISSUE titles should remain plain descriptive — no verb-prefix, no scope. The verb prefix can be presumptuous at the issue stage (you don't yet know if it's a fix vs feat) and the type often drifts through triage/refine anyway. |
+| [feedback_land_prs_one_at_a_time.md](feedback_land_prs_one_at_a_time.md) | `yes` | aw-iterate | With strict status checks, arm auto-merge on ONE PR at a time — rebasing every behind branch re-runs the whole suite per merge |
 | [feedback_manage_branch_yourself.md](feedback_manage_branch_yourself.md) | `yes` | aw-tdd | When the work belongs on a specific branch, the agent must check / switch / create the branch via git, not tell the user to do it |
 | [feedback_mark_prd_done.md](feedback_mark_prd_done.md) | `yes` | aw-tdd | When completing tasks, mark them done in BOTH the task breakdown file AND the PRD — headings and checkboxes |
 | [feedback_no_at_in_claude_md.md](feedback_no_at_in_claude_md.md) | `with-modification` | aw-tdd | Never use @ prefix for large reference docs in CLAUDE.md — @ causes auto-loading into every conversation context regardless of relevance |
 | [feedback_no_commit_while_iterating.md](feedback_no_commit_while_iterating.md) | `no` | — | Don't commit until the user confirms we're done — stop making piecemeal commits during active testing/feedback cycles |
 | [feedback_no_fix_without_approval.md](feedback_no_fix_without_approval.md) | `no` | — | Never make code changes during audits or research — always plan first, execute only when told |
 | [feedback_no_partial_fixes.md](feedback_no_partial_fixes.md) | `yes` | aw-tdd | Don't rush partial fixes after identifying an issue as architecturally complex — do proper analysis first |
+| [feedback_no_release_channels_use_flags.md](feedback_no_release_channels_use_flags.md) | `yes` | aw-triage, aw-refine | Never propose a separate prerelease channel — unproven work goes behind an experimental flag, off by default |
 | [feedback_no_rush_commit.md](feedback_no_rush_commit.md) | `no` | — | Always wait for explicit user approval before committing — show what changed and ask first |
 | [feedback_outcome_shaped_criteria.md](feedback_outcome_shaped_criteria.md) | `yes` | aw-tdd, aw-review | When a task's acceptance criteria name a file, line, function, or hook to modify, treat that as a *suggested* implementation — not the goal. The goal is the user-observable outcome. Verify the outcome before declaring done, even when the literal criteria are satisfied. |
 | [feedback_perf_store_selectors.md](feedback_perf_store_selectors.md) | `yes` | aw-tdd | Never use destructured useStore() — always use individual selectors. Debounce editor serialization. |
+| [feedback_prds_are_historical.md](feedback_prds_are_historical.md) | `yes` | aw-refine, aw-retrospect | PRDs and history files are point-in-time records — when the design evolves, update the living docs instead of rewriting them |
+| [feedback_preflight_checklists.md](feedback_preflight_checklists.md) | `yes` | all | Consolidated checklists to run BEFORE committing, changing CI, releasing, arming auto-merge, or destructive git |
 | [feedback_promote_alpha_from_alpha_not_main.md](feedback_promote_alpha_from_alpha_not_main.md) | `no` | — | When user says "promote the latest alpha to stable", tag from the alpha's commit (or cherry-pick only the version bump on top of it), never from main HEAD. Main HEAD may contain post-alpha code that has not been live-tested. |
 | [feedback_red_team_tdd.md](feedback_red_team_tdd.md) | `yes` | aw-tdd | Drive security/isolation work from failing attack tests — write the attack, confirm it succeeds (leak is real), flip the assertion, land the fix, keep the test as a regression lock |
 | [feedback_reduce_rust_weight.md](feedback_reduce_rust_weight.md) | `yes` | aw-tdd | Project has too much Rust complexity. Prefer browser/frontend solutions over Rust backends when the browser can do the job. |
+| [feedback_release_from_the_default_branch.md](feedback_release_from_the_default_branch.md) | `yes` | aw-iterate | Every build ships from the default branch with everything merged first — never from an integration branch of open PRs |
 | [feedback_release_notes_match_shipped.md](feedback_release_notes_match_shipped.md) | `no` | — | Every release (including patches) needs a docs/history/release-vX.Y.Z.md reconciled to what actually shipped. Drafted-too-early notes ship false statements to users via the in-app changelog dialog. |
 | [feedback_running_app_sees_main.md](feedback_running_app_sees_main.md) | `no` | — | When user is running pnpm tauri dev and testing live, sub-agent worktree changes are invisible to the app until merged to main. |
 | [feedback_search_all_renderers.md](feedback_search_all_renderers.md) | `yes` | aw-tdd | When a visual bug appears in a UI element, grep the whole codebase for every renderer of that element before assuming one file is "the" implementation. Especially in apps with multiple layout shells. |
+| [feedback_ship_a_build_dont_ask_for_testing.md](feedback_ship_a_build_dont_ask_for_testing.md) | `yes` | aw-iterate, aw-review | Platform work complete but unverified on device: merge it and cut a build — don't park a PR and report that it needs an on-device pass |
 | [feedback_survey_shadcn_first.md](feedback_survey_shadcn_first.md) | `yes` | aw-tdd | Notesage's design system says "use shadcn first." When the user asks whether a shadcn component fits, the right answer is a structured survey of every relevant primitive (CommandItem, DropdownMenuRadioItem, DropdownMenuCheckboxItem, SelectItem, etc.), not "no, only X exists, build custom." Surveying first prevents recommending tailor-made components when shadcn already covers the pattern. |
 | [feedback_tag_after_fixes.md](feedback_tag_after_fixes.md) | `no` | — | Never auto-tag a release — always wait for explicit user confirmation that all fixes are done first |
 | [feedback_task_done_format.md](feedback_task_done_format.md) | `yes` | aw-tdd, aw-slice | Use checkmark emoji in task title to mark done, never use checkbox syntax |
 | [feedback_task_status_marks.md](feedback_task_status_marks.md) | `yes` | aw-tdd, aw-slice | In tasks files, mark a task 🚧 when work is kicked off (by me or a sub-agent), flip to ✅ when the work lands — both via git apply --cached to bypass the formatter. |
 | [feedback_test_before_promising.md](feedback_test_before_promising.md) | `yes` | aw-tdd, aw-iterate | When a UI component doesn't work as expected, research and fix it instead of falling back to inferior alternatives |
+| [feedback_test_the_limit_before_asserting_it.md](feedback_test_the_limit_before_asserting_it.md) | `yes` | all | Before claiming something can't be done, isn't cached, or isn't installed — spend one command checking; it is a factual claim like any other |
 | [feedback_thorough_audit.md](feedback_thorough_audit.md) | `yes` | aw-review | When reviewing code or auditing a fix, the bar is whether the request has actually been satisfied. Paper-pass via "tests green + code looks right" is not enough; the review must compare the actual implementation against the actual asks (body + comments + reality). |
 | [feedback_touch_after_edit_for_vite.md](feedback_touch_after_edit_for_vite.md) | `no` | — | Claude Code's Edit tool can write files in a way that preserves the original mtime, which makes Vite's file watcher miss the change and the running app keeps stale code |
 | [feedback_two_way_prd_tasks_links.md](feedback_two_way_prd_tasks_links.md) | `yes` | aw-slice | Every PRD must link to its tasks file and every tasks file must link back to the PRD — maintain bidirectional references always |
 | [feedback_user_facing_release_notes.md](feedback_user_facing_release_notes.md) | `no` | — | The Features / Improvements / Fixes sections of docs/history/*.md are extracted into user-visible release notes (changelog viewer + update dialog). Strip dev-facing detail from those sections — version numbers, crate names, alert IDs, transitive dep mechanics, etc. Put those in "Under the hood". |
+| [feedback_verify_after_rebase.md](feedback_verify_after_rebase.md) | `yes` | aw-iterate, aw-ci-repair | A rebase can silently accept code that reverts or guards the fix — re-run the verification that proved it before pushing |
+| [feedback_verify_behaviour_not_metadata.md](feedback_verify_behaviour_not_metadata.md) | `yes` | aw-tdd, aw-review | A chain of correct descriptions can describe something that does not work — the last gate must exercise the artefact |
+| [feedback_verify_every_state_not_one.md](feedback_verify_every_state_not_one.md) | `yes` | aw-tdd, aw-review | A toggle touching two layouts needs both layouts in both states, on data seeded with every format — not one screen |
+| [feedback_verify_platform_ui_in_simulator_first.md](feedback_verify_platform_ui_in_simulator_first.md) | `yes` | aw-tdd, aw-review | Run mobile UI changes in the simulator and drive the real user path before cutting a build — device time is the operator's only way to test |
 | [feedback_verify_prod_dev.md](feedback_verify_prod_dev.md) | `with-modification` | aw-tdd | Always verify changes work in BOTH production builds and dev mode before saying they're safe |
+| [feedback_verify_without_asking.md](feedback_verify_without_asking.md) | `yes` | aw-tdd, aw-review, aw-iterate | Never ask permission to run a simulator/device/app check — verification is the last step of the work, not a choice for the operator |
 | [feedback_write_feedback_to_repo.md](feedback_write_feedback_to_repo.md) | `yes` | all | When saving a memory in a project that has `.claude/feedback/`, behavioural-correction rules (anything that should change future behaviour on the same task class) MUST go in the repo so they're visible to AW agents and travel with the project. Local `~/.claude/projects/<project-slug>/memory/` is only for project-state memories (in-flight work, branch state, scratch notes). |
 | [feedback_wysiwyg_exports.md](feedback_wysiwyg_exports.md) | `yes` | aw-tdd | Export styling must come from the editor, not template pickers. Templates are for document creation, not export. |

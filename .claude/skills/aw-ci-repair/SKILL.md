@@ -165,12 +165,18 @@ When context budget is tight, prioritise loading these rules from
 
 **Universal (load for every skill):**
 
+- `.claude/feedback/feedback_architect_decides_dont_ask.md` — Once strategy is agreed, implementation-shape decisions belong to the agent — don't hand them back as questions
 - `.claude/feedback/feedback_delete_old_skills.md` — Never ask the user to run commands or do mechanical steps — just do them yourself
+- `.claude/feedback/feedback_dont_argue_the_problem_away.md` — When the operator reports something broken or slower, find what changed — don't build a case that the current state is expected
+- `.claude/feedback/feedback_explain_before_destructive_git.md` — State what and why before reset, mid-flow branch switches, or chained git commands — don't ask for blind approval
 - `.claude/feedback/feedback_generic_voice.md` — Never name the operator, contributors, or individuals when writing rules, READMEs, skill prompts, or commit messages intended to live in the repo. The text must be copy-pasteable to another repo without rewording.
+- `.claude/feedback/feedback_preflight_checklists.md` — Consolidated checklists to run BEFORE committing, changing CI, releasing, arming auto-merge, or destructive git
+- `.claude/feedback/feedback_test_the_limit_before_asserting_it.md` — Before claiming something can't be done, isn't cached, or isn't installed — spend one command checking; it is a factual claim like any other
 - `.claude/feedback/feedback_write_feedback_to_repo.md` — When saving a memory in a project that has `.claude/feedback/`, behavioural-correction rules (anything that should change future behaviour on the same task class) MUST go in the repo so they're visible to AW agents and travel with the project. Local `~/.claude/projects/<project-slug>/memory/` is only for project-state memories (in-flight work, branch state, scratch notes).
 
 **Specific to `aw-ci-repair`:**
 
 - `.claude/feedback/feedback_fix_all_test_failures.md` — Never dismiss local test failures as "pre-existing on main" — CI uses the same suite and will fail. Fix every failure that surfaces locally, regardless of cause.
+- `.claude/feedback/feedback_verify_after_rebase.md` — A rebase can silently accept code that reverts or guards the fix — re-run the verification that proved it before pushing
 
 <!-- END auto-generated -->

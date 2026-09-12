@@ -168,14 +168,26 @@ When context budget is tight, prioritise loading these rules from
 
 **Universal (load for every skill):**
 
+- `.claude/feedback/feedback_architect_decides_dont_ask.md` — Once strategy is agreed, implementation-shape decisions belong to the agent — don't hand them back as questions
 - `.claude/feedback/feedback_delete_old_skills.md` — Never ask the user to run commands or do mechanical steps — just do them yourself
+- `.claude/feedback/feedback_dont_argue_the_problem_away.md` — When the operator reports something broken or slower, find what changed — don't build a case that the current state is expected
+- `.claude/feedback/feedback_explain_before_destructive_git.md` — State what and why before reset, mid-flow branch switches, or chained git commands — don't ask for blind approval
 - `.claude/feedback/feedback_generic_voice.md` — Never name the operator, contributors, or individuals when writing rules, READMEs, skill prompts, or commit messages intended to live in the repo. The text must be copy-pasteable to another repo without rewording.
+- `.claude/feedback/feedback_preflight_checklists.md` — Consolidated checklists to run BEFORE committing, changing CI, releasing, arming auto-merge, or destructive git
+- `.claude/feedback/feedback_test_the_limit_before_asserting_it.md` — Before claiming something can't be done, isn't cached, or isn't installed — spend one command checking; it is a factual claim like any other
 - `.claude/feedback/feedback_write_feedback_to_repo.md` — When saving a memory in a project that has `.claude/feedback/`, behavioural-correction rules (anything that should change future behaviour on the same task class) MUST go in the repo so they're visible to AW agents and travel with the project. Local `~/.claude/projects/<project-slug>/memory/` is only for project-state memories (in-flight work, branch state, scratch notes).
 
 **Specific to `aw-iterate`:**
 
 - `.claude/feedback/feedback_branch_protection_ci_required.md` — main branch has protection rules — CI must pass before any PR can merge; never try to merge without waiting for checks
 - `.claude/feedback/feedback_check_before_workarounds.md` — When a feature gap forces a choice between two options, surface the choice to the user — don't pick a workaround silently. The "obvious safe default" often isn't what the user wants. *(modification: AW flips to `hitl` label + posts a comment with the choice instead of asking interactively.)*
+- `.claude/feedback/feedback_fix_and_release_dont_check_in.md` — A bug report — or a green PR the agent authored — authorises review, fix, merge and release; asking partway is asking for permission already given
+- `.claude/feedback/feedback_fix_the_whole_class_not_one_instance.md` — Asked to fix a CLASS of problem, inventory ALL instances and fix them — never silently downgrade a known one to re-run-and-hope
+- `.claude/feedback/feedback_land_prs_one_at_a_time.md` — With strict status checks, arm auto-merge on ONE PR at a time — rebasing every behind branch re-runs the whole suite per merge
+- `.claude/feedback/feedback_release_from_the_default_branch.md` — Every build ships from the default branch with everything merged first — never from an integration branch of open PRs
+- `.claude/feedback/feedback_ship_a_build_dont_ask_for_testing.md` — Platform work complete but unverified on device: merge it and cut a build — don't park a PR and report that it needs an on-device pass
 - `.claude/feedback/feedback_test_before_promising.md` — When a UI component doesn't work as expected, research and fix it instead of falling back to inferior alternatives
+- `.claude/feedback/feedback_verify_after_rebase.md` — A rebase can silently accept code that reverts or guards the fix — re-run the verification that proved it before pushing
+- `.claude/feedback/feedback_verify_without_asking.md` — Never ask permission to run a simulator/device/app check — verification is the last step of the work, not a choice for the operator
 
 <!-- END auto-generated -->
