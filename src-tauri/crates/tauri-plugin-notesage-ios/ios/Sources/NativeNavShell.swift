@@ -220,7 +220,12 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     else { return false }
     self.webView = webView
 
-    let root = ScreenController(screenId: "", title: rootTitle)
+    // `/home`, matching the web layer's `HOME_KEY`. Home and All Folders are
+    // both the root, and while both answered to `""` a `didPop` for one was
+    // indistinguishable from the other — which collapsed the web layer's
+    // folder stack and left it convinced it was at Home. A leading slash
+    // cannot be a relative path, so the two can never collide.
+    let root = ScreenController(screenId: "/home", title: rootTitle)
     let nav = UINavigationController(rootViewController: root)
     // Routed here rather than from the screens themselves: this is the only
     // object holding the web view, so it is the only one that can speak to the
