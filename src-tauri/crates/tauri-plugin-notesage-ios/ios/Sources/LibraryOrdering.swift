@@ -102,6 +102,33 @@ func libraryRefreshKind(layoutChanged: Bool, densityChanged: Bool) -> LibraryRef
     return .none
 }
 
+/// What a row shows, for the purpose of searching it.
+///
+/// Every field the row DRAWS, not just the filename. A saved article's row is
+/// titled with the article's own title and carries its site and standfirst —
+/// so filtering on `name` alone means typing what you can plainly see matches
+/// nothing, and each further character narrows the result until the list is
+/// empty. That is exactly what a folder of captures did: the file behind
+/// "Gartner Predicts AI Coding Costs" is a timestamped slug, so "G" still
+/// matched an unrelated `Gamma.md` and "Gar" matched nothing at all.
+struct LibrarySearchable {
+    var name: String
+    var title: String?
+    var site: String?
+    var excerpt: String?
+}
+
+/// Case- AND diacritic-insensitive: the library is read in Swedish as often as
+/// in English, and "Ändringsdatum" should be reachable by typing "andring".
+func libraryMatchesFilter(_ filter: String, _ fields: LibrarySearchable) -> Bool {
+    let needle = filter.trimmingCharacters(in: .whitespaces)
+    guard !needle.isEmpty else { return true }
+    let haystacks = [fields.name, fields.title, fields.site, fields.excerpt].compactMap { $0 }
+    return haystacks.contains {
+        $0.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
+    }
+}
+
 /// Can this be read aloud (#833)?
 ///
 /// By EXTENSION, not by `LibraryFileKind`, and deliberately so: `.text` also

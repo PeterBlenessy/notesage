@@ -233,5 +233,38 @@ check("refresh: both at once still rebuilds, never reconfigures",
 check("refresh: sort or group needs neither",
     libraryRefreshKind(layoutChanged: false, densityChanged: false), LibraryRefreshKind.none)
 
+
+// Searching a folder matches what the ROW SHOWS, not just the filename.
+// Reported on build 66: "searching any string that is visible in the list
+// eventually hides every item" — the rows showed article titles while the
+// filter read `name`, so a capture saved as a timestamped slug could not be
+// found by the title printed on it, and each extra character narrowed the
+// result to nothing.
+let capture = LibrarySearchable(
+    name: "2026-06-24-101400-gartner-ai.html",
+    title: "Gartner Predicts AI Coding Costs",
+    site: "gartner.com",
+    excerpt: "By 2028, AI coding costs will overtake…")
+let note = LibrarySearchable(name: "Gamma.md", title: nil, site: nil, excerpt: nil)
+
+check("search: an article is found by its TITLE", libraryMatchesFilter("Gartner Predicts", capture), true)
+check("search: and by its site", libraryMatchesFilter("gartner.com", capture), true)
+check("search: and by its standfirst", libraryMatchesFilter("2028", capture), true)
+check("search: and still by its filename", libraryMatchesFilter("101400", capture), true)
+check("search: case does not matter", libraryMatchesFilter("gARTNER", capture), true)
+// The exact progression that emptied the list: "G" matched an unrelated note,
+// "Gar" matched nothing, because only `name` was searched.
+check("search: 'G' matches the note by name", libraryMatchesFilter("G", note), true)
+check("search: 'Gar' no longer matches nothing", libraryMatchesFilter("Gar", capture), true)
+check("search: a miss is still a miss", libraryMatchesFilter("zzz", capture), false)
+// Swedish is read as often as English here.
+check("search: diacritics are ignored",
+    libraryMatchesFilter("andring",
+        LibrarySearchable(name: "Ändringsdatum.md", title: nil, site: nil, excerpt: nil)), true)
+check("search: an empty filter keeps everything", libraryMatchesFilter("", note), true)
+check("search: whitespace alone keeps everything", libraryMatchesFilter("   ", note), true)
+// A note has no header; it must not be lost because the fields are nil.
+check("search: a plain note still matches its name", libraryMatchesFilter("gamma", note), true)
+
 print(failures == 0 ? "\nall good" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

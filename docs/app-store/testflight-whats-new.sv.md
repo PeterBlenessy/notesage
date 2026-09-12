@@ -25,15 +25,15 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Det du hittade i 65, plus det en kodgranskning hittade.
+Sökningen i en mapp söker på riktigt nu.
 
 RÄTTAT
-• Att svepa på en rad visar Dela och Radera. Det fungerade aldrig förut —
-svepet öppnade dokumentet i stället.
-• Radmenyn och svepknapparna öppnar inte längre dokumentet bakom sig.
-• Att skriva i sökfältet filtrerar mappen du är i.
-• Miniatyrer sparas mellan besök, så en mapp du öppnat förut ritas direkt.
-• En sparad artikels rad hoppar inte längre när du trycker Lyssna.
+• Sökning i en mapp matchar det du SER på raden — en sparad artikels titel,
+dess sajt och dess sammanfattning — inte bara filnamnet. Att skriva ett ord ur
+en artikels titel dolde förut allt, eftersom filen bakom den är döpt efter ett
+datum.
+• Sökningen struntar också i accenter, så "andring" hittar "Ändringsdatum".
 
 PROVA
-• Svep rader åt vänster, använd Dela och Radera, och sök inne i en mapp.
+• Öppna en mapp med sparade artiklar, sök ett ord ur en titel du ser på
+skärmen, sedan ett ord ur sajten under. Båda ska hitta den.
