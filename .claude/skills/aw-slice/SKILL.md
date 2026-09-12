@@ -356,13 +356,19 @@ When context budget is tight, prioritise loading these rules from
 
 **Universal (load for every skill):**
 
+- `.claude/feedback/feedback_architect_decides_dont_ask.md` — Once strategy is agreed, implementation-shape decisions belong to the agent — don't hand them back as questions
 - `.claude/feedback/feedback_delete_old_skills.md` — Never ask the user to run commands or do mechanical steps — just do them yourself
+- `.claude/feedback/feedback_dont_argue_the_problem_away.md` — When the operator reports something broken or slower, find what changed — don't build a case that the current state is expected
+- `.claude/feedback/feedback_explain_before_destructive_git.md` — State what and why before reset, mid-flow branch switches, or chained git commands — don't ask for blind approval
 - `.claude/feedback/feedback_generic_voice.md` — Never name the operator, contributors, or individuals when writing rules, READMEs, skill prompts, or commit messages intended to live in the repo. The text must be copy-pasteable to another repo without rewording.
+- `.claude/feedback/feedback_preflight_checklists.md` — Consolidated checklists to run BEFORE committing, changing CI, releasing, arming auto-merge, or destructive git
+- `.claude/feedback/feedback_test_the_limit_before_asserting_it.md` — Before claiming something can't be done, isn't cached, or isn't installed — spend one command checking; it is a factual claim like any other
 - `.claude/feedback/feedback_write_feedback_to_repo.md` — When saving a memory in a project that has `.claude/feedback/`, behavioural-correction rules (anything that should change future behaviour on the same task class) MUST go in the repo so they're visible to AW agents and travel with the project. Local `~/.claude/projects/<project-slug>/memory/` is only for project-state memories (in-flight work, branch state, scratch notes).
 
 **Specific to `aw-slice`:**
 
 - `.claude/feedback/feedback_attach_docs_to_issue.md` — When a GitHub issue references docs files, ensure they are committed to the repo AND posted as collapsible comments on the issue
+- `.claude/feedback/feedback_confirm_interaction_model_first.md` — Name tap → outcome → where the user ends up, in one line, before building a control — a request naming the trigger rarely names the destination
 - `.claude/feedback/feedback_task_done_format.md` — Use checkmark emoji in task title to mark done, never use checkbox syntax
 - `.claude/feedback/feedback_task_status_marks.md` — In tasks files, mark a task 🚧 when work is kicked off (by me or a sub-agent), flip to ✅ when the work lands — both via git apply --cached to bypass the formatter.
 - `.claude/feedback/feedback_two_way_prd_tasks_links.md` — Every PRD must link to its tasks file and every tasks file must link back to the PRD — maintain bidirectional references always

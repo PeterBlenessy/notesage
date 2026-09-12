@@ -204,16 +204,28 @@ When context budget is tight, prioritise loading these rules from
 
 **Universal (load for every skill):**
 
+- `.claude/feedback/feedback_architect_decides_dont_ask.md` — Once strategy is agreed, implementation-shape decisions belong to the agent — don't hand them back as questions
 - `.claude/feedback/feedback_delete_old_skills.md` — Never ask the user to run commands or do mechanical steps — just do them yourself
+- `.claude/feedback/feedback_dont_argue_the_problem_away.md` — When the operator reports something broken or slower, find what changed — don't build a case that the current state is expected
+- `.claude/feedback/feedback_explain_before_destructive_git.md` — State what and why before reset, mid-flow branch switches, or chained git commands — don't ask for blind approval
 - `.claude/feedback/feedback_generic_voice.md` — Never name the operator, contributors, or individuals when writing rules, READMEs, skill prompts, or commit messages intended to live in the repo. The text must be copy-pasteable to another repo without rewording.
+- `.claude/feedback/feedback_preflight_checklists.md` — Consolidated checklists to run BEFORE committing, changing CI, releasing, arming auto-merge, or destructive git
+- `.claude/feedback/feedback_test_the_limit_before_asserting_it.md` — Before claiming something can't be done, isn't cached, or isn't installed — spend one command checking; it is a factual claim like any other
 - `.claude/feedback/feedback_write_feedback_to_repo.md` — When saving a memory in a project that has `.claude/feedback/`, behavioural-correction rules (anything that should change future behaviour on the same task class) MUST go in the repo so they're visible to AW agents and travel with the project. Local `~/.claude/projects/<project-slug>/memory/` is only for project-state memories (in-flight work, branch state, scratch notes).
 
 **Specific to `aw-review`:**
 
+- `.claude/feedback/feedback_code_review_is_the_agents_gate.md` — Never ask the operator to glance at a diff or approve code on technical grounds — run the review, fix, report, ship
 - `.claude/feedback/feedback_code_review_mandatory_gate.md` — Bugs visible on a careful code reread must be caught before marking a task done. Tests are necessary, not sufficient. Applies to every task.
+- `.claude/feedback/feedback_fix_and_release_dont_check_in.md` — A bug report — or a green PR the agent authored — authorises review, fix, merge and release; asking partway is asking for permission already given
 - `.claude/feedback/feedback_full_coverage.md` — When implementing a feature, cover ALL touch points completely. Never leave known gaps as "follow-ups" unless the user explicitly says so.
 - `.claude/feedback/feedback_functional_parity_vs_visual_parity.md` — When wrapping existing functionality in a new UI shell, functional parity and visual parity are distinct gates — both mandatory, neither substitutes for the other.
 - `.claude/feedback/feedback_outcome_shaped_criteria.md` — When a task's acceptance criteria name a file, line, function, or hook to modify, treat that as a *suggested* implementation — not the goal. The goal is the user-observable outcome. Verify the outcome before declaring done, even when the literal criteria are satisfied.
+- `.claude/feedback/feedback_ship_a_build_dont_ask_for_testing.md` — Platform work complete but unverified on device: merge it and cut a build — don't park a PR and report that it needs an on-device pass
 - `.claude/feedback/feedback_thorough_audit.md` — When reviewing code or auditing a fix, the bar is whether the request has actually been satisfied. Paper-pass via "tests green + code looks right" is not enough; the review must compare the actual implementation against the actual asks (body + comments + reality).
+- `.claude/feedback/feedback_verify_behaviour_not_metadata.md` — A chain of correct descriptions can describe something that does not work — the last gate must exercise the artefact
+- `.claude/feedback/feedback_verify_every_state_not_one.md` — A toggle touching two layouts needs both layouts in both states, on data seeded with every format — not one screen
+- `.claude/feedback/feedback_verify_platform_ui_in_simulator_first.md` — Run mobile UI changes in the simulator and drive the real user path before cutting a build — device time is the operator's only way to test
+- `.claude/feedback/feedback_verify_without_asking.md` — Never ask permission to run a simulator/device/app check — verification is the last step of the work, not a choice for the operator
 
 <!-- END auto-generated -->

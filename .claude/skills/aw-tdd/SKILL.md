@@ -308,8 +308,13 @@ When context budget is tight, prioritise loading these rules from
 
 **Universal (load for every skill):**
 
+- `.claude/feedback/feedback_architect_decides_dont_ask.md` — Once strategy is agreed, implementation-shape decisions belong to the agent — don't hand them back as questions
 - `.claude/feedback/feedback_delete_old_skills.md` — Never ask the user to run commands or do mechanical steps — just do them yourself
+- `.claude/feedback/feedback_dont_argue_the_problem_away.md` — When the operator reports something broken or slower, find what changed — don't build a case that the current state is expected
+- `.claude/feedback/feedback_explain_before_destructive_git.md` — State what and why before reset, mid-flow branch switches, or chained git commands — don't ask for blind approval
 - `.claude/feedback/feedback_generic_voice.md` — Never name the operator, contributors, or individuals when writing rules, READMEs, skill prompts, or commit messages intended to live in the repo. The text must be copy-pasteable to another repo without rewording.
+- `.claude/feedback/feedback_preflight_checklists.md` — Consolidated checklists to run BEFORE committing, changing CI, releasing, arming auto-merge, or destructive git
+- `.claude/feedback/feedback_test_the_limit_before_asserting_it.md` — Before claiming something can't be done, isn't cached, or isn't installed — spend one command checking; it is a factual claim like any other
 - `.claude/feedback/feedback_write_feedback_to_repo.md` — When saving a memory in a project that has `.claude/feedback/`, behavioural-correction rules (anything that should change future behaviour on the same task class) MUST go in the repo so they're visible to AW agents and travel with the project. Local `~/.claude/projects/<project-slug>/memory/` is only for project-state memories (in-flight work, branch state, scratch notes).
 
 **Specific to `aw-tdd`:**
@@ -317,7 +322,10 @@ When context budget is tight, prioritise loading these rules from
 - `.claude/feedback/feedback_add_tests.md` — When verifying bug fixes with test cases, add them as proper vitest tests in the project instead of running ad-hoc scripts
 - `.claude/feedback/feedback_branch_protection_ci_required.md` — main branch has protection rules — CI must pass before any PR can merge; never try to merge without waiting for checks
 - `.claude/feedback/feedback_check_before_workarounds.md` — When a feature gap forces a choice between two options, surface the choice to the user — don't pick a workaround silently. The "obvious safe default" often isn't what the user wants. *(modification: AW flips to `hitl` label + posts a comment with the choice instead of asking interactively.)*
+- `.claude/feedback/feedback_check_reachability_before_splitting.md` — Before acting on a split-large-file task, check each branch is actually rendered — deleting dead code beats tidying it into more files
+- `.claude/feedback/feedback_drive_interactive_repros_yourself.md` — When the project has a driver for the app, drive the scenario yourself — don't ask the operator to click around while you watch logs
 - `.claude/feedback/feedback_fix_all_test_failures.md` — Never dismiss local test failures as "pre-existing on main" — CI uses the same suite and will fail. Fix every failure that surfaces locally, regardless of cause.
+- `.claude/feedback/feedback_fix_the_whole_class_not_one_instance.md` — Asked to fix a CLASS of problem, inventory ALL instances and fix them — never silently downgrade a known one to re-run-and-hope
 - `.claude/feedback/feedback_full_coverage.md` — When implementing a feature, cover ALL touch points completely. Never leave known gaps as "follow-ups" unless the user explicitly says so.
 - `.claude/feedback/feedback_functional_parity_vs_visual_parity.md` — When wrapping existing functionality in a new UI shell, functional parity and visual parity are distinct gates — both mandatory, neither substitutes for the other.
 - `.claude/feedback/feedback_manage_branch_yourself.md` — When the work belongs on a specific branch, the agent must check / switch / create the branch via git, not tell the user to do it
@@ -333,7 +341,11 @@ When context budget is tight, prioritise loading these rules from
 - `.claude/feedback/feedback_task_done_format.md` — Use checkmark emoji in task title to mark done, never use checkbox syntax
 - `.claude/feedback/feedback_task_status_marks.md` — In tasks files, mark a task 🚧 when work is kicked off (by me or a sub-agent), flip to ✅ when the work lands — both via git apply --cached to bypass the formatter.
 - `.claude/feedback/feedback_test_before_promising.md` — When a UI component doesn't work as expected, research and fix it instead of falling back to inferior alternatives
+- `.claude/feedback/feedback_verify_behaviour_not_metadata.md` — A chain of correct descriptions can describe something that does not work — the last gate must exercise the artefact
+- `.claude/feedback/feedback_verify_every_state_not_one.md` — A toggle touching two layouts needs both layouts in both states, on data seeded with every format — not one screen
+- `.claude/feedback/feedback_verify_platform_ui_in_simulator_first.md` — Run mobile UI changes in the simulator and drive the real user path before cutting a build — device time is the operator's only way to test
 - `.claude/feedback/feedback_verify_prod_dev.md` — Always verify changes work in BOTH production builds and dev mode before saying they're safe *(modification: AW can't run prod builds — modified rule: avoid changes that obviously break the prod path (e.g., dev-only imports, `import.meta.env.DEV` gates without a prod fallback).)*
+- `.claude/feedback/feedback_verify_without_asking.md` — Never ask permission to run a simulator/device/app check — verification is the last step of the work, not a choice for the operator
 - `.claude/feedback/feedback_wysiwyg_exports.md` — Export styling must come from the editor, not template pickers. Templates are for document creation, not export.
 
 <!-- END auto-generated -->
