@@ -25,19 +25,18 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Hem ritas nu av appen, och vyväxlingen kraschar inte längre.
+Hems meny och långtryck fungerar nu.
 
 RÄTTAT
-• Att växla mellan lista och galleri kraschade appen i bygge 69. Mitt fel —
-det är rättat och kraschen täcks nu av ett test.
-
-NYTT
-• Hem ritas av appen själv i stället för av webblagret: korten Inbox och
-Recordings, dina valda mappar och Alla mappar. Det ska se likadant ut och
-kännas snabbare.
+• Lista, galleri och kompakt får nu effekt på Hem. Menyn fanns där och gjorde
+ingenting. Sökningen på Hem var död på samma sätt.
+• Att hålla in en mapp under Alla mappar öppnar menyn igen, så du kan välja
+Visa på Hem. Det är precis vad tipset på Hem säger åt dig att göra, och det var
+det enda du inte kunde göra.
+• Inbox och Recordings har fått tillbaka sitt mellanrum i stället för att läsas
+som ett block.
 
 PROVA
-• Växla mellan lista och galleri några gånger, åt båda hållen, i en mapp och
-på Hem.
-• På Hem: öppna båda korten, tryck på Alla mappar och håll in en mapp där för
-att välja Visa på Hem — den ska dyka upp på Hem direkt.
+• På Hem: växla lista/galleri/kompakt och sök sedan. De två korten och Alla
+mappar förblir rader vad du än väljer.
+• Alla mappar, håll in en mapp, Visa på Hem — den ska dyka upp på Hem direkt.
