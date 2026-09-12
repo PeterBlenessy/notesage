@@ -73,6 +73,7 @@ final class LibraryBrowsing: LibraryFolderHost {
     /// values: a popped screen must not be kept alive by this.
     private let screens = NSMapTable<NSString, LibraryFolderScreen>.strongToWeakObjects()
 
+    private var homeCache: (folders: [String]?, at: Date)?
     private var pinnedCache: (paths: Set<String>, at: Date)?
     private var progressCache: (values: [String: Double], at: Date)?
     private var recents: Set<String> = []
@@ -124,10 +125,13 @@ final class LibraryBrowsing: LibraryFolderHost {
     // MARK: Screens
 
     @MainActor
-    func makeScreen(rel: String, title: String) -> LibraryFolderScreen {
+    func makeScreen(rel: String, title: String, isHome: Bool = false) -> LibraryFolderScreen {
         let screen = LibraryFolderScreen(
-            relPath: rel, title: title, settings: settings(for: rel), host: self)
-        screens.setObject(screen, forKey: rel as NSString)
+            relPath: rel, title: title, settings: settings(for: rel), host: self, isHome: isHome)
+        // Keyed so the host can push a filter or a setting at the right
+        // screen. Home and All Folders are both the root, so Home takes its
+        // own key rather than evicting the other from the table.
+        screens.setObject(screen, forKey: (isHome ? "/home" : rel) as NSString)
         return screen
     }
 
@@ -152,6 +156,7 @@ final class LibraryBrowsing: LibraryFolderHost {
     /// Forget the cached sidecars — after a delete, a rename, or a return from
     /// the reader, where progress will have moved.
     func invalidate() {
+        homeCache = nil
         pinnedCache = nil
         progressCache = nil
     }
@@ -255,6 +260,55 @@ final class LibraryBrowsing: LibraryFolderHost {
     }
 
     func recentlyRead() -> Set<String> { recents }
+
+    // MARK: Home
+
+    /// `.notesage/home.json`. Cached like the other sidecars, and invalidated
+    /// with them — editing Home rewrites the file, and the screen has to see
+    /// that on the way back.
+    func homeFolders() -> [String]? {
+        if let cache = homeCache, Date().timeIntervalSince(cache.at) < Self.ttl {
+            return cache.folders
+        }
+        switch LibraryAccess.readSidecar(".notesage/home.json") {
+        case .text(let raw):
+            let folders = parseLibraryHome(raw)
+            homeCache = (folders, Date())
+            return folders
+        case .absent:
+            // No file is the honest "never curated" — the default Home.
+            homeCache = (nil, Date())
+            return nil
+        case .pending:
+            // Not cached: see `readSidecar`. Answering "never curated" for a
+            // file that is merely on its way would show the hint to someone
+            // who has already chosen, once.
+            homeCache = nil
+            return nil
+        }
+    }
+
+    /// Per DEVICE, not per library: the tip is about where this phone puts
+    /// things, and a Mac has no Home screen to be confused by.
+    private static let hintKey = "notesage.homeHintDismissed"
+
+    func homeHintDismissed() -> Bool {
+        UserDefaults.standard.bool(forKey: Self.hintKey)
+    }
+
+    func dismissHomeHint() {
+        UserDefaults.standard.set(true, forKey: Self.hintKey)
+    }
+
+    /// The Inbox card's badge. `InboxState` is also what badges the app icon,
+    /// so asking it here means the two numbers cannot disagree — which they
+    /// did when the web layer counted separately.
+    func inboxUnread() -> Int {
+        guard let root = try? LibraryAccess.resolveRoot() else { return 0 }
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        return InboxState.unreadCount(root: root)
+    }
 
     func progress(for rel: String) -> Double {
         if progressCache == nil || Date().timeIntervalSince(progressCache!.at) >= Self.ttl {

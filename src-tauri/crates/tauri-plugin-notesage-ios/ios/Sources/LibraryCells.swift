@@ -770,3 +770,184 @@ extension UIFont {
         return UIFont(descriptor: descriptor, size: 0)
     }
 }
+
+// MARK: - Home
+
+/// The Inbox and Recordings cards, pinned above Home's listing (#683).
+///
+/// Shared items land in `Inbox/`, but as an ordinary folder in an alphabetical
+/// list, getting to them after sharing a few links meant scrolling or
+/// switching the whole listing to sort-by-date (Peter, 2026-08-13). Apple
+/// Notes answers the same problem the same way: a card above the folder list,
+/// with a count, in a fixed position no sort or grouping can move.
+///
+/// Geometry deliberately matches a list row — the card is a row with an icon
+/// where the thumbnail goes, not a different kind of object.
+final class LibraryCardCell: UICollectionViewCell {
+    private let icon = UIImageView()
+    private let title = UILabel()
+    private let trailing = UILabel()
+    private let chevron = UIImageView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        contentView.backgroundColor = .secondarySystemBackground
+        contentView.layer.cornerRadius = 12
+        contentView.layer.cornerCurve = .continuous
+
+        icon.tintColor = .label
+        icon.contentMode = .scaleAspectFit
+        title.font = .preferredFont(forTextStyle: .body)
+        title.adjustsFontForContentSizeCategory = true
+        trailing.font = .preferredFont(forTextStyle: .subheadline)
+        trailing.adjustsFontForContentSizeCategory = true
+        trailing.textColor = .secondaryLabel
+        chevron.image = UIImage(systemName: "chevron.right")
+        chevron.tintColor = .tertiaryLabel
+        chevron.contentMode = .scaleAspectFit
+
+        for v in [icon, title, trailing, chevron] as [UIView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            contentView.addSubview(v)
+        }
+        title.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        trailing.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 14),
+            icon.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 22),
+            icon.heightAnchor.constraint(equalToConstant: 22),
+            title.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 14),
+            title.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            trailing.leadingAnchor.constraint(
+                greaterThanOrEqualTo: title.trailingAnchor, constant: 8),
+            trailing.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            chevron.leadingAnchor.constraint(equalTo: trailing.trailingAnchor, constant: 8),
+            chevron.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            chevron.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            chevron.widthAnchor.constraint(equalToConstant: 12),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    /// `badge` wins over `count` when non-zero and draws in the accent — the
+    /// Inbox's unread number, which is the one thing on Home worth looking at
+    /// twice. `count` is the plain child count, `nil` for a folder that does
+    /// not exist yet, where a "0" would read as a broken card rather than an
+    /// empty one.
+    func configure(symbol: String, name: String, count: Int?, badge: Int?) {
+        icon.image = UIImage(systemName: symbol)
+        title.text = name
+        if let badge, badge > 0 {
+            trailing.text = "\(badge)"
+            trailing.textColor = contentView.tintColor
+            trailing.font = .preferredFont(forTextStyle: .subheadline).withWeight(.semibold)
+        } else {
+            trailing.text = count.map { "\($0)" } ?? ""
+            trailing.textColor = .secondaryLabel
+            trailing.font = .preferredFont(forTextStyle: .subheadline)
+        }
+        accessibilityLabel = name
+        isAccessibilityElement = true
+        accessibilityTraits = .button
+    }
+}
+
+/// "All Folders" — the way to the uncurated root.
+///
+/// Home shows the chosen folders; everything else waits here. Without it a
+/// folder kept off Home would be reachable only by searching for it, which is
+/// not a thing anyone guesses.
+final class LibraryActionCell: UICollectionViewCell {
+    private let icon = UIImageView()
+    private let title = UILabel()
+    private let chevron = UIImageView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        icon.tintColor = .secondaryLabel
+        icon.contentMode = .scaleAspectFit
+        title.font = .preferredFont(forTextStyle: .body)
+        title.adjustsFontForContentSizeCategory = true
+        chevron.image = UIImage(systemName: "chevron.right")
+        chevron.tintColor = .tertiaryLabel
+        chevron.contentMode = .scaleAspectFit
+
+        for v in [icon, title, chevron] as [UIView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            contentView.addSubview(v)
+        }
+        NSLayoutConstraint.activate([
+            icon.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            icon.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 20),
+            icon.heightAnchor.constraint(equalToConstant: 20),
+            title.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 14),
+            title.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            chevron.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
+            chevron.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            chevron.widthAnchor.constraint(equalToConstant: 12),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func configure(symbol: String, title text: String) {
+        icon.image = UIImage(systemName: symbol)
+        title.text = text
+        accessibilityLabel = text
+        isAccessibilityElement = true
+        accessibilityTraits = .button
+    }
+}
+
+/// The one-off tip saying where the folders went.
+///
+/// Shown only before any Home choice has been made, and dismissible — a tip
+/// that cannot be got rid of is an advert. `libraryHomeHintApplies` decides;
+/// this only draws.
+final class LibraryHintCell: UICollectionViewCell {
+    private let label = UILabel()
+    private let close = UIButton(type: .system)
+    private var onDismiss: (() -> Void)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        label.font = .preferredFont(forTextStyle: .footnote)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .secondaryLabel
+        label.numberOfLines = 0
+        close.setImage(UIImage(systemName: "xmark"), for: .normal)
+        close.tintColor = .secondaryLabel
+        close.addTarget(self, action: #selector(dismissTapped), for: .touchUpInside)
+
+        for v in [label, close] as [UIView] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            contentView.addSubview(v)
+        }
+        close.setContentCompressionResistancePriority(.required, for: .horizontal)
+        NSLayoutConstraint.activate([
+            label.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
+            label.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 10),
+            label.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -10),
+            close.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 12),
+            close.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -14),
+            close.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+            close.widthAnchor.constraint(equalToConstant: 22),
+        ])
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    func configure(text: String, onDismiss: @escaping () -> Void) {
+        label.text = text
+        self.onDismiss = onDismiss
+    }
+
+    @objc private func dismissTapped() { onDismiss?() }
+}

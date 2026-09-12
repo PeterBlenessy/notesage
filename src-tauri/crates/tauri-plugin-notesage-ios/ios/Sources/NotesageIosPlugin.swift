@@ -1325,6 +1325,11 @@ class NotesageIosPlugin: Plugin {
       DispatchQueue.main.async {
         LibraryBrowsing.shared.enabled = args.enabled
         LibraryBrowsing.shared.strings = args.strings ?? [:]
+        // Nothing orders this against `present()`. When the shell went up
+        // first it read `enabled == false` and the root kept the WEB Home for
+        // the rest of the session — the same build showing a native Home on
+        // one launch and the web one on the next.
+        NavShellPresenter.shared.adoptNativeHome()
         invoke.resolve()
       }
     } catch { invoke.reject(String(describing: error)) }

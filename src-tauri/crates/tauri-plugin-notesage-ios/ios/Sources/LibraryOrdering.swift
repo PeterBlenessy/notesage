@@ -167,6 +167,11 @@ struct LibraryEntry: Equatable {
     let isDirectory: Bool
     /// Seconds since 1970; `nil` when the filesystem did not say.
     let modified: Double?
+    /// How many visible items a FOLDER holds, when the listing counted them.
+    /// `nil` for a file, and for a folder whose count was not taken. Home's
+    /// two cards show it; nothing else does (#684 — it rides along with the
+    /// listing rather than costing a second read).
+    var childCount: Int? = nil
 }
 
 /// The settings that drive ordering, plus the two path sets that only the app
@@ -410,4 +415,72 @@ func parseLibraryReadingProgress(_ json: String) -> [String: Double] {
         values[name] = min(max(fraction, 0), 1)
     }
     return values
+}
+
+// MARK: - Home
+
+/// The two folders Home shows as cards rather than as rows.
+///
+/// Both are ALWAYS shown, whether or not the folder exists yet. On a container
+/// install nothing creates `Inbox/` until something is shared, so gating the
+/// card on the folder left a fresh install with no Inbox at all until the
+/// first share (Peter, build 54: "I think inbox should be there from start
+/// just like recordings"). Opening one creates it.
+let libraryInboxFolder = "Inbox"
+let libraryRecordingsFolder = "Recordings"
+
+/// The folders chosen for Home, from `.notesage/home.json`.
+///
+/// `{ "version": 1, "folders": [...] }` — written by `src/lib/home-file.ts`,
+/// which is the owner of the format.
+///
+/// `nil` means NEVER CURATED, which is not the same as curated to nothing: an
+/// empty array is a deliberate choice, and the difference is what decides
+/// whether the "your folders are in All Folders" hint has anything to say.
+/// A malformed file reads as never curated, since the alternative is telling
+/// someone they chose an empty Home when they did not.
+func parseLibraryHome(_ json: String) -> [String]? {
+    guard let data = json.data(using: .utf8),
+        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        (object["version"] as? Int) == 1,
+        let folders = object["folders"] as? [Any]
+    else { return nil }
+    var seen: [String] = []
+    for value in folders {
+        guard let folder = value as? String, !folder.isEmpty, !seen.contains(folder) else { continue }
+        seen.append(folder)
+    }
+    return seen
+}
+
+/// What Home LISTS, under its two cards.
+///
+/// Every file in the root, plus the folders chosen for Home — never Inbox or
+/// Recordings, which are the cards and would otherwise appear twice. Ported
+/// from `LibraryBrowser.tsx`, where the same filter decided the same thing.
+///
+/// Everything else waits under All Folders. A search is not curated: it looks
+/// through the whole root, so a folder kept off Home is one query away — that
+/// is `libraryHomeIsCurated` returning false for a non-empty filter.
+func libraryHomeEntries(_ entries: [LibraryEntry], home: [String]?) -> [LibraryEntry] {
+    let chosen = Set(home ?? [])
+    return entries.filter { entry in
+        guard entry.isDirectory else { return true }
+        return chosen.contains(entry.path)
+            && entry.name != libraryInboxFolder
+            && entry.name != libraryRecordingsFolder
+    }
+}
+
+/// Whether the "your folders are in All Folders" hint has anything to say.
+///
+/// Only before any choice has been made (`home == nil`), only while it has not
+/// been dismissed, and only when there IS a folder it would be talking about —
+/// a library whose root holds nothing but the Inbox has no hidden folders, and
+/// a tip pointing at an empty screen is noise.
+func libraryHomeHintApplies(
+    entries: [LibraryEntry], home: [String]?, dismissed: Bool
+) -> Bool {
+    guard home == nil, !dismissed else { return false }
+    return entries.contains { $0.isDirectory && $0.name != libraryInboxFolder }
 }

@@ -320,5 +320,59 @@ check("refresh: a density change must not — its own reconfigure follows",
 check("refresh: a LAYOUT change must not — the cell class is changing",
     libraryMayReconfigure(.reload), false)
 
+// MARK: - Home
+//
+// Home is the root listing CURATED: two cards, the chosen folders, the root's
+// own files, and everything else under All Folders. The rules come from
+// `LibraryBrowser.tsx`, and the one worth pinning is nil-vs-empty: they look
+// the same on screen and mean opposite things to the hint.
+
+let homeRoot = [
+    dir("Inbox"), dir("Recordings"), dir("Essays"), dir("Archive 2024"),
+    file("Prompt library.md"),
+]
+
+check("home: never curated shows the files and no folders",
+    names(libraryHomeEntries(homeRoot, home: nil).map { LibrarySection(key: "x", items: [$0]) }),
+    ["Prompt library.md"])
+check("home: a chosen folder is listed",
+    libraryHomeEntries(homeRoot, home: ["Essays"]).map(\.name),
+    ["Essays", "Prompt library.md"])
+// Both are cards. Listing them too is how a folder appeared twice.
+check("home: Inbox is never listed, even when chosen",
+    libraryHomeEntries(homeRoot, home: ["Inbox", "Essays"]).map(\.name),
+    ["Essays", "Prompt library.md"])
+check("home: Recordings is never listed either",
+    libraryHomeEntries(homeRoot, home: ["Recordings"]).map(\.name),
+    ["Prompt library.md"])
+check("home: a chosen folder that has since gone is simply absent",
+    libraryHomeEntries(homeRoot, home: ["Deleted"]).map(\.name),
+    ["Prompt library.md"])
+
+check("home file: folders are read in order",
+    parseLibraryHome(#"{"version":1,"folders":["Essays","Archive 2024"]}"#) ?? [],
+    ["Essays", "Archive 2024"])
+check("home file: duplicates collapse",
+    parseLibraryHome(#"{"version":1,"folders":["A","A","B"]}"#) ?? [],
+    ["A", "B"])
+// nil and [] look identical on screen and mean opposite things to the hint.
+check("home file: an empty list is a CHOICE, not silence",
+    parseLibraryHome(#"{"version":1,"folders":[]}"#) != nil, true)
+check("home file: a missing file is silence", parseLibraryHome("") == nil, true)
+check("home file: malformed is silence", parseLibraryHome("{oops") == nil, true)
+check("home file: another version is silence",
+    parseLibraryHome(#"{"version":2,"folders":["A"]}"#) == nil, true)
+
+check("home hint: speaks before any choice is made",
+    libraryHomeHintApplies(entries: homeRoot, home: nil, dismissed: false), true)
+check("home hint: silent once a choice exists",
+    libraryHomeHintApplies(entries: homeRoot, home: [], dismissed: false), false)
+check("home hint: silent once dismissed",
+    libraryHomeHintApplies(entries: homeRoot, home: nil, dismissed: true), false)
+// A root holding only the Inbox hides nothing, so there is nothing to point at.
+check("home hint: silent when there is no folder it could mean",
+    libraryHomeHintApplies(entries: [dir("Inbox"), file("a.md")], home: nil, dismissed: false),
+    false)
+
 print(failures == 0 ? "\nall good" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

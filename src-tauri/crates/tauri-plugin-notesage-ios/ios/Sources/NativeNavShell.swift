@@ -88,6 +88,11 @@ final class ScreenController: UIViewController {
     webView.translatesAutoresizingMaskIntoConstraints = false
     if let snapshot {
       view.insertSubview(webView, belowSubview: snapshot)
+    } else if let native = nativeChild?.view, native.superview === view {
+      // Home draws itself and the web view lives UNDERNEATH it. The web layer
+      // still owns the store, the sync and the listeners, so it has to stay in
+      // the hierarchy and running — it just has nothing to show here any more.
+      view.insertSubview(webView, belowSubview: native)
     } else {
       view.addSubview(webView)
     }
@@ -247,16 +252,50 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     self.nav = nav
     self.chromeContainer = container
 
-    // The ROOT stays web even with native browsing on. Home is not a folder
-    // listing — it is the Inbox card, the Recordings card and the chosen
-    // folders, all synthesised by the web layer — so a native screen there
-    // would replace it with the raw root directory. Home is step 4 of #1000;
-    // until then the root is the one screen the web layer still draws.
-    root.attachLive(webView)
-    liveHost = root
+    // Home draws itself now (step 4 of #1000) — not the raw root directory,
+    // but the two cards, the chosen folders and All Folders, which
+    // `LibraryFolderScreen` synthesises. So the root takes a native screen and
+    // the web view STAYS in the container beneath the stack, exactly where
+    // `didShow` parks it for every other native screen: live and running,
+    // because the web layer still owns the store, the sync and the chrome, but
+    // covered because it has nothing left to show here.
+    if LibraryBrowsing.shared.enabled {
+      root.attachNative(
+        LibraryBrowsing.shared.makeScreen(rel: "", title: rootTitle ?? "", isHome: true))
+      // Nothing to freeze: the visible layer draws itself and stays drawn.
+      liveHost = nil
+    } else {
+      root.attachLive(webView)
+      liveHost = root
+    }
     applyMenu(to: root)
     ChromeManager.shared.bringChromeToFront()
     return true
+  }
+
+  /// Give the root its native Home, if browsing is on and it has not got one.
+  ///
+  /// `present()` and the web layer's "native browsing is on" both arrive from
+  /// the frontend, from DIFFERENT effects, and nothing orders them. When the
+  /// shell is presented first, `present()` reads `enabled == false` and the
+  /// root keeps the web Home — for the whole session. It was a coin flip:
+  /// the same build showed a native Home on one launch and the web one on the
+  /// next, which is the worst way for a bug to behave.
+  ///
+  /// So the flag turning on installs Home too, rather than only being read at
+  /// presentation. Idempotent: a root that already draws itself is left alone.
+  func adoptNativeHome() {
+    dispatchPrecondition(condition: .onQueue(.main))
+    guard LibraryBrowsing.shared.enabled,
+      let nav, let root = nav.viewControllers.first as? ScreenController,
+      !root.isNative
+    else { return }
+    root.attachNative(
+      LibraryBrowsing.shared.makeScreen(
+        rel: "", title: root.title ?? "", isHome: true))
+    // The web view stays where it is, underneath — `attachNative` adds above
+    // it, and the layer keeps running because it still owns the store.
+    if liveHost === root { liveHost = nil }
   }
 
   func dismiss() {
@@ -336,6 +375,9 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     guard let nav, let webView, let root = nav.viewControllers.first as? ScreenController else {
       return
     }
+    // A native root is left alone: the pop drives `didShow`, which parks the
+    // web view back in the container beneath the stack. Re-parenting it onto
+    // the root here would only have to be undone a moment later.
     if !root.isNative {
       root.attachLive(webView)
       root.thaw()

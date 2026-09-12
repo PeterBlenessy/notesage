@@ -63,6 +63,11 @@ const SECTION_KEYS: MessageKey[] = [
   "reader.listenPause",
   "reader.listenResume",
   "recording.inProgress",
+  // Home's own rows (#1000 step 4): the way to the uncurated root, and the
+  // one-off tip saying where the folders went. The two cards show the
+  // FOLDERS' names, which are not translated.
+  "home.allFolders",
+  "home.hint",
 ];
 
 /** Messages the native row interpolates rather than shows as they are: the
@@ -118,14 +123,22 @@ export function useNativeLibrary(active: boolean): boolean {
           title?: string;
         }>
       ).detail;
-      if (detail?.type !== "open" || !detail.relPath) return;
+      // `typeof`, not truthiness: the ROOT's relative path is the empty
+      // string, which is falsy. `!detail.relPath` dropped every event about
+      // it — which is why Home's "All Folders" row, the first thing that ever
+      // opens the root BY PATH, did nothing at all (#1000 step 4).
+      if (detail?.type !== "open" || typeof detail.relPath !== "string") return;
       // `name` stays the FILE's name: the viewer is chosen from its
       // extension. `title` is what the row displayed — for a saved article
       // the capture's own title, sent by the native side because that is the
       // side that read the header.
       const name = detail.relPath.split("/").pop() ?? detail.relPath;
       const title = detail.title || undefined;
-      if (detail.kind === "folder") enterFolder({ relPath: detail.relPath, name });
+      // A folder shows the title the native row carried where there is one —
+      // "All Folders" is the root under another name, and the last path
+      // segment of the root is the empty string.
+      if (detail.kind === "folder")
+        enterFolder({ relPath: detail.relPath, name: title || name });
       // Read aloud: the native row draws the control, this still does the
       // work — document→speech text, resuming from the stored position, the
       // failure toast. A second player would be a second answer to "where
