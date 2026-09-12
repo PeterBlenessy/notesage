@@ -693,10 +693,15 @@ final class LibraryGridCell: UICollectionViewCell, LibraryThumbnailCell {
     }
 
     func configure(
-        _ entry: LibraryEntry, condensed: Bool, progress: Double, recentlyRead: Bool
+        _ entry: LibraryEntry, condensed: Bool, progress: Double, recentlyRead: Bool,
+        article: ArticleRowText? = nil
     ) {
         representedPath = entry.path
-        titleLabel.text = entry.name
+        // A card says what the article IS, for the same reason a row does
+        // (#836). The two drifted: the list was given the capture's title and
+        // the gallery was left on `entry.name`, so switching view turned
+        // "Reading on purpose" into "2026-09-07-114500-reading-on-pu…".
+        titleLabel.text = article?.title ?? entry.name
         titleLabel.numberOfLines = condensed ? 1 : 2
         let unread = !entry.isDirectory && progress <= 0 && !recentlyRead
         titleLabel.font =

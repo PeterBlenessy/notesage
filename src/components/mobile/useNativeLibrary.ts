@@ -110,19 +110,29 @@ export function useNativeLibrary(active: boolean): boolean {
   useEffect(() => {
     if (!live) return;
     const onShell = (event: Event) => {
-      const detail = (event as CustomEvent<{ type?: string; kind?: string; relPath?: string }>)
-        .detail;
+      const detail = (
+        event as CustomEvent<{
+          type?: string;
+          kind?: string;
+          relPath?: string;
+          title?: string;
+        }>
+      ).detail;
       if (detail?.type !== "open" || !detail.relPath) return;
-      // The name is the last path segment — the same thing the row showed,
-      // and the store's refs carry a display name alongside the path.
+      // `name` stays the FILE's name: the viewer is chosen from its
+      // extension. `title` is what the row displayed — for a saved article
+      // the capture's own title, sent by the native side because that is the
+      // side that read the header.
       const name = detail.relPath.split("/").pop() ?? detail.relPath;
+      const title = detail.title || undefined;
       if (detail.kind === "folder") enterFolder({ relPath: detail.relPath, name });
       // Read aloud: the native row draws the control, this still does the
       // work — document→speech text, resuming from the stored position, the
       // failure toast. A second player would be a second answer to "where
       // was I".
       else if (detail.kind === "listen") toggleSpeech({ path: detail.relPath, name });
-      else if (detail.kind === "document") openDocument({ relPath: detail.relPath, name });
+      else if (detail.kind === "document")
+        openDocument({ relPath: detail.relPath, name, title });
       // Everything else is NOT ours. `menu` and `swipe:*` belong to
       // `LibraryBrowser`'s listener, which has the listing needed to find the
       // entry. This used to end in a bare `else openDocument(...)`, so

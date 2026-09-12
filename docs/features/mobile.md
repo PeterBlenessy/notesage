@@ -545,6 +545,19 @@ stale in-memory copy. `.notesage/` is created if missing via
 `ios_ensure_directory`, which unlike `ios_create_directory` does NOT dedupe
 (deduping there would silently produce `.notesage-1` and split the state).
 
+**A saved article is named by its title everywhere, not just in the list.**
+The rule from #836 — a row says what the article IS, not what its file is
+called — reached the list row and stopped there. Gallery cards and the
+reader's nav bar still showed `2026-09-07-114500-reading-on-purpose.html`, so
+switching view or opening the article renamed it in front of the reader. The
+native side now sends the row's title with the tap, since it is the side that
+read the capture header.
+
+`OpenDocRef` keeps `title` apart from `name` on purpose: `name` is the FILE's
+name and several things downstream decide from it, the viewer above all.
+Putting the title there made the reader answer "Can't preview this format
+yet" — the format comes off the extension, and a title has none.
+
 **The sidecar formats are owned by `src/lib/`, and Swift must follow.**
 `.notesage/pins.json` is `{ "paths": [...] }` (`src/lib/pins-file.ts`) and
 `Inbox/.notesage/reading-progress.json` is
