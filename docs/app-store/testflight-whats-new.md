@@ -26,16 +26,15 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-What you found in 65, plus what a code review turned up.
+Search in a folder actually searches now.
 
 FIXED
-• Swiping a row reveals Share and Delete. It never worked before — the swipe
-opened the document instead.
-• The row menu and the swipe buttons no longer open the document behind them.
-• Typing in the search bar filters the folder you are in.
-• Thumbnails are kept between visits, so a folder you have opened before draws
-at once instead of redrawing everything.
-• A saved article's row no longer twitches when you press Listen.
+• Searching a folder matches what you can SEE on the row — a saved article's
+title, its site and its summary line — not just the filename. Typing a word
+from an article's title used to hide everything, because the file behind it is
+named after a date.
+• Searching also ignores accents, so "andring" finds "Ändringsdatum".
 
 TRY
-• Swipe rows left, use Share and Delete, and search inside a folder.
+• Open a folder with saved articles, search a word from a title you can read
+on screen, then a word from the site under it. Both should find it.

@@ -236,6 +236,7 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
                 self.refreshControl.endRefreshing()
                 self.entries = visible
                 self.byPath = Dictionary(visible.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
+                self.warmArticleTitles(visible)
                 self.rebuildSections(animated: true)
             }
         }
@@ -246,7 +247,17 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
         let matched =
             filter.isEmpty
             ? entries
-            : entries.filter { $0.name.range(of: filter, options: .caseInsensitive) != nil }
+            : entries.filter { entry in
+                // Match what the ROW SHOWS. For a saved article that is its
+                // title, site and standfirst — searching the filename alone
+                // made typing a visible word hide everything.
+                let meta = ArticleMeta.peek(entry.path, modified: entry.modified) ?? nil
+                return libraryMatchesFilter(
+                    filter,
+                    LibrarySearchable(
+                        name: entry.name, title: meta?.title, site: meta?.site,
+                        excerpt: meta?.excerpt))
+            }
 
         let sorted = sortLibraryEntries(matched, by: settings.sort)
         let context = LibraryOrderingContext(
@@ -423,6 +434,29 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
             name: entry.name, meta: known ?? nil,
             progress: host?.progress(for: entry.path) ?? 0, templates: templates)
     }
+
+    /// Read the capture headers for this folder up front, so SEARCH can match
+    /// an article by its title.
+    ///
+    /// A row's header is otherwise read when its cell is configured, i.e. only
+    /// for rows that have been on screen. An article scrolled past — or never
+    /// reached — would then be unfindable by the very title it displays, and
+    /// filtering hides it before its cell can ever load it. The reads are
+    /// backgrounded, deduplicated by `ArticleMeta`'s in-flight set and cached
+    /// by path@mtime, so this costs the same reads the cells would do anyway,
+    /// just sooner. Bounded so a folder of thousands does not queue thousands.
+    private func warmArticleTitles(_ entries: [LibraryEntry]) {
+        let candidates = entries.filter { !$0.isDirectory && ArticleMeta.isCandidate($0.path) }
+        for entry in candidates.prefix(Self.searchWarmCap) {
+            // No completion: the cell redraws itself when it configures, and a
+            // reconfigure per row here would be a snapshot apply per row.
+            ArticleMeta.load(entry.path, modified: entry.modified) { _ in }
+        }
+    }
+
+    /// How many capture headers to read up front for search. Generous for a
+    /// real Inbox, small enough that a pathological folder does not stall.
+    private static let searchWarmCap = 300
 
     /// Ask for the header if it is not already known, and redraw the one row
     /// when it lands. Reconfiguring rather than reloading: the item is
