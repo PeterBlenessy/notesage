@@ -26,13 +26,16 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-One more from 65.
+What you found in 65, plus what a code review turned up.
 
 FIXED
-• A saved article's row no longer twitches when you press Listen. It briefly
-lost its site and reading time, showed the file's date instead, and dropped
-the summary line — which moved the title.
+• Swiping a row reveals Share and Delete. It never worked before — the swipe
+opened the document instead.
+• The row menu and the swipe buttons no longer open the document behind them.
+• Typing in the search bar filters the folder you are in.
+• Thumbnails are kept between visits, so a folder you have opened before draws
+at once instead of redrawing everything.
+• A saved article's row no longer twitches when you press Listen.
 
 TRY
-• Press Listen on a saved article in a list, and watch the row itself:
-nothing but the button should change.
+• Swipe rows left, use Share and Delete, and search inside a folder.
