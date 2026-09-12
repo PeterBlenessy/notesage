@@ -26,17 +26,18 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Home's menu and long press work now.
+All Folders behaves like a real screen now.
 
 FIXED
-• List, gallery and compact now take effect on Home. The menu was there and
-did nothing. Searching on Home was dead the same way.
-• Holding a folder under All Folders opens its menu again, so you can choose
-Show on Home. That is what the tip on Home tells you to do, and it was the one
-thing you could not do.
-• Inbox and Recordings have their gap back instead of reading as one block.
+• All Folders ignored the view menu and its long press did nothing. It shared
+an identity with Home, so the app thought you were still on Home the whole
+time and applied your choices there. Searching it was dead for the same
+reason.
+• Compact is offered on Home again, and on any list of folders — it does
+change them.
+• Folder icons are no longer specks: they scale with the row or card.
 
 TRY
-• On Home: switch list/gallery/compact, then search. The two cards and All
-Folders stay rows whichever you pick.
-• All Folders, hold a folder, Show on Home — it should appear on Home at once.
+• All Folders: switch list/gallery/compact and search. Home should keep its
+own separate view.
+• Hold a folder there and choose Show on Home.

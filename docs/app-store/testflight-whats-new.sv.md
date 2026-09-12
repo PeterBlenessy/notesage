@@ -25,18 +25,17 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Hems meny och långtryck fungerar nu.
+Alla mappar beter sig som en riktig skärm nu.
 
 RÄTTAT
-• Lista, galleri och kompakt får nu effekt på Hem. Menyn fanns där och gjorde
-ingenting. Sökningen på Hem var död på samma sätt.
-• Att hålla in en mapp under Alla mappar öppnar menyn igen, så du kan välja
-Visa på Hem. Det är precis vad tipset på Hem säger åt dig att göra, och det var
-det enda du inte kunde göra.
-• Inbox och Recordings har fått tillbaka sitt mellanrum i stället för att läsas
-som ett block.
+• Alla mappar struntade i vymenyn och långtryck gjorde ingenting. Den delade
+identitet med Hem, så appen trodde att du fortfarande var på Hem och lade dina
+val där. Sökningen var död av samma skäl.
+• Kompakt erbjuds på Hem igen, och i vilken mapplista som helst — den ändrar
+faktiskt utseendet.
+• Mappikonerna är inte längre prickar: de skalar med raden eller kortet.
 
 PROVA
-• På Hem: växla lista/galleri/kompakt och sök sedan. De två korten och Alla
-mappar förblir rader vad du än väljer.
-• Alla mappar, håll in en mapp, Visa på Hem — den ska dyka upp på Hem direkt.
+• Alla mappar: växla lista/galleri/kompakt och sök. Hem ska behålla sin egen
+vy separat.
+• Håll in en mapp där och välj Visa på Hem.
