@@ -275,7 +275,45 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
 
     // MARK: Layout
 
+    /// The list is built by `NSCollectionLayoutSection.list(using:)` and NOT
+    /// by a hand-rolled group, for one reason: swipe actions.
+    ///
+    /// On a collection view they come from `UICollectionLayoutListConfiguration`'s
+    /// providers. `collectionView(_:trailingSwipeActionsConfigurationForItemAt:)`
+    /// — which is what this screen had — is a UITableView API; UIKit never
+    /// calls it on a collection view, so it sat there looking implemented
+    /// while no swipe did anything and the horizontal drag fell through to
+    /// selection. Swiping a row OPENED it (Peter, build 65), and build 63's
+    /// notes claimed "swipe a row for Share and Delete", which was never true.
     private func makeLayout() -> UICollectionViewLayout {
+        UICollectionViewCompositionalLayout { [weak self] _, environment in
+            guard let self else { return nil }
+            return self.settings.layout == .list
+                ? self.makeListSection(environment)
+                : self.makeGallerySection()
+        }
+    }
+
+    private func makeListSection(_ environment: NSCollectionLayoutEnvironment)
+        -> NSCollectionLayoutSection
+    {
+        var config = UICollectionLayoutListConfiguration(appearance: .plain)
+        // The cell draws its own hairline, inset past the thumbnail, and its
+        // own background; the list's would sit under the tile and double up.
+        config.showsSeparators = false
+        config.backgroundColor = .clear
+        // The header is added below, as before, so it keeps `pinToVisibleBounds`.
+        config.headerMode = .none
+        config.trailingSwipeActionsConfigurationProvider = { [weak self] indexPath in
+            self?.trailingSwipeActions(at: indexPath)
+        }
+        let section = NSCollectionLayoutSection.list(
+            using: config, layoutEnvironment: environment)
+        section.boundarySupplementaryItems = [Self.stickyHeader()]
+        return section
+    }
+
+    private static func stickyHeader() -> NSCollectionLayoutBoundarySupplementaryItem {
         let header = NSCollectionLayoutBoundarySupplementaryItem(
             layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: .estimated(34)),
             elementKind: UICollectionView.elementKindSectionHeader,
@@ -283,43 +321,32 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
         // Sticky, like the web layer's — a header that scrolls away leaves a
         // long section with nothing saying what it is.
         header.pinToVisibleBounds = true
+        return header
+    }
 
-        let section: NSCollectionLayoutSection
-        switch settings.layout {
-        case .list:
-            let height: CGFloat = settings.condensed ? 56 : 88
-            let item = NSCollectionLayoutItem(
-                layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: .absolute(height)))
-            let group = NSCollectionLayoutGroup.horizontal(
-                layoutSize: .init(
-                    widthDimension: .fractionalWidth(1), heightDimension: .absolute(height)),
-                subitems: [item])
-            section = NSCollectionLayoutSection(group: group)
-
-        case .gallery:
-            let columns = settings.condensed ? 4 : 3
-            let spacing: CGFloat = settings.condensed ? 8 : 12
-            let item = NSCollectionLayoutItem(
-                layoutSize: .init(
-                    widthDimension: .fractionalWidth(1.0 / CGFloat(columns)),
-                    heightDimension: .fractionalHeight(1)))
-            item.contentInsets = .init(
-                top: 0, leading: spacing / 2, bottom: 0, trailing: spacing / 2)
-            // Estimated, not absolute: a card is a square picture plus one or
-            // two lines of caption, and the caption's height follows the
-            // device's text size.
-            let group = NSCollectionLayoutGroup.horizontal(
-                layoutSize: .init(
-                    widthDimension: .fractionalWidth(1),
-                    heightDimension: .estimated(settings.condensed ? 120 : 168)),
-                subitems: Array(repeating: item, count: columns))
-            section = NSCollectionLayoutSection(group: group)
-            section.interGroupSpacing = settings.condensed ? 12 : 20
-            section.contentInsets = .init(
-                top: 0, leading: 12 - spacing / 2, bottom: 0, trailing: 12 - spacing / 2)
-        }
-        section.boundarySupplementaryItems = [header]
-        return UICollectionViewCompositionalLayout(section: section)
+    private func makeGallerySection() -> NSCollectionLayoutSection {
+        let columns = settings.condensed ? 4 : 3
+        let spacing: CGFloat = settings.condensed ? 8 : 12
+        let item = NSCollectionLayoutItem(
+            layoutSize: .init(
+                widthDimension: .fractionalWidth(1.0 / CGFloat(columns)),
+                heightDimension: .fractionalHeight(1)))
+        item.contentInsets = .init(
+            top: 0, leading: spacing / 2, bottom: 0, trailing: spacing / 2)
+        // Estimated, not absolute: a card is a square picture plus one or
+        // two lines of caption, and the caption's height follows the
+        // device's text size.
+        let group = NSCollectionLayoutGroup.horizontal(
+            layoutSize: .init(
+                widthDimension: .fractionalWidth(1),
+                heightDimension: .estimated(settings.condensed ? 120 : 168)),
+            subitems: Array(repeating: item, count: columns))
+        let section = NSCollectionLayoutSection(group: group)
+        section.interGroupSpacing = settings.condensed ? 12 : 20
+        section.contentInsets = .init(
+            top: 0, leading: 12 - spacing / 2, bottom: 0, trailing: spacing / 2)
+        section.boundarySupplementaryItems = [Self.stickyHeader()]
+        return section
     }
 
     // MARK: Read aloud
@@ -541,10 +568,7 @@ extension LibraryFolderScreen {
     ///
     /// `performsFirstActionWithFullSwipe` is FALSE for exactly that reason: a
     /// full swipe would otherwise fire Share without the row ever being read.
-    func collectionView(
-        _ collectionView: UICollectionView,
-        trailingSwipeActionsConfigurationForItemAt indexPath: IndexPath
-    ) -> UISwipeActionsConfiguration? {
+    func trailingSwipeActions(at indexPath: IndexPath) -> UISwipeActionsConfiguration? {
         guard let entry = entry(at: indexPath), !entry.isDirectory else { return nil }
         let host = self.host
 
