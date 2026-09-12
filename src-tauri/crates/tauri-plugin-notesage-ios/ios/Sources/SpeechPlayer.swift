@@ -147,7 +147,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
         // expects silence now, and resume re-speaks the current paragraph from
         // its start anyway.
         if synth.isSpeaking { synth.pauseSpeaking(at: .immediate) }
-        updateNowPlaying(playing: false)
+        updateNowPlaying(playing: false, reason: "pause()")
         onPlayingChanged?(false)
     }
 
@@ -164,7 +164,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
             // Finished or never started — nothing to resume.
             return
         }
-        updateNowPlaying(playing: true)
+        updateNowPlaying(playing: true, reason: "resume()")
         onPlayingChanged?(true)
     }
 
@@ -208,6 +208,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
         if synth.isPaused { synth.continueSpeaking() }
         synth.stopSpeaking(at: .immediate)
         paragraphs = []
+        os_log("now-playing: stopped (resetQueue)", log: SpeechPlayer.logger, type: .info)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         MPNowPlayingInfoCenter.default().playbackState = .stopped
     }
@@ -291,7 +292,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
         utterance.voice = voice
         synth.speak(utterance)
         onProgress?(index, paragraphs.count)
-        updateNowPlaying(playing: true)
+        updateNowPlaying(playing: true, reason: "speakCurrent(paragraph)")
         onPlayingChanged?(true)
     }
 
@@ -529,7 +530,19 @@ private let MAX_VOTING_PARAGRAPHS = 60
         }
     }
 
-    private func updateNowPlaying(playing: Bool) {
+    /// Publish what the lock screen shows, and SAY WHO ASKED.
+    ///
+    /// The plate disagreeing with the app is a bug we have fixed once already
+    /// (#889) and which came back without any of that fix being undone. It
+    /// only shows itself on a locked device, where the web layer is throttled
+    /// and cannot report, and the Simulator's lock screen draws no transport
+    /// buttons at all — so the next occurrence has to explain itself. Every
+    /// publish names its caller here; `log stream --predicate 'category ==
+    /// "speech"'` then reads back the exact sequence.
+    private func updateNowPlaying(playing: Bool, reason: String = "unspecified") {
+        os_log(
+            "now-playing: %{public}@ (%{public}@)", log: SpeechPlayer.logger, type: .info,
+            playing ? "playing" : "paused", reason)
         // The rate alone does not drive the lock screen's play/pause toggle:
         // with the audio session still active (it is, while paused — that is
         // what keeps the plate on screen), iOS kept showing Pause for a
@@ -582,11 +595,18 @@ private let MAX_VOTING_PARAGRAPHS = 60
                 // app, whose web layer is throttled in the background, still
                 // shows Play.
                 self.interruptedWhilePlaying = self.synth.isSpeaking && !self.synth.isPaused
+                os_log(
+                    "interruption began, wasPlaying=%{public}@", log: SpeechPlayer.logger,
+                    type: .info, self.interruptedWhilePlaying ? "yes" : "no")
                 self.pause()
             case .ended:
                 let raw = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
                 let resumable = AVAudioSession.InterruptionOptions(rawValue: raw)
                     .contains(.shouldResume)
+                os_log(
+                    "interruption ended, shouldResume=%{public}@ wasPlaying=%{public}@",
+                    log: SpeechPlayer.logger, type: .info, resumable ? "yes" : "no",
+                    self.interruptedWhilePlaying ? "yes" : "no")
                 if resumable, self.interruptedWhilePlaying { self.resume() }
                 self.interruptedWhilePlaying = false
             @unknown default:
@@ -624,7 +644,7 @@ extension SpeechPlayer: AVSpeechSynthesizerDelegate {
         _ synthesizer: AVSpeechSynthesizer, didPause utterance: AVSpeechUtterance
     ) {
         guard isCurrent(utterance) else { return }
-        updateNowPlaying(playing: false)
+        updateNowPlaying(playing: false, reason: "synth didPause")
         onPlayingChanged?(false)
     }
 
@@ -632,7 +652,7 @@ extension SpeechPlayer: AVSpeechSynthesizerDelegate {
         _ synthesizer: AVSpeechSynthesizer, didContinue utterance: AVSpeechUtterance
     ) {
         guard isCurrent(utterance) else { return }
-        updateNowPlaying(playing: true)
+        updateNowPlaying(playing: true, reason: "synth didContinue")
         onPlayingChanged?(true)
     }
 
