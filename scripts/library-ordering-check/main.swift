@@ -374,5 +374,68 @@ check("home hint: silent when there is no folder it could mean",
     libraryHomeHintApplies(entries: [dir("Inbox"), file("a.md")], home: nil, dismissed: false),
     false)
 
+// MARK: - Folder appearance
+//
+// Read-only: the desktop sets a folder's icon and colour (#140) in
+// `<folder>/.notesage/project.json`, and the phone shows it. The literals
+// below come from `src/lib/folder-icon.ts`, so a rename on either side fails
+// here rather than silently reverting a folder to the default.
+
+check("appearance: an icon name maps to an SF Symbol",
+    parseLibraryFolderAppearance(#"{"appearance":{"iconName":"Rocket"}}"#).symbol ?? "",
+    "paperplane")
+check("appearance: a colour index is kept",
+    parseLibraryFolderAppearance(#"{"appearance":{"colorIndex":5}}"#).colorIndex ?? -1, 5)
+check("appearance: both together",
+    parseLibraryFolderAppearance(#"{"appearance":{"iconName":"Leaf","colorIndex":3}}"#),
+    LibraryFolderAppearance(symbol: "leaf", colorIndex: 3))
+// Independently optional on the desktop, so independently optional here.
+check("appearance: an icon alone leaves the colour unset",
+    parseLibraryFolderAppearance(#"{"appearance":{"iconName":"Star"}}"#).colorIndex == nil, true)
+// An unknown name is the DEFAULT, never a guess: a folder wearing the wrong
+// picture is worse than one wearing the plain folder.
+check("appearance: an unknown icon falls back rather than approximating",
+    parseLibraryFolderAppearance(#"{"appearance":{"iconName":"Nonesuch"}}"#).symbol == nil, true)
+check("appearance: an index outside the palette is ignored",
+    parseLibraryFolderAppearance(#"{"appearance":{"colorIndex":99}}"#).colorIndex == nil, true)
+check("appearance: a negative index is ignored",
+    parseLibraryFolderAppearance(#"{"appearance":{"colorIndex":-1}}"#).colorIndex == nil, true)
+check("appearance: a project.json without one is empty",
+    parseLibraryFolderAppearance(#"{"version":1}"#).isEmpty, true)
+check("appearance: malformed JSON is empty", parseLibraryFolderAppearance("{oops").isEmpty, true)
+check("appearance: a missing file is empty", parseLibraryFolderAppearance("").isEmpty, true)
+// The palette is the desktop's, converted once. Eight, in its order.
+check("appearance: eight colours, Red first and Pink last",
+    libraryFolderTagColors.count, 8)
+// Read the DESKTOP's list and require every name in it, rather than pinning a
+// count. Adding an icon there and forgetting it here would otherwise show up
+// as one folder quietly wearing the default, on a phone, months later.
+// `#filePath`, not a path relative to the working directory: this binary is
+// built into a temp dir and run from wherever the caller happened to be.
+let repoRoot = URL(fileURLWithPath: #filePath)
+    .deletingLastPathComponent()  // library-ordering-check/
+    .deletingLastPathComponent()  // scripts/
+    .deletingLastPathComponent()  // repo root
+let iconSource =
+    (try? String(
+        contentsOf: repoRoot.appendingPathComponent("src/lib/folder-icon.ts"),
+        encoding: .utf8)) ?? ""
+// From the FIRST mention to the end: the name appears again further down in
+// a lookup, and taking the last block found a slice with no entries in it.
+let curatedBlock =
+    iconSource.range(of: "CURATED_FOLDER_ICONS").map { String(iconSource[$0.lowerBound...]) } ?? ""
+var curatedNames: [String] = []
+for line in curatedBlock.components(separatedBy: "\n") {
+    // A curated entry is `{ name: 'X', icon: Y }` — requiring BOTH keeps
+    // unrelated `name:` lines elsewhere in the file out of the list.
+    guard line.contains("icon:"), let r = line.range(of: "name: '") else { continue }
+    let rest = line[r.upperBound...]
+    guard let end = rest.firstIndex(of: "'") else { continue }
+    curatedNames.append(String(rest[..<end]))
+}
+check("appearance: the desktop's list was readable", curatedNames.count > 40, true)
+let unmapped = curatedNames.filter { librarySymbolForFolderIcon[$0] == nil }
+check("appearance: every curated icon has an SF Symbol", unmapped.joined(separator: ","), "")
+
 print(failures == 0 ? "\nall good" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

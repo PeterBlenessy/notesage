@@ -170,6 +170,7 @@ final class LibraryBrowsing: LibraryFolderHost {
     /// Forget the cached sidecars — after a delete, a rename, or a return from
     /// the reader, where progress will have moved.
     func invalidate() {
+        appearanceCache.removeAll()
         homeCache = nil
         pinnedCache = nil
         progressCache = nil
@@ -276,6 +277,36 @@ final class LibraryBrowsing: LibraryFolderHost {
     }
 
     func recentlyRead() -> Set<String> { recents }
+
+    /// A folder's custom icon and colour, from its own `project.json` (#140).
+    ///
+    /// One small read per FOLDER, cached like the other sidecars — a listing
+    /// of a hundred files does none, because only directories can carry one.
+    /// Read-only: the phone shows what the Mac set and never writes this
+    /// file, so the rest of the project's metadata is never at risk.
+    private var appearanceCache: [String: (value: LibraryFolderAppearance, at: Date)] = [:]
+
+    func folderAppearance(for entry: LibraryEntry) -> LibraryFolderAppearance {
+        guard entry.isDirectory else { return LibraryFolderAppearance() }
+        if let hit = appearanceCache[entry.path],
+            Date().timeIntervalSince(hit.at) < Self.ttl
+        {
+            return hit.value
+        }
+        switch LibraryAccess.readSidecar("\(entry.path)/.notesage/project.json") {
+        case .text(let raw):
+            let value = parseLibraryFolderAppearance(raw)
+            appearanceCache[entry.path] = (value, Date())
+            return value
+        case .absent:
+            // Most folders are not projects and never will be. Cache the
+            // nothing, or every scroll re-reads a file that is not there.
+            appearanceCache[entry.path] = (LibraryFolderAppearance(), Date())
+            return LibraryFolderAppearance()
+        case .pending:
+            return LibraryFolderAppearance()
+        }
+    }
 
     // MARK: Home
 

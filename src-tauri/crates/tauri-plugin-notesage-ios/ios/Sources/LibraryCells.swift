@@ -129,16 +129,22 @@ final class ThumbnailLoader {
     }
 
     /// Fill a cell, now if possible and later if not.
-    func load(_ entry: LibraryEntry, into cell: LibraryThumbnailCell) {
+    ///
+    /// `appearance` is the folder's custom icon and colour where the Mac set
+    /// one (#140); it is empty for files, which never have one.
+    func load(
+        _ entry: LibraryEntry, into cell: LibraryThumbnailCell,
+        appearance: LibraryFolderAppearance = LibraryFolderAppearance()
+    ) {
         guard !entry.isDirectory else {
-            cell.showIcon(for: entry)
+            cell.showIcon(for: entry, appearance: appearance)
             return
         }
         if let image = cached(entry.path) {
             cell.showThumbnail(image)
             return
         }
-        cell.showIcon(for: entry)
+        cell.showIcon(for: entry, appearance: appearance)
         start(entry.path) { [weak cell] image in
             // The cell may have been reused for another file while this ran —
             // `representedPath` is the check that stops a picture landing on
@@ -294,7 +300,21 @@ protocol LibraryThumbnailCell: AnyObject {
     /// picture landing on a reused cell.
     var representedPath: String? { get }
     func showThumbnail(_ image: UIImage)
-    func showIcon(for entry: LibraryEntry)
+    func showIcon(for entry: LibraryEntry, appearance: LibraryFolderAppearance)
+}
+
+/// The colour a folder's appearance asks for, resolved for the current theme.
+///
+/// A dynamic colour rather than a fixed one: the desktop lightens every tag
+/// for dark mode, and a single value is unreadable on one theme or the other.
+/// `nil` when no colour was set, which leaves the tile its ordinary tint.
+func libraryTagColor(_ index: Int?) -> UIColor? {
+    guard let index, index >= 0, index < libraryFolderTagColors.count else { return nil }
+    let pair = libraryFolderTagColors[index]
+    return UIColor { traits in
+        let c = traits.userInterfaceStyle == .dark ? pair.dark : pair.light
+        return UIColor(red: c.0, green: c.1, blue: c.2, alpha: 1)
+    }
 }
 
 /// How big the stand-in symbol is drawn inside a tile of `side` points.
@@ -616,13 +636,15 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
         tile.image = image
     }
 
-    func showIcon(for entry: LibraryEntry) {
+    func showIcon(for entry: LibraryEntry, appearance: LibraryFolderAppearance) {
         tile.contentMode = .center
         // Sized from the tile the symbol sits in, not left at its natural
         // 17pt — see `librarySymbolPointSize`.
         tile.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
             pointSize: librarySymbolPointSize(forTileSide: tileSize.constant))
-        tile.image = UIImage(systemName: librarySymbol(for: entry))
+        // What the Mac set for this folder, where it set anything (#140).
+        tile.image = UIImage(systemName: appearance.symbol ?? librarySymbol(for: entry))
+        tile.tintColor = libraryTagColor(appearance.colorIndex) ?? .secondaryLabel
     }
 
     private static func dateText(_ modified: Double?) -> String? {
@@ -736,11 +758,12 @@ final class LibraryGridCell: UICollectionViewCell, LibraryThumbnailCell {
         picture.image = image
     }
 
-    func showIcon(for entry: LibraryEntry) {
+    func showIcon(for entry: LibraryEntry, appearance: LibraryFolderAppearance) {
         picture.contentMode = .center
         iconEntry = entry
         applyIconSize()
-        picture.image = UIImage(systemName: librarySymbol(for: entry))
+        picture.image = UIImage(systemName: appearance.symbol ?? librarySymbol(for: entry))
+        picture.tintColor = libraryTagColor(appearance.colorIndex) ?? .secondaryLabel
     }
 
     /// The card's width is only known after layout, and a gallery card is
