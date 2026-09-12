@@ -408,6 +408,76 @@ enum LibraryAccess {
         }.sorted { ($0.is_directory ? 0 : 1, $0.name.lowercased()) < ($1.is_directory ? 0 : 1, $1.name.lowercased()) }
     }
 
+    /// Read a small synced sidecar, materialising it first.
+    ///
+    /// `readFile` coordinates but never asks iCloud for the BYTES, and for a
+    /// sidecar that is the difference between working and silently empty. A
+    /// synced file can sit on disk as an evicted placeholder; since iOS 11 it
+    /// keeps its real name in the directory listing and hides the
+    /// `.name.icloud` marker, so `fileExists` answers true for a file with
+    /// nothing behind it, and an uncoordinated read of one just fails. That
+    /// failure is indistinguishable from "this sidecar has never been
+    /// written" — so Pinned is empty and every progress ring is blank, on a
+    /// device, for ever, and a relaunch does not help.
+    ///
+    /// `InboxState.progressItems` learned this the expensive way (the frozen
+    /// Inbox badge) and reads the very same `reading-progress.json` correctly.
+    /// The folder screen did not, which is why the simulator — where there is
+    /// no real iCloud and nothing is ever evicted — could never reproduce it.
+    ///
+    /// The gate is the DOWNLOADING STATUS, not existence. `.current` is the
+    /// only value meaning the bytes are here; `.downloaded` means they are
+    /// stale, `.notDownloaded` that there are none, and no status at all that
+    /// the file is not ubiquitous — where existence really was the question.
+    /// Asking can itself throw under I/O contention, and unknown is treated
+    /// as "may be missing": requesting a download for a file already here is
+    /// a no-op, while skipping it on a placeholder is the bug.
+    ///
+    /// The three answers are kept apart because they mean different things to
+    /// a cache. `absent` is a fact that will not change on its own and can be
+    /// cached like any other; `pending` means a download is now running and
+    /// the caller must NOT remember the empty state, or the rows stay blank
+    /// until something else happens to re-read.
+    enum SidecarRead {
+        case text(String)
+        case absent
+        case pending
+    }
+
+    static func readSidecar(_ rel: String) -> SidecarRead {
+        guard let root = try? resolveRoot() else { return .absent }
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        let url = root.appendingPathComponent(rel)
+        let fm = FileManager.default
+
+        let exists = fm.fileExists(atPath: url.path)
+        var needsDownload = !exists
+        if exists {
+            do {
+                let status = try url.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
+                    .ubiquitousItemDownloadingStatus
+                needsDownload = status != nil && status != .current
+            } catch {
+                needsDownload = true
+            }
+        }
+        if needsDownload { try? fm.startDownloadingUbiquitousItem(at: url) }
+
+        var text: String?
+        var coordError: NSError?
+        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordError) { u in
+            if let data = try? Data(contentsOf: u) {
+                text = String(decoding: data, as: UTF8.self)
+            }
+        }
+        if let text { return .text(text) }
+        // The read failed. If the path is there, something is behind it and
+        // the download just started — say so rather than let the caller cache
+        // "no progress has ever been recorded".
+        return exists ? .pending : .absent
+    }
+
     static func readFile(_ rel: String) throws -> String {
         let data = try readBinary(rel)
         return String(decoding: data, as: UTF8.self)

@@ -153,3 +153,35 @@ describe("storeStateForScreen", () => {
     expect(storeStateForScreen(stack, "Nowhere")).toBeNull();
   });
 });
+
+describe("a saved article's screen title", () => {
+  it("uses the capture's title, not its timestamped file name", () => {
+    // The row shows "Reading on purpose" (#836); the bar above it used to
+    // show "2026-09-07-114500-reading-on-purpose.html".
+    const screens = deriveNavStack({
+      folderStack: [{ relPath: "Inbox", name: "Inbox" }],
+      docStack: [],
+      openDoc: {
+        relPath: "Inbox/2026-09-07-114500-reading-on-purpose.html",
+        name: "2026-09-07-114500-reading-on-purpose.html",
+        title: "Reading on purpose",
+      },
+      homeEditorOpen: false,
+      rootTitle: "Notesage",
+      homeEditorTitle: "Edit Home",
+    });
+    expect(screens[screens.length - 1].title).toBe("Reading on purpose");
+  });
+
+  it("falls back to the file name for anything with no title", () => {
+    const screens = deriveNavStack({
+      folderStack: [],
+      docStack: [],
+      openDoc: { relPath: "Notes/Alpha.md", name: "Alpha.md" },
+      homeEditorOpen: false,
+      rootTitle: "Notesage",
+      homeEditorTitle: "Edit Home",
+    });
+    expect(screens[screens.length - 1].title).toBe("Alpha.md");
+  });
+});

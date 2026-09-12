@@ -36,7 +36,11 @@ protocol LibraryFolderHost: AnyObject {
     func openFolder(_ rel: String, title: String)
     /// Hand a document to the reader — the one thing still rendered by the
     /// web layer.
-    func openDocument(_ rel: String)
+    /// Open a document. `title` is what the row displayed — a capture's own
+    /// title, where the file name is a timestamp and a slug — so the reader's
+    /// nav bar says the same thing the row did. `nil` for anything whose row
+    /// showed its file name.
+    func openDocument(_ rel: String, title: String?)
     /// Raise the entry menu. The rows and what they do are assembled by
     /// `mobile-entry-actions.ts`, so this asks rather than rebuilds them.
     func presentMenu(for rel: String)
@@ -270,6 +274,23 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
             snapshot.appendSections([section.key])
             snapshot.appendItems(section.items.map(\.path), toSection: section.key)
         }
+        // What a row SAYS lives in sidecar files — reading progress, pins,
+        // the read state — not in the entry list, and the identifiers here
+        // are file paths. So when only a sidecar moved, this snapshot is
+        // identical to the last one, `apply` is a no-op, and every row keeps
+        // whatever it last drew.
+        //
+        // That is the whole reason reading an article to the end and coming
+        // straight back left the row still saying "8 min": the number was
+        // already correct on disk, and the only thing that ever redrew the
+        // row was a relaunch. `viewWillAppear` calls this on every return
+        // from the reader, which is exactly the moment the progress is new.
+        //
+        // Only items the data source already holds: reconfiguring one it has
+        // never seen is not a reconfiguration.
+        let carried = Set(dataSource?.snapshot().itemIdentifiers ?? [])
+        let again = snapshot.itemIdentifiers.filter(carried.contains)
+        if !again.isEmpty { snapshot.reconfigureItems(again) }
         dataSource?.apply(snapshot, animatingDifferences: animated)
     }
 
@@ -503,13 +524,17 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
             cell.configure(
                 entry, condensed: self.settings.condensed,
                 progress: self.host?.progress(for: path) ?? 0,
-                recentlyRead: self.host?.recentlyRead().contains(path) ?? false)
+                recentlyRead: self.host?.recentlyRead().contains(path) ?? false,
+                article: self.articleText(for: entry))
             cell.configureListen(
                 entry, speech: self.host?.speechState() ?? LibrarySpeechState(),
                 label: self.listenLabel(for: entry))
             cell.listen.removeTarget(self, action: nil, for: .touchUpInside)
             cell.listen.addTarget(self, action: #selector(self.listenTapped(_:)), for: .touchUpInside)
             self.thumbnails.load(entry, into: cell)
+            // Same read as the list cell's: without it a card would show its
+            // filename until some list pass happened to warm the header.
+            self.loadArticleMeta(for: entry)
         }
 
         dataSource = UICollectionViewDiffableDataSource<String, String>(
@@ -560,7 +585,7 @@ extension LibraryFolderScreen: UICollectionViewDelegate {
         if entry.isDirectory {
             host?.openFolder(entry.path, title: entry.name)
         } else {
-            host?.openDocument(entry.path)
+            host?.openDocument(entry.path, title: articleText(for: entry)?.title)
         }
     }
 

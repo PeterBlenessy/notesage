@@ -56,9 +56,9 @@ import {
 import { useMobileStore } from "@/stores/mobile-store";
 import { setLocale } from "@/lib/i18n";
 
-function fireOpen(kind: string, relPath: string) {
+function fireOpen(kind: string, relPath: string, title?: string) {
   window.dispatchEvent(
-    new CustomEvent("notesage:nav-shell", { detail: { type: "open", kind, relPath } }),
+    new CustomEvent("notesage:nav-shell", { detail: { type: "open", kind, relPath, title } }),
   );
 }
 
@@ -197,6 +197,42 @@ describe("useNativeLibrary", () => {
 
     act(() => fireOpen("document", "Inbox/Alpha.md"));
     expect(useMobileStore.getState().openDoc?.relPath).toBe("Inbox/Alpha.md");
+    // No title sent: the row showed the file name, so the bar should too.
+    expect(useMobileStore.getState().openDoc?.name).toBe("Alpha.md");
+    expect(useMobileStore.getState().openDoc?.title).toBeUndefined();
+  });
+
+  it("takes the reader's title from the row, not from the file name", async () => {
+    // A capture's file name is a timestamp and a slug. The row shows the
+    // article's own title (#836) and the native side sends it along, because
+    // it is the side that read the header — without it the reader's nav bar
+    // read "2026-09-07-114500-reading-on-pu…" above a page titled "Reading on
+    // purpose".
+    const { result } = renderHook(() => useNativeLibrary(true));
+    await waitFor(() => expect(result.current).toBe(true));
+
+    act(() =>
+      fireOpen(
+        "document",
+        "Inbox/2026-09-07-114500-reading-on-purpose.html",
+        "Reading on purpose",
+      ),
+    );
+    const open = useMobileStore.getState().openDoc;
+    expect(open?.title).toBe("Reading on purpose");
+    // `name` stays the FILE's name. Overwriting it with the title made the
+    // reader answer "Can't preview this format yet", because the viewer is
+    // chosen from the extension and a title has none.
+    expect(open?.name).toBe("2026-09-07-114500-reading-on-purpose.html");
+  });
+
+  it("falls back to the file name when the title is empty", async () => {
+    const { result } = renderHook(() => useNativeLibrary(true));
+    await waitFor(() => expect(result.current).toBe(true));
+
+    act(() => fireOpen("document", "Inbox/Alpha.md", ""));
+    expect(useMobileStore.getState().openDoc?.title).toBeUndefined();
+    expect(useMobileStore.getState().openDoc?.name).toBe("Alpha.md");
   });
 
   it("does NOT open a document for a menu or a swipe", async () => {

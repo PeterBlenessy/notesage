@@ -50,7 +50,7 @@ final class LibraryBrowsing: LibraryFolderHost {
 
     /// Called with a screen id when the user taps something. Set by
     /// `NavShellPresenter`, which owns the only route back to the web layer.
-    var onOpen: ((_ kind: String, _ relPath: String) -> Void)?
+    var onOpen: ((_ kind: String, _ relPath: String, _ title: String?) -> Void)?
     /// The frontend's message table, pushed across when the surface is turned
     /// on. Held as the table rather than behind a resolver closure because
     /// some of what the screen draws is a TEMPLATE, not a finished string —
@@ -207,27 +207,27 @@ final class LibraryBrowsing: LibraryFolderHost {
     // MARK: LibraryFolderHost
 
     func openFolder(_ rel: String, title: String) {
-        onOpen?("folder", rel)
+        onOpen?("folder", rel, title)
     }
 
-    func openDocument(_ rel: String) {
+    func openDocument(_ rel: String, title: String?) {
         noteRead(rel)
-        onOpen?("document", rel)
+        onOpen?("document", rel, title)
     }
 
     func presentMenu(for rel: String) {
-        onOpen?("menu", rel)
+        onOpen?("menu", rel, nil)
     }
 
     func swipeAction(_ id: String, for rel: String) {
-        onOpen?("swipe:\(id)", rel)
+        onOpen?("swipe:\(id)", rel, nil)
     }
 
     func toggleListen(for rel: String) {
         // Asked, not done. `toggleSpeech` converts the document to speech
         // text, resumes from the stored position and handles the failure
         // toast — none of which is a folder screen's business.
-        onOpen?("listen", rel)
+        onOpen?("listen", rel, nil)
     }
 
     func speechState() -> LibrarySpeechState { speech }
@@ -236,18 +236,40 @@ final class LibraryBrowsing: LibraryFolderHost {
         if let cache = pinnedCache, Date().timeIntervalSince(cache.at) < Self.ttl {
             return cache.paths
         }
-        let paths = parseLibraryPins(
-            (try? LibraryAccess.readFile(".notesage/pins.json")) ?? "")
-        pinnedCache = (paths, Date())
-        return paths
+        // `readSidecar`, not `readFile`: on a device this file is synced and
+        // can be an evicted placeholder, which reads as empty — see there.
+        switch LibraryAccess.readSidecar(".notesage/pins.json") {
+        case .text(let raw):
+            let paths = parseLibraryPins(raw)
+            pinnedCache = (paths, Date())
+            return paths
+        case .absent:
+            pinnedCache = ([], Date())
+            return []
+        case .pending:
+            // A download is running. Remembering the empty answer would show
+            // an unpinned library until something else forced a re-read.
+            pinnedCache = nil
+            return []
+        }
     }
 
     func recentlyRead() -> Set<String> { recents }
 
     func progress(for rel: String) -> Double {
         if progressCache == nil || Date().timeIntervalSince(progressCache!.at) >= Self.ttl {
-            let raw = (try? LibraryAccess.readFile("Inbox/.notesage/reading-progress.json")) ?? ""
-            progressCache = (parseLibraryReadingProgress(raw), Date())
+            switch LibraryAccess.readSidecar("Inbox/.notesage/reading-progress.json") {
+            case .text(let raw):
+                progressCache = (parseLibraryReadingProgress(raw), Date())
+            case .absent:
+                progressCache = ([:], Date())
+            case .pending:
+                // Left uncached on purpose, so the next row to be configured
+                // tries again — by then the bytes have usually landed. The
+                // alternative is a blank ring on every row until the folder is
+                // left and re-entered.
+                progressCache = nil
+            }
         }
         // The sidecar is keyed by file name, not by path — see
         // `parseLibraryReadingProgress`.

@@ -24,8 +24,8 @@ export interface NavScreen {
 
 export interface NavStackInputs {
   folderStack: { relPath: string; name: string }[];
-  docStack: { relPath: string; name: string }[];
-  openDoc: { relPath: string; name: string } | null;
+  docStack: { relPath: string; name: string; title?: string }[];
+  openDoc: { relPath: string; name: string; title?: string } | null;
   homeEditorOpen: boolean;
   /** What the root is called. */
   rootTitle: string;
@@ -57,11 +57,17 @@ export function deriveNavStack(input: NavStackInputs): NavScreen[] {
   }
   // The trail BELOW the open document: following three links and pressing
   // Back should retrace them, which is exactly what a stack does.
+  // `title` where there is one — a saved article's row shows the capture's
+  // own title rather than its timestamped file name, and the bar above it
+  // should say the same thing.
   for (const doc of input.docStack) {
-    screens.push({ id: documentScreenId(doc.relPath), title: doc.name });
+    screens.push({ id: documentScreenId(doc.relPath), title: doc.title ?? doc.name });
   }
   if (input.openDoc) {
-    screens.push({ id: documentScreenId(input.openDoc.relPath), title: input.openDoc.name });
+    screens.push({
+      id: documentScreenId(input.openDoc.relPath),
+      title: input.openDoc.title ?? input.openDoc.name,
+    });
   }
   return screens;
 }

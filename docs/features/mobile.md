@@ -545,6 +545,45 @@ stale in-memory copy. `.notesage/` is created if missing via
 `ios_ensure_directory`, which unlike `ios_create_directory` does NOT dedupe
 (deduping there would silently produce `.notesage-1` and split the state).
 
+**A saved article is named by its title everywhere, not just in the list.**
+The rule from #836 — a row says what the article IS, not what its file is
+called — reached the list row and stopped there. Gallery cards and the
+reader's nav bar still showed `2026-09-07-114500-reading-on-purpose.html`, so
+switching view or opening the article renamed it in front of the reader. The
+native side now sends the row's title with the tap, since it is the side that
+read the capture header.
+
+`OpenDocRef` keeps `title` apart from `name` on purpose: `name` is the FILE's
+name and several things downstream decide from it, the viewer above all.
+Putting the title there made the reader answer "Can't preview this format
+yet" — the format comes off the extension, and a title has none.
+
+**Sidecars are read with `LibraryAccess.readSidecar`, never `readFile`.**
+`readFile` coordinates but never asks iCloud for the bytes. A synced file can
+sit on disk as an evicted placeholder that keeps its real name, so
+`fileExists` answers true for a file with nothing behind it and the read
+fails — and a failed read of a sidecar is indistinguishable from "nothing has
+ever been recorded". `InboxState.progressItems` learned this as the frozen
+Inbox badge; the folder screen had the same gap for both `pins.json` and
+`reading-progress.json`, so Pinned was empty and every ring blank on a real
+device, permanently, relaunch included. **The simulator cannot reproduce any
+of it** — there is no real iCloud there and nothing is ever evicted, so this
+class of bug ships green.
+
+`readSidecar` separates `absent` from `pending` because they mean different
+things to a cache: `absent` is stable and cacheable, `pending` means a
+download has just been started and the empty answer must NOT be remembered,
+or the rows stay blank until the folder is left and re-entered.
+
+**A row's text comes from sidecars, so the snapshot cannot see it change.**
+`viewWillAppear` re-reads the folder on every return from the reader, but the
+diffable identifiers are file paths: when only progress moved, the snapshot
+is identical, `apply` is a no-op, and every row keeps what it last drew.
+Reading an article to the end and coming straight back left the row still
+saying "8 min" while the file already said `fraction: 1`; only a relaunch
+redrew it. `reload()` therefore reconfigures the items carried over from the
+previous snapshot.
+
 **The sidecar formats are owned by `src/lib/`, and Swift must follow.**
 `.notesage/pins.json` is `{ "paths": [...] }` (`src/lib/pins-file.ts`) and
 `Inbox/.notesage/reading-progress.json` is
