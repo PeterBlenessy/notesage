@@ -102,6 +102,20 @@ func libraryRefreshKind(layoutChanged: Bool, densityChanged: Bool) -> LibraryRef
     return .none
 }
 
+/// Whether a rebuild of the snapshot may also REDRAW the rows that survived it.
+///
+/// Only when nothing else is about to redraw them. A rebuild that precedes a
+/// refresh must leave the cells alone: `.reload` is a cell-class change, and
+/// asking UIKit to re-apply a configuration to cells it is about to replace
+/// with a different class is the crash this enum exists to prevent.
+///
+/// Build 69 shipped exactly that. A rebuild was given a reconfigure so that
+/// sidecar-driven text (reading progress) would redraw, and it ran on the
+/// settings path too — so every list↔gallery switch crashed. The rule is a
+/// function rather than a condition at the call site because that is where it
+/// was already written down once, in a comment, and still got broken.
+func libraryMayReconfigure(_ refresh: LibraryRefreshKind) -> Bool { refresh == .none }
+
 /// What a row shows, for the purpose of searching it.
 ///
 /// Every field the row DRAWS, not just the filename. A saved article's row is

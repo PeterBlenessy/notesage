@@ -310,5 +310,15 @@ check("progress: the old flat shape is no longer what we write",
 check("progress: malformed JSON degrades to nothing read",
     parseLibraryReadingProgress("{not json").isEmpty, true)
 
+// A rebuild may redraw surviving rows ONLY when nothing else is about to.
+// Build 69 crashed on every list/gallery switch because a rebuild reconfigured
+// cells that were about to be replaced by a different class.
+check("refresh: a plain rebuild may redraw its rows",
+    libraryMayReconfigure(.none), true)
+check("refresh: a density change must not — its own reconfigure follows",
+    libraryMayReconfigure(.reconfigure), false)
+check("refresh: a LAYOUT change must not — the cell class is changing",
+    libraryMayReconfigure(.reload), false)
+
 print(failures == 0 ? "\nall good" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)
