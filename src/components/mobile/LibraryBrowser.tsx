@@ -5,6 +5,7 @@ import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory, iosCreateDirectory, iosEnsureDirectory, iosTextPrompt, iosQuickLook, iosOpenSettings, iosReloadLibraryScreens } from "@/lib/ios-api";
 import { toast } from "sonner";
 import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-store";
+import { useNativeLibraryFilter } from "@/components/mobile/useNativeLibrary";
 import { stopSpeech, toggleSpeech } from "@/lib/speech-controller";
 import { presentEntryMenu, type EntryActionContext } from "@/lib/mobile-entry-actions";
 import { FileRow, classifyFile, entrySwipeActions } from "./FileRow";
@@ -167,6 +168,9 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
     return cached ? { status: "ready", entries: cached } : { status: "loading" };
   });
   const [query, setQuery] = useState("");
+  // The native folder screen filters itself; the island's text lives here, so
+  // it has to be pushed down. Mounted beside the state it follows.
+  useNativeLibraryFilter(nativeContent, query);
 
   // Generation counter: rapid folder navigation can resolve listings out of
   // order — a superseded load must not put a stale listing under the new
@@ -577,7 +581,10 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
     };
     window.addEventListener("notesage:nav-shell", onShell);
     return () => window.removeEventListener("notesage:nav-shell", onShell);
-  });
+    // Declared, not omitted: with no array at all this tore the window
+    // listener down and re-attached it after EVERY render of a component that
+    // re-renders often.
+  }, [nativeContent, state, actionContext, load]);
 
   const promptName = useCallback(async (title: string): Promise<string | null> => {
     try {
