@@ -545,6 +545,24 @@ stale in-memory copy. `.notesage/` is created if missing via
 `ios_ensure_directory`, which unlike `ios_create_directory` does NOT dedupe
 (deduping there would silently produce `.notesage-1` and split the state).
 
+**The sidecar formats are owned by `src/lib/`, and Swift must follow.**
+`.notesage/pins.json` is `{ "paths": [...] }` (`src/lib/pins-file.ts`) and
+`Inbox/.notesage/reading-progress.json` is
+`{ "version": 2, "items": { "<file name>": { "fraction": … } } }`
+(`src/lib/reading-progress-file.ts`) — keyed by file *name*, so a capture
+keeps its progress when it is filed out of the Inbox. When the folder screen
+went native (#1000) its Swift readers were written from memory rather than
+from those files, and both guessed wrong: pins were read from a `pinned` key
+and progress from a flat top-level map with a `progress` field. Neither
+throws — a wrong key just yields nothing — so Group by → Pinned was empty in
+a library full of pins and every progress ring was empty, for every build of
+the native screen. `parseLibraryPins` and `parseLibraryReadingProgress` in
+`LibraryOrdering.swift` are now the only readers, and
+`scripts/check-library-ordering.sh` asserts against literals copied from the
+TypeScript shapes, so a rename on either side fails CI instead of going
+unnoticed. **Any new sidecar the native screens read belongs there too** —
+never inline a `JSONSerialization` walk in a screen.
+
 **Why the menu is hand-built, not a real `UIContextMenu`.** A system context
 menu is driven by `UIContextMenuInteraction`, which must be attached to the
 pressed *view* and starts tracking at touch-down. The pressed item is web
