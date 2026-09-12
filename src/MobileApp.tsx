@@ -52,7 +52,6 @@ export function MobileApp() {
   // native screen obey it.
   useNativeLibraryView(nativeLibrary);
 
-  const folderDepth = useMobileStore((s) => s.folderStack.length);
   const homeEditorOpen = useMobileStore((s) => s.homeEditorOpen);
   const refreshGrant = useMobileStore((s) => s.refreshGrant);
 
@@ -175,10 +174,14 @@ export function MobileApp() {
           ) : openDoc ? (
             <Reader key={openDoc.relPath} />
           ) : (
-            // Home is still the web layer's (see `NavShellPresenter.present`):
-            // it is synthesised cards, not a listing. Only a pushed folder is
-            // drawn natively, so only there does this stop rendering rows.
-            <LibraryBrowser nativeContent={nativeLibrary && folderDepth > 0} />
+            // Home draws itself now too (#1000 step 4), so EVERY browsing
+            // screen is native and this renders no rows at all. It stays
+            // mounted for what it still owns: the listing the native menus
+            // are built from, the sweep, the chrome. The old
+            // `folderDepth > 0` gate dates from when Home was web, and left
+            // this rendering an invisible second Home underneath the real
+            // one.
+            <LibraryBrowser nativeContent={nativeLibrary} />
           )
         ) : (
           <Onboarding />
