@@ -220,9 +220,11 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     // Routed here rather than from the screens themselves: this is the only
     // object holding the web view, so it is the only one that can speak to the
     // frontend. A screen that emitted for itself would need its own copy.
-    LibraryBrowsing.shared.onOpen = { [weak self] kind, rel in
+    LibraryBrowsing.shared.onOpen = { [weak self] kind, rel, title in
+      let name = title.map { ", title: \(Self.jsonString($0))" } ?? ""
       self?.dispatch(
-        "open", detail: "{ kind: \(Self.jsonString(kind)), relPath: \(Self.jsonString(rel)) }")
+        "open",
+        detail: "{ kind: \(Self.jsonString(kind)), relPath: \(Self.jsonString(rel))\(name) }")
     }
     nav.delegate = self
     nav.navigationBar.prefersLargeTitles = false

@@ -78,7 +78,18 @@ export interface FolderRef {
 /** The currently open document (relative path + display name). */
 export interface OpenDocRef {
   relPath: string;
+  /** The FILE's name, extension included. Several things downstream decide
+   *  what to do from it — which viewer can render the document, above all —
+   *  so it must stay a file name. What to SHOW is `title`. */
   name: string;
+  /** What to put in the nav bar, when that is not the file name.
+   *
+   *  A saved article's file name is a timestamp and a slug; the listing row
+   *  shows the capture's own title (#836) and the reader's bar should agree.
+   *  Kept apart from `name` because putting the title there made the reader
+   *  answer "Can't preview this format yet" — the format is read off the
+   *  extension, and "Reading on purpose" has none. */
+  title?: string;
   /** A brand-new note that does NOT exist on disk yet: the Reader opens the
    *  editor with an empty draft and only CREATES the file on save/back when
    *  the draft is non-empty — an accidental "+" tap leaves no file behind

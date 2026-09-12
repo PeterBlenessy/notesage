@@ -50,7 +50,7 @@ final class LibraryBrowsing: LibraryFolderHost {
 
     /// Called with a screen id when the user taps something. Set by
     /// `NavShellPresenter`, which owns the only route back to the web layer.
-    var onOpen: ((_ kind: String, _ relPath: String) -> Void)?
+    var onOpen: ((_ kind: String, _ relPath: String, _ title: String?) -> Void)?
     /// The frontend's message table, pushed across when the surface is turned
     /// on. Held as the table rather than behind a resolver closure because
     /// some of what the screen draws is a TEMPLATE, not a finished string —
@@ -207,27 +207,27 @@ final class LibraryBrowsing: LibraryFolderHost {
     // MARK: LibraryFolderHost
 
     func openFolder(_ rel: String, title: String) {
-        onOpen?("folder", rel)
+        onOpen?("folder", rel, title)
     }
 
-    func openDocument(_ rel: String) {
+    func openDocument(_ rel: String, title: String?) {
         noteRead(rel)
-        onOpen?("document", rel)
+        onOpen?("document", rel, title)
     }
 
     func presentMenu(for rel: String) {
-        onOpen?("menu", rel)
+        onOpen?("menu", rel, nil)
     }
 
     func swipeAction(_ id: String, for rel: String) {
-        onOpen?("swipe:\(id)", rel)
+        onOpen?("swipe:\(id)", rel, nil)
     }
 
     func toggleListen(for rel: String) {
         // Asked, not done. `toggleSpeech` converts the document to speech
         // text, resumes from the stored position and handles the failure
         // toast — none of which is a folder screen's business.
-        onOpen?("listen", rel)
+        onOpen?("listen", rel, nil)
     }
 
     func speechState() -> LibrarySpeechState { speech }
