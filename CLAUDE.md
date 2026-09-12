@@ -99,6 +99,38 @@ This makes `cargo check` (compile-only, no linking) succeed without the real lib
 
 **Limits:** stubs provide pkg-config metadata, not headers or libs — so a full `cargo build`/`cargo test` (which links) still needs the real `-dev` packages and is left to CI (`.github/workflows/test.yml` "Rust Backend Tests" runs `cargo test` on macOS). Locally, treat a green `cargo check` as the backend gate and let CI run `cargo test`.
 
+## Shared machine
+
+This laptop runs several agents on different projects at once, and it is
+short of disk. Three rules, all learned the hard way:
+
+1. **Never `pkill -f <pattern>`.** The pattern matches other projects'
+   processes — `pkill -f "xcodebuild.*iphonesimulator"` kills someone else's
+   test run, and `pkill -f "tauri ios build"` also matches your own shell
+   wrapper, so it lies to you as well. Record the PID you started and
+   `kill <pid>`.
+2. **Never `xcrun simctl shutdown all`**, and never delete simulator runtimes
+   or iOS DeviceSupport — they are shared and expensive to rebuild. Use ONE
+   simulator, by UDID, never `booted` and never by name. Shut down only the
+   device you booted, and kill only the `idb_companion` you started.
+3. **Colima is shared.** One daemon and a ~13 GB image store serve every
+   project. Start it if it is down; never stop it, never `colima delete`.
+   Stop only your own containers.
+
+**Clean up what you started.** Simulators, `idb_companion`, dev servers,
+Playwright, the Supabase stack. Say so plainly if you cannot.
+
+**Your own disk debts, worth checking before you finish:**
+
+```bash
+du -sh src-tauri/target/*/incremental        # safe to delete; grows to GBs
+du -sh "$SCRATCHPAD"                         # screen recordings are enormous
+```
+
+A `simctl io … recordVideo` that is not stopped cleanly leaves a
+`*.mp4.sb-*` temp file that keeps growing — one reached 19 GB in a single
+session. Check for it.
+
 ## iOS: driving the Simulator from the command line
 
 Screenshots alone do not verify a gesture. `xcrun simctl` has no touch input,
