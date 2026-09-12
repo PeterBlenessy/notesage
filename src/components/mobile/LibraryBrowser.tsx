@@ -502,12 +502,18 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
   // note's title will become the filename once editing lands) and
   // long-press offers New Folder via the native UIMenu.
   const atRoot = isRootListing;
-  // Whether the rows on screen (after the search filter) include a document
-  // — what the density toggle would act on.
-  const listedHasDocuments =
+  // Whether there are rows for the density toggle to act on at all.
+  //
+  // It used to ask for a DOCUMENT, on the reasoning that a list of folders
+  // alone would not change. That was true of the web rows; it is not true of
+  // the native ones, where condensed halves the tile (72pt → 40) and the row
+  // height (88 → 56) for every row, a folder included. A library whose root
+  // holds only folders — which is most of them — therefore lost the option
+  // on Home for no reason (Peter, build 71).
+  const listedHasRows =
     state.status === "ready" &&
     state.entries.some(
-      (e) => !e.is_directory && (!query || e.name.toLowerCase().includes(query.toLowerCase())),
+      (e) => !query || e.name.toLowerCase().includes(query.toLowerCase()),
     );
 
   // The folders Home shows: the file's list, or the defaults when the
@@ -717,7 +723,7 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
           // in the gallery. A checkmark toggle, remembered per folder. Left
           // out of a list of folders alone, where it would change nothing:
           // an option that does nothing reads as a bug.
-          ...(viewMode === "gallery" || listedHasDocuments
+          ...(viewMode === "gallery" || listedHasRows
             ? [
                 {
                   id: "view-condensed",

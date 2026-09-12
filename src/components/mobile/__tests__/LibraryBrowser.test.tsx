@@ -141,10 +141,10 @@ describe("Group by — Pinned (#652)", () => {
   });
 });
 
-describe("the view menu offers Condensed only where it changes something", () => {
+describe("the view menu offers Condensed wherever there are rows", () => {
   const menuIds = (spec: CapturedChromeSpec) => spec.topRight?.menu?.map((m) => m.id) ?? [];
 
-  it("leaves Condensed out of a list of folders alone, and brings it back for files or the gallery", async () => {
+  it("offers Condensed for a list of folders too — native rows change with it", async () => {
     useMobileStore.setState({ folderStack: [{ relPath: "", name: "All Folders" }] });
     let captured: CapturedChromeSpec = {};
     setMockInvokeHandler("ios_set_chrome", (args) => {
@@ -162,13 +162,18 @@ describe("the view menu offers Condensed only where it changes something", () =>
     renderWithProviders(<LibraryBrowser />);
     await screen.findByText("Ideas");
     await waitFor(() => expect(menuIds(captured)).toContain("view-list"));
-    expect(menuIds(captured)).not.toContain("view-condensed");
+    // This used to assert the OPPOSITE — that a list of folders alone gets no
+    // Condensed, since there would be nothing to condense. True of the web
+    // rows this was written for; false of the native ones, where condensed
+    // halves the tile (72pt → 40) and the row height (88 → 56) for every row,
+    // a folder included. A library whose root holds only folders lost the
+    // option on Home for no reason (Peter, build 71).
+    expect(menuIds(captured)).toContain("view-condensed");
 
-    // The gallery packs folder cards tighter, so there it does something.
     useMobileStore.getState().setViewMode("gallery");
     await waitFor(() => expect(menuIds(captured)).toContain("view-condensed"));
     useMobileStore.getState().setViewMode("list");
-    await waitFor(() => expect(menuIds(captured)).not.toContain("view-condensed"));
+    await waitFor(() => expect(menuIds(captured)).toContain("view-condensed"));
   });
 
   it("offers Condensed in a list that has documents to condense", async () => {

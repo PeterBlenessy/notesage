@@ -297,6 +297,17 @@ protocol LibraryThumbnailCell: AnyObject {
     func showIcon(for entry: LibraryEntry)
 }
 
+/// How big the stand-in symbol is drawn inside a tile of `side` points.
+///
+/// An SF Symbol placed with `.center` draws at its NATURAL size — about
+/// 17pt — whatever it is centred in. In a 72pt list tile that is a speck, and
+/// on a gallery card it is lost entirely: the folder cards read as empty
+/// rectangles rather than as folders (Peter, build 71). Proportional to the
+/// tile, with a floor so a condensed 40pt tile still shows something.
+func librarySymbolPointSize(forTileSide side: CGFloat) -> CGFloat {
+    max(18, side * 0.42)
+}
+
 /// The SF Symbol that stands in for a file with no picture.
 func librarySymbol(for entry: LibraryEntry) -> String {
     if entry.isDirectory { return "folder" }
@@ -607,6 +618,10 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
 
     func showIcon(for entry: LibraryEntry) {
         tile.contentMode = .center
+        // Sized from the tile the symbol sits in, not left at its natural
+        // 17pt — see `librarySymbolPointSize`.
+        tile.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+            pointSize: librarySymbolPointSize(forTileSide: tileSize.constant))
         tile.image = UIImage(systemName: librarySymbol(for: entry))
     }
 
@@ -623,6 +638,11 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
 // MARK: - Gallery card
 
 final class LibraryGridCell: UICollectionViewCell, LibraryThumbnailCell {
+    /// Set while the card is showing a stand-in SYMBOL rather than a picture,
+    /// so a re-layout knows to resize it — and cleared when a real thumbnail
+    /// arrives, so a picture is never given a symbol's point size.
+    private var iconEntry: LibraryEntry?
+
     private(set) var representedPath: String?
 
     private let picture = UIImageView()
@@ -712,12 +732,31 @@ final class LibraryGridCell: UICollectionViewCell, LibraryThumbnailCell {
 
     func showThumbnail(_ image: UIImage) {
         picture.contentMode = .scaleAspectFill
+        iconEntry = nil
         picture.image = image
     }
 
     func showIcon(for entry: LibraryEntry) {
         picture.contentMode = .center
+        iconEntry = entry
+        applyIconSize()
         picture.image = UIImage(systemName: librarySymbol(for: entry))
+    }
+
+    /// The card's width is only known after layout, and a gallery card is
+    /// four across on a phone and wider on a pad — so the size is applied
+    /// again whenever the card is laid out rather than guessed once.
+    private func applyIconSize() {
+        guard iconEntry != nil else { return }
+        let side = min(picture.bounds.width, picture.bounds.height)
+        guard side > 0 else { return }
+        picture.preferredSymbolConfiguration = UIImage.SymbolConfiguration(
+            pointSize: librarySymbolPointSize(forTileSide: side))
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        applyIconSize()
     }
 }
 
