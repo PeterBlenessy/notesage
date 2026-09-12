@@ -26,15 +26,18 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Search in a folder actually searches now.
+Pinned and reading progress work again.
 
 FIXED
-• Searching a folder matches what you can SEE on the row — a saved article's
-title, its site and its summary line — not just the filename. Typing a word
-from an article's title used to hide everything, because the file behind it is
-named after a date.
-• Searching also ignores accents, so "andring" finds "Ändringsdatum".
+• Group by pinned now shows your pinned articles and folders. It found nothing
+before, in a library full of pins, because the list read the shared pins file
+with the wrong name for the list inside it.
+• Reading progress shows again: the bar under a part-read article, and "Read"
+on one you finished. Same cause — the file was read the wrong way, and an
+empty result looks exactly like "you have not read anything".
 
 TRY
-• Open a folder with saved articles, search a word from a title you can read
-on screen, then a word from the site under it. Both should find it.
+• Pin an article or a folder on the Mac, then open that folder on the phone
+and choose Group by pinned from the … menu. It should sit under PINNED.
+• Read half an article on either device, go back to the list, and look for the
+bar under it.
