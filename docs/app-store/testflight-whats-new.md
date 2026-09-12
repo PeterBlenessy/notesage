@@ -26,17 +26,18 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Reading progress, fixed twice over.
+Home is native now, and the view switch no longer crashes.
 
 FIXED
-• The bar and "Read" appear as soon as you come back from an article. The
-list had the right number and never redrew the row.
-• On a phone the list could not read the progress file at all once iCloud had
-evicted it, so everything looked untouched. Same for your pins.
-• A saved article is named by its title in the gallery and in the reader, not
-by its filename.
+• Switching between list and gallery crashed the app in build 69. Mine, and
+sorry — it is fixed and the crash is covered by a test now.
+
+NEW
+• Home is drawn by the app itself rather than the web layer: the Inbox and
+Recordings cards, your chosen folders, and All Folders. It should look the
+same and feel faster.
 
 TRY
-• Open an Inbox article, scroll about HALFWAY, go back. The bar should be
-there straight away — no relaunch.
-• Scrolling moves it. Listening saves your place but does not fill the bar.
+• Switch list and gallery a few times, both ways, in a folder and on Home.
+• On Home: open both cards, tap All Folders, and hold a folder there to choose
+Show on Home — it should appear on Home straight away.
