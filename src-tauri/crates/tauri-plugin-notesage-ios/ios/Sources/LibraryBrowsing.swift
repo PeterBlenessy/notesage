@@ -236,18 +236,40 @@ final class LibraryBrowsing: LibraryFolderHost {
         if let cache = pinnedCache, Date().timeIntervalSince(cache.at) < Self.ttl {
             return cache.paths
         }
-        let paths = parseLibraryPins(
-            (try? LibraryAccess.readFile(".notesage/pins.json")) ?? "")
-        pinnedCache = (paths, Date())
-        return paths
+        // `readSidecar`, not `readFile`: on a device this file is synced and
+        // can be an evicted placeholder, which reads as empty — see there.
+        switch LibraryAccess.readSidecar(".notesage/pins.json") {
+        case .text(let raw):
+            let paths = parseLibraryPins(raw)
+            pinnedCache = (paths, Date())
+            return paths
+        case .absent:
+            pinnedCache = ([], Date())
+            return []
+        case .pending:
+            // A download is running. Remembering the empty answer would show
+            // an unpinned library until something else forced a re-read.
+            pinnedCache = nil
+            return []
+        }
     }
 
     func recentlyRead() -> Set<String> { recents }
 
     func progress(for rel: String) -> Double {
         if progressCache == nil || Date().timeIntervalSince(progressCache!.at) >= Self.ttl {
-            let raw = (try? LibraryAccess.readFile("Inbox/.notesage/reading-progress.json")) ?? ""
-            progressCache = (parseLibraryReadingProgress(raw), Date())
+            switch LibraryAccess.readSidecar("Inbox/.notesage/reading-progress.json") {
+            case .text(let raw):
+                progressCache = (parseLibraryReadingProgress(raw), Date())
+            case .absent:
+                progressCache = ([:], Date())
+            case .pending:
+                // Left uncached on purpose, so the next row to be configured
+                // tries again — by then the bytes have usually landed. The
+                // alternative is a blank ring on every row until the folder is
+                // left and re-entered.
+                progressCache = nil
+            }
         }
         // The sidecar is keyed by file name, not by path — see
         // `parseLibraryReadingProgress`.

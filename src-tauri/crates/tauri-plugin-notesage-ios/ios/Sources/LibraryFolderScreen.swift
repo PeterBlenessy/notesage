@@ -274,6 +274,23 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
             snapshot.appendSections([section.key])
             snapshot.appendItems(section.items.map(\.path), toSection: section.key)
         }
+        // What a row SAYS lives in sidecar files — reading progress, pins,
+        // the read state — not in the entry list, and the identifiers here
+        // are file paths. So when only a sidecar moved, this snapshot is
+        // identical to the last one, `apply` is a no-op, and every row keeps
+        // whatever it last drew.
+        //
+        // That is the whole reason reading an article to the end and coming
+        // straight back left the row still saying "8 min": the number was
+        // already correct on disk, and the only thing that ever redrew the
+        // row was a relaunch. `viewWillAppear` calls this on every return
+        // from the reader, which is exactly the moment the progress is new.
+        //
+        // Only items the data source already holds: reconfiguring one it has
+        // never seen is not a reconfiguration.
+        let carried = Set(dataSource?.snapshot().itemIdentifiers ?? [])
+        let again = snapshot.itemIdentifiers.filter(carried.contains)
+        if !again.isEmpty { snapshot.reconfigureItems(again) }
         dataSource?.apply(snapshot, animatingDifferences: animated)
     }
 
