@@ -344,3 +344,56 @@ func groupLibraryEntries(
 
     return sections
 }
+
+// MARK: - Sidecar files
+
+// The two files the desktop writes and the folder screen reads. Both are
+// parsed here, UIKit-free, because both were read with the WRONG KEY by the
+// native screen for as long as it existed: the format is defined in
+// `src/lib/pins-file.ts` and `src/lib/reading-progress-file.ts`, and the
+// React browser these screens replaced used those parsers directly. Nothing
+// in Swift was checking the shape, so both failures were silent — a Pinned
+// section that is always empty, and rings that never fill.
+
+/// Paths pinned on the desktop, from `.notesage/pins.json`.
+///
+/// The shared format is `{ "paths": ["Inbox/a.html", …] }`. The native reader
+/// looked for `pinned`, a key the desktop has never written, so Group by →
+/// Pinned found nothing even in a library full of pins.
+///
+/// A malformed or missing file means "nothing is pinned", never an error: a
+/// browser that refuses to list a folder because a preferences file is odd is
+/// worse than one that shows nothing pinned.
+func parseLibraryPins(_ json: String) -> Set<String> {
+    guard let data = json.data(using: .utf8),
+        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let list = object["paths"] as? [String]
+    else { return [] }
+    return Set(list.filter { !$0.isEmpty })
+}
+
+/// Reading progress by file NAME, from `Inbox/.notesage/reading-progress.json`.
+///
+/// `{ "version": 2, "items": { "<file name>": { "fraction": 0.42, … } } }`.
+/// The native reader walked the TOP level looking for a `progress` key, so it
+/// saw `version` and `items`, matched neither, and every row drew an empty
+/// ring.
+///
+/// Keyed by file name rather than relative path on purpose — that is what the
+/// desktop writes, so a capture keeps its progress when it is filed out of the
+/// Inbox. `deleted` entries are tombstones for a sync that has not reached
+/// this device yet; `liveEntry` drops them on the desktop and so do we.
+func parseLibraryReadingProgress(_ json: String) -> [String: Double] {
+    guard let data = json.data(using: .utf8),
+        let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+        let items = root["items"] as? [String: Any]
+    else { return [:] }
+    var values: [String: Double] = [:]
+    for (name, value) in items {
+        guard let entry = value as? [String: Any], entry["deleted"] == nil,
+            let fraction = entry["fraction"] as? Double
+        else { continue }
+        values[name] = min(max(fraction, 0), 1)
+    }
+    return values
+}

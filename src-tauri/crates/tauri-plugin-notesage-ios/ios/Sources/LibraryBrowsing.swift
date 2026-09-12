@@ -236,18 +236,8 @@ final class LibraryBrowsing: LibraryFolderHost {
         if let cache = pinnedCache, Date().timeIntervalSince(cache.at) < Self.ttl {
             return cache.paths
         }
-        // The desktop writes `{ "pinned": ["a/b.md", …] }`; a malformed or
-        // missing file means "nothing is pinned", never an error — a browser
-        // that refuses to list a folder because a preferences file is odd is
-        // worse than one that shows nothing pinned.
-        var paths: Set<String> = []
-        if let raw = try? LibraryAccess.readFile(".notesage/pins.json"),
-            let data = raw.data(using: .utf8),
-            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-            let list = object["pinned"] as? [String]
-        {
-            paths = Set(list)
-        }
+        let paths = parseLibraryPins(
+            (try? LibraryAccess.readFile(".notesage/pins.json")) ?? "")
         pinnedCache = (paths, Date())
         return paths
     }
@@ -256,25 +246,12 @@ final class LibraryBrowsing: LibraryFolderHost {
 
     func progress(for rel: String) -> Double {
         if progressCache == nil || Date().timeIntervalSince(progressCache!.at) >= Self.ttl {
-            var values: [String: Double] = [:]
-            if let raw = try? LibraryAccess.readFile("Inbox/.notesage/reading-progress.json"),
-                let data = raw.data(using: .utf8),
-                let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-            {
-                // `{ "<relPath>": { "progress": 0.42, … } }` — the shape the
-                // Mac writes. A bare number is accepted too, since an older
-                // sidecar used one.
-                for (key, value) in object {
-                    if let entry = value as? [String: Any], let p = entry["progress"] as? Double {
-                        values[key] = p
-                    } else if let p = value as? Double {
-                        values[key] = p
-                    }
-                }
-            }
-            progressCache = (values, Date())
+            let raw = (try? LibraryAccess.readFile("Inbox/.notesage/reading-progress.json")) ?? ""
+            progressCache = (parseLibraryReadingProgress(raw), Date())
         }
-        return progressCache?.values[rel] ?? 0
+        // The sidecar is keyed by file name, not by path — see
+        // `parseLibraryReadingProgress`.
+        return progressCache?.values[(rel as NSString).lastPathComponent] ?? 0
     }
 
     func localized(_ key: String) -> String {

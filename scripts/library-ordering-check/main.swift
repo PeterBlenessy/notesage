@@ -266,5 +266,49 @@ check("search: whitespace alone keeps everything", libraryMatchesFilter("   ", n
 // A note has no header; it must not be lost because the fields are nil.
 check("search: a plain note still matches its name", libraryMatchesFilter("gamma", note), true)
 
+// MARK: - Sidecar files
+//
+// Both of these were read with a key the desktop has never written, and both
+// failed silently: Pinned was empty in a library full of pins, and every
+// progress ring was empty. The literals below are copied from the shapes in
+// `src/lib/pins-file.ts` and `src/lib/reading-progress-file.ts` — if either
+// side renames a key, one of these fails instead of a user noticing months
+// later.
+
+check("pins: the desktop's `paths` key is read",
+    parseLibraryPins(#"{"paths":["Inbox/a.html","Notes/b.md"]}"#).sorted(),
+    ["Inbox/a.html", "Notes/b.md"])
+// The exact bug: `pinned` is what the native screen looked for, and is not a
+// key the shared serializer has ever emitted.
+check("pins: the key the native screen invented finds nothing",
+    parseLibraryPins(#"{"pinned":["Inbox/a.html"]}"#), Set<String>())
+check("pins: an empty file is no pins, not an error",
+    parseLibraryPins(#"{"paths":[]}"#), Set<String>())
+check("pins: malformed JSON degrades to no pins",
+    parseLibraryPins("{not json"), Set<String>())
+check("pins: a missing file degrades to no pins", parseLibraryPins(""), Set<String>())
+
+let progressJSON = #"""
+{"version":2,"items":{
+  "Half.html":{"fraction":0.5,"openedAt":"2026-09-01T00:00:00Z"},
+  "Done.html":{"fraction":1,"openedAt":"2026-09-01T00:00:00Z"},
+  "Gone.html":{"fraction":0.9,"openedAt":null,"deleted":true},
+  "Fresh.html":{"fraction":0,"openedAt":null}
+}}
+"""#
+let progress = parseLibraryReadingProgress(progressJSON)
+check("progress: entries come from `items`, not the top level", progress["Half.html"] ?? -1, 0.5)
+check("progress: a finished article is 1", progress["Done.html"] ?? -1, 1.0)
+check("progress: an unopened article is 0", progress["Fresh.html"] ?? -1, 0.0)
+// A tombstone means the desktop deleted it; the row must not resurrect it.
+check("progress: tombstones are dropped", progress["Gone.html"] == nil, true)
+check("progress: the version field is not an entry", progress["version"] == nil, true)
+// What the native screen actually did — walk the top level for a `progress`
+// key — found neither `version` nor `items`, so every ring was empty.
+check("progress: the old flat shape is no longer what we write",
+    parseLibraryReadingProgress(#"{"Half.html":{"progress":0.5}}"#).isEmpty, true)
+check("progress: malformed JSON degrades to nothing read",
+    parseLibraryReadingProgress("{not json").isEmpty, true)
+
 print(failures == 0 ? "\nall good" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)
