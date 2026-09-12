@@ -25,19 +25,18 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Fastnålat och lästa-läget fungerar igen.
+Lästa-läget, rättat på två håll.
 
 RÄTTAT
-• Gruppera efter fastnålat visar nu dina fastnålade artiklar och mappar. Förut
-hittade den ingenting, i ett bibliotek fullt av nålar, eftersom listan läste
-den delade nålfilen med fel namn på listan inuti.
-• Lästa-läget syns igen: stapeln under en påbörjad artikel, och "Läst" på en du
-läst klart. Samma orsak — filen lästes på fel sätt, och ett tomt resultat ser
-precis ut som "du har inte läst något".
+• Stapeln och "Läst" syns direkt när du kommer tillbaka från en artikel.
+Listan hade rätt värde men ritade aldrig om raden.
+• På en telefon kunde listan inte läsa lägesfilen alls när iCloud rensat bort
+den, så allt såg orört ut. Samma för dina nålar.
+• En sparad artikel heter som sin titel i galleriet och i läsaren, inte som
+sitt filnamn.
 
 PROVA
-• Nåla fast en artikel eller en mapp på Macen, öppna sedan den mappen på
-telefonen och välj Gruppera efter fastnålat i …-menyn. Den ska ligga under
-FASTNÅLADE.
-• Läs halva en artikel på endera enheten, gå tillbaka till listan och leta
-efter stapeln under den.
+• Öppna en artikel i Inkorgen, bläddra HALVVÄGS, gå tillbaka. Stapeln ska
+ligga där direkt — ingen omstart.
+• Det är bläddrandet som flyttar den. Att lyssna sparar var du är men fyller
+inte stapeln.
