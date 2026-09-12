@@ -2196,65 +2196,6 @@ describe("pinning a folder (#685)", () => {
   });
 });
 
-describe("Inbox shortcut (#683)", () => {
-  it("pins Inbox above the root listing and omits it from the list below", async () => {
-    setMockInvokeHandler("ios_read_file", (args) =>
-      (args as { relPath: string }).relPath === ".notesage/home.json"
-        ? JSON.stringify({ version: 1, folders: ["Inbox", "Zebra", "Apple"] })
-        : (() => {
-            throw new Error("not found");
-          })(),
-    );
-    // The count rides along on the listing itself (#684) — no second read.
-    setMockInvokeHandler("ios_list_directory", () => [
-      { name: "Inbox", path: "Inbox", is_directory: true, hidden: false, child_count: 2 },
-      { name: "Zebra", path: "Zebra", is_directory: true, hidden: false, child_count: 7 },
-    ]);
-
-    renderWithProviders(<LibraryBrowser />);
-    // The card carries the count; the folder appears exactly once overall.
-    await waitFor(() => expect(screen.getByText("2")).toBeTruthy());
-    expect(screen.getAllByText("Inbox")).toHaveLength(1);
-    expect(screen.getByText("Zebra")).toBeTruthy();
-  });
-
-  it("jumps to Inbox from the card, replacing the stack rather than nesting", async () => {
-    setMockInvokeHandler("ios_list_directory", (args) => {
-      const rel = (args as { relPath: string }).relPath;
-      if (rel === "") {
-        return [{ name: "Inbox", path: "Inbox", is_directory: true, hidden: false }];
-      }
-      return [];
-    });
-    useMobileStore.getState().enterFolder({ relPath: "Deep", name: "Deep" });
-    useMobileStore.getState().jumpToFolder({ relPath: "Inbox", name: "Inbox" });
-    expect(useMobileStore.getState().folderStack).toEqual([
-      { relPath: "Inbox", name: "Inbox" },
-    ]);
-  });
-
-  it("shows the card even when nothing has ever been shared", async () => {
-    setMockInvokeHandler("ios_read_file", (args) =>
-      (args as { relPath: string }).relPath === ".notesage/home.json"
-        ? JSON.stringify({ version: 1, folders: ["Ideas"] })
-        : (() => {
-            throw new Error("not found");
-          })(),
-    );
-    setMockInvokeHandler("ios_list_directory", () => [
-      { name: "Ideas", path: "Ideas", is_directory: true, hidden: false },
-    ]);
-    renderWithProviders(<LibraryBrowser />);
-    await screen.findByText("Ideas");
-    // Was: no card until something had been shared. On a container install
-    // nothing creates `Inbox/` until the first share, so that left a fresh
-    // install with no Inbox on Home at all — and the breadcrumb's Inbox
-    // entry navigating to a folder that did not exist (Peter, build 54).
-    // Same rule as Recordings now: always there, and opening it makes the
-    // folder.
-    expect(screen.getByText("Inbox")).toBeTruthy();
-  });
-});
 
 describe("Edit Home is a screen of its own", () => {
   it("opens over the browser and Back returns to it", async () => {
@@ -2264,13 +2205,18 @@ describe("Edit Home is a screen of its own", () => {
     setMockInvokeHandler("ios_read_file", () => {
       throw new Error("not found");
     });
+    // The listing itself is the marker now. This used to look for the "All
+    // Folders" row, which was Home's and moved to the native screen (#1000
+    // step 4) — the subject here is Edit Home, not what is under it.
     renderWithProviders(<Shell />);
-    await screen.findByText("All Folders");
+    await screen.findByText("Inbox");
     useMobileStore.getState().openHomeEditor();
     await screen.findByRole("switch", { name: "Inbox" });
-    expect(screen.queryByText("All Folders")).toBeNull();
     expect(useMobileStore.getState().goBack()).toBe(true);
-    await screen.findByText("All Folders");
+    await waitFor(() =>
+      expect(screen.queryByRole("switch", { name: "Inbox" })).toBeNull(),
+    );
+    await screen.findByText("Inbox");
   });
 });
 

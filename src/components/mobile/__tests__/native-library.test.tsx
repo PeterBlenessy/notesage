@@ -45,6 +45,8 @@ vi.mock("@/lib/ios-api", () => ({
   iosSetLibraryFilter: (args: { relPath: string; query: string }) => setFilterMock(args),
 }));
 
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn() } }));
+
 vi.mock("@/lib/speech-controller", () => ({
   toggleSpeech: (entry: { path: string; name: string }) => toggleSpeechMock(entry),
 }));
@@ -56,6 +58,7 @@ import {
   useNativeLibrarySpeech,
   useNativeLibraryView,
 } from "@/components/mobile/useNativeLibrary";
+import { toast } from "sonner";
 import { useMobileStore } from "@/stores/mobile-store";
 import { setLocale } from "@/lib/i18n";
 
@@ -251,6 +254,19 @@ describe("useNativeLibrary", () => {
     expect(stack[0]?.relPath).toBe("");
     // The last segment of the root is "", so the row's own title is the name.
     expect(stack[0]?.name).toBe("All Folders");
+  });
+
+  it("toasts instead of navigating when a card's folder cannot be made", async () => {
+    // The Critical from the first review of #924, which the web cards had a
+    // test for and the native ones did not: when the name is taken by a FILE,
+    // the handler must say why and NOT navigate — entering it shows a broken
+    // listing with the explanation flashing past underneath.
+    const { result } = renderHook(() => useNativeLibrary(true));
+    await waitFor(() => expect(result.current).toBe(true));
+
+    act(() => fireOpen("folderFailed", "Recordings", "exists and is not a folder"));
+    expect(useMobileStore.getState().folderStack).toEqual([]);
+    expect(toast.error).toHaveBeenCalled();
   });
 
   it("does NOT open a document for a menu or a swipe", async () => {

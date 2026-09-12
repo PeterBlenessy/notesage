@@ -10,12 +10,14 @@ import {
   pushInboxProgress,
   resetInboxProgressSync,
   startInboxProgressSync,
+  flushInboxProgress,
 } from "@/lib/inbox-progress-sync";
 import { parseReadingProgress, tombstone } from "@/lib/reading-progress-file";
 
 describe("inbox-progress-sync (the phone's write-through of the sidecar)", () => {
   let disk: Record<string, string>;
   let ensured: string[];
+  let reloaded: number;
 
   beforeEach(() => {
     resetInboxProgressSync();
@@ -33,6 +35,10 @@ describe("inbox-progress-sync (the phone's write-through of the sidecar)", () =>
     });
     setMockInvokeHandler("ios_ensure_directory", (args) => {
       ensured.push((args as { relPath: string }).relPath);
+    });
+    reloaded = 0;
+    setMockInvokeHandler("ios_reload_library_screens", () => {
+      reloaded += 1;
     });
     vi.useFakeTimers();
   });
@@ -222,5 +228,44 @@ describe("inbox-progress-sync (the phone's write-through of the sidecar)", () =>
     useMobileStore.getState().rememberReadingProgress("Inbox/a.html", 0.4);
     await pullInboxProgress();
     expect(useMobileStore.getState().readingProgress["Inbox/a.html"]).toBe(0.4);
+  });
+
+  it("closing the reader writes at once and tells the screens to re-read", async () => {
+    // The debounce is right while reading and wrong the moment the reader
+    // closes: the folder screen re-reads the sidecar in `viewWillAppear`,
+    // which runs BEFORE the web layer learns the document closed. A back tap
+    // beat the 1.5s timer every time, so the row kept its old text until the
+    // app was relaunched (Peter, builds 69-72).
+    const stop = startInboxProgressSync();
+    useMobileStore.setState({ openDoc: { relPath: "Inbox/a.html", name: "a.html" } });
+    useMobileStore.getState().rememberReadingProgress("Inbox/a.html", 0.5);
+
+    // Closing, with the debounce still pending — nothing written yet.
+    expect(disk[INBOX_SIDECAR_REL]).toBeUndefined();
+    useMobileStore.setState({ openDoc: null });
+    await vi.waitFor(() => expect(disk[INBOX_SIDECAR_REL]).toBeDefined());
+
+    const written = parseReadingProgress(disk[INBOX_SIDECAR_REL]);
+    expect(written.items["a.html"]?.fraction).toBe(0.5);
+    // And the screens are told AFTER the write, or they read the stale file
+    // a second time and nothing changes on screen.
+    await vi.waitFor(() => expect(reloaded).toBeGreaterThan(0));
+    stop();
+  });
+
+  it("a close with nothing pending neither writes nor reloads", async () => {
+    const stop = startInboxProgressSync();
+    useMobileStore.setState({ openDoc: { relPath: "Inbox/a.html", name: "a.html" } });
+    // `openDoc` becoming non-null marks the item opened, which IS a change;
+    // flush it so the close below starts clean.
+    await flushInboxProgress();
+    const writes = Object.keys(disk).length;
+    reloaded = 0;
+
+    useMobileStore.setState({ openDoc: null });
+    await flushInboxProgress();
+    expect(Object.keys(disk).length).toBe(writes);
+    expect(reloaded).toBe(0);
+    stop();
   });
 });

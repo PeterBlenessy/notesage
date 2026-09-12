@@ -1,4 +1,3 @@
-// @vitest-environment jsdom
 /**
  * The Inbox folder's name must never be translated.
  *
@@ -12,27 +11,33 @@
  * every surface agreed, which is how it shipped (Peter, 2026-08-17).
  */
 
-import { describe, it, expect, afterEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
-import { InboxCard } from "@/components/mobile/InboxCard";
 import { INBOX_FOLDER_NAME } from "@/lib/inbox";
-import { setLocale } from "@/lib/i18n";
 
-afterEach(() => setLocale(null));
 
 describe("Inbox is never translated", () => {
-  it("renders the folder's real name in Swedish", () => {
-    setLocale("sv");
-    render(<InboxCard count={3} onOpen={() => {}} />);
-    expect(screen.getByText(INBOX_FOLDER_NAME)).toBeTruthy();
-    expect(screen.queryByText("Inkorg")).toBeNull();
-  });
+  it("is a literal in the native card, not a localised label", () => {
+    // The card that shows this name is Swift now (#1000 step 4), so the two
+    // rendering cases that used to live here cannot. The rule they guarded is
+    // unchanged and this is where it moved: `LibraryFolderScreen` must use
+    // the FOLDER's own name. Asking `localized("home.inbox")` for a key that
+    // does not exist would render the key itself — which is the shape of
+    // #989 — and asking for one that did exist would translate a directory
+    // name that is the same on every device.
+    const swift = readFileSync(
+      "src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryOrdering.swift",
+      "utf8",
+    );
+    const declared = swift.match(/let libraryInboxFolder = "([^"]+)"/);
+    expect(declared?.[1]).toBe(INBOX_FOLDER_NAME);
 
-  it("renders the same name in English", () => {
-    setLocale("en");
-    render(<InboxCard count={3} onOpen={() => {}} />);
-    expect(screen.getByText(INBOX_FOLDER_NAME)).toBeTruthy();
+    const screen = readFileSync(
+      "src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryFolderScreen.swift",
+      "utf8",
+    );
+    expect(screen).not.toContain('localized("home.inbox")');
+    expect(screen).not.toContain('localized("home.recordings")');
   });
 
   it("matches the folder the capture crate writes to", () => {
