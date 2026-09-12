@@ -5,9 +5,18 @@ type: feedback
 originSessionId: c3b9ec0f-08ec-4fbf-973a-f341085e80ad
 aw_applies: no
 ---
-The user's running `pnpm tauri dev` watches `/Users/peter/Development/note-sage/src/...` (the main checkout). Sub-agent worktrees at `.claude/worktrees/agent-XX/src/...` are separate filesystem locations — Vite HMR never sees them.
+The running `pnpm tauri dev` watches `<repo>/src/...` in the PRIMARY checkout. Sub-agent worktrees under `.claude/worktrees/agent-XX/src/...` are separate filesystem locations — Vite HMR never sees them.
 
 **Why:** When I report a sub-agent's work as "done in the worktree" and pause for user approval before committing, the user often opens the app to test it — and sees no change. They reasonably wonder if something is broken (e.g. "should I rebuild Rust?"). The answer is: changes are real, but they're in the worktree, not where the running app looks.
+
+**Corrected later:** the running dev server watches the **primary working
+directory** — i.e. whatever branch is checked out there. Switching that
+checkout to a feature branch and running the dev server DOES make the branch
+live-testable; no merge is required. What the running app cannot see is a
+**separate git worktree** (a different filesystem location) — the bundler
+never watches those. An earlier version of this rule over-generalised to
+"watches the default branch"; the real boundary is primary-checkout versus
+separate-worktree.
 
 **How to apply:**
 - When proposing a commit on the user's behalf and the change is testable in the running app, say explicitly: "your running `pnpm tauri dev` won't see this until I merge — the changes are in the worktree branch right now."
