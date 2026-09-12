@@ -382,6 +382,7 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
     private let progressBar = UIProgressView(progressViewStyle: .default)
     private let separator = UIView()
     private var tileSize: NSLayoutConstraint!
+    private var rowHeight: NSLayoutConstraint!
     /// Read-aloud, floating over the row's right edge. Shown only for
     /// documents that can be read — a folder has nothing to say.
     let listen = ListenDisc()
@@ -439,6 +440,15 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
         contentView.addSubview(listen)
 
         tileSize = tile.widthAnchor.constraint(equalToConstant: 72)
+        // A list section self-sizes its cells. The row's height is FIXED on
+        // purpose — a row that grows when a late read lands is the jump this
+        // screen exists to avoid — so it is pinned here rather than left to
+        // the content. `defaultLow + 1` keeps it above the cell's own
+        // estimated height without fighting the temporary
+        // `UIView-Encapsulated-Layout-Height` UIKit installs while measuring.
+        rowHeight = contentView.heightAnchor.constraint(equalToConstant: 88)
+        rowHeight.priority = .required - 1
+        rowHeight.isActive = true
         NSLayoutConstraint.activate([
             row.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 16),
             row.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -16),
@@ -521,6 +531,7 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
         progressBar.progress = Float(progress)
         // The slot is FIXED, so a late picture never reflows the row.
         tileSize.constant = condensed ? 40 : 72
+        rowHeight.constant = condensed ? 56 : 88
     }
 
     func showThumbnail(_ image: UIImage) {

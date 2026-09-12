@@ -129,14 +129,24 @@ private let MAX_VOTING_PARAGRAPHS = 60
     }
 
     @objc public func pause() {
-        // Nothing queued means the article already finished; re-publishing
-        // now-playing info here resurrected a finished article on the lock
-        // screen with its stale title.
-        guard synth.isSpeaking || synth.isPaused else { return }
+        // Guarded on the SESSION, not on the synthesiser's instantaneous
+        // state. Nothing queued means the article already finished, and
+        // re-publishing now-playing info then resurrected it on the lock
+        // screen with a stale title — that is what this is for, and
+        // `resetQueue` empties `paragraphs` exactly when it happens.
+        //
+        // It used to read `synth.isSpeaking || synth.isPaused`, which is a
+        // different question and can be false for a live session — between
+        // utterances, or after the app was relaunched with a paused article
+        // restored and nothing queued. Answering it wrongly skipped the two
+        // lines below, so the app showed Play while the lock screen still
+        // showed Pause, and the next lock-screen tap spent itself correcting
+        // the icon instead of playing (Peter, build 65).
+        guard !paragraphs.isEmpty else { return }
         // `.immediate` rather than `.word`: on a lock-screen tap the user
         // expects silence now, and resume re-speaks the current paragraph from
         // its start anyway.
-        synth.pauseSpeaking(at: .immediate)
+        if synth.isSpeaking { synth.pauseSpeaking(at: .immediate) }
         updateNowPlaying(playing: false)
         onPlayingChanged?(false)
     }
@@ -524,7 +534,6 @@ private let MAX_VOTING_PARAGRAPHS = 60
         // with the audio session still active (it is, while paused — that is
         // what keeps the plate on screen), iOS kept showing Pause for a
         // paused article until the state was published explicitly.
-        MPNowPlayingInfoCenter.default().playbackState = playing ? .playing : .paused
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: title,
             MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
@@ -536,10 +545,17 @@ private let MAX_VOTING_PARAGRAPHS = 60
         info[MPMediaItemPropertyPlaybackDuration] = Double(max(paragraphs.count, 1))
         if let artwork { info[MPMediaItemPropertyArtwork] = artwork }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
+        // AFTER the info, which is the documented order: assigning
+        // `nowPlayingInfo` republishes the whole entry, so a state set before
+        // it is describing a version the system has not seen yet.
+        MPNowPlayingInfoCenter.default().playbackState = playing ? .playing : .paused
     }
 
     private var remoteCommandsRegistered = false
     private var interruptionsObserved = false
+    /// Was speech actually audible when an interruption began? Only then may
+    /// its end resume — see the interruption observer.
+    private var interruptedWhilePlaying = false
 
     /// A call, Siri, or another app taking the output stops the speech
     /// without a word to this player: the article fell silent while the app,
@@ -559,12 +575,20 @@ private let MAX_VOTING_PARAGRAPHS = 60
             else { return }
             switch type {
             case .began:
+                // Remember whether this interrupted actual SPEECH. A user who
+                // pressed Pause is already paused here, and resuming them when
+                // the interruption ends starts an article they deliberately
+                // stopped — and tells the lock screen it is playing while the
+                // app, whose web layer is throttled in the background, still
+                // shows Play.
+                self.interruptedWhilePlaying = self.synth.isSpeaking && !self.synth.isPaused
                 self.pause()
             case .ended:
                 let raw = note.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
-                if AVAudioSession.InterruptionOptions(rawValue: raw).contains(.shouldResume) {
-                    self.resume()
-                }
+                let resumable = AVAudioSession.InterruptionOptions(rawValue: raw)
+                    .contains(.shouldResume)
+                if resumable, self.interruptedWhilePlaying { self.resume() }
+                self.interruptedWhilePlaying = false
             @unknown default:
                 break
             }

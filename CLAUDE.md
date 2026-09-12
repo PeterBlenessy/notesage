@@ -99,6 +99,57 @@ This makes `cargo check` (compile-only, no linking) succeed without the real lib
 
 **Limits:** stubs provide pkg-config metadata, not headers or libs — so a full `cargo build`/`cargo test` (which links) still needs the real `-dev` packages and is left to CI (`.github/workflows/test.yml` "Rust Backend Tests" runs `cargo test` on macOS). Locally, treat a green `cargo check` as the backend gate and let CI run `cargo test`.
 
+## iOS: driving the Simulator from the command line
+
+Screenshots alone do not verify a gesture. `xcrun simctl` has no touch input,
+so use **`idb`** — it talks to the Simulator's HID layer, which means it also
+works when the Mac's screen is **locked** (`cliclick` cannot: a locked screen
+leaves the Simulator app with zero windows).
+
+```bash
+# once per machine — idb_companion comes from brew, the CLI does not
+brew install idb-companion
+python3 -m venv /tmp/idbenv && /tmp/idbenv/bin/pip install fb-idb
+
+export PATH="/opt/homebrew/bin:$PATH"          # idb must find idb_companion
+/tmp/idbenv/bin/idb connect <SIM-UDID>
+
+/tmp/idbenv/bin/idb ui tap   --udid $U X Y
+/tmp/idbenv/bin/idb ui swipe --udid $U --delta 4 --duration 0.5 X1 Y1 X2 Y2
+/tmp/idbenv/bin/idb ui text  --udid $U "typed text"
+```
+
+- **Coordinates are device POINTS, not screenshot pixels.** A screenshot from
+  `simctl io booted screenshot` is 3× on a 3x device (1206×2622 px = 402×874
+  pt) — divide by three. No window-rect calibration is needed.
+- **`--duration` is effectively required for swipes.** Without it the gesture
+  is delivered instantaneously, UIKit reads it as a TAP, and a swipe across a
+  list row opens the document instead of swiping it. ~0.4–0.5s with
+  `--delta 4` behaves like a finger.
+- **Works:** taps, in-view pans (scrolling), text entry, hardware buttons.
+- **Does NOT work:** the system screen-edge pan. A swipe from `x=2` does not
+  drive `interactivePopGestureRecognizer` — verified against the reader, whose
+  swipe-back is known-good on device. The interactive back gesture cannot be
+  verified here; say so rather than claiming it.
+- Screenshot BEFORE each step to establish state: the app restores its last
+  open document on launch, so "tap the first row" can land somewhere else.
+
+**Before trusting any simulator screenshot, check the build actually landed.**
+`tauri ios build --target aarch64-sim` can print `** BUILD SUCCEEDED **` and
+still leave the PREVIOUS `.app` in place, because the export cannot overwrite a
+non-empty archive directory:
+
+```bash
+rm -rf src-tauri/gen/apple/build/notesage_iOS.xcarchive \
+       src-tauri/gen/apple/build/arm64-sim          # before every sim build
+stat -f "%Sm" -t "%H:%M:%S" \
+  src-tauri/gen/apple/build/arm64-sim/Notesage.app/Notesage   # after
+```
+
+If that timestamp is not from the last few minutes, the build did not land —
+whatever the log said. A stale binary imitates every bug you might go looking
+for.
+
 ## Versioning
 
 The app version is defined in `package.json`. The Tauri config (`src-tauri/tauri.conf.json`) references it via `"version": "../package.json"` — only bump `package.json` when releasing.
