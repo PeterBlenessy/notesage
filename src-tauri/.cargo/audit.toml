@@ -18,11 +18,14 @@ ignore = [
     "RUSTSEC-2026-0235",
 
     # quick-xml (fix >=0.41.0): quadratic duplicate-attribute check.
-    # Pinned by docx-rs 0.4 (0.36) and typst's citation stack
-    # citationberg/hayagriva (0.38); both parse app-local/trusted XML, and
-    # the impact is DoS-shaped, not memory corruption. Issue #602.
+    # docx-rs is CLEAR as of 0.4.22, which requires quick-xml ^0.41 — bumped
+    # 2026-09-13, so the DOCX export path no longer carries this. What remains
+    # is typst's citation stack: citationberg pins ^0.38.1 and still does at
+    # its latest release (0.7.0), so this is not a bump we can pull forward.
+    # It parses bundled CSL styles — app-local, trusted input — and the impact
+    # is DoS-shaped rather than memory corruption. Issue #602.
     "RUSTSEC-2026-0194",
-    # quick-xml NsReader unbounded namespace allocation (same pins as above).
+    # quick-xml NsReader unbounded namespace allocation (same remaining pin).
     "RUSTSEC-2026-0195",
 
     # bincode 1.3.3 "unmaintained": pinned by syntect 5 (comrak / ppt-rs),
