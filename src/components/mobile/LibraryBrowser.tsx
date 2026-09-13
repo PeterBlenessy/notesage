@@ -4,6 +4,7 @@ import { ChevronLeft, FolderOpen, Plus, FolderPlus, ArrowDownAZ, Clock, LayoutGr
 import type { FileEntry } from "@/lib/tauri";
 import { iosListDirectory, iosCreateDirectory, iosEnsureDirectory, iosTextPrompt, iosQuickLook, iosOpenSettings, iosReloadLibraryScreens } from "@/lib/ios-api";
 import { toast } from "sonner";
+import { reportActionError } from "@/lib/mobile-action-report";
 import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-store";
 import { useNativeLibraryFilter } from "@/components/mobile/useNativeLibrary";
 import { stopSpeech, toggleSpeech } from "@/lib/speech-controller";
@@ -68,7 +69,7 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
     try {
       await iosEnsureDirectory(INBOX_NAME);
     } catch (err) {
-      toast.error(t("action.createFolderFailed", { error: String(err) }));
+      await reportActionError(t("action.createFolderFailed", { error: String(err) }));
       return;
     }
     jumpToFolder({ relPath: INBOX_NAME, name: INBOX_NAME });
@@ -528,7 +529,7 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
         await setOnHomeInFile(relPath, shown, rootEntries);
         if (shown) dismissHomeHint();
       } catch (err) {
-        toast.error(t("home.updateFailed", { error: String(err) }));
+        await reportActionError(t("home.updateFailed", { error: String(err) }));
       }
     },
   };
@@ -609,7 +610,7 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
       // something in it.
       enterFolder({ relPath: finalRel, name: finalRel.split("/").pop() ?? name });
     } catch (err) {
-      toast.error(t("action.createFolderFailed", { error: String(err) }));
+      await reportActionError(t("action.createFolderFailed", { error: String(err) }));
     }
   }, [currentRelPath, promptName, load, enterFolder]);
 
@@ -905,7 +906,7 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
           .then(() => void load())
           .catch((err) => {
             if (!String(err).includes("No folder was selected")) {
-              toast.error(t("library.changeFolderFailed", { error: String(err) }));
+              void reportActionError(t("library.changeFolderFailed", { error: String(err) }));
             }
           });
       },
@@ -915,7 +916,7 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
         void setLibraryMode("container")
           .then(() => void load())
           .catch((err) => {
-            toast.error(t("library.switchToICloudFailed", { error: String(err) }));
+            void reportActionError(t("library.switchToICloudFailed", { error: String(err) }));
           });
       },
       // Fired by the native pull-to-refresh gesture (WKWebView's

@@ -164,7 +164,7 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
     /// a view choice per screen; a leading slash cannot collide with a
     /// relative path. Matching on `relPath` instead meant no view or density
     /// change ever reached Home — the menu was there and did nothing.
-    var screenKey: String { isHome ? "/home" : relPath }
+    var screenKey: String { isHome ? LibraryBrowsing.homeScreenId : relPath }
 
     init(
         relPath: String, title: String, settings: LibraryViewSettings,

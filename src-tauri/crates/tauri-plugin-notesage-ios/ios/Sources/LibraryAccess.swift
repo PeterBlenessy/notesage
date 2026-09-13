@@ -747,19 +747,25 @@ enum LibraryAccess {
         } catch { completion(.failure(error)) }
     }
 
-    /// Delete a FILE (never a directory — recursive folder deletion stays off
-    /// the surface, #618) with a coordinated `.forDeleting` write. Deletions
-    /// inside the iCloud container land in iCloud Drive's "Recently Deleted"
-    /// (30-day recovery), which is the safety net for the no-confirm swipe.
+    /// Delete a file OR a folder (with everything in it) under a coordinated
+    /// `.forDeleting` write. Deletions inside the iCloud container land in
+    /// iCloud Drive's "Recently Deleted" (30-day recovery), which is the
+    /// safety net behind the confirmation.
+    ///
+    /// Folders were refused here until 2026-09-13, a guard left over from
+    /// swipe-delete (#619), which was files-only because the swipe row omits
+    /// directories. The long-press menu (#684) then offered Delete on every
+    /// entry and even asked "delete X and everything in it?" — so confirming
+    /// it threw, and because a native folder screen covers the web view the
+    /// error toast was never seen either. The folder simply stayed.
+    ///
+    /// `removeItem` is recursive, so the only thing to keep out is the root.
     static func deleteFile(_ rel: String) throws {
         guard !rel.isEmpty else { throw LibraryAccessError.ioError("cannot delete the library root") }
         let root = try resolveRoot()
         let scoped = root.startAccessingSecurityScopedResource()
         defer { if scoped { root.stopAccessingSecurityScopedResource() } }
         let fileURL = root.appendingPathComponent(rel)
-        if (try? fileURL.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true {
-            throw LibraryAccessError.ioError("directories cannot be deleted from the app")
-        }
         var coordError: NSError?
         var result: Result<Void, Error> = .failure(LibraryAccessError.ioError("uncoordinated"))
         NSFileCoordinator().coordinate(writingItemAt: fileURL, options: .forDeleting, error: &coordError) { url in

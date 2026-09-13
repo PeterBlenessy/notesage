@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { toast } from "sonner";
 import { log } from "@/lib/logger";
 import {
   iosSetLibraryBrowsing,
@@ -8,6 +7,7 @@ import {
   iosSetLibraryView,
 } from "@/lib/ios-api";
 import { t, getLocale, type MessageKey } from "@/lib/i18n";
+import { reportActionError } from "@/lib/mobile-action-report";
 import { toggleSpeech } from "@/lib/speech-controller";
 import { useMobileStore, resolveFolderView, screenKeyOf } from "@/stores/mobile-store";
 
@@ -150,7 +150,9 @@ export function useNativeLibrary(active: boolean): boolean {
       // that is not a folder. The native side refuses to navigate; this says
       // why, in the same words the web cards used.
       else if (detail.kind === "folderFailed")
-        toast.error(t("action.createFolderFailed", { error: title ?? "" }));
+        // Natively, not as a toast: this fires from a Home card, so a native
+        // screen is on top and the web view is not visible behind it.
+        void reportActionError(t("action.createFolderFailed", { error: title ?? "" }));
       // Everything else is NOT ours. `menu` and `swipe:*` belong to
       // `LibraryBrowser`'s listener, which has the listing needed to find the
       // entry. This used to end in a bare `else openDocument(...)`, so

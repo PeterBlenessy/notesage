@@ -15,7 +15,13 @@ import { t } from "@/lib/i18n";
 import { log } from "@/lib/logger";
 import { setNavigationGate, useMobileStore } from "@/stores/mobile-store";
 
-import { deriveNavStack, diffNavStack, storeStateForScreen, type NavScreen } from "./nav-stack";
+import {
+  HOME_EDITOR_KEY,
+  deriveNavStack,
+  diffNavStack,
+  storeStateForScreen,
+  type NavScreen,
+} from "./nav-stack";
 import { setNavShellPresented, useNavShellPresented } from "./nav-shell-state";
 
 /**
@@ -134,7 +140,11 @@ export function useNativeNavShell(active: boolean): void {
       openDoc,
       homeEditorOpen,
       rootTitle,
-      homeEditorTitle: t("menu.editHome"),
+      // `home.editTitle`, not `menu.editHome`: the MENU row ends in an
+      // ellipsis because it opens something, and a screen you have already
+      // arrived at should not still be promising to take you there. The
+      // screen that draws itself uses the same key.
+      homeEditorTitle: t("home.editTitle"),
     });
     if (reconciling.current) {
       rerun.current = true;
@@ -214,7 +224,7 @@ export function useNativeNavShell(active: boolean): void {
       applyingPop.current = true;
       try {
         const store = useMobileStore.getState();
-        if (screenId === "home-editor") {
+        if (screenId === HOME_EDITOR_KEY) {
           // Nothing above it to unwind.
         } else if (target.closesDoc) {
           if (store.openDoc) store.closeDocument();

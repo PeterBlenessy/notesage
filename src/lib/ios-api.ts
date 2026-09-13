@@ -425,13 +425,16 @@ export async function iosContextMenu(options: {
   title?: string;
   items: IosContextMenuItem[];
   at?: { x: number; y: number };
+  /** The dismiss row's label. "Cancel" is right for a menu and wrong for a
+   *  message the user can only acknowledge — see `reportActionError`. */
+  cancelLabel?: string;
 }): Promise<string | null> {
   const chosen = await invoke<string | null>("ios_context_menu", {
     title: options.title ?? null,
     items: options.items,
     x: options.at?.x ?? null,
     y: options.at?.y ?? null,
-    cancelLabel: t("common.cancel"),
+    cancelLabel: options.cancelLabel ?? t("common.cancel"),
   });
   return chosen ?? null;
 }

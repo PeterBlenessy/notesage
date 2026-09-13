@@ -48,6 +48,14 @@ protocol LibrarySpeechObserver: AnyObject {
 final class LibraryBrowsing: LibraryFolderHost {
     static let shared = LibraryBrowsing()
 
+    /// Home's screen id, and the web layer's `HOME_KEY`.
+    ///
+    /// The leading slash is load-bearing on BOTH sides: a folder is named by
+    /// its relative path, and a relative path can never begin with "/", so
+    /// this can never be confused with the folder screen for the root — which
+    /// is a different screen showing the same directory ("All Folders").
+    static let homeScreenId = "/home"
+
     /// Set by the plugin when the frontend says the native surface is on.
     /// Off by default so a build where the wiring is incomplete behaves
     /// exactly as it did before.
@@ -148,7 +156,7 @@ final class LibraryBrowsing: LibraryFolderHost {
     func makeScreen(rel: String, title: String, isHome: Bool = false) -> LibraryFolderScreen {
         let screen = LibraryFolderScreen(
             relPath: rel, title: title,
-            settings: settings(for: isHome ? "/home" : rel), host: self, isHome: isHome)
+            settings: settings(for: isHome ? Self.homeScreenId : rel), host: self, isHome: isHome)
         screens.add(screen)
         return screen
     }

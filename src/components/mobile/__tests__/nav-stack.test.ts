@@ -1,7 +1,7 @@
 import { HOME_KEY } from "@/lib/home-file";
 import { describe, it, expect } from "vitest";
 
-import {
+import { HOME_EDITOR_KEY,
   deriveNavStack,
   diffNavStack,
   documentScreenId,
@@ -67,7 +67,7 @@ describe("deriveNavStack", () => {
       homeEditorOpen: true,
       folderStack: [folder("Inbox")],
     });
-    expect(stack.map((s) => s.id)).toEqual([HOME_KEY, "home-editor"]);
+    expect(stack.map((s) => s.id)).toEqual([HOME_KEY, HOME_EDITOR_KEY]);
   });
 
   it("gives a document a different id from a folder of the same path", () => {

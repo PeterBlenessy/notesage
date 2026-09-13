@@ -78,7 +78,13 @@ describe("entryMenuItems", () => {
     const onListen = vi.fn();
     const page: FileEntry = { ...file, name: "story.html", path: "Inbox/story.html" };
     expect(entryMenuItems(page, ctx({ onListen })).map((i) => i.id)).toContain("listen");
-    expect(entryMenuItems(file, ctx({ onListen })).map((i) => i.id)).not.toContain("listen");
+    // A NOTE too. The row has always drawn a Listen control for markdown and
+    // plain text (`isSpeakable`); the menu tested `.html` alone, so the long
+    // press was missing an action the row right under it was offering.
+    expect(entryMenuItems(file, ctx({ onListen })).map((i) => i.id)).toContain("listen");
+    expect(
+      entryMenuItems({ ...file, name: "scan.pdf" }, ctx({ onListen })).map((i) => i.id),
+    ).not.toContain("listen");
     expect(entryMenuItems(page, ctx()).map((i) => i.id)).not.toContain("listen");
     await runEntryAction("listen", page, ctx({ onListen }));
     expect(onListen).toHaveBeenCalledWith(page);

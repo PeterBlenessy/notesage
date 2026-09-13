@@ -16,12 +16,25 @@
 
 import { HOME_KEY } from "@/lib/home-file";
 
+/**
+ * The Home editor's screen id.
+ *
+ * Slash-prefixed for the same reason `HOME_KEY` is: a relative path can never
+ * begin with `/`, so this cannot collide with a folder someone happens to
+ * name "home-editor". It also tells the NATIVE side what kind of screen this
+ * is — `NativeNavShell.push` hands the live web view to `doc:` and `/`-
+ * prefixed screens and draws everything else itself, which is how a bare
+ * `home-editor` came to be treated as a folder whose path did not exist, and
+ * pushed a blank screen.
+ */
+export const HOME_EDITOR_KEY = "/home-editor";
+
 export interface NavScreen {
   /** Stable identity. `HOME_KEY` (`/home`) is Home; a folder is its relative
    *  path — including `""` for All Folders, which is the root shown
    *  uncurated; a document is `doc:<relPath>`; the Home editor is
-   *  `home-editor`. A leading slash cannot be a relative path, which is what
-   *  keeps Home and All Folders apart. */
+   *  `HOME_EDITOR_KEY`. A leading slash cannot be a relative path, which is
+   *  what keeps all three apart from a folder. */
   id: string;
   /** What the navigation bar shows. */
   title: string;
@@ -61,7 +74,7 @@ export function deriveNavStack(input: NavStackInputs): NavScreen[] {
   // `folderDepth` was 0. One id, two screens, every symptom downstream.
   const screens: NavScreen[] = [{ id: HOME_KEY, title: input.rootTitle }];
   if (input.homeEditorOpen) {
-    screens.push({ id: "home-editor", title: input.homeEditorTitle });
+    screens.push({ id: HOME_EDITOR_KEY, title: input.homeEditorTitle });
     return screens;
   }
   for (const folder of input.folderStack) {
@@ -128,7 +141,7 @@ export function storeStateForScreen(
   // Home is not a folder level; All Folders IS one, and its id is the root's
   // own path — the empty string. Excluding `""` here is what hid it.
   const folders = above.filter(
-    (s) => s.id !== HOME_KEY && s.id !== "home-editor" && !s.id.startsWith("doc:"),
+    (s) => s.id !== HOME_KEY && s.id !== HOME_EDITOR_KEY && !s.id.startsWith("doc:"),
   );
   const docs = above.filter((s) => s.id.startsWith("doc:"));
   return {
