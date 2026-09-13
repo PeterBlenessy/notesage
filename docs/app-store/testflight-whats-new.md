@@ -26,18 +26,23 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-All Folders behaves like a real screen now.
+Reading progress shows up on its own now, and your folders keep their colours.
+
+NEW
+• Top-level folders wear the icon and colour you gave them on the Mac, in
+lists and on the gallery cards.
 
 FIXED
-• All Folders ignored the view menu and its long press did nothing. It shared
-an identity with Home, so the app thought you were still on Home the whole
-time and applied your choices there. Searching it was dead for the same
-reason.
-• Compact is offered on Home again, and on any list of folders — it does
-change them.
-• Folder icons are no longer specks: they scale with the row or card.
+• The progress bar under an article used to appear only after restarting the
+app. Closing the reader writes your place immediately, so the row updates
+while you watch.
+• Progress is read per folder, so an article filed out of the Inbox keeps its
+bar instead of losing it.
+• Renaming or deleting a file no longer leaves the old row behind for a
+moment.
+• Scrolling a large folder no longer stutters on the first pass.
 
 TRY
-• All Folders: switch list/gallery/compact and search. Home should keep its
-own separate view.
-• Hold a folder there and choose Show on Home.
+• Open an article, read part of it, come straight back. The bar should already
+be there.
+• Give a folder an icon and colour on the Mac, then pull to refresh here.
