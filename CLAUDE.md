@@ -179,10 +179,14 @@ export PATH="/opt/homebrew/bin:$PATH"          # idb must find idb_companion
     trailing `…`. Only the ROOT (Home) does. Automation that looks them up by
     label finds nothing, does nothing, and reports success — which surfaced
     two layers away as a "gallery" screenshot byte-identical to the list one.
-    Tap those two positions blind instead: `(40, 88)` and `(398, 84)`, placed
-    by the nav shell rather than by content.
-  - Home's rows are drawn by the React renderer (#1000 step 3), so they are
-    absent entirely; only the native chrome is there.
+    Tap those two positions blind instead — but **derive them from the screen
+    width**: leading is `(40, 88)` on every phone, trailing is
+    `(width - 38, 84)`. A fixed `398` is the Pro **Max**'s button and four
+    points outside the frame on a 402pt Pro, where it taps nothing and
+    reports "the menu did not open".
+  - The document picker is a separate process, and NONE of it reaches the
+    tree — granting a library folder is the one step that has to be tapped by
+    coordinate or by hand.
 
   After any step that is supposed to change the screen, compare a screenshot
   hash before and after. "The tap returned successfully" is not evidence.
