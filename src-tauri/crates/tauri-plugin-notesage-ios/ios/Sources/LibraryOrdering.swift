@@ -655,3 +655,120 @@ struct LibraryReconfigureGate {
         return Array(waiting)
     }
 }
+
+// MARK: - Scroll memory
+
+/// Which ROW a folder screen was resting on.
+///
+/// A row, and deliberately nothing finer. Three pixel-based attempts came
+/// before this one and every one was wrong on a device while looking right in
+/// the code: `contentOffset.y` is measured against `adjustedContentInset.top`,
+/// that inset changes as the large-title navigation bar collapses, and during
+/// a pop it is mid-animation. Corrections for it were out by 59pt, then
+/// 214pt, then a row, then six rows at the end of a listing.
+///
+/// Storing an identifier and putting that row back at the top removes the
+/// arithmetic entirely — `scrollToItem` owns the inset maths, and it is the
+/// same code UIKit uses everywhere else. The cost is that a position halfway
+/// down a row snaps to the row's top, which is a pixel nobody asked for; the
+/// benefit is that it is right every time.
+///
+/// Where each folder screen was, by screen key.
+///
+/// UIKit-free and held by the host rather than the screen because a POP
+/// deallocates the controller: the anchor has to outlive the thing that had
+/// it. Tested by `scripts/check-library-ordering.sh` — bounding, prefix
+/// handling and rename-following are exactly the kind of thing that is wrong
+/// in ways a screenshot does not show.
+///
+/// Not persisted, matching the web layer's `scrollOffsets`: returning to a
+/// folder you were halfway down should land you there, but one you last
+/// opened a week ago should open at the top.
+struct LibraryScrollMemory {
+    /// Most-recently-touched keys last. Bounded because this is per process
+    /// and nothing else prunes it.
+    private(set) var order: [String] = []
+    private(set) var anchors: [String: String] = [:]
+    private let limit: Int
+
+    init(limit: Int = 64) { self.limit = limit }
+
+    mutating func remember(_ item: String, for key: String) {
+        anchors[key] = item
+        order.removeAll { $0 == key }
+        order.append(key)
+        while order.count > limit, let oldest = order.first {
+            order.removeFirst()
+            anchors.removeValue(forKey: oldest)
+        }
+    }
+
+    func anchor(for key: String) -> String? { anchors[key] }
+
+    /// Forget a path AND everything under it.
+    ///
+    /// Deleting a folder and later making another with the same name would
+    /// otherwise hand the new one a position it never had. Descendants go
+    /// too: deleting `Work` must not leave `Work/Q3` to ambush a future one.
+    mutating func forget(_ key: String) {
+        let prefix = key + "/"
+        for existing in order where existing == key || existing.hasPrefix(prefix) {
+            anchors.removeValue(forKey: existing)
+        }
+        order.removeAll { $0 == key || $0.hasPrefix(prefix) }
+    }
+
+    /// Follow a rename or a move.
+    ///
+    /// Two separate things have to travel, and conflating them missed the
+    /// commoner one. A KEY is a folder that was scrolled; an ITEM is the row
+    /// that folder was resting on. Renaming a folder moves keys. Renaming a
+    /// FILE moves no key at all — the file is never a screen — but it may
+    /// well be some folder's anchor, and leaving that anchor pointing at the
+    /// old path means the row is looked up, not found, and the folder opens
+    /// at the top even though the file is still right there under a new name.
+    mutating func rewrite(from: String, to: String) {
+        guard from != to else { return }
+        let prefix = from + "/"
+        func moved(_ path: String) -> String {
+            path == from ? to : to + String(path.dropFirst(from.count))
+        }
+        func touches(_ path: String) -> Bool {
+            path == from || path.hasPrefix(prefix)
+        }
+
+        // The rows, wherever they are remembered — including in a folder that
+        // is not itself affected by the rename.
+        for (key, item) in anchors where touches(item) {
+            anchors[key] = moved(item)
+        }
+
+        // The screens.
+        for (index, key) in order.enumerated() where touches(key) {
+            let newKey = moved(key)
+            if let value = anchors.removeValue(forKey: key) { anchors[newKey] = value }
+            order[index] = newKey
+        }
+
+        // A rename can land on a key that already existed — a stale entry for
+        // a path that was deleted without the delete reaching `forget`. The
+        // move above then writes one anchor over the other and leaves `order`
+        // holding the same key twice, so it no longer agrees with `anchors`
+        // and the LRU counts a folder as two. Keep the most recent mention
+        // and drop the rest: the renamed folder IS the newer fact.
+        var seen: Set<String> = []
+        var deduped: [String] = []
+        for key in order.reversed() where seen.insert(key).inserted { deduped.append(key) }
+        order = deduped.reversed()
+    }
+}
+
+/// The item to scroll back to, or `nil` to leave the screen at the top.
+///
+/// `nil` when the anchor's item is not in the listing any more — it was
+/// deleted, filed elsewhere, or a filter is hiding it. Scrolling to a
+/// neighbour would be a guess, and the top is the honest answer.
+func libraryScrollTarget(_ anchor: String?, in items: [String]) -> String? {
+    guard let anchor, items.contains(anchor) else { return nil }
+    return anchor
+}

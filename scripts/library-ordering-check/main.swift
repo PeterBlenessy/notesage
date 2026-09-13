@@ -499,5 +499,100 @@ let only = idle.beginLayoutChange()
 check("gate: a change with nothing held flushes empty",
     idle.finishLayoutChange(only) ?? ["unexpected"], [String]())
 
+// --- scroll memory ---------------------------------------------------------
+
+var mem = LibraryScrollMemory()
+mem.remember("Work/a.md", for: "Work")
+check("scroll: remembers the row at the top", mem.anchor(for: "Work") ?? "", "Work/a.md")
+check("scroll: an unvisited screen has no anchor", mem.anchor(for: "Nope") == nil, true)
+
+// A deleted folder must not hand its position to a new one of the same name.
+mem.remember("Work/Q3/b.md", for: "Work/Q3")
+mem.remember("Working/c.md", for: "Working")
+mem.forget("Work")
+check("scroll: forget drops the folder", mem.anchor(for: "Work") == nil, true)
+check("scroll: and everything under it", mem.anchor(for: "Work/Q3") == nil, true)
+check("scroll: but not a folder that merely shares a prefix",
+    mem.anchor(for: "Working") ?? "", "Working/c.md")
+
+// A rename carries the position — and rewrites the anchor, which names a
+// path that moved with the folder.
+var renamed = LibraryScrollMemory()
+renamed.remember("Work/a.md", for: "Work")
+renamed.remember("Work/Q3/b.md", for: "Work/Q3")
+renamed.remember("Workshop/d.md", for: "Workshop")
+renamed.rewrite(from: "Work", to: "Archive")
+check("scroll: rename carries the screen", renamed.anchor(for: "Archive") ?? "", "Archive/a.md")
+check("scroll: and its children", renamed.anchor(for: "Archive/Q3") ?? "", "Archive/Q3/b.md")
+check("scroll: leaving the old key empty", renamed.anchor(for: "Work") == nil, true)
+check("scroll: and a prefix-sharing sibling alone",
+    renamed.anchor(for: "Workshop") ?? "", "Workshop/d.md")
+
+// Renaming a FILE moves no screen key — a file is never a screen — but it is
+// very likely some folder's anchor. Missing this meant the commonest rename
+// of all silently dropped the position it was supposed to carry.
+var leaf = LibraryScrollMemory()
+leaf.remember("Notes/x.md", for: "Notes")
+leaf.rewrite(from: "Notes/x.md", to: "Notes/y.md")
+check("scroll: a renamed FILE is followed by the folder resting on it",
+    leaf.anchor(for: "Notes") ?? "", "Notes/y.md")
+
+// Filing a file into another folder is the same shape.
+var filed = LibraryScrollMemory()
+filed.remember("Inbox/a.html", for: "Inbox")
+filed.rewrite(from: "Inbox/a.html", to: "Essays/a.html")
+check("scroll: a moved file is followed too",
+    filed.anchor(for: "Inbox") ?? "", "Essays/a.html")
+
+// A folder rename has to move the key AND fix references from elsewhere.
+var both = LibraryScrollMemory()
+both.remember("Work/a.md", for: "Work")
+both.remember("Work/a.md", for: "Other")
+both.rewrite(from: "Work", to: "Archive")
+check("scroll: folder rename moves the key", both.anchor(for: "Archive") ?? "", "Archive/a.md")
+check("scroll: and fixes a reference from an unrelated screen",
+    both.anchor(for: "Other") ?? "", "Archive/a.md")
+
+// A rename can land on a key that already exists — a stale entry left by a
+// delete that never reached `forget`. One anchor wins; what must NOT happen
+// is `order` keeping the key twice, which desyncs it from `anchors`.
+var collide = LibraryScrollMemory()
+collide.remember("B/old.md", for: "B")
+collide.remember("A/new.md", for: "A")
+collide.rewrite(from: "A", to: "B")
+check("scroll: a collision keeps the renamed folder's anchor",
+    collide.anchor(for: "B") ?? "", "B/new.md")
+check("scroll: and leaves no duplicate key", collide.order.count, 1)
+check("scroll: so order and anchors still agree",
+    collide.order.count == collide.anchors.count, true)
+
+// Bounded: a long session walking a big library cannot grow this forever.
+var bounded = LibraryScrollMemory(limit: 3)
+for name in ["a", "b", "c", "d"] { bounded.remember(name + "/x.md", for: name) }
+check("scroll: the oldest entry is evicted", bounded.anchor(for: "a") == nil, true)
+check("scroll: the newest are kept", bounded.anchor(for: "d") != nil, true)
+check("scroll: and the limit holds", bounded.anchors.count, 3)
+
+// Touching a key makes it recent again, so the folder you keep coming back
+// to is not the one evicted.
+var lru = LibraryScrollMemory(limit: 2)
+lru.remember("a/1.md", for: "a")
+lru.remember("b/1.md", for: "b")
+lru.remember("a/2.md", for: "a")
+lru.remember("c/1.md", for: "c")
+check("scroll: a re-remembered key survives eviction", lru.anchor(for: "a") ?? "", "a/2.md")
+check("scroll: the untouched one goes", lru.anchor(for: "b") == nil, true)
+
+// --- choosing the target ---------------------------------------------------
+
+check("target: the remembered row, when it is still listed",
+    libraryScrollTarget("b.md", in: ["a.md", "b.md", "c.md"]) ?? "", "b.md")
+// Deleted, filed elsewhere, or hidden by a filter — scrolling to a neighbour
+// would be a guess.
+check("target: nothing when the row is gone",
+    libraryScrollTarget("b.md", in: ["a.md", "c.md"]) == nil, true)
+check("target: nothing when there is no anchor",
+    libraryScrollTarget(nil, in: ["a.md"]) == nil, true)
+
 print(failures == 0 ? "\nall good" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

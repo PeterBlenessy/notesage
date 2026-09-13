@@ -252,6 +252,31 @@ final class LibraryBrowsing: LibraryFolderHost {
         onOpen?("folderFailed", rel, reason)
     }
 
+    /// Where each screen was scrolled to, by screen key.
+    ///
+    /// Held here rather than on the screen because a POP deallocates the
+    /// controller: the position has to outlive the thing that had it, or
+    /// going back and forward twice forgets. The type itself is UIKit-free
+    /// and tested by `scripts/check-library-ordering.sh` — bounding, prefix
+    /// handling and rename-following are exactly the kind of thing that is
+    /// wrong in ways a screenshot does not show.
+    private var scroll = LibraryScrollMemory()
+
+    func rememberScroll(_ item: String, for key: String) {
+        scroll.remember(item, for: key)
+    }
+
+    func rememberedScroll(for key: String) -> String? { scroll.anchor(for: key) }
+
+    /// A path is gone: drop its remembered position, and its children's.
+    ///
+    /// Without this, deleting a folder and later making another with the same
+    /// name hands the new one a position it never had.
+    func forgetScroll(_ rel: String) { scroll.forget(rel) }
+
+    /// A path moved: the position travels with it.
+    func moveScroll(from: String, to: String) { scroll.rewrite(from: from, to: to) }
+
     func presentMenu(for rel: String) {
         onOpen?("menu", rel, nil)
     }

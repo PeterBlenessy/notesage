@@ -1105,14 +1105,33 @@ class NotesageIosPlugin: Plugin {
     do {
       let args = try invoke.parseArgs(RelPathArgs.self)
       try LibraryAccess.deleteFile(args.relPath)
-      invoke.resolve()
+      // This command is the one chokepoint every deletion passes through, so
+      // it is where the remembered scroll position is dropped. A folder that
+      // is gone must not lend its position to a later folder that happens to
+      // take the same name.
+      // Resolved INSIDE the hop, not beside it. These commands run on Tauri's
+      // ipc queue, `LibraryBrowsing` is `@MainActor`, and resolving first
+      // would let the web layer's reload race the forget — leaving the screen
+      // memory holding a path that is already gone. Ordering by construction
+      // rather than by luck, which is how the rest of this file does it.
+      let gone = args.relPath
+      DispatchQueue.main.async {
+        LibraryBrowsing.shared.forgetScroll(gone)
+        invoke.resolve()
+      }
     } catch { invoke.reject(String(describing: error)) }
   }
 
   @objc public func renameFile(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(RenameArgs.self)
-      invoke.resolve(["relPath": try LibraryAccess.renameFile(args.relPath, to: args.newName)])
+      let from = args.relPath
+      let to = try LibraryAccess.renameFile(from, to: args.newName)
+      // The position follows the folder, for it and everything nested in it.
+      DispatchQueue.main.async {
+        LibraryBrowsing.shared.moveScroll(from: from, to: to)
+        invoke.resolve(["relPath": to])
+      }
     } catch { invoke.reject(String(describing: error)) }
   }
 
@@ -1121,9 +1140,12 @@ class NotesageIosPlugin: Plugin {
   @objc public func moveFile(_ invoke: Invoke) {
     do {
       let args = try invoke.parseArgs(MoveArgs.self)
-      invoke.resolve([
-        "relPath": try LibraryAccess.moveFile(args.relPath, toDirectory: args.destDir)
-      ])
+      let from = args.relPath
+      let to = try LibraryAccess.moveFile(from, toDirectory: args.destDir)
+      DispatchQueue.main.async {
+        LibraryBrowsing.shared.moveScroll(from: from, to: to)
+        invoke.resolve(["relPath": to])
+      }
     } catch { invoke.reject(String(describing: error)) }
   }
 
