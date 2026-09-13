@@ -11,7 +11,6 @@
  * surfaces can never drift apart.
  */
 
-import { toast } from "sonner";
 import type { FileEntry } from "@/lib/tauri";
 import {
   iosContextMenu,
@@ -24,7 +23,11 @@ import {
   iosTextPrompt,
   type IosEntryMenuItem,
 } from "@/lib/ios-api";
+import { toast } from "sonner";
+
+import { isSpeakable } from "@/components/mobile/FileRow";
 import { t } from "@/lib/i18n";
+import { reportActionDone, reportActionError } from "@/lib/mobile-action-report";
 import { useMobileStore } from "@/stores/mobile-store";
 import { evictThumbnail, getThumbnail } from "@/lib/mobile-thumbnails";
 import { isHomeCandidate } from "@/lib/home-file";
@@ -101,7 +104,14 @@ export function entryMenuItems(entry: FileEntry, ctx: EntryActionContext): IosEn
         : { id: "home-show", title: t("action.showOnHome"), systemImage: "house" },
     );
   }
-  if (ctx.onListen && !entry.is_directory && /\.html?$/i.test(entry.name)) {
+  // The UNION of the two row predicates, which is what `libraryIsSpeakable`
+  // already is on the Swift side. `isSpeakable` deliberately excludes `.html`
+  // because a capture is drawn by `ArticleRow`, which carries its own Listen
+  // button — so neither predicate alone describes "this file can be read
+  // aloud". The menu tested `.html` only, and was therefore missing Listen on
+  // notes and plain text, where the ROW offers it: the same action present on
+  // the row and absent from the long press on it.
+  if (ctx.onListen && (isSpeakable(entry) || /\.html?$/i.test(entry.name))) {
     // The same gesture as the row's control, so the same label: Pause or
     // Play for the article playing, Listen for any other.
     const session = useMobileStore.getState().speech;
@@ -211,7 +221,7 @@ export async function runEntryAction(
       return;
     case "share":
       await iosShareFile(entry.path).catch((err) =>
-        toast.error(t("action.shareFailed", { error: String(err) })),
+        void reportActionError(t("action.shareFailed", { error: String(err) })),
       );
       return;
     case "rename": {
@@ -234,13 +244,13 @@ export async function runEntryAction(
           ctx.onPathMoved?.(entry.path, finalRel);
           ctx.onChanged?.();
         })
-        .catch((err) => toast.error(t("action.renameFailed", { error: String(err) })));
+        .catch((err) => reportActionError(t("action.renameFailed", { error: String(err) })));
       return;
     }
     case "pin":
       await ctx
         .togglePin(entry.path)
-        .catch((err) => toast.error(t("action.pinFailed", { error: String(err) })));
+        .catch((err) => reportActionError(t("action.pinFailed", { error: String(err) })));
       return;
     case "delete": {
       if (!(await confirmDelete(entry))) return;
@@ -253,7 +263,7 @@ export async function runEntryAction(
           ctx.onPathRemoved?.(entry.path);
           ctx.onChanged?.();
         })
-        .catch((err) => toast.error(t("action.deleteFailed", { error: String(err) })));
+        .catch((err) => reportActionError(t("action.deleteFailed", { error: String(err) })));
       return;
     }
     case "move": {
@@ -273,9 +283,9 @@ export async function runEntryAction(
         // stays in Recent pointing at nothing and silently loses its pin.
         ctx.onPathMoved?.(entry.path, moved);
         ctx.onChanged?.();
-        toast.success(t("action.movedTo", { name: dirLabel(dest) }));
+        reportActionDone(t("action.movedTo", { name: dirLabel(dest) }));
       } catch (err) {
-        toast.error(t("action.moveFailed", { error: String(err) }));
+        void reportActionError(t("action.moveFailed", { error: String(err) }));
       }
       return;
     }
@@ -327,6 +337,11 @@ export async function presentEntryMenu(
     // a long press that raises no menu indistinguishable from a long press
     // that was never noticed. That cost an hour of guessing when folders
     // stopped offering "Show on Home".
+    // The ONE failure that stays a toast. Everything else here reports
+    // natively because a native screen is covering the web view — but what
+    // just failed IS the native presenter, and "nothing to present over" or
+    // "another sheet is already open" would defeat a second sheet the same
+    // way. A toast at least reaches the log and the web surfaces.
     toast.error(String(err));
     return null;
   });

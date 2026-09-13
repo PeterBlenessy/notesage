@@ -26,23 +26,18 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Reading progress shows up on its own now, and your folders keep their colours.
-
-NEW
-• Top-level folders wear the icon and colour you gave them on the Mac, in
-lists and on the gallery cards.
+Menu actions that did nothing now do what they say.
 
 FIXED
-• The progress bar under an article used to appear only after restarting the
-app. Closing the reader writes your place immediately, so the row updates
-while you watch.
-• Progress is read per folder, so an article filed out of the Inbox keeps its
-bar instead of losing it.
-• Renaming or deleting a file no longer leaves the old row behind for a
-moment.
-• Scrolling a large folder no longer stutters on the first pass.
+• Deleting a folder did nothing at all — no folder removed, no error. It
+works now, and takes what is inside it, as the confirmation says.
+• Anything that failed on a folder screen failed silently. Failures say so
+now, and a completed move says where it went.
+• Edit Home opened an empty screen.
+• Listen was missing from a note's long-press menu, though the row itself
+offered it.
 
 TRY
-• Open an article, read part of it, come straight back. The bar should already
-be there.
-• Give a folder an icon and colour on the Mac, then pull to refresh here.
+• Hold a folder, choose Delete, confirm. It should go.
+• The … menu → Edit Home: the list of folders should be there.
+• Hold a note: Listen should be in the menu, and should play.

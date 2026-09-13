@@ -25,23 +25,19 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Lässtatus dyker upp av sig själv nu, och dina mappar behåller sina färger.
-
-NYTT
-• Mappar på översta nivån bär ikonen och färgen du gav dem på datorn, både i
-listor och på gallerikorten.
+Menyval som inte gjorde något gör nu det de säger.
 
 RÄTTAT
-• Stapeln under en artikel syntes tidigare först efter en omstart av appen.
-När du stänger läsaren sparas din plats direkt, så raden uppdateras medan du
-tittar.
-• Lässtatus läses per mapp, så en artikel du flyttat ut ur Inkorgen behåller
-sin stapel i stället för att tappa den.
-• Att byta namn på eller ta bort en fil lämnar inte längre kvar den gamla
-raden ett ögonblick.
-• Att bläddra i en stor mapp hackar inte längre första gången.
+• Att radera en mapp gjorde ingenting alls — ingen mapp försvann, inget
+felmeddelande. Nu fungerar det, och det som ligger i mappen följer med, precis
+som bekräftelsen säger.
+• Allt som misslyckades på en mappskärm misslyckades tyst. Nu syns felen, och
+en flytt som gått igenom säger vart filen tog vägen.
+• Redigera Hem öppnade en tom skärm.
+• Lyssna saknades i långtrycksmenyn för en anteckning, trots att raden själv
+erbjöd det.
 
 PROVA
-• Öppna en artikel, läs en bit, gå direkt tillbaka. Stapeln ska redan vara
-där.
-• Ge en mapp ikon och färg på datorn, dra sedan neråt för att uppdatera här.
+• Håll in en mapp, välj Radera, bekräfta. Den ska försvinna.
+• Menyn … → Redigera Hem: listan med mappar ska finnas där.
+• Håll in en anteckning: Lyssna ska finnas i menyn, och ska spela upp.

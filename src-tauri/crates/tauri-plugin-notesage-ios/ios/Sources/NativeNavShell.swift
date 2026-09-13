@@ -228,7 +228,7 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     // indistinguishable from the other — which collapsed the web layer's
     // folder stack and left it convinced it was at Home. A leading slash
     // cannot be a relative path, so the two can never collide.
-    let root = ScreenController(screenId: "/home", title: rootTitle)
+    let root = ScreenController(screenId: LibraryBrowsing.homeScreenId, title: rootTitle)
     let nav = UINavigationController(rootViewController: root)
     // Routed here rather than from the screens themselves: this is the only
     // object holding the web view, so it is the only one that can speak to the
@@ -351,7 +351,21 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     // one thing the web layer still renders. A FOLDER draws itself, and so is
     // never handed the web view at all: nothing to move, nothing to freeze,
     // nothing to thaw (#1000).
-    if LibraryBrowsing.shared.enabled && !screenId.hasPrefix("doc:") {
+    //
+    // The test used to be "not a document", which quietly meant "everything
+    // else is a folder" — so the Home editor, whose id is neither, was handed
+    // to `makeScreen` as a folder whose relative path was the literal string
+    // `home-editor`. That folder does not exist, so the menu item pushed a
+    // blank screen with a title and nothing in it.
+    //
+    // Screen ids are documented on `NavScreen` in `nav-stack.ts`: a folder is
+    // a RELATIVE PATH, and a relative path can never begin with "/". So the
+    // web screens are the `doc:` ones plus every "/"-prefixed sentinel, with
+    // Home itself the one sentinel the native layer does draw.
+    let isFolderScreen =
+      screenId == LibraryBrowsing.homeScreenId
+      || !(screenId.hasPrefix("doc:") || screenId.hasPrefix("/"))
+    if LibraryBrowsing.shared.enabled && isFolderScreen {
       screen.loadViewIfNeeded()
       screen.attachNative(
         LibraryBrowsing.shared.makeScreen(rel: screenId, title: title ?? ""))
