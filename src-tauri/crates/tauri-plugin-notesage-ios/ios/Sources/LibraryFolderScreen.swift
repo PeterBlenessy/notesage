@@ -95,6 +95,16 @@ protocol LibraryFolderHost: AnyObject {
     func speechState() -> LibrarySpeechState
     /// Ask to be told when that changes.
     func observeSpeech(_ observer: LibrarySpeechObserver)
+    /// Remember what this screen was looking at, by screen key.
+    ///
+    /// Per device and per session, like the web layer's `scrollOffsets`,
+    /// which is NOT persisted either: coming back to a folder you were
+    /// halfway down should land you there, but a folder you last opened a
+    /// week ago should open at the top rather than somewhere you no longer
+    /// remember scrolling to.
+    func rememberScroll(_ item: String, for key: String)
+    /// What was remembered, if anything.
+    func rememberedScroll(for key: String) -> String?
 }
 
 /// How this folder is displayed. Per folder, remembered by the host.
@@ -147,6 +157,14 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
     /// the same folder resolving out of order would put the older listing on
     /// screen. The web version carries the same counter for the same reason.
     private var loadGeneration = 0
+
+    /// Whether this screen has already been put back where it was.
+    ///
+    /// Once per appearance, and only after rows exist — restoring against an
+    /// empty collection view silently clamps to zero, which is the bug this
+    /// is here to fix rather than a state it should be able to reach. Reset
+    /// on disappear so the next return restores again.
+    private var restoredScroll = false
 
     /// Home is the root listing CURATED: two cards, the chosen folders, the
     /// root's own files, and everything else behind All Folders.
@@ -215,6 +233,28 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
         // Weakly held by the host, so popping this screen unsubscribes it.
         host?.observeSpeech(self)
         reload()
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        // Opening a document, or pushing a subfolder, and the position has
+        // to outlive this controller staying alive but off screen. Saved
+        // here rather than in `viewDidDisappear` because a pop deallocates
+        // the controller and the later hook is not a promise.
+        // Read ONCE, here. Recording continuously from `scrollViewDidScroll`
+        // was tried and is worse: it also fires while the navigation bar is
+        // collapsing and while the restore itself moves the offset, so the
+        // anchor kept being overwritten with positions the user never chose —
+        // measured nine rows out on a second visit.
+        //
+        // Guarded on `restoredScroll`: a cancelled interactive pop fires this
+        // on the screen revealed underneath too, and before its own restore
+        // has run what is on screen is the top of a freshly loaded list
+        // rather than anywhere the user chose.
+        if restoredScroll, let item = topVisibleItem {
+            host?.rememberScroll(item, for: screenKey)
+        }
+        restoredScroll = false
     }
 
     override func viewWillAppear(_ animated: Bool) {
@@ -383,7 +423,15 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
                 self.byPath = Dictionary(visible.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
                 self.warmArticleTitles(visible)
                 self.warmSidecars(visible)
-                self.rebuildSections(animated: true)
+                // The load, and so the one rebuild allowed to put the screen
+                // back where it was.
+                //
+                // NOT animated when a restore is coming: the rows would
+                // animate in from the top and then jump to the restored
+                // position a moment later, which reads as a flash on every
+                // return. Without an anchor there is nothing to jump to and
+                // the animation is the nicer of the two.
+                self.rebuildSections(animated: true, restoreScroll: true)
             }
         }
     }
@@ -402,7 +450,16 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
     ///   only from `apply(settings:)`, which does its own redraw afterwards.
     ///   A layout change in flight defers rather than drops — see below — so
     ///   the default is safe from `reload()` and pull-to-refresh too.
-    private func rebuildSections(animated: Bool, reconfigure: Bool = true) {
+    /// `restoreScroll` is false for everything except a LOAD.
+    ///
+    /// `rebuildSections` is also how a filter keystroke and a settings change
+    /// redraw, and the restore is one-shot per appearance — so letting either
+    /// of those reach it means a rebuild against a stale or filtered listing
+    /// spends the restore, and the real one, when the directory read finally
+    /// returns, silently never happens.
+    private func rebuildSections(
+        animated: Bool, reconfigure: Bool = true, restoreScroll: Bool = false
+    ) {
         guard let host else { return }
         let matched =
             filter.isEmpty
@@ -490,7 +547,64 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
                 if !now.isEmpty { snapshot.reconfigureItems(now) }
             }
         }
-        dataSource?.apply(snapshot, animatingDifferences: animated)
+        // The completion, NOT the next line. `apply` diffs off the calling
+        // thread and performs the update asynchronously, so a restore that
+        // ran here would measure `contentSize` before the rows it is about to
+        // clamp against exist. That is invisible whenever the listing has not
+        // changed — which is most manual testing — and lands short exactly
+        // when it has: a file synced in from the Mac while you were reading.
+        let rows = snapshot.itemIdentifiers.count
+        // Suppressed only when a restore is genuinely about to happen: the
+        // rows would otherwise animate in from the top and jump a moment
+        // later, which reads as a flash. Decided HERE rather than at the call
+        // site because only here is the listing known — an anchor whose row
+        // has since been deleted restores nothing, and that case should keep
+        // its animation.
+        //
+        // `!restoredScroll` matters: `reload()` also runs on pull-to-refresh
+        // and on an external change while the screen stays put, and the
+        // restore is one-shot per appearance. Without this the animation was
+        // suppressed on every later reload for a restore that would decline
+        // to happen — so a file synced in mid-read stopped animating in.
+        let willRestore =
+            restoreScroll && !restoredScroll
+            && libraryScrollTarget(
+                host.rememberedScroll(for: screenKey), in: snapshot.itemIdentifiers) != nil
+        dataSource?.apply(snapshot, animatingDifferences: animated && !willRestore) { [weak self] in
+            guard let self, restoreScroll else { return }
+            self.restoreScrollIfNeeded(rowCount: rows)
+        }
+    }
+
+    /// The row at the top of the viewport right now.
+    private var topVisibleItem: String? {
+        guard let dataSource else { return nil }
+        let top = collectionView.contentOffset.y + collectionView.adjustedContentInset.top
+        // The first row still showing: the one being read, rather than the
+        // one just scrolled past.
+        for indexPath in collectionView.indexPathsForVisibleItems.sorted() {
+            guard let attributes = collectionView.layoutAttributesForItem(at: indexPath),
+                attributes.frame.maxY > top
+            else { continue }
+            return dataSource.itemIdentifier(for: indexPath)
+        }
+        return nil
+    }
+
+    /// Put the screen back on the row it was showing.
+    ///
+    /// `scrollToItem`, so UIKit owns the inset arithmetic. Doing it by hand
+    /// is what the three previous attempts did, and each was wrong on a
+    /// device in a different way — see `LibraryScrollMemory`.
+    private func restoreScrollIfNeeded(rowCount: Int) {
+        guard !restoredScroll, rowCount > 0, let dataSource else { return }
+        restoredScroll = true
+        let anchor = host?.rememberedScroll(for: screenKey)
+        guard let target = libraryScrollTarget(anchor, in: dataSource.snapshot().itemIdentifiers),
+            let indexPath = dataSource.indexPath(for: target)
+        else { return }
+        collectionView.layoutIfNeeded()
+        collectionView.scrollToItem(at: indexPath, at: .top, animated: false)
     }
 
     /// A month header, in the device's language, with the year dropped inside
@@ -866,6 +980,7 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
 // MARK: - Selection, menus, prefetch
 
 extension LibraryFolderScreen: UICollectionViewDelegate {
+
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         collectionView.deselectItem(at: indexPath, animated: true)
         // Home's own rows first: they are not entries, so `entry(at:)` would
