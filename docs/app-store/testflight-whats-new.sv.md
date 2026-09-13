@@ -25,17 +25,23 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Alla mappar beter sig som en riktig skärm nu.
+Lässtatus dyker upp av sig själv nu, och dina mappar behåller sina färger.
+
+NYTT
+• Mappar på översta nivån bär ikonen och färgen du gav dem på datorn, både i
+listor och på gallerikorten.
 
 RÄTTAT
-• Alla mappar struntade i vymenyn och långtryck gjorde ingenting. Den delade
-identitet med Hem, så appen trodde att du fortfarande var på Hem och lade dina
-val där. Sökningen var död av samma skäl.
-• Kompakt erbjuds på Hem igen, och i vilken mapplista som helst — den ändrar
-faktiskt utseendet.
-• Mappikonerna är inte längre prickar: de skalar med raden eller kortet.
+• Stapeln under en artikel syntes tidigare först efter en omstart av appen.
+När du stänger läsaren sparas din plats direkt, så raden uppdateras medan du
+tittar.
+• Lässtatus läses per mapp, så en artikel du flyttat ut ur Inkorgen behåller
+sin stapel i stället för att tappa den.
+• Att byta namn på eller ta bort en fil lämnar inte längre kvar den gamla
+raden ett ögonblick.
+• Att bläddra i en stor mapp hackar inte längre första gången.
 
 PROVA
-• Alla mappar: växla lista/galleri/kompakt och sök. Hem ska behålla sin egen
-vy separat.
-• Håll in en mapp där och välj Visa på Hem.
+• Öppna en artikel, läs en bit, gå direkt tillbaka. Stapeln ska redan vara
+där.
+• Ge en mapp ikon och färg på datorn, dra sedan neråt för att uppdatera här.
