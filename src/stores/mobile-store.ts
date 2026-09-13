@@ -1082,23 +1082,36 @@ export const useMobileStore = create<MobileStore>()(
         // `togglePin`, and only when this path is actually pinned so an
         // ordinary move does not rewrite a shared file for nothing.
         let current: string[] = [];
+        let pinned = true;
         try {
           current = parsePinsFileContent(await iosReadFile(PINS_FILE_REL_PATH));
         } catch {
-          return;
+          pinned = false;
         }
-        if (!current.some(under)) return;
-        const next = current.map(swap);
-        // The rename or move on disk has already happened; a pins file that
-        // cannot be written must not turn it into a failure. The next
-        // read-modify-write of the file catches up.
-        try {
-          await iosEnsureDirectory(".notesage");
-          await iosWriteFile(PINS_FILE_REL_PATH, serializePinsFileContent(next));
-          set({ pinnedPaths: next });
-        } catch {
-          // Reported nowhere on purpose: see above.
+        if (pinned && current.some(under)) {
+          const next = current.map(swap);
+          // The rename or move on disk has already happened; a pins file that
+          // cannot be written must not turn it into a failure. The next
+          // read-modify-write of the file catches up.
+          try {
+            await iosEnsureDirectory(".notesage");
+            await iosWriteFile(PINS_FILE_REL_PATH, serializePinsFileContent(next));
+            set({ pinnedPaths: next });
+          } catch {
+            // Reported nowhere on purpose: see above.
+          }
         }
+        // Self-contained, like `setOnHome` and `togglePin`: this writes
+        // `pins.json` and `home.json`, so it is the one that knows when they
+        // are actually on disk. The caller's own `load(true)` fires its
+        // reload after a single directory listing and cannot wait for these
+        // round trips — so the native screens would re-read the OLD files and
+        // keep showing a renamed note under its old path.
+        //
+        // Reached on EVERY path, not only the pinned one: an early return
+        // would skip the reload after a `home.json` rewrite that did happen,
+        // which is the narrower version of the same bug.
+        void iosReloadLibraryScreens().catch(() => {});
       },
 
       forgetPath: async (relPath) => {
@@ -1118,20 +1131,28 @@ export const useMobileStore = create<MobileStore>()(
         // The shared pins file too, only when something under the path is
         // pinned — the same read-modify-write as `togglePin`.
         let current: string[] = [];
+        let readable = true;
         try {
           current = parsePinsFileContent(await iosReadFile(PINS_FILE_REL_PATH));
         } catch {
-          return;
+          readable = false;
         }
-        if (!current.some(under)) return;
-        const next = current.filter((p) => !under(p));
-        try {
-          await iosWriteFile(PINS_FILE_REL_PATH, serializePinsFileContent(next));
-          set({ pinnedPaths: next });
-        } catch {
-          // The delete has already happened; the pins file catches up on
-          // the next read-modify-write.
+        if (readable && current.some(under)) {
+          const next = current.filter((p) => !under(p));
+          try {
+            await iosWriteFile(PINS_FILE_REL_PATH, serializePinsFileContent(next));
+            set({ pinnedPaths: next });
+          } catch {
+            // The delete has already happened; the pins file catches up on
+            // the next read-modify-write.
+          }
         }
+        // See `rewritePath`: the write finishes here, so the reload belongs
+        // here too rather than in a caller that cannot wait for it — and it
+        // is reached whether or not the pins file changed, because the
+        // STORE's own drop (recents, progress, the doc trail) is something
+        // the native rows draw from as well.
+        void iosReloadLibraryScreens().catch(() => {});
       },
 
       reset: () =>

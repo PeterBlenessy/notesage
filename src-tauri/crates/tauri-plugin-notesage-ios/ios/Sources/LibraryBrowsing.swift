@@ -40,6 +40,11 @@ protocol LibrarySpeechObserver: AnyObject {
 
 /// Reads the two shared sidecars, cached per read-through so a folder of
 /// several hundred rows does not re-parse them per cell.
+/// Main-actor by construction. Every cache here is read during cell
+/// configuration and written from a sidecar read's completion, so "touched
+/// only on the main thread" is the invariant that keeps them safe — and
+/// stating it as isolation makes the compiler hold it rather than a comment.
+@MainActor
 final class LibraryBrowsing: LibraryFolderHost {
     static let shared = LibraryBrowsing()
 
@@ -89,7 +94,8 @@ final class LibraryBrowsing: LibraryFolderHost {
 
     private var homeCache: (folders: [String]?, at: Date)?
     private var pinnedCache: (paths: Set<String>, at: Date)?
-    private var progressCache: (values: [String: Double], at: Date)?
+    /// Per SIDECAR, keyed by its relative path: every folder can have one.
+    private var progressCache: [String: (values: [String: Double], at: Date)] = [:]
     private var recents: Set<String> = []
     /// Short enough that returning from a document shows fresh state, long
     /// enough that one scroll does not re-read a file per cell.
@@ -171,9 +177,10 @@ final class LibraryBrowsing: LibraryFolderHost {
     /// the reader, where progress will have moved.
     func invalidate() {
         appearanceCache.removeAll()
+        sidecarPendingSince.removeAll()
         homeCache = nil
         pinnedCache = nil
-        progressCache = nil
+        progressCache.removeAll()
     }
 
     /// Something changed the library: a note or folder created, a row deleted
@@ -285,7 +292,38 @@ final class LibraryBrowsing: LibraryFolderHost {
     /// Read-only: the phone shows what the Mac set and never writes this
     /// file, so the rest of the project's metadata is never at risk.
     private var appearanceCache: [String: (value: LibraryFolderAppearance, at: Date)] = [:]
+    /// Sidecars whose read is already scheduled, so a screenful of rows that
+    /// all miss the cache asks for each file once rather than once per row.
+    private var sidecarReadsInFlight: Set<String> = []
+    /// When a sidecar last came back `.pending`, so a file iCloud is not
+    /// delivering is not re-read every time anything else on screen redraws.
+    ///
+    /// `.pending` is deliberately not cached — the download was only just
+    /// asked for, and caching the empty answer would freeze it. But without a
+    /// floor between attempts, an evicted or offline sidecar turns every
+    /// unrelated redraw into another coordinated read, under exactly the
+    /// iCloud contention this whole path exists to relieve.
+    private var sidecarPendingSince: [String: Date] = [:]
+    /// How long to leave a `.pending` sidecar alone before asking again.
+    private static let pendingRetryFloor: TimeInterval = 3
+    /// Set while a redraw is already queued for the next turn of the run
+    /// loop: ten sidecars landing is one redraw, not ten.
+    private var redrawQueued = false
 
+    /// A folder's custom icon and colour — FROM CACHE, never from disk.
+    ///
+    /// This is called from a `CellRegistration` closure, inside
+    /// `cellForItemAt:`. Reading here is what the warm pass exists to avoid:
+    /// `readSidecar` ends in `NSFileCoordinator.coordinate`, which blocks on
+    /// the systemwide coordination queue and can stall while iCloud syncs the
+    /// same container. A miss therefore answers "nothing" immediately and
+    /// schedules the read; the row draws plain and is redrawn when it lands,
+    /// exactly as a thumbnail does.
+    ///
+    /// The first version of this fix left the synchronous read in place as a
+    /// fallback, which meant the very first paint of every listing — the case
+    /// the hitch was reported for — still blocked.
+    @MainActor
     func folderAppearance(for entry: LibraryEntry) -> LibraryFolderAppearance {
         guard entry.isDirectory else { return LibraryFolderAppearance() }
         if let hit = appearanceCache[entry.path],
@@ -293,18 +331,135 @@ final class LibraryBrowsing: LibraryFolderHost {
         {
             return hit.value
         }
-        switch LibraryAccess.readSidecar("\(entry.path)/.notesage/project.json") {
-        case .text(let raw):
-            let value = parseLibraryFolderAppearance(raw)
-            appearanceCache[entry.path] = (value, Date())
-            return value
-        case .absent:
-            // Most folders are not projects and never will be. Cache the
-            // nothing, or every scroll re-reads a file that is not there.
-            appearanceCache[entry.path] = (LibraryFolderAppearance(), Date())
-            return LibraryFolderAppearance()
-        case .pending:
-            return LibraryFolderAppearance()
+        scheduleSidecarRead(appearanceFor: entry.path)
+        return LibraryFolderAppearance()
+    }
+
+    /// Reading progress for one item — FROM CACHE, never from disk. See
+    /// `folderAppearance` for why.
+    ///
+    /// The sidecar belongs to the FOLDER the item is in, not to the Inbox.
+    /// Filing an item out carries its entry into
+    /// `<destination>/.notesage/reading-progress.json` (`fileToNow` in
+    /// `inbox-store.ts`) and leaves a tombstone behind, so reading only the
+    /// Inbox's copy showed nothing for anything filed — and, because the key
+    /// is the bare FILE NAME, could show one item's progress against an
+    /// unrelated file elsewhere that happened to share a name.
+    @MainActor
+    func progress(for rel: String) -> Double {
+        let name = (rel as NSString).lastPathComponent
+        let sidecar = Self.progressSidecar(forItem: rel)
+        if let hit = progressCache[sidecar], Date().timeIntervalSince(hit.at) < Self.ttl {
+            return hit.values[name] ?? 0
+        }
+        scheduleSidecarRead(progress: sidecar)
+        return 0
+    }
+
+    /// The progress sidecar an item belongs to. Shared by the accessor and
+    /// the warm pass so the two can never disagree about which file that is.
+    static func progressSidecar(forItem rel: String) -> String {
+        let folder = (rel as NSString).deletingLastPathComponent
+        return folder.isEmpty
+            ? ".notesage/reading-progress.json"
+            : "\(folder)/.notesage/reading-progress.json"
+    }
+
+    /// Warm a listing's sidecars before its cells ask for them.
+    ///
+    /// An optimisation, not a correctness requirement: a row that misses
+    /// schedules its own read. This exists so the common case — a listing
+    /// drawn once — does one batch of reads rather than one per row.
+    @MainActor
+    func warmSidecars(for entries: [LibraryEntry]) {
+        for entry in entries {
+            if entry.isDirectory { scheduleSidecarRead(appearanceFor: entry.path) }
+            // EVERY entry, not only files: a folder row draws a progress ring
+            // too, and a listing of nothing but folders would otherwise never
+            // warm the sidecar its rows go on to ask for one at a time.
+            scheduleSidecarRead(progress: Self.progressSidecar(forItem: entry.path))
+        }
+    }
+
+    /// Whether a read of `sidecar` should start now: not already running, and
+    /// not inside the floor after a `.pending` answer.
+    @MainActor
+    private func mayRead(_ sidecar: String) -> Bool {
+        if sidecarReadsInFlight.contains(sidecar) { return false }
+        if let since = sidecarPendingSince[sidecar],
+            Date().timeIntervalSince(since) < Self.pendingRetryFloor
+        {
+            return false
+        }
+        return true
+    }
+
+    @MainActor
+    private func scheduleSidecarRead(appearanceFor folder: String) {
+        let sidecar = "\(folder)/.notesage/project.json"
+        guard mayRead(sidecar) else { return }
+        sidecarReadsInFlight.insert(sidecar)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let answer = LibraryAccess.readSidecar(sidecar)
+            DispatchQueue.main.async {
+                self.sidecarReadsInFlight.remove(sidecar)
+                switch answer {
+                case .text(let raw):
+                    self.appearanceCache[folder] = (parseLibraryFolderAppearance(raw), Date())
+                case .absent:
+                    // Most folders are not projects and never will be. Cache
+                    // the nothing, or every scroll asks again.
+                    self.appearanceCache[folder] = (LibraryFolderAppearance(), Date())
+                case .pending:
+                    // A download has only just been asked for; leave it
+                    // uncached so a later miss retries — but not immediately,
+                    // or an undeliverable file is re-read on every redraw.
+                    self.sidecarPendingSince[sidecar] = Date()
+                    return
+                }
+                self.sidecarPendingSince[sidecar] = nil
+                self.setNeedsRowRedraw()
+            }
+        }
+    }
+
+    @MainActor
+    private func scheduleSidecarRead(progress sidecar: String) {
+        guard mayRead(sidecar) else { return }
+        sidecarReadsInFlight.insert(sidecar)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let answer = LibraryAccess.readSidecar(sidecar)
+            DispatchQueue.main.async {
+                self.sidecarReadsInFlight.remove(sidecar)
+                switch answer {
+                case .text(let raw):
+                    self.progressCache[sidecar] = (parseLibraryReadingProgress(raw), Date())
+                case .absent:
+                    self.progressCache[sidecar] = ([:], Date())
+                case .pending:
+                    self.sidecarPendingSince[sidecar] = Date()
+                    return
+                }
+                self.sidecarPendingSince[sidecar] = nil
+                self.setNeedsRowRedraw()
+            }
+        }
+    }
+
+    /// Redraw the rows of every live screen — the cells were configured
+    /// against a cache that was empty at the time.
+    ///
+    /// Coalesced to one pass per turn of the run loop. A listing warms a
+    /// dozen sidecars at once, and redrawing on each one landing meant a
+    /// dozen full `reconfigureItems` passes where one would do.
+    @MainActor
+    private func setNeedsRowRedraw() {
+        guard !redrawQueued else { return }
+        redrawQueued = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.redrawQueued = false
+            for screen in self.screens.allObjects { screen.redrawRows() }
         }
     }
 
@@ -357,25 +512,6 @@ final class LibraryBrowsing: LibraryFolderHost {
         return InboxState.unreadCount(root: root)
     }
 
-    func progress(for rel: String) -> Double {
-        if progressCache == nil || Date().timeIntervalSince(progressCache!.at) >= Self.ttl {
-            switch LibraryAccess.readSidecar("Inbox/.notesage/reading-progress.json") {
-            case .text(let raw):
-                progressCache = (parseLibraryReadingProgress(raw), Date())
-            case .absent:
-                progressCache = ([:], Date())
-            case .pending:
-                // Left uncached on purpose, so the next row to be configured
-                // tries again — by then the bytes have usually landed. The
-                // alternative is a blank ring on every row until the folder is
-                // left and re-entered.
-                progressCache = nil
-            }
-        }
-        // The sidecar is keyed by file name, not by path — see
-        // `parseLibraryReadingProgress`.
-        return progressCache?.values[(rel as NSString).lastPathComponent] ?? 0
-    }
 
     func localized(_ key: String) -> String {
         // Falls back to the key rather than to English: a visible `section.pinned`

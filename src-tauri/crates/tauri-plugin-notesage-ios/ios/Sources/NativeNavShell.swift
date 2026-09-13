@@ -76,6 +76,14 @@ final class ScreenController: UIViewController {
 
   /// Put the live web view in this controller, beneath any snapshot already
   /// showing — so a pop can settle before the swap becomes visible.
+  ///
+  /// Never called on a controller that draws itself: `present()` and
+  /// `adoptNativeHome()` leave the web view parked in the container, and both
+  /// `popToRoot` and the `didShow` delegate check `isNative` before reaching
+  /// here. A branch that inserted it beneath a native child used to sit in
+  /// this function describing that arrangement — it was unreachable, and a
+  /// comment describing a mechanism the code does not use is how the next
+  /// person fixes the wrong function.
   func attachLive(_ webView: WKWebView) {
     self.webView = webView
     webView.removeFromSuperview()
@@ -88,11 +96,6 @@ final class ScreenController: UIViewController {
     webView.translatesAutoresizingMaskIntoConstraints = false
     if let snapshot {
       view.insertSubview(webView, belowSubview: snapshot)
-    } else if let native = nativeChild?.view, native.superview === view {
-      // Home draws itself and the web view lives UNDERNEATH it. The web layer
-      // still owns the store, the sync and the listeners, so it has to stay in
-      // the hierarchy and running — it just has nothing to show here any more.
-      view.insertSubview(webView, belowSubview: native)
     } else {
       view.addSubview(webView)
     }

@@ -437,5 +437,67 @@ check("appearance: the desktop's list was readable", curatedNames.count > 40, tr
 let unmapped = curatedNames.filter { librarySymbolForFolderIcon[$0] == nil }
 check("appearance: every curated icon has an SF Symbol", unmapped.joined(separator: ","), "")
 
+// MARK: - The reconfigure gate
+//
+// Five review rounds, five criticals, each one caused by the fix before it.
+// These are the cases that were learned the expensive way; every one of them
+// is a bug that actually shipped or was one review away from shipping.
+
+var gate = LibraryReconfigureGate()
+check("gate: open by default, rows go straight through",
+    gate.request(["a", "b"]), ["a", "b"])
+
+// 1. Build 69: reconfiguring across a cell-class change.
+_ = gate.beginLayoutChange()
+check("gate: shut while the cell class is changing", gate.request(["a"]), [String]())
+
+// 2. Deferred, not dropped — a density toggle that appeared to do nothing.
+let flushed = gate.finishLayoutChange(gate.generation)?.sorted() ?? []
+check("gate: what was held is drawn when the change completes", flushed, ["a"])
+check("gate: and the backlog is emptied", gate.deferred.isEmpty, true)
+check("gate: reopened", gate.request(["c"]), ["c"])
+
+// 3. Two overlapping changes. The FIRST completion must not reopen the gate:
+//    its swap is done, the second one's is not.
+var overlap = LibraryReconfigureGate()
+let first = overlap.beginLayoutChange()
+let second = overlap.beginLayoutChange()
+_ = overlap.request(["x"])
+check("gate: a superseded completion is ignored",
+    overlap.finishLayoutChange(first) == nil, true)
+check("gate: and leaves the gate SHUT", overlap.request(["y"]), [String]())
+check("gate: the newest completion drains everything held",
+    overlap.finishLayoutChange(second)?.sorted() ?? [], ["x", "y"])
+check("gate: open again afterwards", overlap.request(["z"]), ["z"])
+
+// Three deep, the same rule.
+var deep = LibraryReconfigureGate()
+let g1 = deep.beginLayoutChange()
+let g2 = deep.beginLayoutChange()
+let g3 = deep.beginLayoutChange()
+_ = deep.request(["p"])
+check("gate: three deep — first ignored", deep.finishLayoutChange(g1) == nil, true)
+check("gate: three deep — second ignored", deep.finishLayoutChange(g2) == nil, true)
+check("gate: three deep — the last one drains",
+    deep.finishLayoutChange(g3) ?? [], ["p"])
+
+// A completion arriving twice must not reopen a change that came after it.
+var replay = LibraryReconfigureGate()
+let once = replay.beginLayoutChange()
+_ = replay.finishLayoutChange(once)
+let again = replay.beginLayoutChange()
+_ = replay.request(["q"])
+check("gate: a stale token cannot reopen a later change",
+    replay.finishLayoutChange(once) == nil, true)
+check("gate: still shut for the live one", replay.request(["r"]), [String]())
+check("gate: and the live token drains both",
+    replay.finishLayoutChange(again)?.sorted() ?? [], ["q", "r"])
+
+// Nothing held is nothing to draw — not a nil, not a crash.
+var idle = LibraryReconfigureGate()
+let only = idle.beginLayoutChange()
+check("gate: a change with nothing held flushes empty",
+    idle.finishLayoutChange(only) ?? ["unexpected"], [String]())
+
 print(failures == 0 ? "\nall good" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)
