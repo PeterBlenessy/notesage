@@ -1,8 +1,11 @@
 // @vitest-environment jsdom
 import "@/test/local-storage";
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { toast } from "sonner";
 import type { FileEntry } from "@/lib/tauri";
 import { useMobileStore } from "@/stores/mobile-store";
+
+vi.mock("sonner", () => ({ toast: { error: vi.fn(), success: vi.fn(), message: vi.fn() } }));
 
 vi.mock("@/lib/mobile-thumbnails", () => ({
   getThumbnail: vi.fn(async () => ({ kind: "markdown", html: "<p>rendered</p>" })),
@@ -231,9 +234,17 @@ describe("presentEntryMenu", () => {
     expect(vi.mocked(iosEntryMenu).mock.calls[1][0].previewRelPath).toBeUndefined();
   });
 
-  it("swallows a failed presentation rather than rejecting into the render", async () => {
+  it("reports a failed presentation instead of swallowing it", async () => {
+    // This test used to assert the opposite — "swallows a failed
+    // presentation" — and its name outlived the change. `.catch(() => null)`
+    // made a long press that FAILED look exactly like one that was never
+    // noticed, which cost an hour of reading code when folders stopped
+    // offering "Show on Home". It must still resolve rather than reject into
+    // the render, but it must also say something.
     vi.mocked(iosEntryMenu).mockRejectedValueOnce(new Error("no presenter"));
+    vi.mocked(toast.error).mockClear();
     await expect(presentEntryMenu(file, rect, ctx())).resolves.toBeUndefined();
+    expect(toast.error).toHaveBeenCalledWith(expect.stringContaining("no presenter"));
   });
 });
 

@@ -31,6 +31,12 @@ import UIKit
 /// Everything the screen cannot work out for itself. Injected rather than
 /// reached for, so the screen can be driven from a test harness or a preview
 /// without a granted library.
+/// Main-actor throughout: every one of these is called from a screen — cell
+/// configuration, a tap, a gesture — and the implementation's caches are
+/// main-thread-only. Annotating the PROTOCOL rather than each conformance is
+/// what stops the conformance "crossing into main actor-isolated code", which
+/// is a warning today and an error under Swift 6.
+@MainActor
 protocol LibraryFolderHost: AnyObject {
     /// Push another folder.
     func openFolder(_ rel: String, title: String)
@@ -51,8 +57,12 @@ protocol LibraryFolderHost: AnyObject {
     /// is asked for rather than reimplemented.
     func swipeAction(_ id: String, for rel: String)
     /// A folder's custom icon and colour, set on the desktop (#140). Empty
-    /// for a file, and for a folder the Mac never styled.
+    /// for a file, and for a folder the Mac never styled. Answers from cache
+    /// — see `warmSidecars`, which is what fills it.
     func folderAppearance(for entry: LibraryEntry) -> LibraryFolderAppearance
+    /// Read the sidecars these entries will need, off the main thread, and
+    /// cache them. Called once per listing rather than once per cell.
+    func warmSidecars(for entries: [LibraryEntry])
     /// The folders chosen for Home, from `.notesage/home.json`. `nil` means
     /// never curated, which is not the same as curated to nothing — see
     /// `parseLibraryHome`.
@@ -235,8 +245,16 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
         // Never reconfigure from here when a refresh follows: the switch
         // below is the one that knows whether the cell class is changing.
         // Reconfiguring first crashes on a view switch — build 69.
+        // `isChangingLayout` too: a SECOND settings push can arrive while the
+        // first `.reload`'s one-turn buffer has not fired — each plugin
+        // command is its own `DispatchQueue.main.async` block, so two pushes
+        // close together race that reset rather than being serialised by it.
+        // Reconfiguring then is the same build-69 crash from a different
+        // door, which is why the flag guards every reconfigure path and not
+        // only the asynchronous one it was added for.
         rebuildSections(
-            animated: refresh == .none, reconfigure: libraryMayReconfigure(refresh))
+            animated: refresh == .none,
+            reconfigure: libraryMayReconfigure(refresh) && !gate.isChangingLayout)
 
         guard let dataSource else { return }
         var snapshot = dataSource.snapshot()
@@ -249,12 +267,23 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
             // no date line. A diffable data source will not redraw an item
             // whose identity did not move, so this is what makes condensed
             // actually look condensed.
-            snapshot.reconfigureItems(snapshot.itemIdentifiers)
-            dataSource.apply(snapshot, animatingDifferences: false)
+            //
+            reconfigure(snapshot.itemIdentifiers)
         case .reload:
             // A DIFFERENT cell class. Reconfiguring here is the crash quoted
             // in `libraryRefreshKind`; the cells have to be built afresh.
+            //
+            // The flag is dropped a run loop later, not immediately: UIKit
+            // does not promise the swap is complete when this returns, and an
+            // asynchronous `redrawRows` landing in that window would
+            // reconfigure cells mid-replacement.
+            let token = gate.beginLayoutChange()
             dataSource.applySnapshotUsingReloadData(snapshot)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, let waiting = self.gate.finishLayoutChange(token)
+                else { return }
+                self.reconfigure(waiting)
+            }
         }
     }
 
@@ -276,6 +305,60 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
     /// Re-read this folder because something outside changed it. Named apart
     /// from `reload()` so the host is not reaching into a private.
     func reloadFromHost() { reload() }
+
+    /// Redraw the rows against freshly-read sidecars, WITHOUT re-listing.
+    ///
+    /// `warmSidecars` fills the caches after the cells have already been
+    /// configured against an empty one, so something has to tell them. A
+    /// re-list would be wasteful and would fight the scroll; reconfiguring
+    /// the identifiers already on screen is exactly the operation for "same
+    /// rows, different text".
+    /// Redraw these rows — the ONE way this screen reconfigures anything.
+    ///
+    /// Every caller goes through here because the hazard is not specific to
+    /// any of them: `applySnapshotUsingReloadData` does not promise the cell
+    /// swap has finished when it returns, and reconfiguring an identifier
+    /// UIKit is still replacing is the crash build 69 shipped. Guarding the
+    /// call sites individually missed two of the five — a speech tick and an
+    /// article header landing mid-switch — so the guard lives at the door
+    /// instead, and the rows are applied when the swap completes rather than
+    /// abandoned.
+    func reconfigure(_ items: [String]) {
+        guard let dataSource, !items.isEmpty else { return }
+        let now = gate.request(items)
+        guard !now.isEmpty else { return }
+        var snapshot = dataSource.snapshot()
+        // Filtered against the CURRENT snapshot, which matters most on the
+        // flush path: a row deferred before a re-list may be gone by now.
+        let present = Set(snapshot.itemIdentifiers)
+        let carried = now.filter(present.contains)
+        guard !carried.isEmpty else { return }
+        snapshot.reconfigureItems(carried)
+        dataSource.apply(snapshot, animatingDifferences: false)
+    }
+
+    func redrawRows() {
+        // Never while the cell CLASS is changing. `applySnapshotUsingReloadData`
+        // does not promise the swap has finished when it returns, and
+        // reconfiguring identifiers UIKit is still replacing is the crash
+        // build 69 shipped. This arrives from a background read landing at an
+        // arbitrary moment, so it is exactly the caller that can hit that
+        // window — `apply(settings:)` guards its own path with
+        // `libraryMayReconfigure` and this is the same rule for an
+        // asynchronous one.
+        guard let dataSource else { return }
+        reconfigure(dataSource.snapshot().itemIdentifiers)
+    }
+
+    /// When rows may be redrawn, and what is owed when they may not.
+    ///
+    /// The rules — and the five review rounds behind them — live in
+    /// `LibraryReconfigureGate`, which has no UIKit in it and is covered by
+    /// `scripts/check-library-ordering.sh`. This was the one part of the
+    /// screen with no tests, and it is the part that took five rounds.
+    private var gate = LibraryReconfigureGate()
+    /// Set while a card's folder is being ensured — see `openCardFolder`.
+    private var openingCard = false
 
     private func reload() {
         let rel = relPath
@@ -299,6 +382,7 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
                 self.entries = visible
                 self.byPath = Dictionary(visible.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
                 self.warmArticleTitles(visible)
+                self.warmSidecars(visible)
                 self.rebuildSections(animated: true)
             }
         }
@@ -314,6 +398,10 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
     /// that comment, is what crashed build 69 on every list/gallery switch.
     /// `apply(settings:)` does its own redraw straight afterwards and is the
     /// one that knows which kind is safe.
+    /// - Parameter reconfigure: whether surviving rows may be redrawn. False
+    ///   only from `apply(settings:)`, which does its own redraw afterwards.
+    ///   A layout change in flight defers rather than drops — see below — so
+    ///   the default is safe from `reload()` and pull-to-refresh too.
     private func rebuildSections(animated: Bool, reconfigure: Bool = true) {
         guard let host else { return }
         let matched =
@@ -393,7 +481,14 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
         if reconfigure {
             let carried = Set(dataSource?.snapshot().itemIdentifiers ?? [])
             let again = snapshot.itemIdentifiers.filter(carried.contains)
-            if !again.isEmpty { snapshot.reconfigureItems(again) }
+            if !again.isEmpty {
+                // Through the gate, which either hands them back to apply
+                // now or holds them. This cannot call `reconfigure(_:)` — it
+                // is assembling a NEW snapshot rather than amending the
+                // applied one — but it obeys the same rule.
+                let now = gate.request(again)
+                if !now.isEmpty { snapshot.reconfigureItems(now) }
+            }
         }
         dataSource?.apply(snapshot, animatingDifferences: animated)
     }
@@ -557,9 +652,7 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
                 previous: previous.relPath, current: current.relPath,
                 present: { snapshot.indexOfItem($0) != nil })
         }
-        guard !affected.isEmpty else { return }
-        snapshot.reconfigureItems(affected)
-        dataSource.apply(snapshot, animatingDifferences: false)
+        reconfigure(affected)
     }
 
     // MARK: Article rows
@@ -593,6 +686,25 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
     /// backgrounded, deduplicated by `ArticleMeta`'s in-flight set and cached
     /// by path@mtime, so this costs the same reads the cells would do anyway,
     /// just sooner. Bounded so a folder of thousands does not queue thousands.
+    /// Ask the host to read this listing's sidecars before the cells want
+    /// them.
+    ///
+    /// `folderAppearance` and `progress(for:)` end in
+    /// `NSFileCoordinator.coordinate`, which blocks on the systemwide
+    /// coordination queue and can stall while iCloud syncs the same
+    /// container. Called from a `CellRegistration` closure — inside
+    /// `cellForItemAt:` — that stall is a scroll hitch, and this file's own
+    /// `articleText(for:)` states the rule it broke: "never a disk read,
+    /// because this runs during cell configuration."
+    ///
+    /// The host does the reading off-main and stores on main, so the cells
+    /// find the answers cached. A cold cache still answers immediately —
+    /// empty — rather than blocking; the row draws its plain state until the
+    /// next configure, exactly as a thumbnail does.
+    private func warmSidecars(_ entries: [LibraryEntry]) {
+        host?.warmSidecars(for: Array(entries.prefix(Self.searchWarmCap)))
+    }
+
     private func warmArticleTitles(_ entries: [LibraryEntry]) {
         let candidates = entries.filter { !$0.isDirectory && ArticleMeta.isCandidate($0.path) }
         for entry in candidates.prefix(Self.searchWarmCap) {
@@ -616,11 +728,7 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
         else { return }
         let path = entry.path
         ArticleMeta.load(path, modified: entry.modified) { [weak self] _ in
-            guard let self, let dataSource = self.dataSource else { return }
-            var snapshot = dataSource.snapshot()
-            guard snapshot.indexOfItem(path) != nil else { return }
-            snapshot.reconfigureItems([path])
-            dataSource.apply(snapshot, animatingDifferences: false)
+            self?.reconfigure([path])
         }
     }
 
@@ -805,14 +913,48 @@ extension LibraryFolderScreen: UICollectionViewDelegate {
     /// is not a folder, and entering it shows an empty or broken listing with
     /// the explanation flashing past underneath — the Critical from the first
     /// review of #924, pinned by a test the web cards had and these did not.
+    ///
+    /// Off the main thread, because `ensureDirectory` is a COORDINATED write
+    /// and the one moment it has real work to do — a fresh install, where
+    /// neither folder exists yet — is the one moment it can block on the
+    /// coordination queue. That is a tap handler; blocking it is a frozen
+    /// screen.
     private func openCardFolder(_ name: String) {
-        do {
-            try LibraryAccess.ensureDirectory(name)
-        } catch {
-            host?.openFailed(name, reason: String(describing: error))
-            return
+        // One at a time. Backgrounding the write removed the accidental
+        // serialisation the blocking call used to provide, so a fast double
+        // tap on a fresh install — the one moment `ensureDirectory` has real
+        // work to do — could push the same folder twice.
+        guard !openingCard else { return }
+        openingCard = true
+        // The HOST, captured strongly, not `self`. It is a singleton, and the
+        // screen can be popped while a slow coordinated write is still
+        // running — precisely the case this was backgrounded for. Going
+        // through `self` there dropped the failure toast on the floor, with
+        // nothing anywhere saying the tap had failed.
+        let host = self.host
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var failure: String?
+            do {
+                try LibraryAccess.ensureDirectory(name)
+            } catch {
+                failure = String(describing: error)
+            }
+            DispatchQueue.main.async {
+                self?.openingCard = false
+                // A FAILURE is always reported, whatever the shell is doing:
+                // a toast arriving after the user has moved on is harmless,
+                // and silence on a real error is the bug round two fixed.
+                // Only the navigation is conditional, and only on the surface
+                // still being up — `enabled` is a one-way latch today, so
+                // this costs nothing and stops a push into a torn-down shell
+                // if a disable path is ever wired.
+                if let failure {
+                    host?.openFailed(name, reason: failure)
+                } else if LibraryBrowsing.shared.enabled {
+                    host?.openFolder(name, title: name)
+                }
+            }
         }
-        host?.openFolder(name, title: name)
     }
 
     /// Long press.

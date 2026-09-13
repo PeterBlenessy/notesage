@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import "@/test/tauri-mock";
 import { setMockInvokeHandler } from "@/test/tauri-mock";
 import { useMobileStore, resolveFolderView } from "@/stores/mobile-store";
@@ -272,6 +272,34 @@ describe("mobile-store view mode (#633 — gallery view), remembered per folder"
     expect(viewOf("New/Sub").sortMode).toBe("modified");
     expect(viewOf("Older").groupMode).toBe("date");
     expect(store().folderViews.map((e) => e.relPath)).toEqual(["Older", "New", "New/Sub"]);
+  });
+
+  it("tells the native screens once the sidecars are actually written", async () => {
+    // The caller's own listing reload fires after ONE directory read and
+    // cannot wait for these round trips, so a rename left the native rows
+    // reading the old `pins.json` — the same write/read race
+    // `flushInboxProgress` exists to close, on a different path.
+    // ORDER is the point, not the count: a reload that overtakes the write
+    // re-reads the file it was meant to reflect, which is the bug.
+    const order: string[] = [];
+    setMockInvokeHandler("ios_read_file", () => JSON.stringify({ paths: ["Old/a.md"] }));
+    setMockInvokeHandler("ios_ensure_directory", () => undefined);
+    setMockInvokeHandler("ios_write_file", () => {
+      order.push("write");
+    });
+    setMockInvokeHandler("ios_reload_library_screens", () => {
+      order.push("reload");
+    });
+
+    await store().rewritePath("Old", "New");
+    await vi.waitFor(() => expect(order).toContain("reload"));
+    expect(order.indexOf("write")).toBeLessThan(order.indexOf("reload"));
+
+    order.length = 0;
+    setMockInvokeHandler("ios_read_file", () => JSON.stringify({ paths: ["New/a.md"] }));
+    await store().forgetPath("New");
+    await vi.waitFor(() => expect(order).toContain("reload"));
+    expect(order.indexOf("write")).toBeLessThan(order.indexOf("reload"));
   });
 
   it("a renamed folder takes everything remembered about its notes with it — recents, progress, offsets, pins", async () => {

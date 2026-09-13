@@ -599,3 +599,59 @@ func parseLibraryFolderAppearance(_ json: String) -> LibraryFolderAppearance {
     }
     return result
 }
+
+// MARK: - The reconfigure gate
+
+/// When a screen may redraw rows, and what it owes when it may not.
+///
+/// Five review rounds landed on these rules, each one found only after the
+/// previous fix shipped. They are a state machine with no UIKit in them at
+/// all, so they belong here where `scripts/check-library-ordering.sh` can run
+/// them — the concurrency-sensitive half of the folder screen was the one
+/// half with no tests, which is precisely why it took five rounds.
+///
+/// The rules, and what each cost to learn:
+///
+/// 1. **Never reconfigure while the cell CLASS is changing.**
+///    `applySnapshotUsingReloadData` does not promise the swap has finished
+///    when it returns, and reconfiguring an identifier UIKit is still
+///    replacing is the crash build 69 shipped.
+/// 2. **Defer, do not drop.** Skipping a request meant a density toggle could
+///    visibly do nothing until something unrelated happened to redraw.
+/// 3. **Only the NEWEST change reopens the gate.** Each settings push is its
+///    own main-queue block, so two can overlap; the first one's completion
+///    knows nothing about the second and would reopen the gate into a swap
+///    still settling — the same crash, produced by the guard against it.
+struct LibraryReconfigureGate {
+    private(set) var isChangingLayout = false
+    private(set) var generation = 0
+    /// Rows asked for while the gate was shut.
+    private(set) var deferred: Set<String> = []
+
+    /// A layout change starts. The returned token is what its completion must
+    /// present to reopen the gate.
+    mutating func beginLayoutChange() -> Int {
+        generation += 1
+        isChangingLayout = true
+        return generation
+    }
+
+    /// Rows want redrawing. Returns what may be drawn NOW — empty while a
+    /// layout change is in flight, in which case they are held instead.
+    mutating func request(_ items: [String]) -> [String] {
+        guard isChangingLayout else { return items }
+        deferred.formUnion(items)
+        return []
+    }
+
+    /// A layout change's completion has arrived. Returns the rows it should
+    /// draw, or `nil` when a newer change has superseded it — that one's
+    /// swap is the one still settling, so it owns the gate and the backlog.
+    mutating func finishLayoutChange(_ token: Int) -> [String]? {
+        guard token == generation else { return nil }
+        isChangingLayout = false
+        let waiting = deferred
+        deferred.removeAll()
+        return Array(waiting)
+    }
+}

@@ -543,7 +543,12 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
     const onShell = (event: Event) => {
       const detail = (event as CustomEvent<{ type?: string; kind?: string; relPath?: string }>)
         .detail;
-      if (detail?.type !== "open" || !detail.relPath) return;
+      // `typeof`, not truthiness: the library ROOT's path is the empty
+      // string. No row with an empty path is long-pressed today, so this is
+      // latent rather than broken — but it is the identical shape that cost
+      // three separate bugs in this file's sibling, and the next `kind`
+      // added here would inherit it.
+      if (detail?.type !== "open" || typeof detail.relPath !== "string") return;
       const kind = detail.kind ?? "";
       if (kind !== "menu" && !kind.startsWith("swipe:")) return;
       if (state.status !== "ready") return;

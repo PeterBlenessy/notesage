@@ -272,4 +272,99 @@ describe("recording from the library", () => {
   });
 });
 
+describe("the notification rows in the … menu", () => {
+  // Live on every device — the menu is declared whether or not the rows are
+  // drawn natively — and left with no test at all when the web Home's suites
+  // went. A regression here is silent: the toggle looks like it worked.
+  const menuIds = (spec: CapturedChromeSpec) => spec.topRight?.menu?.map((m) => m.id) ?? [];
 
+  function setup(notifications: Record<string, unknown>) {
+    useMobileStore.setState({ folderStack: [{ relPath: "Inbox", name: "Inbox" }] });
+    // The component asks the native side on mount and overwrites whatever the
+    // store held, so the state under test has to come from there.
+    setMockInvokeHandler("ios_notification_status", () => notifications);
+    setMockInvokeHandler("ios_notification_set_prefs", () => notifications);
+    let captured: CapturedChromeSpec = {};
+    setMockInvokeHandler("ios_set_chrome", (args) => {
+      captured = (args as { spec: CapturedChromeSpec }).spec;
+      return null;
+    });
+    setMockInvokeHandler("ios_read_file", () => {
+      throw new Error("not found");
+    });
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "a.md", path: "Inbox/a.md", is_directory: false, hidden: false, modified: 1 },
+    ]);
+    return () => captured;
+  }
+
+  it("shows each preference's current state as its checkmark", async () => {
+    const captured = setup({ authorization: "authorized", badge: true, newItems: false });
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(menuIds(captured())).toContain("notify-badge"));
+    const rows = captured().topRight!.menu!;
+    expect(rows.find((m) => m.id === "notify-badge")?.selected).toBe(true);
+    expect(rows.find((m) => m.id === "notify-new")?.selected).toBe(false);
+  });
+
+  it("asks iOS first when permission has never been requested", async () => {
+    // The order matters: toggling a preference before the grant exists sets
+    // something the system will ignore, and the row then lies about its state.
+    const asked: string[] = [];
+    setMockInvokeHandler("ios_notification_request", () => {
+      asked.push("request");
+      return { authorization: "denied", badge: false, newItems: false };
+    });
+    setMockInvokeHandler("ios_notification_set_prefs", () => {
+      asked.push("set");
+      return { authorization: "denied", badge: false, newItems: false };
+    });
+    const captured = setup({ authorization: "notDetermined", badge: false, newItems: false });
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(menuIds(captured())).toContain("notify-badge"));
+
+    // Drive the handler the native menu row would call.
+    fireEvent(window, new CustomEvent("notesage:chrome", { detail: { id: "notify-badge" } }));
+    await waitFor(() => expect(asked[0]).toBe("request"));
+    // Denied: nothing is written, because there is nothing to write to.
+    expect(asked).not.toContain("set");
+  });
+});
+
+describe("only the Inbox listing marks its items seen", () => {
+  // Home shows a NUMBER; the Inbox shows the items. Listing Home must recount
+  // without clearing the badge, or the count vanishes from a screen that
+  // never showed anything. The store-level call kept its test when the web
+  // Home went; this wiring — which screen passes `true` — lost its only one.
+  function listing(relPath: string) {
+    useMobileStore.setState({
+      folderStack: relPath === "" ? [] : [{ relPath, name: relPath }],
+    });
+    const marked: boolean[] = [];
+    setMockInvokeHandler("ios_inbox_unread_count", (args) => {
+      marked.push((args as { markSeen?: boolean }).markSeen === true);
+      return 3;
+    });
+    setMockInvokeHandler("ios_read_file", () => {
+      throw new Error("not found");
+    });
+    setMockInvokeHandler("ios_list_directory", () => [
+      { name: "a.md", path: `${relPath ? relPath + "/" : ""}a.md`, is_directory: false, hidden: false, modified: 1 },
+    ]);
+    return marked;
+  }
+
+  it("marks them seen when the Inbox itself is listed", async () => {
+    const marked = listing("Inbox");
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(marked.length).toBeGreaterThan(0));
+    expect(marked).toContain(true);
+  });
+
+  it("counts but does NOT mark them seen when Home is listed", async () => {
+    const marked = listing("");
+    renderWithProviders(<LibraryBrowser />);
+    await waitFor(() => expect(marked.length).toBeGreaterThan(0));
+    expect(marked).not.toContain(true);
+  });
+});
