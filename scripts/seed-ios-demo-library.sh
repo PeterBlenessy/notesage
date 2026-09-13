@@ -52,5 +52,74 @@ cp "$REPO"/content/demo-ios/Inbox/*.html "$LIB/Inbox/"
 # rather than a wall of identical article rows.
 cp "$REPO/content/demo/Drafts/Weekly Review.md" "$LIB/Inbox/"
 
+# The two sidecars the desktop writes. Both drive visible state on the folder
+# screen — the Pinned group and the progress rings — so a library without them
+# photographs as one nobody has ever opened. Formats are defined by
+# `src/lib/pins-file.ts` and `src/lib/reading-progress-file.ts`; the native
+# reader read both with the wrong key until 2026-09-12, which is exactly the
+# kind of thing a seeded library makes visible.
+mkdir -p "$LIB/.notesage" "$LIB/Inbox/.notesage"
+cat > "$LIB/.notesage/pins.json" <<'JSON'
+{
+  "paths": [
+    "Inbox/2026-09-07-114500-reading-on-purpose.html",
+    "Essays"
+  ]
+}
+JSON
+cat > "$LIB/Inbox/.notesage/reading-progress.json" <<'JSON'
+{
+  "version": 2,
+  "items": {
+    "2026-09-02-081500-the-quiet-hours.html": {
+      "fraction": 1,
+      "openedAt": "2026-09-02T09:12:00.000Z",
+      "updatedAt": "2026-09-02T09:31:00.000Z"
+    },
+    "2026-09-04-193000-notes-that-answer-back.html": {
+      "fraction": 0.38,
+      "openedAt": "2026-09-05T07:40:00.000Z",
+      "updatedAt": "2026-09-05T07:46:00.000Z"
+    }
+  }
+}
+JSON
+
+# Home: which root folders the first screen shows (`src/lib/home-file.ts`).
+# Without this the file is absent, Home falls back to the Inbox alone, and the
+# lead marketing screenshot is three rows on black. The folders chosen are the
+# ones with the most photogenic content.
+cat > "$LIB/.notesage/home.json" <<'JSON'
+{
+  "version": 1,
+  "folders": [
+    "Essays",
+    "Research",
+    "Guides"
+  ]
+}
+JSON
+
+# Per-folder appearance, set on the desktop and read on the phone (#140).
+# Icon names come from the desktop's curated set and colour is an index into
+# the eight tag colours — both listed in `LibraryOrdering.swift`. Seeding them
+# is not decoration: the folder cards photograph as grey rectangles otherwise,
+# and it is the only way the screenshots exercise the mapping at all.
+seed_appearance() {  # <folder> <icon> <color index>
+  [ -d "$LIB/$1" ] || return 0
+  mkdir -p "$LIB/$1/.notesage"
+  cat > "$LIB/$1/.notesage/project.json" <<JSON
+{
+  "appearance": {
+    "iconName": "$2",
+    "colorIndex": $3
+  }
+}
+JSON
+}
+seed_appearance Essays BookOpen 6
+seed_appearance Research Lightbulb 4
+seed_appearance Guides Compass 1
+
 echo "seeded $LIB"
 find "$LIB" -type f ! -path "*/.notesage/*" | sed "s|$LIB/|  |" | sort
