@@ -25,19 +25,14 @@ Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skick
 folk att testa sådant som redan är ute.
 -->
 
-Menyval som inte gjorde något gör nu det de säger.
+Mappar minns var du läste.
 
 RÄTTAT
-• Att radera en mapp gjorde ingenting alls — ingen mapp försvann, inget
-felmeddelande. Nu fungerar det, och det som ligger i mappen följer med, precis
-som bekräftelsen säger.
-• Allt som misslyckades på en mappskärm misslyckades tyst. Nu syns felen, och
-en flytt som gått igenom säger vart filen tog vägen.
-• Redigera Hem öppnade en tom skärm.
-• Lyssna saknades i långtrycksmenyn för en anteckning, trots att raden själv
-erbjöd det.
+• Bläddra långt ner i en mapp, öppna en anteckning och gå tillbaka — du
+hamnade högst upp igen. Nu landar du på raden du lämnade. Det håller även
+om du går ut till Alla mappar och in igen, vilket är där det märktes mest.
 
 PROVA
-• Håll in en mapp, välj Radera, bekräfta. Den ska försvinna.
-• Menyn … → Redigera Hem: listan med mappar ska finnas där.
-• Håll in en anteckning: Lyssna ska finnas i menyn, och ska spela upp.
+• Öppna en mapp med många anteckningar. Bläddra långt ner, öppna en, gå
+tillbaka.
+• Gå sedan hela vägen ut och in igen — samma rad.

@@ -26,18 +26,13 @@ Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
 
-Menu actions that did nothing now do what they say.
+Folders remember where you were reading.
 
 FIXED
-• Deleting a folder did nothing at all — no folder removed, no error. It
-works now, and takes what is inside it, as the confirmation says.
-• Anything that failed on a folder screen failed silently. Failures say so
-now, and a completed move says where it went.
-• Edit Home opened an empty screen.
-• Listen was missing from a note's long-press menu, though the row itself
-offered it.
+• Scroll down a long folder, open a note, come back — you were put back at
+the top. Now you land on the row you left. It also survives going out to
+All Folders and back in, which is where it was most obviously wrong.
 
 TRY
-• Hold a folder, choose Delete, confirm. It should go.
-• The … menu → Edit Home: the list of folders should be there.
-• Hold a note: Listen should be in the menu, and should play.
+• Open a folder with a lot of notes. Scroll well down, open one, go back.
+• Then go all the way out and in again — same row.
