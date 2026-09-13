@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.59.0",
+      "date": "2026-09-13",
+      "previousVersion": "0.58.0",
+      "sections": {
+        "improvements": [
+          "**Settings is fully translated.** Every panel, including the help text under the controls — the sentences explaining what a model size does, what blocking external resources means, what each automation step expects. Roughly a hundred of those had never been translated, and were invisible to the check that was supposed to catch them, so Settings had been reported as finished while a Swedish user still read most of its explanations in English."
+        ],
+        "fixes": [
+          "**Word export no longer carries a known vulnerability in its XML reader.** The component that writes `.docx` files depended on an older XML parser with two published advisories, both of which could make it work very hard on a malformed file. Nothing about your documents changes; the parser underneath is simply the fixed version now."
+        ]
+      }
+    },
+    {
       "version": "0.58.0",
       "date": "2026-09-10",
       "previousVersion": "0.57.3",
