@@ -594,5 +594,32 @@ check("target: nothing when the row is gone",
 check("target: nothing when there is no anchor",
     libraryScrollTarget(nil, in: ["a.md"]) == nil, true)
 
+// --- article hero -----------------------------------------------------------
+
+let bigPayload = String(repeating: "A", count: 600)
+let withHero = "<h1>T</h1><img class=\"hero\" src=\"data:image/png;base64,\(bigPayload)\"><p>body</p>"
+check("hero: found in a capture", libraryArticleHeroBase64(withHero) ?? "", bigPayload)
+
+check("hero: nil when there is no image",
+    libraryArticleHeroBase64("<h1>T</h1><p>body</p>") == nil, true)
+
+// A tracking pixel or a bullet glyph is not a hero.
+check("hero: a tiny payload is not a hero",
+    libraryArticleHeroBase64("<img src=\"data:image/gif;base64,R0lGODlhAQABAAAAACw=\">") == nil, true)
+
+// A percent-encoded SVG is a valid data URI and not bytes to decode.
+check("hero: a non-base64 data URI is skipped",
+    libraryArticleHeroBase64("<img src=\"data:image/svg+xml,%3Csvg%20xmlns\">") == nil, true)
+
+// The FIRST inlined image wins — our captures put the lead under the
+// standfirst, and a later figure is not the hero.
+let twoImages = "<img src=\"data:image/png;base64,\(bigPayload)\"><img src=\"data:image/png;base64,\(String(repeating: "B", count: 600))\">"
+check("hero: the first image is the lead",
+    (libraryArticleHeroBase64(twoImages) ?? "").hasPrefix("A"), true)
+
+// An unterminated attribute must not run off the end of the document.
+check("hero: an unclosed src is refused",
+    libraryArticleHeroBase64("<img src=\"data:image/png;base64,AAAA") == nil, true)
+
 print(failures == 0 ? "\nall good" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

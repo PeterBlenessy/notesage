@@ -57,10 +57,39 @@ final class ScreenController: UIViewController {
   private weak var webView: WKWebView?
   private var snapshot: UIView?
 
+  /// The title, drawn in a region centred on the BAR rather than in whatever
+  /// space the bar items happen to leave.
+  ///
+  /// A plain `title` is centred by UIKit only while it fits. Once it has to
+  /// truncate, the label fills the space between the bar items instead — and
+  /// that space is not symmetric, because a screen with a trailing menu item
+  /// has nothing of matching width on the leading side. A long title then
+  /// sits left of centre (measured at 11pt on a 393pt phone), while a short
+  /// one looks perfect, which is why it survives casual checking.
+  ///
+  /// 72pt of clearance each side is the same figure the chrome overlay's
+  /// breadcrumb strip reserves for its corner buttons, so the two agree.
+  ///
+  /// Measured on a 440pt screen with a title long enough to truncate:
+  /// 11.2pt off centre without this, 6.8pt with it. The residual is the bar
+  /// still reserving space for the trailing menu item with nothing matching
+  /// it on the leading side. Balancing THAT was tried and is worse than the
+  /// bug — see the note in `applyMenu`.
+  private let titleLabel: UILabel = {
+    let label = UILabel()
+    label.textAlignment = .center
+    label.lineBreakMode = .byTruncatingTail
+    label.font = .preferredFont(forTextStyle: .headline)
+    label.adjustsFontForContentSizeCategory = true
+    return label
+  }()
+
   init(screenId: String, title: String?) {
     self.screenId = screenId
     super.init(nibName: nil, bundle: nil)
     self.title = title
+    titleLabel.text = title
+    navigationItem.titleView = titleLabel
     // The bar is translucent and content runs under it, which is the iOS
     // norm and keeps the web layer's existing top padding roughly right.
     edgesForExtendedLayout = .all
@@ -69,9 +98,27 @@ final class ScreenController: UIViewController {
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("not used") }
 
+  /// A rename sets `title`; the label has to follow it or the bar keeps the
+  /// old name while the listing shows the new one.
+  override var title: String? {
+    didSet { titleLabel.text = title }
+  }
+
   override func viewDidLoad() {
     super.viewDidLoad()
     view.backgroundColor = .systemBackground
+  }
+
+  /// The title region: the bar's width less equal clearance on both sides.
+  ///
+  /// Sized here rather than by constraints because a `titleView` is laid out
+  /// by the navigation bar, which respects an intrinsic size but not
+  /// arbitrary constraints against its own edges.
+  override func viewWillLayoutSubviews() {
+    super.viewWillLayoutSubviews()
+    let available = max(0, view.bounds.width - 144)
+    titleLabel.frame = CGRect(x: 0, y: 0, width: available, height: 44)
+    titleLabel.bounds = titleLabel.frame
   }
 
   /// Put the live web view in this controller, beneath any snapshot already
@@ -466,6 +513,11 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
       item.menu = menu
     }
     screen.navigationItem.rightBarButtonItem = item
+// NOTHING is set on the leading side. A counterweight there — to balance
+    // the space the bar reserves for this menu item, so a long title centres —
+    // was tried and REPLACES THE BACK BUTTON: `leftBarButtonItem` overrides
+    // the system back item, and the screen loses its way back. An 11pt
+    // misalignment on long titles is the better bug.
   }
 
   static func buildMenu(_ items: [ChromeMenuItemSpec], onTap: @escaping (String) -> Void) -> UIMenu {

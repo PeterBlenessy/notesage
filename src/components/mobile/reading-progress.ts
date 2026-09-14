@@ -18,7 +18,11 @@ export function readingLine(minutes: number | null, progress: number): string | 
   if (minutes == null) return null;
   if (progress >= READ_THRESHOLD) return t("list.read");
   if (progress <= 0) return t("list.minutes", { total: minutes });
-  const left = Math.max(1, Math.ceil(minutes * (1 - progress)));
+  // round, not ceil: ceil on a short article reports the whole length as
+  // remaining — a 2 min piece read to 38% said "2 of 2 min left" beside a
+  // progress bar that was clearly a third full. max(1, …) already covers
+  // the "0 of 4" case that ceil was there for.
+  const left = Math.max(1, Math.round(minutes * (1 - progress)));
   return t("list.minutesLeft", { left, total: minutes });
 }
 
