@@ -137,7 +137,12 @@ fn every_note_builder_is_reachable_or_documented() {
 /// contract that stops at the crate edge stops one link short of where X
 /// actually broke.
 fn ios_src(file: &str) -> String {
-    ext_src("ios", file)
+    // Names are relative to `src-tauri/ios/` — the Share Extension's own
+    // sources, and resource paths like `ShareResources/en.lproj/…`. One
+    // exception, spelled out rather than guessed at: a `crates/` prefix is
+    // relative to `src-tauri/`, because the app target calls some exports
+    // from the iOS plugin package rather than from the extension.
+    if file.starts_with("crates/") { ext_src(".", file) } else { ext_src("ios", file) }
 }
 
 /// Same, for the macOS Share Extension. It links the SAME staticlib and the
@@ -237,6 +242,12 @@ const EXPORT_CALL_SITES: &[(&str, &str, MacExpectation)] = &[
         "notesage_capture_video_contents",
         "LibraryCapture.swift",
         Err("no Video format on macOS; see notesage_capture_oembed_url"),
+    ),
+    (
+        "notesage_capture_article_card_meta",
+        "crates/tauri-plugin-notesage-ios/ios/Sources/ArticleMeta.swift",
+        Err("the iOS list row is a UIKit cell and needs the parse in Swift; the desktop \
+             Inbox row is React and reads the same header in TypeScript"),
     ),
     ("notesage_capture_article_contents", "LibraryCapture.swift", Ok("ShareCapture.swift")),
     ("notesage_capture_article_html_contents", "LibraryCapture.swift", Ok("ShareCapture.swift")),

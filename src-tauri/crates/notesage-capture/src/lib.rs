@@ -179,8 +179,17 @@ pub fn article_card_meta(html: &str) -> Option<CardMeta> {
         // part that is not something else", which mislabels a date as the site
         // when the site is missing.
         let parts: Vec<&str> = byline.split(" · ").map(str::trim).collect();
-        if let Some(i) = parts.iter().position(|p| p.ends_with(" min read")) {
-            minutes = parts[i].trim_end_matches(" min read").trim().parse::<u32>().ok();
+        // The part must END in " min read" AND have a number in front of it.
+        // Matching on the suffix alone picks up an author segment that happens
+        // to contain the phrase — a page whose own byline already reads
+        // "2 min read · site" is re-bylined as "By 2 min read · site · 2 min
+        // read · host", and "By 2 min read" then wins, fails to parse, and the
+        // row loses its reading time altogether.
+        if let Some((i, mins)) = parts.iter().enumerate().find_map(|(i, p)| {
+            let n = p.strip_suffix(" min read")?.trim().parse::<u32>().ok()?;
+            Some((i, n))
+        }) {
+            minutes = Some(mins);
             site = parts.get(i + 1).filter(|s| !s.is_empty()).map(|s| s.to_string());
         }
     }
@@ -2018,6 +2027,21 @@ mod video_tests {
         let meta = article_card_meta(html).unwrap();
         assert_eq!(meta.excerpt, None);
         assert_eq!(meta.site.as_deref(), Some("theguardian.com"));
+    }
+
+    #[test]
+    fn article_card_meta_skips_an_author_that_contains_the_reading_phrase() {
+        // Captured from a page whose own byline already said "2 min read ·
+        // site". The builder reads that whole line as the author, so the
+        // header comes out re-bylined — and matching on the " min read"
+        // suffix alone picked "By 2 min read", failed to parse "By", and left
+        // the row with a site and no reading time at all.
+        let html = r#"<html><head><title>A field guide to saving things</title></head><body>
+<p class="byline">By 2 min read · slowweb.example · 2 min read · slowweb.example</p>
+<footer><p class="source">Clipped from <a href="https://slowweb.example/a">https://slowweb.example/a</a></p></footer></body></html>"#;
+        let meta = article_card_meta(html).unwrap();
+        assert_eq!(meta.minutes, Some(2));
+        assert_eq!(meta.site.as_deref(), Some("slowweb.example"));
     }
 
     #[test]

@@ -341,6 +341,30 @@ ARTICLES: list[tuple] = [
 ]
 
 
+# The sixteenth piece, and the only one not seeded into the library. Loop 2 of
+# the landing page shows an article ARRIVING, and an article already in the
+# Inbox cannot arrive — so this one is served over local HTTP, opened in
+# Safari and shared in. Its title begins with "A " so that it sorts to the top
+# of an alphabetical Inbox, which is a staging decision and is recorded as one
+# in the site's MANUSCRIPT.md.
+SHARED: tuple = (
+    "A field guide to saving things",
+    "On the small decision you make a dozen times a day, and how to make it better without making it slower.",
+    "slowweb.example", (88, 132, 180), (22, 38, 56), "dashed", (222, 238, 252),
+    [
+        "Saving is the cheapest action on the internet and the least examined. It takes a second, it feels like progress, and nobody ever reviews whether it was the right call — which is how everyone ends up with a list they are afraid to open.",
+        "The useful distinction is not between good and bad articles. It is between three quite different reasons for saving, which feel identical in the moment and behave nothing alike a week later.",
+        "You save because you need it for something specific and dated. This is not reading-list material; it belongs with the task, and it will get read whether or not you file it anywhere, because something else is forcing the issue.",
+        "You save because you actually want to read it. This is the only kind worth a list, and it is reliably the smallest share — something like one save in six, for most people who bother to count.",
+        "Or you save because you feel you ought to have read it. The commentary everybody is discussing, the long investigation, the thing that would make you better informed. This category grows fastest, gets read least, and supplies all of the guilt.",
+        "None of that is a character flaw. It is what happens when one gesture serves three purposes and nothing downstream tells them apart.",
+        "The intervention is not a better list, and it is certainly not a better app. It is a two-second pause before the gesture, in which you notice which of the three you are doing. The pause fails often; it is still the highest-leverage two seconds available, because everything after it is downstream of a decision already made.",
+        "What makes the pause possible is knowing the save is cheap to undo. If deleting something later feels like an admission, you will not delete it, and the list becomes an archive of your intentions rather than a queue of your interests.",
+        "So the second habit is a standing permission: anything in the list may be deleted unread, at any time, without justification. Most reading lists die because their owner never granted themselves that.",
+        "And the third is to keep what you delete. Not in the list — in a folder, where nothing is asking anything of you. Almost everything worth saving was worth keeping and not worth queueing, and the two have been confused because software has historically offered only one place to put things.",
+    ],
+)
+
 def _bg(size, top, bottom):
     """A diagonal ground, as a numpy array — the canvas every motif sits on."""
     w, h = size
@@ -584,7 +608,29 @@ def main() -> int:
         )
         (outdir / f"{date}-{slug(title)}.html").write_text(html, encoding="utf-8")
 
+    # The shared-in piece goes next to the library, not into it.
+    title, stand, site, top, bottom, motif, mark, paras = SHARED
+    mins = max(1, round(sum(len(x.split()) for x in paras) / 200))
+    hero = base64.b64encode(hero_png(1200, 630, top, bottom, motif, mark)).decode()
+    body = "".join(f"<p>{p}</p>" for p in paras)
+    url = f"https://{site}/{slug(title)}"
+    share = outdir.parent / "share"
+    share.mkdir(parents=True, exist_ok=True)
+    (share / f"{slug(title)}.html").write_text(
+        '<!DOCTYPE html><html><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f"<title>{title}</title><style>{STYLE}</style></head><body>"
+        f"<h1>{title}</h1>"
+        f'<p class="standfirst">{stand}</p>'
+        f'<p class="byline">{mins} min read · {site}</p>'
+        f'<img class="hero" src="data:image/png;base64,{hero}">'
+        f"{body}<hr>"
+        f'<p class="endnote">{mins} min read · {site}</p>'
+        f'<p class="source">Clipped from <a href="{url}">{url}</a></p>'
+        "</body></html>", encoding="utf-8")
+
     print(f"wrote {len(ARTICLES)} fictional articles to {outdir}")
+    print(f"wrote the shared-in piece to {share}")
     return 0
 
 

@@ -141,5 +141,27 @@ seed_appearance Essays BookOpen 6
 seed_appearance Research Lightbulb 4
 seed_appearance Guides Compass 1
 
+# Modification dates. Every file otherwise carries the moment the seed ran,
+# which makes "Date modified" a random order and collapses "Group by date"
+# into one bucket called RECENTLY CHANGED — a library nobody has ever used
+# twice. The captures take their dates from their own filenames; the notes get
+# spread over the same weeks so the two kinds interleave.
+set_mtime() {  # <file> <YYYYMMDDhhmm>
+  touch -t "$2" "$1"
+}
+for f in "$LIB"/Inbox/*.html; do
+  b="$(basename "$f")"                       # 2026-08-19-091500-slug.html
+  set_mtime "$f" "${b:0:4}${b:5:2}${b:8:2}${b:11:2}${b:13:2}"
+done
+set_mtime "$LIB/Inbox/Weekly Review.md"        202609120830
+set_mtime "$LIB/Essays/On Attention.md"        202608260945
+set_mtime "$LIB/Essays/Notes on Craft.md"      202609081410
+set_mtime "$LIB/Research/Attention and Devotion.md" 202609031120
+set_mtime "$LIB/Guides/Formatting.md"          202608201600
+set_mtime "$LIB/Drafts/Weekly Review.md"       202609120830
+set_mtime "$LIB/Data/Quarterly review.md"      202608281030
+set_mtime "$LIB/Prompt library.md"             202609101715
+set_mtime "$LIB/Slides/Sample deck.pptx"       202608221300
+
 echo "seeded $LIB"
 find "$LIB" -type f ! -path "*/.notesage/*" | sed "s|$LIB/|  |" | sort
