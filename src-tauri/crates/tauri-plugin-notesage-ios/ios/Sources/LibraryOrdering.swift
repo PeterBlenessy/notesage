@@ -813,3 +813,36 @@ func libraryArticleHeroBase64(_ html: String) -> String? {
     guard payload.count > 512 else { return nil }
     return String(payload)
 }
+
+/// Characters a synthesiser gets through per second at
+/// `AVSpeechUtteranceDefaultSpeechRate`.
+///
+/// Measured the way anyone would check it: average English word ≈ 5 letters
+/// plus a space, and AVSpeech's default lands around 165 words a minute — so
+/// roughly a thousand characters a minute. It is an ESTIMATE and cannot be
+/// anything else: `AVSpeechSynthesizer` reports no duration, and asking it to
+/// speak a paragraph twice does not take the same time twice.
+///
+/// The number only has to be close. The lock screen re-synchronises at every
+/// paragraph boundary, so an error here shows up as the scrubber drifting
+/// slightly within a paragraph and being corrected at the next — not as an
+/// accumulating lie.
+let librarySpeechCharsPerSecond = 16.5
+
+/// How long `characters` take to speak at `rate`, in seconds.
+///
+/// `rate` is in `AVSpeechUtterance`'s own units, where
+/// `AVSpeechUtteranceDefaultSpeechRate` (0.5) is normal — so the multiplier
+/// against the estimate above is `rate / 0.5`, and a user listening at 2×
+/// gets a duration half as long.
+///
+/// This exists as a free function, away from the player, because it is the
+/// one part of the lock-screen clock that can be checked on macOS — the rest
+/// needs MediaPlayer and a device. `scripts/check-library-ordering.sh`.
+func librarySpeechSeconds(characters: Int, rate: Double, defaultRate: Double = 0.5) -> Double {
+    guard characters > 0 else { return 0 }
+    // A rate of zero would divide by nothing; treat it as normal speed, which
+    // is what the player does with a non-positive rate on the way in.
+    let multiplier = rate > 0 ? rate / defaultRate : 1.0
+    return Double(characters) / (librarySpeechCharsPerSecond * multiplier)
+}
