@@ -24,15 +24,18 @@ sektion som är tom. Ungefär 600 tecken ryms på en skärm; skriptet varnar
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
+Uppläsning, låsskärmen, och artiklar som ser ut som sig själva.
 
-Mappar minns var du läste.
+NYTT
+• Sparade artiklar visar sin egen bild i listan och i galleriet.
 
 RÄTTAT
-• Bläddra långt ner i en mapp, öppna en anteckning och gå tillbaka — du
-hamnade högst upp igen. Nu landar du på raden du lämnade. Det håller även
-om du går ut till Alla mappar och in igen, vilket är där det märktes mest.
+• Låsskärmen kunde stå kvar och visa Paus för en artikel appen redan
+stoppat, utan något sätt att stänga den.
+• Dess klocka räknade stycken: en artikel på 14 minuter blev 1:11. Minuter
+nu, och den följer hastigheten du valt.
+• En rad kunde säga "2 av 2 min kvar" en tredjedel in.
 
 PROVA
-• Öppna en mapp med många anteckningar. Bläddra långt ner, öppna en, gå
-tillbaka.
-• Gå sedan hela vägen ut och in igen — samma rad.
+• Läs upp en artikel, lås telefonen, titta på klockan — ändra hastigheten.
+• Öppna Inkorgen, växla till galleriet: varje artikel ska visa ett omslag.

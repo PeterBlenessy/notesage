@@ -25,14 +25,18 @@ screen; the sender warns past that.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
+Read aloud, the lock screen, and articles that look like themselves.
 
-Folders remember where you were reading.
+NEW
+• Saved articles show their own picture in the list and the gallery.
 
 FIXED
-• Scroll down a long folder, open a note, come back — you were put back at
-the top. Now you land on the row you left. It also survives going out to
-All Folders and back in, which is where it was most obviously wrong.
+• The lock screen could sit showing Pause for an article the app had already
+stopped, with nothing left that could dismiss it.
+• Its clock counted paragraphs: a 14 minute article read as 1:11. Minutes
+now, and it follows the speed you picked.
+• A row could claim "2 of 2 min left" a third of the way in.
 
 TRY
-• Open a folder with a lot of notes. Scroll well down, open one, go back.
-• Then go all the way out and in again — same row.
+• Read one aloud, lock the phone, check the clock — then change the speed.
+• Open the Inbox, switch to the gallery: every article should show a cover.
