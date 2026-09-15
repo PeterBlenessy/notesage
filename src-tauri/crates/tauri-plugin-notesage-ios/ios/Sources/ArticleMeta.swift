@@ -91,7 +91,9 @@ enum ArticleMeta {
         if progress <= 0 {
             return fill(templates.minutes, ["total": String(minutes)])
         }
-        let left = max(1, Int(ceil(Double(minutes) * (1 - progress))))
+        // Rounded, not ceiled — see `reading-progress.ts`: ceil on a short
+        // article reports its whole length as remaining.
+        let left = max(1, Int((Double(minutes) * (1 - progress)).rounded()))
         return fill(templates.minutesLeft, ["left": String(left), "total": String(minutes)])
     }
 

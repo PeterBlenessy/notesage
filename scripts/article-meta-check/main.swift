@@ -50,8 +50,13 @@ check("part-read shows what is left",
 // started reads as finished.
 check("a barely-started article never says 0 left",
     ArticleMeta.readingLine(minutes: 4, progress: 0.96, templates: en) == "1 of 4 min left")
-check("rounds up rather than down",
+check("a half minute rounds up, not down",
     ArticleMeta.readingLine(minutes: 10, progress: 0.35, templates: en) == "7 of 10 min left")
+// A 2 min piece read to 38% once said "2 of 2 min left" beside a bar that
+// was clearly a third full: the remainder was ceiled, so a short article
+// reported its whole length as still to go.
+check("a short article does not report its whole length as remaining",
+    ArticleMeta.readingLine(minutes: 2, progress: 0.38, templates: en) == "1 of 2 min left")
 check("at the threshold it reads as read",
     ArticleMeta.readingLine(minutes: 4, progress: 0.97, templates: en) == "Read")
 check("past the threshold it reads as read",

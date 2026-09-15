@@ -25,19 +25,18 @@ screen; the sender warns past that.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
+Read aloud, the lock screen, and articles that look like themselves.
 
-Menu actions that did nothing now do what they say.
+NEW
+• Saved articles show their own picture in the list and the gallery.
 
 FIXED
-• Deleting a folder did nothing at all — no folder removed, no error. It
-works now, and takes what is inside it, as the confirmation says.
-• Anything that failed on a folder screen failed silently. Failures say so
-now, and a completed move says where it went.
-• Edit Home opened an empty screen.
-• Listen was missing from a note's long-press menu, though the row itself
-offered it.
+• The lock screen could sit showing Pause for an article the app had already
+stopped, with nothing left that could dismiss it.
+• Its clock counted paragraphs: a 14 minute article read as 1:11. Minutes
+now, and it follows the speed you picked.
+• A row could claim "2 of 2 min left" a third of the way in.
 
 TRY
-• Hold a folder, choose Delete, confirm. It should go.
-• The … menu → Edit Home: the list of folders should be there.
-• Hold a note: Listen should be in the menu, and should play.
+• Read one aloud, lock the phone, check the clock — then change the speed.
+• Open the Inbox, switch to the gallery: every article should show a cover.

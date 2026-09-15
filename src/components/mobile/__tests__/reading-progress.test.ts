@@ -16,6 +16,12 @@ describe("readingLine", () => {
     // at least a minute left until it reads as done.
     expect(readingLine(4, 0.95)).toBe("1 of 4 min left");
   });
+  it("does not report a short article's whole length as remaining", () => {
+    // A 2 min piece read to 38% once said "2 of 2 min left" next to a bar
+    // that was clearly a third full, because the remainder was ceiled.
+    expect(readingLine(2, 0.38)).toBe("1 of 2 min left");
+    expect(readingLine(5, 0.4)).toBe("3 of 5 min left");
+  });
   it("reads as done past the threshold — the tail is footer, not article", () => {
     expect(readingLine(4, 0.97)).toBe("Read");
     expect(readingLine(4, 1)).toBe("Read");

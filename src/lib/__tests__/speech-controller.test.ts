@@ -71,6 +71,30 @@ describe("speech-controller (read aloud belongs to the app)", () => {
     expect(started).toHaveLength(1); // never restarted
   });
 
+  it("a rejected command must silence the player, not just the app (#889)", async () => {
+    // Peter, device, 2026-09-15: lock screen showing Pause for an article the
+    // list and the reader both thought had stopped. The native side is not at
+    // fault — `stop()` clears the plate — but a command that REJECTS drops the
+    // session on the app side and never tells the player, so it keeps speaking
+    // to a lock screen nobody can dismiss. A rejection does not mean the
+    // player is gone: on a locked device the web layer is throttled and the
+    // round-trip is exactly what fails.
+    const entry = { path: "Inbox/q3.html", name: "q3.html" };
+    toggleSpeech(entry);
+    await flush();
+    expect(useMobileStore.getState().speech?.playing).toBe(true);
+
+    setMockInvokeHandler("ios_speech_pause", () => {
+      calls.push("ios_speech_pause");
+      throw new Error("ipc timed out");
+    });
+    toggleSpeech(entry);
+    await flush();
+
+    expect(useMobileStore.getState().speech).toBeNull();      // the app gave up
+    expect(calls).toContain("ios_speech_stop");               // and said so
+  });
+
   it("progress feeds the ring and the resume position; finishing retires the session at the top", async () => {
     await startSpeech({ relPath: "Inbox/q3.html", name: "q3.html", text: "one\n\ntwo\n\nthree", title: "T" });
     await flush();

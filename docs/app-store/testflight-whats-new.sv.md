@@ -24,20 +24,18 @@ sektion som är tom. Ungefär 600 tecken ryms på en skärm; skriptet varnar
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
+Uppläsning, låsskärmen, och artiklar som ser ut som sig själva.
 
-Menyval som inte gjorde något gör nu det de säger.
+NYTT
+• Sparade artiklar visar sin egen bild i listan och i galleriet.
 
 RÄTTAT
-• Att radera en mapp gjorde ingenting alls — ingen mapp försvann, inget
-felmeddelande. Nu fungerar det, och det som ligger i mappen följer med, precis
-som bekräftelsen säger.
-• Allt som misslyckades på en mappskärm misslyckades tyst. Nu syns felen, och
-en flytt som gått igenom säger vart filen tog vägen.
-• Redigera Hem öppnade en tom skärm.
-• Lyssna saknades i långtrycksmenyn för en anteckning, trots att raden själv
-erbjöd det.
+• Låsskärmen kunde stå kvar och visa Paus för en artikel appen redan
+stoppat, utan något sätt att stänga den.
+• Dess klocka räknade stycken: en artikel på 14 minuter blev 1:11. Minuter
+nu, och den följer hastigheten du valt.
+• En rad kunde säga "2 av 2 min kvar" en tredjedel in.
 
 PROVA
-• Håll in en mapp, välj Radera, bekräfta. Den ska försvinna.
-• Menyn … → Redigera Hem: listan med mappar ska finnas där.
-• Håll in en anteckning: Lyssna ska finnas i menyn, och ska spela upp.
+• Läs upp en artikel, lås telefonen, titta på klockan — ändra hastigheten.
+• Öppna Inkorgen, växla till galleriet: varje artikel ska visa ett omslag.
