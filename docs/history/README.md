@@ -235,3 +235,4 @@ Chronological log of major implementation milestones and changes.
 | 229 | [Release v0.57.1](229-release-v0.57.1.md) | The library move explains what it is, where to find it, and why it is sometimes not offered. |
 | 230 | [Release v0.57.3](230-release-v0.57.3.md) | Moving your library into Notesage's own iCloud folder no longer asks you for anything. |
 | 231 | [Release v0.58.0](231-release-v0.58.0.md) | Shared links stop landing in iCloud's Trash after a library move, and the app lists the open-source projects inside it. |
+| 232 | [Release v0.59.0](232-release-v0.59.0.md) | Settings fully translated; Word export's XML reader security fix |
