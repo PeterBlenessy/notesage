@@ -106,11 +106,19 @@ export function startSpeechEvents(): () => void {
 }
 
 function fail(relPath: string, err: unknown): void {
-  // A rejection here means the native player is unavailable (desktop dev,
-  // the vitest harness, an older build). Reset rather than leaving a player
-  // that controls nothing — but only if the session is still this one; a
-  // late failure from an old start must not kill a newer article.
-  if (speechFor(relPath)) useMobileStore.getState().setSpeech(null);
+  // Only if the session is still this one: a late failure from an old start
+  // must not kill a newer article.
+  if (speechFor(relPath)) {
+    // Silence the PLAYER, not just the app. A rejection does NOT mean the
+    // native side is unavailable — that was the old assumption here, and on a
+    // locked device it is wrong in the worst way: the web layer is throttled
+    // and the round-trip is precisely what fails, while the player carries on.
+    // Dropping the session without this leaves the lock screen showing Pause
+    // for an article the list and the reader have both forgotten, with no
+    // surface left that can stop it (#889; Peter, device, 2026-09-15).
+    void iosSpeechStop().catch(() => {});
+    useMobileStore.getState().setSpeech(null);
+  }
   toast.error(String(err));
 }
 

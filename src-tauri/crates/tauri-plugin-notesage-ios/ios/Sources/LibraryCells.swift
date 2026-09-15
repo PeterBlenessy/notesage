@@ -272,6 +272,72 @@ final class ThumbnailLoader {
             return
         }
 
+        // A saved article shows its OWN picture. `QLThumbnailGenerator` renders
+        // the file, and for an HTML file that is a miniature web page — a
+        // title, a small image and three paragraphs of body text shrunk to
+        // forty points, which reads as a grey smudge and says nothing about
+        // the article. Read-later apps show the lead image; so do we.
+        //
+        // Falls through to the page render when the capture has no image.
+        if ArticleMeta.isCandidate(rel) {
+            let size = CGSize(width: Self.maxPixel, height: Self.maxPixel)
+            DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+                let hero = Self.articleHero(rel).flatMap { UIImage(data: $0) }
+                let filled = hero.map { Self.fill($0, into: size) }
+                DispatchQueue.main.async {
+                    guard let self else { return }
+                    guard let filled, let data = filled.pngData() else {
+                        // No image in the capture: the page render is still
+                        // better than nothing.
+                        self.generateByQuickLook(rel, completion: completion)
+                        return
+                    }
+                    let wasCancelled = !self.inFlight.contains(rel)
+                    self.inFlight.remove(rel)
+                    self.memory.setObject(filled, forKey: Self.cacheKey(rel, dark: Self.isDark) as NSString)
+                    ThumbnailCache.put(Self.diskKey(rel, dark: Self.isDark), data)
+                    if !wasCancelled { completion?(filled) }
+                }
+            }
+            return
+        }
+
+        generateByQuickLook(rel, completion: completion)
+    }
+
+    /// A saved article's own lead image, decoded from the document.
+    ///
+    /// Lives here rather than on `LibraryAccess` because that file is
+    /// compiled into the APP target as well as this package, so it cannot see
+    /// `libraryArticleHeroBase64` — which is package-only, being testable on
+    /// macOS. Worth knowing before moving anything else onto it.
+    ///
+    /// Synchronous and for a background queue: it reads the whole capture.
+    private static func articleHero(_ rel: String) -> Data? {
+        guard let root = try? LibraryAccess.resolveRoot() else { return nil }
+        let scoped = root.startAccessingSecurityScopedResource()
+        defer { if scoped { root.stopAccessingSecurityScopedResource() } }
+        guard let html = try? String(contentsOf: root.appendingPathComponent(rel), encoding: .utf8),
+            let payload = libraryArticleHeroBase64(html)
+        else { return nil }
+        return Data(base64Encoded: payload, options: .ignoreUnknownCharacters)
+    }
+
+    /// Crop to fill a square, centred.
+    ///
+    /// A hero is wide — 1200x630 in our own captures — and letterboxing it
+    /// into a square tile wastes half the tile on background. Filling is what
+    /// the row's fixed slot expects, and what every listing of articles does.
+    private static func fill(_ image: UIImage, into size: CGSize) -> UIImage {
+        let scale = max(size.width / image.size.width, size.height / image.size.height)
+        let drawn = CGSize(width: image.size.width * scale, height: image.size.height * scale)
+        let origin = CGPoint(x: (size.width - drawn.width) / 2, y: (size.height - drawn.height) / 2)
+        return UIGraphicsImageRenderer(size: size).image { _ in
+            image.draw(in: CGRect(origin: origin, size: drawn))
+        }
+    }
+
+    private func generateByQuickLook(_ rel: String, completion: ((UIImage) -> Void)?) {
         LibraryAccess.thumbnail(rel, maxPixel: Self.maxPixel) { [weak self] result in
             DispatchQueue.main.async {
                 guard let self else { return }

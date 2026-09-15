@@ -772,3 +772,77 @@ func libraryScrollTarget(_ anchor: String?, in items: [String]) -> String? {
     guard let anchor, items.contains(anchor) else { return nil }
     return anchor
 }
+
+// MARK: - Article hero
+
+/// The base64 payload of a saved article's own lead image.
+///
+/// A capture inlines its images as `data:` URIs (#755), so the hero is in the
+/// document rather than beside it, and the first one is the lead — our
+/// captures put it directly under the standfirst.
+///
+/// This exists because `QLThumbnailGenerator` renders the FILE, and for an
+/// HTML file that means a miniature web page: a title, a small picture and
+/// three paragraphs of body text shrunk to forty points. It reads as a grey
+/// smudge at row size and tells you nothing. Every read-later app shows the
+/// article's picture instead, and so should this.
+///
+/// `nil` when the capture has no image, which is common enough — the caller
+/// falls back to the page render.
+///
+/// Deliberately a scan rather than an HTML parse. The input is our own
+/// capture format, the attribute is machine-written, and a parser would be a
+/// dependency and a much larger surface for a job that ends at the first
+/// match.
+func libraryArticleHeroBase64(_ html: String) -> String? {
+    // `data:image/` rather than `<img` — a capture's inlined image is always
+    // one, and anchoring on the scheme skips every other attribute an <img>
+    // might carry before its src.
+    guard let scheme = html.range(of: "src=\"data:image/") else { return nil }
+    let afterQuote = html[scheme.upperBound...]
+    // The URI ends at the attribute's closing quote.
+    guard let close = afterQuote.range(of: "\"") else { return nil }
+    let uri = afterQuote[..<close.lowerBound]
+    // Only base64 payloads. A percent-encoded SVG is a valid data URI and not
+    // something to hand to an image decoder as if it were bytes.
+    guard let marker = uri.range(of: ";base64,") else { return nil }
+    let payload = uri[marker.upperBound...]
+    // A one-pixel spacer is not a hero. The threshold is deliberately low —
+    // it is there to reject tracking pixels and bullet glyphs, not to judge
+    // quality.
+    guard payload.count > 512 else { return nil }
+    return String(payload)
+}
+
+/// Characters a synthesiser gets through per second at
+/// `AVSpeechUtteranceDefaultSpeechRate`.
+///
+/// Measured the way anyone would check it: average English word ≈ 5 letters
+/// plus a space, and AVSpeech's default lands around 165 words a minute — so
+/// roughly a thousand characters a minute. It is an ESTIMATE and cannot be
+/// anything else: `AVSpeechSynthesizer` reports no duration, and asking it to
+/// speak a paragraph twice does not take the same time twice.
+///
+/// The number only has to be close. The lock screen re-synchronises at every
+/// paragraph boundary, so an error here shows up as the scrubber drifting
+/// slightly within a paragraph and being corrected at the next — not as an
+/// accumulating lie.
+let librarySpeechCharsPerSecond = 16.5
+
+/// How long `characters` take to speak at `rate`, in seconds.
+///
+/// `rate` is in `AVSpeechUtterance`'s own units, where
+/// `AVSpeechUtteranceDefaultSpeechRate` (0.5) is normal — so the multiplier
+/// against the estimate above is `rate / 0.5`, and a user listening at 2×
+/// gets a duration half as long.
+///
+/// This exists as a free function, away from the player, because it is the
+/// one part of the lock-screen clock that can be checked on macOS — the rest
+/// needs MediaPlayer and a device. `scripts/check-library-ordering.sh`.
+func librarySpeechSeconds(characters: Int, rate: Double, defaultRate: Double = 0.5) -> Double {
+    guard characters > 0 else { return 0 }
+    // A rate of zero would divide by nothing; treat it as normal speed, which
+    // is what the player does with a non-positive rate on the way in.
+    let multiplier = rate > 0 ? rate / defaultRate : 1.0
+    return Double(characters) / (librarySpeechCharsPerSecond * multiplier)
+}

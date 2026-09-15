@@ -34,6 +34,12 @@ private let MAX_VOTING_PARAGRAPHS = 60
 
     private let synth = AVSpeechSynthesizer()
     private var paragraphs: [String] = []
+    /// Characters before the start of each paragraph, plus the total at the
+    /// end — so `charsBefore[i]` is how much has been spoken by the time
+    /// paragraph `i` begins, and `charsBefore.last` is the whole article.
+    /// Kept alongside `paragraphs` and rebuilt with it; the lock screen's
+    /// clock is the only reader.
+    private var charsBefore: [Int] = [0]
     private var index = 0
     private var rate: Float = AVSpeechUtteranceDefaultSpeechRate
     /// Voice chosen for THIS article, from its own language.
@@ -110,6 +116,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
         self.title = title
         self.rate = rate > 0 ? rate : AVSpeechUtteranceDefaultSpeechRate
         paragraphs = SpeechPlayer.splitIntoParagraphs(text)
+        charsBefore = SpeechPlayer.cumulativeCharacters(paragraphs)
         guard !paragraphs.isEmpty else { return false }
         language = detected
         voice = SpeechPlayer.voice(forLanguage: language, chosen: voiceByLanguage)
@@ -208,6 +215,7 @@ private let MAX_VOTING_PARAGRAPHS = 60
         if synth.isPaused { synth.continueSpeaking() }
         synth.stopSpeaking(at: .immediate)
         paragraphs = []
+        charsBefore = [0]
         os_log("now-playing: stopped (resetQueue)", log: SpeechPlayer.logger, type: .info)
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         MPNowPlayingInfoCenter.default().playbackState = .stopped
@@ -283,6 +291,15 @@ private let MAX_VOTING_PARAGRAPHS = 60
         text.components(separatedBy: "\n\n")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+
+    /// Running character totals for `paragraphs`, one entry longer than the
+    /// input: the first is always 0, the last is the whole article.
+    static func cumulativeCharacters(_ paragraphs: [String]) -> [Int] {
+        var totals = [0]
+        totals.reserveCapacity(paragraphs.count + 1)
+        for paragraph in paragraphs { totals.append(totals[totals.count - 1] + paragraph.count) }
+        return totals
     }
 
     private func speakCurrent() {
@@ -540,9 +557,17 @@ private let MAX_VOTING_PARAGRAPHS = 60
     /// publish names its caller here; `log stream --predicate 'category ==
     /// "speech"'` then reads back the exact sequence.
     private func updateNowPlaying(playing: Bool, reason: String = "unspecified") {
+        let spokenChars = charsBefore[min(index, charsBefore.count - 1)]
+        let elapsed = librarySpeechSeconds(characters: spokenChars, rate: Double(rate))
+        let duration = librarySpeechSeconds(characters: charsBefore.last ?? 0, rate: Double(rate))
+        // The clock goes in the line too. "-1:11 on a 14-minute article" was
+        // the whole of the last report, and a reason without the numbers it
+        // published cannot answer that.
         os_log(
-            "now-playing: %{public}@ (%{public}@)", log: SpeechPlayer.logger, type: .info,
-            playing ? "playing" : "paused", reason)
+            "now-playing: %{public}@ (%{public}@) %{public}.0fs/%{public}.0fs para %d/%d",
+            log: SpeechPlayer.logger, type: .info,
+            playing ? "playing" : "paused", reason, elapsed, duration,
+            index, max(paragraphs.count, 0))
         // The rate alone does not drive the lock screen's play/pause toggle:
         // with the audio session still active (it is, while paused — that is
         // what keeps the plate on screen), iOS kept showing Pause for a
@@ -551,11 +576,18 @@ private let MAX_VOTING_PARAGRAPHS = 60
             MPMediaItemPropertyTitle: title,
             MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0,
         ]
-        // Paragraph index as position: not seconds, but it gives the lock
-        // screen a truthful sense of progress through the article, which is
-        // the number the user actually cares about.
-        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = Double(index)
-        info[MPMediaItemPropertyPlaybackDuration] = Double(max(paragraphs.count, 1))
+        // Seconds, estimated from the text. These two fields have a defined
+        // meaning and iOS renders them as a clock, so putting the paragraph
+        // INDEX and COUNT here — which is what this did — announced a
+        // 14-minute article as "-1:11": 71 paragraphs drawn as 71 seconds
+        // (Peter, device, 2026-09-15). A rough number in the right unit beats
+        // an exact one in the wrong unit.
+        //
+        // Only the paragraph boundary is published. Between boundaries iOS
+        // runs the clock itself from the playback rate above, so the estimate
+        // is re-synchronised every paragraph instead of drifting all article.
+        info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsed
+        info[MPMediaItemPropertyPlaybackDuration] = duration
         if let artwork { info[MPMediaItemPropertyArtwork] = artwork }
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         // AFTER the info, which is the documented order: assigning

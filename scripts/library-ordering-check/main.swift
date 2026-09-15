@@ -594,5 +594,70 @@ check("target: nothing when the row is gone",
 check("target: nothing when there is no anchor",
     libraryScrollTarget(nil, in: ["a.md"]) == nil, true)
 
+// --- article hero -----------------------------------------------------------
+
+let bigPayload = String(repeating: "A", count: 600)
+let withHero = "<h1>T</h1><img class=\"hero\" src=\"data:image/png;base64,\(bigPayload)\"><p>body</p>"
+check("hero: found in a capture", libraryArticleHeroBase64(withHero) ?? "", bigPayload)
+
+check("hero: nil when there is no image",
+    libraryArticleHeroBase64("<h1>T</h1><p>body</p>") == nil, true)
+
+// A tracking pixel or a bullet glyph is not a hero.
+check("hero: a tiny payload is not a hero",
+    libraryArticleHeroBase64("<img src=\"data:image/gif;base64,R0lGODlhAQABAAAAACw=\">") == nil, true)
+
+// A percent-encoded SVG is a valid data URI and not bytes to decode.
+check("hero: a non-base64 data URI is skipped",
+    libraryArticleHeroBase64("<img src=\"data:image/svg+xml,%3Csvg%20xmlns\">") == nil, true)
+
+// The FIRST inlined image wins — our captures put the lead under the
+// standfirst, and a later figure is not the hero.
+let twoImages = "<img src=\"data:image/png;base64,\(bigPayload)\"><img src=\"data:image/png;base64,\(String(repeating: "B", count: 600))\">"
+check("hero: the first image is the lead",
+    (libraryArticleHeroBase64(twoImages) ?? "").hasPrefix("A"), true)
+
+// An unterminated attribute must not run off the end of the document.
+check("hero: an unclosed src is refused",
+    libraryArticleHeroBase64("<img src=\"data:image/png;base64,AAAA") == nil, true)
+
+// --- the lock screen's clock -------------------------------------------------
+// The plate used to put the PARAGRAPH INDEX in the elapsed field and the
+// paragraph COUNT in the duration field, so a 14-minute article announced
+// itself as "-1:11" — 71 paragraphs read as 71 seconds (Peter, device,
+// 2026-09-15). These assert the replacement is in seconds and answers to the
+// rate.
+
+// ~1000 characters at normal speed is about a minute of speech.
+check("speech clock: normal rate is about a minute per thousand characters",
+    (librarySpeechSeconds(characters: 1000, rate: 0.5) / 60).rounded(), 1.0)
+
+// Twice the speed, half the time. This is the part a listener notices: the
+// remaining time has to change when they change the rate.
+check("speech clock: 2x speech takes half as long",
+    librarySpeechSeconds(characters: 5000, rate: 1.0),
+    librarySpeechSeconds(characters: 5000, rate: 0.5) / 2)
+
+// And slower is longer, in the same proportion.
+check("speech clock: 0.8x speech takes longer",
+    librarySpeechSeconds(characters: 5000, rate: 0.4),
+    librarySpeechSeconds(characters: 5000, rate: 0.5) / 0.8)
+
+// An empty article has no duration — not a division by zero, and not a
+// one-second track, which is what `max(count, 1)` used to publish.
+check("speech clock: nothing to say takes no time",
+    librarySpeechSeconds(characters: 0, rate: 0.5), 0.0)
+
+// A non-positive rate is what the player normalises away on the way in; the
+// clock must not divide by it either.
+check("speech clock: a zero rate is read as normal speed",
+    librarySpeechSeconds(characters: 1000, rate: 0),
+    librarySpeechSeconds(characters: 1000, rate: 0.5))
+
+// The real case from the report: 71 paragraphs of real prose is minutes, not
+// seconds. The exact figure is an estimate; being in the right ORDER is not.
+check("speech clock: a long article reads as minutes, not seconds",
+    librarySpeechSeconds(characters: 14000, rate: 0.5) > 600, true)
+
 print(failures == 0 ? "\nall good" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)
