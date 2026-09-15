@@ -23,6 +23,8 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { tauriApi } from "@/lib/tauri";
 import { tryOpenFile } from "@/lib/link-utils";
 import { cn } from "@/lib/utils";
+import DOMPurify from "dompurify";
+
 import { MarkdownContent } from "@/components/MarkdownContent";
 import { t } from "@/lib/i18n";
 
@@ -151,14 +153,76 @@ function formatTypeLabel(path: string): string {
 }
 
 /**
- * Whether the file should be rendered as markdown (vs. raw monospace)
- * in the preview body. Only `.md` / `.markdown` get the rendered view
- * — other text formats (json, yaml, code) stay in the monospace `<pre>`
- * because their structure is best conveyed by preserving whitespace.
+ * Whether the file should be rendered (vs. raw monospace) in the preview body.
+ *
+ * Markdown and HTML both get the rendered view — a saved article previewed as
+ * raw `<!DOCTYPE html><html>…` told you nothing about the article, which is
+ * the one thing the preview is for. Other text formats (json, yaml, code) stay
+ * in the monospace `<pre>`: their structure IS the whitespace.
  */
-function shouldRenderMarkdown(path: string): boolean {
+function shouldRenderRich(path: string): boolean {
+  const ext = getExtension(path);
+  return ext === "md" || ext === "markdown" || ext === "html" || ext === "htm";
+}
+
+/**
+ * How much of an article the hover card shows, measured in rendered text.
+ *
+ * The markdown branch is bounded by `lineCount`, which is meaningless here: a
+ * saved capture is effectively ONE line — tags and a base64 hero and all —
+ * so line-slicing keeps the entire document. This is the HTML equivalent of
+ * the same limit, counted in characters a reader would actually see.
+ */
+const HTML_PREVIEW_CHAR_BUDGET = 700;
+
+/**
+ * Sanitise a saved article and cut it down to a glance.
+ *
+ * Sanitising is the same treatment `lib/external-diff.ts` already gives
+ * untrusted HTML. `FORBID_TAGS` goes past DOMPurify's defaults on purpose:
+ * everything executable is gone by default, so this is about containment —
+ * `style` and `link` would let a document restyle the card it is previewed
+ * in, and every preview has to look like every other preview.
+ *
+ * Then the budget. Block elements are taken whole until the text they carry
+ * passes the budget, so the cut always lands between elements and never
+ * inside a tag or mid-word.
+ */
+export function sanitizePreviewHtml(html: string): string {
+  const clean = DOMPurify.sanitize(html, {
+    FORBID_TAGS: ["style", "link", "iframe", "object", "embed", "form", "script"],
+    FORBID_ATTR: ["style", "class", "srcset", "id"],
+  });
+  let doc: Document;
+  try {
+    doc = new DOMParser().parseFromString(clean, "text/html");
+  } catch {
+    return clean;
+  }
+  const out: string[] = [];
+  let budget = HTML_PREVIEW_CHAR_BUDGET;
+  for (const child of Array.from(doc.body.children)) {
+    out.push(child.outerHTML);
+    // An image carries no text but is most of what makes an article
+    // recognisable, so it costs nothing against the budget — one is plenty.
+    budget -= (child.textContent ?? "").trim().length;
+    if (budget <= 0) break;
+  }
+  // No block children (a bare text node, or a fragment) — fall back to the
+  // sanitised string rather than rendering nothing.
+  return out.length > 0 ? out.join("") : clean;
+}
+
+/** Markdown proper — the link graph and its relations footer are its alone. */
+function isMarkdownDocument(path: string): boolean {
   const ext = getExtension(path);
   return ext === "md" || ext === "markdown";
+}
+
+/** Is this file HTML rather than markdown? Decides which renderer runs. */
+function isHtmlDocument(path: string): boolean {
+  const ext = getExtension(path);
+  return ext === "html" || ext === "htm";
 }
 
 /**
@@ -833,7 +897,22 @@ export function FilePreview({
           )}
           {state.status === "ready" && (
             state.body ? (
-              shouldRenderMarkdown(filePath) ? (
+              isHtmlDocument(filePath) ? (
+                // Saved articles are HTML, and showing their source in a
+                // hover card told the reader nothing about the article.
+                // Sanitised with DOMPurify — the same treatment
+                // `lib/external-diff.ts` already gives untrusted HTML — and
+                // styled like the markdown branch rather than with the
+                // document's own CSS: this is a 300px card, not the reader,
+                // and an article's stylesheet would fight it.
+                <div
+                  className="font-serif text-xs leading-[1.55] text-muted-foreground [&_h1]:text-sm [&_h1]:font-semibold [&_h1]:text-foreground [&_h1]:mb-1 [&_h2]:text-xs [&_h2]:font-semibold [&_h2]:text-foreground [&_h2]:mb-1 [&_h3]:text-xs [&_h3]:font-medium [&_h3]:text-foreground [&_p]:mb-2 [&_ul]:pl-4 [&_ol]:pl-4 [&_code]:font-mono [&_code]:text-[11px] [&_pre]:font-mono [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded [&_a]:text-foreground"
+                  // Sanitised immediately above; DOMPurify strips script,
+                  // event handlers and every other execution path, which is
+                  // what makes this safe to set.
+                  dangerouslySetInnerHTML={{ __html: sanitizePreviewHtml(state.body) }}
+                />
+              ) : shouldRenderRich(filePath) ? (
                 // Rendered markdown — honors headings, bold, italic,
                 // lists, links, etc. Live-test feedback 2026-04-24:
                 // raw markdown in a `<pre>` felt like a dev tool;
@@ -863,7 +942,7 @@ export function FilePreview({
             (relations only exist for those). Mounted here — inside the open
             PopoverContent — so the links.db query fires per hover-open, never
             per sidebar row. Self-hides when the doc has no relations. */}
-        {shouldRenderMarkdown(filePath) ? (
+        {isMarkdownDocument(filePath) ? (
           <PreviewRelations filePath={filePath} onNavigated={closeNow} />
         ) : null}
         {/* No bottom bar — mockup-L had a "Click to open · ⌘click for new

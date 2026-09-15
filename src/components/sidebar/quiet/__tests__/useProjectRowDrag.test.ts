@@ -5,7 +5,8 @@
  * does not yet exist.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+import { FOLDER_DRAG_MIME } from '../file-drag';
 import { useProjectRowDrag } from '../useProjectRowDrag';
 import type { FileEntry } from '@/lib/tauri';
 
@@ -25,9 +26,16 @@ describe('useProjectRowDrag', () => {
     expect(draggable).toBe(true);
   });
 
-  it('returns draggable=false for a directory entry', () => {
-    const { draggable } = useProjectRowDrag(makeDir('docs', '/p/docs'), false);
-    expect(draggable).toBe(false);
+  it('a directory is draggable too, and carries the FOLDER payload', () => {
+    // It was not, which left the sidebar asymmetric in a way nobody could
+    // explain: a folder could receive a file but could not be moved itself.
+    // The separate payload is what keeps Pinned refusing it — that section
+    // renders every row as a file.
+    const { draggable, onDragStart } = useProjectRowDrag(makeDir('docs', '/p/docs'), false);
+    expect(draggable).toBe(true);
+    const setData = vi.fn();
+    onDragStart?.({ dataTransfer: { setData, effectAllowed: '' } } as never);
+    expect(setData).toHaveBeenCalledWith(FOLDER_DRAG_MIME, '/p/docs');
   });
 
   it('returns draggable=false when isRenaming is true', () => {
@@ -36,7 +44,9 @@ describe('useProjectRowDrag', () => {
   });
 
   it('returns onDragStart=undefined when draggable=false', () => {
-    const { onDragStart } = useProjectRowDrag(makeDir('docs', '/p/docs'), false);
+    // A renaming row, now that directories are draggable — the input would be
+    // lost under the drag.
+    const { onDragStart } = useProjectRowDrag(makeDir('docs', '/p/docs'), true);
     expect(onDragStart).toBeUndefined();
   });
 

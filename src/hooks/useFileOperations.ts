@@ -369,8 +369,21 @@ export function useFileOperations() {
         await tauriApi.markSelfWrite(oldPath);
         await tauriApi.markSelfWrite(newPath);
         await tauriApi.renamePath(oldPath, newPath);
-        // Update open tab if this file is open in the editor
-        useEditorStore.getState().renameTab(oldPath, newPath);
+        // `renameOpenDocument`, NOT `renameTab`: this is the one primitive
+        // behind every move and rename in the app — the sidebar's rename, its
+        // "Move to…", the Inbox drop, "File to…" and `e` — and it is handed
+        // folders as readily as files. `renameTab` matches `filePath ===
+        // oldPath` exactly, so renaming or moving a FOLDER left every open tab,
+        // persisted tab, recent entry and scroll position beneath it pointing
+        // at a path that no longer existed. `renameOpenDocument` matches the
+        // path OR the path plus a separator; see `project-moved.ts` for the
+        // same reasoning applied to a project move.
+        useEditorStore.getState().renameOpenDocument(oldPath, newPath);
+        // A pin is a path too. `deletePath` below already drops pins beneath a
+        // deleted folder, with a comment about stale rows that 404 on click;
+        // a move reaches the same state by the other route, so it gets the
+        // same treatment rather than only the tab.
+        useWorkspaceStore.getState().renamePinnedPath(oldPath, newPath);
         await refreshFileTree(oldPath);
         await refreshFileTree(newPath);
         refreshGitForPath(oldPath);

@@ -84,6 +84,12 @@ interface WorkspaceStore {
   // Pinned file actions
   pinFile: (path: string) => void;
   unpinFile: (path: string) => void;
+  /**
+   * Follow a rename or a move. Rewrites the exact path and, for a folder,
+   * every pin beneath it — the same prefix rule `deletePath` already uses
+   * to clean pins, applied to the other half of the pair.
+   */
+  renamePinnedPath: (oldPath: string, newPath: string) => void;
   reorderPinnedFiles: (from: number, to: number) => void;
   /**
    * Read-only merge (#652): pulls remote-only pins from the shared
@@ -256,6 +262,35 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         if (!before.includes(path)) return;
         set({ pinnedFiles: before.filter((p) => p !== path) });
         void writeThroughPinsFile(get().pinnedFiles, path);
+      },
+
+      /**
+       * A pin is a path, so a rename or a move invalidates it. Without this the
+       * row survives in the sidebar pointing at a file that is no longer there
+       * and 404s on click — exactly the state `deletePath` goes out of its way
+       * to prevent, reached by the other route. Order matters on the way out:
+       * the pins file is keyed on the library root, so it is written once, from
+       * the NEW path, after the whole list is rewritten.
+       */
+      renamePinnedPath: (oldPath, newPath) => {
+        const before = get().pinnedFiles;
+        const prefix = `${oldPath}/`;
+        let touched = false;
+        const after = before.map((p) => {
+          if (p === oldPath) {
+            touched = true;
+            return newPath;
+          }
+          // A folder move takes its contents with it.
+          if (p.startsWith(prefix)) {
+            touched = true;
+            return `${newPath}/${p.slice(prefix.length)}`;
+          }
+          return p;
+        });
+        if (!touched) return;
+        set({ pinnedFiles: after });
+        void writeThroughPinsFile(after, newPath);
       },
 
       syncPinsFromLibraryRoot: async (libraryRoot) => {

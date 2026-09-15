@@ -85,10 +85,12 @@ describe('ChildRow (dedicated file)', () => {
     expect(screen.getByRole('treeitem').getAttribute('draggable')).toBe('true');
   });
 
-  it('folder row is NOT draggable', () => {
+  it('folder row is draggable AND a drop target', () => {
+    // Both halves changed on 2026-09-15. A folder row used to be neither: it
+    // could not be picked up, and nothing could be dropped on it — which is
+    // why a file could be moved out of the Inbox and nowhere else.
     renderWithProviders(<ChildRow row={folderRow} {...baseProps} />);
-    // Folders are not draggable per the "file-only drag" rule.
-    expect(screen.getByRole('treeitem').getAttribute('draggable')).not.toBe('true');
+    expect(screen.getByRole('treeitem').getAttribute('draggable')).toBe('true');
   });
 
   it('calls onActivate when file row is clicked (single click)', () => {

@@ -18,6 +18,7 @@ import { validateRenameBasename } from "@/components/sidebar/quiet/rename-utils"
 import { announce } from "@/components/sidebar/quiet/aria-announcer";
 import { isSystemFolderName, type RowDescriptor } from "./project-section-utils";
 import { useProjectRowDrag } from "./useProjectRowDrag";
+import { useFolderDropTarget, useMoveIntoFolder } from "./useFolderDrop";
 
 // ---------------------------------------------------------------------------
 // ChildRow
@@ -107,6 +108,17 @@ export function ChildRow({
 
   // Drag handling — files only, not while renaming (#44).
   const { draggable, onDragStart } = useProjectRowDrag(entry, isRenaming);
+  // A sub-folder is a folder: it takes a drop. This row was a drag SOURCE with
+  // no matching target, which is why a file could be picked up here and had
+  // nowhere to go — the only drop target in the sidebar was a top-level
+  // project. Files stay inert; only directories accept.
+  const moveInto = useMoveIntoFolder();
+  const {
+    dropActive,
+    dragOver,
+    dragLeave,
+    drop,
+  } = useFolderDropTarget(entry.path, moveInto, entry.is_directory && !isRenaming);
 
   // Chain rename-aware handling with the parent's navigation handler.
   const handleRowKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -149,6 +161,10 @@ export function ChildRow({
       onKeyDown={isRenaming ? undefined : handleRowKeyDown}
       onFocus={onFocus}
       onDragStart={isRenaming ? undefined : onDragStart}
+      onDragOver={dragOver}
+      onDragLeave={dragLeave}
+      onDrop={drop}
+      data-drop-active={dropActive ? "true" : undefined}
       className={cn(
         "h-7 px-2 flex items-center gap-2 rounded-sm text-[13px]",
         "text-foreground/90 transition-colors duration-150",
@@ -156,6 +172,10 @@ export function ChildRow({
         // Active document — name goes solid/medium, icon gets the accent below.
         isActive && "text-foreground font-medium",
         "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent-primary)] focus-visible:z-10",
+        // Drop affordance — the row a drop would land in, not merely the one
+        // under the cursor: `useFolderDropTarget` stops propagation so the
+        // innermost folder wins over its ancestors.
+        dropActive && "bg-[var(--color-accent-primary)]/12 ring-1 ring-[var(--color-accent-primary)]/50",
       )}
     >
       <Icon

@@ -49,6 +49,7 @@ import { tauriApi } from "@/lib/tauri";
 import { copyToClipboard } from "@/components/sidebar/quiet/sidebar-clipboard";
 import { toast } from "sonner";
 import { t } from "@/lib/i18n";
+import { useFolderDropTarget, useMoveIntoFolder } from "./useFolderDrop";
 
 /**
  * FoldersSection — the QuietSidebar's section for arbitrary folders the
@@ -763,10 +764,21 @@ function FolderRow({
   // exposes `tabIndex=0` so Tab from the previous section lands
   // here. Once focus enters, only the focused row stays at 0.
   const tabIndex = isFocused || !hasFocusWithin ? 0 : -1;
+  // An explorer folder had no drop target at all — not even at top level — so
+  // "you can only drop on root folders" was really "only on projects".
+  const moveInto = useMoveIntoFolder();
+  const { dropActive, dragOver, dragLeave, drop } = useFolderDropTarget(
+    folder.path,
+    moveInto,
+  );
   return (
     <div
       ref={registerRef}
       role="treeitem"
+      onDragOver={dragOver}
+      onDragLeave={dragLeave}
+      onDrop={drop}
+      data-drop-active={dropActive ? "true" : undefined}
       aria-level={1}
       aria-expanded={isExpanded}
       aria-selected={isFocused ? "true" : undefined}
@@ -782,6 +794,7 @@ function FolderRow({
         "hover:bg-muted/50",
         "relative focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-accent-primary)] focus-visible:z-10",
         isActive && "bg-muted text-foreground font-medium",
+        dropActive && "bg-[var(--color-accent-primary)]/12 ring-1 ring-[var(--color-accent-primary)]/50",
       )}
     >
       <Icon

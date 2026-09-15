@@ -41,7 +41,6 @@ import {
 import { ProjectRow } from "./ProjectRow";
 import { ChildRow } from "./ChildRow";
 import { useProjectInlineEdit } from "./useProjectInlineEdit";
-import { useInboxActions } from "@/components/inbox/useInboxActions";
 import { t } from "@/lib/i18n";
 
 // ---------------------------------------------------------------------------
@@ -106,7 +105,15 @@ function findEntryToOpen(
   ): FileEntry | null => {
     for (const entry of entries) {
       if (!entry.is_directory && entry.path === target) return entry;
-      if (entry.is_directory && entry.children && target.startsWith(entry.path)) {
+      // The separator matters: without it `/a/Notes` claims
+      // `/a/Notes-archive/x.md` and the walk descends the wrong subtree. It
+      // recovers — the inner match is by exact path — but it recovers by
+      // searching a tree that cannot contain the answer.
+      if (
+        entry.is_directory &&
+        entry.children &&
+        target.startsWith(`${entry.path}/`)
+      ) {
         const found = findInTree(entry.children, target);
         if (found) return found;
       }
@@ -187,7 +194,6 @@ async function openFileEntry(entry: FileEntry): Promise<void> {
 export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
   // Drop-to-file: an Inbox selection (or any sidebar file) dropped on a
   // project row moves into that project, carrying its read-later state.
-  const { fileTo } = useInboxActions();
   const allProjects = useWorkspaceStore((s) => s.projects);
   const activeTabPath = useEditorStore((s) => {
     const id = s.activeTabId;
@@ -665,7 +671,6 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
                           void commitProjectRename(project.path, value)
                         }
                         onCancelRename={cancelProjectRename}
-                        onDropFiles={(paths) => void fileTo(paths, project.path)}
                         registerRef={(el) =>
                           rowRefs.current.set(project.path, el)
                         }
