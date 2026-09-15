@@ -30,6 +30,7 @@ import {
   extractFrontmatterTitle,
   extractPreviewParts,
   splitFrontmatter,
+  sanitizePreviewHtml,
 } from "../FilePreview";
 import { useEditorStore } from "@/stores/editor-store";
 import type { BacklinkGroup, LinkRow } from "@/lib/tauri";
@@ -605,5 +606,53 @@ describe("FilePreview — relations footer", () => {
     } finally {
       useEditorStore.setState({ openTab: originalOpenTab });
     }
+  });
+});
+
+describe("sanitizePreviewHtml — a saved article, not its source", () => {
+  it("keeps the prose and the article's own picture", () => {
+    const html = `<html><body><h1>On attention</h1>` +
+      `<img src="data:image/png;base64,AAAA"><p>A short opening line.</p></body></html>`;
+    const out = sanitizePreviewHtml(html);
+    expect(out).toContain("On attention");
+    expect(out).toContain("A short opening line.");
+    expect(out).toContain("<img");
+  });
+
+  it("strips anything executable", () => {
+    const out = sanitizePreviewHtml(
+      `<p>safe</p><script>alert(1)</script><p onclick="alert(2)">click</p>`,
+    );
+    expect(out).toContain("safe");
+    expect(out).not.toContain("script");
+    expect(out).not.toContain("onclick");
+  });
+
+  it("drops style and link so an article cannot restyle the card it sits in", () => {
+    const out = sanitizePreviewHtml(
+      `<style>body{display:none}</style><link rel="stylesheet" href="x.css"><p>hi</p>`,
+    );
+    expect(out).not.toContain("<style");
+    expect(out).not.toContain("<link");
+    expect(out).toContain("hi");
+  });
+
+  it("stops after a glance rather than rendering the whole article", () => {
+    // A capture is effectively ONE line, so the markdown branch's line-slice
+    // would have kept all of this.
+    const many = Array.from({ length: 60 }, (_, i) => `<p>${"word ".repeat(40)}${i}</p>`).join("");
+    const out = sanitizePreviewHtml(many);
+    expect(out.length).toBeLessThan(many.length / 4);
+    expect(out).toContain("word");
+  });
+
+  it("never cuts inside a tag", () => {
+    const many = Array.from({ length: 40 }, () => `<p>${"x".repeat(60)}</p>`).join("");
+    const out = sanitizePreviewHtml(many);
+    // Balanced <p> count is the assertion: a mid-tag cut would leave an
+    // unclosed one.
+    const open = (out.match(/<p>/g) ?? []).length;
+    const close = (out.match(/<\/p>/g) ?? []).length;
+    expect(open).toBe(close);
   });
 });

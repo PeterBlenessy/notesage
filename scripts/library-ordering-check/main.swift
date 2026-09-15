@@ -659,5 +659,26 @@ check("speech clock: a zero rate is read as normal speed",
 check("speech clock: a long article reads as minutes, not seconds",
     librarySpeechSeconds(characters: 14000, rate: 0.5) > 600, true)
 
+// --- a search result that shows its reason ---------------------------------
+let stand = "On keeping things you will never read again, and why that is not hoarding."
+
+check("snippet: no query leaves the line alone",
+    librarySearchSnippet(stand, matching: ""), stand)
+check("snippet: a match already in view leaves the line alone",
+    librarySearchSnippet(stand, matching: "keeping"), stand)
+// The reported case: the match is past the truncation, so the row showed a
+// result with nothing in it to explain the match.
+check("snippet: a late match is brought into view",
+    librarySearchSnippet(stand, matching: "hoarding").contains("hoarding"), true)
+check("snippet: and the cut is marked",
+    librarySearchSnippet(stand, matching: "hoarding").hasPrefix("…"), true)
+check("snippet: short text is never windowed",
+    librarySearchSnippet("tiny", matching: "tiny"), "tiny")
+check("snippet: a query that matches nothing leaves the line alone",
+    librarySearchSnippet(stand, matching: "zzz"), stand)
+// Case folding — the row matches case-insensitively, so the window must too.
+check("snippet: matching ignores case",
+    librarySearchSnippet(stand, matching: "HOARDING").contains("hoarding"), true)
+
 print(failures == 0 ? "\nall good" : "\n\(failures) failed")
 exit(failures == 0 ? 0 : 1)

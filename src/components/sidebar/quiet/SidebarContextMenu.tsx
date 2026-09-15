@@ -144,6 +144,102 @@ function extension(name: string): { stem: string; ext: string } {
   return { stem: name.slice(0, dot), ext: name.slice(dot) };
 }
 
+/**
+ * One folder in the "Move to…" tree.
+ *
+ * A destination with no sub-folders is a plain item. One WITH sub-folders
+ * becomes a submenu — Radix sub-triggers are not selectable, so the folder
+ * itself is offered as an explicit "Move here" at the top of its own submenu
+ * rather than being lost to the nesting.
+ *
+ * Until now the menu rendered a flat list of roots: Quick Notes, every
+ * project, every explorer folder. Each destination was already built carrying
+ * a `tree`, and nothing ever read it — so moving a file into a sub-folder was
+ * impossible from the menu, and impossible by drag as well. This is the half
+ * that was missing.
+ */
+function MoveDestinationItem({
+  path,
+  label,
+  tree,
+  currentParent,
+  sourcePath,
+  onMove,
+  itemClassName,
+}: {
+  path: string;
+  label: string;
+  tree: FileEntry[];
+  currentParent: string;
+  /** The row being moved — it and its descendants cannot host it. */
+  sourcePath: string;
+  onMove: (destination: string) => void;
+  itemClassName: string;
+}) {
+  const isCurrent = path === currentParent;
+  const current = isCurrent ? (
+    <span className="ml-1 text-xs text-muted-foreground">(current)</span>
+  ) : null;
+
+  // Only real sub-folders, and never `.notesage` and friends — the same rule
+  // the tree itself uses for what a person may rename.
+  const subFolders = tree.filter(
+    (entry) =>
+      entry.is_directory &&
+      !isSystemFolderName(entry.name) &&
+      // A folder cannot be moved into itself or anything under it. Guarded in
+      // `handleMoveTo` too; offering it and then refusing is worse than not
+      // offering it.
+      entry.path !== sourcePath &&
+      !entry.path.startsWith(`${sourcePath}/`),
+  );
+
+  if (subFolders.length === 0) {
+    return (
+      <ContextMenuItem
+        className={itemClassName}
+        disabled={isCurrent}
+        onSelect={() => onMove(path)}
+      >
+        {label}
+        {current}
+      </ContextMenuItem>
+    );
+  }
+
+  return (
+    <ContextMenuSub>
+      <ContextMenuSubTrigger className={itemClassName}>
+        {label}
+        {current}
+      </ContextMenuSubTrigger>
+      <ContextMenuSubContent>
+        <ContextMenuItem
+          className={itemClassName}
+          disabled={isCurrent}
+          onSelect={() => onMove(path)}
+        >
+          {t("menu.moveHere")}
+          {current}
+        </ContextMenuItem>
+        <ContextMenuSeparator />
+        {subFolders.map((entry) => (
+          <MoveDestinationItem
+            key={entry.path}
+            path={entry.path}
+            label={entry.name}
+            tree={entry.children ?? []}
+            currentParent={currentParent}
+            sourcePath={sourcePath}
+            onMove={onMove}
+            itemClassName={itemClassName}
+          />
+        ))}
+      </ContextMenuSubContent>
+    </ContextMenuSub>
+  );
+}
+
 export function SidebarContextMenu({
   filePath,
   kind,
@@ -729,19 +825,16 @@ export function SidebarContextMenu({
                         {moveDestinations
                           .filter((d) => d.category === "notes")
                           .map((d) => (
-                            <ContextMenuItem
+                            <MoveDestinationItem
                               key={d.path}
-                              className={ITEM_DENSITY}
-                              disabled={d.path === currentParent}
-                              onSelect={() => void handleMoveTo(d.path)}
-                            >
-                              {d.label}
-                              {d.path === currentParent && (
-                                <span className="ml-1 text-xs text-muted-foreground">
-                                  (current)
-                                </span>
-                              )}
-                            </ContextMenuItem>
+                              path={d.path}
+                              label={d.label}
+                              tree={d.tree}
+                              currentParent={currentParent}
+                              sourcePath={filePath}
+                              onMove={(dest) => void handleMoveTo(dest)}
+                              itemClassName={ITEM_DENSITY}
+                            />
                           ))}
                       </>
                     )}
@@ -753,19 +846,16 @@ export function SidebarContextMenu({
                         {moveDestinations
                           .filter((d) => d.category === "project")
                           .map((d) => (
-                            <ContextMenuItem
+                            <MoveDestinationItem
                               key={d.path}
-                              className={ITEM_DENSITY}
-                              disabled={d.path === currentParent}
-                              onSelect={() => void handleMoveTo(d.path)}
-                            >
-                              {d.label}
-                              {d.path === currentParent && (
-                                <span className="ml-1 text-xs text-muted-foreground">
-                                  (current)
-                                </span>
-                              )}
-                            </ContextMenuItem>
+                              path={d.path}
+                              label={d.label}
+                              tree={d.tree}
+                              currentParent={currentParent}
+                              sourcePath={filePath}
+                              onMove={(dest) => void handleMoveTo(dest)}
+                              itemClassName={ITEM_DENSITY}
+                            />
                           ))}
                       </>
                     )}
@@ -777,38 +867,32 @@ export function SidebarContextMenu({
                         {moveDestinations
                           .filter((d) => d.category === "folder")
                           .map((d) => (
-                            <ContextMenuItem
+                            <MoveDestinationItem
                               key={d.path}
-                              className={ITEM_DENSITY}
-                              disabled={d.path === currentParent}
-                              onSelect={() => void handleMoveTo(d.path)}
-                            >
-                              {d.label}
-                              {d.path === currentParent && (
-                                <span className="ml-1 text-xs text-muted-foreground">
-                                  (current)
-                                </span>
-                              )}
-                            </ContextMenuItem>
+                              path={d.path}
+                              label={d.label}
+                              tree={d.tree}
+                              currentParent={currentParent}
+                              sourcePath={filePath}
+                              onMove={(dest) => void handleMoveTo(dest)}
+                              itemClassName={ITEM_DENSITY}
+                            />
                           ))}
                       </>
                     )}
                   </>
                 ) : (
                   moveDestinations.map((d) => (
-                    <ContextMenuItem
+                    <MoveDestinationItem
                       key={d.path}
-                      className={ITEM_DENSITY}
-                      disabled={d.path === currentParent}
-                      onSelect={() => void handleMoveTo(d.path)}
-                    >
-                      {d.label}
-                      {d.path === currentParent && (
-                        <span className="ml-1 text-xs text-muted-foreground">
-                          (current)
-                        </span>
-                      )}
-                    </ContextMenuItem>
+                      path={d.path}
+                      label={d.label}
+                      tree={d.tree}
+                      currentParent={currentParent}
+                      sourcePath={filePath}
+                      onMove={(dest) => void handleMoveTo(dest)}
+                      itemClassName={ITEM_DENSITY}
+                    />
                   ))
                 )}
               </ContextMenuSubContent>
