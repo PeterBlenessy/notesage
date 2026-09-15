@@ -846,3 +846,37 @@ func librarySpeechSeconds(characters: Int, rate: Double, defaultRate: Double = 0
     let multiplier = rate > 0 ? rate / defaultRate : 1.0
     return Double(characters) / (librarySpeechCharsPerSecond * multiplier)
 }
+
+/// A one-line excerpt windowed so a search match is inside it.
+///
+/// The row draws its standfirst on a single truncating line, which is right
+/// until a search matches a word further along it: the result then shows no
+/// reason for being in the list. Searching "hoarding" returned the article
+/// whose standfirst ends "…and why that is not hoarding." and displayed
+/// "On keeping things you will never read again,…" — correct, and mute
+/// (Peter, 2026-09-15).
+///
+/// Slides the window so the match is visible, marking each cut end with an
+/// ellipsis. Returns the text unchanged when the query is empty, absent, or
+/// already inside the first `budget` characters — the common case pays
+/// nothing.
+func librarySearchSnippet(_ text: String, matching query: String, budget: Int = 64) -> String {
+    let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    guard !needle.isEmpty, text.count > budget else { return text }
+    guard let found = text.lowercased().range(of: needle) else { return text }
+    let start = text.distance(from: text.startIndex, to: found.lowerBound)
+    // Already visible — the label's own truncation is fine.
+    if start + needle.count <= budget { return text }
+
+    // Put the match a third of the way in, so the words BEFORE it survive
+    // too: a match with no lead-in reads as a fragment.
+    let lead = budget / 3
+    let from = max(0, start - lead)
+    let to = min(text.count, from + budget)
+    let lower = text.index(text.startIndex, offsetBy: from)
+    let upper = text.index(text.startIndex, offsetBy: to)
+    var window = String(text[lower..<upper])
+    if from > 0 { window = "…" + window }
+    if to < text.count { window += "…" }
+    return window
+}

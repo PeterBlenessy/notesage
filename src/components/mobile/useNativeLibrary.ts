@@ -68,6 +68,10 @@ const SECTION_KEYS: MessageKey[] = [
   // FOLDERS' names, which are not translated.
   "home.allFolders",
   "home.hint",
+  // What the screen says when there is nothing to list. A filter that matched
+  // nothing used to leave it blank — no message, no count — which reads as a
+  // crash rather than as a search.
+  "library.emptyFolder",
 ];
 
 /** Messages the native row interpolates rather than shows as they are: the
@@ -75,7 +79,13 @@ const SECTION_KEYS: MessageKey[] = [
  *  known in Swift. `t()` with no variables returns the template with its
  *  placeholders intact, which is exactly what has to cross — so the Swedish
  *  word order travels with the Swedish string instead of being assumed. */
-const TEMPLATE_KEYS: MessageKey[] = ["list.minutes", "list.minutesLeft", "list.read"];
+const TEMPLATE_KEYS: MessageKey[] = [
+  "list.minutes",
+  "list.minutesLeft",
+  "list.read",
+  // "Nothing matches \"{query}\"" — the query is only known in Swift.
+  "library.noMatches",
+];
 
 export function useNativeLibrary(active: boolean): boolean {
   const [live, setLive] = useState(false);

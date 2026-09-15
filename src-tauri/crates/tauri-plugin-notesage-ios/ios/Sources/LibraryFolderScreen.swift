@@ -144,6 +144,23 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
     private static let hintItem = "/home.hint"
 
     private var collectionView: UICollectionView!
+    /// Shown when the list has nothing in it.
+    ///
+    /// A filter that matched nothing used to leave the screen completely
+    /// blank — no message, no count, just the navigation bar over an empty
+    /// grey field, which reads as a crash rather than as a search (Peter,
+    /// desktop and phone, 2026-09-15). An empty FOLDER had the same silence.
+    private let emptyLabel: UILabel = {
+        let label = UILabel()
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .preferredFont(forTextStyle: .subheadline)
+        label.adjustsFontForContentSizeCategory = true
+        label.textColor = .secondaryLabel
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.isHidden = true
+        return label
+    }()
     private var dataSource: UICollectionViewDiffableDataSource<String, String>!
     /// Entries by path — the diffable data source carries identifiers only, so
     /// a re-list that changes a file's date does not have to invalidate the
@@ -223,6 +240,16 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
             collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
             collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+        ])
+
+        view.addSubview(emptyLabel)
+        NSLayoutConstraint.activate([
+            emptyLabel.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            // Above the true centre: the bottom islands own the lower third,
+            // and a message sitting behind them reads as debris.
+            emptyLabel.centerYAnchor.constraint(equalTo: view.centerYAnchor, constant: -60),
+            emptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: view.leadingAnchor, constant: 40),
+            emptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: view.trailingAnchor, constant: -40),
         ])
 
         let longPress = UILongPressGestureRecognizer(
@@ -507,6 +534,18 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
             homeTail = tail
         } else {
             homeTail = []
+        }
+
+        // Say something rather than nothing. Two different silences to break:
+        // a query that matched none of this folder, and a folder with nothing
+        // in it yet.
+        let listIsEmpty = sections.allSatisfy { $0.items.isEmpty } && homeTail.isEmpty
+        emptyLabel.isHidden = !listIsEmpty
+        if listIsEmpty {
+            emptyLabel.text =
+                filter.isEmpty
+                ? host.localized("library.emptyFolder")
+                : ArticleMeta.fill(host.localized("library.noMatches"), ["query": filter])
         }
 
         var snapshot = NSDiffableDataSourceSnapshot<String, String>()
@@ -856,7 +895,7 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
                 entry, condensed: self.settings.condensed,
                 progress: self.host?.progress(for: path) ?? 0,
                 recentlyRead: self.host?.recentlyRead().contains(path) ?? false,
-                article: self.articleText(for: entry))
+                article: self.articleText(for: entry), query: self.filter)
             cell.configureListen(
                 entry, speech: self.host?.speechState() ?? LibrarySpeechState(),
                 label: self.listenLabel(for: entry))
@@ -876,7 +915,7 @@ final class LibraryFolderScreen: UIViewController, LibrarySpeechObserver {
                 entry, condensed: self.settings.condensed,
                 progress: self.host?.progress(for: path) ?? 0,
                 recentlyRead: self.host?.recentlyRead().contains(path) ?? false,
-                article: self.articleText(for: entry))
+                article: self.articleText(for: entry), query: self.filter)
             cell.configureListen(
                 entry, speech: self.host?.speechState() ?? LibrarySpeechState(),
                 label: self.listenLabel(for: entry))
