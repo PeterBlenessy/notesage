@@ -5,7 +5,7 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { usePermissionStore } from '@/stores/permission-store';
-import { tauriApi } from '@/lib/tauri';
+import { tauriApi, type BundledSkillsResult } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
 import type { ConnectionProvider } from '@/lib/ai/connections';
@@ -84,6 +84,19 @@ export function __resetBundledExtractionForTests(): void {
   bundledExtracted = false;
   discoveryChain = null;
   cancelScheduledDiscovery();
+}
+
+/**
+ * Does this response actually carry the change counts, or is it something
+ * older or stranger? The command's declared type says it does, but the value
+ * crosses an IPC boundary from a binary that may not match this bundle —
+ * during a dev hot-reload, or against a stale build — so the shape is checked
+ * rather than assumed.
+ */
+function isBundledSkillsResult(value: unknown): value is BundledSkillsResult {
+  if (typeof value !== 'object' || value === null) return false;
+  const { changed, removed } = value as Partial<BundledSkillsResult>;
+  return typeof changed === 'number' && typeof removed === 'number';
 }
 
 /**
@@ -390,14 +403,19 @@ async function runSkillDiscovery(): Promise<void> {
       // Whether extraction actually touched anything. The rescan below costs
       // roughly as much as the whole of phase 1, so it only earns its keep
       // when the skills on disk are not the ones phase 1 already read.
-      let skillsOnDiskChanged = false;
+      // Anything short of a confident "nothing changed" means rescanning:
+      // being slow is a nuisance, missing a new skill is a bug.
+      let skillsOnDiskChanged = true;
       try {
         const extracted = await tauriApi.extractBundledSkills();
-        skillsOnDiskChanged = extracted.changed > 0 || extracted.removed > 0;
+        // A backend that predates the change signal returns a bare path
+        // string, so read it defensively rather than trusting the type: a
+        // stale binary must fall back to rescanning, not silently skip.
+        if (isBundledSkillsResult(extracted)) {
+          skillsOnDiskChanged = extracted.changed > 0 || extracted.removed > 0;
+        }
       } catch (e) {
         log.error('skills', 'Failed to extract bundled skills', e);
-        // No answer means no grounds to skip: rescan, as we always did.
-        skillsOnDiskChanged = true;
       }
       console.log('[perf:skills]', { step: 'bundled-skills-extract', ms: Math.round(performance.now() - stepStart) });
 

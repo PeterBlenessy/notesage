@@ -267,6 +267,25 @@ describe('useSkillDiscovery', () => {
     expect(scanSkills).toHaveBeenCalledTimes(2);
   });
 
+  // A backend that predates the change signal returns a bare path string.
+  // Reading `.changed` off it yields undefined, which must not be mistaken
+  // for "nothing changed" — a stale binary has to fall back to rescanning.
+  it('rescans when the backend returns the old bare path', async () => {
+    mockExtractBundledSkills.mockResolvedValue(
+      '/Users/test/.notesage/skills' as unknown as typeof UNCHANGED_EXTRACTION,
+    );
+    const { scanSkills, scanAgents } = setupStoreMocks();
+    useSettingsStore.setState({ skillsReady: true });
+
+    renderHook(() => useSkillDiscovery());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100));
+    });
+
+    expect(scanSkills).toHaveBeenCalledTimes(2);
+    expect(scanAgents).toHaveBeenCalledTimes(2);
+  });
+
   // Without an answer from the backend there are no grounds to skip: the
   // rescan is the safe default, and correctness outranks the 895ms.
   it('rescans when extraction failed', async () => {

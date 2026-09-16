@@ -152,7 +152,9 @@ export async function setupTauriMock(page: Page, options: TauriMockOptions = {})
         discover_agents: () => [],
         scan_agent_instructions: () => [],
         read_agent_instructions: () => [],
-        extract_bundled_skills: () => null,
+        // Shape matters: the frontend reads `changed`/`removed` to decide
+        // whether to rescan. Zero/zero is the steady state — nothing changed.
+        extract_bundled_skills: () => ({ dir: '/tmp/notesage-e2e-home/.notesage/skills', changed: 0, removed: 0 }),
         cleanup_bundled_agents: () => 0,
 
         // MCP
