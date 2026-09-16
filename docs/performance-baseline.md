@@ -812,6 +812,108 @@ by AI sessions; scanning all 57 across 18 directories before the window is
 usable buys nothing for a user who opens the app to read a note. `phase1-ready`
 is 2.2 s of a 3.6 s startup.
 
+### 2026-09-16 — v0.60.1 release (`715c12f6`), Apple M3 / 24 GB, steady-state refresh
+
+Measured by Peter on the shipped v0.60.1 build. Same dataset as the v0.59.0
+entry: **14 projects + 2 explorer folders, 57 skills, 1 agent**. This is the
+run that tests the three changes in #1043.
+
+**Skills pipeline:**
+
+| Step | v0.59.0 | v0.60.1 | |
+| --- | --- | --- | --- |
+| skill-scan (57 skills, 18 directories) | 2,052 | 484 | −76% |
+| skill-tool-extract (17 defs) | 29 | 11 | |
+| agent-scan (69 directories, 1 agent) | 100 | 15 | |
+| instruction-scan | 38 | 5 | |
+| **phase1-ready (tools visible)** | **2,223** | **515** | **−77%** |
+| bundled-skills-extract | 12 | 10 | |
+| **phase2-extract** | **895** | **10** | **−99%** |
+| **total** | **3,118** | **525** | **−83%** |
+
+**Startup & trees:**
+
+| Metric | v0.59.0 | v0.60.1 | |
+| --- | --- | --- | --- |
+| store batch read | — | 103 | |
+| trees validated (14 projects, 2 folders) | 1,184 | 370 | |
+| iCloud/sync complete | 2,282 | 658 | |
+| notes tree loaded | 2,319 | 664 | |
+| **startup ready** | **3,636** | **1,423** | **−61%** |
+| doc-load (1.8 KB md) | 810 | 232 | |
+| doc-switch, click → visible | 1,198 | 422 | −65% |
+
+`index init total` and `tabs restored` were not captured this run.
+
+#### What is actually attributable to #1043, and what is not
+
+**`phase2-extract` is confirmed.** It reports `rescanned: false` — the new
+change signal from `extract_bundled_skills` came back `{changed: 0,
+removed: 0}` and phase 2 skipped its rescan, which is what the field exists to
+prove. 895 → 10 ms.
+
+Sized honestly, the saving on *this* run is smaller than that subtraction
+suggests. The rescan repeated phase 1's scans, which cost 484 + 15 = ~499 ms
+today, not the 883 ms they cost during the v0.59.0 run. So **~500 ms removed
+from a 1,423 ms startup**, not 885. The change is real; the arithmetic of
+comparing across two machine states is not.
+
+**Most of the rest is not attributable, and the giveaway is `skill-scan`.**
+It fell 2,052 → 484 ms, and #1043 did not touch `scanSkills` at all. Nothing
+in this release makes scanning 18 directories four times faster. That drop is
+the filesystem cache, machine load, or both — the v0.59.0 entry records load of
+3.93/4.82/5.92 at the time of its run, against "< 2.8" for a comparable one.
+
+So `startup ready 3,636 → 1,423` is a true measurement and a misleading
+attribution. Treat this entry as: one confirmed fix worth ~500 ms, on a run
+that was faster for unrelated reasons. A second sample under comparable load
+would settle the remainder; one sample cannot.
+
+**`[perf:tree] refresh` is no longer blind, and it closes v0.59.0's question.**
+That entry asked whether "the instrument broke or the refresh no longer does
+the work it did". Neither. The line now reads:
+
+```
+[perf:tree] refresh {mode: "targeted", sections: 0, totalFiles: 0, ms: 0}
+```
+
+`mode: "targeted"` — these are path-scoped refreshes whose target matched no
+explorer folder, no project and no notes root, so there was nothing to do and
+`ms: 0` is correct. The v0.46.0 line they were being compared against
+(`11 sections, 4,343 files, 1,460 ms`) was a **full** refresh. The two were
+never the same measurement, and the old log could not say so. Four fire after
+startup, clustered around the local-AI server start.
+
+#### The deferral did not defer — the one thing #1043 did not achieve
+
+Discovery is scheduled with `requestIdleCallback` (2 s timeout cap) so it stops
+competing with first paint. In this log it does not wait:
+
+```
+[startup] Validating 2 explorer folders, 14 projects
+[skills] Starting skill/agent discovery pipeline      <- immediately
+[skills] Scanning skills in 18 directories
+[perf:startup] trees validated            ms: 370
+[perf:doc-switch] Doc visible             totalMs: 422
+[skills] Discovered 57 skills             skill-scan: 484
+```
+
+The scan starts before trees are validated and is still running when the
+document becomes visible — exactly the overlap the change set out to remove.
+`requestIdleCallback` fires in the first idle gap, and an IPC-heavy startup is
+mostly waiting on `await`, so a gap arrives within a few hundred milliseconds.
+Idle is the wrong signal here: it asks "is the main thread free right now",
+when the question is "has startup finished".
+
+The fix is to wait for `startupReady` and *then* go idle. Not done in v0.60.1.
+Note that `ensureSkillsDiscovered()` already makes this safe to delay further:
+opening the command bar or the Skills pane pulls the scan forward on demand,
+so a later start costs the user nothing.
+
+**Still open from v0.59.0:** the three CSP stylesheet violations at launch.
+**New, unexplained:** `trees validated` reports `totalFiles: 16` across 14
+projects, and `agent-scan` probes 69 directories to find 1 agent.
+
 #### Synthetic gate at the v0.60.0 cut — red, and not the release
 
 `pnpm test:perf` failed 3 of 45 at the v0.60.0 cut: parse 1KB 341 ms (budget
