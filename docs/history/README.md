@@ -237,3 +237,4 @@ Chronological log of major implementation milestones and changes.
 | 231 | [Release v0.58.0](231-release-v0.58.0.md) | Shared links stop landing in iCloud's Trash after a library move, and the app lists the open-source projects inside it. |
 | 232 | [Release v0.59.0](232-release-v0.59.0.md) | Settings fully translated; Word export's XML reader security fix |
 | 233 | [Release v0.60.0](233-release-v0.60.0.md) | Move files into any folder by drag or menu; saved pages preview as the article, not its source |
+| 234 | [Release v0.60.1](234-release-v0.60.1.md) | The app opens your document without first reading through every skill and agent you have |

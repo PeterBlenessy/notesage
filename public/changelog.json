@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.60.1",
+      "date": "2026-09-16",
+      "previousVersion": "0.60.0",
+      "sections": {
+        "improvements": [
+          "Notesage opens your document sooner. It used to spend the first couple of seconds reading through every skill and agent you have — work that only matters once you start an AI session — while you were waiting for the window. That reading now happens quietly afterwards, or the moment you open the command bar, whichever comes first. It also stops reading them a second time on launches where nothing about them has changed."
+        ]
+      }
+    },
+    {
       "version": "0.60.0",
       "date": "2026-09-16",
       "previousVersion": "0.59.0",
