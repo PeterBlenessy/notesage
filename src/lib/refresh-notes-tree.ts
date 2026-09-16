@@ -29,12 +29,16 @@ async function listNotesFiles(path: string): Promise<FileEntry[]> {
  * keeps their notes root under iCloud Drive, Quick Notes are synced;
  * if not, they're local. There's no separate "sync Quick Notes" toggle
  * to consult.
+ *
+ * Returns how many files were listed, or null when there is no notes root
+ * to list — the caller reports tree work in `[perf:tree]`, and "no root
+ * configured" has to read differently from "a root with no files in it".
  */
-export async function refreshNotesTree(): Promise<void> {
+export async function refreshNotesTree(): Promise<number | null> {
   const { notesRootPath } = useSettingsStore.getState();
   const ws = useWorkspaceStore.getState();
 
-  if (!notesRootPath) return;
+  if (!notesRootPath) return null;
 
   let files: FileEntry[] = [];
 
@@ -48,4 +52,5 @@ export async function refreshNotesTree(): Promise<void> {
   }
 
   ws.setNotesTree(files);
+  return files.length;
 }

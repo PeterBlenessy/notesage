@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { subscribeToCmdBarEvents, emitCmdBarEvent } from "@/lib/cmd-bar-events";
 import { useCmdBarSummonStore } from "@/stores/cmd-bar-summon-store";
+import { ensureSkillsDiscovered } from "@/hooks/useSkillOperations";
 import { MODES } from "@/components/cmd/prefix-modes";
 import { VERBS } from "@/components/cmd/verb-modes";
 import { type AttachmentChip } from "@/components/cmd/AttachmentChips";
@@ -76,6 +77,11 @@ export function useCommandBarBusWiring({
   const consumeSummon = useCmdBarSummonStore((s) => s.consume);
   useEffect(() => {
     if (!pendingSummon) return;
+    // Opening the bar is the earliest reliable sign that skills are about to
+    // matter. Discovery is idle-scheduled at startup precisely because nothing
+    // before this point reads one; summoning the bar pulls it forward so the
+    // scan is not still running when the user's first message is composed.
+    void ensureSkillsDiscovered();
     emitCmdBarEvent({
       type: "focus",
       prefix: pendingSummon.prefix,

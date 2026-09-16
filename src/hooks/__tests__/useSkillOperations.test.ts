@@ -26,7 +26,14 @@ vi.mock('@/lib/logger', () => ({
 
 // Mock tauriApi — the module under test imports it at the top level
 const mockGetHomeDir = vi.fn(async () => '/Users/test');
-const mockExtractBundledSkills = vi.fn(async () => '/Users/test/.notesage/bundled-skills');
+// The steady state: extraction runs, finds every bundled file already current,
+// and reports that nothing moved. Tests covering an app update override it.
+const UNCHANGED_EXTRACTION = {
+  dir: '/Users/test/.notesage/bundled-skills',
+  changed: 0,
+  removed: 0,
+};
+const mockExtractBundledSkills = vi.fn(async () => UNCHANGED_EXTRACTION);
 const mockCleanupBundledAgents = vi.fn(async () => 0);
 const mockPathExists = vi.fn(async (_path: string) => false);
 const mockCreateDirectory = vi.fn(async () => {});
@@ -67,7 +74,7 @@ vi.mock('@/lib/tauri', () => ({
 }));
 
 // Import hooks under test (uses mocked tauriApi)
-import { useSkillDiscovery, useSkillOperations } from '@/hooks/useSkillOperations';
+import { useSkillDiscovery, useSkillOperations, ensureSkillsDiscovered } from '@/hooks/useSkillOperations';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -181,7 +188,7 @@ describe('useSkillDiscovery', () => {
     __resetBundledExtractionForTests();
 
     mockGetHomeDir.mockResolvedValue('/Users/test');
-    mockExtractBundledSkills.mockResolvedValue('/Users/test/.notesage/bundled-skills');
+    mockExtractBundledSkills.mockResolvedValue(UNCHANGED_EXTRACTION);
     mockCleanupBundledAgents.mockResolvedValue(0);
     mockPathExists.mockResolvedValue(false);
     mockCreateDirectory.mockResolvedValue(undefined);
@@ -214,10 +221,66 @@ describe('useSkillDiscovery', () => {
 
     // Bundled skills extraction should run on first invocation (phase 2)
     expect(mockExtractBundledSkills).toHaveBeenCalledTimes(1);
-    // scanSkills/scanAgents called twice: phase 1 (immediate) + phase 2 (after extraction)
+    // Extraction reported nothing changed, so phase 2 adds no second scan —
+    // phase 1 already read the same files off disk.
+    expect(scanSkills).toHaveBeenCalledTimes(1);
+    expect(scanAgents).toHaveBeenCalledTimes(1);
+    expect(scanAgentInstructions).toHaveBeenCalledTimes(1);
+  });
+
+  // The rescan exists for the launch after an app update, when the bundled
+  // skills on disk are no longer the ones phase 1 read.
+  it('rescans when extraction rewrote bundled skills', async () => {
+    mockExtractBundledSkills.mockResolvedValue({
+      dir: '/Users/test/.notesage/bundled-skills',
+      changed: 4,
+      removed: 0,
+    });
+    const { scanSkills, scanAgents } = setupStoreMocks();
+    useSettingsStore.setState({ skillsReady: true });
+
+    renderHook(() => useSkillDiscovery());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100));
+    });
+
     expect(scanSkills).toHaveBeenCalledTimes(2);
     expect(scanAgents).toHaveBeenCalledTimes(2);
-    expect(scanAgentInstructions).toHaveBeenCalledTimes(1);
+  });
+
+  // A skill dropped from the bundle is removed from disk, which changes the
+  // skill set just as surely as a rewrite does.
+  it('rescans when extraction removed a deprecated skill', async () => {
+    mockExtractBundledSkills.mockResolvedValue({
+      dir: '/Users/test/.notesage/bundled-skills',
+      changed: 0,
+      removed: 1,
+    });
+    const { scanSkills } = setupStoreMocks();
+    useSettingsStore.setState({ skillsReady: true });
+
+    renderHook(() => useSkillDiscovery());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100));
+    });
+
+    expect(scanSkills).toHaveBeenCalledTimes(2);
+  });
+
+  // Without an answer from the backend there are no grounds to skip: the
+  // rescan is the safe default, and correctness outranks the 895ms.
+  it('rescans when extraction failed', async () => {
+    mockExtractBundledSkills.mockRejectedValue(new Error('disk full'));
+    const { scanSkills, scanAgents } = setupStoreMocks();
+    useSettingsStore.setState({ skillsReady: true });
+
+    renderHook(() => useSkillDiscovery());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100));
+    });
+
+    expect(scanSkills).toHaveBeenCalledTimes(2);
+    expect(scanAgents).toHaveBeenCalledTimes(2);
   });
 
   // Extraction runs once per session; a second run only re-scans.
@@ -252,6 +315,53 @@ describe('useSkillDiscovery', () => {
     expect(mockExtractBundledSkills).not.toHaveBeenCalled();
     expect(scanSkills).toHaveBeenCalledTimes(1);
     expect(scanAgents).toHaveBeenCalledTimes(1);
+  });
+
+  // Discovery no longer races the startup burst: the hook schedules it and
+  // anything that actually reads a skill calls `ensureSkillsDiscovered()`.
+  // Whoever gets there first runs it — and only one of them runs it.
+  it('runs one pass no matter how many callers ask for it', async () => {
+    const { scanSkills } = setupStoreMocks();
+    useSettingsStore.setState({ skillsReady: true });
+
+    renderHook(() => useSkillDiscovery());
+
+    await act(async () => {
+      await Promise.all([
+        ensureSkillsDiscovered(),
+        ensureSkillsDiscovered(),
+        ensureSkillsDiscovered(),
+      ]);
+      await new Promise((r) => setTimeout(r, 100));
+    });
+
+    expect(scanSkills).toHaveBeenCalledTimes(1);
+    expect(mockExtractBundledSkills).toHaveBeenCalledTimes(1);
+  });
+
+  // The promise is the contract: a caller that awaits it must find the skills
+  // loaded when it resolves, not merely find a scan under way. A scan that
+  // takes real time is the only way to tell those two apart.
+  it('resolves only once the scan has finished', async () => {
+    let scanFinished = false;
+    const scanSkills = vi.fn(async () => {
+      await new Promise((r) => setTimeout(r, 30));
+      scanFinished = true;
+    });
+    useSkillStore.setState({
+      scanSkills,
+      scanAgents: vi.fn(async () => {}),
+      scanAgentInstructions: vi.fn(async () => {}),
+      setActiveAgent: vi.fn(),
+      skills: [],
+      agents: [],
+    } as unknown as Parameters<typeof useSkillStore.setState>[0]);
+    useSettingsStore.setState({ skillsReady: true });
+
+    await act(async () => {
+      await ensureSkillsDiscovered();
+      expect(scanFinished).toBe(true);
+    });
   });
 
   it('includes project paths in skill and agent directories', async () => {
@@ -510,7 +620,7 @@ describe('project-level agent discovery', () => {
     vi.clearAllMocks();
     resetStores();
     mockGetHomeDir.mockResolvedValue('/Users/test');
-    mockExtractBundledSkills.mockResolvedValue('/Users/test/.notesage/bundled-skills');
+    mockExtractBundledSkills.mockResolvedValue(UNCHANGED_EXTRACTION);
     mockCleanupBundledAgents.mockResolvedValue(0);
   });
 

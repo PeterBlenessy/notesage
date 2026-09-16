@@ -1,5 +1,5 @@
 import { RefreshCw, ScrollText, ChevronDown, Plus, MoreHorizontal, Trash2, ArrowUpFromLine, ArrowDownToLine, Pencil } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -24,6 +24,7 @@ import { McpServersSettings } from '@/components/settings/McpServersSettings';
 import { NewAddressableAgentDialog } from '@/components/settings/NewAddressableAgentDialog';
 import { EditSkillDialog } from '@/components/settings/EditSkillDialog';
 import { EditAgentDialog } from '@/components/settings/EditAgentDialog';
+import { ensureSkillsDiscovered } from '@/hooks/useSkillOperations';
 import { isManageable, sourceLabel, sourceBadgeClass } from '@/components/settings/skills-settings-utils';
 import { useFormatLocale } from "@/lib/useLocale";
 import { t } from '@/lib/i18n';
@@ -347,6 +348,13 @@ export function SkillsSettings() {
   const [editingAgent, setEditingAgent] = useState<AgentEntry | null>(null);
 
   const [rescanSpinning, setRescanSpinning] = useState(false);
+
+  // This pane is one of the few surfaces that reads skills, so it is also one
+  // of the few that must not wait for the idle scan startup scheduled. Opening
+  // it runs discovery now if it has not run.
+  useEffect(() => {
+    void ensureSkillsDiscovered();
+  }, []);
 
   const handleRescan = () => {
     // Trigger the full discovery flow via rescanCounter (observed by useSkillDiscovery)
