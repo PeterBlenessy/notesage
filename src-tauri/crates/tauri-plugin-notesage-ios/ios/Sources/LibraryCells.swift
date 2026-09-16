@@ -653,7 +653,7 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
 
     func configure(
         _ entry: LibraryEntry, condensed: Bool, progress: Double, recentlyRead: Bool,
-        article: ArticleRowText? = nil
+        article: ArticleRowText? = nil, query: String = ""
     ) {
         representedPath = entry.path
 
@@ -688,7 +688,15 @@ final class LibraryListCell: UICollectionViewCell, LibraryThumbnailCell {
         subtitleLabel.isHidden = entry.isDirectory || (!isArticle && condensed)
         // Condensed is one line per row, so the standfirst goes — the same
         // rule the web row follows.
-        excerptLabel.text = condensed ? nil : (isArticle ? (article?.excerpt ?? " ") : nil)
+        // While filtering, window the standfirst so the matched word is
+        // inside it — a result whose visible text does not contain the query
+        // looks like a bug in the search.
+        excerptLabel.text =
+            condensed
+            ? nil
+            : (isArticle
+                ? librarySearchSnippet(article?.excerpt ?? " ", matching: query)
+                : nil)
         excerptLabel.isHidden = condensed || !isArticle
         progressBar.isHidden = progress <= 0 || progress >= 1
         progressBar.progress = Float(progress)
@@ -802,7 +810,7 @@ final class LibraryGridCell: UICollectionViewCell, LibraryThumbnailCell {
 
     func configure(
         _ entry: LibraryEntry, condensed: Bool, progress: Double, recentlyRead: Bool,
-        article: ArticleRowText? = nil
+        article: ArticleRowText? = nil, query: String = ""
     ) {
         representedPath = entry.path
         // A card says what the article IS, for the same reason a row does

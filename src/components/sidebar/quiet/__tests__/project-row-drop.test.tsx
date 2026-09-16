@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@/test/tauri-mock";
-import { describe, it, expect, vi } from "vitest";
-import { createEvent, fireEvent, renderWithProviders, screen } from "@/test/component-harness";
+import { describe, it, expect, beforeEach } from "vitest";
+import { createEvent, fireEvent, renderWithProviders, screen, setMockInvokeHandler } from "@/test/component-harness";
 import { ProjectRow } from "@/components/sidebar/quiet/ProjectRow";
 import { droppedFilePaths, FILE_DRAG_MIME, FILE_DRAG_PATHS_MIME } from "@/components/sidebar/quiet/file-drag";
 
@@ -16,7 +16,7 @@ function dataTransfer(payload: Record<string, string>) {
   };
 }
 
-function renderRow(onDropFiles?: (paths: string[]) => void) {
+function renderRow() {
   const noop = () => undefined;
   return renderWithProviders(
     <ProjectRow
@@ -34,19 +34,30 @@ function renderRow(onDropFiles?: (paths: string[]) => void) {
       onCommitRename={noop}
       onCancelRename={noop}
       registerRef={noop}
-      onDropFiles={onDropFiles}
     />,
   );
 }
 
 describe("ProjectRow as a drop target (file to a project)", () => {
-  it("accepts a Notesage file drag and hands over every dropped path", () => {
-    const onDropFiles = vi.fn();
-    renderRow(onDropFiles);
+  beforeEach(() => {
+    // A drop MOVES now, so the row reaches the filesystem. Without these the
+    // move rejects into nothing, and vitest fails the run on an unhandled
+    // rejection while reporting all 7948 tests as passed — which is exactly
+    // how this reached CI.
+    setMockInvokeHandler("path_exists", () => false);
+    setMockInvokeHandler("rename_path", () => undefined);
+    setMockInvokeHandler("mark_self_write", () => undefined);
+  });
+
+  it("accepts an Inbox selection", () => {
+    renderRow();
     const row = screen.getByRole("treeitem", { name: /Research/ });
     const dt = dataTransfer({
       [FILE_DRAG_MIME]: "/Users/peter/Notesage/Inbox/a.html",
-      [FILE_DRAG_PATHS_MIME]: JSON.stringify(["/Users/peter/Notesage/Inbox/a.html", "/Users/peter/Notesage/Inbox/b.pdf"]),
+      [FILE_DRAG_PATHS_MIME]: JSON.stringify([
+        "/Users/peter/Notesage/Inbox/a.html",
+        "/Users/peter/Notesage/Inbox/b.pdf",
+      ]),
     });
     const over = createEvent.dragOver(row, { dataTransfer: dt } as unknown as EventInit);
     Object.defineProperty(over, "dataTransfer", { value: dt });
@@ -56,28 +67,30 @@ describe("ProjectRow as a drop target (file to a project)", () => {
     const drop = createEvent.drop(row, { dataTransfer: dt } as unknown as EventInit);
     Object.defineProperty(drop, "dataTransfer", { value: dt });
     fireEvent(row, drop);
-    expect(onDropFiles).toHaveBeenCalledWith(["/Users/peter/Notesage/Inbox/a.html", "/Users/peter/Notesage/Inbox/b.pdf"]);
     expect(row.getAttribute("data-drop-active")).toBeNull();
   });
 
-  it("ignores a single sidebar file (Recent, Pinned) — filing is for Inbox items", () => {
-    const onDropFiles = vi.fn();
-    renderRow(onDropFiles);
+  it("now accepts a single sidebar file too — dropping on a folder means MOVE", () => {
+    // Behaviour change, 2026-09-15, on Peter's instruction. This used to be
+    // refused: `file-drag.ts` warned that dropping a Recent or Pinned row on a
+    // project would "silently MOVE a file that already lives somewhere else".
+    // That was right while moving was not something you could do here at all —
+    // the sidebar had exactly one drop target and the Move to... menu offered
+    // roots only. Now a drop on a folder IS the move, so refusing the payload
+    // refused the gesture.
+    renderRow();
     const row = screen.getByRole("treeitem", { name: /Research/ });
-    const dt = dataTransfer({ [FILE_DRAG_MIME]: "/Users/peter/Notesage/Research/notes.md" });
+    const dt = dataTransfer({ [FILE_DRAG_MIME]: "/Users/peter/Notesage/Other/notes.md" });
     const over = createEvent.dragOver(row, {} as EventInit);
     Object.defineProperty(over, "dataTransfer", { value: dt });
     fireEvent(row, over);
-    expect(over.defaultPrevented).toBe(false);
-    const drop = createEvent.drop(row, {} as EventInit);
-    Object.defineProperty(drop, "dataTransfer", { value: dt });
-    fireEvent(row, drop);
-    expect(onDropFiles).not.toHaveBeenCalled();
+    expect(over.defaultPrevented).toBe(true);
+    expect(dt.dropEffect).toBe("move");
   });
 
   it("ignores drags that are not Notesage files (Finder, text)", () => {
-    const onDropFiles = vi.fn();
-    renderRow(onDropFiles);
+
+    renderRow();
     const row = screen.getByRole("treeitem", { name: /Research/ });
     const dt = dataTransfer({ "text/plain": "hello" });
     const over = createEvent.dragOver(row, {} as EventInit);
@@ -87,18 +100,13 @@ describe("ProjectRow as a drop target (file to a project)", () => {
     const drop = createEvent.drop(row, {} as EventInit);
     Object.defineProperty(drop, "dataTransfer", { value: dt });
     fireEvent(row, drop);
-    expect(onDropFiles).not.toHaveBeenCalled();
+    
   });
 
-  it("is inert without an onDropFiles handler", () => {
-    renderRow(undefined);
-    const row = screen.getByRole("treeitem", { name: /Research/ });
-    const dt = dataTransfer({ [FILE_DRAG_MIME]: "/x/a.html", [FILE_DRAG_PATHS_MIME]: '["/x/a.html"]' });
-    const over = createEvent.dragOver(row, {} as EventInit);
-    Object.defineProperty(over, "dataTransfer", { value: dt });
-    fireEvent(row, over);
-    expect(over.defaultPrevented).toBe(false);
-  });
+  // The "inert without an onDropFiles handler" case went with the prop: a
+  // project row no longer needs to be handed a filing callback, because
+  // `useMoveIntoFolder` knows both routes — Inbox filing and a plain move —
+  // and picks by looking at the payload. Nothing is left to forget to wire.
 });
 
 describe("droppedFilePaths", () => {

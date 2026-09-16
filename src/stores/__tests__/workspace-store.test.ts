@@ -970,3 +970,45 @@ describe('pins.json write-through & sync (#652)', () => {
     expect(pinned.filter((p) => p === `${LIBRARY_ROOT}/local-only.md`)).toHaveLength(1);
   });
 });
+
+describe("renamePinnedPath — a pin is a path, so a move invalidates it", () => {
+  beforeEach(() => {
+    useWorkspaceStore.setState({ pinnedFiles: [] });
+  });
+
+  it("follows a file that was moved or renamed", () => {
+    useWorkspaceStore.setState({ pinnedFiles: ["/lib/Inbox/a.md", "/lib/other.md"] });
+    useWorkspaceStore.getState().renamePinnedPath("/lib/Inbox/a.md", "/lib/Essays/a.md");
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual([
+      "/lib/Essays/a.md",
+      "/lib/other.md",
+    ]);
+  });
+
+  it("takes a folder's contents with it", () => {
+    useWorkspaceStore.setState({
+      pinnedFiles: ["/lib/Notes/a.md", "/lib/Notes/deep/b.md", "/lib/keep.md"],
+    });
+    useWorkspaceStore.getState().renamePinnedPath("/lib/Notes", "/lib/Archive/Notes");
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual([
+      "/lib/Archive/Notes/a.md",
+      "/lib/Archive/Notes/deep/b.md",
+      "/lib/keep.md",
+    ]);
+  });
+
+  it("does not claim a sibling whose name merely starts the same", () => {
+    // `/lib/Notes` must not swallow `/lib/Notes-archive` — the separator is
+    // the whole guard.
+    useWorkspaceStore.setState({ pinnedFiles: ["/lib/Notes-archive/x.md"] });
+    useWorkspaceStore.getState().renamePinnedPath("/lib/Notes", "/lib/Moved");
+    expect(useWorkspaceStore.getState().pinnedFiles).toEqual(["/lib/Notes-archive/x.md"]);
+  });
+
+  it("leaves the list alone when nothing matches", () => {
+    const before = ["/lib/a.md"];
+    useWorkspaceStore.setState({ pinnedFiles: before });
+    useWorkspaceStore.getState().renamePinnedPath("/lib/zzz.md", "/lib/yyy.md");
+    expect(useWorkspaceStore.getState().pinnedFiles).toBe(before);
+  });
+});

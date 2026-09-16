@@ -1,5 +1,5 @@
-import { useMemo, useState, type DragEvent, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
-import { droppedFilePaths, hasInboxDrag } from "@/components/sidebar/quiet/file-drag";
+import { useMemo, type KeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { useFolderDropTarget, useMoveIntoFolder } from "@/components/sidebar/quiet/useFolderDrop";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useProjectMetadataStore } from "@/stores/project-metadata-store";
@@ -40,7 +40,6 @@ export interface ProjectRowProps {
    * Inbox items dropped on the row: the caller files them into the project.
    * Only the Inbox's selection payload is accepted. Absent = not a target.
    */
-  onDropFiles?: (paths: string[]) => void;
 }
 
 export function ProjectRow({
@@ -58,28 +57,15 @@ export function ProjectRow({
   onCommitRename,
   onCancelRename,
   registerRef,
-  onDropFiles,
 }: ProjectRowProps) {
-  const [dropActive, setDropActive] = useState(false);
-  // Inbox items only (`hasInboxDrag`): filing is the gesture, not moving
-  // arbitrary sidebar files between projects.
-  const dragOver = (event: DragEvent<HTMLDivElement>) => {
-    if (!onDropFiles || !hasInboxDrag(event)) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    setDropActive(true);
-  };
-  const dragLeave = (event: DragEvent<HTMLDivElement>) => {
-    const next = event.relatedTarget as Node | null;
-    if (next && event.currentTarget.contains(next)) return;
-    setDropActive(false);
-  };
-  const drop = (event: DragEvent<HTMLDivElement>) => {
-    if (!onDropFiles || !hasInboxDrag(event)) return;
-    event.preventDefault();
-    setDropActive(false);
-    onDropFiles(droppedFilePaths(event));
-  };
+  const moveInto = useMoveIntoFolder();
+  // Any file drag, not just the Inbox's. See `useFolderDrop` for why the old
+  // Inbox-only guard went: dropping on a folder now MEANS move, so a guard
+  // that rejected every non-Inbox payload rejected the gesture itself.
+  const { dropActive, dragOver, dragLeave, drop } = useFolderDropTarget(
+    project.path,
+    moveInto,
+  );
   const name = useMemo(() => projectBasename(project.path), [project.path]);
   const hasTree = project.fileTree.length > 0;
   const fileCount = useMemo(

@@ -16,6 +16,17 @@ import type { DragEvent as ReactDragEvent } from "react";
 export const FILE_DRAG_MIME = "application/x-notesage-file";
 /** A multi-file selection (the Inbox drags its whole selection) — JSON array of paths. */
 export const FILE_DRAG_PATHS_MIME = "application/x-notesage-inbox-paths";
+/**
+ * A FOLDER being dragged, carrying its absolute path.
+ *
+ * Deliberately a different type from `FILE_DRAG_MIME` rather than a flag
+ * inside it, because the distinction is exactly what drop targets need to
+ * dispatch on: a folder may be dropped into another folder, and may NOT be
+ * dropped into Pinned, which renders every row as a file — `kind="file"`, a
+ * `FilePreview` that would try to read a directory. Type-based rejection
+ * costs the Pinned section nothing: it never asked for this type.
+ */
+export const FOLDER_DRAG_MIME = "application/x-notesage-folder";
 
 /**
  * Is this a drag of Inbox items (the selection payload)? Project rows accept
@@ -53,6 +64,14 @@ export function droppedFilePaths(event: { dataTransfer: DataTransfer }): string[
  * `effectAllowed` so the browser paints the correct cursor (move for
  * reorder, copyMove for cross-section pin).
  */
+export function beginFolderDrag(
+  event: ReactDragEvent<HTMLElement>,
+  path: string,
+): void {
+  event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer.setData(FOLDER_DRAG_MIME, path);
+}
+
 export function beginFileDrag(
   event: ReactDragEvent<HTMLElement>,
   path: string,
@@ -67,6 +86,22 @@ export function beginFileDrag(
  */
 export function hasFileDrag(event: ReactDragEvent<HTMLElement>): boolean {
   return event.dataTransfer.types.includes(FILE_DRAG_MIME);
+}
+
+/** Is this a folder being dragged? */
+export function hasFolderDrag(event: { dataTransfer: DataTransfer }): boolean {
+  return event.dataTransfer.types.includes(FOLDER_DRAG_MIME);
+}
+
+/**
+ * Every path a drop carries, whatever kind it is — files, an Inbox selection,
+ * or a folder. For drop targets that accept all three; `droppedFilePaths`
+ * stays the narrower question.
+ */
+export function droppedMovablePaths(event: { dataTransfer: DataTransfer }): string[] {
+  const folder = event.dataTransfer.getData(FOLDER_DRAG_MIME);
+  if (folder) return [folder];
+  return droppedFilePaths(event);
 }
 
 /**

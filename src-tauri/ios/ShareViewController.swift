@@ -96,11 +96,16 @@ final class ShareViewController: UIViewController {
     private static let appGroup = "group.com.notesage.app"
     private static let formatKey = "capture-format"
 
+    /// Declaration order is PICKER order (`allCases`), and HTML leads because
+    /// it is the default — see `format` below. It also matches the macOS
+    /// extension, whose popup has always listed Article (HTML) first and
+    /// therefore always defaulted to it. The two platforms disagreeing about
+    /// what a share produces was not a decision anyone made.
     private enum CaptureFormat: String, CaseIterable {
         case video
+        case html
         case article
         case link
-        case html
         /// The URL serves a file (PDF, deck, EPUB…): store that file, under
         /// its own name. Offered only once the probe below has seen the
         /// response headers, never remembered as a default — the next share
@@ -151,10 +156,18 @@ final class ShareViewController: UIViewController {
     /// resting on URLSession's self-retention while a task is outstanding.
     private var probeSession: URLSession?
 
+    /// Remembered choice wins; absent one, HTML.
+    ///
+    /// Markdown used to be the default, and a Markdown capture arrives in the
+    /// library as a plain note: the row shows `Title.md` and a date, with no
+    /// site, no reading time and no cover, because the metadata a row draws is
+    /// parsed out of the captured HTML's header. The same page saved as HTML
+    /// gets the full article row. Two of the three formats produced
+    /// second-class rows and the weaker one was what you got by default.
     private var format: CaptureFormat =
         UserDefaults(suiteName: ShareViewController.appGroup)?
             .string(forKey: ShareViewController.formatKey)
-            .flatMap(CaptureFormat.init(rawValue:)) ?? .article
+            .flatMap(CaptureFormat.init(rawValue:)) ?? .html
 
     private var sharedUrl: String?
     private var sharedTitle: String?
