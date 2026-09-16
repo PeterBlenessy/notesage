@@ -1,6 +1,26 @@
 {
   "releases": [
     {
+      "version": "0.60.0",
+      "date": "2026-09-16",
+      "previousVersion": "0.59.0",
+      "sections": {
+        "features": [
+          "Drag a file onto any folder to move it — a sub-folder, a project, a folder in the sidebar. Folders can be dragged too.",
+          "\"Move to…\" in the right-click menu now opens into sub-folders instead of listing only top-level ones.",
+          "Saved web pages preview as the article, with their pictures, instead of as raw HTML."
+        ],
+        "fixes": [
+          "Moving or renaming a folder left open tabs, recent files and pinned items pointing at the old location. They follow it now, contents included.",
+          "A pinned file that was moved or renamed kept a dead link in the sidebar.",
+          "Read times on short saved articles were wrong: something you were a third of the way through still claimed the whole length remained."
+        ],
+        "improvements": [
+          "Security: updated a networking component used for every HTTPS connection the app makes. No action required."
+        ]
+      }
+    },
+    {
       "version": "0.59.0",
       "date": "2026-09-13",
       "previousVersion": "0.58.0",

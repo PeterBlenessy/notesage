@@ -30,6 +30,15 @@ Reversible + cheap → act, then report. Otherwise → ask first.
 - **Files:** One component per file. Filename = component name.
 - **Types:** Prefer interfaces. No `any` (use `unknown`).
 - **Typecheck gate:** `vitest` / `pnpm test` do NOT run `tsc` — a green test run says nothing about types. After editing ANY `.ts`/`.tsx` (including `*.test.ts` and mocks), run `pnpm typecheck` before calling the work done. CI's frontend job runs `tsc --noEmit` over test files too, so a type error in a test (e.g. an untyped `vi.fn()` mock whose `.mock.calls` is an empty tuple) fails the whole job even when every test passes.
+- **A green "Tests" line is not a green run.** Vitest exits NON-ZERO on unhandled errors even when every test passes, and says so only in a summary line that is easy to grep past:
+
+  ```
+   Test Files  513 passed (513)
+        Tests  7948 passed | 6 skipped (7954)
+       Errors  2 errors          <- the run FAILED
+  ```
+
+  Check the **exit code**, or read the tail. Grepping for `Tests |FAIL` reports such a run as green — that happened on 2026-09-15 and three "all passing" reports were given on a run CI then rejected. The usual cause is a fire-and-forget promise (`void doThing()`) rejecting after its test finished: mock the commands it reaches, and give the call a `.catch` so it cannot reject unhandled in the app either.
 - **Errors:** Tauri returns `Result<T, String>`. Show toast for user errors.
 - **Radix Tooltip:** Every `<Tooltip>` MUST be wrapped in `<TooltipProvider>`. Radix throws at render time without it (see `docs/design-system.md` §"Radix Tooltip — `<TooltipProvider>` is mandatory").
 
