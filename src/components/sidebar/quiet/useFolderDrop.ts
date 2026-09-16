@@ -144,7 +144,16 @@ export function useFolderDropTarget(
     setDropActive(false);
     const fromInbox = hasInboxDrag(event);
     const paths = droppedMovablePaths(event);
-    if (paths.length > 0) void moveInto(paths, destFolder, { fromInbox });
+    // `void` alone leaves a rejection unhandled. `moveInto` reports every
+    // failure it can name with a toast, so anything arriving here is one it
+    // could not — a missing command, a backend that went away. Unhandled,
+    // that is a console error in the app, and in CI it fails the run while
+    // every test still reports as passed.
+    if (paths.length > 0) {
+      void moveInto(paths, destFolder, { fromInbox }).catch((error: unknown) => {
+        console.error("[sidebar] move failed:", error);
+      });
+    }
   };
 
   return { dropActive, dragOver, dragLeave, drop };

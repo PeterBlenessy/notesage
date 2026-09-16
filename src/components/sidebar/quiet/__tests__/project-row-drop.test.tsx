@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import "@/test/tauri-mock";
-import { describe, it, expect } from "vitest";
-import { createEvent, fireEvent, renderWithProviders, screen } from "@/test/component-harness";
+import { describe, it, expect, beforeEach } from "vitest";
+import { createEvent, fireEvent, renderWithProviders, screen, setMockInvokeHandler } from "@/test/component-harness";
 import { ProjectRow } from "@/components/sidebar/quiet/ProjectRow";
 import { droppedFilePaths, FILE_DRAG_MIME, FILE_DRAG_PATHS_MIME } from "@/components/sidebar/quiet/file-drag";
 
@@ -39,6 +39,16 @@ function renderRow() {
 }
 
 describe("ProjectRow as a drop target (file to a project)", () => {
+  beforeEach(() => {
+    // A drop MOVES now, so the row reaches the filesystem. Without these the
+    // move rejects into nothing, and vitest fails the run on an unhandled
+    // rejection while reporting all 7948 tests as passed — which is exactly
+    // how this reached CI.
+    setMockInvokeHandler("path_exists", () => false);
+    setMockInvokeHandler("rename_path", () => undefined);
+    setMockInvokeHandler("mark_self_write", () => undefined);
+  });
+
   it("accepts an Inbox selection", () => {
     renderRow();
     const row = screen.getByRole("treeitem", { name: /Research/ });
