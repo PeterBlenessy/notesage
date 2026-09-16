@@ -5,6 +5,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { EditorView } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { Editor } from "@tiptap/core";
+import { log, PERF } from '@/lib/logger';
 
 export const SearchPluginKey = new PluginKey("searchHighlight");
 
@@ -42,7 +43,7 @@ function findMatches(doc: PMNode, query: string): { from: number; to: number }[]
     }
   });
 
-  console.log('[perf:find]', {
+  log.perf(PERF.find, 'find', {
     query,
     matchCount: matches.length,
     docNodes: doc.nodeSize,
@@ -148,7 +149,7 @@ export const SearchHighlight = Extension.create({
               };
               searchHighlightCounter++;
               if (searchHighlightCounter % 10 === 0) {
-                console.log('[perf:typing]', {
+                log.perf(PERF.typing, 'typing', {
                   plugin: 'SearchHighlight',
                   docNodes: tr.doc.nodeSize,
                   decorationCount: matches.length,

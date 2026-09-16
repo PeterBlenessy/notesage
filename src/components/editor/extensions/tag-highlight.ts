@@ -3,6 +3,7 @@ import { PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { createDecorationPlugin } from "./decoration-factory";
+import { log, PERF } from '@/lib/logger';
 
 const TAG_RE = /(?:^|(?:[^\w]))#([a-zA-Z][a-zA-Z0-9_-]*)/g;
 
@@ -57,7 +58,7 @@ export const TagHighlight = Extension.create({
         onRebuild({ docNodeSize, decorationCount, elapsedMs }) {
           tagHighlightCounter++;
           if (tagHighlightCounter % 10 === 0) {
-            console.log('[perf:typing]', {
+            log.perf(PERF.typing, 'typing', {
               plugin: 'TagHighlight',
               docNodes: docNodeSize,
               decorationCount,

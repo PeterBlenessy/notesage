@@ -110,7 +110,14 @@ vi.mock('@/lib/file-utils', () => ({ getFileType: vi.fn(() => 'markdown'), isBin
 vi.mock('@/lib/binary-cache', () => ({ setBinaryData: vi.fn() }));
 vi.mock('@/lib/refresh-notes-tree', () => ({ refreshNotesTree: vi.fn().mockResolvedValue(undefined) }));
 vi.mock('@/lib/scan-icloud-projects', () => ({ scanICloudForProjects: scanICloudForProjectsMock }));
-vi.mock('@/lib/logger', () => ({ log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() }, setLogLevel: vi.fn() }));
+vi.mock('@/lib/logger', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/logger')>();
+  return {
+    ...actual,
+    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), perf: vi.fn() },
+    setLogLevel: vi.fn(),
+  };
+});
 
 vi.mock('sonner', () => ({ toast: { info: toastInfoMock, warning: vi.fn(), error: vi.fn(), dismiss: vi.fn() } }));
 

@@ -16,6 +16,7 @@ import { wasAutomationWrite } from "@/lib/automations/loop-guard";
 import { toast } from "sonner";
 import { trackSelfRename } from "@/lib/self-rename-filter";
 import { t } from '@/lib/i18n';
+import { log, PERF } from '@/lib/logger';
 
 /** Recursively count files in a FileEntry tree. */
 function countFiles(entries: FileEntry[]): number {
@@ -125,7 +126,7 @@ export function useFileOperations() {
             const ms = Math.round(performance.now() - t0);
             const fileCount = countFiles(tree);
             const path = folder.path.split('/').pop() ?? folder.path;
-            console.log('[perf:tree] list', { path, fileCount, ms });
+            log.perf(PERF.tree, 'list', { path, fileCount, ms });
             totalFiles += fileCount;
             sections += 1;
             ws.updateExplorerTree(folder.path, tree);
@@ -144,7 +145,7 @@ export function useFileOperations() {
             const ms = Math.round(performance.now() - t0);
             const fileCount = countFiles(tree);
             const path = project.path.split('/').pop() ?? project.path;
-            console.log('[perf:tree] list', { path, fileCount, ms });
+            log.perf(PERF.tree, 'list', { path, fileCount, ms });
             totalFiles += fileCount;
             sections += 1;
             ws.updateProjectTree(project.path, tree);
@@ -169,7 +170,7 @@ export function useFileOperations() {
       }
 
       const ms = Math.round(performance.now() - refreshStart);
-      console.log('[perf:tree] refresh', { mode: 'targeted', sections, totalFiles, ms });
+      log.perf(PERF.tree, 'refresh', { mode: 'targeted', sections, totalFiles, ms });
       return;
     }
 
@@ -181,7 +182,7 @@ export function useFileOperations() {
         const ms = Math.round(performance.now() - t0);
         const fileCount = countFiles(tree);
         const path = folder.path.split('/').pop() ?? folder.path;
-        console.log('[perf:tree] list', { path, fileCount, ms });
+        log.perf(PERF.tree, 'list', { path, fileCount, ms });
         totalFiles += fileCount;
         sections += 1;
         ws.updateExplorerTree(folder.path, tree);
@@ -197,7 +198,7 @@ export function useFileOperations() {
         const ms = Math.round(performance.now() - t0);
         const fileCount = countFiles(tree);
         const path = project.path.split('/').pop() ?? project.path;
-        console.log('[perf:tree] list', { path, fileCount, ms });
+        log.perf(PERF.tree, 'list', { path, fileCount, ms });
         totalFiles += fileCount;
         sections += 1;
         ws.updateProjectTree(project.path, tree);
@@ -223,7 +224,7 @@ export function useFileOperations() {
     }
 
     const ms = Math.round(performance.now() - refreshStart);
-    console.log('[perf:tree] refresh', { mode: 'full', sections, totalFiles, ms });
+    log.perf(PERF.tree, 'refresh', { mode: 'full', sections, totalFiles, ms });
   }, []);
 
   // The Inbox is a mode of the document column, so showing a document means
@@ -305,7 +306,7 @@ export function useFileOperations() {
         const totalMs = Math.round(performance.now() - saveStart);
         const file = filePath.split('/').pop() ?? filePath;
         const sizeKB = Math.round(raw.length / 1024 * 10) / 10;
-        console.log('[perf:save]', { file, sizeKB, serializeMs, writeMs, totalMs });
+        log.perf(PERF.save, 'save', { file, sizeKB, serializeMs, writeMs, totalMs });
         markTabClean(tabId, content);
         useEditorStore.getState().clearExternalChange(filePath);
         refreshGitForPath(filePath);

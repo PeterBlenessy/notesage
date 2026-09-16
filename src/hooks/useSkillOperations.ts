@@ -7,7 +7,7 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import { tauriApi, type BundledSkillsResult } from '@/lib/tauri';
 import { toast } from 'sonner';
-import { log } from '@/lib/logger';
+import { log, PERF } from '@/lib/logger';
 import type { ConnectionProvider } from '@/lib/ai/connections';
 
 /** Map connection provider + auth method to skill paths. */
@@ -286,25 +286,27 @@ export function useSkillDiscovery() {
     s.explorerFolders.map((f) => f.path).sort().join(',')
   );
   const rescanCounter = useSkillStore((s) => s.rescanCounter);
+  const startupReady = useSettingsStore((s) => s.startupReady);
 
   useEffect(() => {
     if (!skillsReady) return;
 
-    // The first pass waits for an idle moment; later passes answer a change
-    // the user just made, so they run straight away.
+    // The first pass waits for startup to finish and then for an idle moment;
+    // later passes answer a change the user just made, so they run at once.
     if (discoveryChain === null) {
+      if (!startupReady) return;
       scheduleSkillDiscovery();
       return cancelScheduledDiscovery;
     }
 
     void queueSkillDiscovery();
-  }, [skillsReady, connectionKey, projectPaths, explorerPaths, rescanCounter]);
+  }, [skillsReady, startupReady, connectionKey, projectPaths, explorerPaths, rescanCounter]);
 }
 
 /**
- * How long discovery may wait for an idle moment before it runs anyway. Long
- * enough to clear the startup burst, short enough that a user who opens chat
- * a minute in finds the skills already loaded.
+ * How long discovery may wait for an idle moment before it runs anyway,
+ * measured from `startupReady`. By then the startup burst is over, so this is
+ * only about finding a gap between the user's own interactions.
  */
 const SKILL_DISCOVERY_IDLE_TIMEOUT_MS = 2000;
 
@@ -313,6 +315,17 @@ const SKILL_DISCOVERY_IDLE_TIMEOUT_MS = 2000;
  * on a machine that never goes idle. `requestIdleCallback` is absent in the
  * test environment and in older WebKit, where the timeout path is the whole
  * implementation.
+ *
+ * Only called once `startupReady` is set, and that ordering is the whole
+ * point. Idle alone was not enough: the v0.60.1 baseline caught the scan
+ * starting before the file trees were validated and still running when the
+ * document became visible — the exact overlap deferring it was meant to
+ * remove. An IPC-heavy startup spends most of its time awaiting, so the first
+ * idle gap arrives within a few hundred milliseconds. `requestIdleCallback`
+ * answers "is the main thread free right now", and the question here is "has
+ * startup finished". `startupReady` answers that one, and it always arrives —
+ * `useAppLifecycle` has a watchdog that sets it even when startup times out,
+ * so gating on it cannot strand discovery.
  */
 function scheduleSkillDiscovery(): void {
   cancelScheduledDiscovery();
@@ -358,7 +371,7 @@ async function runSkillDiscovery(): Promise<void> {
     });
     const initialSkillCount = useSkillStore.getState().skills.length;
     log.info('skills', `Discovered ${initialSkillCount} skills`);
-    console.log('[perf:skills]', { step: 'skill-scan', ms: Math.round(performance.now() - stepStart) });
+    log.perf(PERF.skills, 'skill-scan', { ms: Math.round(performance.now() - stepStart) });
 
     // Extract tool definitions from script-bearing skills (all active, unscoped).
     stepStart = performance.now();
@@ -367,7 +380,7 @@ async function runSkillDiscovery(): Promise<void> {
       const skillTools = await tauriApi.extractSkillTools(activeSkills);
       useSkillStore.getState().setSkillTools(skillTools);
       log.info('skills', `Extracted ${skillTools.length} skill tool definitions`);
-      console.log('[perf:skills]', { step: 'skill-tool-extract', count: skillTools.length, ms: Math.round(performance.now() - stepStart) });
+      log.perf(PERF.skills, 'skill-tool-extract', { count: skillTools.length, ms: Math.round(performance.now() - stepStart) });
     } catch (e) {
       log.error('skills', 'Skill tool extraction failed', e);
     }
@@ -381,7 +394,7 @@ async function runSkillDiscovery(): Promise<void> {
     });
     const initialAgentCount = useSkillStore.getState().agents.length;
     log.info('skills', `Discovered ${initialAgentCount} agents`);
-    console.log('[perf:skills]', { step: 'agent-scan', ms: Math.round(performance.now() - stepStart) });
+    log.perf(PERF.skills, 'agent-scan', { ms: Math.round(performance.now() - stepStart) });
 
     // Scan agent instructions for ALL known projects + global. Scoping
     // happens at read time via `selectedProjectPaths` (see useAIContext.ts).
@@ -391,10 +404,10 @@ async function runSkillDiscovery(): Promise<void> {
     const providerTypes = getConnectedProviderTypes();
     stepStart = performance.now();
     await useSkillStore.getState().scanAgentInstructions(allProjectRoots, providerTypes);
-    console.log('[perf:skills]', { step: 'instruction-scan', ms: Math.round(performance.now() - stepStart) });
+    log.perf(PERF.skills, 'instruction-scan', { ms: Math.round(performance.now() - stepStart) });
 
     const phase1Ms = Math.round(performance.now() - pipelineStart);
-    console.log('[perf:skills] phase1-ready', { skillCount: initialSkillCount, agentCount: initialAgentCount, ms: phase1Ms });
+    log.perf(PERF.skills, 'phase1-ready', { skillCount: initialSkillCount, agentCount: initialAgentCount, ms: phase1Ms });
     log.info('skills', 'Phase 1 complete — tools available');
 
     // --- Phase 2: Extract bundled skills + one-time bundled agent cleanup ---
@@ -417,7 +430,7 @@ async function runSkillDiscovery(): Promise<void> {
       } catch (e) {
         log.error('skills', 'Failed to extract bundled skills', e);
       }
-      console.log('[perf:skills]', { step: 'bundled-skills-extract', ms: Math.round(performance.now() - stepStart) });
+      log.perf(PERF.skills, 'bundled-skills-extract', { ms: Math.round(performance.now() - stepStart) });
 
       // One-time cleanup: remove previously extracted bundled agents
       let agentsOnDiskChanged = false;
@@ -435,7 +448,7 @@ async function runSkillDiscovery(): Promise<void> {
           log.error('skills', 'Failed to clean up bundled agents', e);
           agentsOnDiskChanged = true;
         }
-        console.log('[perf:skills]', { step: 'bundled-agents-cleanup', ms: Math.round(performance.now() - stepStart) });
+        log.perf(PERF.skills, 'bundled-agents-cleanup', { ms: Math.round(performance.now() - stepStart) });
       }
 
       bundledExtracted = true;
@@ -475,7 +488,7 @@ async function runSkillDiscovery(): Promise<void> {
         }
       }
 
-      console.log('[perf:skills] phase2-extract', {
+      log.perf(PERF.skills, 'phase2-extract', {
         skillsBefore: initialSkillCount, skillsAfter: finalSkillCount,
         agentsBefore: initialAgentCount, agentsAfter: finalAgentCount,
         rescanned: skillsOnDiskChanged || agentsOnDiskChanged,
@@ -484,7 +497,7 @@ async function runSkillDiscovery(): Promise<void> {
     }
 
     const totalMs = Math.round(performance.now() - pipelineStart);
-    console.log('[perf:skills] total', { skillCount: useSkillStore.getState().skills.length, agentCount: useSkillStore.getState().agents.length, totalMs });
+    log.perf(PERF.skills, 'total', { skillCount: useSkillStore.getState().skills.length, agentCount: useSkillStore.getState().agents.length, totalMs });
     log.info('skills', 'Skill/agent discovery pipeline complete');
   };
 
