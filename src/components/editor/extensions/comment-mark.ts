@@ -3,6 +3,7 @@ import { Plugin, PluginKey } from '@tiptap/pm/state';
 import type { Node as PMNode } from '@tiptap/pm/model';
 import { Decoration, DecorationSet } from '@tiptap/pm/view';
 import type { Comment } from '@/stores/comment-store';
+import { log, PERF } from '@/lib/logger';
 
 interface CommentDecoration {
   commentId: string;
@@ -93,7 +94,7 @@ export const CommentMark = Extension.create({
               const decorations = buildDecorations(newState.doc, mapped, value.activeCommentId, pending);
               commentMarkCounter++;
               if (commentMarkCounter % 10 === 0) {
-                console.log('[perf:typing]', {
+                log.perf(PERF.typing, 'typing', {
                   plugin: 'CommentMark',
                   docNodes: newState.doc.nodeSize,
                   decorationCount: mapped.length + (pending ? 1 : 0),

@@ -15,7 +15,7 @@ import { migrateUserContentPathsForFolders } from "@/lib/migrate-user-content-pa
 import { migrateV1AISettings } from "@/lib/ai/migration";
 import { resolveSyncedLibraryRoot } from "@/lib/library-root";
 import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
-import { log, setLogLevel } from "@/lib/logger";
+import { log, setLogLevel, PERF } from "@/lib/logger";
 import { stopAllAcpAgents } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
@@ -397,7 +397,7 @@ export async function reloadTrees() {
   {
     const wsNow = useWorkspaceStore.getState();
     const totalFiles = wsNow.explorerFolders.length + wsNow.projects.length;
-    console.log('[perf:startup] trees validated', {
+    log.perf(PERF.startup, 'trees validated', {
       projects: wsNow.projects.length,
       folders: wsNow.explorerFolders.length,
       totalFiles,
@@ -614,13 +614,13 @@ export async function reloadTrees() {
       await initIndexWithRecovery(project.path);
       const projectTree = useWorkspaceStore.getState().projects.find(p => p.path === project.path);
       const fileCount = countFiles(projectTree?.fileTree);
-      console.log('[perf:startup] index init', {
+      log.perf(PERF.startup, 'index init', {
         project: project.path,
         fileCount,
         ms: Math.round(performance.now() - tProjectIndex0),
       });
     }));
-    console.log('[perf:startup] index init total', {
+    log.perf(PERF.startup, 'index init total', {
       ms: Math.round(performance.now() - tIndex0),
     });
   } catch (error) {
@@ -630,7 +630,7 @@ export async function reloadTrees() {
   // Signal that startup tree validation is complete
   log.info("startup", `Startup complete in ${Math.round(performance.now() - t0)}ms, setting startupReady`);
   settings.setStartupReady(true);
-  console.log('[perf:startup] ready', { totalMs: Math.round(performance.now() - t0) });
+  log.perf(PERF.startup, 'ready', { totalMs: Math.round(performance.now() - t0) });
 
   // One-time migration: move user content out of hidden .notesage/ subdirectories
   // into user-visible sibling folders (issue #172). Fire-and-forget — must not
@@ -653,7 +653,7 @@ export async function reloadTrees() {
   await tabRestorePromise;
   const editorState = useEditorStore.getState();
   const activeTabForLog = editorState.openDocuments.find(t => t.id === editorState.activeTabId);
-  console.log('[perf:startup] tabs restored', {
+  log.perf(PERF.startup, 'tabs restored', {
     tabCount: editorState.openDocuments.length,
     activeTab: activeTabForLog?.filePath ?? null,
     ms: Math.round(performance.now() - tTabs0),

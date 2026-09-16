@@ -15,14 +15,17 @@ import type { Connection } from '@/lib/ai/connections';
 // Mock modules
 // ---------------------------------------------------------------------------
 
-vi.mock('@/lib/logger', () => ({
-  log: {
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  },
-}));
+vi.mock('@/lib/logger', async (importOriginal) => {
+  // Spread the real module rather than hand-listing its surface: a mock that
+  // enumerates exports goes stale the moment one is added, and the failure is
+  // opaque — `PERF` came back undefined and the discovery pipeline rejected
+  // several layers away from the missing key.
+  const actual = await importOriginal<typeof import('@/lib/logger')>();
+  return {
+    ...actual,
+    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), perf: vi.fn() },
+  };
+});
 
 // Mock tauriApi — the module under test imports it at the top level
 const mockGetHomeDir = vi.fn(async () => '/Users/test');
@@ -195,6 +198,57 @@ describe('useSkillDiscovery', () => {
     mockWriteFile.mockResolvedValue(undefined);
   });
 
+  // The first pass waits for startup to finish. Idle alone was not enough:
+  // an IPC-heavy startup is mostly awaiting, so the first idle gap arrives
+  // while the trees are still being validated — which is where the scan used
+  // to land, competing with opening the user's document.
+  it('does not run before startupReady, however idle the main thread is', async () => {
+    const { scanSkills } = setupStoreMocks();
+    useSettingsStore.setState({ skillsReady: true, startupReady: false });
+
+    renderHook(() => useSkillDiscovery());
+
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100));
+    });
+
+    expect(scanSkills).not.toHaveBeenCalled();
+    expect(mockExtractBundledSkills).not.toHaveBeenCalled();
+  });
+
+  // ...and picks it up as soon as startup reports in, without a remount.
+  it('runs once startupReady arrives', async () => {
+    const { scanSkills } = setupStoreMocks();
+    useSettingsStore.setState({ skillsReady: true, startupReady: false });
+
+    renderHook(() => useSkillDiscovery());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 50));
+    });
+    expect(scanSkills).not.toHaveBeenCalled();
+
+    await act(async () => {
+      useSettingsStore.setState({ startupReady: true });
+      await new Promise((r) => setTimeout(r, 100));
+    });
+
+    expect(scanSkills).toHaveBeenCalledTimes(1);
+  });
+
+  // An explicit reader must not be made to wait for startup — it asked.
+  it('still runs on demand before startupReady', async () => {
+    const { scanSkills } = setupStoreMocks();
+    useSettingsStore.setState({ skillsReady: true, startupReady: false });
+
+    renderHook(() => useSkillDiscovery());
+
+    await act(async () => {
+      await ensureSkillsDiscovered();
+    });
+
+    expect(scanSkills).toHaveBeenCalledTimes(1);
+  });
+
   it('does not run when skillsReady is false', async () => {
     useSettingsStore.setState({ skillsReady: false });
 
@@ -211,7 +265,7 @@ describe('useSkillDiscovery', () => {
   // is still false and extraction runs.
   it('runs full discovery pipeline including extraction on first run', async () => {
     const { scanSkills, scanAgents, scanAgentInstructions } = setupStoreMocks();
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -237,7 +291,7 @@ describe('useSkillDiscovery', () => {
       removed: 0,
     });
     const { scanSkills, scanAgents } = setupStoreMocks();
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
     await act(async () => {
@@ -257,7 +311,7 @@ describe('useSkillDiscovery', () => {
       removed: 1,
     });
     const { scanSkills } = setupStoreMocks();
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
     await act(async () => {
@@ -275,7 +329,7 @@ describe('useSkillDiscovery', () => {
       '/Users/test/.notesage/skills' as unknown as typeof UNCHANGED_EXTRACTION,
     );
     const { scanSkills, scanAgents } = setupStoreMocks();
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
     await act(async () => {
@@ -291,7 +345,7 @@ describe('useSkillDiscovery', () => {
   it('rescans when extraction failed', async () => {
     mockExtractBundledSkills.mockRejectedValue(new Error('disk full'));
     const { scanSkills, scanAgents } = setupStoreMocks();
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
     await act(async () => {
@@ -311,7 +365,7 @@ describe('useSkillDiscovery', () => {
   // flag rather than the test that ran before it.
   it('skips extraction on subsequent runs (bundledExtracted flag)', async () => {
     setupStoreMocks();
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     // First run — this is what sets the flag.
     const first = renderHook(() => useSkillDiscovery());
@@ -324,7 +378,7 @@ describe('useSkillDiscovery', () => {
     // Second run, with a clean slate of call counts.
     vi.clearAllMocks();
     const { scanSkills, scanAgents } = setupStoreMocks();
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
     await act(async () => {
@@ -341,7 +395,7 @@ describe('useSkillDiscovery', () => {
   // Whoever gets there first runs it — and only one of them runs it.
   it('runs one pass no matter how many callers ask for it', async () => {
     const { scanSkills } = setupStoreMocks();
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -375,7 +429,7 @@ describe('useSkillDiscovery', () => {
       skills: [],
       agents: [],
     } as unknown as Parameters<typeof useSkillStore.setState>[0]);
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     await act(async () => {
       await ensureSkillsDiscovered();
@@ -392,7 +446,7 @@ describe('useSkillDiscovery', () => {
         { path: '/projects/beta', fileTree: [] },
       ],
     });
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -427,7 +481,7 @@ describe('useSkillDiscovery', () => {
         makeAgentManagedConnection('openai', { id: 'conn-openai' }),
       ],
     });
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -457,7 +511,7 @@ describe('useSkillDiscovery', () => {
         }),
       ],
     });
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -480,7 +534,7 @@ describe('useSkillDiscovery', () => {
         makeAgentManagedConnection('google', { id: 'conn-g2' }),
       ],
     });
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -507,7 +561,7 @@ describe('useSkillDiscovery', () => {
         }),
       ],
     });
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -535,7 +589,7 @@ describe('useSkillDiscovery', () => {
 
   it('rescans when rescanCounter changes', async () => {
     const { scanSkills } = setupStoreMocks();
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     const { rerender } = renderHook(() => useSkillDiscovery());
 
@@ -588,7 +642,7 @@ describe('useSkillDiscovery', () => {
         }),
       ],
     });
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -616,7 +670,7 @@ describe('useSkillDiscovery', () => {
         makeAgentManagedConnection('anthropic', { status: 'disconnected' as Connection['status'] }),
       ],
     });
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
 
@@ -649,7 +703,7 @@ describe('project-level agent discovery', () => {
     useWorkspaceStore.setState({
       projects: [{ path: '/projects/myapp', fileTree: [] }],
     });
-    useSettingsStore.setState({ skillsReady: true });
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
 
     renderHook(() => useSkillDiscovery());
 

@@ -86,9 +86,18 @@ function flush(): void {
   if (buffer.length === 0) return;
   const entries = buffer;
   buffer = [];
-  invoke('log_frontend', { entries }).catch(() => {
-    // Backend may be unavailable (e.g., during shutdown) — drop silently
-  });
+  try {
+    invoke('log_frontend', { entries }).catch(() => {
+      // Backend may be unavailable (e.g., during shutdown) — drop silently
+    });
+  } catch {
+    // `invoke` can throw SYNCHRONOUSLY when there is no Tauri IPC to talk to —
+    // under test, in a browser preview — and a synchronous throw walks past
+    // the `.catch` above. That turns a log call into an exception raised in
+    // whatever code happened to log, and `enqueue` flushes on a threshold, so
+    // it lands on an arbitrary caller rather than a reproducible one. Logging
+    // must never be able to break the thing being logged.
+  }
 }
 
 function startTimer(): void {
@@ -112,7 +121,11 @@ function logImpl(level: string, category: string, message: string, data?: unknow
         console.debug(...args);
         break;
       case 'info':
-        console.info(...args);
+        // Perf measurements keep the plain `console.log` they have always
+        // used: they are read as a stream in the Inspector, and console.info
+        // puts them in a different filter bucket with an icon in front.
+        if (category.startsWith('perf:')) console.log(...args);
+        else console.info(...args);
         break;
       case 'warn':
         console.warn(...args);
@@ -130,6 +143,24 @@ function logImpl(level: string, category: string, message: string, data?: unknow
 }
 
 export const log = {
+  /**
+   * A measurement, not an event.
+   *
+   * Perf call sites used raw `console.log('[perf:x]', {...})`, which reaches
+   * the Web Inspector and nowhere else — so reading a startup profile meant
+   * expanding collapsed objects in a console by hand and pasting them
+   * somewhere. 25 call sites were invisible to `notesage.log`, including every
+   * `perf:skills` and `perf:tree` one, which are the two this project has
+   * spent the most time trying to read.
+   *
+   * Console output keeps the exact shape it had — `[perf:skills] phase1-ready
+   * {…}` — so anyone reading the Inspector sees no change. The difference is
+   * that it now also forwards, at `info`, landing in the log file whenever
+   * debug logging is on and staying out of the way when it is not.
+   */
+  perf(category: PerfCategory, message: string, data?: unknown): void {
+    logImpl('info', category, message, data);
+  },
   debug(category: string, message: string, data?: unknown): void {
     logImpl('debug', category, message, data);
   },
