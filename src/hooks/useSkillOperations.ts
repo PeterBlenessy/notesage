@@ -5,7 +5,7 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { usePermissionStore } from '@/stores/permission-store';
-import { tauriApi } from '@/lib/tauri';
+import { tauriApi, type BundledSkillsResult } from '@/lib/tauri';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
 import type { ConnectionProvider } from '@/lib/ai/connections';
@@ -82,6 +82,71 @@ let bundledExtracted = false;
  */
 export function __resetBundledExtractionForTests(): void {
   bundledExtracted = false;
+  discoveryChain = null;
+  cancelScheduledDiscovery();
+}
+
+/**
+ * Does this response actually carry the change counts, or is it something
+ * older or stranger? The command's declared type says it does, but the value
+ * crosses an IPC boundary from a binary that may not match this bundle —
+ * during a dev hot-reload, or against a stale build — so the shape is checked
+ * rather than assumed.
+ */
+function isBundledSkillsResult(value: unknown): value is BundledSkillsResult {
+  if (typeof value !== 'object' || value === null) return false;
+  const { changed, removed } = value as Partial<BundledSkillsResult>;
+  return typeof changed === 'number' && typeof removed === 'number';
+}
+
+/**
+ * The discovery pipeline, serialised.
+ *
+ * Skills and agents are read by AI sessions and by the surfaces that manage
+ * them (Settings, the wizards, the command bar) — never by anything on the
+ * startup render path. So discovery does not need to finish before the window
+ * is usable; it needs to finish before the first thing that reads a skill.
+ *
+ * Everything that reads one awaits this promise, and startup schedules it for
+ * the first idle moment, so the scan no longer competes with opening a
+ * document for CPU and IPC. If the user reaches a chat before idle arrives,
+ * they wait exactly as long as they used to.
+ */
+let discoveryChain: Promise<void> | null = null;
+let idleHandle: number | null = null;
+
+function cancelScheduledDiscovery(): void {
+  if (idleHandle === null) return;
+  if (typeof cancelIdleCallback === 'function') cancelIdleCallback(idleHandle);
+  else clearTimeout(idleHandle);
+  idleHandle = null;
+}
+
+/**
+ * Run discovery now if it has not run, and resolve when it has.
+ *
+ * Safe to call from anywhere, any number of times: concurrent callers share
+ * one pass, and a caller arriving mid-scan waits for that scan rather than
+ * starting a second one.
+ */
+export function ensureSkillsDiscovered(): Promise<void> {
+  cancelScheduledDiscovery();
+  if (!discoveryChain) {
+    discoveryChain = runSkillDiscovery();
+  }
+  return discoveryChain;
+}
+
+/**
+ * Queue another discovery pass behind the current one.
+ *
+ * Used when the inputs change — a project opened, a provider connected — where
+ * the scan has to happen again but must not overlap the one in flight.
+ */
+function queueSkillDiscovery(): Promise<void> {
+  cancelScheduledDiscovery();
+  discoveryChain = (discoveryChain ?? Promise.resolve()).then(() => runSkillDiscovery());
+  return discoveryChain;
 }
 
 /**
@@ -193,8 +258,15 @@ function buildDiscoveryDirs(
 
 /**
  * Hook that manages skill discovery lifecycle.
- * Runs initial scan after skillsReady (fires early — before tree validation),
- * rescans on connection or project changes.
+ *
+ * The first scan is scheduled for an idle moment after `skillsReady` rather
+ * than run immediately: nothing the user sees at startup reads a skill, so the
+ * scan used to spend its ~2s competing with opening their document. Anything
+ * that does read one calls `ensureSkillsDiscovered()` and gets the same scan,
+ * started early if it has not started yet.
+ *
+ * Later passes — a project opened, a provider connected — answer something the
+ * user just did, so they run at once.
  */
 export function useSkillDiscovery() {
   const skillsReady = useSettingsStore((s) => s.skillsReady);
@@ -218,144 +290,208 @@ export function useSkillDiscovery() {
   useEffect(() => {
     if (!skillsReady) return;
 
-    // Read full state inside the effect (not as a dependency)
-    const connections = useConnectionsStore.getState().connections;
-    const projects = useWorkspaceStore.getState().projects;
-    const explorerFolders = useWorkspaceStore.getState().explorerFolders;
+    // The first pass waits for an idle moment; later passes answer a change
+    // the user just made, so they run straight away.
+    if (discoveryChain === null) {
+      scheduleSkillDiscovery();
+      return cancelScheduledDiscovery;
+    }
 
-    const run = async () => {
-      log.info('skills', 'Starting skill/agent discovery pipeline');
-      const pipelineStart = performance.now();
+    void queueSkillDiscovery();
+  }, [skillsReady, connectionKey, projectPaths, explorerPaths, rescanCounter]);
+}
 
-      // Use home dir from settings (resolved once on startup) to avoid IPC contention
-      const home = useSettingsStore.getState().homeDir;
-      if (!home) {
-        log.error('skills', 'Home directory not resolved yet');
-        return;
-      }
-      log.info('skills', `Home directory: ${home}`);
+/**
+ * How long discovery may wait for an idle moment before it runs anyway. Long
+ * enough to clear the startup burst, short enough that a user who opens chat
+ * a minute in finds the skills already loaded.
+ */
+const SKILL_DISCOVERY_IDLE_TIMEOUT_MS = 2000;
 
-      // --- Phase 1: Scan existing files and populate tools immediately ---
-      const dirs = buildDiscoveryDirs(home, connections, projects, explorerFolders);
+/**
+ * Hand discovery to the browser's idle queue, with a timeout so it still runs
+ * on a machine that never goes idle. `requestIdleCallback` is absent in the
+ * test environment and in older WebKit, where the timeout path is the whole
+ * implementation.
+ */
+function scheduleSkillDiscovery(): void {
+  cancelScheduledDiscovery();
+  if (typeof requestIdleCallback === 'function') {
+    idleHandle = requestIdleCallback(() => {
+      idleHandle = null;
+      void ensureSkillsDiscovered();
+    }, { timeout: SKILL_DISCOVERY_IDLE_TIMEOUT_MS });
+  } else {
+    idleHandle = setTimeout(() => {
+      idleHandle = null;
+      void ensureSkillsDiscovered();
+    }, 0) as unknown as number;
+  }
+}
 
-      const totalSkillDirs = dirs.skillGlobalDirs.length + Object.values(dirs.skillByProject).flat().length;
-      log.info('skills', `Scanning skills in ${totalSkillDirs} directories (${Object.keys(dirs.skillByProject).length} projects)`);
-      let stepStart = performance.now();
-      await useSkillStore.getState().scanSkills({
-        globalDirs: dirs.skillGlobalDirs,
-        byProject: dirs.skillByProject,
-      });
-      const initialSkillCount = useSkillStore.getState().skills.length;
-      log.info('skills', `Discovered ${initialSkillCount} skills`);
-      console.log('[perf:skills]', { step: 'skill-scan', ms: Math.round(performance.now() - stepStart) });
+async function runSkillDiscovery(): Promise<void> {
+  const connections = useConnectionsStore.getState().connections;
+  const projects = useWorkspaceStore.getState().projects;
+  const explorerFolders = useWorkspaceStore.getState().explorerFolders;
 
-      // Extract tool definitions from script-bearing skills (all active, unscoped).
+  const run = async () => {
+    log.info('skills', 'Starting skill/agent discovery pipeline');
+    const pipelineStart = performance.now();
+
+    // Use home dir from settings (resolved once on startup) to avoid IPC contention
+    const home = useSettingsStore.getState().homeDir;
+    if (!home) {
+      log.error('skills', 'Home directory not resolved yet');
+      return;
+    }
+    log.info('skills', `Home directory: ${home}`);
+
+    // --- Phase 1: Scan existing files and populate tools immediately ---
+    const dirs = buildDiscoveryDirs(home, connections, projects, explorerFolders);
+
+    const totalSkillDirs = dirs.skillGlobalDirs.length + Object.values(dirs.skillByProject).flat().length;
+    log.info('skills', `Scanning skills in ${totalSkillDirs} directories (${Object.keys(dirs.skillByProject).length} projects)`);
+    let stepStart = performance.now();
+    await useSkillStore.getState().scanSkills({
+      globalDirs: dirs.skillGlobalDirs,
+      byProject: dirs.skillByProject,
+    });
+    const initialSkillCount = useSkillStore.getState().skills.length;
+    log.info('skills', `Discovered ${initialSkillCount} skills`);
+    console.log('[perf:skills]', { step: 'skill-scan', ms: Math.round(performance.now() - stepStart) });
+
+    // Extract tool definitions from script-bearing skills (all active, unscoped).
+    stepStart = performance.now();
+    try {
+      const activeSkills = useSkillStore.getState().getActiveSkills();
+      const skillTools = await tauriApi.extractSkillTools(activeSkills);
+      useSkillStore.getState().setSkillTools(skillTools);
+      log.info('skills', `Extracted ${skillTools.length} skill tool definitions`);
+      console.log('[perf:skills]', { step: 'skill-tool-extract', count: skillTools.length, ms: Math.round(performance.now() - stepStart) });
+    } catch (e) {
+      log.error('skills', 'Skill tool extraction failed', e);
+    }
+
+    const totalAgentDirs = dirs.agentGlobalDirs.length + Object.values(dirs.agentByProject).flat().length;
+    log.info('skills', `Scanning agents in ${totalAgentDirs} directories`);
+    stepStart = performance.now();
+    await useSkillStore.getState().scanAgents({
+      globalDirs: dirs.agentGlobalDirs,
+      byProject: dirs.agentByProject,
+    });
+    const initialAgentCount = useSkillStore.getState().agents.length;
+    log.info('skills', `Discovered ${initialAgentCount} agents`);
+    console.log('[perf:skills]', { step: 'agent-scan', ms: Math.round(performance.now() - stepStart) });
+
+    // Scan agent instructions for ALL known projects + global. Scoping
+    // happens at read time via `selectedProjectPaths` (see useAIContext.ts).
+    // This fixes Task #19: the old path only scanned `projects[0]`, silently
+    // leaking Project A's CLAUDE.md into Project B's chat.
+    const allProjectRoots = projects.map((p) => p.path);
+    const providerTypes = getConnectedProviderTypes();
+    stepStart = performance.now();
+    await useSkillStore.getState().scanAgentInstructions(allProjectRoots, providerTypes);
+    console.log('[perf:skills]', { step: 'instruction-scan', ms: Math.round(performance.now() - stepStart) });
+
+    const phase1Ms = Math.round(performance.now() - pipelineStart);
+    console.log('[perf:skills] phase1-ready', { skillCount: initialSkillCount, agentCount: initialAgentCount, ms: phase1Ms });
+    log.info('skills', 'Phase 1 complete — tools available');
+
+    // --- Phase 2: Extract bundled skills + one-time bundled agent cleanup ---
+    if (!bundledExtracted) {
       stepStart = performance.now();
+      // Whether extraction actually touched anything. The rescan below costs
+      // roughly as much as the whole of phase 1, so it only earns its keep
+      // when the skills on disk are not the ones phase 1 already read.
+      // Anything short of a confident "nothing changed" means rescanning:
+      // being slow is a nuisance, missing a new skill is a bug.
+      let skillsOnDiskChanged = true;
       try {
-        const activeSkills = useSkillStore.getState().getActiveSkills();
-        const skillTools = await tauriApi.extractSkillTools(activeSkills);
-        useSkillStore.getState().setSkillTools(skillTools);
-        log.info('skills', `Extracted ${skillTools.length} skill tool definitions`);
-        console.log('[perf:skills]', { step: 'skill-tool-extract', count: skillTools.length, ms: Math.round(performance.now() - stepStart) });
+        const extracted = await tauriApi.extractBundledSkills();
+        // A backend that predates the change signal returns a bare path
+        // string, so read it defensively rather than trusting the type: a
+        // stale binary must fall back to rescanning, not silently skip.
+        if (isBundledSkillsResult(extracted)) {
+          skillsOnDiskChanged = extracted.changed > 0 || extracted.removed > 0;
+        }
       } catch (e) {
-        log.error('skills', 'Skill tool extraction failed', e);
+        log.error('skills', 'Failed to extract bundled skills', e);
       }
+      console.log('[perf:skills]', { step: 'bundled-skills-extract', ms: Math.round(performance.now() - stepStart) });
 
-      const totalAgentDirs = dirs.agentGlobalDirs.length + Object.values(dirs.agentByProject).flat().length;
-      log.info('skills', `Scanning agents in ${totalAgentDirs} directories`);
-      stepStart = performance.now();
-      await useSkillStore.getState().scanAgents({
-        globalDirs: dirs.agentGlobalDirs,
-        byProject: dirs.agentByProject,
-      });
-      const initialAgentCount = useSkillStore.getState().agents.length;
-      log.info('skills', `Discovered ${initialAgentCount} agents`);
-      console.log('[perf:skills]', { step: 'agent-scan', ms: Math.round(performance.now() - stepStart) });
-
-      // Scan agent instructions for ALL known projects + global. Scoping
-      // happens at read time via `selectedProjectPaths` (see useAIContext.ts).
-      // This fixes Task #19: the old path only scanned `projects[0]`, silently
-      // leaking Project A's CLAUDE.md into Project B's chat.
-      const allProjectRoots = projects.map((p) => p.path);
-      const providerTypes = getConnectedProviderTypes();
-      stepStart = performance.now();
-      await useSkillStore.getState().scanAgentInstructions(allProjectRoots, providerTypes);
-      console.log('[perf:skills]', { step: 'instruction-scan', ms: Math.round(performance.now() - stepStart) });
-
-      const phase1Ms = Math.round(performance.now() - pipelineStart);
-      console.log('[perf:skills] phase1-ready', { skillCount: initialSkillCount, agentCount: initialAgentCount, ms: phase1Ms });
-      log.info('skills', 'Phase 1 complete — tools available');
-
-      // --- Phase 2: Extract bundled skills + one-time bundled agent cleanup ---
-      if (!bundledExtracted) {
+      // One-time cleanup: remove previously extracted bundled agents
+      let agentsOnDiskChanged = false;
+      const { bundledAgentsCleaned, setBundledAgentsCleaned } = useSettingsStore.getState();
+      if (!bundledAgentsCleaned) {
         stepStart = performance.now();
         try {
-          await tauriApi.extractBundledSkills();
-        } catch (e) {
-          log.error('skills', 'Failed to extract bundled skills', e);
-        }
-        console.log('[perf:skills]', { step: 'bundled-skills-extract', ms: Math.round(performance.now() - stepStart) });
-
-        // One-time cleanup: remove previously extracted bundled agents
-        const { bundledAgentsCleaned, setBundledAgentsCleaned } = useSettingsStore.getState();
-        if (!bundledAgentsCleaned) {
-          stepStart = performance.now();
-          try {
-            const removed = await tauriApi.cleanupBundledAgents();
-            if (removed > 0) {
-              log.info('skills', `Cleaned up ${removed} bundled agent files`);
-            }
-            setBundledAgentsCleaned(true);
-          } catch (e) {
-            log.error('skills', 'Failed to clean up bundled agents', e);
+          const removed = await tauriApi.cleanupBundledAgents();
+          if (removed > 0) {
+            log.info('skills', `Cleaned up ${removed} bundled agent files`);
+            agentsOnDiskChanged = true;
           }
-          console.log('[perf:skills]', { step: 'bundled-agents-cleanup', ms: Math.round(performance.now() - stepStart) });
+          setBundledAgentsCleaned(true);
+        } catch (e) {
+          log.error('skills', 'Failed to clean up bundled agents', e);
+          agentsOnDiskChanged = true;
         }
+        console.log('[perf:skills]', { step: 'bundled-agents-cleanup', ms: Math.round(performance.now() - stepStart) });
+      }
 
-        bundledExtracted = true;
+      bundledExtracted = true;
 
-        // Rescan to pick up any new or updated bundled skills — same
-        // per-project buckets so projectRoot annotations stay intact.
+      // Rescan only what changed underneath phase 1 — same per-project
+      // buckets so projectRoot annotations stay intact. On a launch that
+      // ships the same skills as the last one, both scans are skipped and
+      // phase 2 is the extraction alone.
+      let finalSkillCount = initialSkillCount;
+      let finalAgentCount = initialAgentCount;
+
+      if (skillsOnDiskChanged) {
         await useSkillStore.getState().scanSkills({
           globalDirs: dirs.skillGlobalDirs,
           byProject: dirs.skillByProject,
         });
-        const finalSkillCount = useSkillStore.getState().skills.length;
+        finalSkillCount = useSkillStore.getState().skills.length;
+      }
+
+      if (skillsOnDiskChanged || agentsOnDiskChanged) {
         await useSkillStore.getState().scanAgents({
           globalDirs: dirs.agentGlobalDirs,
           byProject: dirs.agentByProject,
         });
-        const finalAgentCount = useSkillStore.getState().agents.length;
-
-        // Re-extract tool definitions if skill count changed
-        if (finalSkillCount !== initialSkillCount) {
-          try {
-            const activeSkills = useSkillStore.getState().getActiveSkills();
-            const skillTools = await tauriApi.extractSkillTools(activeSkills);
-            useSkillStore.getState().setSkillTools(skillTools);
-            log.info('skills', `Updated skill tools after extraction: ${skillTools.length}`);
-          } catch (e) {
-            log.error('skills', 'Skill tool re-extraction failed', e);
-          }
-        }
-
-        console.log('[perf:skills] phase2-extract', {
-          skillsBefore: initialSkillCount, skillsAfter: finalSkillCount,
-          agentsBefore: initialAgentCount, agentsAfter: finalAgentCount,
-          ms: Math.round(performance.now() - pipelineStart) - phase1Ms,
-        });
+        finalAgentCount = useSkillStore.getState().agents.length;
       }
 
-      const totalMs = Math.round(performance.now() - pipelineStart);
-      console.log('[perf:skills] total', { skillCount: useSkillStore.getState().skills.length, agentCount: useSkillStore.getState().agents.length, totalMs });
-      log.info('skills', 'Skill/agent discovery pipeline complete');
-    };
+      // Re-extract tool definitions if skill count changed
+      if (finalSkillCount !== initialSkillCount) {
+        try {
+          const activeSkills = useSkillStore.getState().getActiveSkills();
+          const skillTools = await tauriApi.extractSkillTools(activeSkills);
+          useSkillStore.getState().setSkillTools(skillTools);
+          log.info('skills', `Updated skill tools after extraction: ${skillTools.length}`);
+        } catch (e) {
+          log.error('skills', 'Skill tool re-extraction failed', e);
+        }
+      }
 
-    run().catch((e) => {
-      log.error('skills', 'Unhandled error in skill/agent discovery pipeline', e);
-      toast.error('Failed to load skills and agents. Check logs for details.');
-    });
-  }, [skillsReady, connectionKey, projectPaths, explorerPaths, rescanCounter]);
+      console.log('[perf:skills] phase2-extract', {
+        skillsBefore: initialSkillCount, skillsAfter: finalSkillCount,
+        agentsBefore: initialAgentCount, agentsAfter: finalAgentCount,
+        rescanned: skillsOnDiskChanged || agentsOnDiskChanged,
+        ms: Math.round(performance.now() - pipelineStart) - phase1Ms,
+      });
+    }
+
+    const totalMs = Math.round(performance.now() - pipelineStart);
+    console.log('[perf:skills] total', { skillCount: useSkillStore.getState().skills.length, agentCount: useSkillStore.getState().agents.length, totalMs });
+    log.info('skills', 'Skill/agent discovery pipeline complete');
+  };
+
+  await run().catch((e) => {
+    log.error('skills', 'Unhandled error in skill/agent discovery pipeline', e);
+    toast.error('Failed to load skills and agents. Check logs for details.');
+  });
 }
 
 /**

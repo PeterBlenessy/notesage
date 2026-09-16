@@ -382,28 +382,62 @@ pub struct BundledFile {
     pub executable: bool,
 }
 
-/// Write a bundled file to disk. In debug builds, skip files that already exist
-/// to allow live-editing bundled skills/agents during development.
-pub fn write_bundled_file(target: &Path, content: &str, executable: bool) -> Result<(), String> {
-    // Always overwrite bundled files to keep them in sync with app version.
-    // Bundled skills are embedded at compile time via include_str! — if the app
-    // ships a new version of a skill, the deployed copy must be updated.
-    fs::write(target, content).map_err(|e| e.to_string())?;
+/// Write a bundled file to disk, and report whether that changed anything.
+///
+/// Bundled skills are embedded at compile time via `include_str!`, so a new app
+/// version must overwrite the deployed copy — but only when the copy actually
+/// differs. Reading the file back to compare costs far less than the frontend's
+/// fallback when it cannot tell: a full rescan of every skill directory on every
+/// launch, purely to discover that nothing moved.
+pub fn write_bundled_file(target: &Path, content: &str, executable: bool) -> Result<bool, String> {
+    let mut changed = match fs::read_to_string(target) {
+        Ok(existing) => existing != content,
+        // Unreadable or absent — write it and treat that as a change.
+        Err(_) => true,
+    };
+
+    if changed {
+        fs::write(target, content).map_err(|e| e.to_string())?;
+    }
 
     #[cfg(unix)]
     if executable {
         use std::os::unix::fs::PermissionsExt;
-        let _ = fs::set_permissions(target, fs::Permissions::from_mode(0o755));
+        let wanted = fs::Permissions::from_mode(0o755);
+        // The mode is part of what we ship: a script left non-executable by an
+        // interrupted earlier run is a change even when its bytes match.
+        let needs_chmod = fs::metadata(target)
+            .map(|m| m.permissions().mode() & 0o777 != 0o755)
+            .unwrap_or(true);
+        if needs_chmod {
+            let _ = fs::set_permissions(target, wanted);
+            changed = true;
+        }
     }
 
-    Ok(())
+    Ok(changed)
+}
+
+/// What `extract_bundled_skills` actually did, so the frontend can skip its
+/// rescan when the answer is "nothing".
+#[derive(serde::Serialize)]
+pub struct BundledSkillsResult {
+    /// Directory the bundled skills were extracted to.
+    pub dir: String,
+    /// Bundled files whose on-disk copy differed and was rewritten.
+    pub changed: usize,
+    /// Skill directories dropped from the bundle and removed from disk.
+    pub removed: usize,
 }
 
 /// Extract bundled skills to ~/.notesage/skills/.
-/// Always overwrites to ensure bundled skills stay up-to-date with app version.
+/// Rewrites any file whose deployed copy differs from the one embedded in this
+/// build, and reports how many it touched — on a launch that ships the same
+/// skills as the last one that count is zero, which is what lets the frontend
+/// skip re-reading directories it has already read.
 /// Lives alongside user-created skills; the hierarchy system handles overrides.
 #[tauri::command]
-pub async fn extract_bundled_skills() -> Result<String, String> {
+pub async fn extract_bundled_skills() -> Result<BundledSkillsResult, String> {
     let home = dirs::home_dir()
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
     let bundled_dir = home.join(".notesage").join("skills");
@@ -644,6 +678,7 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
     current_names.dedup();
 
     // Clean up skills removed from the bundle
+    let mut removed = 0usize;
     let manifest_path = home.join(".notesage").join(".bundled-skills.json");
     if let Ok(old_json) = fs::read_to_string(&manifest_path) {
         if let Ok(old_names) = serde_json::from_str::<Vec<String>>(&old_json) {
@@ -653,6 +688,7 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
                     if stale_dir.is_dir() {
                         info!("Removing deprecated bundled skill: {}", old_name);
                         let _ = fs::remove_dir_all(&stale_dir);
+                        removed += 1;
                     }
                 }
             }
@@ -660,7 +696,7 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
     }
 
     info!("Extracting {} bundled skill files to {}", bundled_files.len(), bundled_dir.display());
-    let mut written = 0;
+    let mut changed = 0usize;
     for file in &bundled_files {
         let target = bundled_dir.join(file.relative_path);
         if let Some(parent) = target.parent() {
@@ -668,11 +704,18 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
                 .map_err(|e| format!("Failed to create directory for {}: {}", file.relative_path, e))?;
         }
 
-        write_bundled_file(&target, file.content, file.executable)
+        let wrote = write_bundled_file(&target, file.content, file.executable)
             .map_err(|e| format!("Failed to write {}: {}", file.relative_path, e))?;
-        written += 1;
+        if wrote {
+            changed += 1;
+        }
     }
-    info!("Successfully wrote {}/{} bundled skill files", written, bundled_files.len());
+    info!(
+        "Bundled skills up to date: {} of {} files rewritten, {} stale skills removed",
+        changed,
+        bundled_files.len(),
+        removed
+    );
 
     // Write manifest for future cleanup
     let manifest_json = serde_json::to_string(&current_names)
@@ -680,7 +723,67 @@ pub async fn extract_bundled_skills() -> Result<String, String> {
     fs::write(&manifest_path, manifest_json)
         .map_err(|e| format!("Failed to write skill manifest: {}", e))?;
 
-    Ok(bundled_dir.to_string_lossy().to_string())
+    Ok(BundledSkillsResult {
+        dir: bundled_dir.to_string_lossy().to_string(),
+        changed,
+        removed,
+    })
+}
+
+#[cfg(test)]
+mod bundled_write_tests {
+    use super::write_bundled_file;
+    use std::fs;
+    use tempfile::tempdir;
+
+    // The whole point of the return value: a second launch shipping the same
+    // skill must report no change, so the frontend can skip its rescan.
+    #[test]
+    fn reports_no_change_when_content_already_matches() {
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("SKILL.md");
+
+        assert!(
+            write_bundled_file(&target, "hello", false).unwrap(),
+            "first write creates the file, which is a change"
+        );
+        assert!(
+            !write_bundled_file(&target, "hello", false).unwrap(),
+            "identical content must not count as a change"
+        );
+    }
+
+    #[test]
+    fn reports_a_change_when_the_app_ships_new_content() {
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("SKILL.md");
+
+        write_bundled_file(&target, "v1", false).unwrap();
+        assert!(write_bundled_file(&target, "v2", false).unwrap());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "v2");
+    }
+
+    // Skipping the write must not skip the mode: a script left non-executable
+    // by an interrupted run has to be repaired, and that is a change.
+    #[cfg(unix)]
+    #[test]
+    fn repairs_a_script_that_lost_its_executable_bit() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = tempdir().unwrap();
+        let target = dir.path().join("scan.sh");
+
+        write_bundled_file(&target, "#!/bin/sh\n", true).unwrap();
+        assert!(!write_bundled_file(&target, "#!/bin/sh\n", true).unwrap());
+
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(
+            write_bundled_file(&target, "#!/bin/sh\n", true).unwrap(),
+            "a lost executable bit is a change even when the bytes match"
+        );
+        let mode = fs::metadata(&target).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o755);
+    }
 }
 
 #[cfg(test)]

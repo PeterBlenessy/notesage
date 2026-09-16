@@ -267,6 +267,17 @@ export interface AgentContent {
   path: string;
 }
 
+/**
+ * What `extract_bundled_skills` did. `changed` and `removed` are both zero on
+ * every launch that ships the same skills as the last one, which is the signal
+ * the caller needs to skip re-scanning skill directories that cannot have moved.
+ */
+export interface BundledSkillsResult {
+  dir: string;
+  changed: number;
+  removed: number;
+}
+
 export interface AgentInstruction {
   source: string;
   source_type: string;
@@ -1720,8 +1731,8 @@ export const tauriApi = {
     return await invoke<AgentInstruction[]>("read_agent_instructions", { projectRoot, connectedProviders });
   },
 
-  async extractBundledSkills(): Promise<string> {
-    return await invoke<string>("extract_bundled_skills");
+  async extractBundledSkills(): Promise<BundledSkillsResult> {
+    return await invoke<BundledSkillsResult>("extract_bundled_skills");
   },
 
   async cleanupBundledAgents(): Promise<number> {

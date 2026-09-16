@@ -161,12 +161,15 @@ export function useFileOperations() {
         (notesRoot && targetPath.startsWith(notesRoot)) ||
         (icloudPath && targetPath.startsWith(icloudPath))
       ) {
-        await refreshNotesTree();
-        sections += 1;
+        const notesCount = await refreshNotesTree();
+        if (notesCount !== null && notesCount !== undefined) {
+          totalFiles += notesCount;
+          sections += 1;
+        }
       }
 
       const ms = Math.round(performance.now() - refreshStart);
-      console.log('[perf:tree] refresh', { sections, totalFiles, ms });
+      console.log('[perf:tree] refresh', { mode: 'targeted', sections, totalFiles, ms });
       return;
     }
 
@@ -213,11 +216,14 @@ export function useFileOperations() {
       }
     }
 
-    await refreshNotesTree();
-    sections += 1;
+    const notesCount = await refreshNotesTree();
+    if (notesCount !== null && notesCount !== undefined) {
+      totalFiles += notesCount;
+      sections += 1;
+    }
 
     const ms = Math.round(performance.now() - refreshStart);
-    console.log('[perf:tree] refresh', { sections, totalFiles, ms });
+    console.log('[perf:tree] refresh', { mode: 'full', sections, totalFiles, ms });
   }, []);
 
   // The Inbox is a mode of the document column, so showing a document means
