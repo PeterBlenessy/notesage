@@ -24,18 +24,18 @@ sektion som är tom. Ungefär 600 tecken ryms på en skärm; skriptet varnar
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Uppläsning, låsskärmen, och artiklar som ser ut som sig själva.
+Sparade sidor behåller artikeln, och sökningen förklarar sig.
 
-NYTT
-• Sparade artiklar visar sin egen bild i listan och i galleriet.
+ÄNDRAT
+• Delning sparar som HTML som standard. En sparad sida kommer in som en
+riktig artikel — sajt, lästid, omslag — i stället för en vanlig anteckning.
+Markdown finns kvar i delningsrutan och ditt val minns.
 
 RÄTTAT
-• Låsskärmen kunde stå kvar och visa Paus för en artikel appen redan
-stoppat, utan något sätt att stänga den.
-• Dess klocka räknade stycken: en artikel på 14 minuter blev 1:11. Minuter
-nu, och den följer hastigheten du valt.
-• En rad kunde säga "2 av 2 min kvar" en tredjedel in.
+• En sökning utan träffar visade en tom skärm. Nu säger den det.
+• En träff i ingressen visade ingen anledning. Raden flyttas så att ordet du
+skrev syns.
 
 PROVA
-• Läs upp en artikel, lås telefonen, titta på klockan — ändra hastigheten.
-• Öppna Inkorgen, växla till galleriet: varje artikel ska visa ett omslag.
+• Dela en sida från Safari utan att röra formatet, titta sedan på raden.
+• Sök efter ett ord mitt i en mening, inte i en rubrik.

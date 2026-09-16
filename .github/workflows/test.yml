@@ -637,7 +637,7 @@ jobs:
           echo "OK: app reached startup with the telemetry plugin registered; no reactor panic."
 
   cargo-audit:
-    name: Rust Dependency Audit (advisory)
+    name: Rust Dependency Audit
     runs-on: ubuntu-latest
     needs: check-changes
     # Advisories track the lockfiles, not the commit. Elsewhere the gate is
@@ -645,6 +645,14 @@ jobs:
     # nightly run that re-audits an unchanged lockfile against a moving
     # advisory database — which is how a new CVE actually reaches us.
     if: needs.check-changes.outputs.deps == 'true' || github.event_name != 'pull_request'
+    # BLOCKING, and named accordingly since 2026-09-16. It carried
+    # "(advisory)" in its name for two months after it stopped being one, and
+    # on 2026-09-15 that cost a release: RUSTSEC-2026-0285 landed in rustls
+    # overnight, this job went red, the red was read as advisory because that
+    # is what it said, and v0.59.0 was tagged anyway. `create-release` needs
+    # the whole `tests` workflow, so no release was produced at all — the tag
+    # sat there pointing at nothing until someone looked.
+    #
     # Blocking as of 2026-07-05: the backend dependency tree was confirmed clean
     # (0 vulnerabilities — docs/audits/2026-07-05-dependencies.md), so this job
     # now fails on any RustSec *vulnerability*. `cargo audit` does NOT fail on

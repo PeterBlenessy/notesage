@@ -742,3 +742,87 @@ Which one it is needs a bisect against an older tag on a freshly-booted
 machine. Until then, treat a local 1× perf failure as **unresolved rather than
 clean** — the numbers above are the reference for "no worse than shipped".
 
+
+### 2026-09-16 — v0.59.0 release (`a7fa1d2e`), Apple M3 / 24 GB, steady-state refresh
+
+Measured by Peter on the shipped v0.59.0 build. Dataset has grown a long way
+since the last startup entry: **14 projects + 2 explorer folders, ~3,250
+indexed files, 57 skills, 1 agent**, against v0.46.0's 6 projects / 4,343
+files / **11 skills**. Read the comparison with that in mind — the file count
+fell, the skill count did not.
+
+**Skills pipeline:**
+
+| Step | ms |
+| --- | --- |
+| skill-scan (57 skills, 18 directories) | 2,052 |
+| skill-tool-extract (17 defs) | 29 |
+| agent-scan | 100 |
+| instruction-scan | 38 |
+| **phase1-ready (tools visible)** | **2,223** |
+| bundled-skills-extract | 12 |
+| phase2-extract | 895 |
+| **total** | **3,118** |
+
+**Startup & trees:**
+
+| Metric | ms |
+| --- | --- |
+| trees validated (14 projects, 2 folders) | 1,184 |
+| iCloud/sync complete | 2,282 |
+| notes tree loaded | 2,319 |
+| index init total (~3,250 files) | 1,316 |
+| **startup ready** | **3,636** |
+| tabs restored (1 tab, 1.8 KB md) | 3,546 |
+| doc-load (1.8 KB md) | 810 |
+| doc-switch, click → visible | 1,198 |
+
+**Comparison vs v0.46.0 (2026-06-14):** phase1-ready 1,049 → 2,223 (+112%),
+skills total 1,099 → 3,118 (+184%), startup ready 2,274 → 3,636 (+60%), trees
+validated 797 → 1,184 (+49%), index init 888 → 1,316 (+48%).
+
+Every one of those is past the 20% flag in CLAUDE.md, and most of it is
+plausibly the dataset: 5× the skills, and `skill-scan` rose 870 → 2,052 ms,
+which is roughly in step. Startup is dominated by skill scanning and always
+has been.
+
+**One number does not fit that.** `phase2-extract` went **50 → 895 ms, 18×,
+against 5× the skills** — and it extracted nothing, reporting
+`skillsBefore: 57, skillsAfter: 57, agentsBefore: 1, agentsAfter: 1`. Nearly
+a second of a 3.6 s startup spent confirming that nothing changed. Not
+explained by dataset growth; the first thing to look at.
+
+**Two things in the same log that are not timings:**
+
+1. `[perf:tree] refresh` now reports `{sections: 0, totalFiles: 0, ms: 0}` on
+   every one of its five occurrences. In v0.46.0 the same line read
+   `11 sections, 4,343 files, 1,460 ms`. Tree refresh is one of the key
+   metrics this document exists to track, and it is currently blind — a
+   regression in it would not show up here at all. Either the instrument
+   broke or the refresh no longer does the work it did.
+
+2. Three CSP violations at launch: *"Refused to apply a stylesheet because
+   its hash, its nonce, or 'unsafe-inline' does not appear in the style-src
+   directive."* Something injects a stylesheet the policy rejects, so some
+   styling silently does not apply.
+
+**The open question this raises, for a session of its own:** none of this asks
+whether the work should happen at startup at all. Skills and agents are used
+by AI sessions; scanning all 57 across 18 directories before the window is
+usable buys nothing for a user who opens the app to read a note. `phase1-ready`
+is 2.2 s of a 3.6 s startup.
+
+#### Synthetic gate at the v0.60.0 cut — red, and not the release
+
+`pnpm test:perf` failed 3 of 45 at the v0.60.0 cut: parse 1KB 341 ms (budget
+38), parse 50KB 1,159 ms (budget 276), decoration rebuild 50KB over its 2 ms
+budget.
+
+Machine load at the time was **3.93 / 4.82 / 5.92**, against the "< 2.8" this
+document specifies for a comparable run — a VM at 114% CPU and three processes
+from an unrelated project at 71/71/49%. This is a shared laptop.
+
+Two of the three have been red since v0.53.1 (see the 2026-08-25 entry, which
+was written for exactly this reason), and v0.60.0's content is sidebar
+drag-and-drop and an HTML preview — neither goes anywhere near the markdown
+parser. Recorded rather than chased: the gate is measuring the machine.
