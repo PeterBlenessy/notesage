@@ -239,3 +239,4 @@ Chronological log of major implementation milestones and changes.
 | 233 | [Release v0.60.0](233-release-v0.60.0.md) | Move files into any folder by drag or menu; saved pages preview as the article, not its source |
 | 234 | [Release v0.60.1](234-release-v0.60.1.md) | The app opens your document without first reading through every skill and agent you have |
 | 235 | [Release v0.60.2](235-release-v0.60.2.md) | Reading your skills and agents now waits until the app has finished starting |
+| 236 | [Release v0.60.3](236-release-v0.60.3.md) | Internal measurement only — startup metrics that report what their names claim |
