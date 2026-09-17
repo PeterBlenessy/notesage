@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.60.2",
+      "date": "2026-09-17",
+      "previousVersion": "0.60.1",
+      "sections": {
+        "improvements": [
+          "Notesage opens your document sooner still. Reading through your skills and agents now waits until the app has finished starting, instead of starting as soon as it found a spare moment — which, during startup, turned out to be almost immediately."
+        ]
+      }
+    },
+    {
       "version": "0.60.1",
       "date": "2026-09-16",
       "previousVersion": "0.60.0",
