@@ -294,13 +294,53 @@ export function useSkillDiscovery() {
     // The first pass waits for startup to finish and then for an idle moment;
     // later passes answer a change the user just made, so they run at once.
     if (discoveryChain === null) {
-      if (!startupReady) return;
+      if (!startupReady && skillGateArm() === 'startup') return;
       scheduleSkillDiscovery();
       return cancelScheduledDiscovery;
     }
 
     void queueSkillDiscovery();
   }, [skillsReady, startupReady, connectionKey, projectPaths, explorerPaths, rescanCounter]);
+}
+
+/**
+ * Which side of the `startupReady` gate this launch runs on.
+ *
+ * Three releases of startup measurements could not say whether waiting for
+ * `startupReady` helps startup itself, because every comparison spanned two
+ * releases on a laptop whose load moved more than the change did: between
+ * v0.60.1 and v0.60.2 `trees validated` rose 43% and `doc visible` 57% on code
+ * nothing had touched. No amount of further releases fixes that. Two launches
+ * minutes apart, same machine, same dataset, differing only in this, does.
+ *
+ * Set `localStorage['notesage.perf.skillGate'] = 'idle'` to take the v0.60.1
+ * arm — schedule on idle without waiting for startup — and remove the key to
+ * go back. It is read once per launch and reported on `phase1-ready`, so a log
+ * always says which arm produced it; a measurement that cannot say that is
+ * worth nothing later.
+ *
+ * Deliberately localStorage rather than a setting: this is an experiment, not
+ * a preference, and it should leave no trace in the settings UI or in synced
+ * state. `startup` is the default and the shipped behaviour.
+ */
+type SkillGateArm = 'startup' | 'idle';
+let cachedGateArm: SkillGateArm | null = null;
+
+function skillGateArm(): SkillGateArm {
+  if (cachedGateArm !== null) return cachedGateArm;
+  let arm: SkillGateArm = 'startup';
+  try {
+    if (localStorage.getItem('notesage.perf.skillGate') === 'idle') arm = 'idle';
+  } catch {
+    // Storage can be unavailable or throw; the default is the shipped path.
+  }
+  cachedGateArm = arm;
+  return arm;
+}
+
+/** Tests only — the arm is cached for the life of the page otherwise. */
+export function __resetSkillGateArmForTests(): void {
+  cachedGateArm = null;
 }
 
 /**
@@ -407,7 +447,14 @@ async function runSkillDiscovery(): Promise<void> {
     log.perf(PERF.skills, 'instruction-scan', { ms: Math.round(performance.now() - stepStart) });
 
     const phase1Ms = Math.round(performance.now() - pipelineStart);
-    log.perf(PERF.skills, 'phase1-ready', { skillCount: initialSkillCount, agentCount: initialAgentCount, ms: phase1Ms });
+    // `gate` is what makes the two arms comparable after the fact. Without it
+    // a log is just a number with no record of which behaviour produced it.
+    log.perf(PERF.skills, 'phase1-ready', {
+      skillCount: initialSkillCount,
+      agentCount: initialAgentCount,
+      gate: skillGateArm(),
+      ms: phase1Ms,
+    });
     log.info('skills', 'Phase 1 complete — tools available');
 
     // --- Phase 2: Extract bundled skills + one-time bundled agent cleanup ---

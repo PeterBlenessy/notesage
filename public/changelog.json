@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.60.3",
+      "date": "2026-09-17",
+      "previousVersion": "0.60.2",
+      "sections": {
+        "improvements": [
+          "Internal measurement only — no change to how the app behaves."
+        ]
+      }
+    },
+    {
       "version": "0.60.2",
       "date": "2026-09-17",
       "previousVersion": "0.60.1",

@@ -77,7 +77,12 @@ vi.mock('@/lib/tauri', () => ({
 }));
 
 // Import hooks under test (uses mocked tauriApi)
-import { useSkillDiscovery, useSkillOperations, ensureSkillsDiscovered } from '@/hooks/useSkillOperations';
+import {
+  useSkillDiscovery,
+  useSkillOperations,
+  ensureSkillsDiscovered,
+  __resetSkillGateArmForTests,
+} from '@/hooks/useSkillOperations';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -189,6 +194,8 @@ describe('useSkillDiscovery', () => {
     // outlives this file. Whichever test file exercised discovery first left
     // it set for everyone after (#736).
     __resetBundledExtractionForTests();
+    __resetSkillGateArmForTests();
+    localStorage.removeItem('notesage.perf.skillGate');
 
     mockGetHomeDir.mockResolvedValue('/Users/test');
     mockExtractBundledSkills.mockResolvedValue(UNCHANGED_EXTRACTION);
@@ -214,6 +221,38 @@ describe('useSkillDiscovery', () => {
 
     expect(scanSkills).not.toHaveBeenCalled();
     expect(mockExtractBundledSkills).not.toHaveBeenCalled();
+  });
+
+  // The A/B arm exists so the two behaviours can be compared on one machine
+  // minutes apart, rather than across releases whose machine load moved more
+  // than the change did.
+  it('takes the idle arm when the experiment key is set', async () => {
+    localStorage.setItem('notesage.perf.skillGate', 'idle');
+    __resetSkillGateArmForTests();
+    const { scanSkills } = setupStoreMocks();
+    useSettingsStore.setState({ skillsReady: true, startupReady: false });
+
+    renderHook(() => useSkillDiscovery());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100));
+    });
+
+    // v0.60.1 behaviour: does not wait for startup.
+    expect(scanSkills).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores an unrecognised value and ships the default arm', async () => {
+    localStorage.setItem('notesage.perf.skillGate', 'banana');
+    __resetSkillGateArmForTests();
+    const { scanSkills } = setupStoreMocks();
+    useSettingsStore.setState({ skillsReady: true, startupReady: false });
+
+    renderHook(() => useSkillDiscovery());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100));
+    });
+
+    expect(scanSkills).not.toHaveBeenCalled();
   });
 
   // ...and picks it up as soon as startup reports in, without a remount.

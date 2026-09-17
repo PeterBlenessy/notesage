@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/browser";
 import App from "./App";
 import { MobileApp } from "./MobileApp";
 import { isIos } from "@/lib/platform";
+import { reportCspViolations } from "@/lib/csp-violation-reporter";
 import "@/styles/globals.css";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
@@ -114,6 +115,11 @@ if (import.meta.env.DEV) {
     materialiseDeps,
   };
 }
+
+// Registered before anything renders: the stylesheet violations this exists to
+// identify fire during the first paint, and a listener attached afterwards
+// would miss every one of them.
+reportCspViolations();
 
 // Global crash capture for uncaught frontend errors and unhandled promise
 // rejections. Routed to Sentry via the Rust-injected plugin client (we never
