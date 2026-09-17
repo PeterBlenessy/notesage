@@ -914,6 +914,93 @@ so a later start costs the user nothing.
 **New, unexplained:** `trees validated` reports `totalFiles: 16` across 14
 projects, and `agent-scan` probes 69 directories to find 1 agent.
 
+### 2026-09-17 — v0.60.2 release (`fc784ea3`), Apple M3 / 24 GB, steady-state refresh
+
+**Read from `notesage.log` rather than pasted out of the Web Inspector** —
+v0.60.2 is the first build whose `[perf:*]` lines forward to the backend, so
+this entry was assembled by grep. Same dataset: 14 projects + 2 explorer
+folders, 57 skills, 1 agent.
+
+**Skills pipeline:**
+
+| Step | v0.59.0 | v0.60.1 | v0.60.2 |
+| --- | --- | --- | --- |
+| skill-scan (57 skills, 18 directories) | 2,052 | 484 | **109** |
+| skill-tool-extract (17 defs) | 29 | 11 | 5 |
+| agent-scan | 100 | 15 | 8 |
+| instruction-scan | 38 | 5 | 3 |
+| **phase1-ready (tools visible)** | **2,223** | **515** | **126** |
+| bundled-skills-extract | 12 | 10 | 3 |
+| phase2-extract | 895 | 10 | 5 |
+| **total** | **3,118** | **525** | **131** |
+
+**Startup & trees:**
+
+| Metric | v0.59.0 | v0.60.1 | v0.60.2 |
+| --- | --- | --- | --- |
+| store batch read | — | 103 | 127 |
+| trees validated | 1,184 | 370 | 530 |
+| index init total (~3,254 files) | 1,316 | — | 1,051 |
+| **startup ready** | **3,636** | **1,423** | **2,008** |
+| tabs restored (1 tab) | 3,546 | — | 1,933 |
+| doc-switch, click → visible | 1,198 | 422 | 661 |
+
+#### The ordering fix is confirmed
+
+The check this release existed for, straight out of the log:
+
+```
+[07:22:35][perf:startup] ready          {"totalMs":2008}
+[07:22:35][perf:startup] tabs restored  {"ms":1933}
+[07:22:35][perf:skills]  skill-scan     {"ms":109}
+```
+
+`ready` precedes `skill-scan`. In v0.60.1 the scan began before the file trees
+were validated. Waiting for `startupReady` rather than for an idle gap does
+what idle was supposed to do.
+
+#### What the contention was actually costing — and it was not startup
+
+`skill-scan` is **109 ms**, against 484 in v0.60.1 and 2,052 in v0.59.0, on
+code that has not changed once across all three. That is the clearest evidence
+yet that those earlier figures were mostly contention: the same scan of the
+same 57 skills across the same 18 directories, run after startup instead of
+during it, is 4.4× faster than the previous release measured it.
+
+And it is better than 4.4×, because **this run was slower everywhere else**.
+Every startup-path metric rose against v0.60.1 by a similar proportion: trees
+validated +43%, doc visible +57%, startup ready +41%. Normalised against a run
+roughly 1.4× slower, `skill-scan` is about 6× faster than v0.60.1 measured it.
+
+**But the deferral did not make startup itself faster, and this entry will not
+claim it did.** `startup ready` went 1,423 → 2,008, which is +41% — past
+CLAUDE.md's 20% flag — and sits exactly in line with the +43%/+57% on metrics
+nothing touched. The honest reading is a slower run, not a regression. What it
+is *not* is evidence that moving the scan helped startup. The contention ran
+both ways and was hurting the scan far more than it was hurting startup.
+
+So the accumulated result over three releases, stated carefully: the skills
+pipeline went 3,118 → 131 ms, and that is real and large. Startup ready has
+not been shown to improve because of any of it; it moves with machine state
+between samples, and three samples on an unquiet laptop cannot separate the
+two. A same-session A/B — one launch each side of the `startupReady` gate —
+would settle it, and nothing short of that will.
+
+#### Still blind, and now worth fixing
+
+- `[perf:tree] refresh` fires five times, every one
+  `{mode: "targeted", sections: 0, totalFiles: 0, ms: 0}`. `mode` told us these
+  are path-scoped refreshes matching no section, which was the question
+  v0.59.0 asked. The next question is *which path* — the log does not carry
+  it, so there is no way to tell a correct no-op from a refresh silently
+  failing to find its target. Adding `targetPath` is a one-line change.
+- `trees validated` reports `totalFiles: 16` across 14 projects, while
+  `index init` on the same launch counts 1,438 files in Private Notes alone
+  and ~3,254 in total. Whatever that 16 counts, it is not files, and the field
+  name says it is.
+- `agent-scan` probes 69 directories to find 1 agent.
+- Three CSP stylesheet violations at launch, carried over from v0.59.0.
+
 #### Synthetic gate at the v0.60.0 cut — red, and not the release
 
 `pnpm test:perf` failed 3 of 45 at the v0.60.0 cut: parse 1KB 341 ms (budget
