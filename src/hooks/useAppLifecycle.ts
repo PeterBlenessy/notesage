@@ -16,6 +16,7 @@ import { migrateV1AISettings } from "@/lib/ai/migration";
 import { resolveSyncedLibraryRoot } from "@/lib/library-root";
 import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
 import { log, setLogLevel, PERF } from "@/lib/logger";
+import { countFiles } from "@/lib/file-utils";
 import { stopAllAcpAgents } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
@@ -396,7 +397,14 @@ export async function reloadTrees() {
 
   {
     const wsNow = useWorkspaceStore.getState();
-    const totalFiles = wsNow.explorerFolders.length + wsNow.projects.length;
+    // This was `explorerFolders.length + projects.length` under the name
+    // `totalFiles`, so it read 16 on a launch with ~3,254 files — and both
+    // numbers it actually summed are already logged beside it. Count the
+    // files, which is what the field claims and what the baseline compares.
+    // The trees are already in memory, so this is an in-memory walk.
+    const totalFiles =
+      wsNow.projects.reduce((n, p) => n + countFiles(p.fileTree ?? []), 0) +
+      wsNow.explorerFolders.reduce((n, f) => n + countFiles(f.fileTree ?? []), 0);
     log.perf(PERF.startup, 'trees validated', {
       projects: wsNow.projects.length,
       folders: wsNow.explorerFolders.length,
@@ -709,7 +717,6 @@ async function restorePersistedTabs() {
   // Phase 2: Background tabs load on demand when the user clicks them.
 }
 
-/** Recursively count files (non-directories) in a FileEntry tree. */
 /**
  * Initialize the index for a scope, with auto-recovery on failure.
  * If init fails (corrupted DB), deletes the DB files and retries once.
@@ -741,18 +748,5 @@ async function initIndexWithRecovery(projectPath?: string): Promise<void> {
       );
     }
   }
-}
-
-function countFiles(entries: FileEntry[] | undefined): number {
-  if (!entries) return 0;
-  let count = 0;
-  for (const entry of entries) {
-    if (entry.is_directory) {
-      count += countFiles(entry.children);
-    } else {
-      count += 1;
-    }
-  }
-  return count;
 }
 

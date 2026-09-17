@@ -1,4 +1,27 @@
 import { isCodeFile } from "@/lib/codemirror-languages";
+import type { FileEntry } from "@/lib/tauri";
+
+/**
+ * Recursively count files (not directories) in a FileEntry tree.
+ *
+ * Shared rather than duplicated because two perf metrics report a file count
+ * and they must mean the same thing: `[perf:tree] list` counts this way, while
+ * `[perf:startup] trees validated` used to report `explorerFolders.length +
+ * projects.length` under the name `totalFiles` — 16, on a launch that had
+ * ~3,254 files. See the v0.60.2 entry in docs/performance-baseline.md.
+ */
+export function countFiles(entries: FileEntry[] | undefined): number {
+  if (!entries) return 0;
+  let count = 0;
+  for (const entry of entries) {
+    if (entry.is_directory) {
+      if (entry.children) count += countFiles(entry.children);
+    } else {
+      count += 1;
+    }
+  }
+  return count;
+}
 
 export type FileType = "markdown" | "pdf" | "docx" | "epub" | "pptx" | "image" | "other";
 export type ViewMode = "wysiwyg" | "source";

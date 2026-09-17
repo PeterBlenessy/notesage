@@ -1,5 +1,5 @@
 import { useCallback } from "react";
-import { tauriApi, type FileEntry } from "@/lib/tauri";
+import { tauriApi } from "@/lib/tauri";
 import { useEditorStore, type ScrollToTag } from "@/stores/editor-store";
 import { useInboxStore } from "@/stores/inbox-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
@@ -9,7 +9,7 @@ import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { useActionStore } from "@/stores/action-store";
 import { migrateProjectPath } from "@/lib/migrate-project-path";
-import { getFileType, isBinaryFileType } from "@/lib/file-utils";
+import { getFileType, isBinaryFileType, countFiles } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
 import { emitWorkflowEvent } from "@/lib/automations/event-bus";
 import { wasAutomationWrite } from "@/lib/automations/loop-guard";
@@ -17,19 +17,6 @@ import { toast } from "sonner";
 import { trackSelfRename } from "@/lib/self-rename-filter";
 import { t } from '@/lib/i18n';
 import { log, PERF } from '@/lib/logger';
-
-/** Recursively count files in a FileEntry tree. */
-function countFiles(entries: FileEntry[]): number {
-  let count = 0;
-  for (const entry of entries) {
-    if (entry.is_directory) {
-      if (entry.children) count += countFiles(entry.children);
-    } else {
-      count += 1;
-    }
-  }
-  return count;
-}
 
 /** Debounced git status refresh per repo. Each repo gets its own timer. */
 const repoRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -170,7 +157,12 @@ export function useFileOperations() {
       }
 
       const ms = Math.round(performance.now() - refreshStart);
-      log.perf(PERF.tree, 'refresh', { mode: 'targeted', sections, totalFiles, ms });
+      // `targetPath` is the difference between a correct no-op and a refresh
+      // that silently failed to find what it was asked to refresh: both log
+      // `sections: 0`. Five such lines appear on every launch (see the
+      // v0.60.2 baseline entry) and there is currently no way to tell which
+      // kind they are.
+      log.perf(PERF.tree, 'refresh', { mode: 'targeted', targetPath, sections, totalFiles, ms });
       return;
     }
 
