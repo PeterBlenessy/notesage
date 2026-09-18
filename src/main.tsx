@@ -5,6 +5,19 @@ import App from "./App";
 import { MobileApp } from "./MobileApp";
 import { isIos } from "@/lib/platform";
 import { reportCspViolations } from "@/lib/csp-violation-reporter";
+// Sonner ships its base stylesheet as a file AND injects the same CSS inline
+// at runtime. Only the injection was ever reaching the app — nothing imported
+// the file — and the shipped CSP refuses it, because Tauri appends a nonce to
+// `style-src` which makes the `'unsafe-inline'` in tauri.conf.json inert. So
+// production has been rendering toasts without any of sonner's 24 base rules,
+// including the toaster positioning, while development looked fine (`tauri
+// dev` serves over Vite with no CSP). Importing the file routes them through
+// the bundler into the hashed stylesheet, which `style-src 'self'` allows.
+//
+// BEFORE globals.css on purpose: globals.css carries `[data-sonner-toast]`
+// overrides written against these rules, and both are un-layered, so the
+// later one wins ties.
+import "sonner/dist/styles.css";
 import "@/styles/globals.css";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";

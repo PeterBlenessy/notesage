@@ -52,6 +52,19 @@ let serializeTimer: ReturnType<typeof setTimeout> | null = null;
 
 export function useEditor({ content, onUpdate, editable = true, documentDir }: UseEditorOptions): Editor | null {
   const editor = useTiptapEditor({
+    // Tiptap injects its ProseMirror base CSS as an inline <style> at editor
+    // creation, and the shipped CSP refuses it: Tauri appends a nonce to
+    // `style-src`, which per spec makes the `'unsafe-inline'` in
+    // tauri.conf.json inert. So in production those rules never applied — the
+    // gap cursor was invisible and `img.ProseMirror-separator` unhidden — while
+    // in development they did, because `tauri dev` serves over Vite with no CSP
+    // at all. The same blind spot that hid #444.
+    //
+    // The rules now live at the top of editor.css, so they arrive through the
+    // bundler as a hashed stylesheet that `style-src 'self'` allows. Placing
+    // them first also preserves what production has actually been doing, where
+    // editor.css won every tie by virtue of being the only one that loaded.
+    injectCSS: false,
     onCreate: ({ editor }) => {
       // Set documentDir early so image nodes created during initial parse resolve correctly
       if (documentDir) {
