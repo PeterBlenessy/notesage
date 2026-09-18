@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.60.4",
+      "date": "2026-09-18",
+      "previousVersion": "0.60.3",
+      "sections": {
+        "fixes": [
+          "Notifications in the corner of the window were rendering without most of their styling — wrong position, wrong spacing. They look the way they were meant to now.",
+          "Clicking in the empty space beside an image or a table showed no cursor, so there was no sign of where typing would go. The cursor appears there again."
+        ]
+      }
+    },
+    {
       "version": "0.60.3",
       "date": "2026-09-17",
       "previousVersion": "0.60.2",
