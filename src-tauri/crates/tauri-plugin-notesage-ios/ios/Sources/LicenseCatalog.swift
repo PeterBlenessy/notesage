@@ -77,6 +77,21 @@ public enum LicenseCatalog {
     public let components: [Component]
   }
 
+  /// One licence, and everything under it.
+  ///
+  /// The top level of the screen. 1,510 components share 51 licence
+  /// identifiers, and three of those are the same dual licence spelled three
+  /// ways — so the list a person scrolls is about 25 rows rather than 1,510,
+  /// while every copyright notice underneath is still reproduced verbatim.
+  /// The obligation is per copyright holder; the ROW does not have to be.
+  public struct LicenceGroup: Equatable {
+    public let licence: String
+    public let components: [Component]
+    /// Distinct notice texts under this licence, in display order. Usually
+    /// one; more where packages ship their own copyright line.
+    public let textIds: [String]
+  }
+
   /// Decode the generated catalog.
   public static func decode(_ data: Data) throws -> Catalog {
     try JSONDecoder().decode(Catalog.self, from: data)
@@ -118,6 +133,71 @@ public enum LicenseCatalog {
     }
   }
 
+  /// Canonical form of a licence expression.
+  ///
+  /// `MIT OR Apache-2.0`, `Apache-2.0 OR MIT` and `MIT/Apache-2.0` are one
+  /// licence written three ways, and between them they cover 592 of the 1,510
+  /// components — left alone they are three rows saying the same thing. SPDX
+  /// treats `OR` as unordered, so sorting the terms is the normalisation, not
+  /// a guess about which name is canonical.
+  ///
+  /// Anything that is not a recognised disjunction passes through untouched:
+  /// an expression this does not understand should look odd in the list rather
+  /// than be quietly folded into something it is not.
+  public static func canonicalLicence(_ input: String?) -> String {
+    guard let original = input, !original.trimmingCharacters(in: .whitespaces).isEmpty else {
+      return "Licence not declared"
+    }
+    var raw = original
+    // Some manifests wrap the whole expression: `(MPL-2.0 OR Apache-2.0)` is
+    // the same licence as the bare form, and a stray pair of brackets should
+    // not be its own row. Only a wrapping pair — brackets that group part of a
+    // compound expression carry meaning and are left alone.
+    if raw.hasPrefix("("), raw.hasSuffix(")"),
+      !raw.dropFirst().dropLast().contains("(")
+    {
+      raw = String(raw.dropFirst().dropLast())
+    }
+    let separators = [" OR ", "/", " or "]
+    var terms: [String] = [raw]
+    for separator in separators where raw.contains(separator) {
+      terms = raw.components(separatedBy: separator)
+      break
+    }
+    guard terms.count > 1 else { return raw }
+    let cleaned = terms
+      .map { $0.trimmingCharacters(in: .whitespaces) }
+      .filter { !$0.isEmpty }
+      .sorted()
+    return cleaned.joined(separator: " OR ")
+  }
+
+  /// Group by canonical licence, largest first — the licence most of the app
+  /// is under should be the first thing on screen. Ties break by name so the
+  /// order cannot shuffle between two reads of the same data.
+  public static func licenceGroups(of components: [Component]) -> [LicenceGroup] {
+    var byLicence: [String: [Component]] = [:]
+    for component in components {
+      byLicence[canonicalLicence(component.license), default: []].append(component)
+    }
+    return byLicence.map { licence, members in
+      let sorted = members.sorted {
+        let byName = $0.name.localizedCaseInsensitiveCompare($1.name)
+        if byName != .orderedSame { return byName == .orderedAscending }
+        return ($0.version ?? "") < ($1.version ?? "")
+      }
+      var seen = Set<String>()
+      let textIds = sorted.compactMap { $0.textId }.filter { seen.insert($0).inserted }
+      return LicenceGroup(licence: licence, components: sorted, textIds: textIds)
+    }
+    .sorted {
+      if $0.components.count != $1.components.count {
+        return $0.components.count > $1.components.count
+      }
+      return $0.licence < $1.licence
+    }
+  }
+
   /// Filter by a search string, matched against the package name, its licence
   /// and its publisher — the three things someone looking for a specific
   /// obligation would type. Empty or whitespace-only query returns everything.
@@ -138,6 +218,13 @@ public enum LicenseCatalog {
   /// notices from the bundle fails rather than shipping.
   public static func componentsWithoutText(_ catalog: Catalog) -> [Component] {
     catalog.components.filter { catalog.text(for: $0) == nil }
+  }
+
+  /// Subtitle for a licence row: how many packages it covers.
+  public static func subtitle(for group: LicenceGroup) -> String {
+    group.components.count == 1
+      ? "1 package"
+      : "\(group.components.count) packages"
   }
 
   /// Subtitle for a row: the licence, and the version when there is one.
