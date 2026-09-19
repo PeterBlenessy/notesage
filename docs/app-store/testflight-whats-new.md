@@ -25,18 +25,13 @@ screen; the sender warns past that.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Saved pages keep the article, and search can explain itself.
+The licences behind the app, and somewhere to read them.
 
-CHANGED
-• Sharing saves as HTML by default. A saved page arrives as a proper article
-— site, reading time, cover — instead of a plain note. Markdown is still in
-the share sheet, and your choice is remembered.
-
-FIXED
-• A search that matched nothing showed a blank screen. It says so now.
-• A result matched on its opening line showed no reason for being there. The
-line shifts so you can see the word you typed.
+NEW
+• Acknowledgements, at the foot of the "…" menu on Home. Everything Notesage
+is built on — the packages, the typefaces, the local model server — each with
+its licence in full rather than a summary. Search by package or by licence.
 
 TRY
-• Share a page from Safari without touching the format, then look at the row.
-• Search for a word that sits mid-sentence, not in a title.
+• Open "…" on Home, scroll to the bottom, tap Acknowledgements.
+• Search for "Apache", open a result, and check the licence text is there.

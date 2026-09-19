@@ -392,6 +392,8 @@ jobs:
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryBrowsing.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LibraryFolderScreen.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ChromeOverlay.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LicenseCatalog.swift \
+            src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/LicensesScreen.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/NativeNavShell.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/ReportWebView.swift \
             src-tauri/crates/tauri-plugin-notesage-ios/ios/Sources/BackgroundRefresh.swift \

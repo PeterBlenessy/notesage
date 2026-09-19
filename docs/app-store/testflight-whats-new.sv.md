@@ -24,18 +24,13 @@ sektion som är tom. Ungefär 600 tecken ryms på en skärm; skriptet varnar
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Sparade sidor behåller artikeln, och sökningen förklarar sig.
+Licenserna bakom appen, och någonstans att läsa dem.
 
-ÄNDRAT
-• Delning sparar som HTML som standard. En sparad sida kommer in som en
-riktig artikel — sajt, lästid, omslag — i stället för en vanlig anteckning.
-Markdown finns kvar i delningsrutan och ditt val minns.
-
-RÄTTAT
-• En sökning utan träffar visade en tom skärm. Nu säger den det.
-• En träff i ingressen visade ingen anledning. Raden flyttas så att ordet du
-skrev syns.
+NYTT
+• Tack till, längst ned i "…"-menyn på Hem. Allt Notesage bygger på — paketen,
+typsnitten, den lokala modellservern — var och en med hela sin licens, inte en
+sammanfattning. Sök på paket eller licens.
 
 PROVA
-• Dela en sida från Safari utan att röra formatet, titta sedan på raden.
-• Sök efter ett ord mitt i en mening, inte i en rubrik.
+• Öppna "…" på Hem, skrolla längst ned och tryck på Tack till.
+• Sök efter "Apache", öppna en träff och se att licenstexten finns där.
