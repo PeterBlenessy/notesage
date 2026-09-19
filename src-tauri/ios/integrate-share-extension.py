@@ -239,6 +239,28 @@ def patch_project_yml() -> None:
         if not any(isinstance(e, dict) and e.get("path") == path for e in app_sources):
             app_sources.append({"path": path, "buildPhase": "resources", "type": "folder"})
 
+    # The third-party licence notices (#949).
+    #
+    # Bundled as a resource because the screen that shows them is native
+    # (`LicensesScreen.swift`) and reads it with `Bundle.main.url`. Pointed at
+    # the generated file in `src/` rather than copied here: `pnpm
+    # licenses:generate` already keeps that current and the release skill runs
+    # it whenever dependencies move, so a copy would be a second thing to
+    # forget. 1.8 MB, which is the cost of carrying notices verbatim — and a
+    # summary is not the notice the licences ask for.
+    #
+    # Missing it is a shipped app that does not carry the notices it is
+    # obliged to, so this exits rather than warning.
+    licences = REPO / "src" / "generated" / "third-party-licenses.json"
+    if not licences.is_file():
+        sys.exit(
+            f"no licence catalogue at {licences} — run `pnpm licenses:generate`; "
+            "the iOS build would ship without the notices it is required to carry"
+        )
+    licence_path = "../../../src/generated/third-party-licenses.json"
+    if not any(isinstance(e, dict) and e.get("path") == licence_path for e in app_sources):
+        app_sources.append({"path": licence_path, "buildPhase": "resources"})
+
     # Xcode warns when an extension's CFBundleShortVersionString differs from
     # its containing app's, and App Store Connect rejects the pair outright.
     #

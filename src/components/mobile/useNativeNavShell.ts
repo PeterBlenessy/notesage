@@ -48,6 +48,7 @@ export function useNativeNavShell(active: boolean): void {
   const docStack = useMobileStore((s) => s.docStack);
   const openDoc = useMobileStore((s) => s.openDoc);
   const homeEditorOpen = useMobileStore((s) => s.homeEditorOpen);
+  const acknowledgementsOpen = useMobileStore((s) => s.acknowledgementsOpen);
   // The root's title is the library's own name — what the breadcrumb shows
   // today, so the bar reads the same as the chrome it replaces.
   const rootTitle = useMobileStore((s) => s.libraryName) || "Notesage";
@@ -139,12 +140,14 @@ export function useNativeNavShell(active: boolean): void {
       docStack,
       openDoc,
       homeEditorOpen,
+      acknowledgementsOpen,
       rootTitle,
       // `home.editTitle`, not `menu.editHome`: the MENU row ends in an
       // ellipsis because it opens something, and a screen you have already
       // arrived at should not still be promising to take you there. The
       // screen that draws itself uses the same key.
       homeEditorTitle: t("home.editTitle"),
+      acknowledgementsTitle: t("acknowledgements.title"),
     });
     if (reconciling.current) {
       rerun.current = true;
@@ -187,7 +190,17 @@ export function useNativeNavShell(active: boolean): void {
         }
       }
     })();
-  }, [on, presented, folderStack, docStack, openDoc, homeEditorOpen, rootTitle, reconcileTick]);
+  }, [
+    on,
+    presented,
+    folderStack,
+    docStack,
+    openDoc,
+    homeEditorOpen,
+    acknowledgementsOpen,
+    rootTitle,
+    reconcileTick,
+  ]);
 
   // Stack → store.
   useEffect(() => {

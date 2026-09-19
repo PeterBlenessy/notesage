@@ -389,6 +389,10 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     host.freeze(from: webView)
   }
 
+  /// Must equal `ACKNOWLEDGEMENTS_KEY` in `src/components/mobile/nav-stack.ts`.
+  /// The two sides agree by string, as every other screen id here does.
+  static let acknowledgementsScreenId = "/acknowledgements"
+
   func push(screenId: String, title: String?, animated: Bool) {
     dispatchPrecondition(condition: .onQueue(.main))
     guard let nav, let webView else { return }
@@ -409,6 +413,17 @@ final class NavShellPresenter: NSObject, UINavigationControllerDelegate {
     // a RELATIVE PATH, and a relative path can never begin with "/". So the
     // web screens are the `doc:` ones plus every "/"-prefixed sentinel, with
     // Home itself the one sentinel the native layer does draw.
+    // Acknowledgements draws itself, like a folder, but its id is a "/"
+    // sentinel — so the test below would hand it the web view. Branch on it
+    // explicitly and ahead of that test rather than widening the rule: the
+    // comment above records what happened last time a screen fell through
+    // this dispatch into the wrong arm.
+    if screenId == Self.acknowledgementsScreenId {
+      screen.loadViewIfNeeded()
+      screen.attachNative(LicensesScreen())
+      nav.pushViewController(screen, animated: animated)
+      return
+    }
     let isFolderScreen =
       screenId == LibraryBrowsing.homeScreenId
       || !(screenId.hasPrefix("doc:") || screenId.hasPrefix("/"))

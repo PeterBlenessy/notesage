@@ -96,6 +96,7 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
   const setOnHomeInFile = useMobileStore((s) => s.setOnHome);
   const dismissHomeHint = useMobileStore((s) => s.dismissHomeHint);
   const openHomeEditor = useMobileStore((s) => s.openHomeEditor);
+  const openAcknowledgements = useMobileStore((s) => s.openAcknowledgements);
   const notifications = useMobileStore((s) => s.notifications);
   const refreshNotificationStatus = useMobileStore((s) => s.refreshNotificationStatus);
   const requestNotifications = useMobileStore((s) => s.requestNotifications);
@@ -816,6 +817,18 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
                   : []),
               ]
             : []),
+          // Last, and the one screen in this menu. The rule above is that
+          // every preference is a row rather than a screen — 1,510 components
+          // do not fit in a UIMenu, and the licences require the notice itself
+          // to be readable rather than summarised, so this is the exception
+          // and it is for an obligation rather than a preference (#949).
+          // Bottom because it is the thing nobody came here for.
+          {
+            id: "acknowledgements",
+            title: t("menu.acknowledgements"),
+            icon: "doc.text",
+            sectionBreak: true,
+          },
         ],
       },
       // Inside Recordings/ the "+" records (two taps from Home to a meeting);
@@ -887,6 +900,7 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
       "img-original": () => setImageMaxPixel("original"),
       "goto-inbox": () => void openInbox(),
       "edit-home": () => openHomeEditor(),
+      acknowledgements: () => openAcknowledgements(),
       "notify-badge": () => void toggleNotification("badge"),
       "notify-new": () => void toggleNotification("newItems"),
       "notify-settings": () => void iosOpenSettings().catch(() => {}),

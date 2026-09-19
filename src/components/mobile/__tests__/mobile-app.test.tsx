@@ -372,6 +372,11 @@ describe("sort toggle (#632)", () => {
       // on the row that is in use, so the choice reads as a choice.
       ["Notesage (chosen folder)", true],
       ["Use a different folder…", undefined],
+      // Last: the notices the licences require us to carry (#949). It is a
+      // screen rather than a row because 1,510 components do not fit in a
+      // menu, and at the bottom because it is the one thing in here nobody
+      // opened the menu to find.
+      ["Acknowledgements…", undefined],
     ]);
     // The size picks are conditional: four rows offering to choose a
     // resolution for work that is switched OFF is the kind of dead control
@@ -399,9 +404,11 @@ describe("sort toggle (#632)", () => {
         true, false, false, false, true, true, false, false, false, false,
         true, false, true, false, false,
         // …the Edit Home action row, which is not a pick, then the library
-        // rows: the folder in use is checked, changing it is an action.
+        // rows: the folder in use is checked, changing it is an action, and
+        // last the acknowledgements screen, which is neither.
         undefined,
         true,
+        undefined,
         undefined,
       ]),
     );
