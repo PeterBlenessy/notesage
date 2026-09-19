@@ -18,6 +18,10 @@ import UIKit
 /// the part that needs a device to judge.
 final class LicensesScreen: UIViewController {
   private enum Row: Hashable {
+    /// A licence, with everything under it. The default view.
+    case licence(index: Int)
+    /// A single package. Only while searching — someone typing a package name
+    /// wants that package, not the licence it happens to share with 642 others.
     case component(index: Int)
     /// Shown while the catalogue decodes, and replaced when it arrives.
     case loading
@@ -40,8 +44,14 @@ final class LicensesScreen: UIViewController {
   private var dataSource: SectionedDataSource!
   private let searchBar = UISearchBar()
   private var catalog: LicenseCatalog.Catalog?
-  /// Flattened for the diffable data source: rows address components by index
-  /// into this, so a filter is a re-snapshot rather than a re-decode.
+  /// The default view: one row per licence rather than per package. 1,510
+  /// components over 42 licences — the obligation is per copyright holder, and
+  /// every notice is still reproduced one level down, but the list a person
+  /// scrolls should not be 1,510 near-identical rows.
+  private var groups: [LicenseCatalog.LicenceGroup] = []
+  /// Flattened for the diffable data source while SEARCHING: rows address
+  /// components by index into this, so a filter is a re-snapshot rather than a
+  /// re-decode.
   private var visible: [LicenseCatalog.Component] = []
 
   override func viewDidLoad() {
@@ -100,6 +110,13 @@ final class LicensesScreen: UIViewController {
         content.textProperties.numberOfLines = 0
         cell.accessoryType = .none
         cell.selectionStyle = .none
+      case .licence(let index):
+        guard let group = self?.groups[safe: index] else { break }
+        content.text = group.licence
+        content.secondaryText = LicenseCatalog.subtitle(for: group)
+        content.secondaryTextProperties.color = .secondaryLabel
+        cell.accessoryType = .disclosureIndicator
+        cell.selectionStyle = .default
       case .component(let index):
         guard let component = self?.visible[safe: index] else { break }
         content.text = component.name
@@ -170,26 +187,37 @@ final class LicensesScreen: UIViewController {
 
   private func apply(query: String) {
     guard let catalog else { return }
-    let matching = LicenseCatalog.filter(catalog.components, query: query)
-    let sections = LicenseCatalog.sections(of: matching)
-
-    // Flatten in display order so a row's index addresses the right component.
-    visible = sections.flatMap(\.components)
-
+    let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
     var snapshot = NSDiffableDataSourceSnapshot<String, Row>()
-    var cursor = 0
-    for section in sections {
-      snapshot.appendSections([section.title])
-      snapshot.appendItems(
-        (0..<section.components.count).map { .component(index: cursor + $0) },
-        toSection: section.title)
-      cursor += section.components.count
-    }
-    if sections.isEmpty {
+
+    if needle.isEmpty {
+      // Default: one row per licence.
+      groups = LicenseCatalog.licenceGroups(of: catalog.components)
+      visible = []
       snapshot.appendSections([""])
-      snapshot.appendItems(
-        [.failure(Self.localized("acknowledgements.noMatches", "Nothing matches that."))],
-        toSection: "")
+      snapshot.appendItems((0..<groups.count).map { .licence(index: $0) }, toSection: "")
+    } else {
+      // Searching: the packages themselves, still sectioned by ecosystem.
+      // Someone typing a package name wants that package, not the licence it
+      // shares with hundreds of others.
+      groups = []
+      let sections = LicenseCatalog.sections(
+        of: LicenseCatalog.filter(catalog.components, query: needle))
+      visible = sections.flatMap(\.components)
+      var cursor = 0
+      for section in sections {
+        snapshot.appendSections([section.title])
+        snapshot.appendItems(
+          (0..<section.components.count).map { .component(index: cursor + $0) },
+          toSection: section.title)
+        cursor += section.components.count
+      }
+      if sections.isEmpty {
+        snapshot.appendSections([""])
+        snapshot.appendItems(
+          [.failure(Self.localized("acknowledgements.noMatches", "Nothing matches that."))],
+          toSection: "")
+      }
     }
     dataSource.apply(snapshot, animatingDifferences: false)
   }
@@ -205,12 +233,41 @@ final class LicensesScreen: UIViewController {
 extension LicensesScreen: UITableViewDelegate {
   func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
     tableView.deselectRow(at: indexPath, animated: true)
-    guard case .component(let index) = dataSource.itemIdentifier(for: indexPath),
-      let component = visible[safe: index], let catalog
-    else { return }
-    navigationController?.pushViewController(
-      LicenceTextScreen(component: component, text: catalog.text(for: component)),
-      animated: true)
+    guard let catalog, let row = dataSource.itemIdentifier(for: indexPath) else { return }
+    switch row {
+    case .licence(let index):
+      guard let group = groups[safe: index] else { return }
+      presentDetail(LicenceGroupScreen(group: group, catalog: catalog))
+    case .component(let index):
+      guard let component = visible[safe: index] else { return }
+      presentDetail(LicenceTextScreen(component: component, text: catalog.text(for: component)))
+    case .loading, .failure:
+      return
+    }
+  }
+
+  /// Show a detail screen as a sheet, NOT by pushing it.
+  ///
+  /// `NativeNavShell` owns the navigation stack and reconciles it against the
+  /// web side's store on every change — a controller pushed straight onto
+  /// `navigationController` is a screen that store has never heard of, and the
+  /// next reconcile diffs it away. Verified on the simulator: the tap did
+  /// nothing at all, because the push and the pop raced inside one run loop
+  /// turn.
+  ///
+  /// A sheet sidesteps the whole question. These are leaves — a notice you
+  /// read and dismiss — so they do not need to be in the app's navigation
+  /// history, and putting them there would mean teaching the store about
+  /// screens that are nobody else's business.
+  private func presentDetail(_ controller: UIViewController) {
+    let wrapper = UINavigationController(rootViewController: controller)
+    controller.navigationItem.rightBarButtonItem = UIBarButtonItem(
+      barButtonSystemItem: .done, target: self, action: #selector(dismissDetail))
+    present(wrapper, animated: true)
+  }
+
+  @objc private func dismissDetail() {
+    presentedViewController?.dismiss(animated: true)
   }
 }
 
@@ -221,6 +278,100 @@ extension LicensesScreen: UISearchBarDelegate {
 
   func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
     searchBar.resignFirstResponder()
+  }
+}
+
+/// One licence: its notices verbatim, and the packages they cover.
+///
+/// This is where the obligation is actually discharged. The list a level up
+/// shows 42 rows instead of 1,510, but nothing is summarised away — every
+/// distinct notice under a licence is reproduced here in full, and every
+/// package it covers is named. Grouping changes how many rows a person
+/// scrolls, not what the app carries.
+final class LicenceGroupScreen: UIViewController {
+  private let group: LicenseCatalog.LicenceGroup
+  private let catalog: LicenseCatalog.Catalog
+
+  init(group: LicenseCatalog.LicenceGroup, catalog: LicenseCatalog.Catalog) {
+    self.group = group
+    self.catalog = catalog
+    super.init(nibName: nil, bundle: nil)
+  }
+
+  @available(*, unavailable)
+  required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    title = group.licence
+    view.backgroundColor = .systemBackground
+
+    let scroll = UIScrollView()
+    scroll.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(scroll)
+
+    let stack = UIStackView()
+    stack.axis = .vertical
+    stack.spacing = 20
+    stack.translatesAutoresizingMaskIntoConstraints = false
+    scroll.addSubview(stack)
+
+    stack.addArrangedSubview(
+      caption(LicenseCatalog.subtitle(for: group), style: .subheadline, colour: .label))
+
+    // The packages first: the question this screen answers is usually "what is
+    // under this licence", and the notice below is the same text repeated for
+    // all of them.
+    stack.addArrangedSubview(
+      caption(
+        group.components.map { component in
+          let version = component.version.map { " \($0)" } ?? ""
+          return "• \(component.name)\(version)"
+        }.joined(separator: "\n"),
+        style: .footnote, colour: .secondaryLabel))
+
+    // Then every distinct notice under it, verbatim. Usually one; more where
+    // packages ship their own copyright line.
+    for textId in group.textIds {
+      guard let text = catalog.texts[textId], !text.isEmpty else { continue }
+      let label = UILabel()
+      label.numberOfLines = 0
+      label.adjustsFontForContentSizeCategory = true
+      label.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+      label.textColor = .secondaryLabel
+      label.text = text
+      stack.addArrangedSubview(label)
+    }
+
+    if group.textIds.isEmpty {
+      stack.addArrangedSubview(
+        caption(
+          LicensesScreen.localized(
+            "acknowledgements.noText",
+            "This package declares its licence but does not ship the licence text, so there is none to reproduce here."),
+          style: .footnote, colour: .tertiaryLabel))
+    }
+
+    NSLayoutConstraint.activate([
+      scroll.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+      scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+      scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+      scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+      stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 20),
+      stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -40),
+      stack.leadingAnchor.constraint(equalTo: scroll.frameLayoutGuide.leadingAnchor, constant: 20),
+      stack.trailingAnchor.constraint(equalTo: scroll.frameLayoutGuide.trailingAnchor, constant: -20),
+    ])
+  }
+
+  private func caption(_ text: String, style: UIFont.TextStyle, colour: UIColor) -> UILabel {
+    let label = UILabel()
+    label.numberOfLines = 0
+    label.adjustsFontForContentSizeCategory = true
+    label.font = .preferredFont(forTextStyle: style)
+    label.textColor = colour
+    label.text = text
+    return label
   }
 }
 

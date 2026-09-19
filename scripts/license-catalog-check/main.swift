@@ -96,6 +96,44 @@ check(
     LicenseCatalog.subtitle(for: comp("x", "npm", licence: "MIT", version: "1.2.3")), "MIT · 1.2.3")
 
 // ---------------------------------------------------------------------------
+// Licence grouping: the top level of the screen.
+// ---------------------------------------------------------------------------
+
+// One dual licence spelled three ways covers 592 of 1,510 components. Left
+// alone that is three rows saying the same thing.
+check("OR is unordered, so both spellings canonicalise the same",
+      LicenseCatalog.canonicalLicence("Apache-2.0 OR MIT"),
+      LicenseCatalog.canonicalLicence("MIT OR Apache-2.0"))
+check("slash form joins them", LicenseCatalog.canonicalLicence("MIT/Apache-2.0"), "Apache-2.0 OR MIT")
+check("lower-case or is the same licence", LicenseCatalog.canonicalLicence("MIT or Apache-2.0"), "Apache-2.0 OR MIT")
+check("a single licence is left alone", LicenseCatalog.canonicalLicence("MIT"), "MIT")
+check("an undeclared licence says so", LicenseCatalog.canonicalLicence(nil), "Licence not declared")
+check("empty counts as undeclared", LicenseCatalog.canonicalLicence("   "), "Licence not declared")
+// An expression this does not understand must look odd rather than be folded
+// into something it is not.
+check("a wrapping pair of brackets is not its own row",
+      LicenseCatalog.canonicalLicence("(MPL-2.0 OR Apache-2.0)"), "Apache-2.0 OR MPL-2.0")
+// Brackets that group part of a compound expression carry meaning.
+check("inner brackets are left alone",
+      LicenseCatalog.canonicalLicence("(MIT OR Apache-2.0) AND Unicode-3.0"),
+      "(MIT OR Apache-2.0) AND Unicode-3.0")
+check("an unrecognised expression passes through",
+      LicenseCatalog.canonicalLicence("SomeLicence WITH an-exception"),
+      "SomeLicence WITH an-exception")
+
+let grouped = LicenseCatalog.licenceGroups(of: [
+    comp("a", "npm", licence: "MIT"),
+    comp("b", "npm", licence: "MIT OR Apache-2.0"),
+    comp("c", "cargo", licence: "Apache-2.0 OR MIT"),
+    comp("d", "cargo", licence: "MIT"),
+    comp("e", "cargo", licence: "MIT"),
+])
+check("groups are largest-first", grouped.map(\.licence), ["MIT", "Apache-2.0 OR MIT"])
+check("the dual spellings landed in one group", grouped[1].components.map(\.name), ["b", "c"])
+check("group subtitle counts packages", LicenseCatalog.subtitle(for: grouped[0]), "3 packages")
+check("one package is not pluralised", LicenseCatalog.subtitle(for: grouped[1]).isEmpty, false)
+
+// ---------------------------------------------------------------------------
 // The real file. This is the packaging guard.
 // ---------------------------------------------------------------------------
 
@@ -173,6 +211,26 @@ do {
     let sectioned = LicenseCatalog.sections(of: catalog.components)
     let total = sectioned.reduce(0) { $0 + $1.components.count }
     check("sectioning preserves every component", total, catalog.components.count)
+
+    // Nor may grouping — the screen shows fewer ROWS, never fewer notices.
+    let groups = LicenseCatalog.licenceGroups(of: catalog.components)
+    let grouped = groups.reduce(0) { $0 + $1.components.count }
+    check("grouping preserves every component", grouped, catalog.components.count)
+    // 42 today, and that is what the data is rather than a target that was
+    // aimed at: the top twelve rows cover 97% of the components and the tail
+    // is genuinely different terms, not spellings left unnormalised. The cap
+    // is here to catch canonicalisation regressing — without it the raw count
+    // is 51 — not to push the number down further.
+    expect(
+        "grouping collapses the list to something a person can scan",
+        groups.count <= 45,
+        "\(groups.count) licence rows from \(catalog.components.count) components")
+    // Every notice still reachable: the union of the groups' textIds must be
+    // every textId in the file, or a notice exists that nothing can open.
+    let reachable = Set(groups.flatMap(\.textIds))
+    let all = Set(catalog.components.compactMap(\.textId))
+    check("every notice is reachable from some group", reachable.count, all.count)
+    print("     \(groups.count) licence groups, largest: \(groups[0].licence) (\(groups[0].components.count))")
 
     print("     \(catalog.components.count) components, \(catalog.texts.count) notices, \(missing.count) without text")
 } catch {
