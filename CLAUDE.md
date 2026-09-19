@@ -76,10 +76,47 @@ Reversible + cheap → act, then report. Otherwise → ask first.
 After any work that touches startup, skills, tree loading, editor rendering, or Tauri IPC hot paths:
 
 1. **Run `pnpm test:perf`** — synthetic benchmarks must pass within budget
-2. **Check real-world startup** — open the app (dev mode), capture `[perf:*]` console logs, compare against the baseline in `docs/performance-baseline.md`
+2. **Read a real launch from the log**, not from the console:
+
+   ```bash
+   grep "frontend::perf" ~/Library/Logs/com.notesage.app/notesage.log | tail -40
+   ```
+
+   Every `[perf:*]` call site goes through `log.perf()`, which forwards to the
+   backend, so a startup profile is greppable with its objects already expanded.
+   Perf lines are `info`, so forwarding needs Settings → System → Diagnostics →
+   Log level set to `info` or `debug` (it defaults to `warn`, which drops them).
+
 3. **Record new measurements** — append a dated entry to the "Startup Performance" section in `docs/performance-baseline.md` with the commit hash. Never overwrite previous entries — the history is the point.
 
 Key metrics to capture: `phase1-ready` (tools visible), `startup ready`, `tree refresh`, `skills total`, and any metric that changed significantly.
+
+**Measure a shipped build, not `tauri dev`.** This used to read "open the app
+(dev mode), capture `[perf:*]` console logs", and both halves were wrong. Dev
+mode is served over Vite with **no CSP header at all**, which hides an entire
+class of production-only bug — #444 and the v0.60.4 stylesheet failures both
+lived there, the latter for three releases with toasts rendering off-screen
+because the rule that positions them was being refused. And reading the console
+means expanding collapsed objects by hand and pasting them somewhere; the log
+file is already structured.
+
+**Do not attribute a change from one before/after pair.** This laptop's load
+moves more between runs than most changes do: across v0.60.1 → v0.60.2,
+`trees validated` rose 43% and `doc visible` 57% on code nothing had touched,
+while `startup ready` "regressed" 41% purely from machine state. Either
+normalise against metrics the change cannot have affected, or A/B on one
+machine minutes apart — `localStorage['notesage.perf.skillGate']` exists for
+exactly that, and stamps its arm on `phase1-ready` so a log says which
+behaviour produced it.
+
+**A plausible number is not a measurement.** Four instrumentation bugs were
+found in this area in three releases, every one of them reporting something
+sane-looking: `[perf:tree] refresh` logged all zeros for a release and a half;
+`extract_bundled_skills` returned a directory path, so 895ms of defensive
+rescanning looked like extraction; `trees validated` reported `totalFiles: 16`
+on a launch with ~3,254 files, because three copies of `countFiles` existed and
+that metric called none of them. Check a headline number against a second
+source before trusting it.
 
 ## Backend (Rust/Tauri)
 

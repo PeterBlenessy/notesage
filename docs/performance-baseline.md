@@ -914,6 +914,72 @@ so a later start costs the user nothing.
 **New, unexplained:** `trees validated` reports `totalFiles: 16` across 14
 projects, and `agent-scan` probes 69 directories to find 1 agent.
 
+### 2026-09-19 — v0.60.4 (`749459e4`), controlled A/B of the startupReady gate
+
+**The first measurement in this document that isolates a change from the
+machine.** Both arms on one laptop 34 minutes apart, same dataset (57 skills,
+18 directories, 14 projects), switched with
+`localStorage['notesage.perf.skillGate']` and stamped on `phase1-ready` as
+`gate`, so the log states which behaviour produced which numbers.
+
+| | arm `startup` (shipped) | arm `idle` (v0.60.1 behaviour) |
+| --- | --- | --- |
+| `startup ready` | 1,775 | **1,634** |
+| `skill-scan` | 137 | 505, then 139 |
+| `phase1-ready` | 197 | 554, then 158 |
+| `skills total` | 206 | 563, then 158 |
+
+#### Contention is real, and one launch proves it without any comparison
+
+The idle arm ran discovery **twice in the same process** — once before
+`startupReady`, once after it flipped:
+
+```
+11:02:56  skill-scan {"ms":505}  gate:"idle"   <- during startup
+11:02:57  ready      {"totalMs":1634}
+11:02:57  skill-scan {"ms":139}  gate:"idle"   <- after startup
+```
+
+**505 ms against 139 ms, same process, seconds apart, identical work.** No
+machine state differs between those two numbers, which is what every earlier
+comparison in this document could not say. The shipped arm's 137 ms matches the
+second reading almost exactly. Contention costs the scan ~3.6×.
+
+(The double scan is an artifact of the experiment: the A/B arm leaves
+`startupReady` in the effect's dependency list, so the idle path re-runs when
+it flips. The shipped path cannot hit it — `startupReady` is already true
+before its first pass, and arm `startup` scanning once confirms that.)
+
+#### Deferring does NOT make startup faster — the v0.60.2 notes were wrong
+
+`startup ready` was **1,775 ms deferred against 1,634 ms concurrent**: the arm
+that ran the scan alongside startup finished 141 ms *sooner*. That is noise in
+either direction, and precisely the point — after three releases of trying,
+there is no reading under which deferring improved startup.
+
+The v0.60.2 release notes claimed "Notesage opens your document sooner still".
+That claim is now corrected in `docs/history/235-release-v0.60.2.md`. The
+v0.60.2 entry in *this* document did not make it — it recorded that startup
+improvement was unattributable and asked for exactly this A/B — which is the
+argument for hedging a number you cannot separate from its machine.
+
+#### What the change is actually worth
+
+Not latency. CPU: the same scan for a third of the cost, which is battery and
+heat on every launch. Against that, skills become ready roughly a second later
+— free for a user who opens the app to read, and erased for anyone who does
+not by `ensureSkillsDiscovered()`, which the command bar and the Skills pane
+call on open.
+
+Worth keeping. Not for the reason originally given.
+
+#### Method note for the next person
+
+Two launches on one machine settled in ten minutes what five releases of
+before/after comparison could not, because this laptop's load moves more than
+most changes do. When a result matters, A/B it and stamp the arm into the log.
+An unstamped measurement cannot be checked later, and will be misread.
+
 ### 2026-09-17 — v0.60.2 release (`fc784ea3`), Apple M3 / 24 GB, steady-state refresh
 
 **Read from `notesage.log` rather than pasted out of the Web Inspector** —
