@@ -24,13 +24,16 @@ sektion som är tom. Ungefär 600 tecken ryms på en skärm; skriptet varnar
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Licenserna bakom appen, och någonstans att läsa dem.
+Listan Tack till går att öppna nu, och den är betydligt kortare.
 
-NYTT
-• Tack till, längst ned i "…"-menyn på Hem. Allt Notesage bygger på — paketen,
-typsnitten, den lokala modellservern — var och en med hela sin licens, inte en
-sammanfattning. Sök på paket eller licens.
+RÄTTAT
+• Att trycka på en rad i Tack till gjorde ingenting i bygge 78. Licenstexten
+öppnades aldrig, vilket var hela poängen med skärmen.
+
+ÄNDRAT
+• Den listar 42 licenser i stället för 1 510 paket. Tryck på en för att se
+alla paket under den och själva licensen, i sin helhet.
 
 PROVA
-• Öppna "…" på Hem, skrolla längst ned och tryck på Tack till.
-• Sök efter "Apache", öppna en träff och se att licenstexten finns där.
+• "…" på Hem, sedan Tack till. Tryck på MIT — 643 paket och texten.
+• Sök på ett paketnamn, till exempel "tiptap", för att gå direkt till dess licens.

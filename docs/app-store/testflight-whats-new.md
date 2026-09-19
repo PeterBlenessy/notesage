@@ -25,13 +25,16 @@ screen; the sender warns past that.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-The licences behind the app, and somewhere to read them.
+The Acknowledgements list opens now, and it is a great deal shorter.
 
-NEW
-• Acknowledgements, at the foot of the "…" menu on Home. Everything Notesage
-is built on — the packages, the typefaces, the local model server — each with
-its licence in full rather than a summary. Search by package or by licence.
+FIXED
+• Tapping a row in Acknowledgements did nothing in build 78. The licence text
+never opened, which was the whole point of the screen.
+
+CHANGED
+• It lists 42 licences rather than 1,510 packages. Tap one to see every
+package under it and the licence itself, in full.
 
 TRY
-• Open "…" on Home, scroll to the bottom, tap Acknowledgements.
-• Search for "Apache", open a result, and check the licence text is there.
+• "…" on Home, then Acknowledgements. Tap MIT — 643 packages and the text.
+• Search for a package by name, like "tiptap", to go straight to its notice.
