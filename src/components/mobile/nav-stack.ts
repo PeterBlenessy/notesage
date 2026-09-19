@@ -29,6 +29,19 @@ import { HOME_KEY } from "@/lib/home-file";
  */
 export const HOME_EDITOR_KEY = "/home-editor";
 
+/**
+ * The acknowledgements screen's id.
+ *
+ * Slash-prefixed for the same reason as `HOME_EDITOR_KEY` — a relative path
+ * can never begin with `/`, so it cannot collide with a folder — but unlike
+ * the other `/` ids this one is drawn NATIVELY. `NativeNavShell.push` hands
+ * the live web view to `doc:` and `/`-prefixed screens by default, so it
+ * carries an explicit branch for this id ahead of that test. The alternative,
+ * a bare id, is what made `home-editor` resolve as a folder whose path did not
+ * exist and push a blank screen.
+ */
+export const ACKNOWLEDGEMENTS_KEY = "/acknowledgements";
+
 export interface NavScreen {
   /** Stable identity. `HOME_KEY` (`/home`) is Home; a folder is its relative
    *  path — including `""` for All Folders, which is the root shown
@@ -45,10 +58,13 @@ export interface NavStackInputs {
   docStack: { relPath: string; name: string; title?: string }[];
   openDoc: { relPath: string; name: string; title?: string } | null;
   homeEditorOpen: boolean;
+  acknowledgementsOpen: boolean;
   /** What the root is called. */
   rootTitle: string;
   /** The Home editor's title. */
   homeEditorTitle: string;
+  /** The acknowledgements screen's title. */
+  acknowledgementsTitle: string;
 }
 
 /** Document ids are prefixed so a document can never collide with a folder of
@@ -75,6 +91,11 @@ export function deriveNavStack(input: NavStackInputs): NavScreen[] {
   const screens: NavScreen[] = [{ id: HOME_KEY, title: input.rootTitle }];
   if (input.homeEditorOpen) {
     screens.push({ id: HOME_EDITOR_KEY, title: input.homeEditorTitle });
+    return screens;
+  }
+  // Like the Home editor: pushed from Home, and nothing nests inside it.
+  if (input.acknowledgementsOpen) {
+    screens.push({ id: ACKNOWLEDGEMENTS_KEY, title: input.acknowledgementsTitle });
     return screens;
   }
   for (const folder of input.folderStack) {
@@ -141,7 +162,11 @@ export function storeStateForScreen(
   // Home is not a folder level; All Folders IS one, and its id is the root's
   // own path — the empty string. Excluding `""` here is what hid it.
   const folders = above.filter(
-    (s) => s.id !== HOME_KEY && s.id !== HOME_EDITOR_KEY && !s.id.startsWith("doc:"),
+    (s) =>
+      s.id !== HOME_KEY
+      && s.id !== HOME_EDITOR_KEY
+      && s.id !== ACKNOWLEDGEMENTS_KEY
+      && !s.id.startsWith("doc:"),
   );
   const docs = above.filter((s) => s.id.startsWith("doc:"));
   return {

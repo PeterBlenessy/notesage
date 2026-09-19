@@ -2,6 +2,7 @@ import { HOME_KEY } from "@/lib/home-file";
 import { describe, it, expect } from "vitest";
 
 import { HOME_EDITOR_KEY,
+  ACKNOWLEDGEMENTS_KEY,
   deriveNavStack,
   diffNavStack,
   documentScreenId,
@@ -19,8 +20,19 @@ import { HOME_EDITOR_KEY,
  * kind of bug that is miserable to chase on a phone and trivial here.
  */
 
-const ROOT = { rootTitle: "Notesage", homeEditorTitle: "Edit Home" };
-const base = { folderStack: [], docStack: [], openDoc: null, homeEditorOpen: false, ...ROOT };
+const ROOT = {
+  rootTitle: "Notesage",
+  homeEditorTitle: "Edit Home",
+  acknowledgementsTitle: "Acknowledgements",
+};
+const base = {
+  folderStack: [],
+  docStack: [],
+  openDoc: null,
+  homeEditorOpen: false,
+  acknowledgementsOpen: false,
+  ...ROOT,
+};
 const folder = (relPath: string, name = relPath) => ({ relPath, name });
 
 describe("deriveNavStack", () => {
@@ -57,6 +69,26 @@ describe("deriveNavStack", () => {
       openDoc: folder("Inbox/c.md", "c"),
     });
     expect(stack.map((s) => s.title)).toEqual(["Notesage", "Inbox", "a", "b", "c"]);
+  });
+
+  it("shows acknowledgements as a screen on Home, with nothing under it", () => {
+    // Same shape as the Home editor: opened FROM Home, and nothing nests
+    // inside it, so a folder trail left over from before must not appear
+    // beneath it.
+    const stack = deriveNavStack({
+      ...base,
+      acknowledgementsOpen: true,
+      folderStack: [folder("Inbox")],
+    });
+    expect(stack.map((s) => s.id)).toEqual([HOME_KEY, ACKNOWLEDGEMENTS_KEY]);
+  });
+
+  it("gives acknowledgements an id that cannot be a relative path", () => {
+    // The native side draws this screen itself, and `NativeNavShell.push`
+    // decides that by id. A bare id would fall through its folder test and
+    // push a blank screen for a folder that does not exist — which is exactly
+    // what happened to `home-editor` once.
+    expect(ACKNOWLEDGEMENTS_KEY.startsWith("/")).toBe(true);
   });
 
   it("shows the Home editor as a screen on Home, with nothing under it", () => {
@@ -168,8 +200,10 @@ describe("a saved article's screen title", () => {
         title: "Reading on purpose",
       },
       homeEditorOpen: false,
+      acknowledgementsOpen: false,
       rootTitle: "Notesage",
       homeEditorTitle: "Edit Home",
+      acknowledgementsTitle: "Acknowledgements",
     });
     expect(screens[screens.length - 1].title).toBe("Reading on purpose");
   });
@@ -180,8 +214,10 @@ describe("a saved article's screen title", () => {
       docStack: [],
       openDoc: { relPath: "Notes/Alpha.md", name: "Alpha.md" },
       homeEditorOpen: false,
+      acknowledgementsOpen: false,
       rootTitle: "Notesage",
       homeEditorTitle: "Edit Home",
+      acknowledgementsTitle: "Acknowledgements",
     });
     expect(screens[screens.length - 1].title).toBe("Alpha.md");
   });
@@ -198,11 +234,21 @@ describe("Home and All Folders are both the root, and must not share an id", () 
       docStack: [],
       openDoc: null,
       homeEditorOpen: false,
+      acknowledgementsOpen: false,
       rootTitle: "Notesage",
       homeEditorTitle: "Edit Home",
+      acknowledgementsTitle: "Acknowledgements",
     });
     expect(screens.map((s) => s.id)).toEqual([HOME_KEY, ""]);
     expect(HOME_KEY.startsWith("/")).toBe(true);
+  });
+
+  it("does not count acknowledgements as a folder level", () => {
+    // It is excluded from the folder filter for the same reason the Home
+    // editor is: counting it would tell the web layer it is one folder deeper
+    // than it is, and every depth-dependent behaviour downstream would follow.
+    const screens = deriveNavStack({ ...base, acknowledgementsOpen: true });
+    expect(storeStateForScreen(screens, ACKNOWLEDGEMENTS_KEY)?.folderDepth).toBe(0);
   });
 
   it("counts All Folders as a folder level, and Home as none", () => {
@@ -211,8 +257,10 @@ describe("Home and All Folders are both the root, and must not share an id", () 
       docStack: [],
       openDoc: null,
       homeEditorOpen: false,
+      acknowledgementsOpen: false,
       rootTitle: "Notesage",
       homeEditorTitle: "Edit Home",
+      acknowledgementsTitle: "Acknowledgements",
     });
     expect(storeStateForScreen(screens, HOME_KEY)?.folderDepth).toBe(0);
     expect(storeStateForScreen(screens, "")?.folderDepth).toBe(1);

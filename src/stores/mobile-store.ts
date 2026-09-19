@@ -442,8 +442,13 @@ interface MobileStore {
   dismissNotificationPrePrompt: () => void;
   /** Whether the Edit Home screen is showing (session only). */
   homeEditorOpen: boolean;
+  /** The acknowledgements screen, pushed from Home. Drawn natively — see
+   *  `ACKNOWLEDGEMENTS_KEY` in nav-stack.ts. */
+  acknowledgementsOpen: boolean;
   openHomeEditor: () => void;
   closeHomeEditor: () => void;
+  openAcknowledgements: () => void;
+  closeAcknowledgements: () => void;
   /** The one-line hint under a not-yet-curated Home has been dismissed
    *  (persisted: it is about this screen having changed). */
   homeHintDismissed: boolean;
@@ -637,6 +642,7 @@ export const useMobileStore = create<MobileStore>()(
       listDensity: "comfortable",
       homeFolders: null,
       homeEditorOpen: false,
+      acknowledgementsOpen: false,
       homeHintDismissed: false,
       notifications: null,
       unreadInbox: 0,
@@ -759,7 +765,11 @@ export const useMobileStore = create<MobileStore>()(
 
       goBack: () => {
         navigationGate?.();
-        const { openDoc, folderStack, docStack, homeEditorOpen } = get();
+        const { openDoc, folderStack, docStack, homeEditorOpen, acknowledgementsOpen } = get();
+        if (acknowledgementsOpen) {
+          set({ acknowledgementsOpen: false });
+          return true;
+        }
         if (homeEditorOpen) {
           set({ homeEditorOpen: false });
           return true;
@@ -907,6 +917,14 @@ export const useMobileStore = create<MobileStore>()(
       closeHomeEditor: () => {
         navigationGate?.();
         set({ homeEditorOpen: false });
+      },
+      openAcknowledgements: () => {
+        navigationGate?.();
+        set({ acknowledgementsOpen: true });
+      },
+      closeAcknowledgements: () => {
+        navigationGate?.();
+        set({ acknowledgementsOpen: false });
       },
       dismissHomeHint: () => set({ homeHintDismissed: true }),
 
@@ -1183,6 +1201,7 @@ export const useMobileStore = create<MobileStore>()(
           listDensity: "comfortable",
           homeFolders: null,
           homeEditorOpen: false,
+          acknowledgementsOpen: false,
           homeHintDismissed: false,
           notifications: null,
           unreadInbox: 0,
