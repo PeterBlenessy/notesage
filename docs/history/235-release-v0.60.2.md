@@ -6,14 +6,19 @@
 A second pass at the startup work in v0.60.1, after measuring it rather than
 reasoning about it.
 
+> **Corrected 2026-09-19.** The Improvements bullet below claimed this makes
+> the app open sooner. A controlled A/B on one machine disproved it: startup
+> is unchanged. What the change actually does is stop the skill scan costing
+> 3.6× more than it needs to. See "What this release actually did" at the
+> bottom, and the 2026-09-19 entry in `docs/performance-baseline.md`.
+
 ## Changes
 
 ### Improvements
 
-- Notesage opens your document sooner still. Reading through your skills and
-  agents now waits until the app has finished starting, instead of starting as
-  soon as it found a spare moment — which, during startup, turned out to be
-  almost immediately.
+- Reading through your skills and agents now waits until the app has finished
+  starting, instead of competing with it. The work costs a fraction of what it
+  did — less battery and less heat on launch.
 
 ## Under the hood
 
@@ -64,3 +69,30 @@ demand for anything that reads a skill.
 ## Files Changed
 
 - 10 files across 1 commit (#1045, and this release).
+
+## What this release actually did — corrected 2026-09-19
+
+The claim above was that deferring the scan makes startup faster. It does not.
+An A/B on one machine, both arms minutes apart via
+`localStorage['notesage.perf.skillGate']`, settled it:
+
+| | arm `startup` (shipped) | arm `idle` (v0.60.1) |
+| --- | --- | --- |
+| `startup ready` | 1,775 ms | **1,634 ms** |
+| `skill-scan` | 137 ms | 505 ms, then 139 ms |
+
+The concurrent arm finished startup **141 ms sooner** — noise in either
+direction, but no reading of it says deferring helped.
+
+What it did do is visible in one launch without any cross-run comparison at
+all. The idle arm scanned twice (an artifact of the experiment's effect
+dependency, not of the shipped path, which arm `startup` shows scanning once):
+**505 ms while startup was running, 139 ms after it finished — same process,
+same 57 skills, seconds apart.** Contention is real and it is ~3.6×, and that
+single pair is better evidence than every cross-release comparison in this
+document, because nothing else differed.
+
+So the honest case for this release is CPU, not latency: the same work for a
+third of the cost, against roughly a second's delay before skills are ready —
+which `ensureSkillsDiscovered()` erases for anything that actually reads one.
+Worth keeping. Not for the reason originally given.

@@ -3,15 +3,16 @@
 **Date:** 2026-09-18
 **Previous version:** 0.60.3
 
-Toasts get their styling back, and the editor's cursor appears where it should.
+Notifications appear again, and the editor's cursor shows up beside images and
+tables.
 
 ## Changes
 
 ### Fixes
 
-- Notifications in the corner of the window were rendering without most of
-  their styling — wrong position, wrong spacing. They look the way they were
-  meant to now.
+- Notifications were not appearing at all. Saving, renaming, exporting — none
+  of them confirmed anything had happened. They show up in the bottom-right
+  corner again.
 - Clicking in the empty space beside an image or a table showed no cursor, so
   there was no sign of where typing would go. The cursor appears there again.
 
@@ -50,9 +51,24 @@ the only one that loaded. Verified against a real build: 0 → 24
 `data-sonner-toaster`, 0 → 3 `ProseMirror-gapcursor`, base preceding override
 in the emitted CSS.
 
-Sonner still injects and is still refused — it has no opt-out — but the styles
-now come from the bundle, so what remains is log noise rather than a missing
-stylesheet.
+Sonner turned out to stop injecting altogether: importing the stylesheet makes
+Vite prebundle the package and extract its CSS rather than shim it through
+`__insertCSS`, so the launch after this release reported **zero** CSP
+violations rather than the two predicted.
+
+**The severity was initially described wrong, and the correction is the more
+interesting fact.** The first write-up of this entry said the toasts rendered
+"without most of their styling — wrong position, wrong spacing", which was
+inferred rather than checked. The layout says otherwise: `<Toaster>` is a
+sibling that follows `<div className="flex h-screen w-screen overflow-hidden">`,
+and sonner's inline `style` sets only CSS custom properties — `position: fixed`
+came solely from the refused rule. Without it the toaster is a normal block in
+document flow, placed after an element that already fills the viewport, so it
+rendered below the fold. Not misplaced. **Off-screen.**
+
+That also explains why nobody reported it. Asked whether toasts had looked
+wrong, the answer was "I don't remember them looking wrong" — which is exactly
+what you would say about a notification you never saw.
 
 **No test could have caught this, and that is the point.** `tauri dev` serves
 over Vite with no CSP header at all, so all of it works perfectly in

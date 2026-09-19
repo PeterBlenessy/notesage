@@ -6,7 +6,7 @@
       "previousVersion": "0.60.3",
       "sections": {
         "fixes": [
-          "Notifications in the corner of the window were rendering without most of their styling — wrong position, wrong spacing. They look the way they were meant to now.",
+          "Notifications were not appearing at all. Saving, renaming, exporting — none of them confirmed anything had happened. They show up in the bottom-right corner again.",
           "Clicking in the empty space beside an image or a table showed no cursor, so there was no sign of where typing would go. The cursor appears there again."
         ]
       }
@@ -27,7 +27,7 @@
       "previousVersion": "0.60.1",
       "sections": {
         "improvements": [
-          "Notesage opens your document sooner still. Reading through your skills and agents now waits until the app has finished starting, instead of starting as soon as it found a spare moment — which, during startup, turned out to be almost immediately."
+          "Reading through your skills and agents now waits until the app has finished starting, instead of competing with it. The work costs a fraction of what it did — less battery and less heat on launch."
         ]
       }
     },
