@@ -343,7 +343,7 @@ When context budget is tight, prioritise loading these rules from
 - `.claude/feedback/feedback_test_before_promising.md` — When a UI component doesn't work as expected, research and fix it instead of falling back to inferior alternatives
 - `.claude/feedback/feedback_verify_behaviour_not_metadata.md` — A chain of correct descriptions can describe something that does not work — the last gate must exercise the artefact
 - `.claude/feedback/feedback_verify_every_state_not_one.md` — A toggle touching two layouts needs both layouts in both states, on data seeded with every format — not one screen
-- `.claude/feedback/feedback_verify_platform_ui_in_simulator_first.md` — Run mobile UI changes in the simulator and drive the real user path before cutting a build — device time is the operator's only way to test
+- `.claude/feedback/feedback_verify_platform_ui_in_simulator_first.md` — Run mobile UI changes in the simulator and drive the whole round trip — open it, use it, leave it — before cutting a build; stopping at 'it rendered' is how broken builds ship
 - `.claude/feedback/feedback_verify_prod_dev.md` — Always verify changes work in BOTH production builds and dev mode before saying they're safe *(modification: AW can't run prod builds — modified rule: avoid changes that obviously break the prod path (e.g., dev-only imports, `import.meta.env.DEV` gates without a prod fallback).)*
 - `.claude/feedback/feedback_verify_without_asking.md` — Never ask permission to run a simulator/device/app check — verification is the last step of the work, not a choice for the operator
 - `.claude/feedback/feedback_wysiwyg_exports.md` — Export styling must come from the editor, not template pickers. Templates are for document creation, not export.
