@@ -823,12 +823,24 @@ export function LibraryBrowser({ nativeContent = false }: { nativeContent?: bool
           // to be readable rather than summarised, so this is the exception
           // and it is for an obligation rather than a preference (#949).
           // Bottom because it is the thing nobody came here for.
-          {
-            id: "acknowledgements",
-            title: t("menu.acknowledgements"),
-            icon: "doc.text",
-            sectionBreak: true,
-          },
+          //
+          // HOME ONLY, like `edit-home` and the library rows above, and for a
+          // reason that is not cosmetic: `deriveNavStack` pushes this screen
+          // directly onto Home and drops the folder trail, because nothing
+          // nests inside it. Offered from inside a folder, the trail is gone
+          // by the time Back is pressed — `storeStateForScreen` reports depth
+          // 0 and `goToDepth(0)` returns the user to the library root instead
+          // of the folder they were in.
+          ...(atHome
+            ? [
+                {
+                  id: "acknowledgements",
+                  title: t("menu.acknowledgements"),
+                  icon: "doc.text",
+                  sectionBreak: true,
+                },
+              ]
+            : []),
         ],
       },
       // Inside Recordings/ the "+" records (two taps from Home to a meeting);

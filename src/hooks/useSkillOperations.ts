@@ -83,6 +83,7 @@ let bundledExtracted = false;
 export function __resetBundledExtractionForTests(): void {
   bundledExtracted = false;
   discoveryChain = null;
+  lastScannedInputs = null;
   cancelScheduledDiscovery();
 }
 
@@ -100,6 +101,16 @@ function isBundledSkillsResult(value: unknown): value is BundledSkillsResult {
 }
 
 /**
+ * Thrown when a pass cannot start yet — not a failure, just too early.
+ *
+ * Distinguished from a real error because the two want opposite handling: a
+ * real failure has been attempted and should not be retried on a loop, while
+ * this one has not been attempted at all and MUST be, or discovery never
+ * happens for that launch.
+ */
+class SkillDiscoveryNotReady extends Error {}
+
+/**
  * The discovery pipeline, serialised.
  *
  * Skills and agents are read by AI sessions and by the surfaces that manage
@@ -114,6 +125,9 @@ function isBundledSkillsResult(value: unknown): value is BundledSkillsResult {
  */
 let discoveryChain: Promise<void> | null = null;
 let idleHandle: number | null = null;
+/** The inputs the last queued pass was for, so a readiness gate flipping does
+ *  not look like a reason to scan again. */
+let lastScannedInputs: string | null = null;
 
 function cancelScheduledDiscovery(): void {
   if (idleHandle === null) return;
@@ -132,7 +146,16 @@ function cancelScheduledDiscovery(): void {
 export function ensureSkillsDiscovered(): Promise<void> {
   cancelScheduledDiscovery();
   if (!discoveryChain) {
-    discoveryChain = runSkillDiscovery();
+    // Clear the memo if the pass never got as far as scanning, so the next
+    // caller starts a real one instead of awaiting a resolved nothing.
+    discoveryChain = runSkillDiscovery().catch((e: unknown) => {
+      if (e instanceof SkillDiscoveryNotReady) discoveryChain = null;
+      throw e;
+    });
+    // The rejection above is the signal for the retry, not something to report
+    // twice — `runSkillDiscovery` has already logged and toasted anything that
+    // deserves it.
+    void discoveryChain.catch(() => {});
   }
   return discoveryChain;
 }
@@ -291,14 +314,32 @@ export function useSkillDiscovery() {
   useEffect(() => {
     if (!skillsReady) return;
 
+    // What a pass would be scanning, were one to start now. Readiness gates
+    // are deliberately NOT in here: `startupReady` flipping says nothing about
+    // skills, and treating it as a reason to scan is what queued a redundant
+    // second pass back-to-back with the first.
+    const inputs = `${connectionKey}|${projectPaths}|${explorerPaths}|${rescanCounter}`;
+
     // The first pass waits for startup to finish and then for an idle moment;
     // later passes answer a change the user just made, so they run at once.
     if (discoveryChain === null) {
       if (!startupReady && skillGateArm() === 'startup') return;
+      lastScannedInputs = inputs;
       scheduleSkillDiscovery();
       return cancelScheduledDiscovery;
     }
 
+    // A pass started OUTSIDE this effect — the command bar pulling discovery
+    // forward on ⌘K — scanned whatever was current at that moment, which is
+    // what we are looking at now. Adopt it rather than reading it as a change,
+    // or the next gate flip queues a whole second scan for the same inputs.
+    if (lastScannedInputs === null) {
+      lastScannedInputs = inputs;
+      return;
+    }
+
+    if (inputs === lastScannedInputs) return;
+    lastScannedInputs = inputs;
     void queueSkillDiscovery();
   }, [skillsReady, startupReady, connectionKey, projectPaths, explorerPaths, rescanCounter]);
 }
@@ -394,8 +435,13 @@ async function runSkillDiscovery(): Promise<void> {
     // Use home dir from settings (resolved once on startup) to avoid IPC contention
     const home = useSettingsStore.getState().homeDir;
     if (!home) {
-      log.error('skills', 'Home directory not resolved yet');
-      return;
+      // THROW, do not return. A plain return resolves `run()` successfully,
+      // and `ensureSkillsDiscovered` memoises whatever it gets — so a caller
+      // arriving before `homeDir` resolves (the command bar pulls discovery
+      // forward with no readiness guard, deliberately) would leave
+      // `discoveryChain` a permanently-resolved empty promise. Every later
+      // caller would then await it, get nothing, and never retry.
+      throw new SkillDiscoveryNotReady('Home directory not resolved yet');
     }
     log.info('skills', `Home directory: ${home}`);
 
@@ -548,7 +594,15 @@ async function runSkillDiscovery(): Promise<void> {
     log.info('skills', 'Skill/agent discovery pipeline complete');
   };
 
-  await run().catch((e) => {
+  await run().catch((e: unknown) => {
+    // Too-early is not a failure and must reach the caller: it is the signal
+    // that clears the memo so the next caller runs a real pass. Reporting it
+    // as a failure would also be wrong — nothing failed, and a toast saying
+    // so at launch would be a lie the user cannot act on.
+    if (e instanceof SkillDiscoveryNotReady) {
+      log.info('skills', 'Discovery asked for before it could start — will retry');
+      throw e;
+    }
     log.error('skills', 'Unhandled error in skill/agent discovery pipeline', e);
     toast.error('Failed to load skills and agents. Check logs for details.');
   });

@@ -914,6 +914,14 @@ so a later start costs the user nothing.
 **New, unexplained:** `trees validated` reports `totalFiles: 16` across 14
 projects, and `agent-scan` probes 69 directories to find 1 agent.
 
+> **`[perf:tree] refresh`'s `totalFiles` changed meaning in v0.60.1.** Before
+> that release the notes-root section incremented `sections` but contributed
+> nothing to `totalFiles`; it now adds its file count. An identical library
+> therefore reports a LARGER `totalFiles` after v0.60.1 than before, for
+> reasons that have nothing to do with performance. Do not diff that field
+> across the v0.60.0/v0.60.1 boundary. Raised in review, and the same class of
+> silent redefinition that `trees validated` was fixed for in v0.60.3.
+
 ### 2026-09-19 — v0.60.4 (`749459e4`), controlled A/B of the startupReady gate
 
 **The first measurement in this document that isolates a change from the
