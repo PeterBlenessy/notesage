@@ -475,6 +475,29 @@ no folder share), which the gesture treats as "no swipe".
 Long-press (below) covers the same actions, so a user who cannot land a swipe
 — or a layout with no swipe at all, like the gallery — is never stuck.
 
+## A screen pushed from Home must only be offered from Home
+
+`deriveNavStack` gives the Home editor and Acknowledgements the same shape: it
+pushes them directly onto Home and **drops the folder trail**, because nothing
+nests inside them. That is correct, and the nav-stack tests pin it.
+
+It is also a precondition that nothing enforces. The `…` menu is built on every
+folder screen, so a row added to it appears everywhere unless it is wrapped in
+`atHome`. Offered from inside a folder, such a screen loses the trail the
+moment it opens: `storeStateForScreen` reports `folderDepth: 0`, the pop calls
+`goToDepth(0)`, and the user comes back to the library root instead of the
+folder they were in.
+
+Both existing rows of this kind — `edit-home` and the library block — are
+guarded. A third was added without the guard and shipped; caught in review, not
+by any test, because the tests exercise `deriveNavStack` against the documented
+precondition and nothing checks the UI honours it.
+
+**So: a menu row that opens a Home-pushed screen goes inside `...(atHome ? […]
+: [])`.** If a future screen genuinely needs to be reachable from a folder, the
+fix is to make `deriveNavStack` preserve the trail under it — not to offer it
+and hope.
+
 ## Long-press actions (#680)
 
 Gallery cards have no swipe affordance — the grid scrolls and a horizontal
