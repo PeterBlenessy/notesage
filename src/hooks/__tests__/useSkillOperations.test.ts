@@ -223,6 +223,69 @@ describe('useSkillDiscovery', () => {
     expect(mockExtractBundledSkills).not.toHaveBeenCalled();
   });
 
+  // Both of these come from a code review of the feature, and neither was
+  // reachable by the suite as written: every other test here sets both
+  // readiness flags up front and never toggles one after an out-of-band call.
+  it('does not memoise a pass that never got as far as scanning', async () => {
+    // The command bar pulls discovery forward with no readiness guard, by
+    // design. Arriving before `homeDir` resolves used to leave the memo a
+    // permanently-resolved empty promise: every later caller awaited it, got
+    // nothing, and never retried.
+    useSettingsStore.setState({ homeDir: null, skillsReady: true, startupReady: true });
+    const early = setupStoreMocks();
+
+    await act(async () => {
+      await ensureSkillsDiscovered().catch(() => {});
+    });
+    expect(early.scanSkills).not.toHaveBeenCalled();
+
+    // Home dir arrives; the next caller must run a REAL pass.
+    useSettingsStore.setState({ homeDir: '/Users/test' });
+    const later = setupStoreMocks();
+    await act(async () => {
+      await ensureSkillsDiscovered();
+    });
+    expect(later.scanSkills).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not rescan when only a readiness gate flipped', async () => {
+    // An early ⌘K sets the chain; `startupReady` turning true moments later
+    // carries no information about skills, so it must not queue a second full
+    // pass back-to-back with the first.
+    useSettingsStore.setState({ skillsReady: true, startupReady: false });
+    const { scanSkills } = setupStoreMocks();
+
+    renderHook(() => useSkillDiscovery());
+    await act(async () => {
+      await ensureSkillsDiscovered();
+    });
+    expect(scanSkills).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      useSettingsStore.setState({ startupReady: true });
+      await new Promise((r) => setTimeout(r, 100));
+    });
+    expect(scanSkills).toHaveBeenCalledTimes(1);
+  });
+
+  it('still rescans when an input actually changes', async () => {
+    // The guard must not be so tight that a real change stops working.
+    useSettingsStore.setState({ skillsReady: true, startupReady: true });
+    const { scanSkills } = setupStoreMocks();
+
+    renderHook(() => useSkillDiscovery());
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 100));
+    });
+    const afterFirst = scanSkills.mock.calls.length;
+
+    await act(async () => {
+      useWorkspaceStore.setState({ projects: [{ path: '/projects/new', fileTree: [] }] });
+      await new Promise((r) => setTimeout(r, 100));
+    });
+    expect(scanSkills.mock.calls.length).toBeGreaterThan(afterFirst);
+  });
+
   // The A/B arm exists so the two behaviours can be compared on one machine
   // minutes apart, rather than across releases whose machine load moved more
   // than the change did.
@@ -425,8 +488,13 @@ describe('useSkillDiscovery', () => {
     });
 
     expect(mockExtractBundledSkills).not.toHaveBeenCalled();
-    expect(scanSkills).toHaveBeenCalledTimes(1);
-    expect(scanAgents).toHaveBeenCalledTimes(1);
+    // And no rescan either. This used to assert one, from when any re-run of
+    // the effect queued a pass; a remount with the same projects, connections
+    // and rescanCounter has nothing new to read, and the skills are already in
+    // the store. The flag this test is named for — extraction running once per
+    // session (#736) — is unaffected and still asserted above.
+    expect(scanSkills).not.toHaveBeenCalled();
+    expect(scanAgents).not.toHaveBeenCalled();
   });
 
   // Discovery no longer races the startup burst: the hook schedules it and

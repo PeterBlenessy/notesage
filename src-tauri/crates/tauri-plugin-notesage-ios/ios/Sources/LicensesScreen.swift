@@ -139,7 +139,11 @@ final class LicensesScreen: UIViewController {
         switch result {
         case .success(let catalog):
           self.catalog = catalog
-          self.apply(query: "")
+          // Whatever was typed while the 1.8 MB catalogue decoded, not "".
+          // `apply` no-ops until the catalogue lands, so a hardcoded empty
+          // string left the search field showing the user's text over an
+          // unfiltered list until they typed again.
+          self.apply(query: self.searchBar.text ?? "")
         case .failure(let fault):
           self.showPlaceholder(.failure(fault.message))
         }
@@ -222,10 +226,25 @@ final class LicensesScreen: UIViewController {
     dataSource.apply(snapshot, animatingDifferences: false)
   }
 
-  /// InfoPlist-style lookup with an English fallback, matching how the rest of
-  /// the native shell localises: `AppResources/*.lproj` carries the strings.
+  /// A string from the web layer's i18n, the way the rest of the native shell
+  /// gets them.
+  ///
+  /// NOT `NSLocalizedString`. The app target ships only `InfoPlist.strings`
+  /// — there is no `Localizable.strings` anywhere in it — so every lookup
+  /// missed and fell through to the hardcoded English, permanently, in every
+  /// locale. `LibraryBrowsing.localized` reads a dictionary bridged from the
+  /// web side for exactly this reason, and falls back to the KEY rather than
+  /// to English: "a silently English header in a Swedish app is the thing
+  /// nobody notices for three builds (#989)".
+  ///
+  /// The fallback here is English rather than the key because these strings
+  /// are prose a user reads, not headers — a visible `acknowledgements.search`
+  /// in a search field is worse than an English placeholder. The bridge is
+  /// what makes Swedish work at all.
   fileprivate static func localized(_ key: String, _ fallback: String) -> String {
-    let value = NSLocalizedString(key, comment: "")
+    // `LibraryBrowsing.localized` returns the key when the bridge has no
+    // entry, which is how the rest of the shell detects a miss.
+    let value = LibraryBrowsing.shared.localized(key)
     return value == key ? fallback : value
   }
 }
