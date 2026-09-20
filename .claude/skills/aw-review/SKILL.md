@@ -225,7 +225,7 @@ When context budget is tight, prioritise loading these rules from
 - `.claude/feedback/feedback_thorough_audit.md` — When reviewing code or auditing a fix, the bar is whether the request has actually been satisfied. Paper-pass via "tests green + code looks right" is not enough; the review must compare the actual implementation against the actual asks (body + comments + reality).
 - `.claude/feedback/feedback_verify_behaviour_not_metadata.md` — A chain of correct descriptions can describe something that does not work — the last gate must exercise the artefact
 - `.claude/feedback/feedback_verify_every_state_not_one.md` — A toggle touching two layouts needs both layouts in both states, on data seeded with every format — not one screen
-- `.claude/feedback/feedback_verify_platform_ui_in_simulator_first.md` — Run mobile UI changes in the simulator and drive the real user path before cutting a build — device time is the operator's only way to test
+- `.claude/feedback/feedback_verify_platform_ui_in_simulator_first.md` — Run mobile UI changes in the simulator and drive the whole round trip — open it, use it, leave it — before cutting a build; stopping at 'it rendered' is how broken builds ship
 - `.claude/feedback/feedback_verify_without_asking.md` — Never ask permission to run a simulator/device/app check — verification is the last step of the work, not a choice for the operator
 
 <!-- END auto-generated -->
