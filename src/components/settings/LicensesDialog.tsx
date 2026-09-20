@@ -20,8 +20,14 @@ interface LicenseComponent {
   license: string;
   publisher: string | null;
   url: string | null;
-  /** Key into `texts`; null when the package shipped no licence file. */
+  /** Key into `texts`; null when the package shipped no licence file and no
+   *  canonical text applies. */
   textId: string | null;
+  /** Set when the notice shown is the CANONICAL text for a fixed-text licence
+   *  rather than a file the package shipped. Correct either way — Apache 2.0
+   *  §4(a) is discharged by the canonical text whoever the licensor is — but
+   *  the reader should not have to guess which they are looking at. */
+  canonicalFor?: string | null;
 }
 
 interface LicenseData {
@@ -90,6 +96,11 @@ function ComponentRow({
       {expanded && (
         <div className="border-t border-border px-3 py-3 space-y-2">
           {component.url && <p className="text-xs text-muted-foreground break-all">{component.url}</p>}
+          {component.canonicalFor && (
+            <p className="text-xs text-muted-foreground">
+              {t("licenses.canonical", { licence: component.canonicalFor })}
+            </p>
+          )}
           {text ? (
             <pre className="text-[11px] leading-relaxed text-muted-foreground whitespace-pre-wrap font-mono">
               {text}

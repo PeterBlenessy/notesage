@@ -435,6 +435,17 @@ final class LicenceTextScreen: UIViewController {
     var lines = [LicenseCatalog.subtitle(for: component)]
     if let publisher = component.publisher, !publisher.isEmpty { lines.append(publisher) }
     if let url = component.url, !url.isEmpty { lines.append(url) }
+    // Whose notice this is. Correct either way — a fixed-text licence is
+    // discharged by its canonical text whoever the licensor is — but the
+    // reader should not have to guess which they are looking at.
+    if let canonical = component.canonicalFor {
+      lines.append(
+        String(
+          format: LicensesScreen.localized(
+            "acknowledgements.canonical",
+            "This package ships no licence file. The standard %@ text is shown."),
+          canonical))
+    }
     label.text = lines.joined(separator: "\n")
     return label
   }

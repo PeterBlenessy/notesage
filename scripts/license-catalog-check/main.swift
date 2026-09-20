@@ -187,25 +187,42 @@ do {
         suspiciouslyShort.isEmpty,
         "\(suspiciouslyShort.count) under 100 chars")
 
-    // Components with no notice text at all: 167 of 1,510 at the time of
-    // writing, 51 npm and 116 cargo. They are NOT unlicensed — they declare
-    // one (61 MIT, 19 Apache-2.0, the rest dual-licence variants) but ship no
-    // licence file, so the generator has nothing verbatim to carry.
+    // 65 of 1,510, down from 167 once the generator learned canonical texts.
     //
-    // That is a real gap and it is recorded rather than accepted: the fix is
-    // to substitute the canonical SPDX text when a package declares a licence
-    // but omits its file, which is what most licence tooling does. It belongs
-    // in `scripts/generate-licenses.mjs` and affects the desktop app equally,
-    // so it is not this screen's job.
+    // Every one that remains is copyright-bearing — 61 MIT, the rest BSD and
+    // ISC — and those cannot be filled from a template: MIT asks for "the
+    // above copyright notice", which is the package's own and is not
+    // recoverable. A canonical MIT text would read as compliance while
+    // attributing nobody, which is worse than admitting the gap.
     //
-    // The ceiling exists so the gap cannot quietly grow while nobody is
-    // looking. Lower it when the generator learns canonical texts.
+    // The 102 that WERE fillable are the fixed-text licences, whose words are
+    // the same for every licensor. The check below pins that at zero.
     let missing = LicenseCatalog.componentsWithoutText(catalog)
     expect(
         "the number of components with no notice text has not grown past the recorded gap",
-        missing.count <= 170,
-        "\(missing.count)/\(catalog.components.count) lack a notice — was 167; "
+        missing.count <= 70,
+        "\(missing.count)/\(catalog.components.count) lack a notice — was 65; "
             + "if this grew, find out what stopped shipping its licence file")
+
+    // The fallback's whole claim: a licence whose text is fixed can always be
+    // carried, so none of them may be missing one. If this fails the canonical
+    // texts have stopped being applied and 102 components lost their notice.
+    let fixedText = ["Apache-2.0", "MPL-2.0", "BSL-1.0", "CC0-1.0", "Unicode-3.0", "Unlicense"]
+    let fixedWithoutText = missing.filter { component in
+        guard let licence = component.license else { return false }
+        return fixedText.contains { licence.contains($0) }
+    }
+    expect(
+        "no fixed-text licence is left without a notice",
+        fixedWithoutText.isEmpty,
+        "\(fixedWithoutText.count) e.g. \(fixedWithoutText.prefix(3).map(\.name))")
+
+    // And the substitution must actually be happening.
+    let canonical = catalog.components.filter { $0.canonicalFor != nil }
+    expect(
+        "the canonical-text fallback is carrying the packages that ship none",
+        canonical.count > 90,
+        "only \(canonical.count) components carry a canonical text")
 
     // Sectioning the real thing must not lose anyone.
     let sectioned = LicenseCatalog.sections(of: catalog.components)
