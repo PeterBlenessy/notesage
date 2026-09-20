@@ -61,6 +61,58 @@ function licenceTextIn(dir) {
   return best;
 }
 
+/**
+ * Licences whose text is FIXED — the same words for every user, with no
+ * per-holder copyright line anywhere in them.
+ *
+ * That distinction is the whole basis for the fallback below. Apache 2.0 §4(a)
+ * asks that recipients be given a copy of the License, and the License is this
+ * exact document; shipping it discharges the obligation completely, whoever
+ * the licensor happens to be. MIT does not work that way — it asks for "the
+ * above copyright notice", which is the package's own and is not recoverable
+ * from a template. So a canonical MIT text would look like compliance while
+ * attributing nobody, which is worse than admitting the gap.
+ *
+ * Sourced from the corpus itself rather than transcribed: each file is the
+ * most-shipped copy of that licence among our own dependencies, so it cannot
+ * drift from the text the ecosystem actually uses. Verified to carry no
+ * specific copyright holder.
+ */
+const CANONICAL_DIR = join(ROOT, "scripts", "licence-texts");
+const FIXED_TEXT_LICENCES = [
+  "Apache-2.0",
+  "MPL-2.0",
+  "BSL-1.0",
+  "CC0-1.0",
+  "Unicode-3.0",
+  "Unlicense",
+];
+
+/**
+ * The canonical text for a declared licence, when the package shipped none.
+ *
+ * For a disjunction — `MIT OR Apache-2.0`, and the 72 variants of it in this
+ * tree — complying under one branch is what OR means, so the Apache text is a
+ * complete answer even though the MIT half of the expression is unanswerable.
+ * Returns null when nothing in the expression has a fixed text, which leaves
+ * the component honestly marked as carrying no notice.
+ */
+function canonicalTextFor(licence) {
+  if (!licence) return null;
+  for (const id of FIXED_TEXT_LICENCES) {
+    if (!licence.includes(id)) continue;
+    const path = join(CANONICAL_DIR, `${id}.txt`);
+    if (!existsSync(path)) {
+      throw new Error(
+        `${id} is listed as fixed-text but ${path} is missing. The fallback ` +
+          `would silently stop applying and components would lose their notice.`,
+      );
+    }
+    return { text: readFileSync(path, "utf8").trim(), licence: id };
+  }
+  return null;
+}
+
 function firstString(...candidates) {
   for (const c of candidates) {
     if (typeof c === "string" && c.trim()) return c.trim();
@@ -207,12 +259,25 @@ function build() {
   // fraction of that without losing a single distinct notice.
   const texts = {};
   const rows = components.map(({ text, ...rest }) => {
+    // A package that declares a fixed-text licence but ships no file: the
+    // canonical text IS its notice, so carry it rather than leaving a gap
+    // that looks like the dependency has no terms at all. Marked, because a
+    // reader should be able to tell a notice the author shipped from one we
+    // supplied on their behalf.
+    let canonicalFor = null;
+    if (!text) {
+      const canonical = canonicalTextFor(rest.license);
+      if (canonical) {
+        text = canonical.text;
+        canonicalFor = canonical.licence;
+      }
+    }
     let textId = null;
     if (text) {
       textId = createHash("sha256").update(text).digest("hex").slice(0, 12);
       texts[textId] = text;
     }
-    return { ...rest, textId };
+    return canonicalFor ? { ...rest, textId, canonicalFor } : { ...rest, textId };
   });
 
   rows.sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version));

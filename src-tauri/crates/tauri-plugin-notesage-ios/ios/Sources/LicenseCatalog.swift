@@ -31,14 +31,22 @@ public enum LicenseCatalog {
     public let license: String?
     public let publisher: String?
     public let url: String?
-    /// Key into `texts`. Absent when no licence file was found on disk, which
-    /// is a packaging fault worth showing rather than hiding — see
-    /// `componentsWithoutText`.
+    /// Key into `texts`. Absent when no licence file was found on disk and no
+    /// canonical text applies — see `componentsWithoutText`.
     public let textId: String?
+    /// Set when the notice shown is the CANONICAL text for a fixed-text
+    /// licence rather than a file the package shipped.
+    ///
+    /// Surfaced rather than hidden: Apache 2.0 §4(a) is discharged by the
+    /// canonical text whoever the licensor is, so substituting it is correct —
+    /// but a reader should still be able to tell which notices came from the
+    /// author and which the build supplied on their behalf.
+    public let canonicalFor: String?
 
     public init(
       kind: String, name: String, version: String? = nil, license: String? = nil,
-      publisher: String? = nil, url: String? = nil, textId: String? = nil
+      publisher: String? = nil, url: String? = nil, textId: String? = nil,
+      canonicalFor: String? = nil
     ) {
       self.kind = kind
       self.name = name
@@ -47,6 +55,7 @@ public enum LicenseCatalog {
       self.publisher = publisher
       self.url = url
       self.textId = textId
+      self.canonicalFor = canonicalFor
     }
   }
 
