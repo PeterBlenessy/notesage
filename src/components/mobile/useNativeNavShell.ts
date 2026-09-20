@@ -225,6 +225,7 @@ export function useNativeNavShell(active: boolean): void {
         try {
           if (store.openDoc) store.closeDocument();
           if (store.homeEditorOpen) store.closeHomeEditor();
+          if (store.acknowledgementsOpen) store.closeAcknowledgements();
           store.goToDepth(0);
         } finally {
           applyingPop.current = false;
@@ -241,7 +242,14 @@ export function useNativeNavShell(active: boolean): void {
           // Nothing above it to unwind.
         } else if (target.closesDoc) {
           if (store.openDoc) store.closeDocument();
-          if (store.homeEditorOpen) store.closeHomeEditor();
+          // Which flags a pop shuts is decided in `storeStateForScreen`, not
+          // here: listing them by hand is what let Acknowledgements reopen
+          // itself on Back, because this branch knew about two flags and there
+          // were three.
+          if (store.homeEditorOpen && target.closesHomeEditor) store.closeHomeEditor();
+          if (store.acknowledgementsOpen && target.closesAcknowledgements) {
+            store.closeAcknowledgements();
+          }
           store.goToDepth(target.folderDepth);
         } else {
           // Back to a document in the link trail. `goBack` walks it one step

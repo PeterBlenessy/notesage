@@ -155,7 +155,22 @@ export function diffNavStack(current: NavScreen[], next: NavScreen[]): NavStackD
 export function storeStateForScreen(
   screens: NavScreen[],
   screenId: string,
-): { folderDepth: number; docTrail: number; closesDoc: boolean } | null {
+): {
+  folderDepth: number;
+  docTrail: number;
+  closesDoc: boolean;
+  /** Whether the Home editor should now be shut. */
+  closesHomeEditor: boolean;
+  /** Whether the acknowledgements screen should now be shut.
+   *
+   *  This exists because leaving it out was a bug: the pop handler cleared
+   *  `openDoc` and `homeEditorOpen` by hand and knew nothing about this flag,
+   *  so Back from Acknowledgements left it set, the reconcile re-derived a
+   *  stack that still contained the screen, and it reopened immediately.
+   *  Deciding it HERE means the rule is covered by the nav-stack tests rather
+   *  than living in a hook that needs a device to exercise. */
+  closesAcknowledgements: boolean;
+} | null {
   const index = screens.findIndex((s) => s.id === screenId);
   if (index < 0) return null;
   const above = screens.slice(0, index + 1);
@@ -174,5 +189,11 @@ export function storeStateForScreen(
     // The trail is everything below the document now on top.
     docTrail: Math.max(0, docs.length - 1),
     closesDoc: docs.length === 0,
+    // Both are pushed from Home with nothing nesting inside them, so each is
+    // open exactly when it is the screen now on top. `screenId` is the screen
+    // REVEALED by the pop, not the one dismissed — which is why neither can be
+    // recognised from the id of what went away.
+    closesHomeEditor: screenId !== HOME_EDITOR_KEY,
+    closesAcknowledgements: screenId !== ACKNOWLEDGEMENTS_KEY,
   };
 }

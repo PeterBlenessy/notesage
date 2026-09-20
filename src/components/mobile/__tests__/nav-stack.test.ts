@@ -160,6 +160,8 @@ describe("storeStateForScreen", () => {
       folderDepth: 1,
       docTrail: 0,
       closesDoc: true,
+      closesHomeEditor: true,
+      closesAcknowledgements: true,
     });
   });
 
@@ -168,6 +170,8 @@ describe("storeStateForScreen", () => {
       folderDepth: 0,
       docTrail: 0,
       closesDoc: true,
+      closesHomeEditor: true,
+      closesAcknowledgements: true,
     });
   });
 
@@ -177,6 +181,8 @@ describe("storeStateForScreen", () => {
       folderDepth: 2,
       docTrail: 0,
       closesDoc: false,
+      closesHomeEditor: true,
+      closesAcknowledgements: true,
     });
   });
 
@@ -241,6 +247,34 @@ describe("Home and All Folders are both the root, and must not share an id", () 
     });
     expect(screens.map((s) => s.id)).toEqual([HOME_KEY, ""]);
     expect(HOME_KEY.startsWith("/")).toBe(true);
+  });
+
+  // The bug Peter hit on build 79: Back from Acknowledgements reopened it
+  // immediately. The pop handler cleared `openDoc` and `homeEditorOpen` by
+  // hand and knew nothing about the third flag, so it stayed set, the
+  // reconcile re-derived a stack that still contained the screen, and pushed
+  // it straight back. A loop you cannot leave.
+  it("a pop back to Home shuts the acknowledgements screen", () => {
+    const screens = deriveNavStack({ ...base, acknowledgementsOpen: true });
+    // `screenId` is the screen REVEALED by the pop, not the one dismissed —
+    // so this arrives as a pop to Home, with nothing in the id naming what
+    // went away.
+    expect(storeStateForScreen(screens, HOME_KEY)?.closesAcknowledgements).toBe(true);
+  });
+
+  it("staying on the acknowledgements screen does not shut it", () => {
+    const screens = deriveNavStack({ ...base, acknowledgementsOpen: true });
+    expect(
+      storeStateForScreen(screens, ACKNOWLEDGEMENTS_KEY)?.closesAcknowledgements,
+    ).toBe(false);
+  });
+
+  // The same rule for the Home editor, which had the same shape and was only
+  // correct because the handler happened to name it.
+  it("a pop back to Home shuts the Home editor", () => {
+    const screens = deriveNavStack({ ...base, homeEditorOpen: true });
+    expect(storeStateForScreen(screens, HOME_KEY)?.closesHomeEditor).toBe(true);
+    expect(storeStateForScreen(screens, HOME_EDITOR_KEY)?.closesHomeEditor).toBe(false);
   });
 
   it("does not count acknowledgements as a folder level", () => {
