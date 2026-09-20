@@ -25,16 +25,12 @@ screen; the sender warns past that.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-The Acknowledgements list opens now, and it is a great deal shorter.
+Back works on the Acknowledgements screen now.
 
 FIXED
-• Tapping a row in Acknowledgements did nothing in build 78. The licence text
-never opened, which was the whole point of the screen.
-
-CHANGED
-• It lists 42 licences rather than 1,510 packages. Tap one to see every
-package under it and the licence itself, in full.
+• In build 79 the Back button on Acknowledgements put you straight back on it,
+so the only way out was to quit the app. It returns to Home now.
 
 TRY
-• "…" on Home, then Acknowledgements. Tap MIT — 643 packages and the text.
-• Search for a package by name, like "tiptap", to go straight to its notice.
+• "…" on Home, then Acknowledgements, then Back. Once is enough.
+• While you are there: tap MIT for its 643 packages and the licence itself.
