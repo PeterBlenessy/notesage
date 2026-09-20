@@ -38,7 +38,7 @@ pub(crate) fn spawn_mcp_transport(
     let reader_pending = transport.pending.clone();
 
     tokio::spawn(async move {
-        if let Err(e) = mcp_reader_loop(stdout, reader_pending, child_pid, &server_id, &app).await {
+        if let Err(e) = mcp_reader_loop(stdout, reader_pending, child_pid, &server_id, Some(&app)).await {
             log::error!(target: "notesage::mcp", "Reader loop exited for server {}: {}", server_id, e);
             let _ = app.emit(
                 "mcp-server-status",
@@ -60,12 +60,20 @@ pub(crate) fn spawn_mcp_transport(
 
 const MCP_READER_TIMEOUT: Duration = Duration::from_secs(30);
 
-async fn mcp_reader_loop(
-    stdout: ChildStdout,
+/// Pump a server's stdout into the pending-request table until it dies.
+///
+/// `app` is optional so the loop can be driven without a Tauri application —
+/// it is used in exactly one place, a best-effort status emit on fatal error,
+/// and requiring it was the only thing keeping the stdio path out of reach of
+/// a test. Generic over the reader for the same reason:
+/// `json_rpc::read_next_message` already is, so this costs nothing and lets a
+/// test supply any stream.
+async fn mcp_reader_loop<R: tokio::io::AsyncRead + Unpin>(
+    stdout: R,
     pending: PendingRequests,
     child_pid: Option<u32>,
     server_id: &str,
-    app: &AppHandle,
+    app: Option<&AppHandle>,
 ) -> Result<(), String> {
     let mut reader = BufReader::new(stdout);
 
@@ -82,14 +90,16 @@ async fn mcp_reader_loop(
             }
             ReadMessageResult::Fatal(e) => {
                 log::error!(target: "notesage::mcp", "MCP server {} reader fatal: {}", server_id, e);
-                let _ = app.emit(
-                    "mcp-server-status",
-                    serde_json::json!({
-                        "serverId": server_id,
-                        "status": "error",
-                        "error": format!("Server process exited: {}", e),
-                    }),
-                );
+                if let Some(app) = app {
+                    let _ = app.emit(
+                        "mcp-server-status",
+                        serde_json::json!({
+                            "serverId": server_id,
+                            "status": "error",
+                            "error": format!("Server process exited: {}", e),
+                        }),
+                    );
+                }
                 return Err(format!("MCP server {} reader: {}", server_id, e));
             }
         }
@@ -471,5 +481,159 @@ mod tests {
     fn parse_http_response_empty_stream_is_error() {
         let err = parse_jsonrpc_http_response("text/event-stream", "", 7).unwrap_err();
         assert!(err.contains("No matching"));
+    }
+}
+
+#[cfg(test)]
+mod stdio_harness {
+    //! A real MCP server on stdio, for the dual-era client work (#573).
+    //!
+    //! The era-detection work in #576 needs a server that answers
+    //! `server/discover` like a 2026-07-28 one, one that rejects the method
+    //! like a pre-2026 one, and one that never answers at all. None of that
+    //! was reachable before: this module's tests only exercised pure response
+    //! parsers, and the stdio path could not be driven from a test at all.
+    //!
+    //! Two things were in the way, both fixed above:
+    //!
+    //! - `mcp_reader_loop` demanded an `AppHandle`, for one best-effort status
+    //!   emit. It takes an `Option` now, so the loop runs without a Tauri app.
+    //! - It demanded a `ChildStdout`. `json_rpc::read_next_message` was already
+    //!   generic over `AsyncBufRead`, so the loop is generic too, for free.
+    //!
+    //! What is deliberately NOT done: making `JsonRpcTransport` generic over
+    //! its writer. It holds a concrete `ChildStdin` and is shared with the
+    //! Copilot LSP client, so a type parameter there would cascade into a
+    //! subsystem that has nothing to do with MCP. Spawning a real process
+    //! avoids that, and is the higher-fidelity test anyway — the framing, the
+    //! chunk boundaries and the process lifetime are all genuine.
+    //!
+    //! In-module rather than under `tests/` because the crate's `commands`
+    //! module is private, and widening it to `pub` for a test would be a
+    //! bigger change than the test is worth.
+    //!
+    //! The server is `tests/fixtures/mcp/mock-mcp-server.mjs`, which picks a
+    //! behaviour from argv. Node keeps the mock legible and easy to extend for
+    //! phases 2-4; the Rust CI job gains a `setup-node` step for it.
+
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    use serde_json::{json, Value};
+    use tokio::io::{AsyncWriteExt, BufReader};
+    use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+
+    use crate::commands::json_rpc::{read_next_message, JsonRpcMessage, ReadMessageResult};
+
+    fn spawn_mock(behaviour: &str) -> (Child, ChildStdin, ChildStdout) {
+        let script = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/mcp/mock-mcp-server.mjs"
+        );
+        let mut child = Command::new("node")
+            .arg(script)
+            .arg(behaviour)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("node is required for the MCP harness — see the module comment");
+        let stdin = child.stdin.take().expect("piped");
+        let stdout = child.stdout.take().expect("piped");
+        (child, stdin, stdout)
+    }
+
+    /// Write one Content-Length framed request, the way the client does.
+    async fn write_frame(stdin: &mut ChildStdin, body: &Value) {
+        let text = serde_json::to_string(body).unwrap();
+        stdin
+            .write_all(format!("Content-Length: {}\r\n\r\n{}", text.len(), text).as_bytes())
+            .await
+            .unwrap();
+        stdin.flush().await.unwrap();
+    }
+
+    /// Read one framed message back, or None if the server stays silent.
+    async fn read_frame(
+        stdout: &mut BufReader<ChildStdout>,
+        within: Duration,
+    ) -> Option<JsonRpcMessage> {
+        match read_next_message(stdout, within, None).await {
+            ReadMessageResult::Message(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    /// The protocol version out of a successful result.
+    fn protocol_version(message: &JsonRpcMessage) -> Option<&str> {
+        message.result.as_ref()?.get("protocolVersion")?.as_str()
+    }
+
+    /// The JSON-RPC error code, which is what classifies an era.
+    fn error_code(message: &JsonRpcMessage) -> Option<i64> {
+        message.error.as_ref().map(|e| e.code)
+    }
+
+    #[tokio::test]
+    async fn a_modern_server_answers_server_discover() {
+        let (mut child, mut stdin, stdout) = spawn_mock("modern");
+        let mut reader = BufReader::new(stdout);
+
+        write_frame(&mut stdin, &json!({"jsonrpc":"2.0","id":1,"method":"server/discover"})).await;
+        let reply = read_frame(&mut reader, Duration::from_secs(5))
+            .await
+            .expect("a modern server replies to server/discover");
+
+        assert_eq!(protocol_version(&reply), Some("2026-07-28"));
+        let _ = child.kill().await;
+    }
+
+    #[tokio::test]
+    async fn a_legacy_server_rejects_discover_and_answers_initialize() {
+        let (mut child, mut stdin, stdout) = spawn_mock("legacy");
+        let mut reader = BufReader::new(stdout);
+
+        write_frame(&mut stdin, &json!({"jsonrpc":"2.0","id":1,"method":"server/discover"})).await;
+        let probe = read_frame(&mut reader, Duration::from_secs(5)).await.expect("a reply");
+        // Method-not-found is the signal that classifies a server as legacy.
+        assert_eq!(error_code(&probe), Some(-32601));
+
+        write_frame(&mut stdin, &json!({"jsonrpc":"2.0","id":2,"method":"initialize"})).await;
+        let init = read_frame(&mut reader, Duration::from_secs(5)).await.expect("a reply");
+        assert_eq!(protocol_version(&init), Some("2025-06-18"));
+        let _ = child.kill().await;
+    }
+
+    #[tokio::test]
+    async fn a_modern_server_may_reject_our_version_before_agreeing() {
+        // The retry case: rejected once with -32021, then answers. Era
+        // detection must read this as Modern and retry, never as a reason to
+        // fall back to the legacy handshake.
+        let (mut child, mut stdin, stdout) = spawn_mock("modern-newer");
+        let mut reader = BufReader::new(stdout);
+
+        write_frame(&mut stdin, &json!({"jsonrpc":"2.0","id":1,"method":"server/discover"})).await;
+        let rejected = read_frame(&mut reader, Duration::from_secs(5)).await.expect("a reply");
+        assert_eq!(error_code(&rejected), Some(-32021));
+
+        write_frame(&mut stdin, &json!({"jsonrpc":"2.0","id":2,"method":"server/discover"})).await;
+        let agreed = read_frame(&mut reader, Duration::from_secs(5)).await.expect("a reply");
+        assert_eq!(protocol_version(&agreed), Some("2026-07-28"));
+        let _ = child.kill().await;
+    }
+
+    #[tokio::test]
+    async fn a_silent_server_times_out_rather_than_hanging() {
+        // The probe-timeout case. A short window because the point is that it
+        // returns at all, not how long the real 5s probe waits.
+        let (mut child, mut stdin, stdout) = spawn_mock("silent");
+        let mut reader = BufReader::new(stdout);
+
+        write_frame(&mut stdin, &json!({"jsonrpc":"2.0","id":1,"method":"server/discover"})).await;
+        assert!(
+            read_frame(&mut reader, Duration::from_millis(600)).await.is_none(),
+            "a server that never answers must time out, not block the test"
+        );
+        let _ = child.kill().await;
     }
 }

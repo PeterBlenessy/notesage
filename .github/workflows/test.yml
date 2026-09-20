@@ -579,6 +579,19 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      # The MCP stdio harness spawns a mock server written in Node
+      # (`src-tauri/tests/fixtures/mcp/mock-mcp-server.mjs`). `JsonRpcTransport`
+      # holds a concrete `ChildStdin` and is shared with the Copilot LSP client,
+      # so admitting an in-memory fake would mean a type parameter cascading
+      # into a subsystem unrelated to MCP — spawning a real process avoids that
+      # and tests the real framing. Runners ship Node, but this job pinned none,
+      # and relying on an unpinned default is how a version bump becomes a
+      # mystery failure here.
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
