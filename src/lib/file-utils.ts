@@ -1,4 +1,3 @@
-import { isCodeFile } from "@/lib/codemirror-languages";
 import type { FileEntry } from "@/lib/tauri";
 
 /**
@@ -71,30 +70,3 @@ export function isBinaryFileType(fileType: FileType): boolean {
   return fileType === "pdf" || fileType === "docx" || fileType === "epub" || fileType === "pptx" || fileType === "image";
 }
 
-/**
- * Map a file to a low-cardinality telemetry document format (document_opened).
- * Derives from the resolved `FileType` plus a code-file check on the name so
- * `.ts`/`.py`/etc. report `code` while plain `.txt`/`.log` report `text`.
- * Pure — no DOM, no PII (format, not path).
- */
-export function documentFormat(
-  fileName: string,
-  fileType: FileType,
-): "md" | "epub" | "pdf" | "docx" | "pptx" | "code" | "image" | "text" {
-  switch (fileType) {
-    case "markdown":
-      return "md";
-    case "epub":
-      return "epub";
-    case "pdf":
-      return "pdf";
-    case "docx":
-      return "docx";
-    case "pptx":
-      return "pptx";
-    case "image":
-      return "image";
-    default:
-      return isCodeFile(fileName) ? "code" : "text";
-  }
-}

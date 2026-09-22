@@ -92,7 +92,7 @@ already, so repeating them wastes the budget.
 | --- | --- | --- |
 | Support URL | *(decide)* — `https://github.com/PeterBlenessy/notesage/issues` is acceptable and honest | **needs a decision** |
 | Marketing URL | optional — omit unless there is a real page | — |
-| Privacy Policy URL | wherever [`privacy-policy.md`](privacy-policy.md) ends up hosted | **needs hosting** |
+| Privacy Policy URL | `https://notesage.io/privacy/` | ✅ published |
 
 ## Copyright
 

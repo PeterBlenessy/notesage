@@ -41,14 +41,16 @@ describe("Labs panel", () => {
     expect(screen.getAllByText(/Added in 0\.49\.0/)).toHaveLength(2);
   });
 
-  it("discloses the telemetry coupling BEFORE anything is enabled", () => {
-    // The consent obligation from the PRD: enabling a FEATURE also enables
-    // data collection, so it must be stated where the user acts — not only
-    // in the privacy policy, and not after the fact.
+  it("promises no reporting, because turning a flag on now reports nothing", () => {
+    // This test used to assert the OPPOSITE: Labs had to disclose, before the
+    // user acted, that enabling a feature also switched on usage and crash
+    // reporting. That bargain is gone with the telemetry itself, so the copy
+    // that sold it has to go too — stale consent language is worse than none,
+    // because it describes collection the app no longer performs.
     renderWithProviders(<LabsSettings />);
-    const hint = screen.getByText(/usage and crash reporting/i);
-    expect(hint).toBeTruthy();
-    expect(hint.textContent).toMatch(/turn that back off/i);
+    const intro = screen.getByText(/Features still being worked on/i);
+    expect(intro.textContent).toMatch(/nothing is reported anywhere/i);
+    expect(intro.textContent).not.toMatch(/crash reporting/i);
     expect(useFlagStore.getState().enabled).toEqual([]);
   });
 

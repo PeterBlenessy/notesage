@@ -12,36 +12,15 @@ import { useDirectApiChat } from '@/hooks/useDirectApiChat';
 import { useAcpLifecycle } from '@/hooks/useAcpLifecycle';
 import { useCopilotChat } from '@/hooks/useCopilotChat';
 import { findLockConflict, ProjectLockViolation, describeLockTarget } from '@/lib/ai/project-lock';
-import { track, providerKind, type AiPath } from '@/lib/telemetry';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useSessionRunStore, selectIsInFlight } from '@/stores/session-run-store';
 import { useMessageQueueStore } from '@/stores/message-queue-store';
 import { hasSessionCapacity, enqueueSend, dropQueuedSend, isSendQueued } from '@/lib/ai/session-run';
-import type { Connection } from '@/lib/ai/connections';
 
 // Re-export ACP utilities for external consumers
 export { stopAcpAgent, stopAllAcpAgents } from '@/lib/ai/acp-agent-state';
 export { truncateDetail, formatAcpToolName } from '@/lib/ai/acp-utils';
 export { ProjectLockViolation };
-
-// ---------------------------------------------------------------------------
-// Telemetry — classify which of the four routing paths handles a send. Mirrors
-// the branch order in `sendChatMessage` exactly so the reported `path` matches
-// the path actually taken.
-// ---------------------------------------------------------------------------
-
-function aiPathFor(conn: Connection | null): AiPath {
-  if (
-    conn?.credentials &&
-    'agentBinary' in conn.credentials &&
-    conn.credentials.agentBinary === 'copilot-language-server'
-  ) {
-    return 'copilot_lsp';
-  }
-  if (conn?.authMethod === 'agent_managed') return 'acp';
-  if (conn?.authMethod === 'local_bundled') return 'local_bundled';
-  return 'direct';
-}
 
 // ---------------------------------------------------------------------------
 // Hook — routes AI operations between direct API and ACP paths
@@ -189,20 +168,6 @@ export function useAIOperations() {
         return;
       }
 
-      const chatPath = aiPathFor(effectiveConnection);
-      track('ai_chat_sent', {
-        path: chatPath,
-        // A Copilot LSP connection's authMethod is the generic `agent_managed`,
-        // which providerKind() collapses to "agent_managed" — but the routing
-        // path is copilot_lsp. Report copilot_lsp so path/provider_kind agree.
-        provider_kind:
-          chatPath === 'copilot_lsp'
-            ? 'copilot_lsp'
-            : providerKind(
-                effectiveConnection?.provider ?? resolved?.provider ?? '',
-                effectiveConnection?.authMethod ?? '',
-              ),
-      });
       // Route to the path that owns this connection's streaming. `sendOpts`
       // lets a deferred send name its target conversation (see the cap below).
       const route = (sendOpts: typeof opts = opts) => {

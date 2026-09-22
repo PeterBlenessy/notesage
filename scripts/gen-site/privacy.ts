@@ -54,9 +54,8 @@ export function privacyHtml(css: string): string {
     ),
     sec(
       '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="14" width="3" height="4"/>',
-      "Telemetry is opt-out — and off in stable builds",
-      `<p>Stable releases collect no usage data or crash reports. Pre-release (alpha) builds turn on basic, anonymous diagnostics by default to catch problems early — and you can switch both usage and crash reporting off at any time in Settings, with a first-run notice when they're on. Whatever the build, the contents of your notes are never collected, and the app otherwise makes only the network connections you set up yourself (your AI provider, iCloud if enabled).</p>
-       <p>Some third-party AI providers may collect data under their own policies — check your provider's documentation for details.</p>`,
+      "Nothing is collected",
+      `<p>Notesage collects no usage data and no crash reports, on either platform. The analytics and crash-reporting libraries are not switched off — they are not compiled into the app, and there is no setting that could turn them on. This changed on 21 September 2026; earlier Mac versions could send anonymous diagnostics, off by default. The contents of your notes are never collected. Some third-party AI providers may collect data under their own policies — check your provider's documentation.</p>`,
     ),
     sec(
       '<path d="m18 16 4-4-4-4"/><path d="m6 8-4 4 4 4"/><path d="m14.5 4-5 16"/>',

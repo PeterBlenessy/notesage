@@ -4,7 +4,6 @@ import { useRecording } from "@/hooks/useRecording";
 import { useRecordingStore } from "@/stores/recording-store";
 import { useActivityStore } from "@/stores/activity-store";
 import { startTranscription } from "@/hooks/useTranscriptionJob";
-import { track } from "@/lib/telemetry";
 import { tauriApi, type RecordingResult } from "@/lib/tauri";
 import { appVersion } from "@/lib/version";
 import { basename, dirname, writeRecordingManifest } from "@/lib/transcription/bundle";
@@ -149,7 +148,6 @@ export function useMeetingRecording(): MeetingRecordingHook {
           liveRecordingItemId = null;
           return;
         }
-        track("feature_used", { feature: "recording" });
       } catch (err) {
         // Capture never began — remove the live activity item so the orb doesn't
         // show a stuck "Recording" indicator, clear the id, and surface the error.

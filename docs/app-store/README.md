@@ -38,7 +38,7 @@ else in this folder is for later.
 | File | For |
 | --- | --- |
 | [`app-privacy.md`](app-privacy.md) | The App Privacy questionnaire, answered, with the evidence for each answer |
-| [`privacy-policy.md`](privacy-policy.md) | The policy itself — needs hosting at a public URL before store submission |
+| [`privacy-policy.md`](privacy-policy.md) | Pointer only — the policy is published at <https://notesage.io/privacy/> |
 | [`testflight.md`](testflight.md) | Beta description, feedback email, "What to Test" |
 | [`listing.md`](listing.md) | Name, subtitle, description, keywords, category, URLs |
 | [`screenshots.md`](screenshots.md) | Required sizes and the shot list |

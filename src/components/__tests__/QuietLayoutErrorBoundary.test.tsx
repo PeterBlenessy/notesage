@@ -85,8 +85,6 @@ vi.mock('@/stores/settings-store', () => {
     SIDEBAR_MIN_WIDTH: 200,
     SIDEBAR_MAX_WIDTH: 500,
     SIDEBAR_DEFAULT_WIDTH: 252,
-    // ErrorBoundary.componentDidCatch consults the crash-telemetry consent.
-    selectEffectiveTelemetryCrash: () => false,
   };
 });
 

@@ -90,17 +90,6 @@ async function setSidebar(pinned: boolean): Promise<void> {
   await browser.pause(350);
 }
 
-/** Dismiss the alpha telemetry first-run notice by clicking its close button —
- *  a real dismissal, like a user would (the toast has `closeButton: true`). */
-async function dismissNotice(): Promise<void> {
-  const close = await browser.$('[data-sonner-toast] [data-close-button]');
-  await close.waitForExist({ timeout: 5000 }).catch(() => {});
-  if (await close.isExisting().catch(() => false)) {
-    await close.click().catch(() => {});
-    await browser.pause(400);
-  }
-}
-
 /** Clear stray hover tooltips / suggestion popovers and blur the active target,
  *  then park the caret on the title so no link/tag tooltip lingers. Not for the
  *  command-bar shots (Escape would close the bar). */
@@ -147,7 +136,6 @@ describe('marketing screenshots (manual)', () => {
     // which wedges the Tiptap editor and leaves it blank.
     await browser.pause(1500);
     await openHero();
-    await dismissNotice();
     await clearTransient();
   });
 

@@ -1,8 +1,7 @@
 import { useEffect } from "react";
 import { useEditorStore } from "@/stores/editor-store";
 import { tauriApi } from "@/lib/tauri";
-import { isBinaryFileType, documentFormat, type FileType } from "@/lib/file-utils";
-import { track } from "@/lib/telemetry";
+import { isBinaryFileType, type FileType } from "@/lib/file-utils";
 import { log } from "@/lib/logger";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { setBinaryData } from "@/lib/binary-cache";
@@ -44,7 +43,6 @@ export function useEditorTabContentLoader({
     const t0 = performance.now();
     const fileName = filePath.split("/").pop() ?? filePath;
 
-    track("document_opened", { format: documentFormat(fileName, fileType) });
 
     (async () => {
       try {

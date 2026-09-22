@@ -32,7 +32,6 @@ describe('diagnose (manual)', () => {
         },
         overlays,
         settings: {
-          telemetryNoticeSeen: s.telemetryNoticeSeen,
           uiPreview: s.uiPreview,
           theme: s.theme,
           startupReady: s.startupReady,

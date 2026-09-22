@@ -19,7 +19,6 @@ import { SettingsRow } from './SettingsRow';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
 import { useSettingsStore } from '@/stores/settings-store';
-import { track, trackSettingToggle } from '@/lib/telemetry';
 import type { AccentName } from '@/lib/accent';
 import type { Locale } from '@/lib/i18n';
 import { t, type MessageKey } from '@/lib/i18n';
@@ -237,7 +236,6 @@ export function AppearanceSettings() {
               onChange={(v) => {
                 const next = v === 'system' ? null : (v as Locale);
                 setLocale(next);
-                track('setting_changed', { setting: 'locale', value: v });
               }}
             />
           }
@@ -263,7 +261,7 @@ export function AppearanceSettings() {
                 ariaLabel: t(o.labelKey),
               }))}
               value={theme}
-              onChange={(v) => { setTheme(v); track("setting_changed", { setting: "theme", value: v }); }}
+              onChange={setTheme}
             />
           }
         />
@@ -289,7 +287,7 @@ export function AppearanceSettings() {
                 ariaLabel: t(o.labelKey),
               }))}
               value={accent}
-              onChange={(v) => { setAccent(v); track("setting_changed", { setting: "accent", value: v }); }}
+              onChange={setAccent}
               columns={4}
             />
           }
@@ -440,7 +438,7 @@ export function AppearanceSettings() {
                 ariaLabel: t(o.labelKey),
               }))}
               value={quietChromePreset === 'custom' ? 'default' : quietChromePreset}
-              onChange={(v) => { setQuietChromePreset(v); track("setting_changed", { setting: "quiet_preset", value: v }); }}
+              onChange={setQuietChromePreset}
             />
           }
           controlSublabel={
@@ -480,7 +478,7 @@ export function AppearanceSettings() {
             <Switch
               id="appearance-show-title-bar"
               checked={showTitleBar}
-              onCheckedChange={(v) => { setShowTitleBar(v); trackSettingToggle("title_bar", v); }}
+              onCheckedChange={setShowTitleBar}
             />
           }
         />

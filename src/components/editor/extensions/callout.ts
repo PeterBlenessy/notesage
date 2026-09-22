@@ -1,6 +1,5 @@
 import { Node, mergeAttributes, InputRule } from "@tiptap/core";
 import { TextSelection } from "@tiptap/pm/state";
-import { track } from "@/lib/telemetry";
 
 export type CalloutType = "note" | "tip" | "warning" | "important";
 
@@ -97,8 +96,7 @@ export const Callout = Node.create({
     return {
       setCallout:
         (attrs) =>
-        ({ commands, dispatch }) => {
-          if (dispatch) track("block_inserted", { kind: "callout" });
+        ({ commands }) => {
           return commands.wrapIn(this.name, attrs);
         },
       toggleCallout:

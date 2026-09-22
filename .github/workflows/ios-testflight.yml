@@ -136,8 +136,6 @@ jobs:
           # and the upload confirmation. On a laptop both still ask.
           ASSUME_YES: "1"
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          NOTESAGE_APTABASE_KEY: ${{ secrets.NOTESAGE_APTABASE_KEY }}
-          NOTESAGE_SENTRY_DSN: ${{ secrets.NOTESAGE_SENTRY_DSN }}
         run: scripts/ios-testflight.sh
 
       - name: Remove the key

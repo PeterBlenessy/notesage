@@ -21,8 +21,9 @@
 <dict>
     <!-- No tracking, no collection. Matches docs/app-store/app-privacy.md,
          which is defensible rather than aspirational: the Sentry and Aptabase
-         crates are gated off the iOS target in Cargo.toml, so no telemetry
-         client is compiled into this binary at all. -->
+         crates are gone from Cargo.toml entirely, for every target, so no
+         telemetry client is compiled into this binary at all. This used to be
+         an iOS-only gate; since 2026-09-21 it holds for the Mac app too. -->
     <key>NSPrivacyTracking</key>
     <false/>
     <key>NSPrivacyTrackingDomains</key>

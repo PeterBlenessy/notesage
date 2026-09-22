@@ -56,12 +56,6 @@ function loadDefaultCapability(): DefaultCapability {
   return JSON.parse(readFileSync(defaultCapPath, 'utf8')) as DefaultCapability;
 }
 
-/** Load a capability by file stem, e.g. `desktop-telemetry`. */
-function loadCapability(name: string): DefaultCapability {
-  const path = join(dirname(defaultCapPath), `${name}.json`);
-  return JSON.parse(readFileSync(path, 'utf8')) as DefaultCapability;
-}
-
 /**
  * Every permission identifier granted across ALL capability files.
  *
@@ -187,57 +181,22 @@ describe('tauri default capability permissions', () => {
     expect(fsPermissions).toEqual([]);
   });
 
-  it('grants sentry:default in the DESKTOP-ONLY telemetry capability, never in default', () => {
-    // `tauri-plugin-sentry` routes frontend errors through Rust via `invoke`;
-    // `sentry:default` enables that bridge. It is an invoke permission, NOT a
-    // network permission — egress originates from the Rust SDK, so this does
-    // not widen the frontend's HTTP surface. See PRD 2026-06-07-telemetry.
+  it('grants no telemetry permission in any capability file', () => {
+    // Successor to three tests that pinned the SHAPE of a `desktop-telemetry`
+    // capability — where `sentry:default` and `aptabase:allow-track-event`
+    // lived, and that it was platform-scoped off iOS so the App Store label
+    // could say "Data Not Collected".
     //
-    // It lives in `desktop-telemetry.json` (platform-scoped), NOT in
-    // `default.json`: the sentry crates are gated off the iOS target (#587 —
-    // the "Data Not Collected" privacy label relies on the SDK not linking
-    // there), and a capability naming a permission from a plugin that isn't
-    // built fails the iOS build outright.
-    const desktopTelemetry = loadCapability('desktop-telemetry');
-    const identifiers = desktopTelemetry.permissions.map((perm) =>
-      typeof perm === 'string' ? perm : perm.identifier,
+    // Both plugins are gone from every target, and the published policy at
+    // notesage.io/privacy now says the app collects nothing at all. So the
+    // assertion inverts: not "granted in the right place" but "granted
+    // nowhere". Scanning every capability file is what makes it hold — a
+    // permission reintroduced in a NEW file would slip past a check that only
+    // read the one it used to live in.
+    const telemetryPerms = allCapabilityPermissions().filter(
+      (id) => id.startsWith('aptabase:') || id.startsWith('sentry:'),
     );
-    expect(identifiers).toContain('sentry:default');
-    expect(desktopTelemetry.platforms).not.toContain('iOS');
-
-    const cap = loadDefaultCapability();
-    const defaultIdentifiers = cap.permissions.map((perm) =>
-      typeof perm === 'string' ? perm : perm.identifier,
-    );
-    expect(defaultIdentifiers).not.toContain('sentry:default');
-  });
-
-  it('grants aptabase:allow-track-event, and ONLY that, across every capability file', () => {
-    // `tauri-plugin-aptabase` exposes only the `track_event` command and ships
-    // NO `aptabase:default` set, so the command must be granted explicitly. We
-    // invoke it directly through the v2 IPC (the npm JS binding is pinned to the
-    // Tauri v1 API and can't reach the v2 bridge). Like sentry, this is an
-    // invoke permission, NOT a network permission — egress is Rust-side
-    // `reqwest`, so it does not widen the frontend HTTP surface.
-    //
-    // It lives in `desktop-telemetry.json` rather than `default.json` because
-    // the plugin does not compile for iOS, so the dependency is gated off there
-    // — and a capability naming a permission from a plugin that isn't built
-    // fails the build. Scanning EVERY capability file (rather than one) is the
-    // stronger check: it also catches a broader aptabase scope smuggled into a
-    // new file.
-    const perms = allCapabilityPermissions().filter((id) => id.startsWith('aptabase:'));
-    expect(perms).toEqual(['aptabase:allow-track-event']);
-  });
-
-  it('keeps telemetry off the iOS build by platform-scoping its capability', () => {
-    // If this capability ever loses its `platforms` field, the iOS build breaks
-    // at the manifest step with "Permission aptabase:allow-track-event not
-    // found" — an error that reads like a typo rather than a platform issue.
-    const cap = loadCapability('desktop-telemetry');
-    expect(cap.platforms).toBeDefined();
-    expect(cap.platforms).not.toContain('iOS');
-    expect(cap.platforms).toContain('macOS');
+    expect(telemetryPerms).toEqual([]);
   });
 
   it('grants clipboard-manager READ-only (no write/clear/image surface)', () => {
@@ -266,10 +225,10 @@ describe('tauri default capability permissions', () => {
   });
 
   it('keeps http:default narrowly scoped to the GitHub release endpoints', () => {
-    // Telemetry must NOT widen the JS HTTP surface — all telemetry egress is
-    // Rust-side `reqwest`, which Tauri capabilities don't govern. This locks the
-    // http:default allow-list to exactly the two GitHub release URLs so a future
-    // edit can't quietly add a telemetry (or any other) endpoint here.
+    // The app talks to GitHub to check for updates and to nothing else on its
+    // own behalf. This locks the http:default allow-list to exactly the two
+    // GitHub release URLs so a future edit can't quietly add a reporting
+    // endpoint — the JS HTTP surface is where that would be easiest to miss.
     const cap = loadDefaultCapability();
     const httpPerm = cap.permissions.find(
       (perm) => typeof perm !== 'string' && perm.identifier === 'http:default',

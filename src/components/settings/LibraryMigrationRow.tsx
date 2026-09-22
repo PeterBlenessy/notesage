@@ -8,7 +8,6 @@ import { tauriApi } from "@/lib/tauri";
 import { migrationOfferState, type MigrationOfferState } from "@/lib/library-root";
 import { latestUndoRecord, type UndoRecord } from "@/lib/library-migration-undo";
 import { undoStoreDeps } from "@/lib/library-migration-run";
-import { track } from "@/lib/telemetry";
 import { t } from "@/lib/i18n";
 
 /**
@@ -91,7 +90,6 @@ export function LibraryMigrationRow({
         // What is stopping the people who opted in. Once per mount of this
         // panel rather than per render; the volume is a person opening
         // Settings, not a loop.
-        track("library_migration_state", { state });
       } catch {
         if (!cancelled) setOffer("no-icloud");
       }

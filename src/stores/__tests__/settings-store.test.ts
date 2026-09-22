@@ -80,15 +80,10 @@ vi.mock('@/lib/version', async (importOriginal) => {
 
 import {
   useSettingsStore,
-  selectEffectiveTelemetryUsage,
-  selectEffectiveTelemetryCrash,
   RELATIONS_PANEL_DEFAULT_HEIGHT,
   RELATIONS_PANEL_MIN_HEIGHT,
   RELATIONS_PANEL_MAX_HEIGHT,
 } from '../settings-store';
-import { useFlagStore } from '@/stores/flag-store';
-import type { FlagId } from '@/lib/flags';
-import { invoke } from '@tauri-apps/api/core';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -632,6 +627,52 @@ describe('notifyInboxCaptures (Inbox arrivals, PRD 2026-09-05-ios-notifications)
 
   it('is version-gated — a blob already at v28 is left alone', () => {
     expect(migrate({}, 28).notifyInboxCaptures).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// v29 migration — the telemetry consent keys are dropped
+// ---------------------------------------------------------------------------
+
+describe('telemetry consent keys are dropped (v29)', () => {
+  function migrate(persisted: Record<string, unknown>, from: number) {
+    const opts = (useSettingsStore as unknown as {
+      persist: { getOptions: () => { migrate?: (s: unknown, v: number) => unknown } };
+    }).persist.getOptions();
+    return opts.migrate!(persisted, from) as Record<string, unknown>;
+  }
+
+  /** What an existing user's blob looks like — all three keys, any values. */
+  const withConsent = () => ({
+    telemetryUsageEnabled: true,
+    telemetryCrashEnabled: false,
+    telemetryNoticeSeen: true,
+    theme: 'dark',
+  });
+
+  it('removes all three keys from an existing blob', () => {
+    const out = migrate(withConsent(), 28);
+    expect(out.telemetryUsageEnabled).toBeUndefined();
+    expect(out.telemetryCrashEnabled).toBeUndefined();
+    expect(out.telemetryNoticeSeen).toBeUndefined();
+  });
+
+  it('leaves everything else alone', () => {
+    expect(migrate(withConsent(), 28).theme).toBe('dark');
+  });
+
+  it('drops an explicit true as readily as a false', () => {
+    // The point is not "turn it off" — there is nothing left to turn off. A
+    // surviving `telemetryUsageEnabled: true` would read, to anyone who opened
+    // the settings file, as a live switch consenting to collection that no
+    // longer happens. Both values have to go, not just the permissive one.
+    const out = migrate({ telemetryUsageEnabled: true, telemetryCrashEnabled: true }, 1);
+    expect('telemetryUsageEnabled' in out).toBe(false);
+    expect('telemetryCrashEnabled' in out).toBe(false);
+  });
+
+  it('is a no-op on a blob that never had them', () => {
+    expect(() => migrate({ theme: 'light' }, 28)).not.toThrow();
   });
 });
 
@@ -1478,7 +1519,7 @@ describe('v6 → v7 migration (quietChromePreset + quietChromeOverrides)', () =>
     const raw = localStorageMock.getItem(STORAGE_KEY);
     expect(raw).toBeTruthy();
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(28);
+    expect(parsed.version).toBe(29);
     expect(parsed.state.quietChromePreset).toBe('default');
     expect(parsed.state.quietChromeOverrides).toBeTruthy();
   });
@@ -2538,7 +2579,7 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
 
     const raw = localStorageMock.getItem(STORAGE_KEY);
     const parsed = JSON.parse(raw!);
-    expect(parsed.version).toBe(28);
+    expect(parsed.version).toBe(29);
   });
 
   it('v22 migration backfills linkPreviewRemoteImages=false (privacy by default)', async () => {
@@ -2549,94 +2590,6 @@ describe('v21 migration: quietChromeOverrides titlebar/cmdbar backfill', () => {
     await waitForPersist();
 
     expect(useSettingsStore.getState().linkPreviewRemoteImages).toBe(false);
-  });
-});
-
-// ===========================================================================
-// Telemetry consent (tri-state fields + effective selectors + Rust sync)
-// ===========================================================================
-
-describe('telemetry consent', () => {
-  // `buildAlpha` simulates running an alpha vs stable BUILD (the real signal is
-  // `buildIsAlpha()`, mocked at the top of this file). Telemetry defaults key on
-  // the build, not the update channel.
-  // `labsOn` replaces the old `buildAlpha` argument: with one binary there is
-  // no alpha build to key on, so the default follows Labs instead (PRD
-  // 2026-08-15-single-binary-feature-flags).
-  function resetTelemetry(labsOn = false) {
-    buildChannel.isAlpha = false;
-    useFlagStore.setState({ enabled: labsOn ? (['demo'] as unknown as FlagId[]) : [] });
-    useSettingsStore.setState({
-      ...SETTINGS_DEFAULTS,
-      telemetryUsageEnabled: null,
-      telemetryCrashEnabled: null,
-      telemetryNoticeSeen: false,
-    } as Record<string, unknown>);
-  }
-
-  afterEach(() => {
-    buildChannel.isAlpha = false;
-  });
-
-  it('defaults: tri-state null, notice unseen', () => {
-    resetTelemetry();
-    const s = useSettingsStore.getState();
-    expect(s.telemetryUsageEnabled).toBeNull();
-    expect(s.telemetryCrashEnabled).toBeNull();
-    expect(s.telemetryNoticeSeen).toBe(false);
-  });
-
-  it('effective default follows LABS when not overridden', () => {
-    resetTelemetry(false); // nothing experimental enabled → off
-    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
-    expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(false);
-
-    resetTelemetry(true); // an experimental feature enabled → on
-    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(true);
-    expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
-  });
-
-  it('Labs default is ON regardless of the update channel', () => {
-    // Keying on Labs. (The release channel this once contrasted with no
-    // longer exists — one binary, one stream.)
-    resetTelemetry(true);
-    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(true);
-    expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
-  });
-
-  it('explicit override wins over the build default', () => {
-    resetTelemetry(true); // alpha build → default on
-    useSettingsStore.getState().setTelemetryUsageEnabled(false);
-    expect(selectEffectiveTelemetryUsage(useSettingsStore.getState())).toBe(false);
-
-    resetTelemetry(false); // stable build → default off
-    useSettingsStore.getState().setTelemetryCrashEnabled(true);
-    expect(selectEffectiveTelemetryCrash(useSettingsStore.getState())).toBe(true);
-  });
-
-
-  it('syncs effective consent to Rust via telemetry_apply_consent on toggle', () => {
-    resetTelemetry(false); // stable build
-    vi.mocked(invoke).mockClear();
-
-    // Explicitly enabling usage → usage true, crash still build default (false).
-    useSettingsStore.getState().setTelemetryUsageEnabled(true);
-    expect(invoke).toHaveBeenCalledWith('telemetry_apply_consent', {
-      usage: true,
-      crash: false,
-    });
-  });
-
-  it('toggle sync reflects the Labs default for the untouched stream', () => {
-    resetTelemetry(true); // an experimental feature enabled → both default on
-    vi.mocked(invoke).mockClear();
-
-    // Explicitly disabling crash → crash false, usage still build default (true).
-    useSettingsStore.getState().setTelemetryCrashEnabled(false);
-    expect(invoke).toHaveBeenCalledWith('telemetry_apply_consent', {
-      usage: true,
-      crash: false,
-    });
   });
 });
 

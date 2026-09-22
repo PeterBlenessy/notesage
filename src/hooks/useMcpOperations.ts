@@ -3,9 +3,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
-import { useMcpStore, mcpSourceToItemSource, type McpServerEntry, type McpToolInfo, type McpEnvValue } from '@/stores/mcp-store';
+import { useMcpStore, type McpServerEntry, type McpToolInfo, type McpEnvValue } from '@/stores/mcp-store';
 import { filterValidMcpConfigs, type McpServerConfig } from '@/lib/mcp/config-guards';
-import { track } from '@/lib/telemetry';
 import { toast } from 'sonner';
 import { log } from '@/lib/logger';
 import { tauriApi } from '@/lib/tauri';
@@ -330,8 +329,6 @@ export function useMcpOperations() {
 
   const callTool = useCallback(
     async (serverId: string, toolName: string, args: Record<string, unknown>) => {
-      const server = useMcpStore.getState().servers.find((s) => s.id === serverId);
-      track('mcp_tool_called', { source: server ? mcpSourceToItemSource(server.source) : 'user' });
       return invoke('mcp_call_tool', {
         serverId,
         toolName,

@@ -1,6 +1,5 @@
 import * as React from 'react';
 import { Switch } from '@/components/ui/switch';
-import { trackSettingToggle } from '@/lib/telemetry';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Slider } from '@/components/ui/slider';
@@ -285,7 +284,7 @@ export function EditorSettings() {
             <Switch
               id="typewriter-scrolling"
               checked={typewriterScrolling}
-              onCheckedChange={(v) => { setTypewriterScrolling(v); trackSettingToggle("typewriter_scrolling", v); }}
+              onCheckedChange={setTypewriterScrolling}
             />
           }
         />
@@ -304,7 +303,7 @@ export function EditorSettings() {
             <Switch
               id="external-diff-review"
               checked={externalChangeDiffReview}
-              onCheckedChange={(v) => { setExternalChangeDiffReview(v); trackSettingToggle("external_change_review", v); }}
+              onCheckedChange={setExternalChangeDiffReview}
             />
           }
         />
@@ -387,7 +386,7 @@ export function EditorSettings() {
             control={
               <Switch
                 checked={printLayout}
-                onCheckedChange={(v) => { setPrintLayout(v); trackSettingToggle("print_layout", v); }}
+                onCheckedChange={setPrintLayout}
               />
             }
           />

@@ -11,16 +11,19 @@ the first TestFlight build.
 
 ## Why that is true, and how to defend it
 
-This is not a claim about intent — the iOS binary has no telemetry in it.
+This is not a claim about intent — the binary has no telemetry in it.
 `docs/features/mobile.md` §"Telemetry-free by construction" records the
 mechanism; the short version:
 
-- The Sentry (crash) and Aptabase (usage) crates are gated **off** the iOS
-  target in `Cargo.toml`, so no telemetry client is compiled into the app.
-- The frontend telemetry module is unreachable from `MobileApp` — the mobile
-  shell never imports it.
-- Both facts are regression-locked by tests, so a future change that adds
-  telemetry to iOS fails CI rather than silently invalidating this answer.
+- As of 21 September 2026 the Sentry (crash) and Aptabase (usage) crates are
+  gone from `Cargo.toml` entirely, and `src/lib/telemetry.ts` no longer exists.
+  This used to be an iOS-only guarantee held in place by `cfg` gates; it now
+  holds for every target, which makes the answer easier to defend rather than
+  harder — there is no build of Notesage in which it is untrue.
+- Regression-locked by `no_telemetry_sdk_is_linked_on_any_target` (Rust) and
+  the telemetry-permission check in `tauri-capability-surface.test.ts`, so a
+  future change that adds telemetry back fails CI rather than silently
+  invalidating this answer.
 
 Everything the app touches stays on the device or in the user's own iCloud
 folder:
