@@ -66,7 +66,6 @@ note-sage/
 │   │   │   ├── sandbox_monitor.rs # Seatbelt violation monitoring (macOS log stream)
 │   │   │   ├── web_search.rs   # DuckDuckGo web search (no API key required)
 │   │   │   ├── link_preview.rs # OpenGraph metadata fetch for link preview cards
-│   │   │   ├── alpha_update.rs  # Alpha-channel update check via runtime-URL UpdaterBuilder (`alpha_check`)
 │   │   │   ├── preview.rs       # Markdown → HTML body fragment for large-file instant-load preview (`render_markdown_preview`)
 │   │   │   ├── html_preview.rs  # In-memory HTML doc store + `htmlpreview://` URI scheme for the HTML viewer's sandboxed iframe paths (`html_preview_register`/`html_preview_unregister`)
 │   │   │   ├── constants.rs    # Shared constants (app paths, defaults)
