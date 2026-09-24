@@ -29,5 +29,19 @@ export default defineConfig({
     // independent of the perf-budget gate.
     // 60s timeout absorbs runner variance while still catching genuine hangs.
     testTimeout: 60_000,
+    // Benchmarks must not run concurrently with each other. Every test here
+    // measures wall-clock against a fixed budget, so eight files racing on the
+    // same cores measure contention rather than the code — and the harness
+    // then blames whichever test happened to lose. Observed on 2026-09-24:
+    // the full suite failed 1 test, then 5 across 3 different files, while
+    // each of those files passed alone; forcing sequential execution gave
+    // 45/45 three runs running. That is also the flake the CI job's
+    // `continue-on-error` comment describes ("the markdown-parse 50KB case
+    // still spiked ... and blocked a release on a pure timing flake"), so the
+    // fix belongs here rather than in another budget multiplier.
+    //
+    // `vitest.config.ts` sets the same flag for the main suite, for a
+    // different reason (order-dependent store state, #501).
+    fileParallelism: false,
   },
 });
