@@ -241,3 +241,4 @@ Chronological log of major implementation milestones and changes.
 | 235 | [Release v0.60.2](235-release-v0.60.2.md) | Reading your skills and agents now waits until the app has finished starting |
 | 236 | [Release v0.60.3](236-release-v0.60.3.md) | Internal measurement only — startup metrics that report what their names claim |
 | 237 | [Release v0.60.4](237-release-v0.60.4.md) | Notifications get their styling back, and the editor cursor reappears beside images and tables |
+| 238 | [Release v0.61.0](238-release-v0.61.0.md) | Notesage collects nothing at all — the usage and crash reporting is gone from the app, not just switched off |
