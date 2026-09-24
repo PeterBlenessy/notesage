@@ -1536,65 +1536,6 @@ Located in `src-tauri/src/commands/mcp.rs` and `mcp_oauth.rs`. See `docs/feature
 
 **Deep link:** `notesage://mcp/install?...` (scheme via `tauri-plugin-deep-link`) opens the validate-first Add dialog pre-filled — parsed by `src/lib/mcp/deeplink.ts`, surfaced by `McpDeepLinkInstaller`.
 
-## Alpha Update Operations
-
-Located in `src-tauri/src/commands/alpha_update.rs`
-
-The app ships on an alpha pre-release channel. Tauri's `tauri-plugin-updater` `check()` JS API has no per-call `url` override, so the alpha channel is driven from Rust via `UpdaterBuilder::endpoints(...)` against a runtime-supplied endpoint. The pubkey from `tauri.conf.json` still verifies manifest signatures regardless of which endpoint produced them.
-
-### alpha_check
-
-Checks the alpha-channel update endpoint and, if an update is available, inserts the `Update` into Tauri's resource table so the frontend can wrap it (`new Update(metadata)`) and call `.downloadAndInstall(...)` — which routes back to the plugin's stock signature-verified `download` / `install` handlers via the returned `rid`.
-
-```rust
-#[tauri::command]
-pub async fn alpha_check<R: Runtime>(
-    webview: Webview<R>,
-    url: String,
-) -> Result<Option<AlphaUpdateMetadata>, String>
-```
-
-**Parameters:**
-
-- `webview`: Tauri webview handle (injected automatically)
-- `url`: The alpha update manifest endpoint URL
-
-**Returns:**
-
-- `Ok(Some(AlphaUpdateMetadata))`: An update is available
-- `Ok(None)`: Already up to date
-- `Err(String)`: Invalid URL, updater config/build failure, or check failure
-
-**AlphaUpdateMetadata struct** (serializes with camelCase field names):
-
-```rust
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AlphaUpdateMetadata {
-    rid: ResourceId,            // resource-table handle for `new Update(metadata)`
-    current_version: String,
-    version: String,
-    date: Option<String>,       // RFC3339
-    body: Option<String>,
-    raw_json: serde_json::Value,
-}
-```
-
-**Frontend usage:**
-
-```typescript
-import { invoke } from '@tauri-apps/api/core';
-import { Update } from '@tauri-apps/plugin-updater';
-
-const metadata = await invoke<AlphaUpdateMetadata | null>('alpha_check', {
-  url: ALPHA_UPDATE_ENDPOINT,
-});
-if (metadata) {
-  const update = new Update(metadata);
-  await update.downloadAndInstall();
-}
-```
-
 ## Preview Operations
 
 Located in `src-tauri/src/commands/preview.rs`

@@ -15,7 +15,6 @@ import { useAIStore } from "@/stores/ai-store";
 import { useRoutingStore } from "@/stores/routing-store";
 import { useAIOperations } from "@/hooks/useAIOperations";
 import { setSuggestion, hasActiveSuggestion, CommentMarkPluginKey } from "@/components/editor/extensions";
-import { track } from "@/lib/telemetry";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -79,7 +78,6 @@ export function BubbleMenu({ editor }: BubbleMenuProps) {
       return;
     }
 
-    track("ai_action_used", { action });
 
     setLoadingAction(action);
 

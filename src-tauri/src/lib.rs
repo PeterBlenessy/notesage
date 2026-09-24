@@ -37,23 +37,11 @@ fn set_log_level(level: String) {
     log::info!(target: "notesage::settings", "Log level set to {}", level);
 }
 
-// Build-time telemetry keys. Injected by CI for release builds via GitHub
-// Actions secrets (see `.github/workflows/release.yml` + `.env.example`):
-//   NOTESAGE_SENTRY_DSN     → crash/error reporting (Sentry, DSN-swappable to GlitchTip)
-//   NOTESAGE_APTABASE_KEY   → privacy-first usage analytics (Aptabase)
-// `option_env!` resolves to `None` when the var is unset at compile time, so a
-// no-key local/dev build compiles and runs as a clean telemetry no-op — never
-// `env!` (compile error) and never a runtime panic.
-#[cfg_attr(target_os = "ios", allow(dead_code))]
-const SENTRY_DSN: Option<&str> = option_env!("NOTESAGE_SENTRY_DSN");
-const APTABASE_KEY: Option<&str> = option_env!("NOTESAGE_APTABASE_KEY");
-
 /// Build the process-wide multi-threaded Tokio runtime that `run()` enters
 /// before the Tauri builder starts. Entering this runtime on the main thread is
-/// what gives plugin `setup` hooks a reactor for `tokio::spawn`
-/// (tauri-plugin-aptabase's `start_polling`); without it the app panics at
-/// startup with "there is no reactor running" — see `run()` and the regression
-/// test below.
+/// what gives plugin `setup` hooks a reactor for `tokio::spawn`; without it a
+/// plugin that spawns from `setup` panics at startup with "there is no reactor
+/// running" — see `run()` and the regression test below.
 fn build_app_runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Runtime::new().expect("failed to build Tokio runtime")
 }
@@ -61,19 +49,17 @@ fn build_app_runtime() -> tokio::runtime::Runtime {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Establish and ENTER a Tokio runtime for the whole process BEFORE the
-    // Tauri builder runs. Some plugins call the global `tokio::spawn` from their
-    // `setup` hook (notably `tauri-plugin-aptabase`'s `start_polling`), which
-    // panics with "there is no reactor running, must be called from the context
-    // of a Tokio 1.x runtime" unless a runtime is entered on the main thread at
-    // plugin-setup time. Tauri's default runtime is not entered there, so we
-    // create one, hand it to Tauri (`async_runtime::set`) so everything shares a
-    // single runtime, and keep the enter-guard alive for the app's lifetime.
+    // Tauri builder runs. A plugin that calls the global `tokio::spawn` from its
+    // `setup` hook panics with "there is no reactor running, must be called from
+    // the context of a Tokio 1.x runtime" unless a runtime is entered on the main
+    // thread at plugin-setup time. Tauri's default runtime is not entered there,
+    // so we create one, hand it to Tauri (`async_runtime::set`) so everything
+    // shares a single runtime, and keep the enter-guard alive for the app's
+    // lifetime. `runtime` + `_runtime_guard` are held as locals through the
+    // blocking `builder.run(...)` call below.
     //
-    // This only manifested once `NOTESAGE_APTABASE_KEY` was wired into release
-    // builds (v0.46.0-alpha.17+): without the key the Aptabase plugin is never
-    // registered, so the panic never fired — which is why dev/local builds and
-    // earlier alphas were unaffected. `runtime` + `_runtime_guard` are held as
-    // locals through the blocking `builder.run(...)` call below.
+    // Found the hard way in v0.46.0-alpha.17/18, when a since-removed analytics
+    // plugin spawned from `setup` and crashed every release build at startup.
     // reqwest 0.13's rustls backend requires a process-default CryptoProvider
     // and panics "No provider set" when building any client without one. On
     // desktop the panic lands in a worker thread and hides; on iOS, Tauri's
@@ -84,53 +70,6 @@ pub fn run() {
     let runtime = build_app_runtime();
     tauri::async_runtime::set(runtime.handle().clone());
     let _runtime_guard = runtime.enter();
-
-    // Build the Sentry client ONCE up front so the panic hook installs exactly
-    // once. The returned guard is `mem::forget`-ed (we keep the client alive for
-    // the whole process via `telemetry::set_sentry_client`); dropping it would
-    // close the client. Crash egress is then gated at runtime by binding /
-    // unbinding the client on the Hub (`telemetry::set_sentry_enabled`), so the
-    // crash toggle takes effect immediately with no second panic-hook install.
-    //
-    // `None` DSN → no client is built → all telemetry helpers are clean no-ops.
-    // Not compiled for iOS at all: the sentry crates are absent from that
-    // target (#587), so this block would not even name-resolve there.
-    #[cfg(not(target_os = "ios"))]
-    if let Some(dsn) = SENTRY_DSN {
-        let guard = sentry::init((
-            dsn,
-            sentry::ClientOptions {
-                release: Some(env!("CARGO_PKG_VERSION").into()),
-                send_default_pii: false,
-                // Disable breadcrumb capture entirely: default integrations
-                // collect log/console breadcrumbs, and Notesage logs absolute
-                // file paths heavily (`[perf:doc-load]`, startup logs, …). With
-                // none collected there is no breadcrumb PII channel to scrub.
-                max_breadcrumbs: 0,
-                before_send: Some(std::sync::Arc::new(|event| {
-                    Some(telemetry::scrub_event(event))
-                })),
-                ..Default::default()
-            },
-        ));
-        // Retain the client so runtime toggles can re-bind it without re-init.
-        if let Some(client) = sentry::Hub::current().client() {
-            telemetry::set_sentry_client(client);
-        }
-        // `sentry::init` binds the client ON by default. Honour persisted
-        // startup consent: keep it bound only if crash reporting is enabled,
-        // otherwise unbind immediately (egress off until the user opts in).
-        //
-        // Ordering note: the panic hook is installed by init() above and consent
-        // is applied here, immediately after. The only gap is this synchronous
-        // `read_consent()` fs read — a panic in that window is a startup crash
-        // worth capturing regardless of saved preference, so the race is benign.
-        let consent = telemetry::read_consent();
-        telemetry::set_sentry_enabled(consent.crash);
-        // Keep the guard alive for the process lifetime — the client is owned by
-        // `SENTRY_CLIENT` now, and dropping the guard would close it.
-        std::mem::forget(guard);
-    }
 
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
@@ -173,68 +112,6 @@ pub fn run() {
                 tauri_plugin_autostart::MacosLauncher::LaunchAgent,
                 None,
             ));
-    }
-
-    // Telemetry — usage analytics (Aptabase). Registered unconditionally when a
-    // build-time key is present; the plugin emits nothing until the frontend
-    // calls `trackEvent`, so the consent gate lives at the JS `track()` helper.
-    // No key (every local/dev build) → skip registration cleanly, no panic.
-    match APTABASE_KEY {
-        None => {
-            // Expected on every local/dev build (no build-time key) — info, not warn.
-            log::info!(
-                target: "notesage::telemetry",
-                "Usage telemetry disabled: no build-time Aptabase key."
-            );
-        }
-        Some(key) => {
-            // Diagnose the key WITHOUT logging it (the key is a secret; the region
-            // segment is not). The middle `A-<REGION>-<id>` segment decides the
-            // ingest host inside the plugin's config: US/EU → cloud, DEV →
-            // http://localhost:3000, SH → needs a host we don't pass. A
-            // DEV/SH/malformed key silently routes nowhere, so surface it at warn.
-            let parts: Vec<&str> = key.split('-').collect();
-            let region = parts.get(1).copied().unwrap_or("");
-            match (parts.len(), region) {
-                (3, "US") | (3, "EU") => log::info!(
-                    target: "notesage::telemetry",
-                    "Usage telemetry enabled (Aptabase region {region}, cloud ingest)."
-                ),
-                (3, "DEV") => log::warn!(
-                    target: "notesage::telemetry",
-                    "Aptabase key region is DEV → ingest is http://localhost:3000; \
-                     events will NOT reach the cloud. Set NOTESAGE_APTABASE_KEY to an A-US-/A-EU- key."
-                ),
-                (3, "SH") => log::warn!(
-                    target: "notesage::telemetry",
-                    "Aptabase key is self-hosted (SH) but no host is configured → tracking disabled."
-                ),
-                _ => log::warn!(
-                    target: "notesage::telemetry",
-                    "Aptabase key is malformed (expected A-<REGION>-<id>) → tracking disabled."
-                ),
-            }
-            // iOS has no aptabase plugin (dependency is gated off in
-            // Cargo.toml — mobile ships no usage telemetry). `key` is still
-            // read above so the diagnostics stay identical across platforms.
-            #[cfg(not(target_os = "ios"))]
-            {
-                builder = builder.plugin(tauri_plugin_aptabase::Builder::new(key).build());
-            }
-            #[cfg(target_os = "ios")]
-            let _ = key;
-        }
-    }
-
-    // Telemetry — crash/error reporting (Sentry). Registered only when the
-    // client was successfully built above (DSN present). The plugin injects
-    // `@sentry/browser` and routes frontend errors through Rust via `invoke`,
-    // so frontend egress rides the Rust SDK — no widening of the JS HTTP
-    // capability surface. Runtime crash-consent gating is handled by binding /
-    // unbinding the client on the Hub (`telemetry::set_sentry_enabled`).
-    #[cfg(not(target_os = "ios"))]
-    if let Some(client) = telemetry::sentry_client() {
-        builder = builder.plugin(tauri_plugin_sentry::init(&client));
     }
 
     // WebDriver plugin for real E2E testing (only when compiled with `--features e2e-testing`)
@@ -543,7 +420,6 @@ pub fn run() {
             migrate_library_entry,
             list_evicted_placeholders,
             library_container_access,
-            telemetry_apply_consent,
             agent_resolve_binary,
             agent_install,
             agent_uninstall,
@@ -802,21 +678,44 @@ pub fn run() {
 mod tests {
     use super::*;
 
-    /// Regression for the v0.46.0-alpha.17/18 startup crash: tauri-plugin-aptabase
-    /// calls `tokio::spawn` from its plugin `setup` hook, which panics with
-    /// "there is no reactor running, must be called from the context of a Tokio
-    /// 1.x runtime" unless a runtime is ENTERED on the main thread before the
-    /// Tauri builder runs. This proves `build_app_runtime()` + `enter()` is the
-    /// mechanism that prevents it.
+    /// Regression for the v0.46.0-alpha.17/18 startup crash: a plugin that calls
+    /// `tokio::spawn` from its `setup` hook panics with "there is no reactor
+    /// running, must be called from the context of a Tokio 1.x runtime" unless a
+    /// runtime is ENTERED on the main thread before the Tauri builder runs. This
+    /// proves `build_app_runtime()` + `enter()` is the mechanism that prevents it.
     ///
-    /// This test only exercises the runtime mechanism. The end-to-end guard —
-    /// actually launching a build with `NOTESAGE_APTABASE_KEY` set so the plugin
-    /// registers — lives in CI (`.github/workflows/test.yml`), because the plugin
-    /// is never registered in a keyless test/dev build.
+    /// The plugin that originally tripped this is gone, but the property it
+    /// exposed is not: any future plugin spawning from `setup` depends on it.
+    /// The app collects nothing and phones nowhere on its own behalf.
+    ///
+    /// Successor to `telemetry_crates_are_gated_off_the_ios_target`, which only
+    /// kept the SDKs out of the iOS binary so the App Store label could say
+    /// "Data Not Collected". Both streams are gone from every target now, and
+    /// the privacy policy at notesage.io/privacy states that plainly — so the
+    /// claim has to hold for desktop too, not just the phone.
+    ///
+    /// Asserted against the manifest because that is the guarantee the compiler
+    /// then enforces everywhere: with the crates absent, any reintroduced
+    /// `sentry::` or `tauri_plugin_aptabase::` reference fails the build rather
+    /// than quietly shipping. Reinstating either means updating the published
+    /// policy first — this test is where that decision surfaces.
+    #[test]
+    fn no_telemetry_sdk_is_linked_on_any_target() {
+        let manifest = include_str!("../Cargo.toml");
+        for krate in ["sentry", "aptabase"] {
+            assert!(
+                !manifest.to_lowercase().contains(krate),
+                "{krate} reappeared in Cargo.toml — the published privacy policy \
+                 says the app collects nothing, so adding it back is a policy \
+                 change, not just a dependency change"
+            );
+        }
+    }
+
     #[test]
     fn entered_app_runtime_provides_a_reactor_for_plugin_setup() {
         // Failure precondition: with no runtime entered on this thread, there is
-        // no reactor — exactly the state that made aptabase's `tokio::spawn` panic.
+        // no reactor — exactly the state that made the `tokio::spawn` panic.
         assert!(
             tokio::runtime::Handle::try_current().is_err(),
             "test thread must start with no entered runtime",
@@ -830,8 +729,8 @@ mod tests {
                 tokio::runtime::Handle::try_current().is_ok(),
                 "entering the app runtime must provide a reactor",
             );
-            // … so the spawn that aptabase's `start_polling` performs no longer
-            // panics. `spawn` returning a handle (rather than unwinding) is the
+            // … so a spawn from a plugin's `setup` hook no longer panics.
+            // `spawn` returning a handle (rather than unwinding) is the
             // assertion; the task itself is a no-op.
             let _join = tokio::spawn(async {});
         }

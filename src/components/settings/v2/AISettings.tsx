@@ -5,7 +5,6 @@ import { SandboxActivitySettings } from '@/components/settings/SandboxActivitySe
 import { Switch } from '@/components/ui/switch';
 import { Slider } from '@/components/ui/slider';
 import { useSettingsStore } from '@/stores/settings-store';
-import { trackSettingToggle } from '@/lib/telemetry';
 import { SettingsGroup } from './SettingsGroup';
 import { SettingsHint } from './SettingsHint';
 import { SettingsRow } from './SettingsRow';
@@ -97,7 +96,7 @@ export function AISettings() {
             <Switch
               id="ai-tool-calling-enabled"
               checked={toolCallingEnabled}
-              onCheckedChange={(v) => { setToolCallingEnabled(v); trackSettingToggle("tool_calling", v); }}
+              onCheckedChange={setToolCallingEnabled}
               aria-label={t("settings.enableToolCalling")}
             />
           }
@@ -110,7 +109,7 @@ export function AISettings() {
             <Switch
               id="ai-require-all-confirmations"
               checked={requireAllToolConfirmations}
-              onCheckedChange={(v) => { setRequireAllToolConfirmations(v); trackSettingToggle("require_all_tool_confirmations", v); }}
+              onCheckedChange={setRequireAllToolConfirmations}
               aria-label={t("settings.requireConfirmation")}
             />
           }
@@ -138,7 +137,7 @@ export function AISettings() {
             <Switch
               id="cross-project-mode"
               checked={crossProjectMode}
-              onCheckedChange={(v) => { setCrossProjectMode(v); trackSettingToggle("cross_project", v); }}
+              onCheckedChange={setCrossProjectMode}
             />
           }
         />
@@ -150,7 +149,7 @@ export function AISettings() {
             <Switch
               id="show-agent-mode-picker"
               checked={showAgentModePicker}
-              onCheckedChange={(v) => { setShowAgentModePicker(v); trackSettingToggle("agent_mode_picker", v); }}
+              onCheckedChange={setShowAgentModePicker}
             />
           }
         />

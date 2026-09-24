@@ -1,6 +1,5 @@
 import { useEffect, useCallback } from 'react';
-import { useSkillStore, skillSourceToItemSource, type SkillContent, type ScriptResult, type AgentContent } from '@/stores/skill-store';
-import { track } from '@/lib/telemetry';
+import { useSkillStore, type SkillContent, type ScriptResult, type AgentContent } from '@/stores/skill-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -645,9 +644,6 @@ export function useSkillOperations() {
       // Caller is responsible for showing permission UI and retrying
       throw new Error(`PERMISSION_REQUIRED:${skillName}`);
     }
-
-    const skill = useSkillStore.getState().skills.find((s) => s.name === skillName);
-    track('skill_invoked', { source: skill ? skillSourceToItemSource(skill.source) : 'user' });
 
     return tauriApi.executeSkillScript({
       skillPath,

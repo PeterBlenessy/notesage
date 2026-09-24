@@ -69,7 +69,9 @@ bundled-skills/**/scripts/node_modules/
 # Generated pkg-config stubs for headless Linux cargo check
 src-tauri/.pkg-config-stubs/
 
-# Local env files with telemetry keys/DSN (see .env.example) — never commit
+# Local env files — never commit. Nothing in this repo reads a build-time
+# env var any more (the telemetry keys that needed one are gone), but a local
+# .env is still the wrong place for anything to leak from.
 .env
 .env.local
 public/excalidraw-assets/

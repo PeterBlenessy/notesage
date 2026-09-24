@@ -23,7 +23,6 @@ import {
   applyCompaction,
   isCompactionWorthwhile,
 } from '@/lib/ai/compaction';
-import { track } from '@/lib/telemetry';
 
 /**
  * Ceiling for the compaction summary itself. Generous enough to preserve paths
@@ -301,7 +300,6 @@ export function useDirectApiChat({
             // Counts how often a local model outgrows its window in the field.
             // Fired only on a compaction that actually happened — not on the
             // fallback path below, which would conflate it with failure.
-            track('feature_used', { feature: 'context_compaction' });
             return compacted;
           } catch (error) {
             log.warn('ai', 'Context compaction failed, falling back to trim', error);

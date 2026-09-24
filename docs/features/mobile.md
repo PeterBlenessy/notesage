@@ -272,25 +272,24 @@ links and documents. PRD:
 
 ## Telemetry-free by construction (#587)
 
-The iOS binary ships with **no telemetry SDKs linked at all** — this is the
-verified basis for the App Store privacy label **"Data Not Collected"**:
+The iOS binary ships with **no telemetry SDKs linked at all** — the verified
+basis for the App Store privacy label **"Data Not Collected"**.
 
-- `sentry` / `tauri-plugin-sentry` / `tauri-plugin-aptabase` are declared
-  under `[target.'cfg(not(target_os = "ios"))'.dependencies]` in
-  `src-tauri/Cargo.toml`, and the Sentry init + plugin-registration blocks in
-  `lib.rs` (plus the whole `commands/telemetry.rs` module) are
-  `#[cfg(not(target_os = "ios"))]`. Verified:
-  `cargo tree --target aarch64-apple-ios -i sentry` (and `-i
-  tauri-plugin-aptabase`) prints nothing — the crates are unreachable from
-  the iOS dependency graph.
-- Regression locks: `telemetry_crates_are_gated_off_the_ios_target`
-  (Rust — fails if a telemetry crate moves out of the not-iOS target table)
-  and `telemetry-unreachable.test.ts` (walks `MobileApp.tsx`'s transitive
-  static import graph and fails if `src/lib/telemetry.ts` ever becomes
-  reachable from the iOS shell).
+As of 2026-09-21 this is no longer a mobile-specific property: both SDKs were
+removed from every target, so the claim that once needed a `cfg` gate and a
+dedicated regression test now holds for the desktop app as well. What used to
+be the iOS exception is the whole product's behaviour.
+
+- Regression lock: `no_telemetry_sdk_is_linked_on_any_target` (Rust — fails if
+  `sentry` or `aptabase` reappears anywhere in `Cargo.toml`). It replaces
+  `telemetry_crates_are_gated_off_the_ios_target`, which only checked that the
+  crates sat below the not-iOS target table, and `telemetry-unreachable.test.ts`,
+  which walked `MobileApp.tsx`'s import graph looking for `src/lib/telemetry.ts`
+  — a module that no longer exists.
 - Usage insight comes from Apple's own OS-level collection (App Store
   Connect App Analytics + TestFlight metrics), which requires zero in-app
-  code.
+  code. That was already the only source actually being read on iOS, and it is
+  now the only one anywhere.
 
 ## Architecture
 
@@ -298,7 +297,7 @@ verified basis for the App Store privacy label **"Data Not Collected"**:
   root shell is chosen in `main.tsx` via `isIos()` (`src/lib/platform.ts`):
   `MobileApp` on iOS, the desktop `App` otherwise. Branching at the root — not
   inside `App.tsx` — means the desktop lifecycle hooks (AI, ACP, watcher, git,
-  editor, telemetry) are never *called* on iOS (Rules of Hooks).
+  editor) are never *called* on iOS (Rules of Hooks).
 - **The library is the app's own iCloud container** (PRD
   `2026-09-05-icloud-container-library`). `iCloud.com.notesage.app`'s
   `Documents/` folder IS the Notesage library, so a fresh install finds it

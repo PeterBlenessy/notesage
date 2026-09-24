@@ -52,7 +52,6 @@ note-sage/
 │   │   │   ├── automations.rs # Automation YAML discovery/parse/validation/CRUD + trigger scheduler (`list/save/delete/validate_automation`, `reload_automation_schedule`); step execution stays in the frontend runner
 │   │   │   ├── health.rs   # Backend health check
 │   │   │   ├── logging.rs  # Debug logging control
-│   │   │   ├── telemetry.rs # Telemetry consent file + Sentry runtime live-disable + before_send PII scrubber (`telemetry_apply_consent`)
 │   │   │   ├── store.rs    # Key-value store operations
 │   │   │   ├── sync.rs     # iCloud sync settings + `icloud_ensure_downloaded` (evicted-placeholder download trigger)
 │   │   │   ├── shell_path.rs # Shell PATH resolution
@@ -67,7 +66,6 @@ note-sage/
 │   │   │   ├── sandbox_monitor.rs # Seatbelt violation monitoring (macOS log stream)
 │   │   │   ├── web_search.rs   # DuckDuckGo web search (no API key required)
 │   │   │   ├── link_preview.rs # OpenGraph metadata fetch for link preview cards
-│   │   │   ├── alpha_update.rs  # Alpha-channel update check via runtime-URL UpdaterBuilder (`alpha_check`)
 │   │   │   ├── preview.rs       # Markdown → HTML body fragment for large-file instant-load preview (`render_markdown_preview`)
 │   │   │   ├── html_preview.rs  # In-memory HTML doc store + `htmlpreview://` URI scheme for the HTML viewer's sandboxed iframe paths (`html_preview_register`/`html_preview_unregister`)
 │   │   │   ├── constants.rs    # Shared constants (app paths, defaults)
@@ -449,7 +447,8 @@ Most isolation work is covered by PRD `2026-04-18-project-data-isolation.md` and
 - Per-agent domain allowlists: built-in defaults per provider + user-configurable additions
 - Domain approval cards in chat UI: allow once / allow for session / allow always / deny
 - 30-second auto-deny timeout for unanswered domain requests
-- Telemetry toggle per connection (e.g., sentry.io)
+- Telemetry toggle per connection — blocks OTHER vendors' reporting endpoints
+  (`sentry.io`, `*.datadoghq.com`); unrelated to Notesage's own, which is gone
 - Network restriction toggle + kernel enforcement toggle in connection config dialog
 - Sandbox profiles written to temp files (ephemeral, cleaned up on agent exit)
 
@@ -459,13 +458,30 @@ Most isolation work is covered by PRD `2026-04-18-project-data-isolation.md` and
 - Filters by registered agent PIDs, deduplicates within 5s windows
 - Violations surface as error entries in the Activity panel alongside tool calls
 
-### Telemetry (Usage & Crash Reporting)
+### Telemetry — removed (2026-09-21)
 
-Two opt-out diagnostic streams (PRD `docs/prds/2026-06-07-telemetry.md`). Full user-facing detail — exactly what is and isn't collected — lives in `docs/telemetry.md` (the page the Settings → System → Telemetry "what we collect" link opens).
+**The app collects nothing and reports nowhere on its own behalf.** Two opt-out
+streams shipped between 2026-06 and 2026-09 (usage analytics via Aptabase, crash
+reporting via Sentry) and were removed wholesale: 907 lines across 78 files that
+produced, over their whole life, zero commits and zero issues. Nobody read the
+dashboards, so the data was cost without benefit — and it was the only thing the
+privacy policy had to explain. The accounts at both processors are closed.
 
-- **Build-based consent.** `telemetryUsageEnabled` / `telemetryCrashEnabled` are tri-state (`boolean | null`) in `settings-store`; `null` follows the running **build** via `buildIsAlpha()` (alpha/prerelease build → on, stable build → off), an explicit `true`/`false` always wins. Keyed on the build (the synchronous `__APP_VERSION__`-derived `buildIsAlpha` in `src/lib/version.ts`), NOT the user's chosen update `releaseChannel` — so everyone running an alpha build defaults on, including those who never opted into the alpha update channel. Effective values come from `selectEffectiveTelemetryUsage` / `selectEffectiveTelemetryCrash`. The two Settings switches are the single opt-out; the first-run disclosure (`useAppLifecycle`) fires on any alpha build. Aptabase usage events egress via the Rust plugin's v2 IPC command (`plugin:aptabase|track_event`, gated by `aptabase:allow-track-event`) — the npm `@aptabase/tauri` JS binding is **not** used (it's pinned to the Tauri v1 API and can't reach the v2 bridge).
-- **Usage (Aptabase).** `tauri-plugin-aptabase` registered in `lib.rs` when `option_env!("NOTESAGE_APTABASE_KEY")` is present. The frontend funnels every event through `track()` in `src/lib/telemetry.ts`, which **no-ops when the effective usage flag is off** and enforces a fixed, low-cardinality event taxonomy at the type level (exact props only — no PII appended).
-- **Crash (Sentry, DSN-swappable to GlitchTip).** Built in `lib.rs` when `option_env!("NOTESAGE_SENTRY_DSN")` is present: the client is created **once** (panic hook installed once, `release` = app version, `send_default_pii: false`, `before_send` = `telemetry::scrub_event` which clears `server_name`/`user`/`request` and strips `abs_path`/`filename` from every frame). Runtime **live-disable**: `telemetry_apply_consent` binds/unbinds the client on the `Hub` so the crash toggle takes effect immediately, no restart, no second panic hook. `tauri-plugin-sentry` injects `@sentry/browser` and routes frontend errors (`ErrorBoundary` + `window` `error`/`unhandledrejection` in `main.tsx`, gated on the crash flag) through Rust via `invoke`.
-- **Consent file.** `~/.notesage/telemetry-consent.json` (`{ usage, crash }`, the `sync.rs` disk-file pattern) is written by `telemetry_apply_consent` and read synchronously at startup so Sentry can be bound on/off before the frontend loads.
-- **Egress is Rust-only.** Both SDKs send via Rust `reqwest`, which is not governed by the JS `http:default` capability — no widening of the hardened frontend surface. The only capability added is `sentry:default` (the invoke bridge, not network); the `tauri-capability-surface.test.ts` regression lock asserts `http:default` is unchanged and no `fs:allow-*` was granted.
-- **Build-time keys, release-only.** Keys/DSN are injected from GitHub Actions secrets for release builds (`.github/workflows/release.yml`); a build without them (every local/dev build) compiles and runs as a clean telemetry no-op (`option_env!` → `None`).
+- **Regression locks.** `no_telemetry_sdk_is_linked_on_any_target` (Rust — fails
+  if `sentry` or `aptabase` reappears in `Cargo.toml`) and the capability check
+  in `tauri-capability-surface.test.ts` (fails if any capability file grants a
+  telemetry permission). Both name the published policy at notesage.io/privacy
+  deliberately: reinstating either SDK is a policy change, not just a dependency
+  change, and these tests are where that decision has to surface.
+- **What remains is not ours.** The per-connection "Allow telemetry" toggle in
+  connection Advanced settings governs *third-party agents'* endpoints
+  (`sentry.io` et al.) inside the sandbox — it exists to block someone else's
+  reporting, not to enable ours. Likewise the Copilot LSP and the local-agent
+  preset both pin their vendors' telemetry to off.
+- **Diagnostics are local.** `notesage.log` (debug logging, Settings → System)
+  stays on the user's machine. A future opt-in GitHub-issue reporter may offer
+  to attach part of it — it would have to show the user exactly what it sends,
+  since logs carry absolute file paths.
+
+The history — what was collected, why, and the decision to stop — is in PRD
+`docs/prds/2026-06-07-telemetry.md` and the removal commit.

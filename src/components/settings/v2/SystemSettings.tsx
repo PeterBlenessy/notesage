@@ -41,13 +41,7 @@ import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
 import { setLogLevel as setLoggerLevel } from '@/lib/logger';
 import type { LogLevel } from '@/lib/logger';
-import { openUrl } from '@tauri-apps/plugin-opener';
-import {
-  useSettingsStore,
-  selectEffectiveTelemetryUsage,
-  selectEffectiveTelemetryCrash,
-} from '@/stores/settings-store';
-import { track, trackSettingToggle } from '@/lib/telemetry';
+import { useSettingsStore } from '@/stores/settings-store';
 import { useConnectionsStore } from '@/stores/connections-store';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useEditorStore } from '@/stores/editor-store';
@@ -73,8 +67,6 @@ export interface SystemSettingsProps {
 }
 
 /** Public privacy doc the "What we collect" link opens (created in task #14). */
-const TELEMETRY_DOC_URL =
-  'https://github.com/peterblenessy/notesage/blob/main/docs/telemetry.md';
 
 function friendlyUpdateError(error: string | null): string {
   if (!error) return 'Could not check for updates';
@@ -183,17 +175,6 @@ export function SystemSettings({
   const setAutoCheckUpdates = useSettingsStore((s) => s.setAutoCheckUpdates);
   const lastUpdateCheck = useSettingsStore((s) => s.lastUpdateCheck);
 
-  // Telemetry — switches bind to the *effective* value (explicit override or
-  // build default) so the toggle reflects what's actually happening; the setters
-  // store the explicit boolean, which overrides the build default.
-  const telemetryUsageEffective = useSettingsStore(selectEffectiveTelemetryUsage);
-  const telemetryCrashEffective = useSettingsStore(selectEffectiveTelemetryCrash);
-  const setTelemetryUsageEnabled = useSettingsStore(
-    (s) => s.setTelemetryUsageEnabled,
-  );
-  const setTelemetryCrashEnabled = useSettingsStore(
-    (s) => s.setTelemetryCrashEnabled,
-  );
 
   const [changelogOpen, setChangelogOpen] = useState(false);
   const [licensesOpen, setLicensesOpen] = useState(false);
@@ -326,55 +307,6 @@ export function SystemSettings({
         />
       </SettingsGroup>
 
-      <SettingsGroup
-        label={t("settings.telemetry")}
-        description={t("sys.telemetryDesc")}
-        searchKeywords={['telemetry', 'analytics', 'crash', 'sentry', 'privacy', 'aptabase']}
-      >
-        <SettingsRow
-          label={t("settings.usageAnalytics")}
-          description={t("sys.usageTelemetry")}
-          htmlFor="telemetry-usage"
-          control={
-            <Switch
-              id="telemetry-usage"
-              checked={telemetryUsageEffective}
-              onCheckedChange={(v) => { setTelemetryUsageEnabled(v); trackSettingToggle("telemetry_usage", v); }}
-              aria-label={t("settings.usageAnalytics")}
-            />
-          }
-        />
-        <SettingsRow
-          label={t("settings.crashReports")}
-          description={t("sys.crashTelemetry")}
-          htmlFor="telemetry-crash"
-          control={
-            <Switch
-              id="telemetry-crash"
-              checked={telemetryCrashEffective}
-              onCheckedChange={(v) => { setTelemetryCrashEnabled(v); trackSettingToggle("telemetry_crash", v); }}
-              aria-label={t("settings.crashReports")}
-            />
-          }
-        />
-        <SettingsRow
-          label={t("settings.whatWeCollect")}
-          description={t("system.whatWeCollectDesc")}
-          control={
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              aria-label={t("settings.viewWhatWeCollect")}
-              onClick={() => {
-                openUrl(TELEMETRY_DOC_URL).catch(() => {});
-              }}
-            >
-              {t("sys.view")}
-            </Button>
-          }
-        />
-      </SettingsGroup>
 
       <SettingsGroup
         label={t("settings.systemTray")}
@@ -624,7 +556,6 @@ export function SystemSettings({
                 setLogLevel(level);
                 setLoggerLevel(level);
                 tauriApi.setLogLevel(level);
-                track("setting_changed", { setting: "log_level", value: level });
               }}
             >
               <SelectTrigger className="w-[140px] h-8 text-xs">

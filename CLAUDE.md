@@ -4,7 +4,7 @@
 
 Notesage is a rich text markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** see the `version` field in `package.json` (ships on an alpha pre-release channel). Not duplicated here — a hardcoded version line drifts; `package.json` is the single source of truth.
+**Current version:** see the `version` field in `package.json`. Not duplicated here — a hardcoded version line drifts; `package.json` is the single source of truth. There is **one** binary and one release stream; experimental work is opt-in under Settings → Labs, and the app collects no telemetry.
 
 ## Autonomy
 

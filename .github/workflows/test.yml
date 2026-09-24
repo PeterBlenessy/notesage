@@ -616,17 +616,14 @@ jobs:
         working-directory: src-tauri
         run: cargo test
 
-      # Regression guard for the v0.46.0-alpha.17/18 startup crash: with
-      # NOTESAGE_APTABASE_KEY set, the Aptabase plugin registers and its setup
-      # hook calls tokio::spawn — which panics ("there is no reactor running")
-      # unless run() enters a Tokio runtime first. Keyless test/dev builds never
-      # register the plugin, so ONLY a key'd launch reproduces it. We build with
-      # a dummy key and launch briefly, asserting the app gets past plugin setup
-      # (reaches the "starting up" hook) without the reactor panic.
-      - name: Smoke-launch with telemetry key (aptabase startup-panic regression)
+      # Descendant of the v0.46.0-alpha.17/18 startup-crash guard. The analytics
+      # plugin whose setup hook called tokio::spawn — panicking "there is no
+      # reactor running" unless run() enters a Tokio runtime first — has been
+      # removed, so the original key'd reproduction no longer exists. The launch
+      # itself still earns its place: nothing else in CI asserts that the built
+      # binary gets past plugin setup and reaches the "starting up" hook.
+      - name: Smoke-launch (survives plugin setup)
         working-directory: src-tauri
-        env:
-          NOTESAGE_APTABASE_KEY: "A-DEV-0000000000"
         run: |
           cargo build --bin notesage
           BIN=target/debug/notesage

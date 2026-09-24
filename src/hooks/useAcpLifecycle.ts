@@ -21,8 +21,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log } from '@/lib/logger';
 import { isAcpConnectionError, friendlyAcpError } from '@/lib/ai/errors';
-import { formatStopReasonNotice, toTelemetryStopReason } from '@/lib/ai/stop-reason';
-import { track, providerKind } from '@/lib/telemetry';
+import { formatStopReasonNotice } from '@/lib/ai/stop-reason';
 import { isAuthError, canReauthenticate, reauthenticateAgent } from '@/lib/ai/reauth';
 import { toast } from 'sonner';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -298,27 +297,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
    * leave it unsearchable. The streamed text lives in the listener's closure,
    * not here, so `content` is read back from the store and extended.
    */
-  /**
-   * Report how a turn finished, coerced to the closed telemetry enum.
-   *
-   * Defined once because both the initial send and the crash-retry path end a
-   * turn, and a retry that quietly went unreported would bias the very
-   * statistic this exists to measure.
-   */
-  const trackTurnEnded = useCallback(
-    (stopReason: string | null | undefined) => {
-      track('ai_turn_ended', {
-        path: 'acp',
-        provider_kind: providerKind(
-          effectiveConnection?.provider ?? '',
-          effectiveConnection?.authMethod ?? '',
-        ),
-        stop_reason: toTelemetryStopReason(stopReason),
-      });
-    },
-    [effectiveConnection],
-  );
-
   const appendTurnNotice = useCallback(
     // `convId` mirrors the store's own `convId?: string | null` — an absent id
     // means "the active conversation", which is how every other call here works.
@@ -712,10 +690,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
             // exactly as well — it received a string, not an attachment.
             attachedFilePaths: opts?.attachedFilePaths ?? null,
           });
-          // How the turn finished, in aggregate. `ai_chat_sent` fires at send
-          // and cannot know the outcome; this is the only signal for how often
-          // agents actually run out of room in the field.
-          trackTurnEnded(stopReason);
           const notice = formatStopReasonNotice(stopReason);
           if (notice) {
             log.warn('ai', 'ACP turn ended early', { stopReason, conversationId });
@@ -972,7 +946,6 @@ export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAc
         });
         // Same early-stop surfacing as the initial send — a retried turn can
         // exhaust its budget just as easily, and silence would be just as wrong.
-        trackTurnEnded(stopReason);
         const notice = formatStopReasonNotice(stopReason);
         if (notice) {
           log.warn('ai', 'ACP turn ended early after retry', { stopReason, conversationId });

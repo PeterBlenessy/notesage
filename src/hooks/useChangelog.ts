@@ -19,8 +19,8 @@ export interface Changelog {
   releases: Release[];
 }
 
-// Stable channel → no `-` prerelease segment in the listing.
-// Alpha channel → full list including alphas.
+// One binary, one stream — the alpha channel is gone. The listing carries no
+// `-` prerelease segment, and there is only ever one URL to fetch.
 // File names + URLs mirror the build artifact naming in
 // `scripts/generate-changelog.ts` and the workflow upload step.
 const STABLE_CHANGELOG_URL =

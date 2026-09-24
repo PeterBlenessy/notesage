@@ -162,31 +162,16 @@ tauri-plugin-deep-link = "2.4.9"
 base64 = "0.22"
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 # Telemetry — privacy-first usage analytics (first-party Tauri v2 plugin).
-# NOT available on iOS: the plugin's `sys.rs` leaves `ENGINE_NAME` undefined
-# for that target, so it fails to compile there. Gated off rather than patched
-# because the mobile app ships no usage telemetry by design (PRD
-# `2026-06-28-ios-mobile-app.md` § Non-Goals) — there is nothing to lose.
 [target.'cfg(target_os = "ios")'.dependencies]
 tauri-plugin-notesage-ios = { path = "crates/tauri-plugin-notesage-ios" }
 
 [target.'cfg(not(target_os = "ios"))'.dependencies]
-tauri-plugin-aptabase = "1.0.0"
 # Recoverable deletion for the Inbox (a read-later item is thrown away, not
 # destroyed): Finder's Trash on macOS, the platform equivalent elsewhere.
 # Desktop-only: the crate has no iOS backend and does not compile for the
 # aarch64-apple-ios target (TestFlight build 42 failed on it); the phone
 # never registers `trash_path` anyway.
 trash = "5"
-# Telemetry — crash/error reporting (Sentry, DSN-swappable to GlitchTip).
-# Desktop-only, like aptabase above: the iOS binary must not even LINK the
-# telemetry SDKs — that absence is what backs the App Store privacy label
-# "Data Not Collected" (#587), regression-locked by
-# `telemetry_crates_are_gated_off_the_ios_target`.
-# Pin to match tauri-plugin-sentry 0.5's internal sentry version (0.42) so the
-# ClientInitGuard passed to the plugin is the same type — a newer top-level
-# sentry pulls a second major into the tree and breaks `init(&client)`.
-sentry = "0.42"
-tauri-plugin-sentry = "0.5.0"
 # `whisper-rs` vendors whisper.cpp, whose ggml kernels reference Accelerate
 # symbols (`_vDSP_vsub`, `cblas_*`) that fail to link on iOS; `cpal` drives
 # microphone capture. Mobile ships no recording or transcription (PRD § Non-

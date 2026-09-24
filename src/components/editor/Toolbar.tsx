@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import type { Editor } from "@tiptap/react";
-import { track } from "@/lib/telemetry";
 import {
   Bold,
   Italic,
@@ -489,7 +488,6 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                     )}
                     onClick={() => {
               editor.chain().focus().toggleCodeBlock().run();
-              track("block_inserted", { kind: "code_block" });
             }}
                   >
                     <CodeSquare className="size-4 shrink-0" strokeWidth={1.5} />
@@ -756,7 +754,6 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => {
               editor.chain().focus().toggleCodeBlock().run();
-              track("block_inserted", { kind: "code_block" });
             }}
             active={editor.isActive("codeBlock")}
             title={t("editor.codeBlock")}

@@ -2,6 +2,13 @@
 
 Your notes are yours. Here is exactly how Notesage handles your data.
 
+**This page explains how Notesage is built.** The legal documents — who the
+controller is, what is collected on what basis, and how to exercise your
+rights — are published at
+[notesage.io/privacy](https://notesage.io/privacy/) and
+[notesage.io/eula](https://notesage.io/eula/), and those are the authoritative
+versions.
+
 ---
 
 ## Local-first by default
@@ -38,11 +45,16 @@ The local index that Notesage builds for search is excluded from iCloud sync. Ea
 
 ---
 
-## Telemetry is opt-out — and off in stable builds
+## Nothing is collected
 
-Stable releases of Notesage collect no usage data or crash reports. Pre-release (alpha) builds turn on basic, anonymous diagnostics by default to help catch problems early — and you can switch both usage and crash reporting off at any time in Settings, with a first-run notice when they're on. Whatever the build, the contents of your notes are never collected, and the app otherwise makes only the network connections you set up yourself (your AI provider, iCloud if enabled).
+Notesage collects no usage data and no crash reports, on either platform. The
+analytics and crash-reporting libraries are not switched off — they are not
+compiled into the app, and there is no setting that could turn them on. This
+changed on 21 September 2026; earlier Mac versions could send anonymous
+diagnostics, off by default.
 
-Some third-party AI providers may collect data according to their own policies. Check your provider's documentation for details.
+Some third-party AI providers may collect data according to their own policies.
+Check your provider's documentation for details.
 
 ---
 

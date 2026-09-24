@@ -39,7 +39,6 @@ import { ImageInsertDialog } from "./ImageInsertDialog";
 import { TableHeaderMenu } from "./TableHeaderMenu";
 import { PageHeaderFooterEditor } from "./PageHeaderFooterEditor";
 import { tauriApi } from "@/lib/tauri";
-import { track } from "@/lib/telemetry";
 import { setEditorRef } from "@/lib/editor-bridge";
 import { CONTENT_WIDTHS, CONTENT_HEIGHTS, PX_PER_CM } from "./editor-utils";
 import { EditorViewerContainer } from "./EditorViewerContainer";
@@ -652,7 +651,6 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
         onInsert={(src, alt) => {
           if (editor) {
             editor.chain().focus().setImage({ src, alt: alt || undefined }).run();
-            track("block_inserted", { kind: "image" });
           }
         }}
       />

@@ -366,17 +366,6 @@ function getSourcePriority(source: string): number {
   return SOURCE_PRIORITY[source as SkillSource] ?? 1;
 }
 
-/**
- * Collapse a skill source label to the low-cardinality telemetry `ItemSource`
- * (`bundled | user | project`). Project skills report `project`; every other
- * source (global Notesage skills + external provider skills) is `user`.
- * Pure — no PII.
- */
-export function skillSourceToItemSource(
-  source: string,
-): 'user' | 'project' {
-  return source === 'notesage-project' ? 'project' : 'user';
-}
 
 /**
  * Filter entries by project scope for Task #18 isolation.

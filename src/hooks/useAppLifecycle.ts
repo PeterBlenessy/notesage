@@ -20,15 +20,6 @@ import { countFiles } from "@/lib/file-utils";
 import { stopAllAcpAgents } from "@/hooks/useAIOperations";
 import { stopTaskAgent } from "@/hooks/useAgentTaskOperations";
 import { emitCmdBarEvent } from "@/lib/cmd-bar-events";
-import { track, coarseOs, trackLabsFlag } from "@/lib/telemetry";
-import { setFlagReporter, useFlagStore } from "@/stores/flag-store";
-
-// Wire the Labs graduation signal to telemetry. Done HERE because this module
-// is desktop-only (App.tsx mounts it; MobileApp never imports it) — the flag
-// store itself must not name `lib/telemetry`, or the iOS shell's
-// telemetry-free guarantee breaks. See `setFlagReporter`.
-setFlagReporter(trackLabsFlag);
-import { toastTelemetryNotice } from "@/lib/notifications";
 import { toast } from "sonner";
 import { t } from '@/lib/i18n';
 
@@ -86,40 +77,6 @@ export function useAppLifecycle() {
     const { logLevel } = useSettingsStore.getState();
     setLogLevel(logLevel);
     tauriApi.setLogLevel(logLevel);
-  }, []);
-
-  // --- Telemetry: app_launched event + alpha first-run/channel notice ---
-  // Fires once on startup, after settings have rehydrated from localStorage
-  // (Zustand persist rehydrates synchronously, so getState() here is current).
-  // `track` is a no-op when the effective usage flag is off, so the event is
-  // self-gated; the notice only appears on the alpha channel and only once.
-  const telemetryRanRef = useRef(false);
-  useEffect(() => {
-    if (telemetryRanRef.current) return;
-    telemetryRanRef.current = true;
-
-    const settings = useSettingsStore.getState();
-    // One binary, one stream — there is no channel dimension left to report.
-    // The first-run disclosure now fires for anyone who has opted into Labs,
-    // which is what turns telemetry on in the first place.
-    const version =
-      typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "dev";
-
-    track("app_launched", { version, os: coarseOs() });
-
-    if (useFlagStore.getState().enabled.length > 0 && !settings.telemetryNoticeSeen) {
-      toastTelemetryNotice({
-        onOpenSettings: () =>
-          window.dispatchEvent(
-            new CustomEvent("notesage:open-settings", {
-              detail: { tab: "system" },
-            }),
-          ),
-      });
-      // Read the setter from the live store rather than the captured snapshot,
-      // so this stays correct if the persist storage adapter ever goes async.
-      useSettingsStore.getState().setTelemetryNoticeSeen(true);
-    }
   }, []);
 
   // --- Stop ACP agent processes on window close ---
@@ -523,12 +480,6 @@ export async function reloadTrees() {
       settings.setICloudNotesagePath(icloudNotesagePath);
       settings.setLibraryRootKind(resolved.kind);
       log.info("startup", `Library root: ${resolved.kind} at ${icloudNotesagePath}`);
-      // The denominator for retiring the container migration. Every other
-      // event about it counts people who ACTED; this counts the population
-      // that has not, which is the only number that can say whether the
-      // migration path is still needed. Once per launch, and the path is
-      // never sent — only which of the two kinds of root it was.
-      track("library_root_kind", { kind: resolved.kind ?? "none" });
     }
   } catch {
     // Expected: iCloud path unavailable on non-Apple systems or when iCloud is not set up
