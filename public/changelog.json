@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.61.0",
+      "date": "2026-09-24",
+      "previousVersion": "0.60.4",
+      "sections": {
+        "improvements": [
+          "Notesage no longer collects anything — no usage analytics, no crash reports, on either the Mac app or the iPhone app. This is not a new default you could change back: the code that did it has been removed, and the two switches for it have left Settings → System because there is nothing left to switch. The privacy policy at notesage.io/privacy now says so in plain language.",
+          "The third-party licence list shows the full licence text for every component, including the ones whose projects ship no licence file of their own."
+        ],
+        "fixes": [
+          "Skills could fail to appear and then stay missing for the rest of the session. Opening the command bar in the first moments after launch, before the app had finished starting, could leave it permanently empty with no way back short of restarting.",
+          "Opening the command bar that early could also start a second, redundant scan of your skills immediately after the first — making startup slower at exactly the moment it was meant to be faster."
+        ]
+      }
+    },
+    {
       "version": "0.60.4",
       "date": "2026-09-18",
       "previousVersion": "0.60.3",
