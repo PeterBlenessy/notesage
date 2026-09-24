@@ -25,12 +25,16 @@ screen; the sender warns past that.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Back works on the Acknowledgements screen now.
+Two fixes to the licence screen, and one to where it turns up.
 
 FIXED
-• In build 79 the Back button on Acknowledgements put you straight back on it,
-so the only way out was to quit the app. It returns to Home now.
+• Acknowledgements was offered from every folder, not just Home. Opening it
+from inside a folder and pressing Back dropped you at the top of your library.
+• 102 packages showed no licence text at all. They now show the standard text
+for their licence, marked as standard. 65 more cannot be fixed and now say so
+instead of showing nothing.
 
 TRY
-• "…" on Home, then Acknowledgements, then Back. Once is enough.
-• While you are there: tap MIT for its 643 packages and the licence itself.
+• Open any folder, then "…". Acknowledgements should NOT be there — only on Home.
+• Home → "…" → Acknowledgements → Apache 2.0, then a package. The text should be
+there, with a line saying where it came from.
