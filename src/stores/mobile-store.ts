@@ -265,6 +265,25 @@ interface MobileStore {
   imageQuality: number;
   /** Master switch for the background sweep. */
   inlineImagesEnabled: boolean;
+  /**
+   * Captures already confirmed self-contained: path → the `modified` stamp the
+   * file carried when it was confirmed.
+   *
+   * The sweep used to remember this in a `useRef`, which a cold start forgets —
+   * so every launch re-read every Inbox capture to be told, one IPC round trip
+   * at a time, that there was nothing to do. On a 72-item Inbox that is 72 file
+   * reads and a progress indicator counting to 72 for no work at all.
+   *
+   * Keyed by modification time as well as path, so an edited document is
+   * checked again: an edit can introduce remote images the same way a fresh
+   * capture does. Same shape as the ArticleMeta cache, and for the same reason.
+   */
+  selfContained: Record<string, number>;
+  /** Record that `path`, as it stood at `modified`, needs no inlining. */
+  markSelfContained: (path: string, modified: number) => void;
+  /** Drop entries for paths no longer present, so the map cannot grow forever
+   *  as Inbox items are filed away. */
+  pruneSelfContained: (keep: Set<string>) => void;
   /** Root-relative pinned paths read from the shared library-root
    *  `.notesage/pins.json` (#652) — read-only on iOS in this slice, desktop
    *  is the only writer. Not persisted: always freshly re-read from disk
@@ -630,6 +649,7 @@ export const useMobileStore = create<MobileStore>()(
       imageMaxPixel: 1600,
       imageQuality: 0.8,
       inlineImagesEnabled: true,
+      selfContained: {},
       pinnedPaths: [],
       scrollOffsets: {},
       speechPositions: {},
@@ -813,6 +833,22 @@ export const useMobileStore = create<MobileStore>()(
       // it is a bug, and it would reach CGImageDestination as one.
       setImageQuality: (v) => set({ imageQuality: Math.min(1, Math.max(0.1, v)) }),
       setInlineImagesEnabled: (v) => set({ inlineImagesEnabled: v }),
+
+      markSelfContained: (path, modified) =>
+        set((st) => ({ selfContained: { ...st.selfContained, [path]: modified } })),
+
+      pruneSelfContained: (keep) =>
+        set((st) => {
+          const next: Record<string, number> = {};
+          for (const [path, stamp] of Object.entries(st.selfContained)) {
+            if (keep.has(path)) next[path] = stamp;
+          }
+          // Identity matters: returning a fresh object on every sweep would
+          // re-render every subscriber for nothing.
+          return Object.keys(next).length === Object.keys(st.selfContained).length
+            ? {}
+            : { selfContained: next };
+        }),
 
       loadPinnedPaths: async () => {
         try {
@@ -1241,6 +1277,7 @@ export const useMobileStore = create<MobileStore>()(
         imageMaxPixel: s.imageMaxPixel,
         imageQuality: s.imageQuality,
         inlineImagesEnabled: s.inlineImagesEnabled,
+        selfContained: s.selfContained,
       }),
 
     },

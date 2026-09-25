@@ -41,7 +41,12 @@ import { useMobileStore } from "@/stores/mobile-store";
 function makeAnnouncer() {
   let last = 0;
   let pending = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
   const fire = () => {
+    if (timer !== null) {
+      clearTimeout(timer);
+      timer = null;
+    }
     last = performance.now();
     pending = false;
     window.dispatchEvent(new CustomEvent(INLINE_SWEEP_EVENT));
@@ -52,12 +57,26 @@ function makeAnnouncer() {
         fire();
       } else if (!pending) {
         pending = true;
-        setTimeout(fire, ANNOUNCE_THROTTLE_MS);
+        timer = setTimeout(fire, ANNOUNCE_THROTTLE_MS);
       }
     },
-    /** Always fire at the end, so the final state is never left unshown. */
+    /**
+     * Fire the update the throttle is still holding, if there is one.
+     *
+     * This used to fire unconditionally — the guard read
+     * `pending || performance.now() - last > 0`, and the right-hand side is
+     * true from the first millisecond of the process, so the condition never
+     * said no. Every sweep therefore ended with a full library reload,
+     * including the common one that rewrote nothing at all. On iOS that
+     * reload reaches `reloadScreens()`, so a sweep with no work still made
+     * every native screen re-read itself.
+     *
+     * `pending` is the real question: it is set only when the throttle
+     * swallowed an update, which is the case this exists for. When it is
+     * false, the last `fire()` already showed the final state.
+     */
     flush() {
-      if (pending || performance.now() - last > 0) fire();
+      if (pending) fire();
     },
   };
 }
@@ -123,6 +142,12 @@ export function useInlineSweep() {
    * document with nothing remote left, so a repeat is harmless. This exists to
    * stop the sweep re-reading every Inbox file on every single foreground,
    * which on a large Inbox is real IPC and real disk for a guaranteed no-op.
+   *
+   * It is RAM, so it forgets on a cold start — which is why the confirmed-done
+   * set is persisted in the store instead. This ref still earns its place for
+   * the within-session case (a foreground every few minutes), and for the
+   * documents the persisted map deliberately will not cover: one that was just
+   * rewritten, whose recorded stamp is now stale by construction.
    */
   const attempted = useRef<Set<string>>(new Set());
   const announcer = useRef(makeAnnouncer());
@@ -168,12 +193,24 @@ export function useInlineSweep() {
         return;
       }
 
+      // Forget documents that have left the Inbox, so the map stays the size
+      // of the Inbox rather than growing for the life of the install.
+      const candidates = entries.filter(isSweepableCapture);
+      useMobileStore
+        .getState()
+        .pruneSelfContained(new Set(candidates.map((e) => e.path)));
+      const { selfContained } = useMobileStore.getState();
+
       // Decide the work set BEFORE starting, so the indicator can show a
       // stable "n of m" rather than a total that grows as it goes.
-      const todo = entries.filter(
+      const todo = candidates.filter(
         (e) =>
-          isSweepableCapture(e) &&
           !attempted.current.has(e.path) &&
+          // Already confirmed self-contained AND untouched since. A file with
+          // no `modified` stamp cannot be judged this way and is simply
+          // checked — the listing populates it on iOS, so this is the
+          // defensive branch rather than the normal one.
+          !(e.modified !== undefined && selfContained[e.path] === e.modified) &&
           // Rewriting a file the user is reading would swap the document under
           // them mid-scroll. It keeps its remote images until next time.
           !(openDocRef.current && e.path === openDocRef.current),
@@ -192,6 +229,18 @@ export function useInlineSweep() {
           // session, even once the signal came back — the sweep had silently
           // spent its one attempt.
           attempted.current.add(entry.path);
+          if (inlined === 0 && entry.modified !== undefined) {
+            // Nothing was rewritten, so the stamp we listed with still
+            // describes the file on disk — safe to record against it.
+            //
+            // A document that DID gain images is deliberately not recorded:
+            // the rewrite moved its modification time, and the one we hold is
+            // the pre-rewrite value. Recording it would key the map to a stamp
+            // the file no longer has, so the entry could never match and would
+            // sit there misleading anyone who read it. It is checked once more
+            // on the next launch, returns 0, and is recorded then.
+            useMobileStore.getState().markSelfContained(entry.path, entry.modified);
+          }
           if (inlined > 0) {
             // The thumbnail cache is keyed by path and never expires, so
             // without this the article keeps the text-only thumbnail taken

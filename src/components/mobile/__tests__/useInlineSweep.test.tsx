@@ -37,7 +37,7 @@ beforeEach(() => {
   inlineMock.mockReset();
   evictMock.mockReset();
   inlineMock.mockResolvedValue(1);
-  useMobileStore.setState({ openDoc: null });
+  useMobileStore.setState({ openDoc: null, selfContained: {} });
 });
 
 afterEach(() => {
@@ -418,3 +418,99 @@ describe("settings (#2.2)", () => {
   });
 });
 
+describe("only when there is something to do", () => {
+  // The sweep used to remember what it had finished in a `useRef`, which a
+  // cold start forgets. Every launch therefore re-read every Inbox capture to
+  // be told there was nothing to do — 72 IPC round trips and 72 disk reads on
+  // a 72-item Inbox, with a progress indicator counting through all of them.
+  // Reported from a device: "why does this show every time?"
+
+  it("skips a capture already confirmed self-contained and untouched since", async () => {
+    useMobileStore.setState({ selfContained: { "Inbox/done.html": 1700 } });
+    listDirectoryMock.mockResolvedValue([
+      entry("done.html", { modified: 1700 }),
+      entry("fresh.html", { modified: 1800 }),
+    ]);
+
+    renderHook(() => useInlineSweep());
+
+    await waitFor(() => expect(inlineMock).toHaveBeenCalled());
+    expect(inlineMock.mock.calls.map((c) => c[0])).toEqual(["Inbox/fresh.html"]);
+  });
+
+  it("checks it again once it has been edited", async () => {
+    // An edit can introduce remote images exactly the way a fresh capture
+    // does, so the stamp is half the key — skipping on path alone would leave
+    // an edited document linked forever.
+    useMobileStore.setState({ selfContained: { "Inbox/done.html": 1700 } });
+    listDirectoryMock.mockResolvedValue([entry("done.html", { modified: 1999 })]);
+
+    renderHook(() => useInlineSweep());
+
+    await waitFor(() => expect(inlineMock).toHaveBeenCalledWith("Inbox/done.html", expect.anything()));
+  });
+
+  it("records a capture that needed nothing, so the next launch skips it", async () => {
+    inlineMock.mockResolvedValue(0);
+    listDirectoryMock.mockResolvedValue([entry("clean.html", { modified: 1700 })]);
+
+    renderHook(() => useInlineSweep());
+
+    await waitFor(() =>
+      expect(useMobileStore.getState().selfContained["Inbox/clean.html"]).toBe(1700),
+    );
+  });
+
+  it("does NOT record one it rewrote — the stamp it holds is already stale", async () => {
+    // Rewriting moves the file's modification time, and the value in hand is
+    // the pre-rewrite one. Recording it would key the entry to a stamp the
+    // file no longer carries: it could never match, and would sit there
+    // claiming something untrue. One more check next launch returns 0 and
+    // records the real stamp.
+    inlineMock.mockResolvedValue(3);
+    listDirectoryMock.mockResolvedValue([entry("gained.html", { modified: 1700 })]);
+
+    renderHook(() => useInlineSweep());
+
+    await waitFor(() => expect(evictMock).toHaveBeenCalled());
+    expect(useMobileStore.getState().selfContained["Inbox/gained.html"]).toBeUndefined();
+  });
+
+  it("forgets captures that have left the Inbox", async () => {
+    // Filed items never come back to this listing, so without pruning the map
+    // grows for the life of the install.
+    useMobileStore.setState({
+      selfContained: { "Inbox/filed.html": 1700, "Inbox/here.html": 1700 },
+    });
+    inlineMock.mockResolvedValue(0);
+    listDirectoryMock.mockResolvedValue([entry("here.html", { modified: 1700 })]);
+
+    renderHook(() => useInlineSweep());
+
+    await waitFor(() =>
+      expect(useMobileStore.getState().selfContained["Inbox/filed.html"]).toBeUndefined(),
+    );
+    expect(useMobileStore.getState().selfContained["Inbox/here.html"]).toBe(1700);
+  });
+
+  it("announces nothing when it rewrote nothing", async () => {
+    // Each announcement makes the library reload its whole listing, and on iOS
+    // that reaches `reloadScreens()`, which re-reads every native screen. The
+    // end-of-sweep flush used to fire unconditionally — its guard read
+    // `pending || performance.now() - last > 0`, and the right-hand side is
+    // true from the first millisecond of the process, so it never said no.
+    // A sweep that changed nothing still cost a full reload.
+    inlineMock.mockResolvedValue(0);
+    listDirectoryMock.mockResolvedValue([entry("clean.html", { modified: 1700 })]);
+    let announced = 0;
+    window.addEventListener(INLINE_SWEEP_EVENT, () => {
+      announced += 1;
+    });
+
+    renderHook(() => useInlineSweep());
+
+    await waitFor(() => expect(inlineMock).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 40));
+    expect(announced).toBe(0);
+  });
+});
