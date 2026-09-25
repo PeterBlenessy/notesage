@@ -184,7 +184,15 @@ final class LibraryBrowsing: LibraryFolderHost {
     /// Forget the cached sidecars — after a delete, a rename, or a return from
     /// the reader, where progress will have moved.
     func invalidate() {
-        appearanceCache.removeAll()
+        // Appearance is EXPIRED, not dropped. Dropping it turns the next
+        // redraw into a miss, and a miss can only answer with the default —
+        // so every custom folder icon on screen repaints as a plain grey
+        // folder until its re-read lands. Expiring instead keeps the last
+        // known answer visible while the fresh one is fetched behind it,
+        // which is what `invalidate` actually wants: re-read, not un-draw.
+        for key in appearanceCache.keys {
+            appearanceCache[key]?.at = .distantPast
+        }
         sidecarPendingSince.removeAll()
         homeCache = nil
         pinnedCache = nil
@@ -356,12 +364,27 @@ final class LibraryBrowsing: LibraryFolderHost {
     /// The first version of this fix left the synchronous read in place as a
     /// fallback, which meant the very first paint of every listing — the case
     /// the hitch was reported for — still blocked.
+    ///
+    /// **A stale answer beats a wrong one.** Returning the default on any miss
+    /// conflates "not read yet" with "this folder has no custom icon", and the
+    /// two must draw differently: the first should keep showing what it showed
+    /// a moment ago, the second is a plain folder. With them conflated, every
+    /// miss repainted a custom icon as a plain grey folder for the frame or
+    /// two until the read landed — visible as a flicker across the whole Home
+    /// row on cold start, once per second for as long as the offline sweep ran
+    /// (each of its announcements reloads every screen), plus once more when
+    /// it finished. Reported from a build-81 device.
+    ///
+    /// So a known value is returned even past its TTL, and the re-read happens
+    /// behind it. Only a path never read at all answers with the default, and
+    /// that one really is unknown.
     @MainActor
     func folderAppearance(for entry: LibraryEntry) -> LibraryFolderAppearance {
         guard entry.isDirectory else { return LibraryFolderAppearance() }
-        if let hit = appearanceCache[entry.path],
-            Date().timeIntervalSince(hit.at) < Self.ttl
-        {
+        if let hit = appearanceCache[entry.path] {
+            if Date().timeIntervalSince(hit.at) >= Self.ttl {
+                scheduleSidecarRead(appearanceFor: entry.path)
+            }
             return hit.value
         }
         scheduleSidecarRead(appearanceFor: entry.path)

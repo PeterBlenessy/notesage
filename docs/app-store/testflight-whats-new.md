@@ -25,16 +25,17 @@ screen; the sender warns past that.
 Rewrite it for each release. Stale notes are worse than none — they send
 people testing something that already shipped.
 -->
-Two fixes to the licence screen, and one to where it turns up.
+Two things you should stop seeing on a cold start.
 
 FIXED
-• Acknowledgements was offered from every folder, not just Home. Opening it
-from inside a folder and pressing Back dropped you at the top of your library.
-• 102 packages showed no licence text at all. They now show the standard text
-for their licence, marked as standard. 65 more cannot be fixed and now say so
-instead of showing nothing.
+• The folder icons on Home repainted as plain grey folders for a moment after
+launch, then snapped back. They no longer blank while the app re-reads them.
+• "Saving for offline" ran through every item in your Inbox on every single
+launch, even when all of them were already saved. It now only appears when
+there is actually something to fetch.
 
 TRY
-• Open any folder, then "…". Acknowledgements should NOT be there — only on Home.
-• Home → "…" → Acknowledgements → Apache 2.0, then a package. The text should be
-there, with a line saying where it came from.
+• Force-quit, reopen, and watch the icon row on Home. Nothing should blank.
+• Reopen again without sharing anything new. No "Saving for offline" at all.
+• Share a link, then reopen: it should appear, count only the new one, and the
+thumbnail should fill in.
