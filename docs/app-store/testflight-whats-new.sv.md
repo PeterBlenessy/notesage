@@ -24,16 +24,18 @@ sektion som är tom. Ungefär 600 tecken ryms på en skärm; skriptet varnar
 Skriv om den för varje släpp. Gammal text är sämre än ingen alls: den skickar
 folk att testa sådant som redan är ute.
 -->
-Två rättningar på licensskärmen, och en på var den dyker upp.
+Två saker du ska sluta se vid kallstart.
 
 RÄTTAT
-• Tack till erbjöds från varje mapp, inte bara Hem. Öppnade du den inifrån en
-mapp och tryckte Bakåt hamnade du högst upp i biblioteket.
-• 102 paket visade ingen licenstext alls. De visar nu standardtexten för sin
-licens, märkt som standard. 65 till går inte att rätta och säger nu det rakt ut
-i stället för att visa ingenting.
+• Mappikonerna på Hem målades om till släta grå mappar ett ögonblick efter
+starten och hoppade sedan tillbaka. De blir inte längre tomma medan appen
+läser om dem.
+• "Sparar för offline" gick igenom varje objekt i din Inbox vid varje start,
+även när alla redan var sparade. Den visas nu bara när det faktiskt finns
+något att hämta.
 
 PROVA
-• Öppna vilken mapp som helst, sedan "…". Tack till ska INTE finnas där — bara på Hem.
-• Hem → "…" → Tack till → Apache 2.0, sedan ett paket. Texten ska finnas där,
-med en rad som säger var den kommer ifrån.
+• Tvinga fram avslut, öppna igen och titta på ikonraden på Hem. Inget ska bli tomt.
+• Öppna igen utan att dela något nytt. Ingen "Sparar för offline" alls.
+• Dela en länk och öppna sedan igen: den ska dyka upp, räkna bara den nya, och
+miniatyren ska fyllas i.
