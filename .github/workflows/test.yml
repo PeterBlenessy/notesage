@@ -639,14 +639,14 @@ jobs:
           tail -40 smoke.log || true
           echo "----------------------------"
           if grep -qi "there is no reactor running" smoke.log; then
-            echo "::error::Startup panic from the telemetry plugin reproduced — run() must enter a Tokio runtime before the Tauri builder. See src-tauri/src/lib.rs build_app_runtime()."
+            echo "::error::Startup panic reproduced — run() must enter a Tokio runtime before the Tauri builder, or a plugin that spawns from its setup hook takes the app down. See src-tauri/src/lib.rs build_app_runtime()."
             exit 1
           fi
           if ! grep -q "Notesage starting up" smoke.log; then
-            echo "::error::App did not reach the 'starting up' setup hook within 20s with the telemetry plugin registered — startup is broken."
+            echo "::error::App did not reach the 'starting up' setup hook within 20s — startup is broken."
             exit 1
           fi
-          echo "OK: app reached startup with the telemetry plugin registered; no reactor panic."
+          echo "OK: app reached startup; no reactor panic."
 
   cargo-audit:
     name: Rust Dependency Audit

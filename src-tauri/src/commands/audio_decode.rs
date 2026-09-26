@@ -48,9 +48,8 @@ pub struct Decoded {
     pub samples: Vec<f32>,
     pub sample_rate: u32,
     pub channels: u16,
-    /// Which decoder produced this. Rides out through `TranscriptionResult`
-    /// so the frontend can report it as telemetry — the fallback is only
-    /// worth keeping if we can see whether it fires.
+    /// Which decoder produced this. Logged by `transcribe_file` — the
+    /// fallback is only worth keeping if we can see whether it fires.
     pub decoder: Decoder,
 }
 

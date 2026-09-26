@@ -242,13 +242,8 @@ try {
   }
   await browser.pause(1500);
 
-  // 4) Open the hero doc + dismiss the alpha telemetry toast.
+  // 4) Open the hero doc.
   await openDoc('Essays', 'On Attention.md', '.ProseMirror', 'On Attention');
-  await browser.execute(() => {
-    const b = document.querySelector('[data-sonner-toast] [data-close-button]');
-    if (b) b.click();
-  });
-  await browser.pause(400);
 
   // =========================================================================
   // STORYBOARD — deliberate, video-friendly beats. Each pose settles before the

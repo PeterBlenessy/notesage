@@ -603,9 +603,10 @@ export interface TranscriptionResult {
   /**
    * Which decoder read the audio — `"symphonia"` or `"coreaudio"` (#803).
    *
-   * Reported as telemetry rather than shown: the CoreAudio fallback exists to
-   * cover two known symphonia gaps, and whether it earns its place is a
-   * measurable question this answers.
+   * Not shown anywhere, and nothing reads it: the backend logs the decoder
+   * itself. The field predates the removal of telemetry, which was its only
+   * consumer, and is kept for now because the answer it carries is the one
+   * #803 exists to settle.
    */
   decoder: string;
 }

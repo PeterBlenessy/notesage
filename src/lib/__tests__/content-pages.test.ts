@@ -209,9 +209,14 @@ describe('privacy.md content', () => {
     expect(content.toLowerCase()).toMatch(/icloud|sync|optional/);
   });
 
-  it('explains no telemetry by default', () => {
-    const content = readMarkdown('privacy.md');
-    expect(content.toLowerCase()).toMatch(/telemetry|track|analytic|default/);
+  it('states plainly that nothing is collected', () => {
+    // The old assertion matched /telemetry|track|analytic|default/, which the
+    // word "default" alone satisfied — it would have passed against a page
+    // saying collection was on by default. The page now says the opposite, so
+    // the test should too.
+    const content = readMarkdown('privacy.md').toLowerCase();
+    expect(content).toMatch(/collects no|nothing is collected|no usage data/);
+    expect(content).not.toMatch(/opt-out|alpha builds/);
   });
 });
 
