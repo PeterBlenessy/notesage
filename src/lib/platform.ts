@@ -4,7 +4,7 @@
  * The Notesage desktop shell (`QuietLayout`) and the read-only mobile shell
  * (`MobileApp`) are chosen at the root (`main.tsx`) by `isIos()`. We branch at
  * the root — not inside `App.tsx` — so the desktop lifecycle hooks (AI, ACP,
- * watcher, git, telemetry, editor) are never *called* on mobile (Rules of
+ * watcher, git, editor) are never *called* on mobile (Rules of
  * Hooks forbid conditionally calling them lower down).
  *
  * v1 uses a user-agent heuristic rather than `@tauri-apps/plugin-os` to avoid

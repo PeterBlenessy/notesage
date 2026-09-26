@@ -6,15 +6,15 @@
  * synchronously from the Vite-injected `__APP_VERSION__`, so it is correct from
  * the very first module evaluation — unlike the async `isAlphaBuild()` in
  * `build-channel.ts`, which resolves the version over IPC after startup. The
- * synchronous form is required by the telemetry consent default, which is read
- * during store rehydration (before any startup hook has run).
+ * synchronous form is required by settings-store rehydration, which runs
+ * before any startup hook has.
  */
 
 /**
  * SemVer prerelease check: a version with a `-suffix` (e.g. `0.48.0-alpha.2`) is
  * a prerelease; a plain `0.48.0` is not. Build metadata (`+…`) is stripped first.
  * Single source of truth for "prerelease", shared by the updater's
- * channel-isolation guard, build-channel detection, and telemetry defaults.
+ * channel-isolation guard and build-channel detection.
  */
 export function isPrereleaseVersion(version: string): boolean {
   // Strip build metadata (`+...`) before checking for a prerelease suffix.

@@ -17,10 +17,12 @@ pub struct TranscriptionResult {
     pub language: String,
     /// Which decoder read the file — `"symphonia"` or `"coreaudio"`.
     ///
-    /// Surfaced rather than merely logged so the frontend can report it as
-    /// telemetry. The CoreAudio fallback exists to cover two specific gaps
-    /// (Opus, and AAC that symphonia rejects); whether it earns its place is a
-    /// measurable question, and this is the measurement.
+    /// Recorded in `notesage.log` at info. The CoreAudio fallback exists to
+    /// cover two specific gaps (Opus, and AAC that symphonia rejects); whether
+    /// it earns its place is a measurable question, and the log is where that
+    /// measurement now lives — nothing about it leaves the device.
+    ///
+    /// Still carried on the response, where nothing currently reads it.
     pub decoder: String,
 }
 
@@ -920,6 +922,14 @@ pub async fn transcribe_file(
     // read, not just the 16-bit WAV `start_recording` happens to write (#803).
     let decoded = crate::commands::audio_decode::decode_audio_f32(&audio_path)?;
     let decoder_used = decoded.decoder;
+    // Which decoder read it (#803). This used to ride out to a telemetry event;
+    // with that gone the question it exists to answer — does the CoreAudio
+    // fallback ever actually fire? — had no answer anywhere. The log keeps it
+    // answerable without anything leaving the device.
+    log::info!(
+        target: "notesage::transcription",
+        "Decoded with {}", decoder_used.as_str()
+    );
     let audio_data =
         resample_to_16k_mono(&decoded.samples, decoded.sample_rate, decoded.channels);
     if audio_data.is_empty() {

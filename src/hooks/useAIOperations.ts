@@ -155,9 +155,8 @@ export function useAIOperations() {
       // both streaming paths tear down the previous same-conversation stream on
       // send. Park the message instead; `useMessageQueueDrain` dispatches it
       // (recomputing the thread, since the finishing run appended messages)
-      // once the run reaches a terminal state. Checked BEFORE telemetry so the
-      // `ai_chat_sent` event fires once, at actual dispatch. The `isSendQueued`
-      // check is belt-and-braces for a cap-parked thunk whose run entry drifted.
+      // once the run reaches a terminal state. The `isSendQueued` check is
+      // belt-and-braces for a cap-parked thunk whose run entry drifted.
       const inFlightConv = useChatStore.getState().activeConversationId;
       if (
         inFlightConv &&

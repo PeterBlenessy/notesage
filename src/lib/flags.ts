@@ -7,8 +7,7 @@
  * build; experimental behaviour ships in it, off, and is opted into here.
  *
  * The registry is the join key for everything else — the Labs panel row, the
- * telemetry props, the crash-report tag, and the graduation decision all
- * address a flag by the same id. Adding a flag means adding an entry here;
+ * the graduation decision address a flag by the same id. Adding a flag means adding an entry here;
  * `FlagId` derives from it, so a typo at a call site is a type error rather
  * than a silently-never-enabled feature.
  */

@@ -52,7 +52,7 @@ describe("flag store", () => {
     expect(isFlagEnabled(id)).toBe(false);
   });
 
-  it("anyEnabled drives the telemetry default", () => {
+  it("anyEnabled answers whether any flag is on", () => {
     expect(useFlagStore.getState().anyEnabled()).toBe(false);
     useFlagStore.getState().setEnabled("demo-flag" as FlagId, true);
     expect(useFlagStore.getState().anyEnabled()).toBe(true);
