@@ -4,7 +4,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { useEditorStylesStore } from "@/stores/editor-styles-store";
 import { useChatStore } from "@/stores/chat-store";
-import { tauriApi, type FileEntry } from "@/lib/tauri";
+import { tauriApi, type ContainerAccess, type FileEntry } from "@/lib/tauri";
 import { parseFrontmatter } from "@/lib/frontmatter";
 import { getFileType, isBinaryFileType } from "@/lib/file-utils";
 import { setBinaryData } from "@/lib/binary-cache";
@@ -13,7 +13,9 @@ import { backfillSidecarOriginalPaths } from "@/lib/backfill-sidecar-paths";
 import { recoverIncompleteTransactions } from "@/lib/rename-transaction";
 import { migrateUserContentPathsForFolders } from "@/lib/migrate-user-content-paths";
 import { migrateV1AISettings } from "@/lib/ai/migration";
-import { resolveSyncedLibraryRoot } from "@/lib/library-root";
+import { resolveSyncedLibraryRoot, type LibraryRootKind } from "@/lib/library-root";
+import { followLibraryMove } from "@/lib/library-follow-apply";
+import { isHeldForLibraryAccess } from "@/lib/library-follow";
 import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
 import { log, setLogLevel, PERF } from "@/lib/logger";
 import { countFiles } from "@/lib/file-utils";
@@ -267,6 +269,133 @@ async function withTimeout<T>(
   }
 }
 
+interface SyncedLibrary {
+  icloudAvailable: boolean;
+  icloudNotesagePath: string | null;
+  kind: LibraryRootKind | null;
+  /** This Mac's `iCloud Drive/Notesage`, whether or not it is the live root. */
+  cloudDocsRoot: string | null;
+  /** The container exists here but macOS will not let the app read it. */
+  containerDenied: boolean;
+}
+
+/**
+ * Work out which synced library is live and publish it to the settings store.
+ *
+ * Computes the truth locally instead of re-reading useSettingsStore later —
+ * a snapshot taken at the top of `reloadTrees` is stale once this mutates the
+ * store. (PR #84 hit the same shape of bug; the iCloud-disabled-on-reload
+ * regression.)
+ */
+async function detectSyncedLibrary(stepTimeoutMs: number): Promise<SyncedLibrary> {
+  const settings = useSettingsStore.getState();
+  const result: SyncedLibrary = {
+    icloudAvailable: false,
+    icloudNotesagePath: null,
+    kind: null,
+    cloudDocsRoot: null,
+    containerDenied: false,
+  };
+  try {
+    // There are now two places a synced library can live: today's
+    // `iCloud Drive/Notesage`, and Notesage's own iCloud container, which the
+    // phone can create without anyone picking a folder. Both can exist at
+    // once — during a migration they must — so the marker decides which is
+    // live, not the directories. `resolveSyncedLibraryRoot` holds the rule;
+    // this reads the inputs it needs.
+    const icloudRoot = await tauriApi.getICloudPath();
+    const cloudDocsRoot = icloudRoot ? `${icloudRoot}/Notesage` : null;
+    result.cloudDocsRoot = cloudDocsRoot;
+    // Each container lookup is separately defensive. Whatever the answer,
+    // failing to get one must leave today's CloudDocs library exactly as it
+    // was — a backend without these commands, or an iCloud hiccup, is not a
+    // reason for a Mac to lose its library at startup.
+    let containerRoot: string | null = null;
+    let marker: Awaited<ReturnType<typeof tauriApi.readLibraryMarker>> = null;
+    let containerAccess: ContainerAccess | undefined;
+    try {
+      containerRoot =
+        (await withTimeout(
+          tauriApi.getLibraryContainerPath(),
+          stepTimeoutMs,
+          "getLibraryContainerPath",
+        )) ?? null;
+      if (containerRoot) {
+        // Asked BEFORE trusting anything read from the container. Startup
+        // used to skip this, so a Mac macOS would not let read the folder
+        // could still pick it — and every listing in it then failed in
+        // silence, which looked like the library had been emptied.
+        try {
+          containerAccess = await withTimeout(
+            tauriApi.libraryContainerAccess(),
+            stepTimeoutMs,
+            "libraryContainerAccess",
+          );
+        } catch {
+          containerAccess = undefined;
+        }
+        if (containerAccess !== "denied") {
+          marker =
+            (await withTimeout(
+              tauriApi.readLibraryMarker(containerRoot),
+              stepTimeoutMs,
+              "readLibraryMarker",
+            )) ?? null;
+        }
+      }
+    } catch {
+      containerRoot = null;
+      marker = null;
+    }
+    result.containerDenied = containerAccess === "denied";
+    // "Has content" ignores `.DS_Store`: Finder leaves one in any folder a
+    // person merely opened, and counting it would keep a phone-first user
+    // pinned to an empty CloudDocs root for ever.
+    // Only worth asking when there is a readable container to prefer over
+    // it: otherwise the answer cannot change the outcome, and this is a
+    // directory listing on a cloud path in the startup budget.
+    let cloudDocsHasContent = Boolean(cloudDocsRoot);
+    if (cloudDocsRoot && containerRoot && !result.containerDenied) {
+      try {
+        // Timed out like every other cloud-touching step here, and — when it
+        // fails or is slow — assumed to HAVE content. That default is the
+        // safe one: reading a slow or transiently-empty listing as "empty"
+        // would switch a Mac with a real CloudDocs library over to a
+        // near-empty container for the session.
+        const entries = await withTimeout(
+          tauriApi.listDirectory(cloudDocsRoot),
+          stepTimeoutMs,
+          "listDirectory(cloudDocs)",
+        );
+        if (!entries) throw new Error("timed out");
+        cloudDocsHasContent = entries.some((e) => e.name !== ".DS_Store");
+      } catch {
+        cloudDocsHasContent = true;
+      }
+    }
+    const resolved = resolveSyncedLibraryRoot({
+      containerRoot,
+      cloudDocsRoot,
+      marker,
+      containerAccess,
+      cloudDocsHasContent,
+    });
+    settings.setLibraryContainerDenied(result.containerDenied);
+    if (resolved.path) {
+      result.icloudAvailable = true;
+      result.icloudNotesagePath = resolved.path;
+      result.kind = resolved.kind;
+      settings.setICloudAvailable(true);
+      settings.setICloudNotesagePath(resolved.path);
+      settings.setLibraryRootKind(resolved.kind);
+      log.info("startup", `Library root: ${resolved.kind} at ${resolved.path}`);
+    }
+  } catch {
+    // Expected: iCloud path unavailable on non-Apple systems or when iCloud is not set up
+  }
+  return result;
+}
+
 /**
  * Full startup tree reload — loads explorer folders, projects, iCloud,
  * Quick Notes, SQLite index, and re-opens persisted tabs.
@@ -307,6 +436,12 @@ export async function reloadTrees() {
   log.info("startup", `Validating ${ws.explorerFolders.length} explorer folders, ${ws.projects.length} projects`);
   const STEP_TIMEOUT_MS = 10_000;
 
+  // Resolved alongside tree validation rather than after it: a project that
+  // fails to list may simply have MOVED with the library (another Mac ran
+  // the migration), and that has to be known before anything is removed.
+  const libraryPromise = detectSyncedLibrary(STEP_TIMEOUT_MS);
+  const failedProjects: string[] = [];
+
   const [folderResults] = await Promise.all([
     // Explorer folders — all in parallel
     Promise.all(ws.explorerFolders.map(async (folder) => {
@@ -337,18 +472,75 @@ export async function reloadTrees() {
         }
         // On timeout: keep the project, just skip tree refresh
       } catch {
-        // Expected: project directory may have been deleted or moved
-        const projectName = project.path.split('/').pop() || project.path;
-        ws.removeProject(project.path);
-        toast.warning(t("toast.projectRemoved", { project: projectName }));
+        // Expected: project directory may have been deleted or moved.
+        // Decided below, once the library's location is known.
+        failedProjects.push(project.path);
       }
     })),
   ]);
 
-  // Remove invalid explorer folders
-  for (const result of folderResults) {
-    if (!result.valid) {
-      ws.removeExplorerFolder(result.path);
+  // Taken before waiting on the library, so `trees validated` keeps
+  // measuring the tree reads alone and stays comparable with the baseline.
+  const treesValidatedMs = Math.round(performance.now() - t0);
+  const library = await libraryPromise;
+  const { icloudAvailable, icloudNotesagePath } = library;
+
+  // Follow a library move another device performed BEFORE pruning: the
+  // projects that just failed to list are, in that case, sitting in the new
+  // library under the same name.
+  if (library.kind === "container" && library.cloudDocsRoot && icloudNotesagePath) {
+    // The open document was restored from its OLD path at the very start of
+    // startup (concurrently with everything here), so its read failed and it
+    // shows empty. Note which one it is, and reload it if the follow moved it.
+    const editorBefore = useEditorStore.getState();
+    const openBefore = editorBefore.openDocuments.find((d) => d.id === editorBefore.activeTabId);
+    try {
+      const { followed } = await followLibraryMove(library.cloudDocsRoot, icloudNotesagePath);
+      if (followed.length > 0) {
+        log.info("startup", `Followed library move: ${followed.length} projects/folders re-pointed`);
+      }
+      if (openBefore) {
+        const openNow = useEditorStore.getState().openDocuments.find((d) => d.id === openBefore.id);
+        if (openNow && openNow.filePath !== openBefore.filePath) {
+          await loadDocumentContent(openNow.id, openNow.filePath, openNow.fileName).catch((err) =>
+            log.warn("startup", `Reloading the followed document failed: ${err}`),
+          );
+        }
+      }
+    } catch (err) {
+      log.warn("startup", `Following the library move failed: ${err}`);
+    }
+  }
+
+  {
+    const wsNow = useWorkspaceStore.getState();
+    const stillListed = new Set(wsNow.projects.map((p) => p.path));
+    const stillFolders = new Set(wsNow.explorerFolders.map((f) => f.path));
+    let held = 0;
+    for (const path of failedProjects) {
+      if (!stillListed.has(path)) continue; // followed to the new library
+      if (isHeldForLibraryAccess(path, library.cloudDocsRoot, library.containerDenied)) {
+        held += 1;
+        continue;
+      }
+      const projectName = path.split('/').pop() || path;
+      wsNow.removeProject(path);
+      toast.warning(t("toast.projectRemoved", { project: projectName }));
+    }
+    for (const result of folderResults) {
+      if (result.valid || !stillFolders.has(result.path)) continue;
+      if (isHeldForLibraryAccess(result.path, library.cloudDocsRoot, library.containerDenied)) {
+        held += 1;
+        continue;
+      }
+      wsNow.removeExplorerFolder(result.path);
+    }
+    if (library.containerDenied) {
+      log.warn("startup", `Notesage's iCloud folder is unreadable; kept ${held} unreadable library entries`);
+      toast.warning(t("toast.libraryAccessDenied"), {
+        id: "library-access-denied",
+        duration: Infinity,
+      });
     }
   }
 
@@ -366,7 +558,7 @@ export async function reloadTrees() {
       projects: wsNow.projects.length,
       folders: wsNow.explorerFolders.length,
       totalFiles,
-      ms: Math.round(performance.now() - t0),
+      ms: treesValidatedMs,
     });
   }
 
@@ -394,96 +586,6 @@ export async function reloadTrees() {
 
   // Load system fonts for font picker (non-blocking)
   useEditorStylesStore.getState().loadSystemFonts();
-
-  // Detect iCloud availability. Compute the truth locally instead of
-  // re-reading useSettingsStore.getState() afterwards — `settings` above
-  // is a stale snapshot, and reading `settings.icloudAvailable` later in
-  // this function returns `false` even though we just mutated the store.
-  // (PR #84 hit the same shape of bug for useSyncStore and fixed THAT
-  // store but not this one — the iCloud-disabled-on-reload regression.)
-  log.info("startup", `Trees validated in ${Math.round(performance.now() - t0)}ms, starting iCloud detection`);
-  let icloudAvailable = false;
-  let icloudNotesagePath: string | null = null;
-  try {
-    // There are now two places a synced library can live: today's
-    // `iCloud Drive/Notesage`, and Notesage's own iCloud container, which the
-    // phone can create without anyone picking a folder. Both can exist at
-    // once — during a migration they must — so the marker decides which is
-    // live, not the directories. `resolveSyncedLibraryRoot` holds the rule;
-    // this reads the three inputs it needs.
-    const icloudRoot = await tauriApi.getICloudPath();
-    const cloudDocsRoot = icloudRoot ? `${icloudRoot}/Notesage` : null;
-    // Each container lookup is separately defensive. Whatever the answer,
-    // failing to get one must leave today's CloudDocs library exactly as it
-    // was — a backend without these commands, or an iCloud hiccup, is not a
-    // reason for a Mac to lose its library at startup.
-    let containerRoot: string | null = null;
-    let marker: Awaited<ReturnType<typeof tauriApi.readLibraryMarker>> = null;
-    try {
-      containerRoot =
-        (await withTimeout(
-          tauriApi.getLibraryContainerPath(),
-          STEP_TIMEOUT_MS,
-          "getLibraryContainerPath",
-        )) ?? null;
-      if (containerRoot) {
-        marker =
-          (await withTimeout(
-            tauriApi.readLibraryMarker(containerRoot),
-            STEP_TIMEOUT_MS,
-            "readLibraryMarker",
-          )) ?? null;
-      }
-    } catch {
-      containerRoot = null;
-      marker = null;
-    }
-    // "Has content" ignores `.DS_Store`: Finder leaves one in any folder a
-    // person merely opened, and counting it would keep a phone-first user
-    // pinned to an empty CloudDocs root for ever.
-    // Only worth asking when there is a container to prefer over it: with no
-    // container the answer cannot change the outcome, and this is a
-    // directory listing on a cloud path in the startup budget.
-    let cloudDocsHasContent = Boolean(cloudDocsRoot);
-    if (cloudDocsRoot && containerRoot) {
-      try {
-        // Timed out like every other cloud-touching step here, and — when it
-        // fails or is slow — assumed to HAVE content. That default is the
-        // safe one: reading a slow or transiently-empty listing as "empty"
-        // would switch a Mac with a real CloudDocs library over to a
-        // near-empty container for the session, and someone seeing their
-        // notes apparently gone may do something drastic before the next
-        // restart puts it right.
-        const entries = await withTimeout(
-          tauriApi.listDirectory(cloudDocsRoot),
-          STEP_TIMEOUT_MS,
-          "listDirectory(cloudDocs)",
-        );
-        // `withTimeout` widens the type; an absent result is a timeout, which
-        // takes the safe default below rather than reading as "empty".
-        if (!entries) throw new Error("timed out");
-        cloudDocsHasContent = entries.some((e) => e.name !== ".DS_Store");
-      } catch {
-        cloudDocsHasContent = true;
-      }
-    }
-    const resolved = resolveSyncedLibraryRoot({
-      containerRoot,
-      cloudDocsRoot,
-      marker,
-      cloudDocsHasContent,
-    });
-    if (resolved.path) {
-      icloudNotesagePath = resolved.path;
-      icloudAvailable = true;
-      settings.setICloudAvailable(true);
-      settings.setICloudNotesagePath(icloudNotesagePath);
-      settings.setLibraryRootKind(resolved.kind);
-      log.info("startup", `Library root: ${resolved.kind} at ${icloudNotesagePath}`);
-    }
-  } catch {
-    // Expected: iCloud path unavailable on non-Apple systems or when iCloud is not set up
-  }
 
   // Scan iCloud Notesage for projects that arrived via iCloud sync
   // from other devices. The previous "load sync settings + iterate
@@ -643,22 +745,7 @@ async function restorePersistedTabs() {
     if (activeTab) {
       useEditorStore.getState().setActiveTab(activeTab.id);
       try {
-        const fileType = getFileType(fileName);
-        if (fileType === "image") {
-          useEditorStore.getState().loadTabContent(activeTab.id, "");
-        } else if (isBinaryFileType(fileType)) {
-          const bytes = await tauriApi.readBinaryFile(filePath);
-          setBinaryData(filePath, new Uint8Array(bytes));
-          useEditorStore.getState().loadTabContent(activeTab.id, "");
-        } else {
-          const raw = await tauriApi.readFile(filePath);
-          if (fileType === "markdown") {
-            const { frontmatter, content } = parseFrontmatter(raw);
-            useEditorStore.getState().loadTabContent(activeTab.id, content, frontmatter);
-          } else {
-            useEditorStore.getState().loadTabContent(activeTab.id, raw);
-          }
-        }
+        await loadDocumentContent(activeTab.id, filePath, fileName);
       } catch {
         // Expected: active tab file may have been deleted since last session — user sees empty state
       }
@@ -666,6 +753,26 @@ async function restorePersistedTabs() {
   }
 
   // Phase 2: Background tabs load on demand when the user clicks them.
+}
+
+/** Read a document from disk into its (already open) editor entry. */
+async function loadDocumentContent(id: string, filePath: string, fileName: string): Promise<void> {
+  const fileType = getFileType(fileName);
+  if (fileType === "image") {
+    useEditorStore.getState().loadTabContent(id, "");
+  } else if (isBinaryFileType(fileType)) {
+    const bytes = await tauriApi.readBinaryFile(filePath);
+    setBinaryData(filePath, new Uint8Array(bytes));
+    useEditorStore.getState().loadTabContent(id, "");
+  } else {
+    const raw = await tauriApi.readFile(filePath);
+    if (fileType === "markdown") {
+      const { frontmatter, content } = parseFrontmatter(raw);
+      useEditorStore.getState().loadTabContent(id, content, frontmatter);
+    } else {
+      useEditorStore.getState().loadTabContent(id, raw);
+    }
+  }
 }
 
 /**

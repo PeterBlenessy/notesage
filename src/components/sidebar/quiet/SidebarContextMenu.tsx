@@ -924,6 +924,12 @@ export function SidebarContextMenu({
                 const projectName =
                   meta?.name || filePath.split("/").filter(Boolean).pop() || filePath;
                 removeProject(filePath, projectName);
+                // A project in the synced library would otherwise be added
+                // straight back by the next launch's cross-device scan.
+                const libraryRoot = useSettingsStore.getState().icloudNotesagePath;
+                if (libraryRoot && filePath.startsWith(`${libraryRoot}/`)) {
+                  useWorkspaceStore.getState().dismissLibraryProject(filePath);
+                }
               }}
             >
               Remove from sidebar

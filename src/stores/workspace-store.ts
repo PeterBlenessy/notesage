@@ -45,6 +45,14 @@ interface WorkspaceStore {
 
   // Pinned files (quiet-composer sidebar) — absolute file paths, user-ordered
   pinnedFiles: string[];
+  /**
+   * Library projects the person removed from the sidebar ON THIS MAC.
+   * The cross-device scan and the file watcher add every project they find
+   * in the synced library; without this list a removal lasted until the next
+   * launch, and every Mac converged on whatever the library held. Cleared
+   * for a path by `addProject`, so re-adding a project by hand restores it.
+   */
+  dismissedLibraryProjects: string[];
 
   // Shared
   expandedFolders: Set<string>;
@@ -72,6 +80,8 @@ interface WorkspaceStore {
   // Project actions
   addProject: (path: string, tree: FileEntry[]) => void;
   removeProject: (path: string, name?: string) => void;
+  /** Remember that the person removed this project, so discovery skips it. */
+  dismissLibraryProject: (path: string) => void;
   updateProjectTree: (path: string, tree: FileEntry[]) => void;
 
   // Recent project actions
@@ -112,6 +122,14 @@ interface WorkspaceStore {
   updateProjectPath: (oldPath: string, newPath: string, newTree: FileEntry[]) => void;
   /** Rewrite any pinned paths that start with oldPrefix to use newPrefix. */
   updateFilePaths: (oldPrefix: string, newPrefix: string) => void;
+  /** Re-point an explorer folder at a new location, keeping its place. */
+  updateExplorerFolderPath: (oldPath: string, newPath: string, newTree: FileEntry[]) => void;
+  /**
+   * Follow a moved folder in the stored path lists that are not projects or
+   * folders themselves: pins, recent projects, dismissed library projects.
+   * Matches at a path boundary only.
+   */
+  rebaseStoredPaths: (oldPrefix: string, newPrefix: string) => void;
 
   // Utility: find which section a file path belongs to
   findOwningProject: (filePath: string) => WorkspaceProject | undefined;
@@ -125,6 +143,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
       recentProjects: [],
       notesTree: [],
       pinnedFiles: [],
+      dismissedLibraryProjects: [],
       expandedFolders: new Set<string>(),
       explorerCollapsed: false,
       projectsCollapsed: false,
@@ -186,6 +205,10 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         set((state) => {
           // Remove from recent if re-opening
           const newRecent = state.recentProjects.filter((r) => r.path !== path);
+          // Adding a project is the person's say-so, overriding an earlier removal.
+          const dismissedLibraryProjects = state.dismissedLibraryProjects.includes(path)
+            ? state.dismissedLibraryProjects.filter((d) => d !== path)
+            : state.dismissedLibraryProjects;
 
           // Also remove from explorer folders if it's being promoted to a project
           const newExplorerFolders = state.explorerFolders.filter((f) => f.path !== path);
@@ -198,12 +221,14 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
               ),
               recentProjects: newRecent,
               explorerFolders: newExplorerFolders,
+              dismissedLibraryProjects,
             };
           }
           return {
             projects: [...state.projects, { path, fileTree: tree }],
             recentProjects: newRecent,
             explorerFolders: newExplorerFolders,
+            dismissedLibraryProjects,
           };
         });
       },
@@ -221,6 +246,14 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
             recentProjects: newRecent,
           };
         });
+      },
+
+      dismissLibraryProject: (path) => {
+        set((state) =>
+          state.dismissedLibraryProjects.includes(path)
+            ? state
+            : { dismissedLibraryProjects: [...state.dismissedLibraryProjects, path] },
+        );
       },
 
       addRecentProject: (path, name) => {
@@ -377,6 +410,32 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         });
       },
 
+      updateExplorerFolderPath: (oldPath, newPath, newTree) => {
+        const from = canonicalizeMacPath(oldPath);
+        const to = canonicalizeMacPath(newPath);
+        set((state) => ({
+          explorerFolders: state.explorerFolders.map((f) =>
+            f.path === from ? { path: to, fileTree: newTree } : f
+          ),
+        }));
+      },
+
+      rebaseStoredPaths: (oldPrefix, newPrefix) => {
+        const rewrite = (p: string) =>
+          p === oldPrefix || p.startsWith(oldPrefix + "/")
+            ? newPrefix + p.slice(oldPrefix.length)
+            : p;
+        set((state) => ({
+          pinnedFiles: state.pinnedFiles.map(rewrite),
+          recentProjects: state.recentProjects.map((r) => {
+            const path = rewrite(r.path);
+            if (path === r.path) return r;
+            return { path, name: path === newPrefix ? path.split("/").pop() || r.name : r.name };
+          }),
+          dismissedLibraryProjects: state.dismissedLibraryProjects.map(rewrite),
+        }));
+      },
+
       findOwningProject: (filePath) => {
         return get().projects.find((p) => filePath.startsWith(p.path + "/"));
       },
@@ -389,6 +448,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         projects: state.projects.map((p) => ({ path: p.path, fileTree: [] })),
         recentProjects: state.recentProjects,
         pinnedFiles: state.pinnedFiles,
+        dismissedLibraryProjects: state.dismissedLibraryProjects,
         expandedFolders: Array.from(state.expandedFolders),
         explorerCollapsed: state.explorerCollapsed,
         projectsCollapsed: state.projectsCollapsed,
@@ -419,6 +479,11 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
           projects: (p.projects as WorkspaceProject[]) ?? [],
           recentProjects: (p.recentProjects as RecentProject[]) ?? [],
           pinnedFiles,
+          dismissedLibraryProjects: Array.isArray(p.dismissedLibraryProjects)
+            ? (p.dismissedLibraryProjects as unknown[]).filter(
+                (v): v is string => typeof v === "string"
+              )
+            : [],
           expandedFolders: new Set(
             (p.expandedFolders as string[]) ?? []
           ),

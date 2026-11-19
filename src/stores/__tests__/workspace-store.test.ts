@@ -100,6 +100,7 @@ const WORKSPACE_DEFAULTS = {
   recentProjects: [],
   notesTree: [],
   pinnedFiles: [],
+  dismissedLibraryProjects: [] as string[],
   expandedFolders: new Set<string>(),
   explorerCollapsed: false,
   projectsCollapsed: false,
@@ -1010,5 +1011,54 @@ describe("renamePinnedPath — a pin is a path, so a move invalidates it", () =>
     useWorkspaceStore.setState({ pinnedFiles: before });
     useWorkspaceStore.getState().renamePinnedPath("/lib/zzz.md", "/lib/yyy.md");
     expect(useWorkspaceStore.getState().pinnedFiles).toBe(before);
+  });
+});
+
+// ===========================================================================
+// Library projects removed on this Mac, and following a moved library
+// ===========================================================================
+
+describe('dismissed library projects', () => {
+  const LIB = '/icloud/Notesage';
+
+  it('records a dismissal once, and survives a restart', async () => {
+    useWorkspaceStore.getState().dismissLibraryProject(`${LIB}/Work`);
+    useWorkspaceStore.getState().dismissLibraryProject(`${LIB}/Work`);
+    expect(useWorkspaceStore.getState().dismissedLibraryProjects).toEqual([`${LIB}/Work`]);
+    await waitForPersist();
+
+    await simulateRestart(useWorkspaceStore, STORAGE_KEY, WORKSPACE_DEFAULTS);
+    expect(useWorkspaceStore.getState().dismissedLibraryProjects).toEqual([`${LIB}/Work`]);
+  });
+
+  it('is cleared by adding the project back by hand', () => {
+    useWorkspaceStore.getState().dismissLibraryProject(`${LIB}/Work`);
+    useWorkspaceStore.getState().addProject(`${LIB}/Work`, []);
+    expect(useWorkspaceStore.getState().dismissedLibraryProjects).toEqual([]);
+  });
+
+  it('rebases pins, recents and dismissals at a path boundary only', () => {
+    useWorkspaceStore.setState({
+      pinnedFiles: [`${LIB}/Work/a.md`, `${LIB}/Workshop/b.md`],
+      recentProjects: [{ path: `${LIB}/Work`, name: 'Work' }],
+      dismissedLibraryProjects: [`${LIB}/Work`],
+    });
+    useWorkspaceStore.getState().rebaseStoredPaths(`${LIB}/Work`, '/container/Work (from iCloud Drive)');
+    const s = useWorkspaceStore.getState();
+    expect(s.pinnedFiles).toEqual(['/container/Work (from iCloud Drive)/a.md', `${LIB}/Workshop/b.md`]);
+    expect(s.recentProjects).toEqual([
+      { path: '/container/Work (from iCloud Drive)', name: 'Work (from iCloud Drive)' },
+    ]);
+    expect(s.dismissedLibraryProjects).toEqual(['/container/Work (from iCloud Drive)']);
+  });
+
+  it('re-points an explorer folder in place', () => {
+    useWorkspaceStore.getState().addExplorerFolder('/a', []);
+    useWorkspaceStore.getState().addExplorerFolder(`${LIB}/Inbox`, []);
+    useWorkspaceStore.getState().addExplorerFolder('/c', []);
+    useWorkspaceStore.getState().updateExplorerFolderPath(`${LIB}/Inbox`, '/container/Inbox', makeTree(['x.md'], '/container/Inbox'));
+    const folders = useWorkspaceStore.getState().explorerFolders;
+    expect(folders.map((f) => f.path)).toEqual(['/a', '/container/Inbox', '/c']);
+    expect(folders[1].fileTree).toHaveLength(1);
   });
 });

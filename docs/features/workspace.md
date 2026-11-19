@@ -106,6 +106,38 @@ resolved root and, when the flag is on and there is something to move, offers
 it. The dialog shows the plan first: counts, and every collision with the
 rule that will be applied.
 
+**A Mac that did not run the move follows its own paths, too.** Only the
+migrating Mac rewrites its stored paths. Every other Mac still records
+projects, explorer folders, pins, tabs, recents and comment sidecars under its
+own `iCloud Drive/Notesage`, and startup used to remove each such project as
+"directory no longer exists". The cross-device scan then added back whatever
+the container held, so the second Mac ended up with the first Mac's project
+list and none of its own setup. Now startup resolves the library alongside
+tree validation and, before pruning anything, re-points each stored path
+whose top-level entry is gone from the old root and present in the container
+(`src/lib/library-follow.ts`, applied by `library-follow-apply.ts`). An
+`X (from iCloud Drive)` in the container is checked first, since that is this
+Mac's `X` renamed on a collision. An entry still in the old root is left
+alone. The document that was open is restored from its old path at the very
+start of startup, so if the follow moves it, it is read again from the new
+one. A full tree refresh that races startup (`useFileOperations.refreshFileTree`,
+fired e.g. by the hidden-files setting loading) does not prune unreadable
+projects until `startupReady`: startup owns that decision.
+
+**A container this Mac may not read is never chosen.** Startup asks
+`libraryContainerAccess()` before reading the marker. On `denied` the
+container is treated as absent, unreadable entries in the old library are
+kept rather than removed (here and in the mid-session refresh), and a
+persistent toast says how to grant access. Before this, a denied container
+could still win the resolution rule, and every listing inside it failed in
+silence: an empty sidebar.
+
+**Removing a library project sticks on this Mac.** "Remove from sidebar" on a
+project inside the synced library records it in
+`workspace.dismissedLibraryProjects` (persisted per Mac). The startup scan
+and the watcher's runtime discovery both skip those paths. `addProject`
+clears the entry, so re-adding a project by hand restores it.
+
 | Entry | Rule on collision |
 | --- | --- |
 | `Inbox/` | Merged item by item; a taken name gets the phone's `name-1.ext` dedupe. |

@@ -17,6 +17,8 @@ export async function scanICloudForProjects(
 ): Promise<boolean> {
   const ws = useWorkspaceStore.getState();
   const knownPaths = new Set(ws.projects.map((p) => p.path));
+  // Removed by the person on this Mac: discovery must not overrule them.
+  const dismissed = new Set(ws.dismissedLibraryProjects ?? []);
 
   let discovered = false;
 
@@ -26,6 +28,7 @@ export async function scanICloudForProjects(
     for (const entry of entries) {
       if (!entry.is_directory) continue;
       if (knownPaths.has(entry.path)) continue;
+      if (dismissed.has(entry.path)) continue;
 
       // Check if this directory has .notesage/ metadata (i.e., it's a project)
       try {

@@ -51,7 +51,14 @@ export interface ResolvedLibraryRoot {
  * particular iCloud state.
  */
 export function resolveSyncedLibraryRoot(inputs: LibraryRootInputs): ResolvedLibraryRoot {
-  const { containerRoot, cloudDocsRoot, marker, cloudDocsHasContent } = inputs;
+  const { cloudDocsRoot, cloudDocsHasContent } = inputs;
+  // A container macOS will not let this Mac read is no library at all: every
+  // listing in it fails, and choosing it showed an empty sidebar with no
+  // explanation. Resolve as if it were absent; the caller tells the person
+  // how to grant access.
+  const denied = inputs.containerAccess === "denied";
+  const containerRoot = denied ? null : inputs.containerRoot;
+  const marker = denied ? null : inputs.marker;
 
   // 1. A migration happened somewhere. Follow it, whoever performed it and
   //    whatever is still sitting in the old folder.

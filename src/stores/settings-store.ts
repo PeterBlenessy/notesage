@@ -284,6 +284,13 @@ interface SettingsStore {
    * resolved from disk at every startup, and a stale copy would be a lie.
    */
   libraryRootKind: LibraryRootKind | null;
+  /**
+   * Notesage's own iCloud folder is on this Mac but macOS will not let the
+   * app read it. While true, projects in the old CloudDocs library are kept
+   * even when unreadable — their files are most likely in the container.
+   * Non-persisted; recomputed each launch.
+   */
+  libraryContainerDenied: boolean;
   setTheme: (theme: Theme) => void;
   setAccent: (accent: AccentName) => void;
   setContrastLevel: (level: number) => void;
@@ -339,6 +346,7 @@ interface SettingsStore {
   setICloudAvailable: (available: boolean) => void;
   setICloudNotesagePath: (path: string | null) => void;
   setLibraryRootKind: (kind: LibraryRootKind | null) => void;
+  setLibraryContainerDenied: (denied: boolean) => void;
   setPersonasMigrated: (migrated: boolean) => void;
   setBundledAgentsCleaned: (cleaned: boolean) => void;
   setChatHintsShown: (shown: boolean) => void;
@@ -469,6 +477,7 @@ export const useSettingsStore = create<SettingsStore>()(
       icloudAvailable: false,
       icloudNotesagePath: null,
       libraryRootKind: null,
+      libraryContainerDenied: false,
       printLayout: false,
       typewriterScrolling: false,
       externalChangeDiffReview: false,
@@ -718,6 +727,9 @@ export const useSettingsStore = create<SettingsStore>()(
         set({ icloudNotesagePath: path });
       },
 
+      setLibraryContainerDenied: (denied: boolean) => {
+        set({ libraryContainerDenied: denied });
+      },
       setLibraryRootKind: (kind: LibraryRootKind | null) => {
         set({ libraryRootKind: kind });
       },
@@ -1232,7 +1244,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
       partialize: (state) => {
         // Exclude runtime-only fields and deprecated fields from persistence
-        const { homeDir: _hd, skillsReady: _sr, startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, libraryRootKind: _lk, debugLogging: _d, ...persisted } = state;
+        const { homeDir: _hd, skillsReady: _sr, startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, libraryRootKind: _lk, libraryContainerDenied: _lcd, debugLogging: _d, ...persisted } = state;
         return persisted;
       },
       onRehydrateStorage: () => (state) => {

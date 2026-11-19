@@ -4,6 +4,7 @@ import { useEditorStore, type ScrollToTag } from "@/stores/editor-store";
 import { useInboxStore } from "@/stores/inbox-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { isHeldForLibraryAccess } from "@/lib/library-follow";
 import { useGitStore } from "@/stores/git-store";
 import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
@@ -197,10 +198,27 @@ export function useFileOperations() {
       } catch {
         // Expected: project path no longer exists — check if it was renamed
         // by scanning the parent directory for a folder with matching .notesage metadata
+        if (!useSettingsStore.getState().startupReady) {
+          // Startup decides what an unreadable project means — it may have
+          // moved with the library and be about to be followed — so a
+          // refresh that races it (the hidden-files setting loading fires
+          // one) must not prune it first.
+          continue;
+        }
         const parentDir = project.path.substring(0, project.path.lastIndexOf('/'));
         const renamed = await detectRenamedProject(parentDir);
         if (renamed) {
           await migrateProjectPath(project.path, renamed);
+        } else if (
+          isHeldForLibraryAccess(
+            project.path,
+            useSettingsStore.getState().icloudNotesagePath,
+            useSettingsStore.getState().libraryContainerDenied,
+          )
+        ) {
+          // Unreadable because macOS blocks Notesage's iCloud folder, not
+          // because it is gone: keep it so it can be followed once access
+          // is granted.
         } else {
           const projectName = project.path.split('/').pop() || project.path;
           ws.removeProject(project.path);
