@@ -31,6 +31,7 @@ vi.mock('@/lib/tauri', () => ({
     writeFile: vi.fn(),
     pathExists: vi.fn(),
     createDirectory: vi.fn(),
+    icloudEnsureDownloaded: vi.fn(),
   },
 }));
 
@@ -85,6 +86,7 @@ describe('comment-store', () => {
     vi.clearAllMocks();
     useCommentStore.setState({
       commentsByDocument: {},
+      loadFailedByDocument: {},
       activeCommentId: null,
       scrollToCommentId: null,
       activitiesByComment: {},
@@ -863,6 +865,7 @@ describe('comment-store — sidecar originalPath format (issue #117)', () => {
     vi.clearAllMocks();
     useCommentStore.setState({
       commentsByDocument: {},
+      loadFailedByDocument: {},
       activeCommentId: null,
       scrollToCommentId: null,
       activitiesByComment: {},
@@ -930,5 +933,109 @@ describe('comment-store — sidecar originalPath format (issue #117)', () => {
       expect(comments).toHaveLength(1);
       expect(comments[0].id).toBe('c1');
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A sidecar that failed to load must never be overwritten (audit 2026-11-22 §10)
+// ---------------------------------------------------------------------------
+
+describe('comment-store: a failed load blocks saving', () => {
+  const SIDECAR = '/project/.notesage/comments/doc-1.json';
+  const PLACEHOLDER = '/project/.notesage/comments/.doc-1.json.icloud';
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    useCommentStore.setState({ commentsByDocument: {}, loadFailedByDocument: {} });
+    mockedTauriApi.pathExists.mockReset();
+    mockedTauriApi.readFile.mockReset();
+    mockedTauriApi.writeFile.mockReset().mockResolvedValue(undefined);
+    mockedTauriApi.icloudEnsureDownloaded.mockReset().mockResolvedValue('downloading');
+  });
+
+  /** The user adds a comment to a document whose sidecar just "loaded", then it is saved. */
+  async function addAndSave() {
+    useCommentStore.getState().addComment({
+      documentId: 'doc-1', anchorText: 'x', from: 1, to: 2, body: 'new', author: 'me',
+    });
+    await useCommentStore.getState().saveComments('doc-1', '/project');
+  }
+
+  it('refuses to save after a read error, and says so', async () => {
+    mockedTauriApi.pathExists.mockResolvedValue(true);
+    mockedTauriApi.readFile.mockRejectedValue(new Error('Operation not permitted'));
+
+    await useCommentStore.getState().loadComments('doc-1', '/project');
+    expect(useCommentStore.getState().loadFailedByDocument['doc-1']).toBe(true);
+    expect(toast.error).toHaveBeenCalledTimes(1);
+
+    await addAndSave();
+    expect(mockedTauriApi.writeFile).not.toHaveBeenCalled();
+    expect(toast.error).toHaveBeenCalledTimes(2);
+  });
+
+  it('refuses to save after a parse error', async () => {
+    mockedTauriApi.pathExists.mockResolvedValue(true);
+    mockedTauriApi.readFile.mockResolvedValue('not valid json {{{');
+
+    await useCommentStore.getState().loadComments('doc-1', '/project');
+    await addAndSave();
+
+    expect(mockedTauriApi.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('treats an evicted iCloud placeholder as a failed load, not as "no comments"', async () => {
+    mockedTauriApi.pathExists.mockImplementation(async (p: string) => p === PLACEHOLDER);
+
+    await useCommentStore.getState().loadComments('doc-1', '/project');
+
+    expect(useCommentStore.getState().loadFailedByDocument['doc-1']).toBe(true);
+    expect(toast.error).toHaveBeenCalledTimes(1);
+    expect(mockedTauriApi.icloudEnsureDownloaded).toHaveBeenCalledWith(SIDECAR);
+
+    await addAndSave();
+    expect(mockedTauriApi.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('refuses to save when the existence check itself fails', async () => {
+    mockedTauriApi.pathExists.mockRejectedValue(new Error('ipc down'));
+
+    await useCommentStore.getState().loadComments('doc-1', '/project');
+    mockedTauriApi.pathExists.mockResolvedValue(true);
+    await addAndSave();
+
+    expect(mockedTauriApi.writeFile).not.toHaveBeenCalled();
+  });
+
+  it('still saves when the sidecar is simply absent (no placeholder)', async () => {
+    mockedTauriApi.pathExists.mockResolvedValue(false);
+
+    await useCommentStore.getState().loadComments('doc-1', '/project');
+    expect(useCommentStore.getState().loadFailedByDocument['doc-1']).toBeUndefined();
+    expect(toast.error).not.toHaveBeenCalled();
+
+    mockedTauriApi.pathExists.mockResolvedValue(true);
+    await addAndSave();
+    expect(mockedTauriApi.writeFile).toHaveBeenCalledWith(SIDECAR, expect.any(String));
+  });
+
+  it('a later successful load lifts the block', async () => {
+    mockedTauriApi.pathExists.mockResolvedValue(true);
+    mockedTauriApi.readFile.mockRejectedValueOnce(new Error('busy'));
+    await useCommentStore.getState().loadComments('doc-1', '/project');
+
+    mockedTauriApi.readFile.mockResolvedValue(JSON.stringify([makeComment({ id: 'existing' })]));
+    await useCommentStore.getState().loadComments('doc-1', '/project');
+    expect(useCommentStore.getState().loadFailedByDocument['doc-1']).toBeUndefined();
+
+    await addAndSave();
+    const written = JSON.parse(mockedTauriApi.writeFile.mock.calls[0][1] as string) as Comment[];
+    expect(written.map((c) => c.body)).toEqual(['A comment', 'new']);
+  });
+
+  it('clearDocument keeps the block: closing the document does not make the file safe to overwrite', () => {
+    useCommentStore.setState({ loadFailedByDocument: { 'doc-1': true } });
+    useCommentStore.getState().clearDocument('doc-1');
+    expect(useCommentStore.getState().loadFailedByDocument['doc-1']).toBe(true);
   });
 });
