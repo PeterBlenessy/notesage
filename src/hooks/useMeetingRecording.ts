@@ -1,6 +1,5 @@
-import { useCallback } from "react";
 import { toast } from "sonner";
-import { useRecording } from "@/hooks/useRecording";
+import { startRecordingCapture, stopRecordingCapture, useRecording } from "@/hooks/useRecording";
 import { useRecordingStore } from "@/stores/recording-store";
 import { useActivityStore } from "@/stores/activity-store";
 import { startTranscription } from "@/hooks/useTranscriptionJob";
@@ -87,78 +86,90 @@ export interface MeetingRecordingHook {
   elapsedTime: number;
 }
 
+/**
+ * Toggle meeting recording: start when idle, stop (and dispatch the
+ * transcription) when recording.
+ *
+ * A plain function that reads the stores lazily, so a caller that only needs
+ * to ACT — the app-root ⌘⇧R shortcut — subscribes to nothing. It also means
+ * the toggle always sees the current `isRecording`, not the value from the
+ * render its closure was created in.
+ */
+export async function toggleMeetingRecording(): Promise<void> {
+  const { addRecordingItem, removeRecordingItem } = useActivityStore.getState();
+  if (useRecordingStore.getState().isRecording) {
+    // Capture the start time BEFORE stopping — `stopRecording` clears
+    // `recordingStartTime` from the store as part of teardown.
+    const startedAt = useRecordingStore.getState().recordingStartTime ?? undefined;
+    const result = await stopRecordingCapture();
+    const itemId = liveRecordingItemId;
+    // Capture the recording item's per-recording language override (if the
+    // user picked one on the orb card) BEFORE removing the item — once
+    // removed, its `language` field is gone from the store.
+    const language = itemId
+      ? useActivityStore.getState().tasks.find((t) => t.id === itemId)?.language
+      : undefined;
+    if (itemId) {
+      removeRecordingItem(itemId);
+      liveRecordingItemId = null;
+    }
+    if (result?.path) {
+      // The manifest goes in BEFORE the job is dispatched, so the scanner's
+      // create event for it finds the bundle already tracked by audioPath.
+      await writeMacRecordingManifest(result, startedAt, language);
+      startTranscription({
+        audioPath: result.path,
+        recordingStartedAt: startedAt,
+        recordingStoppedAt: Date.now(),
+        recordingDurationSecs: result.duration_secs,
+        language,
+      });
+    }
+  } else {
+    const id =
+      typeof crypto !== "undefined" && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `recording-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    liveRecordingItemId = id;
+    addRecordingItem({ id, label: "Recording", recordingStartedAt: Date.now() });
+    try {
+      await startRecordingCapture("microphone");
+      // `startRecordingCapture` swallows backend errors (it toasts and
+      // returns normally), so a resolved promise does NOT mean capture began.
+      // The store flag is only set on success — if it's still false, the
+      // start failed and the live item must be cleared or the orb shows a
+      // stuck "Recording" indicator.
+      if (!useRecordingStore.getState().isRecording) {
+        removeRecordingItem(id);
+        liveRecordingItemId = null;
+        return;
+      }
+    } catch (err) {
+      // Capture never began — remove the live activity item so the orb doesn't
+      // show a stuck "Recording" indicator, clear the id, and surface the error.
+      removeRecordingItem(id);
+      liveRecordingItemId = null;
+      toast.error(
+        `Could not start recording: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+}
+
+/**
+ * Reactive view of meeting recording for surfaces that DISPLAY its state
+ * (`isRecording`, `isPaused`, the ticking `elapsedTime`). Mount it in a leaf;
+ * the app root uses `toggleMeetingRecording` directly.
+ */
 export function useMeetingRecording(): MeetingRecordingHook {
-  const {
-    startRecording,
-    stopRecording,
+  const { pauseRecording, resumeRecording, isRecording, isPaused, elapsedTime } = useRecording();
+
+  return {
+    toggleRecording: toggleMeetingRecording,
     pauseRecording,
     resumeRecording,
     isRecording,
     isPaused,
     elapsedTime,
-  } = useRecording();
-  const addRecordingItem = useActivityStore((s) => s.addRecordingItem);
-  const removeRecordingItem = useActivityStore((s) => s.removeRecordingItem);
-
-  const toggleRecording = useCallback(async () => {
-    if (isRecording) {
-      // Capture the start time BEFORE stopping — `stopRecording` clears
-      // `recordingStartTime` from the store as part of teardown.
-      const startedAt = useRecordingStore.getState().recordingStartTime ?? undefined;
-      const result = await stopRecording();
-      const itemId = liveRecordingItemId;
-      // Capture the recording item's per-recording language override (if the
-      // user picked one on the orb card) BEFORE removing the item — once
-      // removed, its `language` field is gone from the store.
-      const language = itemId
-        ? useActivityStore.getState().tasks.find((t) => t.id === itemId)?.language
-        : undefined;
-      if (itemId) {
-        removeRecordingItem(itemId);
-        liveRecordingItemId = null;
-      }
-      if (result?.path) {
-        // The manifest goes in BEFORE the job is dispatched, so the scanner's
-        // create event for it finds the bundle already tracked by audioPath.
-        await writeMacRecordingManifest(result, startedAt, language);
-        startTranscription({
-          audioPath: result.path,
-          recordingStartedAt: startedAt,
-          recordingStoppedAt: Date.now(),
-          recordingDurationSecs: result.duration_secs,
-          language,
-        });
-      }
-    } else {
-      const id =
-        typeof crypto !== "undefined" && crypto.randomUUID
-          ? crypto.randomUUID()
-          : `recording-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      liveRecordingItemId = id;
-      addRecordingItem({ id, label: "Recording", recordingStartedAt: Date.now() });
-      try {
-        await startRecording("microphone");
-        // `useRecording.startRecording` swallows backend errors (it toasts and
-        // returns normally), so a resolved promise does NOT mean capture began.
-        // The store flag is only set on success — if it's still false, the
-        // start failed and the live item must be cleared or the orb shows a
-        // stuck "Recording" indicator.
-        if (!useRecordingStore.getState().isRecording) {
-          removeRecordingItem(id);
-          liveRecordingItemId = null;
-          return;
-        }
-      } catch (err) {
-        // Capture never began — remove the live activity item so the orb doesn't
-        // show a stuck "Recording" indicator, clear the id, and surface the error.
-        removeRecordingItem(id);
-        liveRecordingItemId = null;
-        toast.error(
-          `Could not start recording: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
-  }, [isRecording, startRecording, stopRecording, addRecordingItem, removeRecordingItem]);
-
-  return { toggleRecording, pauseRecording, resumeRecording, isRecording, isPaused, elapsedTime };
+  };
 }
