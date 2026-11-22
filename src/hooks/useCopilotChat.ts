@@ -68,6 +68,13 @@ export function useCopilotChat({
   buildComposedSystemMessage: _buildComposedSystemMessage,
   composedSystemMessage: _composedSystemMessage,
 }: CopilotChatParams) {
+  // Actions are read WITHOUT subscribing. Store actions have stable identity,
+  // so `getState()` yields the same functions a subscription would — but a
+  // bare `useChatStore()` subscribes the calling component to EVERY chat-store
+  // write, and the store is written once per streamed chunk. That re-rendered
+  // every `useAIOperations` caller (Editor, the command bar, both bubble
+  // menus) once per token (audit 2026-11-22 §3). State that is genuinely
+  // rendered or used as a dependency stays a selector below.
   const {
     addMessage,
     updateMessage,
@@ -79,7 +86,7 @@ export function useCopilotChat({
     pushSegment,
     updateSegment,
     finalizeSegments,
-  } = useChatStore();
+  } = useChatStore.getState();
 
   // Both registries are keyed by NOTESAGE conversation id (the same shape as
   // `streamsRef` in `useDirectApiChat`). They used to be one ref each for the

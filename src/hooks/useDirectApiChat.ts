@@ -97,7 +97,14 @@ export function useDirectApiChat({
   composedSystemMessage,
   localSystemMessage,
 }: DirectApiChatParams) {
-  const { addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, appendTextSegment, pushSegment, updateSegment, finalizeSegments } = useChatStore();
+  // Actions are read WITHOUT subscribing. Store actions have stable identity,
+  // so `getState()` yields the same functions a subscription would — but a
+  // bare `useChatStore()` subscribes the calling component to EVERY chat-store
+  // write, and the store is written once per streamed chunk. That re-rendered
+  // every `useAIOperations` caller (Editor, the command bar, both bubble
+  // menus) once per token (audit 2026-11-22 §3). State that is genuinely
+  // rendered or used as a dependency stays a selector below.
+  const { addMessage, updateMessage, updateMessageThinking, setMessageError, setLoading, setError, setActiveTool, addActivity, appendTextSegment, pushSegment, updateSegment, finalizeSegments } = useChatStore.getState();
   const webSearchEnabled = useChatStore((s) => s.webSearchEnabled);
   // In-flight direct-API streams keyed by conversation id, so multiple
   // conversations can stream concurrently without tearing each other down

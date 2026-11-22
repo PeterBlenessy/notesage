@@ -279,7 +279,14 @@ interface AcpLifecycleParams {
 }
 
 export function useAcpLifecycle({ effectiveConnection, acpSystemMessage, buildAcpSystemMessage }: AcpLifecycleParams) {
-  const { addMessage, updateMessage, setMessageError, setMessageInterrupted, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, setLastActivityApprovalMode, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments, resetAssistantMessage } = useChatStore();
+  // Actions are read WITHOUT subscribing. Store actions have stable identity,
+  // so `getState()` yields the same functions a subscription would — but a
+  // bare `useChatStore()` subscribes the calling component to EVERY chat-store
+  // write, and the store is written once per streamed chunk. That re-rendered
+  // every `useAIOperations` caller (Editor, the command bar, both bubble
+  // menus) once per token (audit 2026-11-22 §3). State that is genuinely
+  // rendered or used as a dependency stays a selector below.
+  const { addMessage, updateMessage, setMessageError, setMessageInterrupted, setLoading, setError, setActiveTool, addActivity, completeLastActivity, completeAllActivities, setLastActivityApprovalMode, appendTextSegment, appendThinkingSegment, pushSegment, updateSegment, updateOrPushPlanSegment, finalizeSegments, resetAssistantMessage } = useChatStore.getState();
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   // Per-conversation stream cleanups (review #3) — one entry per in-flight ACP
