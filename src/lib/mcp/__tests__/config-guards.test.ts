@@ -95,6 +95,32 @@ describe('isImportedMcpConfig', () => {
     expect(isImportedMcpConfig({ ...VALID, env: null })).toBe(false);
   });
 
+  // Exactly what `serde_json` emits for a Rust `McpServerConfig` parsed out of
+  // VS Code's settings (`parse_vscode_config`): every field present, `url`
+  // null, and `source` spelled the way `McpConfigSource` serializes it.
+  it('accepts a Rust-shaped VS Code import', () => {
+    const fromRust: unknown = JSON.parse(
+      '{"id":"vscode:github","name":"github","command":"npx",' +
+        '"args":["-y","@modelcontextprotocol/server-github"],' +
+        '"env":{"GITHUB_TOKEN":"abc"},"source":"vscode","enabled":true,' +
+        '"transport":"stdio","url":null}',
+    );
+    expect(isImportedMcpConfig(fromRust)).toBe(true);
+    expect(filterValidMcpConfigs([fromRust], 'vscode')).toEqual({
+      configs: [fromRust],
+      skipped: 0,
+    });
+  });
+
+  // Mirrors `mcp_config_source_wire_names_match_the_frontend_guard` in
+  // `src-tauri/src/commands/mcp/types.rs` — keep the two lists identical.
+  it.each(['notesage_global', 'notesage_project', 'claude_desktop', 'cursor', 'vscode'])(
+    'accepts the Rust wire name %s as a source',
+    (source) => {
+      expect(isImportedMcpConfig({ ...VALID, source })).toBe(true);
+    },
+  );
+
   it('rejects unknown source values', () => {
     expect(isImportedMcpConfig({ ...VALID, source: 'zed' })).toBe(false);
     expect(isImportedMcpConfig({ ...VALID, source: 42 })).toBe(false);

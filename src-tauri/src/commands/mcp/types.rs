@@ -103,6 +103,11 @@ pub enum McpConfigSource {
     NotesageProject,
     ClaudeDesktop,
     Cursor,
+    /// `snake_case` would make this `"vs_code"`, but the frontend union, the
+    /// import guard (`src/lib/mcp/config-guards.ts`) and `source_prefix()` all
+    /// say `"vscode"` — so every VS Code import was rejected as malformed.
+    /// The alias keeps anything that stored the old spelling readable.
+    #[serde(rename = "vscode", alias = "vs_code")]
     VsCode,
 }
 
@@ -211,6 +216,49 @@ pub struct McpConfigFile {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The wire strings below are the contract with the frontend: they must
+    /// match `MCP_SOURCES` in `src/lib/mcp/config-guards.ts`, which drops any
+    /// config whose `source` it does not recognise.
+    #[test]
+    fn mcp_config_source_wire_names_match_the_frontend_guard() {
+        let expected = [
+            (McpConfigSource::NotesageGlobal, "\"notesage_global\""),
+            (McpConfigSource::NotesageProject, "\"notesage_project\""),
+            (McpConfigSource::ClaudeDesktop, "\"claude_desktop\""),
+            (McpConfigSource::Cursor, "\"cursor\""),
+            (McpConfigSource::VsCode, "\"vscode\""),
+        ];
+        for (source, wire) in expected {
+            assert_eq!(serde_json::to_string(&source).unwrap(), wire);
+            assert_eq!(serde_json::from_str::<McpConfigSource>(wire).unwrap(), source);
+        }
+    }
+
+    #[test]
+    fn vscode_source_is_not_serialized_as_vs_code() {
+        let config = McpServerConfig {
+            id: "vscode:github".to_string(),
+            name: "github".to_string(),
+            command: "npx".to_string(),
+            args: vec!["-y".to_string(), "@modelcontextprotocol/server-github".to_string()],
+            env: HashMap::new(),
+            source: McpConfigSource::VsCode,
+            enabled: true,
+            transport: McpTransport::Stdio,
+            url: None,
+        };
+        let json = serde_json::to_value(&config).unwrap();
+        assert_eq!(json["source"], "vscode");
+    }
+
+    #[test]
+    fn legacy_vs_code_spelling_still_deserializes() {
+        assert_eq!(
+            serde_json::from_str::<McpConfigSource>("\"vs_code\"").unwrap(),
+            McpConfigSource::VsCode
+        );
+    }
 
     #[test]
     fn mcp_server_config_serialization_round_trip() {
