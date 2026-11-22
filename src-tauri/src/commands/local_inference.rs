@@ -1233,6 +1233,8 @@ pub async fn local_bundled_chat_stream(
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    // A multibyte character can be split across network chunks.
+    let mut utf8 = super::utf8_chunk_decoder::Utf8ChunkDecoder::new();
 
     // Determine thinking tags from catalog metadata if available.
     // For catalog models with explicit thinking_tags, use only those.
@@ -1277,8 +1279,7 @@ pub async fn local_bundled_chat_stream(
 
     while let Some(chunk) = stream.next().await {
         let bytes = chunk.map_err(|e| format!("Stream error: {}", e))?;
-        let text = String::from_utf8_lossy(&bytes);
-        buffer.push_str(&text);
+        buffer.push_str(&utf8.decode(&bytes));
 
         while let Some(line_end) = buffer.find('\n') {
             let line = buffer[..line_end].trim().to_string();
