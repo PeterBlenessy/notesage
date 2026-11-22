@@ -17,6 +17,7 @@ import { getDocumentDir } from "@/lib/image-utils";
 import { getEditorStorage, type EditorStorageImage } from "@/lib/editor-storage";
 import { tauriApi } from "@/lib/tauri";
 import { useActiveProject } from "@/hooks/useActiveProject";
+import { flushPendingSerialize } from "@/lib/pending-serialize";
 import { toast } from "sonner";
 import { log } from "@/lib/logger";
 
@@ -178,6 +179,13 @@ export function useEditorTabSwitch({
       const fileName = activeTab.filePath.split("/").pop() ?? activeTab.filePath;
       const contentBytes = activeTab.content ? new TextEncoder().encode(activeTab.content).length : 0;
       const contentSizeKB = +(contentBytes / 1024).toFixed(1);
+
+      // Flush the debounced markdown serialize of the document we're LEAVING
+      // while the editor still holds its content. Every load path below
+      // replaces the editor's content without cancelling that timer, so left
+      // pending it would serialize THIS document's markdown and write it
+      // under the previous document's id (audit 2026-11-22 §2).
+      flushPendingSerialize(editor);
 
       // Save full editor state of the tab we're LEAVING (preserves undo/redo, selection, decorations).
       // EditorState is keyed by filePath so it survives single-doc-shell eviction;

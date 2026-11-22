@@ -415,6 +415,17 @@ export function PdfViewer({
 
     return () => {
       cancelled = true;
+      // `destroy()` lives on the loading task: it terminates the dedicated
+      // pdf.js worker this load spawned and releases the parsed document, its
+      // page/font caches and the copied buffer. Without it every mount and
+      // every `filePath` change leaked all of that (audit 2026-11-22 §1).
+      // The same call covers a load still in flight and a document already
+      // handed to state, so drop the state too — it must never hold a
+      // destroyed document.
+      if (loadTask) {
+        setPdf(null);
+        void loadTask.destroy().catch(() => {});
+      }
     };
   }, [filePath]);
 
