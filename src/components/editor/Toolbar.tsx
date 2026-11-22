@@ -649,7 +649,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
           <ToolbarButton
             onClick={() => editor.chain().focus().toggleStrike().run()}
             active={editor.isActive("strike")}
-            title={t("editor.strikethrough") + " (Cmd+Shift+X)"}
+            title={t("editor.strikethrough") + " (Cmd+Shift+S)"}
           >
             <Strikethrough className="size-4" strokeWidth={1.5} />
           </ToolbarButton>

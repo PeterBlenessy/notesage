@@ -20,7 +20,7 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | Bold | `⌘B` | Toggle bold on selection |
 | Italic | `⌘I` | Toggle italic on selection |
 | Underline | `⌘U` | Toggle underline on selection |
-| Strikethrough | `⌘⇧X` | Toggle strikethrough on selection |
+| Strikethrough | `⌘⇧S` | Toggle strikethrough on selection |
 | Code | `⌘E` | Toggle inline code on selection |
 | Indent list item | `Tab` | Nest list item deeper (also available via toolbar button) |
 | Outdent list item | `⇧Tab` | Lift list item one level (also available via toolbar button) |

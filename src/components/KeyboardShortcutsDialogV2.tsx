@@ -5,6 +5,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { catalog, type AppCommand } from "@/lib/appCommandCatalog";
+import { isAlphaBuild } from "@/lib/build-channel";
 
 /**
  * Keyboard Shortcuts dialog (task #137).
@@ -18,9 +20,25 @@ import { ScrollArea } from "@/components/ui/scroll-area";
  *   - Wider (560 px) so the `Kbd` combos don't wrap.
  */
 
+/**
+ * Where the rows come from:
+ *
+ *   - App-level chords are read from the command manifest
+ *     (`appCommandManifest.json` via `appCommandCatalog`). A group lists them
+ *     by command id only; the label and the chord both come from the manifest,
+ *     so this reference cannot disagree with what the dispatcher binds. A
+ *     manifest command that no group places is appended under "Other" rather
+ *     than silently dropped.
+ *   - Editor-owned chords are not in the manifest (they are bound by Tiptap /
+ *     ProseMirror keymaps or a local listener), so they stay a static list.
+ *     Each one names the code that binds it — check that before editing.
+ */
+
 interface ShortcutEntry {
+  /** Manifest command id, or undefined for an editor-owned chord. */
+  commandId?: string;
   action: string;
-  keys: string[][];
+  keys: string[];
 }
 
 interface ShortcutCategory {
@@ -28,78 +46,149 @@ interface ShortcutCategory {
   shortcuts: ShortcutEntry[];
 }
 
-const categories: ShortcutCategory[] = [
+/** A manifest command id, or a static editor-owned chord. */
+type ShortcutSource = string | { action: string; keys: string[] };
+
+interface ShortcutGroupDef {
+  label: string;
+  items: ShortcutSource[];
+}
+
+const GROUPS: ShortcutGroupDef[] = [
   {
     label: "File Operations",
-    shortcuts: [
-      { action: "Save", keys: [["⌘", "S"]] },
-      { action: "Open folder", keys: [["⌘", "O"]] },
-      { action: "Close active document", keys: [["⌘", "W"]] },
-      { action: "New note (inline-create row in sidebar)", keys: [["⌘", "N"]] },
-      { action: "New project (inline-create row in sidebar)", keys: [["⌘", "⇧", "N"]] },
-      { action: "Export (PDF / DOCX / PPTX / HTML)", keys: [["⌘", "⇧", "E"]] },
+    items: [
+      // window keydown listener in `useEditorKeyBindings.ts`
+      { action: "Save", keys: ["⌘", "S"] },
+      "open-folder",
+      "close-active-document",
+      "new-note",
+      "new-project",
+      "export-document",
     ],
   },
   {
     label: "Editor",
-    shortcuts: [
-      { action: "Bold", keys: [["⌘", "B"]] },
-      { action: "Italic", keys: [["⌘", "I"]] },
-      { action: "Underline", keys: [["⌘", "U"]] },
-      { action: "Strikethrough", keys: [["⌘", "⇧", "X"]] },
-      { action: "Code", keys: [["⌘", "E"]] },
-      { action: "Undo", keys: [["⌘", "Z"]] },
-      { action: "Redo", keys: [["⌘", "⇧", "Z"]] },
-      { action: "Paste as plain text", keys: [["⌘", "⇧", "V"]] },
+    items: [
+      // Tiptap StarterKit marks: Bold `Mod-b`, Italic `Mod-i`,
+      // Underline `Mod-u`, Strike `Mod-Shift-s`, Code `Mod-e`.
+      { action: "Bold", keys: ["⌘", "B"] },
+      { action: "Italic", keys: ["⌘", "I"] },
+      { action: "Underline", keys: ["⌘", "U"] },
+      { action: "Strikethrough", keys: ["⌘", "⇧", "S"] },
+      { action: "Code", keys: ["⌘", "E"] },
+      // Tiptap UndoRedo: `Mod-z` / `Shift-Mod-z`
+      { action: "Undo", keys: ["⌘", "Z"] },
+      { action: "Redo", keys: ["⌘", "⇧", "Z"] },
+      // `Mod-Shift-v` in `extensions/paste-handler.ts`
+      { action: "Paste as plain text", keys: ["⌘", "⇧", "V"] },
+      "zoom-in",
+      "zoom-out",
+      "zoom-reset",
     ],
   },
   {
     label: "Find",
-    shortcuts: [
-      { action: "Find in document", keys: [["⌘", "F"]] },
-      { action: "Find and replace", keys: [["⌘", "⇧", "H"]] },
-      { action: "Open command bar (no prefix)", keys: [["⌘", "⇧", "F"]] },
-      { action: "Search references (files / people / comments)", keys: [["⌘", "@"]] },
-      { action: "Search tags", keys: [["⌘", "#"]] },
-      { action: "Search research", keys: [["⌘", "?"]] },
-      { action: "Open tasks / actions", keys: [["⌘", "!"]] },
+    items: [
+      "find-in-document",
+      "find-replace",
+      "find-files",
+      "open-mentions",
+      "open-tags",
+      "open-research",
+      "open-tasks",
+      "open-commands-palette",
     ],
   },
   {
     label: "Navigation",
-    shortcuts: [
-      { action: "Command bar — primary", keys: [["⌘", "K"]] },
-      { action: "Command bar — alternate", keys: [["⌘", "⌘"]] },
-      { action: "Command bar — third path (when collapsed)", keys: [["⌘", "⇧", "C"]] },
-      { action: "Tree overlay (workspace tree)", keys: [["⌘", "⇧", "E"]] },
-      { action: "Toggle sidebar pin", keys: [["⌘", "⇧", "L"]] },
-      { action: "Toggle agent orb popover", keys: [["⌘", "⇧", "A"]] },
-      { action: "Focus mode", keys: [["⌘", "."]] },
-      { action: "Document outline", keys: [["⌘", "⇧", "O"]] },
-      { action: "Previous recent document (MRU)", keys: [["⌃", "⇧", "Tab"]] },
-      { action: "Next recent document (MRU)", keys: [["⌃", "Tab"]] },
-      { action: "Copy active document's path", keys: [["⌘", "⌥", "C"]] },
-      { action: "Reveal active document in Finder", keys: [["⌘", "⌥", "R"]] },
-      { action: "Keyboard shortcuts", keys: [["⌘", "⇧", "K"]] },
+    items: [
+      "open-command-palette",
+      // double-tap ⌘ tracker in `useGlobalShortcuts.ts` (not a chord)
+      { action: "Open command palette (double-tap)", keys: ["⌘", "⌘"] },
+      "toggle-sidebar",
+      "toggle-activity-agent",
+      "toggle-focus-mode",
+      "exit-focus-mode",
+      "open-document-outline",
+      "open-inbox",
+      "inbox-next",
+      "inbox-previous",
+      "cycle-recent-previous",
+      "cycle-recent-next",
+      "copy-document-path",
+      "reveal-in-finder",
+      "keyboard-shortcuts",
     ],
   },
   {
     label: "AI & Voice",
-    shortcuts: [
-      { action: "Add comment on selection", keys: [["⌘", "⇧", "M"]] },
-      { action: "Toggle voice recording", keys: [["⌘", "⇧", "R"]] },
-      { action: "Accept inline suggestion", keys: [["⌘", "↵"]] },
-      { action: "Reject inline suggestion", keys: [["⌘", "⌫"]] },
+    items: [
+      // ProseMirror `handleKeyDown` in `extensions/comment-mark.ts`
+      { action: "Add comment on selection", keys: ["⌘", "⌥", "C"] },
+      "toggle-recording",
+      // `Mod-Enter` / `Mod-Backspace` in `extensions/ai-suggestion.ts` and
+      // `extensions/inline-diff.ts`
+      { action: "Accept inline suggestion", keys: ["⌘", "↵"] },
+      { action: "Reject inline suggestion", keys: ["⌘", "⌫"] },
     ],
   },
   {
     label: "Settings",
-    shortcuts: [
-      { action: "Toggle theme", keys: [["⌘", "T"]] },
-      { action: "Open settings", keys: [["⌘", ","]] },
-    ],
+    items: ["toggle-theme", "open-settings", "open-devtools"],
   },
 ];
+
+const OTHER_GROUP_LABEL = "Other";
+
+/** Commands whose action is a no-op unless a runtime condition holds; listing
+ *  them when it does not would advertise a chord that does nothing. */
+const AVAILABILITY: Record<string, () => boolean> = {
+  "open-devtools": isAlphaBuild,
+};
+
+const MODIFIER_GLYPHS = new Set(["⌘", "⌥", "⇧", "⌃"]);
+
+/** Split a manifest `display` string into key caps: each leading modifier
+ *  glyph is its own cap, the rest is the key ("⌃⇧Tab" → ⌃ ⇧ Tab). */
+function splitDisplay(display: string): string[] {
+  const glyphs = Array.from(display);
+  let i = 0;
+  while (i < glyphs.length - 1 && MODIFIER_GLYPHS.has(glyphs[i])) i++;
+  return [...glyphs.slice(0, i), glyphs.slice(i).join("")];
+}
+
+function isAvailable(commandId: string): boolean {
+  return AVAILABILITY[commandId]?.() ?? true;
+}
+
+function commandEntry(commandId: string): ShortcutEntry | null {
+  // The catalog is typed as total, but a group may name an id the manifest
+  // has since dropped.
+  const command: AppCommand | undefined = catalog[commandId];
+  if (!command || !isAvailable(commandId)) return null;
+  return { commandId, action: command.label, keys: splitDisplay(command.display) };
+}
+
+function buildCategories(): ShortcutCategory[] {
+  const placed = new Set<string>();
+  const categories: ShortcutCategory[] = GROUPS.map((group) => ({
+    label: group.label,
+    shortcuts: group.items.flatMap((item) => {
+      if (typeof item !== "string") return [item];
+      placed.add(item);
+      const entry = commandEntry(item);
+      return entry ? [entry] : [];
+    }),
+  }));
+  const unplaced = Object.keys(catalog)
+    .filter((id) => !placed.has(id))
+    .flatMap((id) => commandEntry(id) ?? []);
+  if (unplaced.length > 0) {
+    categories.push({ label: OTHER_GROUP_LABEL, shortcuts: unplaced });
+  }
+  return categories.filter((category) => category.shortcuts.length > 0);
+}
 
 function Kbd({ children }: { children: string }) {
   return (
@@ -118,6 +207,10 @@ export function KeyboardShortcutsDialogV2({
   open,
   onOpenChange,
 }: KeyboardShortcutsDialogV2Props) {
+  // Built per render, not at module load: availability (the build channel)
+  // resolves asynchronously at startup.
+  const categories = buildCategories();
+  const reopenKeys = commandEntry("keyboard-shortcuts")?.keys ?? [];
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/*
@@ -142,8 +235,13 @@ export function KeyboardShortcutsDialogV2({
             Keyboard Shortcuts
           </DialogTitle>
           <p className="mt-1 text-[13px] text-muted-foreground leading-relaxed">
-            Press <Kbd>⌘</Kbd> <Kbd>⇧</Kbd> <Kbd>K</Kbd> any time to reopen this
-            reference.
+            Press{" "}
+            <span className="inline-flex items-center gap-0.5">
+              {reopenKeys.map((key, i) => (
+                <Kbd key={i}>{key}</Kbd>
+              ))}
+            </span>{" "}
+            any time to reopen this reference.
           </p>
         </DialogHeader>
         <div className="flex-1 min-h-0">
@@ -163,22 +261,16 @@ export function KeyboardShortcutsDialogV2({
                   <div className="rounded-lg border border-border divide-y divide-border/60 bg-card">
                     {category.shortcuts.map((shortcut) => (
                       <div
-                        key={shortcut.action}
+                        key={shortcut.commandId ?? shortcut.action}
+                        data-command-id={shortcut.commandId}
                         className="flex items-center justify-between gap-4 px-3 py-2"
                       >
                         <span className="text-[13px] text-foreground min-w-0 truncate">
                           {shortcut.action}
                         </span>
-                        <div className="flex items-center gap-1 shrink-0">
-                          {shortcut.keys.map((combo, i) => (
-                            <span
-                              key={i}
-                              className="inline-flex items-center gap-0.5"
-                            >
-                              {combo.map((key, j) => (
-                                <Kbd key={j}>{key}</Kbd>
-                              ))}
-                            </span>
+                        <div className="inline-flex items-center gap-0.5 shrink-0">
+                          {shortcut.keys.map((key, i) => (
+                            <Kbd key={i}>{key}</Kbd>
                           ))}
                         </div>
                       </div>
