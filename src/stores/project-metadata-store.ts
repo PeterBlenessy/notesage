@@ -51,11 +51,32 @@ export function createDefaultMetadata(folderName: string): ProjectMetadata {
   };
 }
 
+/**
+ * `aiLock.connectionId` of a project whose `project.json` exists (or may
+ * exist) but could not be read. It matches no real connection, so every lock
+ * check refuses to send: a project that may carry a provider lock we cannot
+ * see is treated as locked, not as unlocked. It doubles as the label the lock
+ * UI falls back to for a connection it cannot resolve, hence the wording.
+ */
+export const METADATA_UNAVAILABLE_LOCK_ID = 'project.json unreadable';
+
 interface ProjectMetadataStore {
   metadataMap: Record<string, ProjectMetadata>;
   dirtyPaths: Set<string>;
+  /**
+   * Projects whose `metadataMap` entry is the fail-closed stand-in above, not
+   * the file's contents. Such an entry is never edited and never saved —
+   * writing it would replace the real `project.json` with defaults.
+   */
+  unavailablePaths: Set<string>;
 
   setMetadata: (projectPath: string, metadata: ProjectMetadata) => void;
+  /**
+   * Record that a project's metadata could not be read. Installs a stand-in
+   * entry locked to `METADATA_UNAVAILABLE_LOCK_ID`; `reason` is shown where
+   * the lock is explained. A later `setMetadata` replaces it.
+   */
+  setMetadataUnavailable: (projectPath: string, reason: string) => void;
   updateMetadata: (projectPath: string, updates: Partial<Pick<ProjectMetadata, 'name' | 'description' | 'citationFormat' | 'citationStyle'>>) => void;
   updateAI: (projectPath: string, updates: Partial<ProjectMetadata['ai']>) => void;
   setAiLock: (projectPath: string, connectionId: string, reason?: string) => void;
@@ -81,20 +102,43 @@ interface ProjectMetadataStore {
 export const useProjectMetadataStore = create<ProjectMetadataStore>((set, get) => ({
   metadataMap: {},
   dirtyPaths: new Set<string>(),
+  unavailablePaths: new Set<string>(),
 
   setMetadata: (projectPath, metadata) =>
     set((state) => {
       const newDirty = new Set(state.dirtyPaths);
       newDirty.delete(projectPath);
+      const newUnavailable = new Set(state.unavailablePaths);
+      newUnavailable.delete(projectPath);
       return {
         metadataMap: { ...state.metadataMap, [projectPath]: metadata },
         dirtyPaths: newDirty,
+        unavailablePaths: newUnavailable,
+      };
+    }),
+
+  setMetadataUnavailable: (projectPath, reason) =>
+    set((state) => {
+      const newDirty = new Set(state.dirtyPaths);
+      newDirty.delete(projectPath);
+      const newUnavailable = new Set(state.unavailablePaths);
+      newUnavailable.add(projectPath);
+      const folderName = projectPath.split('/').filter(Boolean).pop() || 'Untitled';
+      const standIn: ProjectMetadata = {
+        ...createDefaultMetadata(folderName),
+        aiLock: { connectionId: METADATA_UNAVAILABLE_LOCK_ID, lockedAt: Date.now(), reason },
+      };
+      return {
+        metadataMap: { ...state.metadataMap, [projectPath]: standIn },
+        dirtyPaths: newDirty,
+        unavailablePaths: newUnavailable,
       };
     }),
 
   updateMetadata: (projectPath, updates) =>
     set((state) => {
       const existing = state.metadataMap[projectPath];
+      if (state.unavailablePaths.has(projectPath)) return state;
       if (!existing) return state;
       const newDirty = new Set(state.dirtyPaths);
       newDirty.add(projectPath);
@@ -110,6 +154,7 @@ export const useProjectMetadataStore = create<ProjectMetadataStore>((set, get) =
   updateAI: (projectPath, updates) =>
     set((state) => {
       const existing = state.metadataMap[projectPath];
+      if (state.unavailablePaths.has(projectPath)) return state;
       if (!existing) return state;
       const newDirty = new Set(state.dirtyPaths);
       newDirty.add(projectPath);
@@ -128,6 +173,7 @@ export const useProjectMetadataStore = create<ProjectMetadataStore>((set, get) =
   setAiLock: (projectPath, connectionId, reason) =>
     set((state) => {
       const existing = state.metadataMap[projectPath];
+      if (state.unavailablePaths.has(projectPath)) return state;
       if (!existing) return state;
       const newDirty = new Set(state.dirtyPaths);
       newDirty.add(projectPath);
@@ -148,6 +194,7 @@ export const useProjectMetadataStore = create<ProjectMetadataStore>((set, get) =
   clearAiLock: (projectPath) =>
     set((state) => {
       const existing = state.metadataMap[projectPath];
+      if (state.unavailablePaths.has(projectPath)) return state;
       if (!existing || !existing.aiLock) return state;
       const newDirty = new Set(state.dirtyPaths);
       newDirty.add(projectPath);
@@ -164,6 +211,7 @@ export const useProjectMetadataStore = create<ProjectMetadataStore>((set, get) =
   setAppearance: (projectPath, appearance) =>
     set((state) => {
       const existing = state.metadataMap[projectPath];
+      if (state.unavailablePaths.has(projectPath)) return state;
       if (!existing) return state;
       const newDirty = new Set(state.dirtyPaths);
       newDirty.add(projectPath);
@@ -179,6 +227,7 @@ export const useProjectMetadataStore = create<ProjectMetadataStore>((set, get) =
   clearAppearance: (projectPath) =>
     set((state) => {
       const existing = state.metadataMap[projectPath];
+      if (state.unavailablePaths.has(projectPath)) return state;
       if (!existing || !existing.appearance) return state;
       const newDirty = new Set(state.dirtyPaths);
       newDirty.add(projectPath);
@@ -197,9 +246,12 @@ export const useProjectMetadataStore = create<ProjectMetadataStore>((set, get) =
       const { [projectPath]: _, ...rest } = state.metadataMap;
       const newDirty = new Set(state.dirtyPaths);
       newDirty.delete(projectPath);
+      const newUnavailable = new Set(state.unavailablePaths);
+      newUnavailable.delete(projectPath);
       return {
         metadataMap: rest,
         dirtyPaths: newDirty,
+        unavailablePaths: newUnavailable,
       };
     }),
 

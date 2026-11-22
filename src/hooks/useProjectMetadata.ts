@@ -9,6 +9,7 @@ import { tauriApi } from '@/lib/tauri';
 import { log } from '@/lib/logger';
 import { buildDocumentIndex, type DocumentIndex } from '@/lib/document-index';
 import { toast } from 'sonner';
+import { t } from '@/lib/i18n';
 
 const METADATA_DIR = '.notesage';
 const METADATA_FILE = 'project.json';
@@ -65,12 +66,37 @@ export function isProjectMetadata(v: unknown): v is ProjectMetadata {
   return true;
 }
 
-async function loadProjectMetadata(
+/**
+ * `project.json` exists (or may exist) but could not be read. Fail closed:
+ * install the locked stand-in so no send path treats the project as unlocked,
+ * leave the file alone, and offer a retry.
+ */
+function markMetadataUnavailable(
+  projectPath: string,
+  setMetadata: (path: string, metadata: ProjectMetadata) => void,
+  message: string,
+): void {
+  useProjectMetadataStore.getState().setMetadataUnavailable(projectPath, message);
+  toast.error(message, {
+    id: `project-metadata-unavailable:${projectPath}`,
+    duration: Infinity,
+    action: {
+      label: t('toast.projectMetadataRetry'),
+      onClick: () => {
+        void loadProjectMetadata(projectPath, setMetadata);
+      },
+    },
+  });
+}
+
+export async function loadProjectMetadata(
   projectPath: string,
   setMetadata: (path: string, metadata: ProjectMetadata) => void,
 ): Promise<void> {
   const dirPath = getMetadataDir(projectPath);
   const filePath = getMetadataPath(projectPath);
+  const name = folderNameFromPath(projectPath);
+  const toastId = `project-metadata-unavailable:${projectPath}`;
 
   try {
     // Bail out if the project directory itself doesn't exist (e.g., externally renamed/deleted)
@@ -97,27 +123,50 @@ async function loadProjectMetadata(
 
     const fileExists = await tauriApi.pathExists(filePath);
     if (!fileExists) {
-      const defaults = createDefaultMetadata(folderNameFromPath(projectPath));
+      // `pathExists` is also false for a file iCloud has evicted to a
+      // `.name.icloud` placeholder. Writing defaults then would replace the
+      // real project.json (its `aiLock` included) and create a sync conflict.
+      const evicted = await tauriApi.pathExists(`${dirPath}/.${METADATA_FILE}.icloud`);
+      if (evicted) {
+        log.warn('project-metadata', `project.json is not downloaded from iCloud for ${projectPath}`);
+        void tauriApi.icloudEnsureDownloaded(filePath).catch((downloadError: unknown) => {
+          log.warn('project-metadata', `Could not request download of ${filePath}`, downloadError);
+        });
+        markMetadataUnavailable(projectPath, setMetadata, t('toast.projectMetadataNotDownloaded', { project: name }));
+        return;
+      }
+      const defaults = createDefaultMetadata(name);
       await tauriApi.writeFile(filePath, JSON.stringify(defaults, null, 2));
       setMetadata(projectPath, defaults);
+      toast.dismiss(toastId);
+      return;
+    }
+
+    const raw = await tauriApi.readFile(filePath);
+    const parsed: unknown = JSON.parse(raw);
+    if (isProjectMetadata(parsed)) {
+      setMetadata(projectPath, parsed);
+      toast.dismiss(toastId);
+    } else if (isRecord(parsed) && 'aiLock' in parsed) {
+      // The file tries to carry a provider lock we cannot make sense of.
+      // Falling back to defaults here would silently unlock the project.
+      log.warn('project-metadata', `Invalid project.json with an aiLock for ${projectPath} — failing closed`);
+      markMetadataUnavailable(projectPath, setMetadata, t('toast.projectMetadataUnreadable', { project: name }));
     } else {
-      const raw = await tauriApi.readFile(filePath);
-      const parsed: unknown = JSON.parse(raw);
-      if (isProjectMetadata(parsed)) {
-        setMetadata(projectPath, parsed);
-      } else {
-        // Corrupted / hand-edited file: fall back to defaults in memory
-        // (mirrors the file-absent branch above) but do NOT overwrite the
-        // file on disk — the user may want to repair it.
-        log.warn(
-          'project-metadata',
-          `Invalid project.json shape for ${projectPath} — using defaults`,
-        );
-        setMetadata(projectPath, createDefaultMetadata(folderNameFromPath(projectPath)));
-      }
+      // Corrupted / hand-edited file with no lock in it: fall back to
+      // defaults in memory but do NOT overwrite the file on disk — the user
+      // may want to repair it.
+      log.warn(
+        'project-metadata',
+        `Invalid project.json shape for ${projectPath} — using defaults`,
+      );
+      setMetadata(projectPath, createDefaultMetadata(name));
+      toast.dismiss(toastId);
     }
   } catch (error) {
     console.error(`Failed to load project metadata for ${projectPath}:`, error);
+    log.error('project-metadata', `Failed to load project metadata for ${projectPath}`, error);
+    markMetadataUnavailable(projectPath, setMetadata, t('toast.projectMetadataUnreadable', { project: name }));
   }
 }
 
@@ -127,6 +176,8 @@ async function saveProjectMetadata(
   setClean: (path: string) => void,
 ): Promise<void> {
   const filePath = getMetadataPath(projectPath);
+  // Never persist the fail-closed stand-in: it is not the file's contents.
+  if (useProjectMetadataStore.getState().unavailablePaths.has(projectPath)) return;
   try {
     await tauriApi.writeFile(filePath, JSON.stringify(metadata, null, 2));
     setClean(projectPath);
