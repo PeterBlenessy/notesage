@@ -46,10 +46,56 @@ pub struct WorktreeInfo {
     pub is_main: bool,
 }
 
+/// Config overrides passed to every git invocation, ahead of the subcommand.
+///
+/// `core.fsmonitor` names a program git runs on `status`, `diff`, `add`, … The
+/// app runs `git status` by itself on every folder it opens, unsandboxed, so a
+/// config file an agent can write (the repo's, or `~/.config/git/config`)
+/// would otherwise be a way to run code outside the sandbox. `-c` on the
+/// command line outranks every config file.
+const GIT_SAFE_CONFIG: [&str; 2] = ["-c", "core.fsmonitor=false"];
+
+/// `git diff` flags that stop it running configured programs: external diff
+/// drivers (`diff.external`, `diff.<driver>.command`) and textconv filters.
+const GIT_DIFF_NO_EXEC: [&str; 2] = ["--no-ext-diff", "--no-textconv"];
+
+/// Reject a branch/ref name that git would read as an option.
+///
+/// The diff commands also pass `--end-of-options`; this is the check that
+/// does not depend on the installed git honouring it (and the only one for
+/// `git switch`, where `--end-of-options` is not reliable across the git
+/// versions macOS ships). No valid ref name starts with `-`.
+fn validate_ref_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Branch name is empty".to_string());
+    }
+    if name.starts_with('-') {
+        return Err(format!("Invalid branch name: '{}'", name));
+    }
+    Ok(())
+}
+
+/// Arguments for a branch-to-branch `git diff`, with `extra` (e.g.
+/// `--name-only`) placed before the range and `file` limiting it to one path.
+fn branch_diff_args<'a>(extra: &[&'a str], range: &'a str, file: Option<&'a str>) -> Vec<&'a str> {
+    let mut args = vec!["diff"];
+    args.extend_from_slice(extra);
+    args.extend_from_slice(&GIT_DIFF_NO_EXEC);
+    // Everything after this is a revision or a path, never an option.
+    args.push("--end-of-options");
+    args.push(range);
+    if let Some(file) = file {
+        args.push("--");
+        args.push(file);
+    }
+    args
+}
+
 /// Run a git command in the given directory, returning stdout on success.
 fn git(dir: &str, args: &[&str]) -> Result<String, String> {
     let output = Command::new("git")
         .current_dir(dir)
+        .args(GIT_SAFE_CONFIG)
         .args(args)
         .output()
         .map_err(|e| format!("Failed to run git: {}", e))?;
@@ -126,6 +172,7 @@ pub async fn git_status(path: String) -> Result<Vec<GitFileStatus>, String> {
     // This avoids encoding/quoting issues that corrupt path parsing.
     let output = Command::new("git")
         .current_dir(&path)
+        .args(GIT_SAFE_CONFIG)
         .args(["status", "--porcelain=v1", "-z"])
         .output()
         .map_err(|e| format!("Failed to run git: {}", e))?;
@@ -264,6 +311,7 @@ pub async fn git_branch_list(path: String) -> Result<Vec<String>, String> {
 
 #[tauri::command]
 pub async fn git_branch_switch(path: String, branch: String) -> Result<(), String> {
+    validate_ref_name(&branch)?;
     git(&path, &["switch", &branch])?;
     Ok(())
 }
@@ -331,8 +379,10 @@ pub async fn git_diff_files(
     base_branch: String,
     compare_branch: String,
 ) -> Result<Vec<String>, String> {
+    validate_ref_name(&base_branch)?;
+    validate_ref_name(&compare_branch)?;
     let range = format!("{}...{}", base_branch, compare_branch);
-    let output = git(&repo_path, &["diff", "--name-only", &range])?;
+    let output = git(&repo_path, &branch_diff_args(&["--name-only"], &range, None))?;
     Ok(output
         .lines()
         .filter(|l| !l.is_empty())
@@ -348,8 +398,13 @@ pub async fn git_diff_file(
     compare_branch: String,
     file_path: String,
 ) -> Result<Vec<DiffHunk>, String> {
+    validate_ref_name(&base_branch)?;
+    validate_ref_name(&compare_branch)?;
     let range = format!("{}...{}", base_branch, compare_branch);
-    let output = git(&repo_path, &["diff", "--no-color", &range, "--", &file_path])?;
+    let output = git(
+        &repo_path,
+        &branch_diff_args(&["--no-color"], &range, Some(&file_path)),
+    )?;
     Ok(parse_unified_diff(&output))
 }
 
@@ -958,5 +1013,183 @@ detached";
             .collect();
         assert_eq!(modified.len(), 1);
         assert!(modified[0].path.ends_with("init.md"));
+    }
+
+    // -----------------------------------------------------------------------
+    // Hardening: git must not run programs named by (agent-writable) config,
+    // and user-supplied refs must not be read as options.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn safe_config_disables_fsmonitor() {
+        assert_eq!(GIT_SAFE_CONFIG, ["-c", "core.fsmonitor=false"]);
+    }
+
+    #[test]
+    fn branch_diff_args_disable_external_programs_and_end_options() {
+        assert_eq!(
+            branch_diff_args(&["--name-only"], "main...feat", None),
+            vec![
+                "diff",
+                "--name-only",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--end-of-options",
+                "main...feat"
+            ]
+        );
+        assert_eq!(
+            branch_diff_args(&["--no-color"], "main...feat", Some("notes/a.md")),
+            vec![
+                "diff",
+                "--no-color",
+                "--no-ext-diff",
+                "--no-textconv",
+                "--end-of-options",
+                "main...feat",
+                "--",
+                "notes/a.md"
+            ]
+        );
+    }
+
+    #[test]
+    fn validate_ref_name_rejects_option_like_and_empty_names() {
+        assert!(validate_ref_name("main").is_ok());
+        assert!(validate_ref_name("feature/x-1").is_ok());
+        assert!(validate_ref_name("").is_err());
+        assert!(validate_ref_name("-b").is_err());
+        assert!(validate_ref_name("--output=/tmp/x").is_err());
+        assert!(validate_ref_name("--upload-pack=touch /tmp/x").is_err());
+    }
+
+    /// Write an executable script that creates `marker` when git runs it.
+    #[cfg(unix)]
+    fn marker_script(dir: &std::path::Path, name: &str, marker: &std::path::Path) -> String {
+        use std::os::unix::fs::PermissionsExt;
+        let script = dir.join(name);
+        std::fs::write(
+            &script,
+            format!("#!/bin/sh\ntouch '{}'\nexit 1\n", marker.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        script.to_string_lossy().to_string()
+    }
+
+    /// Add a `feature` branch that changes init.md, leaving `main` checked out.
+    #[cfg(unix)]
+    fn add_feature_branch(repo: &std::path::Path) {
+        let run = |args: &[&str]| {
+            let out = Command::new("git").current_dir(repo).args(args).output().unwrap();
+            assert!(out.status.success(), "git {:?} failed", args);
+        };
+        run(&["switch", "-c", "feature"]);
+        std::fs::write(repo.join("init.md"), "# Init\nchanged on feature\n").unwrap();
+        run(&["commit", "-am", "change init"]);
+        run(&["switch", "main"]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn git_status_does_not_run_a_configured_fsmonitor() {
+        if !git_available() {
+            return;
+        }
+        let repo = init_git_repo();
+        let scripts = tempfile::tempdir().unwrap();
+        let marker = scripts.path().join("fsmonitor-ran");
+        let hook = marker_script(scripts.path(), "fsmonitor.sh", &marker);
+        Command::new("git")
+            .current_dir(repo.path())
+            .args(["config", "core.fsmonitor", &hook])
+            .output()
+            .unwrap();
+
+        let path = repo.path().to_string_lossy().to_string();
+        std::fs::write(repo.path().join("new.txt"), "x").unwrap();
+        let status = git_status(path.clone()).await.unwrap();
+        assert!(status.iter().any(|f| f.path.ends_with("new.txt")));
+        // The helper used by every other command is covered too.
+        git_is_repo(path.clone()).await.unwrap();
+        git_branch_current(path).await.unwrap();
+
+        assert!(
+            !marker.exists(),
+            "git ran the fsmonitor program from the repo config"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn git_diff_does_not_run_a_configured_external_diff() {
+        if !git_available() {
+            return;
+        }
+        let repo = init_git_repo();
+        add_feature_branch(repo.path());
+        let scripts = tempfile::tempdir().unwrap();
+        let marker = scripts.path().join("ext-diff-ran");
+        let ext = marker_script(scripts.path(), "ext-diff.sh", &marker);
+        Command::new("git")
+            .current_dir(repo.path())
+            .args(["config", "diff.external", &ext])
+            .output()
+            .unwrap();
+
+        let path = repo.path().to_string_lossy().to_string();
+        let files = git_diff_files(path.clone(), "main".to_string(), "feature".to_string())
+            .await
+            .unwrap();
+        assert_eq!(files, vec!["init.md".to_string()]);
+        let hunks = git_diff_file(
+            path,
+            "main".to_string(),
+            "feature".to_string(),
+            "init.md".to_string(),
+        )
+        .await
+        .unwrap();
+        assert!(!hunks.is_empty(), "the built-in diff should still produce hunks");
+
+        assert!(!marker.exists(), "git ran diff.external from the repo config");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn option_like_branch_names_are_rejected_before_git_runs() {
+        if !git_available() {
+            return;
+        }
+        let repo = init_git_repo();
+        add_feature_branch(repo.path());
+        let out_dir = tempfile::tempdir().unwrap();
+        let target = out_dir.path().join("written-by-git");
+        let path = repo.path().to_string_lossy().to_string();
+
+        // `git diff --output=<file>` would create a file of the caller's choosing.
+        let evil = format!("--output={}", target.display());
+        assert!(git_diff_files(path.clone(), evil.clone(), "feature".to_string())
+            .await
+            .is_err());
+        assert!(git_diff_file(
+            path.clone(),
+            evil.clone(),
+            "feature".to_string(),
+            "init.md".to_string()
+        )
+        .await
+        .is_err());
+        assert!(git_diff_files(path.clone(), "main".to_string(), evil.clone())
+            .await
+            .is_err());
+        assert!(git_branch_switch(path.clone(), "--detach".to_string())
+            .await
+            .is_err());
+
+        let leftovers: Vec<_> = std::fs::read_dir(out_dir.path()).unwrap().collect();
+        assert!(leftovers.is_empty(), "git wrote a file named by a branch argument");
+        // Still on main: `--detach` was not interpreted.
+        assert_eq!(git_branch_current(path).await.unwrap(), "main");
     }
 }

@@ -91,6 +91,12 @@ async fn reader_loop(
                         "kind": "Error",
                     }),
                 );
+                // Nothing will ever answer the requests still in flight. Drop
+                // their senders so the callers fail with "channel closed"
+                // rather than waiting forever: `conversation/turn` no longer
+                // holds the process lock while it waits, so it would
+                // otherwise outlive the process it was sent to.
+                pending.lock().await.clear();
                 return Err(format!("Copilot LSP reader: {}", e));
             }
         };

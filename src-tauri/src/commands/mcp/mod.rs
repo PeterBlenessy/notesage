@@ -13,10 +13,12 @@
 //! - [`config`] — `mcp.json` / Claude Desktop / Cursor / VS Code parsing
 //! - [`catalog`] — embedded curated server catalog
 //! - [`validation`] — `validate_mcp_command` guard + dry-run helpers
+//! - [`stderr_drain`] — keeps a running stdio server's stderr pipe empty
 
 mod catalog;
 mod config;
 mod state;
+mod stderr_drain;
 mod transport;
 mod types;
 mod validation;
@@ -37,6 +39,7 @@ use config::{
 };
 use crate::commands::shell_path::get_shell_path;
 use state::McpServerHandle;
+use stderr_drain::{spawn_stderr_drain, StderrTail};
 use transport::{
     mcp_call_tool_on_server, mcp_initialize, mcp_list_tools_from_server, spawn_mcp_transport,
     McpConn,
@@ -87,6 +90,7 @@ pub async fn mcp_start_server(
     }
 
     // Establish the connection per transport, outside the lock.
+    let mut stderr_tail: Option<StderrTail> = None;
     let (child, conn): (Option<Child>, McpConn) = match config.transport {
         McpTransport::Stdio => {
             let mut spawn_cmd = tokio::process::Command::new(&config.command);
@@ -113,6 +117,12 @@ pub async fn mcp_start_server(
             let child_pid = child.id();
             let stdin = child.stdin.take().ok_or("Failed to capture stdin")?;
             let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
+            // Read stderr for the life of the process. Left piped and unread,
+            // it fills the pipe buffer and the server blocks on its next log
+            // write — it then looks hung, with every tool call timing out.
+            if let Some(stderr) = child.stderr.take() {
+                stderr_tail = Some(spawn_stderr_drain(stderr, server_id.clone()));
+            }
             let transport =
                 spawn_mcp_transport(stdin, stdout, child_pid, server_id.clone(), app.clone());
             (Some(child), McpConn::Stdio(transport))
@@ -128,10 +138,18 @@ pub async fn mcp_start_server(
 
     // Initialize the MCP protocol
     let _server_caps = mcp_initialize(&conn).await.map_err(|e| {
-        format!(
-            "MCP initialization failed for '{}': {}",
-            config.name, e
-        )
+        // What the server printed is usually the real reason it never
+        // answered (missing API key, bad argument, a stack trace).
+        match stderr_tail.as_ref().and_then(StderrTail::snapshot) {
+            Some(tail) => format!(
+                "MCP initialization failed for '{}': {}\n\nServer output:\n{}",
+                config.name, e, tail
+            ),
+            None => format!(
+                "MCP initialization failed for '{}': {}",
+                config.name, e
+            ),
+        }
     })?;
 
     // Discover tools

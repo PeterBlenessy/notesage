@@ -115,6 +115,79 @@ pub(crate) fn agent_config_entries(agent_binary: &str) -> Vec<SandboxEntry> {
     entries
 }
 
+/// `$HOME`-relative directories whose contents the UNSANDBOXED app later
+/// executes or lets git execute. Every sandboxed process can otherwise write
+/// them — `~/.notesage` and `~/.config` are write-allowed — which turns "write
+/// a file" into "run code outside the sandbox":
+///
+/// - `.notesage/agents/{bin,lib,dist}`: managed agent binaries and their npm
+///   trees. The app runs `<binary> --version` unsandboxed whenever the Connect
+///   Agent view opens, and spawns them on connect.
+/// - `.notesage/runtime`: the portable Node.js the app runs `node` / `npm` from.
+/// - `.config/git`: git's XDG global config (`core.fsmonitor`, pagers, textconv
+///   drivers), read by the `git status` the app runs on every opened folder.
+///
+/// Only the app's own installer (agent_manager.rs, never sandboxed) writes the
+/// first four; nothing sandboxed has a reason to write any of them.
+pub(crate) const EXEC_PROTECTED_SUBPATHS: &[&str] = &[
+    ".notesage/agents/bin",
+    ".notesage/agents/lib",
+    ".notesage/agents/dist",
+    ".notesage/runtime",
+    ".config/git",
+];
+
+/// `$HOME`-relative directory NODES (the directory itself, not its contents)
+/// that must not be renamed, replaced or removed: every ancestor of the
+/// protected subpaths below `$HOME`. Without this, the subpath rules above are
+/// sidestepped by moving an ancestor aside (`mv ~/.notesage/agents elsewhere`,
+/// or `~/.config`, or `~/.notesage` itself) and moving a prepared tree into
+/// its place.
+///
+/// A `literal` matches only the node: creating, changing and deleting files
+/// INSIDE these directories is still governed by the allow rules, so
+/// `~/.config/<tool>/…`, `~/.notesage/skills/…` and `agents/versions.json`
+/// stay writable. An existing directory that is denied this way behaves like
+/// any other non-writable ancestor (`mkdir -p` sees EEXIST), which is why
+/// [`ensure_exec_protected_dirs`] makes sure they exist first.
+pub(crate) const EXEC_PROTECTED_LITERALS: &[&str] = &[".notesage", ".notesage/agents", ".config"];
+
+/// Create the directories in [`EXEC_PROTECTED_LITERALS`] that sandboxed tools
+/// expect to be able to create themselves (`~/.config`, on a machine that has
+/// never had one). Once the profile denies writes to the node, a sandboxed
+/// `mkdir ~/.config` would fail; done here, unsandboxed, it never has to.
+/// Best-effort: a failure only means that tool cannot create the directory.
+#[cfg(target_os = "macos")]
+fn ensure_exec_protected_dirs(home: &Path) {
+    for rel in [".notesage", ".config"] {
+        let dir = home.join(rel);
+        if let Err(e) = std::fs::create_dir_all(&dir) {
+            log::warn!(target: "notesage::sandbox", "Could not create {}: {}", dir.display(), e);
+        }
+    }
+}
+
+/// The Seatbelt rule that makes [`EXEC_PROTECTED_SUBPATHS`] read-only.
+///
+/// Seatbelt applies the LAST matching rule, so this must be emitted after the
+/// `(allow file-write* …)` block — the same ordering the `.git` write-deny
+/// relies on.
+///
+/// Not `cfg(macos)`-gated so its text can be unit-tested on any host.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub(crate) fn exec_protected_write_deny(home: &str) -> String {
+    let mut lines: Vec<String> = EXEC_PROTECTED_SUBPATHS
+        .iter()
+        .map(|rel| format!("  (subpath \"{}/{}\")", home, rel))
+        .collect();
+    lines.extend(
+        EXEC_PROTECTED_LITERALS
+            .iter()
+            .map(|rel| format!("  (literal \"{}/{}\")", home, rel)),
+    );
+    format!("(deny file-write*\n{})", lines.join("\n"))
+}
+
 /// Generate a macOS Seatbelt (.sb) sandbox profile for an agent process.
 ///
 /// The profile is written to a temp file tied to the agent's instance ID.
@@ -125,6 +198,8 @@ pub(crate) fn agent_config_entries(agent_binary: &str) -> Vec<SandboxEntry> {
 /// - Allows writing only to the specified paths, /tmp, and /dev device nodes
 /// - Denies reading sensitive directories (~/.ssh, ~/.aws, ~/.gnupg, .env files)
 /// - Denies writing to .git/ directories (read-only access)
+/// - Denies writing to code the unsandboxed app later runs
+///   (see [`EXEC_PROTECTED_SUBPATHS`])
 /// - Network: when `kernel_network_deny` is true and a proxy is configured,
 ///   (deny default) blocks all network and only the proxy port is allowed.
 ///   When false, (allow network*) permits all network (proxy env vars are the only enforcement).
@@ -146,6 +221,8 @@ pub fn generate_seatbelt_profile(
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     let home_str = home.to_string_lossy();
+
+    ensure_exec_protected_dirs(&home);
 
     // Task #24: agent-specific config re-allow list. Only the paths THIS
     // agent binary needs — not a blanket grant that leaks sibling agent
@@ -442,6 +519,11 @@ pub fn generate_seatbelt_profile(
 (deny file-write*
   (regex #".*\/\.git($|\/.*)"))
 
+;; Protect what the UNSANDBOXED app later executes: managed agent binaries,
+;; the portable Node runtime and git's global XDG config. Comes after the
+;; file-write allow above so it overrides the ~/.notesage and ~/.config grants.
+{exec_protected_write_deny}
+
 {network_block}
 
 ;; Allow process execution (agents spawn git, grep, etc.)
@@ -459,6 +541,7 @@ pub fn generate_seatbelt_profile(
         ancestor_literal_allow = ancestor_literal_allow,
         agent_config_read_allow = agent_config_read_allow,
         agent_config_write_allow = agent_config_write_allow,
+        exec_protected_write_deny = exec_protected_write_deny(&home_str),
         home = home_str,
         network_block = network_block,
     );
@@ -615,6 +698,67 @@ mod tests {
     use super::*;
 
     // -------------------------------------------------------------------------
+    // Exec-protected paths (host-independent: checks the rule text only)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn exec_protected_deny_covers_every_path_the_app_later_executes() {
+        let rule = exec_protected_write_deny("/Users/t");
+        assert!(rule.starts_with("(deny file-write*\n"), "got: {}", rule);
+        assert!(rule.ends_with(')'));
+        for needle in [
+            "(subpath \"/Users/t/.notesage/agents/bin\")",
+            "(subpath \"/Users/t/.notesage/agents/lib\")",
+            "(subpath \"/Users/t/.notesage/agents/dist\")",
+            "(subpath \"/Users/t/.notesage/runtime\")",
+            "(subpath \"/Users/t/.config/git\")",
+            // The directory nodes themselves, so no ancestor of the protected
+            // trees can be moved aside and replaced with a prepared one.
+            "(literal \"/Users/t/.notesage/agents\")",
+            "(literal \"/Users/t/.notesage\")",
+            "(literal \"/Users/t/.config\")",
+        ] {
+            assert!(rule.contains(needle), "missing `{}` in:\n{}", needle, rule);
+        }
+    }
+
+    /// Every directory between `$HOME` and a protected subpath must be pinned
+    /// as a literal, or the subpath deny can be dodged by renaming it.
+    #[test]
+    fn every_ancestor_of_a_protected_subpath_is_pinned() {
+        for subpath in EXEC_PROTECTED_SUBPATHS {
+            let mut ancestor = Path::new(subpath).parent();
+            while let Some(dir) = ancestor {
+                let rel = dir.to_string_lossy();
+                if rel.is_empty() {
+                    break;
+                }
+                assert!(
+                    EXEC_PROTECTED_LITERALS.contains(&rel.as_ref()),
+                    "`{}` (ancestor of `{}`) can be renamed away",
+                    rel,
+                    subpath
+                );
+                ancestor = dir.parent();
+            }
+        }
+    }
+
+    #[test]
+    fn exec_protected_deny_leaves_the_rest_of_notesage_and_config_writable() {
+        let rule = exec_protected_write_deny("/Users/t");
+        // Blanket denies here would break skills, agent state and every tool
+        // that keeps its settings under ~/.config.
+        for too_broad in [
+            "(subpath \"/Users/t/.notesage\")",
+            "(subpath \"/Users/t/.notesage/agents\")",
+            "(subpath \"/Users/t/.config\")",
+        ] {
+            assert!(!rule.contains(too_broad), "`{}` is too broad:\n{}", too_broad, rule);
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // macOS-only tests (Seatbelt profile generation)
     // -------------------------------------------------------------------------
 
@@ -622,6 +766,64 @@ mod tests {
     mod macos {
         use super::*;
         use crate::commands::network_proxy::NetworkSandboxConfig;
+
+        /// Seatbelt is last-match-wins: the deny only takes effect if it comes
+        /// after the allow that grants ~/.notesage and ~/.config.
+        #[test]
+        fn exec_protected_deny_comes_after_the_write_allow() {
+            let home = dirs::home_dir().unwrap();
+            let home = home.to_string_lossy();
+            // Known agent, unknown agent and the skill-script profile all get it.
+            for (id, binary) in [
+                ("test-exec-deny-claude", "claude-agent-acp"),
+                ("test-exec-deny-custom", "/opt/custom/my-agent"),
+                ("test-exec-deny-skill", "skill-script"),
+            ] {
+                let path = generate_seatbelt_profile(id, binary, &[], None, false)
+                    .expect("should generate profile");
+                let content = std::fs::read_to_string(&path).unwrap();
+                cleanup_profile(id);
+
+                let deny = exec_protected_write_deny(&home);
+                let deny_at = content
+                    .find(&deny)
+                    .unwrap_or_else(|| panic!("{}: exec-protected deny missing in:\n{}", binary, content));
+                let allow_at = content
+                    .find("(allow file-write*")
+                    .expect("profile has a file-write allow block");
+                assert!(
+                    deny_at > allow_at,
+                    "{}: deny must follow the file-write allow to override it",
+                    binary
+                );
+                // And nothing re-allows writes afterwards.
+                assert!(
+                    !content[deny_at..].contains("(allow file-write"),
+                    "{}: a later file-write allow would override the deny",
+                    binary
+                );
+            }
+        }
+
+        /// A project folder the user made writable stays writable; only the
+        /// five protected trees are carved out.
+        #[test]
+        fn exec_protected_deny_does_not_touch_writable_projects() {
+            let id = "test-exec-deny-project";
+            let project = "/Users/test/Code/project";
+            let path = generate_seatbelt_profile(id, "claude-agent-acp", &[project.to_string()], None, false)
+                .expect("should generate profile");
+            let content = std::fs::read_to_string(&path).unwrap();
+            cleanup_profile(id);
+
+            let deny = exec_protected_write_deny(&dirs::home_dir().unwrap().to_string_lossy());
+            assert!(content.contains(&deny), "deny present");
+            assert!(!deny.contains(project));
+            // The project is still in the write-allow block.
+            let allow_at = content.find("(allow file-write*").unwrap();
+            let allow_block = &content[allow_at..content.find(&deny).unwrap()];
+            assert!(allow_block.contains(&format!("(subpath \"{}\")", project)));
+        }
 
         fn make_network_config(port: u16) -> NetworkSandboxConfig {
             NetworkSandboxConfig {

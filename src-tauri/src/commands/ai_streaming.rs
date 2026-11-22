@@ -7,6 +7,7 @@ use super::ai::ToolDefinition;
 use super::constants;
 use super::tool_execution::*;
 use super::segment_builder::*;
+use super::utf8_chunk_decoder::{floor_char_boundary, Utf8ChunkDecoder};
 
 /// Build a per-stream event name so concurrent direct-API generations don't
 /// cross-contaminate the global event bus. The frontend passes a unique
@@ -100,6 +101,16 @@ fn parse_sse_events(buffer: &mut String) -> Vec<(String, String)> {
     }
 
     events
+}
+
+/// How much of `buf` can be emitted while a thinking tag might still be
+/// arriving: everything except the last `tag.len() - 1` bytes, which could be
+/// the start of `tag`. The split is moved back to a char boundary — slicing a
+/// `String` at the raw byte offset panics when a multibyte character (å, CJK,
+/// emoji) straddles it, which killed the stream without an `ai-stream-done`.
+fn tag_hold_split(buf: &str, tag: &str) -> usize {
+    let hold = tag.len().saturating_sub(1);
+    floor_char_boundary(buf, buf.len().saturating_sub(hold))
 }
 
 // Anthropic streaming implementation with server-side web search
@@ -214,6 +225,8 @@ pub async fn anthropic_chat_stream(
     // Parse SSE stream
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    // A multibyte character can be split across network chunks.
+    let mut utf8 = Utf8ChunkDecoder::new();
     let mut citations: Vec<Citation> = Vec::new();
 
     // Tool call accumulation state
@@ -226,8 +239,7 @@ pub async fn anthropic_chat_stream(
     while let Some(chunk) = stream.next().await {
         match chunk {
             Ok(bytes) => {
-                let text = String::from_utf8_lossy(&bytes);
-                buffer.push_str(&text);
+                buffer.push_str(&utf8.decode(&bytes));
 
                 let events = parse_sse_events(&mut buffer);
 
@@ -523,6 +535,8 @@ pub async fn openai_chat_stream(
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    // A multibyte character can be split across network chunks.
+    let mut utf8 = Utf8ChunkDecoder::new();
     let mut citations: Vec<Citation> = Vec::new();
 
     // Tool call accumulation state for OpenAI Responses API
@@ -533,8 +547,7 @@ pub async fn openai_chat_stream(
     while let Some(chunk) = stream.next().await {
         match chunk {
             Ok(bytes) => {
-                let text = String::from_utf8_lossy(&bytes);
-                buffer.push_str(&text);
+                buffer.push_str(&utf8.decode(&bytes));
 
                 let events = parse_sse_events(&mut buffer);
 
@@ -801,13 +814,14 @@ pub async fn ollama_chat_stream(
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    // A multibyte character can be split across network chunks.
+    let mut utf8 = Utf8ChunkDecoder::new();
     let mut has_tool_calls = false;
 
     while let Some(chunk) = stream.next().await {
         match chunk {
             Ok(bytes) => {
-                let text = String::from_utf8_lossy(&bytes);
-                buffer.push_str(&text);
+                buffer.push_str(&utf8.decode(&bytes));
 
                 // Ollama sends one JSON object per line
                 while let Some(line_end) = buffer.find('\n') {
@@ -872,8 +886,7 @@ pub async fn ollama_chat_stream(
                                                 in_think_tag = false;
                                             } else {
                                                 // Might have a partial closing tag at the end
-                                                let hold = tags.closing.len() - 1;
-                                                let safe = if tag_scan_buf.len() > hold { tag_scan_buf.len() - hold } else { 0 };
+                                                let safe = tag_hold_split(&tag_scan_buf, &tags.closing);
                                                 if safe > 0 {
                                                     let to_emit = &tag_scan_buf[..safe];
                                                     if !to_emit.is_empty() {
@@ -896,8 +909,7 @@ pub async fn ollama_chat_stream(
                                             in_think_tag = true;
                                         } else {
                                             // Might have a partial opening tag at the end
-                                            let hold = tags.opening.len() - 1;
-                                            let safe = if tag_scan_buf.len() > hold { tag_scan_buf.len() - hold } else { 0 };
+                                            let safe = tag_hold_split(&tag_scan_buf, &tags.opening);
                                             if safe > 0 {
                                                 let to_emit = &tag_scan_buf[..safe];
                                                 if !to_emit.is_empty() {
@@ -1060,6 +1072,8 @@ pub async fn openai_compatible_chat_stream(
 
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    // A multibyte character can be split across network chunks.
+    let mut utf8 = Utf8ChunkDecoder::new();
 
     // Tool call accumulation state for Chat Completions format.
     // Tool calls arrive incrementally across multiple SSE chunks:
@@ -1071,8 +1085,7 @@ pub async fn openai_compatible_chat_stream(
     while let Some(chunk) = stream.next().await {
         match chunk {
             Ok(bytes) => {
-                let text = String::from_utf8_lossy(&bytes);
-                buffer.push_str(&text);
+                buffer.push_str(&utf8.decode(&bytes));
 
                 // SSE format: "data: {...}\n\n" or "data: [DONE]\n\n"
                 while let Some(line_end) = buffer.find('\n') {
@@ -1180,6 +1193,72 @@ pub async fn openai_compatible_chat_stream(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- Chunk-boundary tests ---
+
+    /// The decode + SSE-split pipeline every provider loop runs per chunk.
+    fn sse_data_from_chunks(chunks: &[&[u8]]) -> Vec<String> {
+        let mut utf8 = Utf8ChunkDecoder::new();
+        let mut buffer = String::new();
+        let mut data = Vec::new();
+        for chunk in chunks {
+            buffer.push_str(&utf8.decode(chunk));
+            data.extend(parse_sse_events(&mut buffer).into_iter().map(|(_, d)| d));
+        }
+        data
+    }
+
+    #[test]
+    fn multibyte_character_split_across_network_chunks_is_not_corrupted() {
+        let event = "data: {\"text\":\"smörgåsbord 漢字 🎉\"}\n\n";
+        let bytes = event.as_bytes();
+        // Split at every byte, including inside ö, å, 漢 and the emoji.
+        for split in 1..bytes.len() {
+            let data = sse_data_from_chunks(&[&bytes[..split], &bytes[split..]]);
+            assert_eq!(
+                data,
+                vec!["{\"text\":\"smörgåsbord 漢字 🎉\"}".to_string()],
+                "split at byte {}",
+                split
+            );
+        }
+    }
+
+    #[test]
+    fn event_delimiter_split_across_chunks_still_yields_the_event() {
+        let data = sse_data_from_chunks(&[b"data: {\"a\":1}\n", b"\ndata: {\"b\":2}\n\n"]);
+        assert_eq!(data, vec!["{\"a\":1}".to_string(), "{\"b\":2}".to_string()]);
+    }
+
+    #[test]
+    fn tag_hold_split_backs_off_to_a_char_boundary() {
+        // "</think>" holds back 7 bytes. "ååååå" is 10 bytes, so the raw split
+        // (byte 3) falls inside the second "å"; slicing there used to panic.
+        let buf = "ååååå";
+        let safe = tag_hold_split(buf, "</think>");
+        assert_eq!(safe, 2);
+        assert_eq!(&buf[..safe], "å");
+        assert_eq!(&buf[safe..], "åååå");
+    }
+
+    #[test]
+    fn tag_hold_split_never_panics_on_multibyte_text() {
+        for text in ["", "a", "å", "日本語のテキストです", "🎉🎉🎉🎉", "plain ascii text", "aå🎉漢b"] {
+            for tag in ["<think>", "</think>", "<|begin_of_thought|>", "x", ""] {
+                let safe = tag_hold_split(text, tag);
+                let (emit, keep) = (&text[..safe], &text[safe..]); // must not panic
+                assert_eq!(format!("{}{}", emit, keep), text);
+                // Everything that could be the start of the tag is still held.
+                assert!(keep.len() >= tag.len().saturating_sub(1).min(text.len()));
+            }
+        }
+    }
+
+    #[test]
+    fn tag_hold_split_on_ascii_matches_the_old_arithmetic() {
+        assert_eq!(tag_hold_split("hello world", "<think>"), 11 - 6);
+        assert_eq!(tag_hold_split("short", "<think>"), 0);
+    }
 
     // --- SSE parsing tests ---
 

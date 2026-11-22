@@ -1,4 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
+import { toast } from 'sonner';
 import { createJSONStorage } from 'zustand/middleware';
 import type { StateStorage } from 'zustand/middleware';
 import { log, PERF } from '@/lib/logger';
@@ -16,6 +17,12 @@ import { tauriApi } from '@/lib/tauri';
  *
  * On first access, migrates any existing localStorage data to file storage
  * (one-time, from before the localStorage/file split).
+ *
+ * A read that FAILS is not the same as "no file yet". Zustand hydrates
+ * defaults either way, but after a failed read the real file is still on
+ * disk, and the store's next state change would replace it with those
+ * defaults. So a key whose read failed is write-blocked (see
+ * `readFailedKeys`) until a later read of it succeeds.
  */
 
 const THROTTLE_MS = 2000;
@@ -79,6 +86,73 @@ if (typeof window !== 'undefined') {
 const migrated = new Set<string>();
 
 // ---------------------------------------------------------------------------
+// Failed reads
+// ---------------------------------------------------------------------------
+
+/**
+ * Keys whose most recent file read failed (as opposed to finding no file).
+ * `setItem` / `removeItem` are refused for these: the store is running on
+ * defaults it did not load from disk, and persisting them would destroy the
+ * data the read could not get at. A later successful read (e.g. the store's
+ * `persist.rehydrate()`) lifts the block, because the store then holds what
+ * is actually on disk.
+ */
+const readFailedKeys = new Set<string>();
+/** Keys already warned about a refused write — one log line each, not one per keystroke. */
+const blockedWriteWarned = new Set<string>();
+let readFailureToastShown = false;
+
+/**
+ * Stores hydrate while the app is still booting, and sonner drops toasts
+ * raised before its `<Toaster>` has mounted — so the toast waits a moment.
+ */
+const READ_FAILURE_TOAST_DELAY_MS = 1500;
+
+function markReadFailed(key: string, err: unknown): void {
+  readFailedKeys.add(key);
+  // A state change made while the read was still in flight is already queued
+  // (throttled, or waiting in the write queue) and would land on the file a
+  // moment from now. Drop it — it is defaults, not the user's data.
+  const timer = pendingTimers.get(key);
+  if (timer) clearTimeout(timer);
+  pendingTimers.delete(key);
+  pendingValues.delete(key);
+  writeQueue = writeQueue.filter((w) => w.key !== key);
+  log.error(
+    'store',
+    `Failed to read store file '${key}' — keeping it untouched: writes to this store are disabled until it can be read`,
+    err,
+  );
+  if (readFailureToastShown) return;
+  readFailureToastShown = true;
+  setTimeout(() => {
+    toast.error('Some saved data could not be loaded', {
+      description:
+        'Notesage left the files on disk untouched, so changes to that data will not be saved in this session. Restart Notesage to try again.',
+      duration: Infinity,
+    });
+  }, READ_FAILURE_TOAST_DELAY_MS);
+}
+
+function markReadOk(key: string): void {
+  readFailedKeys.delete(key);
+  blockedWriteWarned.delete(key);
+}
+
+/** True (and logs once per key) when writes to `key` must be refused. */
+function isWriteBlocked(key: string, action: string): boolean {
+  if (!readFailedKeys.has(key)) return false;
+  if (!blockedWriteWarned.has(key)) {
+    blockedWriteWarned.add(key);
+    log.warn(
+      'store',
+      `Refusing to ${action} store file '${key}': it could not be read at startup and would be overwritten`,
+    );
+  }
+  return true;
+}
+
+// ---------------------------------------------------------------------------
 // Batched reads (store_read_batch)
 //
 // All file-backed stores (chat, activity, action, automation) rehydrate during
@@ -88,7 +162,9 @@ const migrated = new Set<string>();
 // tokio scheduling overhead per the Rust-side comment) into one.
 //
 // Fallback: if the batch call fails, each key falls back to the legacy
-// per-key `store_read` path individually.
+// per-key `store_read` path individually. The batch fails as a whole when any
+// one file exists but cannot be read, so the per-key pass is also what tells
+// the unreadable keys (which throw) from the healthy and the missing ones.
 // ---------------------------------------------------------------------------
 
 /** Keys awaiting the next batch flush → their pending resolvers. */
@@ -120,12 +196,16 @@ async function flushPendingReads(): Promise<void> {
     if (results) {
       // Missing keys are omitted from the batch result → null.
       value = results[key] ?? null;
+      markReadOk(key);
     } else {
       // Per-key fallback to the legacy single-read path.
       try {
         value = (await invoke<string | null>('store_read', { key })) ?? null;
+        markReadOk(key);
       } catch (err) {
-        log.error('store', `Failed to read store file '${key}'`, err);
+        // The file may well exist. Hydrate defaults so the app still starts,
+        // but never let them be written over it.
+        markReadFailed(key, err);
         value = null;
       }
     }
@@ -170,11 +250,14 @@ function createRawTauriStorage(): StateStorage {
               log.info('store', `Migrating '${key}' from localStorage to file (${(localValue.length / 1024).toFixed(1)} KB)`);
               enqueueFileWrite(key, localValue);
             }
-          } catch {
-            // Expected: file store may not exist yet on first launch — localStorage value used as fallback
+            // Clean up localStorage — file is the source of truth for these stores
+            localStorage.removeItem(key);
+          } catch (err) {
+            // A missing file is `null`, not a throw: this is a real read
+            // failure. Keep the localStorage copy (it may be the only one)
+            // and retry the migration on the next launch.
+            log.warn('store', `Could not check store file '${key}' — leaving its localStorage copy in place`, err);
           }
-          // Clean up localStorage — file is the source of truth for these stores
-          localStorage.removeItem(key);
         }
       }
 
@@ -192,6 +275,9 @@ function createRawTauriStorage(): StateStorage {
     },
 
     setItem: (key: string, value: string): void => {
+      // Never persist over a file we failed to read (see `readFailedKeys`).
+      if (isWriteBlocked(key, 'write')) return;
+
       const serialized = typeof value === 'string' ? value : JSON.stringify(value);
 
       // Skip file write if identical to last written
@@ -215,6 +301,8 @@ function createRawTauriStorage(): StateStorage {
     },
 
     removeItem: (key: string): void => {
+      if (isWriteBlocked(key, 'delete')) return;
+
       // Cancel pending file write
       const timer = pendingTimers.get(key);
       if (timer) clearTimeout(timer);

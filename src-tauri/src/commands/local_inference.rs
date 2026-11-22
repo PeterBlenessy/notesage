@@ -1037,6 +1037,65 @@ fn kill_completion_server_process(state: &LocalInferenceState) {
 // Streaming chat proxy (local_bundled provider)
 // ---------------------------------------------------------------------------
 
+/// Global event marking the start of a local generation. Payload: `{ streamId }`.
+pub const LOCAL_GENERATION_STARTED_EVENT: &str = "ai-local-generation-started";
+/// Global event marking the end of a local generation, however it ended.
+/// Payload: `{ streamId, tokPerSec, tokens }` (the last two `null` unless the
+/// run completed and llama-server reported timings).
+pub const LOCAL_GENERATION_FINISHED_EVENT: &str = "ai-local-generation-finished";
+
+/// Brackets one local generation for the runtime-calibration capture
+/// (`src/hooks/useModelFitCapture.ts`).
+///
+/// The per-stream events (`ai-stream-chunk:<streamId>` …) cannot be observed
+/// by an app-wide listener — Tauri has no wildcard subscription — so capture
+/// gets its own pair of GLOBAL events that carry the `streamId` in the
+/// payload instead, letting overlapping generations be told apart.
+///
+/// "Finished" is emitted from `Drop`, so it fires on every way out: success,
+/// an early `?` return, and cancellation (which drops the stream future).
+/// Without that the frontend would keep polling the server's RSS forever.
+struct LocalGenerationSpan<F: Fn(&str, serde_json::Value)> {
+    emit: F,
+    stream_id: String,
+    tok_per_sec: Option<f64>,
+    tokens: Option<u64>,
+}
+
+impl<F: Fn(&str, serde_json::Value)> LocalGenerationSpan<F> {
+    fn start(stream_id: &str, emit: F) -> Self {
+        emit(
+            LOCAL_GENERATION_STARTED_EVENT,
+            serde_json::json!({ "streamId": stream_id }),
+        );
+        Self {
+            emit,
+            stream_id: stream_id.to_string(),
+            tok_per_sec: None,
+            tokens: None,
+        }
+    }
+
+    /// Record llama-server's measured decode rate / token count for this run.
+    fn set_timings(&mut self, tok_per_sec: Option<f64>, tokens: Option<u64>) {
+        self.tok_per_sec = tok_per_sec;
+        self.tokens = tokens;
+    }
+}
+
+impl<F: Fn(&str, serde_json::Value)> Drop for LocalGenerationSpan<F> {
+    fn drop(&mut self) {
+        (self.emit)(
+            LOCAL_GENERATION_FINISHED_EVENT,
+            serde_json::json!({
+                "streamId": self.stream_id,
+                "tokPerSec": self.tok_per_sec,
+                "tokens": self.tokens,
+            }),
+        );
+    }
+}
+
 /// Stream chat completions through the local llama-server.
 /// Uses the OpenAI-compatible `/v1/chat/completions` endpoint with SSE.
 ///
@@ -1231,8 +1290,17 @@ pub async fn local_bundled_chat_stream(
     use futures::StreamExt;
     use super::tool_execution::ChatCompletionsToolCallAccumulator;
 
+    // Tell the calibration capture a local generation is running; the span's
+    // Drop reports the end (with timings, when the run completes).
+    let span_window = window.clone();
+    let mut generation_span = LocalGenerationSpan::start(stream_id, move |event, payload| {
+        let _ = span_window.emit(event, payload);
+    });
+
     let mut stream = response.bytes_stream();
     let mut buffer = String::new();
+    // A multibyte character can be split across network chunks.
+    let mut utf8 = super::utf8_chunk_decoder::Utf8ChunkDecoder::new();
 
     // Determine thinking tags from catalog metadata if available.
     // For catalog models with explicit thinking_tags, use only those.
@@ -1277,8 +1345,7 @@ pub async fn local_bundled_chat_stream(
 
     while let Some(chunk) = stream.next().await {
         let bytes = chunk.map_err(|e| format!("Stream error: {}", e))?;
-        let text = String::from_utf8_lossy(&bytes);
-        buffer.push_str(&text);
+        buffer.push_str(&utf8.decode(&bytes));
 
         while let Some(line_end) = buffer.find('\n') {
             let line = buffer[..line_end].trim().to_string();
@@ -1458,17 +1525,10 @@ pub async fn local_bundled_chat_stream(
             .emit(&stream_event("ai-tool-calls-done", stream_id), ())
             .map_err(|e| format!("Failed to emit tool calls done: {}", e))?;
     } else {
-        // Emit measured timings (if any) before done so the frontend's
-        // ai-stream-done handler can record the calibration sample.
-        if measured_tok_per_sec.is_some() || measured_tokens.is_some() {
-            let _ = window.emit(
-                "ai-stream-timings",
-                serde_json::json!({
-                    "tokPerSec": measured_tok_per_sec,
-                    "tokens": measured_tokens,
-                }),
-            );
-        }
+        // Hand the measured timings (if any) to the span; they go out with
+        // the "finished" event so the frontend can record the calibration
+        // sample against this stream id.
+        generation_span.set_timings(measured_tok_per_sec, measured_tokens);
         window
             .emit(&stream_event("ai-stream-done", stream_id), ())
             .map_err(|e| format!("Failed to emit done event: {}", e))?;
@@ -1735,6 +1795,60 @@ pub fn build_server_args(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- LocalGenerationSpan (runtime-calibration capture events) ---
+
+    type Emitted = std::sync::Arc<std::sync::Mutex<Vec<(String, serde_json::Value)>>>;
+
+    fn recording_emitter() -> (Emitted, impl Fn(&str, serde_json::Value)) {
+        let emitted: Emitted = Default::default();
+        let sink = emitted.clone();
+        (emitted, move |event: &str, payload: serde_json::Value| {
+            sink.lock().unwrap().push((event.to_string(), payload));
+        })
+    }
+
+    #[test]
+    fn generation_span_emits_global_events_keyed_by_stream_id() {
+        let (emitted, emit) = recording_emitter();
+        {
+            let mut span = LocalGenerationSpan::start("stream-7", emit);
+            assert_eq!(
+                emitted.lock().unwrap().as_slice(),
+                &[(
+                    "ai-local-generation-started".to_string(),
+                    serde_json::json!({ "streamId": "stream-7" })
+                )]
+            );
+            span.set_timings(Some(41.5), Some(128));
+        }
+        let events = emitted.lock().unwrap();
+        assert_eq!(events.len(), 2);
+        // Plain global names: an app-wide listener cannot subscribe to
+        // `<name>:<streamId>`, which is why capture never fired before.
+        assert_eq!(events[1].0, "ai-local-generation-finished");
+        assert!(!events[1].0.contains(':'));
+        assert_eq!(
+            events[1].1,
+            serde_json::json!({ "streamId": "stream-7", "tokPerSec": 41.5, "tokens": 128 })
+        );
+    }
+
+    #[test]
+    fn generation_span_reports_finish_without_timings_when_dropped_early() {
+        // Cancellation and `?` returns drop the span before timings are set.
+        let (emitted, emit) = recording_emitter();
+        drop(LocalGenerationSpan::start("s", emit));
+        let events = emitted.lock().unwrap();
+        assert_eq!(
+            events.last().unwrap(),
+            &(
+                "ai-local-generation-finished".to_string(),
+                serde_json::json!({ "streamId": "s", "tokPerSec": null, "tokens": null })
+            )
+        );
+    }
+
 
     /// Verify the bundled llama.cpp version pin is at least b9000.
     ///
