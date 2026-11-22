@@ -137,35 +137,13 @@ pub(crate) const EXEC_PROTECTED_SUBPATHS: &[&str] = &[
     ".config/git",
 ];
 
-/// `$HOME`-relative directory NODES (the directory itself, not its contents)
-/// that must not be renamed, replaced or removed: every ancestor of the
-/// protected subpaths below `$HOME`. Without this, the subpath rules above are
-/// sidestepped by moving an ancestor aside (`mv ~/.notesage/agents elsewhere`,
-/// or `~/.config`, or `~/.notesage` itself) and moving a prepared tree into
-/// its place.
-///
-/// A `literal` matches only the node: creating, changing and deleting files
-/// INSIDE these directories is still governed by the allow rules, so
-/// `~/.config/<tool>/…`, `~/.notesage/skills/…` and `agents/versions.json`
-/// stay writable. An existing directory that is denied this way behaves like
-/// any other non-writable ancestor (`mkdir -p` sees EEXIST), which is why
-/// [`ensure_exec_protected_dirs`] makes sure they exist first.
-pub(crate) const EXEC_PROTECTED_LITERALS: &[&str] = &[".notesage", ".notesage/agents", ".config"];
-
-/// Create the directories in [`EXEC_PROTECTED_LITERALS`] that sandboxed tools
-/// expect to be able to create themselves (`~/.config`, on a machine that has
-/// never had one). Once the profile denies writes to the node, a sandboxed
-/// `mkdir ~/.config` would fail; done here, unsandboxed, it never has to.
-/// Best-effort: a failure only means that tool cannot create the directory.
-#[cfg(target_os = "macos")]
-fn ensure_exec_protected_dirs(home: &Path) {
-    for rel in [".notesage", ".config"] {
-        let dir = home.join(rel);
-        if let Err(e) = std::fs::create_dir_all(&dir) {
-            log::warn!(target: "notesage::sandbox", "Could not create {}: {}", dir.display(), e);
-        }
-    }
-}
+// KNOWN GAP (audit 2026-11-22, issue #1096): these subpath rules can be
+// sidestepped by renaming an ANCESTOR directory (`~/.notesage/agents`,
+// `~/.config`) aside and moving a prepared tree into its place. Pinning the
+// ancestor nodes with `literal` denies would close that, but changes what a
+// sandboxed tool may do to `~/.config` and `~/.notesage` themselves and could
+// not be exercised on a real Mac when this was written, so it is deliberately
+// not done here.
 
 /// The Seatbelt rule that makes [`EXEC_PROTECTED_SUBPATHS`] read-only.
 ///
@@ -176,15 +154,10 @@ fn ensure_exec_protected_dirs(home: &Path) {
 /// Not `cfg(macos)`-gated so its text can be unit-tested on any host.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn exec_protected_write_deny(home: &str) -> String {
-    let mut lines: Vec<String> = EXEC_PROTECTED_SUBPATHS
+    let lines: Vec<String> = EXEC_PROTECTED_SUBPATHS
         .iter()
         .map(|rel| format!("  (subpath \"{}/{}\")", home, rel))
         .collect();
-    lines.extend(
-        EXEC_PROTECTED_LITERALS
-            .iter()
-            .map(|rel| format!("  (literal \"{}/{}\")", home, rel)),
-    );
     format!("(deny file-write*\n{})", lines.join("\n"))
 }
 
@@ -221,8 +194,6 @@ pub fn generate_seatbelt_profile(
         .ok_or_else(|| "Cannot determine home directory".to_string())?;
 
     let home_str = home.to_string_lossy();
-
-    ensure_exec_protected_dirs(&home);
 
     // Task #24: agent-specific config re-allow list. Only the paths THIS
     // agent binary needs — not a blanket grant that leaks sibling agent
@@ -712,35 +683,8 @@ mod tests {
             "(subpath \"/Users/t/.notesage/agents/dist\")",
             "(subpath \"/Users/t/.notesage/runtime\")",
             "(subpath \"/Users/t/.config/git\")",
-            // The directory nodes themselves, so no ancestor of the protected
-            // trees can be moved aside and replaced with a prepared one.
-            "(literal \"/Users/t/.notesage/agents\")",
-            "(literal \"/Users/t/.notesage\")",
-            "(literal \"/Users/t/.config\")",
         ] {
             assert!(rule.contains(needle), "missing `{}` in:\n{}", needle, rule);
-        }
-    }
-
-    /// Every directory between `$HOME` and a protected subpath must be pinned
-    /// as a literal, or the subpath deny can be dodged by renaming it.
-    #[test]
-    fn every_ancestor_of_a_protected_subpath_is_pinned() {
-        for subpath in EXEC_PROTECTED_SUBPATHS {
-            let mut ancestor = Path::new(subpath).parent();
-            while let Some(dir) = ancestor {
-                let rel = dir.to_string_lossy();
-                if rel.is_empty() {
-                    break;
-                }
-                assert!(
-                    EXEC_PROTECTED_LITERALS.contains(&rel.as_ref()),
-                    "`{}` (ancestor of `{}`) can be renamed away",
-                    rel,
-                    subpath
-                );
-                ancestor = dir.parent();
-            }
         }
     }
 
@@ -756,6 +700,8 @@ mod tests {
         ] {
             assert!(!rule.contains(too_broad), "`{}` is too broad:\n{}", too_broad, rule);
         }
+        // And no rule on the directory nodes themselves (see KNOWN GAP above).
+        assert!(!rule.contains("(literal "), "unexpected literal rule:\n{}", rule);
     }
 
     // -------------------------------------------------------------------------
