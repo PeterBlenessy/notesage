@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useEditor as useTiptapEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -35,22 +36,29 @@ import Superscript from "@tiptap/extension-superscript";
 import markdownitSub from "markdown-it-sub";
 import markdownitSup from "markdown-it-sup";
 import { HeadingWithOverrides, ParagraphWithOverrides, TypographyOverrides } from "@/components/editor/extensions/typography-overrides";
-import { getMarkdownFromEditor } from "@/lib/markdown";
+import { flushPendingSerialize, scheduleSerialize } from "@/lib/pending-serialize";
 import { getEditorStorage, type EditorStorageImage } from "@/lib/editor-storage";
 
 const lowlight = createLowlight(common);
 
 interface UseEditorOptions {
   content: string;
-  onUpdate?: (content: string) => void;
+  /**
+   * Receives the serialized markdown together with the id of the document the
+   * edit was made in (`getDocumentId()` at the time of the keystroke, `null`
+   * when no getter was supplied). Write under THAT id, never under "whatever
+   * is active now" — the callback is debounced and one editor instance is
+   * reused for every document.
+   */
+  onUpdate?: (content: string, documentId: string | null) => void;
+  /** Id of the document currently loaded in the editor. Read per keystroke. */
+  getDocumentId?: () => string | null;
   editable?: boolean;
   /** Document directory for resolving relative image paths on initial load. */
   documentDir?: string;
 }
 
-let serializeTimer: ReturnType<typeof setTimeout> | null = null;
-
-export function useEditor({ content, onUpdate, editable = true, documentDir }: UseEditorOptions): Editor | null {
+export function useEditor({ content, onUpdate, getDocumentId, editable = true, documentDir }: UseEditorOptions): Editor | null {
   const editor = useTiptapEditor({
     // Tiptap injects its ProseMirror base CSS as an inline <style> at editor
     // creation, and the shipped CSP refuses it: Tauri appends a nonce to
@@ -301,15 +309,21 @@ export function useEditor({ content, onUpdate, editable = true, documentDir }: U
         // Debounce serialization — for large documents (3000+ nodes),
         // serializing on every keystroke is expensive. Mark dirty immediately
         // via a lightweight check, serialize after a brief pause.
-        if (serializeTimer) clearTimeout(serializeTimer);
-        serializeTimer = setTimeout(() => {
-          const markdown = getMarkdownFromEditor(editor);
-          onUpdate(markdown);
-          serializeTimer = null;
-        }, 150);
+        // The document id is captured NOW, with the keystroke, so the
+        // serialized text can only ever be written under the document it was
+        // typed into.
+        scheduleSerialize(editor, onUpdate, getDocumentId?.() ?? null);
       }
     },
   });
+
+  // On unmount, write out the last keystrokes while the editor still holds
+  // them (the flush is a no-op once the editor is destroyed) so the timer
+  // cannot fire against a torn-down editor.
+  useEffect(() => {
+    if (!editor) return;
+    return () => flushPendingSerialize(editor);
+  }, [editor]);
 
   return editor;
 }
