@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { tauriApi } from "@/lib/tauri";
-import { getFormatLocale } from "@/lib/i18n";
+import { getFormatLocale, t } from "@/lib/i18n";
 import { moveBundleToProject } from "@/lib/transcription/bundle";
 import { startTranscription } from "@/hooks/useTranscriptionJob";
 import { useRecordingsStore, type RecordingBundle } from "@/stores/recordings-store";
@@ -202,6 +202,7 @@ export function RecordingsView() {
   const bundles = useRecordingsStore((s) => s.bundles);
   const loading = useRecordingsStore((s) => s.loading);
   const dir = useRecordingsStore((s) => s.dir);
+  const error = useRecordingsStore((s) => s.error);
   const load = useRecordingsStore((s) => s.load);
 
   useEffect(() => {
@@ -215,7 +216,23 @@ export function RecordingsView() {
         Meetings recorded here and on your phone. Transcription runs on this Mac.
       </p>
 
-      {bundles.length === 0 ? (
+      {error ? (
+        // A failed read is not an empty folder: say so, and offer the retry.
+        <div
+          role="alert"
+          data-testid="recordings-error"
+          className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center"
+        >
+          <AlertTriangle className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
+          <p className="text-sm font-medium text-foreground">{t("recordings.loadFailed")}</p>
+          <p className="max-w-sm break-words text-xs text-muted-foreground">
+            {error === "library-root-unknown" ? t("recordings.rootUnknown") : error}
+          </p>
+          <Button variant="outline" size="sm" className="mt-2" onClick={() => void load()}>
+            {t("recordings.retry")}
+          </Button>
+        </div>
+      ) : bundles.length === 0 ? (
         <div className="flex flex-1 flex-col items-center justify-center gap-2 py-16 text-center">
           <Mic className="h-6 w-6 text-muted-foreground/50" strokeWidth={1.5} aria-hidden="true" />
           <p className="text-sm text-muted-foreground">

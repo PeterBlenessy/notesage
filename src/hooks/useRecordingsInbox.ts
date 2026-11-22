@@ -330,12 +330,18 @@ export function createRecordingsInbox(dir: string) {
   }
 
   async function scanAll(): Promise<void> {
-    let entries: Awaited<ReturnType<typeof tauriApi.listFilesShallow>> = [];
+    // NOT `listFilesShallow`: it omits directories, and a bundle is one, so
+    // this scan found nothing and a recording that landed while the app was
+    // closed was never transcribed.
+    let entries: Awaited<ReturnType<typeof tauriApi.listDirectory>> = [];
     try {
-      entries = await tauriApi.listFilesShallow(dir);
-    } catch {
+      entries = await tauriApi.listDirectory(dir);
+    } catch (err) {
       // No Recordings folder yet — nothing recorded anywhere. The watcher
-      // brings the first bundle when it lands.
+      // brings the first bundle when it lands. A folder that IS there and
+      // could not be listed is a failed scan, and says so.
+      const folderExists = await tauriApi.pathExists(dir).catch(() => true);
+      if (folderExists) log.warn('recordings', `Could not scan ${dir} for recordings`, err);
       return;
     }
     if (disposed) return;
