@@ -260,7 +260,10 @@ jobs:
     # platform, so the webkit project runs identically here. The macOS runner
     # never provided Apple's WKWebView either — `playwright.config.ts` says so
     # itself, and points at e2e-real/ as the truth for the embedded webview.
-    runs-on: ubuntu-latest
+    # Pinned: `ubuntu-latest` moved to 26.04, which Playwright 1.60 cannot
+    # install browsers on ("does not support chromium on ubuntu26.04-x64").
+    # Unpin when @playwright/test is bumped to a release that supports it.
+    runs-on: ubuntu-24.04
     needs: check-changes
     if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
 

@@ -99,13 +99,13 @@
     "cmdk": "^1.1.1",
     "diff-match-patch": "^1.0.5",
     "docx-preview": "^0.3.7",
-    "dompurify": "^3.4.13",
+    "dompurify": "^3.4.17",
     "jszip": "^3.10.1",
     "linkedom": "^0.18.12",
     "lowlight": "^3.3.0",
     "lucide-react": "^1.16.0",
     "mammoth": "^1.12.0",
-    "markdown-it": "^14.2.0",
+    "markdown-it": "^14.3.3",
     "markdown-it-sub": "^2.0.0",
     "markdown-it-sup": "^2.0.0",
     "markdown-it-task-lists": "^2.1.1",
@@ -178,7 +178,8 @@
       "linkify-it": ">=5.0.2 <6",
       "brace-expansion@^1": ">=1.1.16 <2",
       "brace-expansion@^2": ">=2.1.2 <3",
-      "ip-address": ">=10.3.1 <11"
+      "ip-address": ">=10.3.1 <11",
+      "source-map-js": ">=1.2.2 <2"
     }
   }
 }
