@@ -139,9 +139,12 @@ function WorkspaceHeader() {
 
 export function QuietSidebar({
   onOpenSettings,
+  onOpenFolder,
 }: {
   /** Opens the Settings dialog — driven from the footer's gear button. */
   onOpenSettings?: () => void;
+  /** Opens the native folder picker (⌘O) — offered from the Folders `+` menu. */
+  onOpenFolder?: () => void;
 }) {
   const [filter, setFilter] = useState<string>("");
   // Populate git-store repo detection for every sidebar root (projects +
@@ -245,7 +248,7 @@ export function QuietSidebar({
         <InboxSection filter={filter} />
         <RecordingsSection filter={filter} />
     <PinnedSection filter={filter} />
-        <ProjectsSection filter={filter} onAdd={handleAddProject} />
+        <ProjectsSection filter={filter} onAdd={handleAddProject} onAddExisting={onOpenFolder} />
         {/* Sidebar-simplification task #10 — Folders section sits
            between Projects and Recent. Self-hides when the user has no
            explorer folders open (locked-in 2026-04-27 — no cap, no

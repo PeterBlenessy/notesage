@@ -261,7 +261,7 @@ export function QuietLayout(props: QuietLayoutProps) {
             </div>
           }
         >
-          <QuietSidebar onOpenSettings={props.onOpenSettings} />
+          <QuietSidebar onOpenSettings={props.onOpenSettings} onOpenFolder={props.onOpenFolder} />
         </ErrorBoundary>
       ) : null}
 

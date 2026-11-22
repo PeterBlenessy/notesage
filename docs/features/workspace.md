@@ -52,8 +52,15 @@ The workspace tree is exposed through the flat `QuietSidebar` (`src/components/s
 
 **Library:**
 
-- `~/Notesage` as the default folder for new projects and Quick Notes
-- New Project dialog defaults to `~/Notesage` with option to choose another folder
+- `~/Notesage` as the local library: Quick Notes, and new projects on a Mac without iCloud
+- New projects (`⌘⇧N`, or `+` → New project) are created inline, no dialog. They go to the
+  **synced library** (`icloudNotesagePath`) when iCloud is available and readable, so they
+  appear on the other devices; otherwise to `~/Notesage`. The confirmation toast says which.
+- A name that already exists on disk is refused, not adopted: `create_directory` succeeds
+  on an existing folder, and the name validator only knows the projects in the sidebar.
+- The Folders `+` opens a menu: **New project** and **Add existing folder…** (the native
+  picker, same as `⌘O`). A picked folder with `.notesage/` joins as a project; any other
+  folder appears under External folders.
 - Cross-platform home directory resolution (macOS, Windows, Linux)
 
 **iCloud sync:**

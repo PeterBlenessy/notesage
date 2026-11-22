@@ -10,6 +10,8 @@ import { useWorkspaceStore, type WorkspaceProject } from "@/stores/workspace-sto
 import { useQuietSidebarStore } from "@/stores/quiet-sidebar-store";
 import { tauriApi } from "@/lib/tauri";
 import { dispatchFocusEditor } from "@/lib/editor-events";
+import { t } from "@/lib/i18n";
+import { syncedRootLabel } from "@/lib/library-root";
 import {
   basename as pathBasename,
   resolveRenamePath,
@@ -239,7 +241,18 @@ export function useProjectInlineEdit({
 
   const handleCreateProjectCommit = useCallback(
     async (trimmedName: string) => {
-      const libraryRoot = useSettingsStore.getState().notesRootPath;
+      const settings = useSettingsStore.getState();
+      // A new project goes to the SYNCED library when there is one this Mac
+      // can use, so it shows up on the other devices — it used to be created
+      // in the local `~/Notesage` always, with nothing saying it would stay
+      // on this Mac. Local remains the answer without iCloud, and while the
+      // container is unreadable (the old CloudDocs folder may have been
+      // migrated away, and a project made there would be orphaned).
+      const synced =
+        settings.icloudAvailable && settings.icloudNotesagePath && !settings.libraryContainerDenied
+          ? settings.icloudNotesagePath
+          : null;
+      const libraryRoot = synced ?? settings.notesRootPath;
       if (!libraryRoot || libraryRoot.startsWith("~")) {
         toast.error(
           "Notesage library is not ready yet — try again in a moment",
@@ -252,6 +265,14 @@ export function useProjectInlineEdit({
       setPendingCreateProject(false);
 
       try {
+        // The name validator only knows the projects in the sidebar, and
+        // creating a directory that exists succeeds — so a name already on
+        // disk (a project removed from the sidebar, any other folder) was
+        // silently ADOPTED under a "Created project" toast.
+        if (await tauriApi.pathExists(projectPath)) {
+          toast.error(t("toast.projectNameTaken", { name: trimmedName }));
+          return;
+        }
         await createFolder(libraryRoot, trimmedName);
         let tree: Awaited<ReturnType<typeof tauriApi.listDirectory>> = [];
         try {
@@ -260,7 +281,12 @@ export function useProjectInlineEdit({
           // Expected on freshly-created directories on some filesystems.
         }
         useWorkspaceStore.getState().addProject(projectPath, tree);
-        toast.success(`Created project ${trimmedName}`);
+        toast.success(
+          t(synced ? "toast.projectCreatedSynced" : "toast.projectCreatedLocal", {
+            name: trimmedName,
+            library: syncedRootLabel(settings.libraryRootKind),
+          }),
+        );
       } catch (error) {
         toast.error(`Failed to create project: ${error}`);
       }

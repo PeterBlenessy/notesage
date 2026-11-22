@@ -7,7 +7,14 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
-import { Folder, FileText, Plus } from "lucide-react";
+import { Folder, FileText, FolderOpen, FolderPlus, Plus } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuShortcut,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -66,6 +73,13 @@ export type { RowDescriptor };
 export interface ProjectsSectionProps {
   /** Optional click handler for the `+` add button (wired by task #42). */
   onAdd?: () => void;
+  /**
+   * Adds a folder that already exists on disk (the native picker, same as
+   * ⌘O). When wired, `+` opens a menu offering both; the button used to be
+   * labelled "Add folder" while only ever creating a new one, and the picker
+   * was reachable solely through a shortcut nothing on screen mentioned.
+   */
+  onAddExisting?: () => void;
   /**
    * Case-insensitive substring filter applied to project display names
    * (the basename of `project.path`). Inline-expanded children are NOT
@@ -191,7 +205,7 @@ async function openFileEntry(entry: FileEntry): Promise<void> {
 // ProjectsSection
 // ---------------------------------------------------------------------------
 
-export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
+export function ProjectsSection({ onAdd, onAddExisting, filter }: ProjectsSectionProps) {
   // Drop-to-file: an Inbox selection (or any sidebar file) dropped on a
   // project row moves into that project, carrying its read-later state.
   const allProjects = useWorkspaceStore((s) => s.projects);
@@ -594,17 +608,45 @@ export function ProjectsSection({ onAdd, filter }: ProjectsSectionProps) {
         <h2 className="text-xs font-medium tracking-wider uppercase text-muted-foreground">
           Folders
         </h2>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label={t("sidebar.addFolder")}
-          tabIndex={-1}
-          onClick={onAdd}
-          className="opacity-0 group-hover/section:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
-        >
-          <Plus strokeWidth={1.5} />
-        </Button>
+        {onAddExisting ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label={t("sidebar.addFolder")}
+                className="opacity-0 group-hover/section:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 transition-opacity duration-150"
+              >
+                <Plus strokeWidth={1.5} />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-52">
+              <DropdownMenuItem onSelect={() => onAdd?.()}>
+                <FolderPlus strokeWidth={1.5} />
+                {t("sidebar.newProject")}
+                <DropdownMenuShortcut>⇧⌘N</DropdownMenuShortcut>
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => onAddExisting()}>
+                <FolderOpen strokeWidth={1.5} />
+                {t("sidebar.addExistingFolder")}
+                <DropdownMenuShortcut>⌘O</DropdownMenuShortcut>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={t("sidebar.addFolder")}
+            tabIndex={-1}
+            onClick={onAdd}
+            className="opacity-0 group-hover/section:opacity-100 focus-within:opacity-100 transition-opacity duration-150"
+          >
+            <Plus strokeWidth={1.5} />
+          </Button>
+        )}
       </header>
       {(projects.length > 0 || pendingCreateProject) && (
         <ul role="tree" aria-label={t("section.projects")} className="flex flex-col m-0 p-0 list-none">
