@@ -4,7 +4,7 @@ import { useEditorStore, type ScrollToTag } from "@/stores/editor-store";
 import { useInboxStore } from "@/stores/inbox-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
-import { isHeldForLibraryAccess } from "@/lib/library-follow";
+import { isHeldPath } from "@/lib/library-follow";
 import { useGitStore } from "@/stores/git-store";
 import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
@@ -209,16 +209,15 @@ export function useFileOperations() {
         const renamed = await detectRenamedProject(parentDir);
         if (renamed) {
           await migrateProjectPath(project.path, renamed);
-        } else if (
-          isHeldForLibraryAccess(
-            project.path,
-            useSettingsStore.getState().icloudNotesagePath,
-            useSettingsStore.getState().libraryContainerDenied,
-          )
-        ) {
-          // Unreadable because macOS blocks Notesage's iCloud folder, not
-          // because it is gone: keep it so it can be followed once access
-          // is granted.
+        } else if (isHeldPath(project.path, useSettingsStore.getState().libraryHoldRoots ?? [])) {
+          // Unreadable while the library's state is uncertain (iCloud folder
+          // blocked, or its marker not readable yet), not because it is
+          // gone: keep it so it can be followed once that clears.
+        } else if (await tauriApi.pathExists(project.path).catch(() => true)) {
+          // Still there, just not listable right now (permissions, a volume
+          // that dropped, an iCloud hiccup). One failed read must not drop a
+          // project from the sidebar mid-session.
+          log.warn("tree", `Project unreadable but present, kept: ${project.path}`);
         } else {
           const projectName = project.path.split('/').pop() || project.path;
           ws.removeProject(project.path);

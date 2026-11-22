@@ -92,13 +92,15 @@ export function followPath(path: string, plan: FollowPlan, oldRoot: string, newR
   return rebaseWithRenames(path, oldRoot, newRoot, plan.renames);
 }
 
-/** Is `path` inside the old CloudDocs library while the new one is unreadable?
- *  Such a path must not be removed for being unreadable: its files are very
- *  likely in the container, waiting for access to be granted. */
-export function isHeldForLibraryAccess(
-  path: string,
-  cloudDocsRoot: string | null,
-  containerDenied: boolean,
-): boolean {
-  return containerDenied && cloudDocsRoot !== null && isUnder(path, cloudDocsRoot);
+/**
+ * Is `path` inside a library root whose state is currently uncertain?
+ *
+ * Such a path must not be removed for being unreadable. Two cases set hold
+ * roots: macOS will not let the app read Notesage's iCloud folder (the files
+ * are very likely in there), and the library marker could not be read or has
+ * not downloaded yet (so it is not known WHICH root is live, and a project
+ * "missing" from one may simply be in the other).
+ */
+export function isHeldPath(path: string, holdRoots: readonly string[]): boolean {
+  return holdRoots.some((root) => isUnder(path, root));
 }

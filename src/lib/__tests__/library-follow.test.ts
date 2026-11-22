@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   COLLISION_SUFFIX,
   followPath,
-  isHeldForLibraryAccess,
+  isHeldPath,
   planLibraryFollow,
 } from "@/lib/library-follow";
 
@@ -100,11 +100,12 @@ describe("following a library move another Mac performed", () => {
   });
 });
 
-describe("holding unreadable library entries while access is denied", () => {
-  it("holds a path in the old library only while the container is denied", () => {
-    expect(isHeldForLibraryAccess(`${OLD}/Work`, OLD, true)).toBe(true);
-    expect(isHeldForLibraryAccess(`${OLD}/Work`, OLD, false)).toBe(false);
-    expect(isHeldForLibraryAccess("/Users/w/Local/Work", OLD, true)).toBe(false);
-    expect(isHeldForLibraryAccess(`${OLD}/Work`, null, true)).toBe(false);
+describe("holding unreadable entries under an uncertain library root", () => {
+  it("holds a path only when it sits under one of the hold roots, at a boundary", () => {
+    expect(isHeldPath(`${OLD}/Work`, [OLD])).toBe(true);
+    expect(isHeldPath(`${NEW}/Work`, [OLD, NEW])).toBe(true);
+    expect(isHeldPath(`${OLD}/Work`, [])).toBe(false);
+    expect(isHeldPath("/Users/w/Local/Work", [OLD, NEW])).toBe(false);
+    expect(isHeldPath(`${OLD} Backup/Work`, [OLD])).toBe(false);
   });
 });

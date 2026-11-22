@@ -1,6 +1,9 @@
 import { tauriApi } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { log } from "@/lib/logger";
+import { t } from "@/lib/i18n";
+import { toast } from "sonner";
 
 /**
  * Scan the iCloud Notesage folder for projects synced from other machines.
@@ -40,12 +43,28 @@ export async function scanICloudForProjects(
         const tree = await tauriApi.listDirectory(entry.path, useSettingsStore.getState().showHiddenFiles);
         ws.addProject(entry.path, tree);
         discovered = true;
-      } catch {
-        // Expected: individual project check may fail (iCloud sync in progress, permissions)
+      } catch (err) {
+        // One project mid-sync or unreadable must not stop the rest, but it
+        // is logged: "could not read" and "nothing new" used to look the same.
+        log.warn("startup", `iCloud project not readable, skipped: ${entry.path}: ${err}`);
       }
     }
-  } catch {
-    // Expected: iCloud Notesage folder may not exist yet or is inaccessible
+  } catch (err) {
+    // The library root itself could not be listed. A folder that does not
+    // exist yet is the ordinary first-run case and stays quiet; anything else
+    // is why the sidebar is missing synced projects, so it is said out loud.
+    let exists = false;
+    try {
+      exists = await tauriApi.pathExists(icloudNotesagePath);
+    } catch {
+      exists = true;
+    }
+    if (exists) {
+      log.warn("startup", `iCloud library not readable: ${icloudNotesagePath}: ${err}`);
+      toast.warning(t("toast.libraryUnreadable", { error: String(err) }), {
+        id: "library-unreadable",
+      });
+    }
   }
 
   return discovered;

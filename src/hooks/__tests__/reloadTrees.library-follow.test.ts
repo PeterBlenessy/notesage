@@ -19,10 +19,13 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 
 import "@/test/tauri-mock";
 
-const { disk, access } = vi.hoisted(() => ({
+const { disk, access, unlistable, markerReadable } = vi.hoisted(() => ({
   /** Directories that exist, with their children's names. */
   disk: new Map<string, string[]>(),
   access: { value: "ready" as "ready" | "denied" | "missing" },
+  /** Directories that exist but whose listing fails (permissions, EIO). */
+  unlistable: new Set<string>(),
+  markerReadable: { value: true },
 }));
 
 const HOME = "/Users/w";
@@ -33,6 +36,7 @@ const NEW = `${HOME}/Library/Mobile Documents/iCloud~com~notesage~app/Documents`
 function listing(path: string) {
   const children = disk.get(path);
   if (!children) throw new Error(`No such directory: ${path}`);
+  if (unlistable.has(path)) throw new Error(`Operation not permitted: ${path}`);
   return children.map((name) => ({
     name,
     path: `${path}/${name}`,
@@ -56,7 +60,8 @@ vi.mock("@/lib/tauri", () => ({
     getICloudPath: vi.fn(async () => ICLOUD),
     getLibraryContainerPath: vi.fn(async () => (disk.has(NEW) ? NEW : null)),
     libraryContainerAccess: vi.fn(async () => access.value),
-    readLibraryMarker: vi.fn(async () => ({
+    icloudEnsureDownloaded: vi.fn(async () => "downloading"),
+    readLibraryMarker: vi.fn(async () => !markerReadable.value ? null : ({
       version: 1,
       kind: "container",
       createdBy: "ios",
@@ -116,6 +121,8 @@ const toastWarning = vi.mocked(toast.warning);
 beforeEach(() => {
   toastWarning.mockClear();
   access.value = "ready";
+  unlistable.clear();
+  markerReadable.value = true;
   useSettingsStore.setState({
     notesRootPath: `${HOME}/Notesage`,
     icloudAvailable: false,
@@ -254,5 +261,58 @@ describe("startup when macOS will not let Notesage read its iCloud folder", () =
     await reloadTrees();
 
     expect(useWorkspaceStore.getState().projects.map((p) => p.path)).not.toContain(`${HOME}/Code/gone`);
+  });
+});
+
+describe("startup when the library marker has not downloaded from iCloud yet", () => {
+  beforeEach(() => {
+    markerReadable.value = false;
+    setDisk({
+      [`${HOME}/Notesage`]: [],
+      [`${HOME}/Notesage/.notesage`]: [],
+      [`${HOME}/Code/local`]: ["readme.md"],
+      // A leftover in the old folder makes the unmarked container lose the
+      // resolution rule, so nothing would be followed.
+      [OLD]: ["leftover.txt"],
+      [NEW]: ["Work", "Recipes", ".notesage"],
+      [`${NEW}/.notesage`]: [".library.json.icloud"],
+      [`${NEW}/Work`]: ["plan.md", ".notesage"],
+      [`${NEW}/Work/.notesage`]: [],
+      [`${NEW}/Recipes`]: [".notesage"],
+      [`${NEW}/Recipes/.notesage`]: [],
+    });
+  });
+
+  it("keeps the projects it cannot find and says the library is still syncing", async () => {
+    await reloadTrees();
+
+    const paths = useWorkspaceStore.getState().projects.map((p) => p.path);
+    expect(paths).toContain(`${OLD}/Work`);
+    expect(paths).toContain(`${OLD}/Recipes`);
+    expect(toastWarning.mock.calls.map((c) => String(c[0])).join("|")).toMatch(/still syncing/);
+    expect(toastWarning.mock.calls.map((c) => String(c[0])).join("|")).not.toMatch(/no longer exists/);
+  }, 15000);
+});
+
+describe("a project that cannot be listed but is still on disk", () => {
+  it("is kept, with a message that does not claim the folder is gone", async () => {
+    setDisk({
+      [`${HOME}/Notesage`]: [],
+      [`${HOME}/Notesage/.notesage`]: [],
+      [`${HOME}/Code/local`]: ["readme.md"],
+      [OLD]: ["Work", "Recipes", "Inbox"],
+      [`${OLD}/Work`]: [],
+      [`${OLD}/Recipes`]: [],
+      [`${OLD}/Inbox`]: [],
+    });
+    disk.delete(NEW);
+    unlistable.add(`${HOME}/Code/local`);
+
+    await reloadTrees();
+
+    expect(useWorkspaceStore.getState().projects.map((p) => p.path)).toContain(`${HOME}/Code/local`);
+    const messages = toastWarning.mock.calls.map((c) => String(c[0])).join("|");
+    expect(messages).toMatch(/Couldn't read project/);
+    expect(messages).not.toMatch(/no longer exists/);
   });
 });

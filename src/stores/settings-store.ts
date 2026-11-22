@@ -291,6 +291,12 @@ interface SettingsStore {
    * Non-persisted; recomputed each launch.
    */
   libraryContainerDenied: boolean;
+  /**
+   * Library roots whose state is uncertain this launch (container denied, or
+   * the marker unreadable / not downloaded). Unreadable projects under them
+   * are kept, not removed. Non-persisted; recomputed each launch.
+   */
+  libraryHoldRoots: string[];
   setTheme: (theme: Theme) => void;
   setAccent: (accent: AccentName) => void;
   setContrastLevel: (level: number) => void;
@@ -347,6 +353,7 @@ interface SettingsStore {
   setICloudNotesagePath: (path: string | null) => void;
   setLibraryRootKind: (kind: LibraryRootKind | null) => void;
   setLibraryContainerDenied: (denied: boolean) => void;
+  setLibraryHoldRoots: (roots: string[]) => void;
   setPersonasMigrated: (migrated: boolean) => void;
   setBundledAgentsCleaned: (cleaned: boolean) => void;
   setChatHintsShown: (shown: boolean) => void;
@@ -478,6 +485,7 @@ export const useSettingsStore = create<SettingsStore>()(
       icloudNotesagePath: null,
       libraryRootKind: null,
       libraryContainerDenied: false,
+      libraryHoldRoots: [],
       printLayout: false,
       typewriterScrolling: false,
       externalChangeDiffReview: false,
@@ -729,6 +737,9 @@ export const useSettingsStore = create<SettingsStore>()(
 
       setLibraryContainerDenied: (denied: boolean) => {
         set({ libraryContainerDenied: denied });
+      },
+      setLibraryHoldRoots: (roots: string[]) => {
+        set({ libraryHoldRoots: roots });
       },
       setLibraryRootKind: (kind: LibraryRootKind | null) => {
         set({ libraryRootKind: kind });
@@ -1244,7 +1255,7 @@ export const useSettingsStore = create<SettingsStore>()(
 
       partialize: (state) => {
         // Exclude runtime-only fields and deprecated fields from persistence
-        const { homeDir: _hd, skillsReady: _sr, startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, libraryRootKind: _lk, libraryContainerDenied: _lcd, debugLogging: _d, ...persisted } = state;
+        const { homeDir: _hd, skillsReady: _sr, startupReady: _s, icloudAvailable: _a, icloudNotesagePath: _b, libraryRootKind: _lk, libraryContainerDenied: _lcd, libraryHoldRoots: _lhr, debugLogging: _d, ...persisted } = state;
         return persisted;
       },
       onRehydrateStorage: () => (state) => {

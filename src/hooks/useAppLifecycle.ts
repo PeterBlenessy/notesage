@@ -15,7 +15,8 @@ import { migrateUserContentPathsForFolders } from "@/lib/migrate-user-content-pa
 import { migrateV1AISettings } from "@/lib/ai/migration";
 import { resolveSyncedLibraryRoot, type LibraryRootKind } from "@/lib/library-root";
 import { followLibraryMove } from "@/lib/library-follow-apply";
-import { isHeldForLibraryAccess } from "@/lib/library-follow";
+import { isHeldPath } from "@/lib/library-follow";
+import { classifyMissingMarker, type MarkerAbsence } from "@/lib/library-marker-state";
 import { scanICloudForProjects } from "@/lib/scan-icloud-projects";
 import { log, setLogLevel, PERF } from "@/lib/logger";
 import { countFiles } from "@/lib/file-utils";
@@ -269,6 +270,19 @@ async function withTimeout<T>(
   }
 }
 
+/** How long startup waits for iCloud to hand over the library marker. */
+const MARKER_DOWNLOAD_POLLS = 6;
+const MARKER_DOWNLOAD_POLL_MS = 500;
+
+/** True only when the path is confirmed absent; a failed check is "not sure". */
+export async function isConfirmedMissing(path: string): Promise<boolean> {
+  try {
+    return !(await tauriApi.pathExists(path));
+  } catch {
+    return false;
+  }
+}
+
 interface SyncedLibrary {
   icloudAvailable: boolean;
   icloudNotesagePath: string | null;
@@ -277,6 +291,10 @@ interface SyncedLibrary {
   cloudDocsRoot: string | null;
   /** The container exists here but macOS will not let the app read it. */
   containerDenied: boolean;
+  /** Set when the marker read came back empty for a reason other than "there is none". */
+  markerUncertain: Exclude<MarkerAbsence, "absent"> | null;
+  /** Roots under which an unreadable project is kept rather than removed. */
+  holdRoots: string[];
 }
 
 /**
@@ -295,6 +313,8 @@ async function detectSyncedLibrary(stepTimeoutMs: number): Promise<SyncedLibrary
     kind: null,
     cloudDocsRoot: null,
     containerDenied: false,
+    markerUncertain: null,
+    holdRoots: [],
   };
   try {
     // There are now two places a synced library can live: today's
@@ -341,13 +361,45 @@ async function detectSyncedLibrary(stepTimeoutMs: number): Promise<SyncedLibrary
               stepTimeoutMs,
               "readLibraryMarker",
             )) ?? null;
+          if (!marker) {
+            // "No marker" is only believed once the file is confirmed absent.
+            // An `.icloud` placeholder or an unreadable file used to read as
+            // "not migrated", which skipped the follow below and removed
+            // every project that had moved with the library.
+            const deps = {
+              pathExists: (p: string) => tauriApi.pathExists(p),
+              readFile: (p: string) => tauriApi.readFile(p),
+            };
+            let why = await classifyMissingMarker(containerRoot, deps);
+            if (why === "pending") {
+              // Ask iCloud for it and give it a few seconds; this is one
+              // small file, and having it settles the question properly.
+              const file = `${containerRoot}/.notesage/library.json`;
+              void tauriApi.icloudEnsureDownloaded(file).catch(() => {});
+              for (let attempt = 0; attempt < MARKER_DOWNLOAD_POLLS && !marker; attempt++) {
+                await new Promise((r) => setTimeout(r, MARKER_DOWNLOAD_POLL_MS));
+                marker = (await tauriApi.readLibraryMarker(containerRoot).catch(() => null)) ?? null;
+              }
+              if (marker) why = "absent";
+            }
+            if (!marker && why !== "absent") {
+              result.markerUncertain = why;
+              log.warn("startup", `Library marker is ${why}; keeping unreadable library projects`);
+            }
+          }
         }
       }
-    } catch {
+    } catch (err) {
+      log.warn("startup", `Could not inspect Notesage's iCloud folder: ${err}`);
       containerRoot = null;
       marker = null;
     }
     result.containerDenied = containerAccess === "denied";
+    result.holdRoots = result.containerDenied
+      ? [cloudDocsRoot].filter((r): r is string => Boolean(r))
+      : result.markerUncertain
+        ? [cloudDocsRoot, containerRoot].filter((r): r is string => Boolean(r))
+        : [];
     // "Has content" ignores `.DS_Store`: Finder leaves one in any folder a
     // person merely opened, and counting it would keep a phone-first user
     // pinned to an empty CloudDocs root for ever.
@@ -381,6 +433,7 @@ async function detectSyncedLibrary(stepTimeoutMs: number): Promise<SyncedLibrary
       cloudDocsHasContent,
     });
     settings.setLibraryContainerDenied(result.containerDenied);
+    settings.setLibraryHoldRoots(result.holdRoots);
     if (resolved.path) {
       result.icloudAvailable = true;
       result.icloudNotesagePath = resolved.path;
@@ -390,8 +443,11 @@ async function detectSyncedLibrary(stepTimeoutMs: number): Promise<SyncedLibrary
       settings.setLibraryRootKind(resolved.kind);
       log.info("startup", `Library root: ${resolved.kind} at ${resolved.path}`);
     }
-  } catch {
-    // Expected: iCloud path unavailable on non-Apple systems or when iCloud is not set up
+  } catch (err) {
+    // NOT expected: off macOS the command answers `null` rather than throwing,
+    // so anything landing here is a real failure. It used to be swallowed,
+    // and the sidebar came up empty with nothing in the log to say why.
+    log.warn("startup", `Synced library detection failed: ${err}`);
   }
   return result;
 }
@@ -519,21 +575,40 @@ export async function reloadTrees() {
     let held = 0;
     for (const path of failedProjects) {
       if (!stillListed.has(path)) continue; // followed to the new library
-      if (isHeldForLibraryAccess(path, library.cloudDocsRoot, library.containerDenied)) {
+      if (isHeldPath(path, library.holdRoots)) {
         held += 1;
         continue;
       }
       const projectName = path.split('/').pop() || path;
-      wsNow.removeProject(path);
-      toast.warning(t("toast.projectRemoved", { project: projectName }));
+      // Removed only when the folder is confirmed GONE. A listing can fail
+      // for other reasons (permissions, an unmounted volume, an iCloud
+      // hiccup), and removing the project for those, under a toast saying
+      // the directory no longer exists, was simply false.
+      if (await isConfirmedMissing(path)) {
+        wsNow.removeProject(path);
+        toast.warning(t("toast.projectRemoved", { project: projectName }));
+      } else {
+        log.warn("startup", `Project unreadable but present, kept: ${path}`);
+        toast.warning(t("toast.projectUnreadable", { project: projectName }));
+      }
     }
     for (const result of folderResults) {
       if (result.valid || !stillFolders.has(result.path)) continue;
-      if (isHeldForLibraryAccess(result.path, library.cloudDocsRoot, library.containerDenied)) {
+      if (isHeldPath(result.path, library.holdRoots)) {
         held += 1;
         continue;
       }
-      wsNow.removeExplorerFolder(result.path);
+      if (await isConfirmedMissing(result.path)) {
+        wsNow.removeExplorerFolder(result.path);
+      } else {
+        log.warn("startup", `Folder unreadable but present, kept: ${result.path}`);
+      }
+    }
+    if (library.markerUncertain) {
+      toast.warning(t("toast.libraryMarkerPending"), {
+        id: "library-marker-pending",
+        duration: Infinity,
+      });
     }
     if (library.containerDenied) {
       log.warn("startup", `Notesage's iCloud folder is unreadable; kept ${held} unreadable library entries`);
@@ -603,8 +678,8 @@ export async function reloadTrees() {
         STEP_TIMEOUT_MS,
         "scanICloudForProjects",
       );
-    } catch {
-      // Expected: iCloud scan may fail if cloud storage is temporarily unavailable
+    } catch (err) {
+      log.warn("startup", `iCloud project scan failed: ${err}`);
     }
   }
 

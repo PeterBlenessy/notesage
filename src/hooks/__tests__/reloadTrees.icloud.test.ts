@@ -49,6 +49,7 @@ const {
     setICloudNotesagePath: vi.fn((p: string) => { settingsState.icloudNotesagePath = p; }),
     setLibraryRootKind: vi.fn(),
     setLibraryContainerDenied: vi.fn(),
+    setLibraryHoldRoots: vi.fn(),
   };
   const getICloudPathMock = vi.fn();
   const toastInfoMock = vi.fn();
