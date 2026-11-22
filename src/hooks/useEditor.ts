@@ -26,6 +26,7 @@ import { Markdown } from "tiptap-markdown";
 import { SlashCommand } from "@/components/editor/extensions/slash-command";
 import { AISuggestion, InlineDiff, CommentMark, GhostText, TagHighlight, TagSuggestion, MentionHighlight, MentionSuggestion, WikiLink, DateHighlight, DateSuggestion, SearchHighlight, Drawing, Chart, MermaidBlock, LinkPreview, TableOfContents } from "@/components/editor/extensions";
 import { PageBreaks } from "@/components/editor/extensions/page-breaks";
+import { PageBreakNode } from "@/components/editor/extensions/page-break-node";
 import { LinkClick } from "@/components/editor/extensions/link-click";
 import { SendToAI } from "@/components/editor/extensions/send-to-ai";
 import { Callout } from "@/components/editor/extensions/callout";
@@ -239,6 +240,11 @@ export function useEditor({ content, onUpdate, getDocumentId, editable = true, d
       InlineDiff,
       CommentMark,
       PageBreaks,
+      // The NODE, not just the decoration plugin above. Without it the schema
+      // has no `pageBreak`: a `<!-- pagebreak -->` marker was dropped on load
+      // and removed from the file by the next save, and the worker's parse
+      // (which does know the node) handed this editor content it rejected.
+      PageBreakNode,
       GhostText,
       TagHighlight,
       TagSuggestion,

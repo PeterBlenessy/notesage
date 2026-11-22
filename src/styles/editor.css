@@ -2144,3 +2144,31 @@ mark.dom-find-highlight-active {
 
 
 
+
+/* An explicit page break (`<!-- pagebreak -->`), shown as a labelled rule.
+   The node is an atom; exports turn it into a real break. */
+.ProseMirror .page-break-node {
+  position: relative;
+  margin: 1.5rem 0;
+  border-top: 1px dashed var(--color-border-strong);
+  height: 0;
+  user-select: none;
+}
+.ProseMirror .page-break-node .page-break-label {
+  position: absolute;
+  top: -0.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0 0.5rem;
+  background: var(--color-background);
+  color: var(--color-muted-foreground);
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.ProseMirror .page-break-node.ProseMirror-selectednode {
+  border-top-color: var(--color-ring);
+}
+@media print {
+  .ProseMirror .page-break-node .page-break-label { display: none; }
+}
