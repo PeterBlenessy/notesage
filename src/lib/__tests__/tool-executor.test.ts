@@ -595,6 +595,57 @@ describe('executeToolCall', () => {
       expect(result.content).toContain('https://x');
     });
 
+    // Audit 2026-11-22 §6: these tools run in the unsandboxed main process,
+    // so the spelling of a path must not get it past the scope check.
+    it.each([
+      ['a system prefix as a springboard', '/tmp/../Users/tester/.ssh/id_rsa'],
+      ['climbing out of the project root', `${projectA}/../../.aws/credentials`],
+      ['a relative path (the backend resolves it against its own cwd)', 'Users/tester/.ssh/id_rsa'],
+      ['a relative path that happens to name the project', 'Users/tester/Projects/project-a/notes.md'],
+      ['a ~ path', '~/.ssh/id_rsa'],
+      ['a sibling sharing the root as a prefix', `${projectA}-extra/file`],
+      ['a credential under ~/.config', `${homeDir}/.config/gh/hosts.yml`],
+    ])('denies read_file, list_directory and write_file for %s', async (_label, path) => {
+      const invoked: string[] = [];
+      for (const cmd of ['read_file', 'list_files_shallow', 'write_file']) {
+        setMockInvokeHandler(cmd, () => {
+          invoked.push(cmd);
+          return cmd === 'list_files_shallow' ? [] : 'secret';
+        });
+      }
+      const scope = { projectRoots: [projectA], homeDir };
+
+      const results = [
+        await executeToolCall('t-read', 'read_file', { path }, scope),
+        await executeToolCall('t-list', 'list_directory', { path }, scope),
+        await executeToolCall('t-write', 'write_file', { path, content: 'x' }, scope),
+      ];
+
+      for (const result of results) {
+        expect(result.is_error).toBe(true);
+        expect(result.content).toBe('Denied: path outside project scope');
+      }
+      expect(invoked).toEqual([]);
+    });
+
+    it('hands the backend the normalised path that was checked, not the model\'s spelling', async () => {
+      let seen: unknown;
+      setMockInvokeHandler('read_file', (args) => {
+        seen = args?.path;
+        return 'ok';
+      });
+
+      const result = await executeToolCall(
+        't-norm',
+        'read_file',
+        { path: `${projectA}/sub/.././notes.md` },
+        { projectRoots: [projectA], homeDir },
+      );
+
+      expect(result.is_error).toBe(false);
+      expect(seen).toBe(`${projectA}/notes.md`);
+    });
+
     it('does not affect non-filesystem tools when scope is missing', async () => {
       setMockInvokeHandler('web_search', () => []);
 

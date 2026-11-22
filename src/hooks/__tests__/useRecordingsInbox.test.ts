@@ -60,15 +60,27 @@ function isDir(path: string): boolean {
 
 function installFs(): void {
   setMockInvokeHandler('get_device_name', () => MAC);
-  setMockInvokeHandler('list_files_shallow', (args) => {
-    const path = String(args?.path);
-    if (!isDir(path)) throw new Error(`no such dir ${path}`);
+  // Both listings behave like the Rust commands. This mock used to hand
+  // DIRECTORIES back from `list_files_shallow`, which the real command
+  // (`src-tauri/src/commands/file.rs`) never does — so the suite passed while
+  // the startup scan could not find a single bundle in the app.
+  const list = (path: string) => {
+    if (!isDir(path)) throw new Error(`Path is not a directory: ${path}`);
     const names = new Set<string>();
     for (const k of [...texts.keys(), ...sizes.keys()]) {
       if (k.startsWith(`${path}/`)) names.add(k.slice(path.length + 1).split('/')[0]);
     }
-    return [...names].map((name) => ({ name, path: `${path}/${name}`, is_directory: true, hidden: false }));
-  });
+    return [...names].map((name) => ({
+      name,
+      path: `${path}/${name}`,
+      is_directory: isDir(`${path}/${name}`),
+      hidden: false,
+    }));
+  };
+  setMockInvokeHandler('list_directory', (args) => list(String(args?.path)));
+  setMockInvokeHandler('list_files_shallow', (args) =>
+    list(String(args?.path)).filter((e) => !e.is_directory),
+  );
   setMockInvokeHandler('read_file', (args) => {
     const path = String(args?.path);
     if (!texts.has(path)) throw new Error(`ENOENT ${path}`);

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
+  normalizeAbsolutePath,
   extractPathsFromStructuredInput,
   extractAbsolutePathsFromCommand,
   isPathAllowed,
@@ -36,9 +37,9 @@ describe('extractPathsFromStructuredInput', () => {
     expect(extractPathsFromStructuredInput(input)).toEqual(['/tmp/a.txt', '/tmp/b.txt']);
   });
 
-  it('ignores relative paths', () => {
+  it('returns relative paths too — skipping them meant they were never checked', () => {
     const input = JSON.stringify({ file_path: 'relative/path.ts' });
-    expect(extractPathsFromStructuredInput(input)).toEqual([]);
+    expect(extractPathsFromStructuredInput(input)).toEqual(['relative/path.ts']);
   });
 
   it('ignores non-path fields', () => {
@@ -152,8 +153,9 @@ describe('isPathAllowed', () => {
     expect(isPathAllowed('/Users/peter/.notesage/agents/foo.md', PROJECT, HOME)).toBe(true);
   });
 
-  it('allows ~/.config dir', () => {
-    expect(isPathAllowed('/Users/peter/.config/something', PROJECT, HOME)).toBe(true);
+  it('allows only the agent-owned part of ~/.config, not the directory', () => {
+    expect(isPathAllowed('/Users/peter/.config/goose/config.yaml', PROJECT, HOME)).toBe(true);
+    expect(isPathAllowed('/Users/peter/.config/something', PROJECT, HOME)).toBe(false);
   });
 
   it('allows ~/.cargo dir', () => {
@@ -376,5 +378,123 @@ describe('isToolCallAllowed', () => {
       // Only the well-formed string path survives extraction.
       expect(extractPathsFromStructuredInput(input)).toEqual(['/tmp/ok.txt']);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Adversarial spellings (audit 2026-11-22 §6): the check must judge the path
+// the filesystem will open, not the string the model wrote.
+// ---------------------------------------------------------------------------
+
+describe('normalizeAbsolutePath', () => {
+  it('collapses . and .. and repeated or trailing slashes', () => {
+    expect(normalizeAbsolutePath('/a/./b//c/../d/')).toBe('/a/b/d');
+    expect(normalizeAbsolutePath('/tmp/../Users/x/.ssh/id_rsa')).toBe('/Users/x/.ssh/id_rsa');
+    expect(normalizeAbsolutePath('/')).toBe('/');
+  });
+
+  it('refuses anything that is not an absolute path', () => {
+    expect(normalizeAbsolutePath('Users/x/.ssh/id_rsa')).toBeNull();
+    expect(normalizeAbsolutePath('~/.ssh/id_rsa')).toBeNull();
+    expect(normalizeAbsolutePath('./a')).toBeNull();
+    expect(normalizeAbsolutePath('')).toBeNull();
+    expect(normalizeAbsolutePath('/tmp/a\0/../../etc')).toBeNull();
+  });
+
+  it('refuses a path that climbs above the root', () => {
+    expect(normalizeAbsolutePath('/..')).toBeNull();
+    expect(normalizeAbsolutePath('/tmp/../../etc/passwd')).toBeNull();
+  });
+});
+
+describe('isPathAllowed — traversal and relative paths', () => {
+  it('denies a system prefix used as a springboard: /tmp/../Users/x/.ssh/id_rsa', () => {
+    expect(isPathAllowed('/tmp/../Users/peter/.ssh/id_rsa', PROJECT, HOME)).toBe(false);
+    expect(isPathAllowed('/private/tmp/../../Users/peter/.ssh/id_rsa', PROJECT, HOME)).toBe(false);
+    expect(isPathAllowed('/usr/./../Users/peter/Documents/secret.txt', PROJECT, HOME)).toBe(false);
+  });
+
+  it('denies climbing out of the project root: <root>/../../.aws/credentials', () => {
+    expect(isPathAllowed(`${PROJECT}/../../.aws/credentials`, PROJECT, HOME)).toBe(false);
+    expect(isPathAllowed(`${PROJECT}/../project-b/notes.md`, PROJECT, HOME)).toBe(false);
+    expect(isPathAllowed(`${PROJECT}/src/../../../.ssh/id_rsa`, PROJECT, HOME)).toBe(false);
+  });
+
+  it('denies climbing out of a safe home dir', () => {
+    expect(isPathAllowed('/Users/peter/.claude/../.ssh/id_rsa', PROJECT, HOME)).toBe(false);
+  });
+
+  it('denies a relative path, which the backend would resolve against its own cwd', () => {
+    expect(isPathAllowed('Users/peter/.ssh/id_rsa', PROJECT, HOME)).toBe(false);
+    expect(isPathAllowed('Users/peter/Development/project-a/a.md', PROJECT, HOME)).toBe(false);
+    expect(isPathAllowed('../../.ssh/id_rsa', PROJECT, HOME)).toBe(false);
+    expect(isPathAllowed('', PROJECT, HOME)).toBe(false);
+  });
+
+  it('denies a ~ path', () => {
+    expect(isPathAllowed('~/.ssh/id_rsa', PROJECT, HOME)).toBe(false);
+    expect(isPathAllowed('~/.claude/settings.json', PROJECT, HOME)).toBe(false);
+  });
+
+  it('compares at a path boundary: <root>-extra is not inside <root>', () => {
+    expect(isPathAllowed(`${PROJECT}-extra/file`, PROJECT, HOME)).toBe(false);
+    expect(isPathAllowed('/tmpfoo/file', PROJECT, HOME)).toBe(false);
+    expect(isPathAllowed('/Users/peter/.claude-evil/file', PROJECT, HOME)).toBe(false);
+    // …including when the root itself is written with a trailing slash or dots.
+    expect(isPathAllowed(`${PROJECT}-extra/file`, `${PROJECT}/`, HOME)).toBe(false);
+    expect(isPathAllowed(`${PROJECT}/file`, `${PROJECT}/sub/..`, HOME)).toBe(true);
+  });
+
+  it('still allows a traversal that stays inside the root', () => {
+    expect(isPathAllowed(`${PROJECT}/src/../README.md`, PROJECT, HOME)).toBe(true);
+  });
+
+  it('no longer treats all of ~/.config as safe (it holds gh and Copilot tokens)', () => {
+    expect(isPathAllowed('/Users/peter/.config/gh/hosts.yml', PROJECT, HOME)).toBe(false);
+    expect(isPathAllowed('/Users/peter/.config/github-copilot/apps.json', PROJECT, HOME)).toBe(false);
+    expect(isPathAllowed('/Users/peter/.config', PROJECT, HOME)).toBe(false);
+    expect(isPathAllowed('/Users/peter/.config/goose/config.yaml', PROJECT, HOME)).toBe(true);
+    expect(isPathAllowed('/Users/peter/.config/goose/../gh/hosts.yml', PROJECT, HOME)).toBe(false);
+  });
+
+  it('a missing home directory grants no safe home dirs', () => {
+    expect(isPathAllowed('/.claude/settings.json', PROJECT, '')).toBe(false);
+  });
+});
+
+describe('isToolCallAllowed — traversal and relative paths', () => {
+  const read = (path: string) => isToolCallAllowed('read_file', JSON.stringify({ path }), PROJECT, HOME);
+
+  it('denies the traversal spellings through a structured tool', () => {
+    expect(read('/tmp/../Users/peter/.ssh/id_rsa')).toEqual({
+      allowed: false,
+      deniedPath: '/tmp/../Users/peter/.ssh/id_rsa',
+    });
+    expect(read(`${PROJECT}/../../.aws/credentials`).allowed).toBe(false);
+    expect(read(`${PROJECT}-extra/file`).allowed).toBe(false);
+  });
+
+  it('denies a relative path that climbs out of the working directory', () => {
+    expect(read('../../.ssh/id_rsa').allowed).toBe(false);
+    expect(read('src/../../project-b/notes.md').allowed).toBe(false);
+  });
+
+  it('allows an agent-relative path that stays put (agents work relative to the project)', () => {
+    expect(read('src/main.ts').allowed).toBe(true);
+    expect(read('./src/../README.md').allowed).toBe(true);
+  });
+
+  it('expands ~ before judging it', () => {
+    expect(read('~/.ssh/id_rsa').allowed).toBe(false);
+    expect(read('~/.claude/../.aws/credentials').allowed).toBe(false);
+    expect(read('~/.claude/settings.json').allowed).toBe(true);
+    expect(read('~root/.ssh/id_rsa').allowed).toBe(false);
+  });
+
+  it('denies traversal and ~ paths inside a shell command', () => {
+    expect(isToolCallAllowed('bash', 'cat /tmp/../Users/peter/.ssh/id_rsa', PROJECT, HOME).allowed).toBe(false);
+    expect(isToolCallAllowed('bash', 'cat ~/.ssh/id_rsa', PROJECT, HOME).allowed).toBe(false);
+    expect(isToolCallAllowed('bash', `cat ${PROJECT}/../project-b/a.md`, PROJECT, HOME).allowed).toBe(false);
+    expect(isToolCallAllowed('bash', `cat ${PROJECT}/src/../a.md`, PROJECT, HOME).allowed).toBe(true);
   });
 });

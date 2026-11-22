@@ -29,7 +29,10 @@ describe("RecordingsSection (sidebar row)", () => {
     useRecordingsStore.setState({ open: false, dir: null, bundles: [] });
     useInboxStore.setState({ open: false });
     useSettingsStore.setState({ notesRootPath: "~/Notesage", homeDir: "/Users/peter" });
+    // The real `list_files_shallow` never returns a directory, and a bundle
+    // is one: only `list_directory` can see them.
     setMockInvokeHandler("list_files_shallow", () => []);
+    setMockInvokeHandler("list_directory", () => []);
     setMockInvokeHandler("read_file", () => {
       throw new Error("no manifest");
     });
@@ -55,7 +58,7 @@ describe("RecordingsSection (sidebar row)", () => {
   it("badges the bundles that failed, because those are the ones wanting a decision", async () => {
     // Not a count of all recordings: they transcribe and file themselves, so a
     // standing total would never reach zero and would never mean anything.
-    setMockInvokeHandler("list_files_shallow", () => [
+    setMockInvokeHandler("list_directory", () => [
       { name: "Recording 2026-09-05 12-04-00", path: `${DIR}/Recording 2026-09-05 12-04-00`, is_directory: true, hidden: false },
       { name: "Recording 2026-09-06 09-00-00", path: `${DIR}/Recording 2026-09-06 09-00-00`, is_directory: true, hidden: false },
     ]);
