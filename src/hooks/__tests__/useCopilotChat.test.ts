@@ -719,3 +719,202 @@ describe('useCopilotChat — copilot-chat-step / copilot-chat-tool-update segmen
     expect(assistantSegments().length).toBe(before);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Audit 2026-11-22 §2 (HIGH): one Copilot conversation per Notesage conversation
+// ---------------------------------------------------------------------------
+//
+// The hook kept a single `conversationIdRef` / `cleanupRef` for every Notesage
+// conversation. After chatting in A, a message typed in B went out as a turn
+// on A's Copilot conversation (B's answer saw A's history), B's send tore
+// down A's still-streaming listeners, and cancelling destroyed whichever
+// Copilot conversation the ref happened to hold.
+
+describe('useCopilotChat — Copilot conversations are keyed by Notesage conversation', () => {
+  let createSpy: ReturnType<typeof vi.spyOn>;
+  let turnSpy: ReturnType<typeof vi.spyOn>;
+  let destroySpy: ReturnType<typeof vi.spyOn>;
+
+  function makeConv(id: string): Conversation {
+    const now = Date.now();
+    return {
+      id,
+      title: id,
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+      projectPaths: [],
+      segments: [{ projectPaths: [], sessionId: null, startMessageIndex: 0, historyIncluded: false }],
+      activeSegmentIndex: 0,
+      pendingProjectSwitch: null,
+      activeLeafId: null,
+    };
+  }
+
+  beforeEach(() => {
+    useWorkspaceStore.setState({ explorerFolders: [], projects: [] });
+    useChatStore.setState({
+      conversations: [makeConv('note-A'), makeConv('note-B')],
+      activeConversationId: 'note-A',
+    });
+    useEditorStore.setState({ openDocuments: [], activeTabId: null });
+    useSettingsStore.setState({ homeDir: '/Users/tester', notesRootPath: '/Users/tester/Notesage' });
+
+    vi.spyOn(tauriApi, 'copilotLspStart').mockResolvedValue(undefined);
+    vi.spyOn(tauriApi, 'copilotLspDidOpen').mockResolvedValue(undefined);
+    // Each create hands out the next Copilot conversation id.
+    let created = 0;
+    createSpy = vi.spyOn(tauriApi, 'copilotLspConversationCreate');
+    createSpy.mockReset();
+    createSpy.mockImplementation(async () => {
+      created += 1;
+      return { conversationId: `cop-${created}`, turnId: `turn-${created}` };
+    });
+    turnSpy = vi.spyOn(tauriApi, 'copilotLspConversationTurn');
+    turnSpy.mockReset();
+    turnSpy.mockResolvedValue({ conversationId: 'unused', turnId: 'turn-n' });
+    destroySpy = vi.spyOn(tauriApi, 'copilotLspConversationDestroy');
+    destroySpy.mockReset();
+    destroySpy.mockResolvedValue(undefined);
+  });
+
+  function renderCopilot() {
+    return renderHook(() =>
+      useCopilotChat({
+        effectiveConnection: makeCopilotLspConnection(),
+        buildComposedSystemMessage: () => 'system',
+        composedSystemMessage: 'system',
+      }),
+    );
+  }
+
+  async function send(result: ReturnType<typeof renderCopilot>['result'], text: string) {
+    await act(async () => {
+      await result.current.copilotSendChatMessage(text, [], {});
+    });
+  }
+
+  async function emit(event: string, payload: Record<string, unknown>) {
+    await act(async () => {
+      emitMockEvent(event, payload);
+      await Promise.resolve();
+    });
+  }
+
+  function assistantText(convId: string): string {
+    const conv = useChatStore.getState().conversations.find((c) => c.id === convId);
+    return conv?.messages.filter((m) => m.role === 'assistant').map((m) => m.content).join('|') ?? '';
+  }
+
+  it("never sends conversation B's message on conversation A's Copilot conversation", async () => {
+    const { result } = renderCopilot();
+
+    // Chat in A: creates Copilot conversation cop-1, and the turn finishes.
+    await send(result, 'question in A');
+    await emit('copilot-chat-done', { conversationId: 'cop-1' });
+    expect(createSpy).toHaveBeenCalledTimes(1);
+
+    // Switch to B and send. It must get its OWN Copilot conversation — a
+    // `conversation/turn` on cop-1 would hand B's question A's history.
+    useChatStore.getState().setActiveConversation('note-B');
+    await send(result, 'question in B');
+    expect(turnSpy).not.toHaveBeenCalled();
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    expect(createSpy.mock.calls[1][0]).toBe('question in B');
+    await emit('copilot-chat-done', { conversationId: 'cop-2' });
+
+    // Back in A, a follow-up continues A's own Copilot conversation …
+    useChatStore.getState().setActiveConversation('note-A');
+    await send(result, 'follow-up in A');
+    expect(createSpy).toHaveBeenCalledTimes(2);
+    expect(turnSpy).toHaveBeenCalledTimes(1);
+    expect(turnSpy.mock.calls[0][0]).toBe('cop-1');
+    await emit('copilot-chat-done', { conversationId: 'cop-1' });
+
+    // … and B's follow-up continues B's.
+    useChatStore.getState().setActiveConversation('note-B');
+    await send(result, 'follow-up in B');
+    expect(turnSpy).toHaveBeenCalledTimes(2);
+    expect(turnSpy.mock.calls[1][0]).toBe('cop-2');
+  });
+
+  it("a send in B leaves A's still-streaming listeners alone", async () => {
+    const { result } = renderCopilot();
+
+    await send(result, 'question in A');
+    await emit('copilot-chat-chunk', { conversationId: 'cop-1', text: 'A1 ' });
+
+    // A is still streaming when the user switches to B and sends.
+    useChatStore.getState().setActiveConversation('note-B');
+    await send(result, 'question in B');
+    await emit('copilot-chat-chunk', { conversationId: 'cop-2', text: 'B1' });
+
+    // A's stream continues and finishes on A's message.
+    await emit('copilot-chat-chunk', { conversationId: 'cop-1', text: 'A2' });
+    await emit('copilot-chat-done', { conversationId: 'cop-1' });
+    await emit('copilot-chat-done', { conversationId: 'cop-2' });
+
+    expect(assistantText('note-A')).toBe('A1 A2');
+    expect(assistantText('note-B')).toBe('B1');
+  });
+
+  it("cancelling one conversation destroys only that conversation's Copilot conversation", async () => {
+    const { result } = renderCopilot();
+
+    await send(result, 'question in A');
+    await emit('copilot-chat-chunk', { conversationId: 'cop-1', text: 'A1 ' });
+    useChatStore.getState().setActiveConversation('note-B');
+    await send(result, 'question in B');
+    await emit('copilot-chat-chunk', { conversationId: 'cop-2', text: 'B1' });
+
+    // Stop while B is in the foreground.
+    act(() => {
+      result.current.cancelCopilotChat();
+    });
+    expect(destroySpy).toHaveBeenCalledTimes(1);
+    expect(destroySpy).toHaveBeenCalledWith('cop-2');
+
+    // A is untouched: still streaming, and its next message is a turn on cop-1.
+    await emit('copilot-chat-chunk', { conversationId: 'cop-1', text: 'A2' });
+    await emit('copilot-chat-done', { conversationId: 'cop-1' });
+    expect(assistantText('note-A')).toBe('A1 A2');
+
+    useChatStore.getState().setActiveConversation('note-A');
+    await send(result, 'follow-up in A');
+    expect(turnSpy).toHaveBeenCalledTimes(1);
+    expect(turnSpy.mock.calls[0][0]).toBe('cop-1');
+
+    // B was cancelled, so its next message starts a fresh Copilot conversation.
+    await emit('copilot-chat-done', { conversationId: 'cop-1' });
+    useChatStore.getState().setActiveConversation('note-B');
+    await send(result, 'again in B');
+    expect(createSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it('cancelling an explicit conversation id targets it even when another is in the foreground', async () => {
+    const { result } = renderCopilot();
+
+    await send(result, 'question in A');
+    await emit('copilot-chat-done', { conversationId: 'cop-1' });
+    useChatStore.getState().setActiveConversation('note-B');
+
+    act(() => {
+      result.current.cancelCopilotChat('note-A');
+    });
+    expect(destroySpy).toHaveBeenCalledTimes(1);
+    expect(destroySpy).toHaveBeenCalledWith('cop-1');
+  });
+
+  it('destroys every live Copilot conversation on unmount', async () => {
+    const { result, unmount } = renderCopilot();
+
+    await send(result, 'question in A');
+    await emit('copilot-chat-done', { conversationId: 'cop-1' });
+    useChatStore.getState().setActiveConversation('note-B');
+    await send(result, 'question in B');
+    await emit('copilot-chat-done', { conversationId: 'cop-2' });
+
+    unmount();
+    expect(destroySpy.mock.calls.map((call: unknown[]) => String(call[0])).sort()).toEqual(['cop-1', 'cop-2']);
+  });
+});

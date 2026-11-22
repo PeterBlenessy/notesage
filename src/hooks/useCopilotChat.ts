@@ -53,6 +53,12 @@ interface SendChatOpts {
 /** Maximum tool calls allowed per user turn to prevent runaway loops. */
 const MAX_TOOL_CALLS_PER_TURN = 20;
 
+/** Registry key for a send with no resolved Notesage conversation. */
+const NO_CONVERSATION_KEY = '__none__';
+
+/** Sentinel in `copilotConversationsRef` while `conversation/create` is in flight. */
+const PENDING = 'pending';
+
 // ---------------------------------------------------------------------------
 // Hook — handles Copilot LSP conversation-based chat
 // ---------------------------------------------------------------------------
@@ -75,8 +81,16 @@ export function useCopilotChat({
     finalizeSegments,
   } = useChatStore();
 
-  const conversationIdRef = useRef<string | null>(null);
-  const cleanupRef = useRef<(() => void) | null>(null);
+  // Both registries are keyed by NOTESAGE conversation id (the same shape as
+  // `streamsRef` in `useDirectApiChat`). They used to be one ref each for the
+  // whole hook, so after chatting in conversation A, a message typed in B was
+  // sent as a turn on A's Copilot conversation — B's answer saw A's history,
+  // possibly from another project — and B's send tore down A's still-streaming
+  // listeners (audit 2026-11-22 §2).
+  /** Notesage conversation → its Copilot LSP conversation id (or `PENDING`). */
+  const copilotConversationsRef = useRef<Map<string, string>>(new Map());
+  /** Notesage conversation → listener cleanup of its in-flight turn. */
+  const cleanupRefs = useRef<Map<string, () => void>>(new Map());
 
   // Determine if the effective connection is a Copilot LSP
   const isCopilotLsp = effectiveConnection?.credentials != null
@@ -102,16 +116,18 @@ export function useCopilotChat({
     });
   }, [isCopilotLsp, workingDir]);
 
-  // Clean up the conversation and reset the ref on unmount. This prevents
-  // conversationIdRef from being left as "pending" if the component unmounts
-  // during conversation creation, and destroys any live conversation to free
-  // server-side resources.
+  // Destroy every live Copilot conversation and reset the registry on unmount.
+  // This prevents an entry from being left as "pending" if the component
+  // unmounts during conversation creation, and frees server-side resources.
   useEffect(() => {
+    const copilotConversations = copilotConversationsRef.current;
     return () => {
-      if (conversationIdRef.current && conversationIdRef.current !== 'pending') {
-        tauriApi.copilotLspConversationDestroy(conversationIdRef.current).catch(() => {});
+      for (const copilotId of copilotConversations.values()) {
+        if (copilotId !== PENDING) {
+          tauriApi.copilotLspConversationDestroy(copilotId).catch(() => {});
+        }
       }
-      conversationIdRef.current = null;
+      copilotConversations.clear();
     };
   }, []);
 
@@ -328,11 +344,13 @@ export function useCopilotChat({
 
   const sendChatMessage = useCallback(
     async (content: string, _messages: ChatMessage[], opts?: SendChatOpts) => {
-      // Clean up any stale listeners from a previous streaming call
-      if (cleanupRef.current) {
-        cleanupRef.current();
-        cleanupRef.current = null;
-      }
+      // Clean up stale listeners from a previous streaming call in THIS
+      // conversation only (a re-send in the same chat). Other conversations'
+      // in-flight turns are left running. A fresh chat has no conversation
+      // yet, and so nothing stale to tear down.
+      cleanupRefs.current.get(
+        opts?.conversationId ?? useChatStore.getState().activeConversationId ?? NO_CONVERSATION_KEY,
+      )?.();
 
       setLoading(true);
       setError(null);
@@ -354,6 +372,8 @@ export function useCopilotChat({
       // and activates the conversation for a fresh chat.
       const runConvId =
         opts?.conversationId ?? useChatStore.getState().activeConversationId ?? null;
+      // Key of this conversation in the Copilot-conversation and cleanup registries.
+      const convKey = runConvId ?? NO_CONVERSATION_KEY;
 
       const assistantMessageId = userTimestamp + 1;
       addMessage({
@@ -426,7 +446,8 @@ export function useCopilotChat({
         // Track the conversationId for this turn. For create calls, we learn
         // the ID from the first $/progress event (which arrives before the
         // invoke resolves). For turn calls, we already have it.
-        const turnConvId = conversationIdRef.current;
+        const knownCopilotId = copilotConversationsRef.current.get(convKey);
+        const turnConvId = knownCopilotId && knownCopilotId !== PENDING ? knownCopilotId : null;
         let eventConvId: string | null = turnConvId;
 
         /** Filter: accept events for this conversation. On the first create,
@@ -746,10 +767,14 @@ export function useCopilotChat({
           setLoading(false);
           setActiveTool(null);
           runIdle(runConvId);
-          cleanupRef.current = null;
+          // Drop this conversation's cleanup from the registry (only if it is
+          // still the one we registered — a re-send may have replaced it).
+          if (cleanupRefs.current.get(convKey) === cleanup) {
+            cleanupRefs.current.delete(convKey);
+          }
         };
 
-        cleanupRef.current = cleanup;
+        cleanupRefs.current.set(convKey, cleanup);
 
         // Collect active document context for the LSP
         const editorState = useEditorStore.getState();
@@ -780,27 +805,35 @@ export function useCopilotChat({
         // Note: create/turn block until after all $/progress notifications
         // are delivered, so events arrive DURING this await. The isOurEvent
         // filter latches onto the conversationId from the first event.
-        if (!conversationIdRef.current) {
-          // Set sentinel to prevent a concurrent sendChatMessage from creating
-          // a second conversation before the first resolves.
-          conversationIdRef.current = 'pending';
+        // The Copilot conversation is looked up for THIS Notesage conversation:
+        // each one gets its own, so no turn ever rides on another chat's history.
+        const copilotConversations = copilotConversationsRef.current;
+        const copilotId = copilotConversations.get(convKey);
+        if (!copilotId) {
+          // Set sentinel to prevent a concurrent sendChatMessage in the same
+          // conversation from creating a second one before the first resolves.
+          copilotConversations.set(convKey, PENDING);
           try {
             const result = await tauriApi.copilotLspConversationCreate(content, model, lspTools, docUri, docLang);
-            conversationIdRef.current = result.conversationId;
+            if (copilotConversations.get(convKey) === PENDING) {
+              copilotConversations.set(convKey, result.conversationId);
+            } else {
+              // Cancelled (or the hook unmounted) while the create was in
+              // flight: nobody owns this conversation any more.
+              tauriApi.copilotLspConversationDestroy(result.conversationId).catch(() => {});
+            }
           } catch (e) {
-            conversationIdRef.current = null;
+            if (copilotConversations.get(convKey) === PENDING) copilotConversations.delete(convKey);
             throw e;
           }
-        } else if (conversationIdRef.current === 'pending') {
+        } else if (copilotId === PENDING) {
           throw new Error('A conversation is already being created. Please wait.');
         } else {
-          await tauriApi.copilotLspConversationTurn(conversationIdRef.current, content, model, docUri, docLang);
+          await tauriApi.copilotLspConversationTurn(copilotId, content, model, docUri, docLang);
         }
       } catch (error) {
         clearInterval(flushInterval);
-        if (cleanupRef.current) {
-          cleanupRef.current();
-        }
+        cleanupRefs.current.get(convKey)?.();
         log.error('ai', 'Copilot chat stream error', error);
 
         const errorMsg = error instanceof Error ? error.message : String(error);
@@ -838,13 +871,20 @@ export function useCopilotChat({
   // cancelChat — destroy conversation and clean up listeners
   // -------------------------------------------------------------------------
 
-  const cancelChat = useCallback(() => {
-    if (cleanupRef.current) {
-      cleanupRef.current();
-    }
-    if (conversationIdRef.current) {
-      tauriApi.copilotLspConversationDestroy(conversationIdRef.current).catch(() => {});
-      conversationIdRef.current = null;
+  const cancelChat = useCallback((convId?: string | null) => {
+    // Cancel ONE conversation's Copilot turn, defaulting to the foreground one
+    // (the user pressing Stop cancels what they are watching). Other
+    // conversations keep their listeners and their Copilot conversation.
+    const targetKey = (convId ?? useChatStore.getState().activeConversationId) ?? NO_CONVERSATION_KEY;
+    cleanupRefs.current.get(targetKey)?.();
+    // Destroying the Copilot conversation is what stops the LSP generating.
+    // The next message in this chat starts a new one.
+    const copilotId = copilotConversationsRef.current.get(targetKey);
+    if (copilotId) {
+      if (copilotId !== PENDING) {
+        tauriApi.copilotLspConversationDestroy(copilotId).catch(() => {});
+      }
+      copilotConversationsRef.current.delete(targetKey);
     }
     setLoading(false);
     setActiveTool(null);

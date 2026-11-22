@@ -231,7 +231,15 @@ export function useAIOperations() {
       return;
     }
     cancelDirectChat();
-    cancelCopilotChat();
+    // Cancelling Copilot destroys the conversation's Copilot LSP conversation,
+    // so only do it for a conversation whose run IS on Copilot. This used to be
+    // unconditional: Stop on any provider's chat destroyed a Copilot
+    // conversation (audit 2026-11-22 §2). A run with no record (no
+    // conversation resolved yet) falls back to the effective connection.
+    const runPath = activeConv ? useSessionRunStore.getState().runs[activeConv]?.path : undefined;
+    if (runPath === 'copilot_lsp' || (runPath === undefined && isCopilotLsp)) {
+      cancelCopilotChat(activeConv);
+    }
     if (effectiveConnection?.authMethod === 'agent_managed' && !isCopilotLsp) {
       acpCancelChat();
     }
