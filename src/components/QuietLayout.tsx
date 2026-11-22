@@ -10,6 +10,8 @@ import { RelationsPanel } from "@/components/editor/RelationsPanel";
 import { EditorLinkHoverPreview } from "@/components/editor/EditorLinkHoverPreview";
 import { AlertTriangle } from "lucide-react";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { Button } from "@/components/ui/button";
+import { t } from "@/lib/i18n";
 import { useSettingsStore, SIDEBAR_DEFAULT_WIDTH } from "@/stores/settings-store";
 import { useFadeOnType } from "@/hooks/useFadeOnType";
 import { useFocusMode } from "@/hooks/useFocusMode";
@@ -248,18 +250,29 @@ export function QuietLayout(props: QuietLayoutProps) {
       {sidebarPinned ? (
         <ErrorBoundary
           name="Sidebar"
-          fallback={
+          fallback={(error, reset) => (
             <div
               data-testid="sidebar-error-fallback"
-              className="relative flex h-full shrink-0 flex-col items-center justify-center gap-2 border-r border-border-strong bg-muted/30 px-4 text-center"
+              role="alert"
+              className="relative flex h-full shrink-0 flex-col items-center justify-center gap-3 border-r border-border-strong bg-muted/30 px-4 text-center"
               style={{ width: `var(--quiet-sidebar-width, ${SIDEBAR_DEFAULT_WIDTH}px)` }}
             >
-              <AlertTriangle className="size-5 text-muted-foreground" strokeWidth={1.5} />
-              <p className="text-xs text-muted-foreground">
-                Something went wrong in the sidebar
-              </p>
+              <AlertTriangle className="size-5 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />
+              <div className="min-w-0 max-w-full">
+                <p className="text-xs font-medium text-foreground">
+                  {t("sidebar.errorTitle")}
+                </p>
+                {error.message ? (
+                  <p className="mt-1 line-clamp-4 break-words text-xs text-muted-foreground">
+                    {error.message}
+                  </p>
+                ) : null}
+              </div>
+              <Button variant="outline" size="sm" onClick={reset}>
+                {t("sidebar.reload")}
+              </Button>
             </div>
-          }
+          )}
         >
           <QuietSidebar onOpenSettings={props.onOpenSettings} />
         </ErrorBoundary>

@@ -810,6 +810,8 @@ const en = {
   // Sidebar — sections, row actions, context menu (#706)
   "sidebar.workspace": "Workspace sidebar",
   "sidebar.resize": "Resize sidebar",
+  "sidebar.errorTitle": "Something went wrong in the sidebar",
+  "sidebar.reload": "Reload sidebar",
   "sidebar.clearFilter": "Clear filter",
   "sidebar.settings": "Settings",
   "sidebar.externalFolders": "External folders",
@@ -2398,6 +2400,8 @@ const sv: Dict = {
   "settings.labs": "Labb",
   "sidebar.workspace": "Sidofält för arbetsytan",
   "sidebar.resize": "Ändra sidofältets bredd",
+  "sidebar.errorTitle": "Något gick fel i sidofältet",
+  "sidebar.reload": "Läs in sidofältet igen",
   "sidebar.clearFilter": "Rensa filtret",
   "sidebar.settings": "Inställningar",
   "sidebar.externalFolders": "Externa mappar",

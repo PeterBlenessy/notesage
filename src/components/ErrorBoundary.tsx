@@ -5,7 +5,12 @@ import { AlertTriangle } from 'lucide-react';
 interface ErrorBoundaryProps {
   children: ReactNode;
   name: string;
-  fallback?: ReactNode;
+  /**
+   * Replaces the default fallback. Pass a function to get the caught error
+   * and a `reset` that clears the boundary and re-renders the children — a
+   * static node leaves the user with no way out short of restarting the app.
+   */
+  fallback?: ReactNode | ((error: Error, reset: () => void) => ReactNode);
 }
 
 interface ErrorBoundaryState {
@@ -30,6 +35,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
 
   render() {
     if (this.state.hasError) {
+      if (typeof this.props.fallback === 'function') {
+        return this.props.fallback(this.state.error ?? new Error('Unknown error'), this.handleReload);
+      }
       if (this.props.fallback) {
         return this.props.fallback;
       }
