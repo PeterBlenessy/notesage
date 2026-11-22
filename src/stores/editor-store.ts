@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Frontmatter } from "@/lib/frontmatter";
 import type { FileType, ViewMode } from "@/lib/file-utils";
+import { clearBinaryData, moveBinaryData } from "@/lib/binary-cache";
 
 
 export type { FileType, ViewMode } from "@/lib/file-utils";
@@ -667,3 +668,28 @@ export const useEditorStore = create<EditorStore>()(
     }
   )
 );
+
+// Binary-cache lifetime (audit 2026-11-22 §1). The bytes of every PDF / DOCX /
+// EPUB / PPTX opened used to stay in `binary-cache` for the whole session:
+// nothing on the desktop ever evicted them. Tie each entry to its document
+// instead, by diffing `openDocuments` on every change rather than hooking the
+// individual actions — documents leave the list through `openTab`'s
+// single-document eviction as well as `closeTab`, and are re-pathed by three
+// different rename actions.
+//
+// Only a document that was open and no longer is gets evicted, so a viewer
+// can never lose the bytes of the document it is showing, and bytes cached
+// ahead of `openTab` (every writer does that) are untouched.
+useEditorStore.subscribe((state, prev) => {
+  const next = state.openDocuments;
+  if (next === prev.openDocuments) return;
+  for (const before of prev.openDocuments) {
+    const after = next.find((tab) => tab.id === before.id);
+    if (after) {
+      // Renamed or moved: keep the bytes reachable under the new path.
+      if (after.filePath !== before.filePath) moveBinaryData(before.filePath, after.filePath);
+    } else if (!next.some((tab) => tab.filePath === before.filePath)) {
+      clearBinaryData(before.filePath);
+    }
+  }
+});
