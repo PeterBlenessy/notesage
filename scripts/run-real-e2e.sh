@@ -36,7 +36,14 @@ set -euo pipefail
 WEBDRIVER_HOST="localhost"
 PLUGIN_PORT=4445             # tauri-plugin-webdriver embedded HTTP server
 DRIVER_PORT=4444             # tauri-webdriver bridge (W3C WebDriver endpoint)
-APP_READY_TIMEOUT=600        # seconds — cold cargo build on CI can take 5-10 min; dev rebuilds are seconds. 10-minute upper bound absorbs cold-build runners without masking genuine hangs.
+# Seconds to wait for the app to build and start. Dev rebuilds take seconds; a
+# CI build after a dependency change is close to cold (the Rust cache only
+# partly matches a new Cargo.lock) and has been seen to still be on the final
+# crate, 982/984 with no errors, when a 600s limit expired (2026-11-23, the
+# v0.62.0 release PR). 20 minutes leaves room for that. A genuine hang now
+# costs 20 minutes instead of 10, which is the cheaper mistake: this job also
+# gates every release.
+APP_READY_TIMEOUT=1200
 DRIVER_READY_TIMEOUT=15      # seconds — tauri-webdriver starts fast
 POLL_INTERVAL=2              # seconds between readiness polls
 

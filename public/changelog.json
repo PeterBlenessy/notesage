@@ -1,6 +1,40 @@
 {
   "releases": [
     {
+      "version": "0.62.0",
+      "date": "2026-11-23",
+      "previousVersion": "0.61.0",
+      "sections": {
+        "features": [
+          "The **+** next to Folders in the sidebar now opens a small menu: **New project**, or **Add existing folder…** to bring in a folder that is already on your Mac. Before, it could only create a new one.",
+          "New projects are created in your iCloud library when iCloud is available, so they show up on your other devices. The confirmation tells you where the project went."
+        ],
+        "improvements": [
+          "Removing a synced project from the sidebar now sticks on that Mac. It used to come back at the next launch.",
+          "Recording a meeting no longer slows the rest of the app down while you type.",
+          "The editor stays responsive while an AI answer is streaming in.",
+          "Memory used by PDFs and other documents is released when you close them.",
+          "The keyboard shortcuts list (⌘⇧K) now shows the shortcuts the app actually uses. Several entries were wrong or referred to things that no longer exist.",
+          "If the sidebar ever fails to load, it now says what went wrong and offers a Reload button instead of leaving you stuck."
+        ],
+        "fixes": [
+          "After moving your library to Notesage's own iCloud folder on one Mac, your other Mac could lose sight of its projects and start up showing the first Mac's folders instead. Each Mac now follows the move and keeps its own folders, pinned files and open document.",
+          "A project could disappear from the sidebar with a message saying its folder no longer existed, when the folder was only temporarily unreadable. Projects are now removed only when the folder is really gone, and a problem reading your iCloud library is shown instead of an empty sidebar.",
+          "Typing in one document and switching to another straight away could, in rare cases, put the second document's text into the first.",
+          "Page breaks could vanish from a document after opening and saving it.",
+          "Comments on a document could be wiped if they failed to load once.",
+          "A project's settings, including its AI provider lock, could be reset if the settings file had not finished downloading from iCloud.",
+          "The Recordings list could stay empty even with recordings on disk, and recordings made while the app was closed were not picked up for transcription.",
+          "Letters such as å, ä and ö, and emoji, could come out garbled in AI answers.",
+          "Chats with GitHub Copilot could mix up their history between conversations, and its tools could stall for a minute before failing.",
+          "Typing a name that already existed when creating a project silently took over the existing folder. It now tells you the name is taken.",
+          "Importing MCP servers from VS Code did nothing.",
+          "Strikethrough is ⌘⇧S; the toolbar and the shortcuts list said ⌘⇧X.",
+          "Several security fixes to how AI tools and agents are confined to your project folders — no action required."
+        ]
+      }
+    },
+    {
       "version": "0.61.0",
       "date": "2026-09-24",
       "previousVersion": "0.60.4",
