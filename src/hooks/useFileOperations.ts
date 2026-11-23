@@ -4,6 +4,7 @@ import { useEditorStore, type ScrollToTag } from "@/stores/editor-store";
 import { useInboxStore } from "@/stores/inbox-store";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { isHeldPath } from "@/lib/library-follow";
 import { useGitStore } from "@/stores/git-store";
 import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
@@ -197,10 +198,26 @@ export function useFileOperations() {
       } catch {
         // Expected: project path no longer exists — check if it was renamed
         // by scanning the parent directory for a folder with matching .notesage metadata
+        if (!useSettingsStore.getState().startupReady) {
+          // Startup decides what an unreadable project means — it may have
+          // moved with the library and be about to be followed — so a
+          // refresh that races it (the hidden-files setting loading fires
+          // one) must not prune it first.
+          continue;
+        }
         const parentDir = project.path.substring(0, project.path.lastIndexOf('/'));
         const renamed = await detectRenamedProject(parentDir);
         if (renamed) {
           await migrateProjectPath(project.path, renamed);
+        } else if (isHeldPath(project.path, useSettingsStore.getState().libraryHoldRoots ?? [])) {
+          // Unreadable while the library's state is uncertain (iCloud folder
+          // blocked, or its marker not readable yet), not because it is
+          // gone: keep it so it can be followed once that clears.
+        } else if (await tauriApi.pathExists(project.path).catch(() => true)) {
+          // Still there, just not listable right now (permissions, a volume
+          // that dropped, an iCloud hiccup). One failed read must not drop a
+          // project from the sidebar mid-session.
+          log.warn("tree", `Project unreadable but present, kept: ${project.path}`);
         } else {
           const projectName = project.path.split('/').pop() || project.path;
           ws.removeProject(project.path);

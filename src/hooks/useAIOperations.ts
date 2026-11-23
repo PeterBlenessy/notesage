@@ -27,8 +27,12 @@ export { ProjectLockViolation };
 // ---------------------------------------------------------------------------
 
 export function useAIOperations() {
-  const aiStore = useAIStore();
-  const { ollamaUrl } = aiStore;
+  // Per-field selectors, not a bare `useAIStore()`: only these three values
+  // feed `resolved`, and a whole-store subscription re-rendered every caller
+  // on any ai-store write (audit 2026-11-22 §3).
+  const aiProvider = useAIStore((s) => s.provider);
+  const apiKeys = useAIStore((s) => s.apiKeys);
+  const ollamaUrl = useAIStore((s) => s.ollamaUrl);
   const selectedProjectPaths = useChatStore(selectProjectPaths);
   const metadataMap = useProjectMetadataStore((s) => s.metadataMap);
 
@@ -80,9 +84,9 @@ export function useAIOperations() {
       }
     }
 
-    if (aiStore.provider) {
+    if (aiProvider) {
       return {
-        provider: aiStore.provider,
+        provider: aiProvider,
         connectionId: '',
         ollamaUrl,
         config: undefined,
@@ -90,7 +94,8 @@ export function useAIOperations() {
     }
 
     return null;
-  }, [effectiveConnection, singleMetadata, aiStore.provider, aiStore.apiKeys, ollamaUrl, useCaseModel]);
+    // `apiKeys` is not read here, but a key change must re-resolve credentials.
+  }, [effectiveConnection, singleMetadata, aiProvider, apiKeys, ollamaUrl, useCaseModel]);
 
   // Delegate context building to useAIContext
   const { composedSystemMessage, localSystemMessage, acpSystemMessage, buildComposedSystemMessage, buildAcpSystemMessage } = useAIContext();
@@ -231,7 +236,15 @@ export function useAIOperations() {
       return;
     }
     cancelDirectChat();
-    cancelCopilotChat();
+    // Cancelling Copilot destroys the conversation's Copilot LSP conversation,
+    // so only do it for a conversation whose run IS on Copilot. This used to be
+    // unconditional: Stop on any provider's chat destroyed a Copilot
+    // conversation (audit 2026-11-22 §2). A run with no record (no
+    // conversation resolved yet) falls back to the effective connection.
+    const runPath = activeConv ? useSessionRunStore.getState().runs[activeConv]?.path : undefined;
+    if (runPath === 'copilot_lsp' || (runPath === undefined && isCopilotLsp)) {
+      cancelCopilotChat(activeConv);
+    }
     if (effectiveConnection?.authMethod === 'agent_managed' && !isCopilotLsp) {
       acpCancelChat();
     }

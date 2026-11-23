@@ -3,7 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import '@/test/tauri-mock';
 import { renderHook, act } from '@testing-library/react';
-import { setMockInvokeHandler, emitMockEvent } from '@/test/tauri-mock';
+import { setMockInvokeHandler, emitMockEvent, getListenerCount } from '@/test/tauri-mock';
 import { useRecording } from '@/hooks/useRecording';
 import { useRecordingStore } from '@/stores/recording-store';
 import { toast } from 'sonner';
@@ -225,55 +225,53 @@ describe('useRecording', () => {
 
   // ---- recording level events ----
 
+  // Audit 2026-11-22 §3: the backend emits `recording-level` once per audio
+  // callback (~50–100/s). The hook used to mirror it into `micLevel` /
+  // `systemLevel` state that nothing read, re-rendering every consumer —
+  // including the App root — at that rate.
   describe('recording level events', () => {
-    it('updates micLevel and systemLevel from recording-level events', async () => {
+    it('does not listen for recording-level events or re-render on them', async () => {
       setMockInvokeHandler('start_recording', () => undefined);
 
-      const { result } = renderHook(() => useRecording());
+      let renders = 0;
+      const { result } = renderHook(() => {
+        renders++;
+        return useRecording();
+      });
 
       await act(async () => {
         await result.current.startRecording('microphone');
       });
-
-      // Allow the listen promise to resolve
       await act(async () => {
         vi.advanceTimersByTime(0);
       });
 
-      act(() => {
-        emitMockEvent('recording-level', { mic: 0.75, system: 0.42 });
-      });
+      expect(getListenerCount('recording-level')).toBe(0);
 
-      expect(result.current.micLevel).toBe(0.75);
-      expect(result.current.systemLevel).toBe(0.42);
+      const before = renders;
+      act(() => {
+        for (let i = 0; i < 50; i++) {
+          emitMockEvent('recording-level', { mic: 0.75, system: 0.42 });
+        }
+      });
+      expect(renders).toBe(before);
+      expect(result.current).not.toHaveProperty('micLevel');
+      expect(result.current).not.toHaveProperty('systemLevel');
     });
 
-    it('resets levels to zero when not recording', async () => {
-      setMockInvokeHandler('start_recording', () => undefined);
-      setMockInvokeHandler('stop_recording', () => MOCK_AUDIO_INFO);
-
-      const { result } = renderHook(() => useRecording());
-
-      await act(async () => {
-        await result.current.startRecording('microphone');
+    it('does not re-render on unrelated recording-store writes', async () => {
+      let renders = 0;
+      renderHook(() => {
+        renders++;
+        return useRecording();
       });
 
-      await act(async () => {
-        vi.advanceTimersByTime(0);
-      });
-
+      const before = renders;
       act(() => {
-        emitMockEvent('recording-level', { mic: 0.5, system: 0.3 });
+        useRecordingStore.getState().setTranscriptionProgress(0.5);
+        useRecordingStore.setState({ activeDownloads: { base: { progress: 0.3 } } });
       });
-
-      expect(result.current.micLevel).toBe(0.5);
-
-      await act(async () => {
-        await result.current.stopRecording();
-      });
-
-      expect(result.current.micLevel).toBe(0);
-      expect(result.current.systemLevel).toBe(0);
+      expect(renders).toBe(before);
     });
   });
 

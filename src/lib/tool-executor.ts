@@ -9,7 +9,7 @@ import { findTextInDoc } from '@/lib/pm-text-search';
 import { setCommentDecorations } from '@/components/editor/extensions/comment-mark';
 import type { SkillContent, ScriptResult, ArgMapping, PptxTemplateInfo, WebSearchResult } from '@/lib/tauri';
 import type { ToolResult } from '@/lib/ai/types';
-import { isToolCallAllowed, isPathAllowed } from '@/lib/ai/path-filter';
+import { isToolCallAllowed, isPathAllowed, normalizeAbsolutePath } from '@/lib/ai/path-filter';
 import { hashPath } from '@/lib/comment-storage';
 
 export interface ToolCallScope {
@@ -234,6 +234,23 @@ export async function executeToolCall(
           content: SCOPE_DENIAL_MESSAGE,
           is_error: true,
         };
+      }
+      // These tools run HERE, in the unsandboxed main process, and the
+      // backend resolves a relative path against the process working
+      // directory (`/` when launched from Finder). So unlike an agent's tool
+      // call, `path` must be absolute and in scope — and the backend is
+      // handed the normalised path that was checked, not the spelling the
+      // model chose (`/tmp/../Users/x/.ssh/id_rsa`).
+      if (typeof args.path === 'string' && args.path.length > 0) {
+        const normalizedPath = normalizeAbsolutePath(args.path);
+        if (normalizedPath === null || !isPathAllowed(normalizedPath, roots, homeDir)) {
+          return {
+            tool_call_id: toolCallId,
+            content: SCOPE_DENIAL_MESSAGE,
+            is_error: true,
+          };
+        }
+        args = { ...args, path: normalizedPath };
       }
     }
 

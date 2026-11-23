@@ -136,20 +136,36 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
   const paddingLeft = `${marginLeft * PX_PER_CM}px`;
   const paddingRight = `${marginRight * PX_PER_CM}px`;
 
+  // `documentId` is the document the edit was typed into, captured by
+  // `useEditor` at keystroke time. The serialize is debounced and the editor
+  // instance is shared by every document, so writing under the render-time
+  // `activeTab` here is what let document A receive document B's text.
   const handleUpdate = useCallback(
-    (content: string) => {
-      if (activeTab) {
-        // Check if content has actually changed
-        const hasChanged = content !== activeTab.content;
-        updateTabContent(activeTab.id, content, hasChanged);
-      }
+    (content: string, documentId: string | null) => {
+      if (!documentId) return;
+      const tab = useEditorStore.getState().openDocuments.find((t) => t.id === documentId);
+      if (!tab) return;
+      // Check if content has actually changed
+      const hasChanged = content !== tab.content;
+      updateTabContent(tab.id, content, hasChanged);
     },
-    [activeTab, updateTabContent]
+    [updateTabContent]
+  );
+
+  // The document whose content the editor currently holds: the last one the
+  // switch pipeline loaded, or — before its first run — the one the editor
+  // was created with.
+  const activeTabIdRef = useRef(activeTab?.id ?? null);
+  activeTabIdRef.current = activeTab?.id ?? null;
+  const getLoadedDocumentId = useCallback(
+    () => lastLoadedTabId.current ?? activeTabIdRef.current,
+    [lastLoadedTabId]
   );
 
   const editor = useEditor({
     content: activeTab?.content || "",
     onUpdate: handleUpdate,
+    getDocumentId: getLoadedDocumentId,
     editable: true,
     documentDir: activeTab ? getDocumentDir(activeTab.filePath) : undefined,
   });

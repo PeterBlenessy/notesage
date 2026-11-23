@@ -5,6 +5,7 @@ pub mod ai;
 pub mod ai_streaming;
 pub mod tool_execution;
 pub mod segment_builder;
+pub mod utf8_chunk_decoder;
 pub mod export;
 pub mod preview;
 pub mod html_preview;

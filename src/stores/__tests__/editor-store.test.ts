@@ -63,6 +63,7 @@ vi.mock('@/lib/tauri-storage', () => {
 
 import { useEditorStore } from '../editor-store';
 import type { Tab } from '../editor-store';
+import { clearAllBinaryData, getBinaryData, setBinaryData } from '@/lib/binary-cache';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1276,5 +1277,82 @@ describe('Persist migration', () => {
     expect(recents).toEqual([
       { path: '/kept.md', name: 'kept.md', lastAccessedAt: 999 },
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Binary cache lifetime (audit 2026-11-22 §1)
+// ---------------------------------------------------------------------------
+
+describe('binary cache eviction', () => {
+  const bytes = (n: number) => new Uint8Array([n]);
+
+  beforeEach(() => {
+    clearAllBinaryData();
+  });
+
+  /** Mirrors every desktop writer: cache the bytes, then open the document. */
+  function openBinary(path: string, n: number): void {
+    setBinaryData(path, bytes(n));
+    useEditorStore.getState().openTab(path, path.split('/').pop() ?? path, '', null, 'pdf');
+  }
+
+  it('evicts a document closed with closeTab', () => {
+    openBinary('/docs/a.pdf', 1);
+    expect(getBinaryData('/docs/a.pdf')).toEqual(bytes(1));
+
+    useEditorStore.getState().closeTab(getTab('/docs/a.pdf')!.id);
+    expect(getBinaryData('/docs/a.pdf')).toBeUndefined();
+  });
+
+  it('evicts the previous document when opening another evicts it from the shell', () => {
+    openBinary('/docs/a.pdf', 1);
+    openBinary('/docs/b.pdf', 2);
+
+    expect(getTab('/docs/a.pdf')).toBeUndefined();
+    expect(getBinaryData('/docs/a.pdf')).toBeUndefined();
+    // The document now showing keeps its bytes.
+    expect(getBinaryData('/docs/b.pdf')).toEqual(bytes(2));
+  });
+
+  it('never evicts a still-open document, whatever else the store does', () => {
+    openBinary('/docs/a.pdf', 1);
+    const id = getTab('/docs/a.pdf')!.id;
+    const store = useEditorStore.getState();
+
+    store.updateTabContent(id, 'x', true);
+    store.setScrollPosition('/docs/a.pdf', 0.5);
+    store.openTab('/docs/a.pdf', 'a.pdf', '', null, 'pdf'); // re-activate
+    store.markTabDeleted('/docs/a.pdf'); // stays open, flagged deleted
+    expect(getBinaryData('/docs/a.pdf')).toEqual(bytes(1));
+
+    // Deleted documents are evicted once they actually leave the shell.
+    store.closeTab(id);
+    expect(getBinaryData('/docs/a.pdf')).toBeUndefined();
+  });
+
+  it('keeps bytes cached ahead of openTab for a document that is not open yet', () => {
+    openBinary('/docs/a.pdf', 1);
+    setBinaryData('/docs/b.pdf', bytes(2));
+    // Unrelated store churn between the cache write and openTab.
+    useEditorStore.getState().updateTabContent(getTab('/docs/a.pdf')!.id, 'x', true);
+    expect(getBinaryData('/docs/b.pdf')).toEqual(bytes(2));
+  });
+
+  it('re-keys the bytes on renameTab, renameOpenDocument and updateFilePaths', () => {
+    openBinary('/docs/a.pdf', 1);
+    const store = useEditorStore.getState();
+
+    store.renameTab('/docs/a.pdf', '/docs/b.pdf');
+    expect(getBinaryData('/docs/a.pdf')).toBeUndefined();
+    expect(getBinaryData('/docs/b.pdf')).toEqual(bytes(1));
+
+    store.renameOpenDocument('/docs', '/papers');
+    expect(getBinaryData('/docs/b.pdf')).toBeUndefined();
+    expect(getBinaryData('/papers/b.pdf')).toEqual(bytes(1));
+
+    store.updateFilePaths('/papers', '/archive');
+    expect(getBinaryData('/papers/b.pdf')).toBeUndefined();
+    expect(getBinaryData('/archive/b.pdf')).toEqual(bytes(1));
   });
 });

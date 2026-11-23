@@ -176,6 +176,30 @@ describe("recording the migration in the marker (2026-09-06)", () => {
     await expect(clearMigrationInMarker("/new", d)).resolves.toBeNull();
     expect(written).toEqual([]);
   });
+
+  it("fails, rather than reporting success, when the marker is there but could not be read", async () => {
+    // An undo that swallowed this left `migratedFrom` standing: every device
+    // kept resolving the library to a container the files had just left.
+    for (const state of ["pending", "unreadable"] as const) {
+      const { deps: d, written } = deps(null);
+      await expect(
+        clearMigrationInMarker("/new", { ...d, missingMarkerState: async () => state }),
+      ).rejects.toThrow(/marker/);
+      expect(written).toEqual([]);
+    }
+  });
+
+  it("lets a failing marker read through instead of treating it as no marker", async () => {
+    const { deps: d } = deps(null);
+    await expect(
+      clearMigrationInMarker("/new", {
+        ...d,
+        readMarker: async () => {
+          throw new Error("EIO");
+        },
+      }),
+    ).rejects.toThrow("EIO");
+  });
 });
 
 describe("reading a root for planning", () => {

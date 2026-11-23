@@ -752,7 +752,7 @@ fn assert_pptx_has_entries(bytes: &[u8], expected: &[&str]) {
     let reader = std::io::Cursor::new(bytes);
     let mut archive = zip::ZipArchive::new(reader).expect("Failed to open PPTX as ZIP");
     let names: Vec<String> = (0..archive.len())
-        .map(|i| archive.by_index(i).unwrap().name().to_string())
+        .map(|i| archive.by_index(i).unwrap().name().expect("entry name").to_string())
         .collect();
 
     for entry in expected {
@@ -801,7 +801,7 @@ fn test_pptx_long_document_creates_multiple_slides() {
     let archive = zip::ZipArchive::new(reader).expect("Failed to open PPTX");
     let slide_count = (0..archive.len())
         .filter(|&i| {
-            let name = archive.name_for_index(i).unwrap_or_default();
+            let name = archive.name_for_index(i).and_then(|n| n.ok()).unwrap_or_default();
             name.starts_with("ppt/slides/slide") && name.ends_with(".xml")
         })
         .count();
@@ -944,7 +944,7 @@ fn test_pptx_overflow_produces_continuation_slides() {
     let archive = zip::ZipArchive::new(reader).expect("Failed to open PPTX");
     let slide_count = (0..archive.len())
         .filter(|&i| {
-            let name = archive.name_for_index(i).unwrap_or_default();
+            let name = archive.name_for_index(i).and_then(|n| n.ok()).unwrap_or_default();
             name.starts_with("ppt/slides/slide") && name.ends_with(".xml")
         })
         .count();

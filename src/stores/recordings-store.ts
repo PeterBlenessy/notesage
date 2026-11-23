@@ -130,7 +130,21 @@ export const useRecordingsStore = create<RecordingsStore>((set, get) => ({
     set({ dir, loading: true, error: null });
 
     try {
-      const entries = await tauriApi.listFilesShallow(dir).catch(() => []);
+      // `listFilesShallow` omits directories, and a bundle IS a directory —
+      // it can never return one. `listDirectory` descends, but a bundle holds
+      // a handful of files, so the walk is one `read_dir` per recording.
+      let entries: Awaited<ReturnType<typeof tauriApi.listDirectory>>;
+      try {
+        entries = await tauriApi.listDirectory(dir);
+      } catch (err) {
+        // No Recordings folder is the ordinary state before the first
+        // recording. Anything else is a failed read, and must not be shown
+        // as "No recordings yet". If the check itself fails, assume the
+        // folder is there: an error is the safer thing to show.
+        const folderExists = await tauriApi.pathExists(dir).catch(() => true);
+        if (folderExists) throw err;
+        entries = [];
+      }
       const dirs = entries
         .filter((e) => e.is_directory && isRecordingBundleName(e.name))
         .map((e) => e.path);

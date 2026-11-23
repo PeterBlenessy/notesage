@@ -134,7 +134,9 @@ export function useFileWatcher() {
             const knownPaths = new Set(
               useWorkspaceStore.getState().projects.map((p) => p.path)
             );
-            if (!knownPaths.has(projectRoot)) {
+            const dismissed =
+              useWorkspaceStore.getState().dismissedLibraryProjects ?? [];
+            if (!knownPaths.has(projectRoot) && !dismissed.includes(projectRoot)) {
               // Guard: flush debounce map if it grows too large
               if (Object.keys(icloudDiscoveryDebounce.current).length >= MAX_DEBOUNCE_ENTRIES) {
                 log.warn('watcher', 'iCloud discovery debounce map overflow — triggering batch refresh');
@@ -149,8 +151,11 @@ export function useFileWatcher() {
               icloudDiscoveryDebounce.current[projectRoot] = setTimeout(async () => {
                 delete icloudDiscoveryDebounce.current[projectRoot];
                 try {
-                  // Re-check: project may have been added by another event
-                  if (useWorkspaceStore.getState().projects.some((p) => p.path === projectRoot)) return;
+                  // Re-check: project may have been added by another event,
+                  // or removed by the person during the debounce
+                  const wsNow = useWorkspaceStore.getState();
+                  if (wsNow.projects.some((p) => p.path === projectRoot)) return;
+                  if ((wsNow.dismissedLibraryProjects ?? []).includes(projectRoot)) return;
 
                   const hasMetadata = await tauriApi.pathExists(`${projectRoot}/.notesage`);
                   if (!hasMetadata) return;

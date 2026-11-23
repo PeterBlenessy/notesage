@@ -1349,7 +1349,14 @@ describe('ProjectsSection — inline create project (#42)', () => {
       pendingCreateProject: false,
     });
     // Default to an expanded notesRootPath so the commit handler can proceed.
-    useSettingsStore.setState({ notesRootPath: '/Users/me/Notesage' });
+    useSettingsStore.setState({
+      notesRootPath: '/Users/me/Notesage',
+      icloudAvailable: false,
+      icloudNotesagePath: null,
+      libraryContainerDenied: false,
+    });
+    // The name is free on disk unless a test says otherwise.
+    setMockInvokeHandler('path_exists', () => false);
     vi.mocked(toast.success).mockReset();
     vi.mocked(toast.error).mockReset();
   });
@@ -1430,6 +1437,89 @@ describe('ProjectsSection — inline create project (#42)', () => {
     expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
       expect.stringMatching(/my-project/i),
     );
+  });
+
+  it('creates in the synced library when there is one, and says so', async () => {
+    const user = userEvent.setup();
+    const ICLOUD = '/Users/me/Library/Mobile Documents/iCloud~com~notesage~app/Documents';
+    useSettingsStore.setState({
+      icloudAvailable: true,
+      icloudNotesagePath: ICLOUD,
+      libraryRootKind: 'container',
+    });
+    setMockInvokeHandler('list_directory', () => []);
+    renderWithProviders(<ProjectsSection />);
+    useQuietSidebarStore.getState().setPendingCreateProject(true);
+
+    await user.type(await screen.findByLabelText(/create/i), 'shared{Enter}');
+
+    await waitFor(() => {
+      expect(mockCreateFolder).toHaveBeenCalledWith(ICLOUD, 'shared');
+    });
+    await waitFor(() => {
+      expect(useWorkspaceStore.getState().projects[0]?.path).toBe(`${ICLOUD}/shared`);
+    });
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+      expect.stringMatching(/Notesage in iCloud.*syncs/),
+    );
+  });
+
+  it('stays local while the iCloud folder is unreadable', async () => {
+    const user = userEvent.setup();
+    useSettingsStore.setState({
+      icloudAvailable: true,
+      icloudNotesagePath: '/Users/me/Library/Mobile Documents/com~apple~CloudDocs/Notesage',
+      libraryContainerDenied: true,
+    });
+    setMockInvokeHandler('list_directory', () => []);
+    renderWithProviders(<ProjectsSection />);
+    useQuietSidebarStore.getState().setPendingCreateProject(true);
+
+    await user.type(await screen.findByLabelText(/create/i), 'held{Enter}');
+
+    await waitFor(() => {
+      expect(mockCreateFolder).toHaveBeenCalledWith('/Users/me/Notesage', 'held');
+    });
+    await waitFor(() => {
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+        expect.stringMatching(/on this Mac/),
+      );
+    });
+  });
+
+  it('refuses a name that already exists on disk instead of adopting the folder', async () => {
+    const user = userEvent.setup();
+    setMockInvokeHandler('path_exists', (args) =>
+      (args as { path: string }).path === '/Users/me/Notesage/old-stuff');
+    renderWithProviders(<ProjectsSection />);
+    useQuietSidebarStore.getState().setPendingCreateProject(true);
+
+    await user.type(await screen.findByLabelText(/create/i), 'old-stuff{Enter}');
+
+    await waitFor(() => {
+      expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+        expect.stringMatching(/already exists/),
+      );
+    });
+    expect(mockCreateFolder).not.toHaveBeenCalled();
+    expect(useWorkspaceStore.getState().projects).toHaveLength(0);
+    expect(vi.mocked(toast.success)).not.toHaveBeenCalled();
+  });
+
+  it('+ opens a menu offering New project and Add existing folder when both are wired', async () => {
+    const user = userEvent.setup();
+    const onAdd = vi.fn();
+    const onAddExisting = vi.fn();
+    renderWithProviders(<ProjectsSection onAdd={onAdd} onAddExisting={onAddExisting} />);
+
+    await user.click(screen.getByRole('button', { name: /add folder/i }));
+    await user.click(await screen.findByRole('menuitem', { name: /add existing folder/i }));
+    expect(onAddExisting).toHaveBeenCalledTimes(1);
+    expect(onAdd).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: /add folder/i }));
+    await user.click(await screen.findByRole('menuitem', { name: /new project/i }));
+    expect(onAdd).toHaveBeenCalledTimes(1);
   });
 
   it('Escape cancels — no createFolder, no new project, pending cleared', async () => {

@@ -220,3 +220,35 @@ describe("why the migration is or is not offered", () => {
     expect(migrationOfferState({ ...base, cloudDocsHasContent: false })).toBe("nothing-to-move");
   });
 });
+
+describe("a container this Mac may not read is never the live library", () => {
+  it("falls back to the CloudDocs folder rather than an unreadable container", () => {
+    // Choosing it showed an empty sidebar with no explanation: every listing
+    // inside a denied container fails, and each failure was swallowed.
+    for (const cloudDocsHasContent of [true, false]) {
+      const r = resolveSyncedLibraryRoot(
+        inputs({
+          containerRoot: CONTAINER,
+          cloudDocsRoot: CLOUDDOCS,
+          marker: marker({ migratedFrom: CLOUDDOCS }),
+          containerAccess: "denied",
+          cloudDocsHasContent,
+        }),
+      );
+      expect(r).toEqual({ path: CLOUDDOCS, kind: "clouddocs" });
+    }
+  });
+
+  it("still picks a readable container", () => {
+    const r = resolveSyncedLibraryRoot(
+      inputs({
+        containerRoot: CONTAINER,
+        cloudDocsRoot: CLOUDDOCS,
+        marker: marker({ migratedFrom: CLOUDDOCS }),
+        containerAccess: "ready",
+        cloudDocsHasContent: false,
+      }),
+    );
+    expect(r).toEqual({ path: CONTAINER, kind: "container" });
+  });
+});

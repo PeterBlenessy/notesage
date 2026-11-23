@@ -92,6 +92,14 @@ pub(crate) type PendingServerRequests = Arc<Mutex<HashMap<String, tokio::sync::o
 
 pub struct CopilotLspState {
     pub process: Mutex<Option<CopilotLspProcess>>,
+    /// Pending server→client request responses (context requests, tool calls).
+    /// The reader loop inserts a oneshot sender; a Tauri command resolves it.
+    ///
+    /// Lives outside the `process` mutex on purpose: the reply commands must
+    /// never queue behind another Copilot command, because the reply is what
+    /// lets the in-flight `conversation/turn` finish. Request ids come from a
+    /// process-global counter, so entries cannot collide across LSP restarts.
+    pub pending_server_requests: PendingServerRequests,
 }
 
 pub struct CopilotLspProcess {
@@ -103,16 +111,46 @@ pub struct CopilotLspProcess {
     /// clicks "Open GitHub", so the browser doesn't open before the code is shown.
     pub pending_auth_command: tokio::sync::Mutex<Option<(String, Value)>>,
     /// Active conversation IDs for cleanup on LSP stop/crash.
-    pub active_conversations: tokio::sync::Mutex<Vec<String>>,
-    /// Pending server→client request responses (context requests, tool calls).
-    /// The reader loop inserts a oneshot sender; a Tauri command resolves it.
-    pub pending_server_requests: PendingServerRequests,
+    /// `Arc` so `conversation/create` can record the new id after it has
+    /// released the process lock.
+    pub active_conversations: Arc<tokio::sync::Mutex<Vec<String>>>,
 }
 
 impl CopilotLspState {
     pub fn new() -> Self {
         Self {
             process: Mutex::new(None),
+            pending_server_requests: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// Clone what a long-running conversation request needs, holding the
+    /// process lock only for the clone.
+    ///
+    /// `conversation/create` and `conversation/turn` do not get their response
+    /// until the whole turn is over. Awaiting that with the process lock held
+    /// blocked every other Copilot command for the duration of the turn.
+    async fn conversation_handles(
+        &self,
+    ) -> Result<(json_rpc::JsonRpcTransport, Arc<tokio::sync::Mutex<Vec<String>>>), String> {
+        let guard = self.process.lock().await;
+        let process = guard.as_ref().ok_or("Copilot LSP not running.")?;
+        Ok((
+            process.transport.clone_handle(),
+            process.active_conversations.clone(),
+        ))
+    }
+
+    /// Hand `value` to the reader loop waiting on server request `request_id`.
+    /// Returns `false` when nothing is waiting (unknown id, or it timed out).
+    /// Deliberately does not touch the process lock.
+    async fn resolve_server_request(&self, request_id: &str, value: Value) -> bool {
+        match self.pending_server_requests.lock().await.remove(request_id) {
+            Some(tx) => {
+                let _ = tx.send(value);
+                true
+            }
+            None => false,
         }
     }
 
@@ -331,9 +369,9 @@ pub async fn copilot_lsp_start(
     }
 
     // Create the JSON-RPC transport (spawns reader loop)
-    let pending_server_requests: PendingServerRequests = Arc::new(Mutex::new(HashMap::new()));
+    let pending_server_requests = state.pending_server_requests.clone();
     let transport = copilot_protocol::spawn_copilot_transport(
-        stdin, stdout, child_pid, app.clone(), pending_server_requests.clone(),
+        stdin, stdout, child_pid, app.clone(), pending_server_requests,
     );
 
     // Read app version from package.json (via Tauri config)
@@ -422,8 +460,7 @@ pub async fn copilot_lsp_start(
         child,
         status: tokio::sync::Mutex::new(status),
         pending_auth_command: tokio::sync::Mutex::new(None),
-        active_conversations: tokio::sync::Mutex::new(Vec::new()),
-        pending_server_requests,
+        active_conversations: Arc::new(tokio::sync::Mutex::new(Vec::new())),
     });
 
     Ok(())
@@ -1117,10 +1154,9 @@ pub async fn copilot_lsp_conversation_create(
     doc_uri: Option<String>,
     doc_language_id: Option<String>,
 ) -> Result<Value, String> {
-    let guard = state.process.lock().await;
-    let process = guard
-        .as_ref()
-        .ok_or("Copilot LSP not running.")?;
+    // Do NOT hold the process lock across the request: the response only
+    // arrives once the whole turn is over (see `conversation_handles`).
+    let (transport, active_conversations) = state.conversation_handles().await?;
 
     let work_done_token = format!("copilot-chat-{}", std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1154,8 +1190,7 @@ pub async fn copilot_lsp_conversation_create(
         params["doc"] = doc;
     }
 
-    let result = process
-        .transport
+    let result = transport
         .send_request("conversation/create", Some(params))
         .await
         .map_err(|e| format!("conversation/create failed: {}", e))?;
@@ -1167,13 +1202,12 @@ pub async fn copilot_lsp_conversation_create(
         .to_string();
 
     if !conversation_id.is_empty() {
-        process.active_conversations.lock().await.push(conversation_id.clone());
+        active_conversations.lock().await.push(conversation_id.clone());
 
         // Register tools if provided
         if let Some(tool_defs) = tools {
             if !tool_defs.is_empty() {
-                let reg_result = process
-                    .transport
+                let reg_result = transport
                     .send_request(
                         "conversation/registerTools",
                         Some(serde_json::json!({ "tools": tool_defs })),
@@ -1209,10 +1243,9 @@ pub async fn copilot_lsp_conversation_turn(
     doc_uri: Option<String>,
     doc_language_id: Option<String>,
 ) -> Result<Value, String> {
-    let guard = state.process.lock().await;
-    let process = guard
-        .as_ref()
-        .ok_or("Copilot LSP not running.")?;
+    // Do NOT hold the process lock across the request: the response only
+    // arrives once the whole turn is over (see `conversation_handles`).
+    let (transport, _) = state.conversation_handles().await?;
 
     let work_done_token = format!("copilot-chat-{}", std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -1239,8 +1272,7 @@ pub async fn copilot_lsp_conversation_turn(
         params["doc"] = doc;
     }
 
-    let result = process
-        .transport
+    let result = transport
         .send_request("conversation/turn", Some(params))
         .await
         .map_err(|e| format!("conversation/turn failed: {}", e))?;
@@ -1324,14 +1356,7 @@ pub async fn copilot_lsp_context_response(
     request_id: String,
     context: Value,
 ) -> Result<(), String> {
-    let guard = state.process.lock().await;
-    let process = guard
-        .as_ref()
-        .ok_or("Copilot LSP not running.")?;
-
-    let mut pending = process.pending_server_requests.lock().await;
-    if let Some(tx) = pending.remove(&request_id) {
-        let _ = tx.send(context);
+    if state.resolve_server_request(&request_id, context).await {
         Ok(())
     } else {
         Err(format!("No pending context request with id {}", request_id))
@@ -1346,14 +1371,7 @@ pub async fn copilot_lsp_tool_result(
     request_id: String,
     result: Value,
 ) -> Result<(), String> {
-    let guard = state.process.lock().await;
-    let process = guard
-        .as_ref()
-        .ok_or("Copilot LSP not running.")?;
-
-    let mut pending = process.pending_server_requests.lock().await;
-    if let Some(tx) = pending.remove(&request_id) {
-        let _ = tx.send(result);
+    if state.resolve_server_request(&request_id, result).await {
         Ok(())
     } else {
         Err(format!("No pending tool request with id {}", request_id))
@@ -1368,19 +1386,103 @@ pub async fn copilot_lsp_tool_confirmation_response(
     request_id: String,
     accepted: bool,
 ) -> Result<(), String> {
-    let guard = state.process.lock().await;
-    let process = guard
-        .as_ref()
-        .ok_or("Copilot LSP not running.")?;
-
-    let mut pending = process.pending_server_requests.lock().await;
-    if let Some(tx) = pending.remove(&request_id) {
-        let response = serde_json::json!({
-            "result": if accepted { "accept" } else { "dismiss" }
-        });
-        let _ = tx.send(response);
+    let response = serde_json::json!({
+        "result": if accepted { "accept" } else { "dismiss" }
+    });
+    if state.resolve_server_request(&request_id, response).await {
         Ok(())
     } else {
         Err(format!("No pending confirmation request with id {}", request_id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::process::Stdio;
+    use std::time::Duration;
+
+    /// A state whose "LSP" is `cat` with an unread stdout: requests are
+    /// written but never answered, like a turn that is still running.
+    async fn state_with_silent_process() -> CopilotLspState {
+        let mut child = tokio::process::Command::new("cat")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .kill_on_drop(true)
+            .spawn()
+            .expect("spawn cat");
+        let stdin = child.stdin.take().expect("stdin");
+        let state = CopilotLspState::new();
+        *state.process.lock().await = Some(CopilotLspProcess {
+            transport: json_rpc::JsonRpcTransport::new(stdin),
+            child,
+            status: tokio::sync::Mutex::new(CopilotStatus {
+                authenticated: true,
+                message: "test".to_string(),
+                kind: CopilotStatusKind::Normal,
+            }),
+            pending_auth_command: tokio::sync::Mutex::new(None),
+            active_conversations: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+        });
+        state
+    }
+
+    #[tokio::test]
+    async fn reply_resolves_while_process_lock_is_held() {
+        let state = CopilotLspState::new();
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        state
+            .pending_server_requests
+            .lock()
+            .await
+            .insert("tool-1".to_string(), tx);
+
+        // Another command (or, before the fix, the turn itself) owns the lock.
+        let _held = state.process.lock().await;
+
+        let resolved = tokio::time::timeout(
+            Duration::from_secs(2),
+            state.resolve_server_request("tool-1", serde_json::json!({"ok": true})),
+        )
+        .await
+        .expect("reply must not wait on the process lock");
+        assert!(resolved);
+        assert_eq!(rx.await.unwrap(), serde_json::json!({"ok": true}));
+    }
+
+    #[tokio::test]
+    async fn reply_to_unknown_request_reports_false() {
+        let state = CopilotLspState::new();
+        assert!(!state.resolve_server_request("nope", Value::Null).await);
+    }
+
+    #[tokio::test]
+    async fn conversation_request_in_flight_leaves_process_lock_free() {
+        let state = state_with_silent_process().await;
+        let (transport, _convs) = state.conversation_handles().await.unwrap();
+
+        // The turn: written to the server, response never comes.
+        let turn = tokio::spawn(async move {
+            transport
+                .send_request("conversation/turn", Some(serde_json::json!({})))
+                .await
+        });
+        tokio::time::sleep(Duration::from_millis(50)).await;
+        assert!(!turn.is_finished(), "the turn should still be waiting");
+
+        // Every other Copilot command can still take the lock.
+        let guard = tokio::time::timeout(Duration::from_secs(2), state.process.lock())
+            .await
+            .expect("process lock must be free while a turn is in flight");
+        assert!(guard.is_some());
+        drop(guard);
+        turn.abort();
+    }
+
+    #[tokio::test]
+    async fn conversation_handles_errors_when_not_running() {
+        let state = CopilotLspState::new();
+        assert!(state.conversation_handles().await.is_err());
     }
 }

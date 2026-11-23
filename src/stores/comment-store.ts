@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
 import { log } from '@/lib/logger';
 import { parseSidecar, serializeSidecar } from '@/lib/comment-storage';
+import { t } from '@/lib/i18n';
 
 export interface CommentReply {
   id: string;
@@ -69,6 +70,14 @@ interface CommentStore {
   delegationModeByComment: Record<string, DelegationMode>;
   /** Increments when partialReplies map changes — subscribe to trigger re-renders */
   partialReplyVersion: number;
+  /**
+   * Documents whose sidecar exists (or may exist) but could not be loaded:
+   * a read error, a parse error, or an evicted iCloud placeholder. The
+   * in-memory list for such a document is NOT the truth, so `saveComments`
+   * refuses to write it back over the file. Cleared by a successful
+   * `loadComments`.
+   */
+  loadFailedByDocument: Record<string, true>;
 
   loadComments: (documentId: string, projectRoot: string) => Promise<void>;
   addComment: (comment: Omit<Comment, 'id' | 'createdAt' | 'updatedAt'>) => Comment;
@@ -101,15 +110,39 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
   activitiesByComment: {},
   delegationModeByComment: {},
   partialReplyVersion: 0,
+  loadFailedByDocument: {},
 
   loadComments: async (documentId: string, projectRoot: string) => {
-    const filePath = `${projectRoot}/.notesage/comments/${documentId}.json`;
+    const dirPath = `${projectRoot}/.notesage/comments`;
+    const filePath = `${dirPath}/${documentId}.json`;
+    // The list shown is empty either way; what differs is whether it may be
+    // saved. `failed` means "there are (or may be) comments on disk we could
+    // not read", and blocks every save until a later load succeeds.
+    const setEmpty = (failed: boolean) =>
+      set((state) => {
+        const { [documentId]: _wasFailed, ...otherFailed } = state.loadFailedByDocument;
+        return {
+          commentsByDocument: { ...state.commentsByDocument, [documentId]: [] },
+          loadFailedByDocument: failed ? { ...otherFailed, [documentId]: true } : otherFailed,
+        };
+      });
     try {
       const exists = await tauriApi.pathExists(filePath);
       if (!exists) {
-        set((state) => ({
-          commentsByDocument: { ...state.commentsByDocument, [documentId]: [] },
-        }));
+        // `pathExists` is also false for a sidecar iCloud has evicted to a
+        // `.name.icloud` placeholder. That is not "no comments yet".
+        const evicted = await tauriApi.pathExists(`${dirPath}/.${documentId}.json.icloud`);
+        if (!evicted) {
+          setEmpty(false);
+          return;
+        }
+        log.warn('comments', `Comment file is not downloaded from iCloud: ${filePath}`);
+        setEmpty(true);
+        toast.error(t('toast.commentsNotDownloaded'), { id: `comments-load-failed:${documentId}` });
+        // Best effort: ask iCloud for it so reopening the document finds it.
+        void tauriApi.icloudEnsureDownloaded(filePath).catch((downloadError: unknown) => {
+          log.warn('comments', `Could not request download of ${filePath}`, downloadError);
+        });
         return;
       }
       const raw = await tauriApi.readFile(filePath);
@@ -121,9 +154,7 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
         console.error('Failed to parse comment file:', filePath, parseError);
         log.error('comments', `Failed to parse comment file: ${filePath}`, parseError);
         toast.error('Failed to load comments — file may be corrupted');
-        set((state) => ({
-          commentsByDocument: { ...state.commentsByDocument, [documentId]: [] },
-        }));
+        setEmpty(true);
         return;
       }
       const comments: Comment[] = rawComments.map((c: Comment) => {
@@ -133,15 +164,18 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
         }
         return c;
       });
-      set((state) => ({
-        commentsByDocument: { ...state.commentsByDocument, [documentId]: comments },
-      }));
+      set((state) => {
+        const { [documentId]: _wasFailed, ...otherFailed } = state.loadFailedByDocument;
+        return {
+          commentsByDocument: { ...state.commentsByDocument, [documentId]: comments },
+          loadFailedByDocument: otherFailed,
+        };
+      });
     } catch (error) {
       console.error('Failed to load comment file:', filePath, error);
       log.error('comments', `Failed to load comments from ${filePath}`, error);
-      set((state) => ({
-        commentsByDocument: { ...state.commentsByDocument, [documentId]: [] },
-      }));
+      setEmpty(true);
+      toast.error(t('toast.commentsLoadFailed'), { id: `comments-load-failed:${documentId}` });
     }
   },
 
@@ -376,6 +410,13 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
   },
 
   saveComments: async (documentId: string, projectRoot: string, originalFilePath?: string) => {
+    if (get().loadFailedByDocument[documentId]) {
+      // The in-memory list was never the file's contents. Writing it would
+      // replace every existing comment with whatever was added since.
+      log.warn('comments', `Refusing to save comments for ${documentId}: its sidecar failed to load`);
+      toast.error(t('toast.commentsSaveBlocked'), { id: `comments-save-blocked:${documentId}` });
+      return;
+    }
     const comments = get().commentsByDocument[documentId] ?? [];
     const dirPath = `${projectRoot}/.notesage/comments`;
     const filePath = `${dirPath}/${documentId}.json`;

@@ -6,14 +6,23 @@
  *
  * Threat model: prevent accidental leakage from a well-behaved agent.
  * Not defending against prompt injection or deliberate circumvention.
+ *
+ * That said, for the direct-API and Copilot tools (`tool-executor.ts`) this
+ * check is the ONLY boundary — those run in the unsandboxed main process — so
+ * it must at least not be defeated by spelling: every path is resolved
+ * lexically (`.`/`..` collapsed) before it is compared, and anything that is
+ * not an absolute path is refused by `isPathAllowed`. It is still a string
+ * check: it does not follow symlinks, and nothing on the Rust side enforces
+ * the same roots.
  */
 
 // Fields that commonly contain file paths in structured ACP tool inputs
 const PATH_FIELDS = ['file_path', 'path', 'directory', 'cwd', 'paths', 'destination', 'source'];
 
-// Regex for absolute paths in shell commands — matches /foo/bar style paths
+// Regex for absolute paths in shell commands — matches /foo/bar style paths,
+// and ~/foo/bar, which the shell turns into one.
 // Handles both quoted and unquoted paths
-const ABSOLUTE_PATH_RE = /(?:^|[\s='"(])(\/([\w.@~-]+\/)+[\w.@~-]*)/g;
+const ABSOLUTE_PATH_RE = /(?:^|[\s='"(])(~?\/([\w.@~-]+\/)+[\w.@~-]*)/g;
 
 // System paths that agents always need access to
 const SYSTEM_PREFIXES = [
@@ -40,7 +49,11 @@ const SAFE_HOME_DIRS = [
   '.copilot',
   '.gemini',
   '.notesage',
-  '.config',
+  // NOT all of `.config`: it holds other tools' credentials
+  // (`.config/gh/hosts.yml`, `.config/github-copilot`, `.config/gcloud`).
+  // Only the one agent that keeps its own state there, mirroring the
+  // per-agent grant in `src-tauri/src/commands/sandbox.rs`.
+  '.config/goose',
   '.npm',
   '.nvm',
   '.volta',
@@ -54,7 +67,56 @@ const SAFE_HOME_DIRS = [
 ];
 
 /**
+ * Resolve an absolute path lexically: collapse `.`, `..` and repeated
+ * slashes, drop a trailing slash. Returns `null` for anything that is not an
+ * absolute path (relative, `~`-prefixed, empty, containing NUL) and for a
+ * path whose `..` climbs above `/`.
+ *
+ * Every comparison in this module goes through here, so that
+ * `/tmp/../Users/x/.ssh/id_rsa` is judged as the `/Users/x/.ssh/id_rsa` the
+ * filesystem will open, not as something under `/tmp`.
+ */
+export function normalizeAbsolutePath(path: string): string | null {
+  if (typeof path !== 'string' || !path.startsWith('/') || path.includes('\0')) return null;
+  const out: string[] = [];
+  for (const segment of path.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') {
+      if (out.length === 0) return null;
+      out.pop();
+      continue;
+    }
+    out.push(segment);
+  }
+  return '/' + out.join('/');
+}
+
+/** `path` is `dir` or lies beneath it. Both already normalised. */
+function isInside(path: string, dir: string): boolean {
+  if (dir === '/') return true;
+  return path === dir || path.startsWith(dir + '/');
+}
+
+/** A relative path whose `..` segments climb out of wherever it starts. */
+function relativePathEscapes(path: string): boolean {
+  let depth = 0;
+  for (const segment of path.split('/')) {
+    if (segment === '' || segment === '.') continue;
+    if (segment === '..') {
+      depth -= 1;
+      if (depth < 0) return true;
+    } else {
+      depth += 1;
+    }
+  }
+  return false;
+}
+
+/**
  * Parse structured tool input (JSON) and extract file path values.
+ *
+ * Returns every non-empty string in a path field, relative ones included:
+ * skipping them here meant a relative path was never checked at all.
  */
 export function extractPathsFromStructuredInput(rawInput: string): string[] {
   if (!rawInput) return [];
@@ -74,11 +136,11 @@ export function extractPathsFromStructuredInput(rawInput: string): string[] {
 
   for (const field of PATH_FIELDS) {
     const val = obj[field];
-    if (typeof val === 'string' && val.startsWith('/')) {
+    if (typeof val === 'string' && val.length > 0) {
       paths.push(val);
     } else if (Array.isArray(val)) {
       for (const item of val) {
-        if (typeof item === 'string' && item.startsWith('/')) {
+        if (typeof item === 'string' && item.length > 0) {
           paths.push(item);
         }
       }
@@ -92,7 +154,8 @@ export function extractPathsFromStructuredInput(rawInput: string): string[] {
  * Scan a shell command string for absolute paths.
  *
  * This is best-effort — catches direct path references like `ls "/other-project"`
- * but misses dynamic construction (`$(echo /path)`) and relative traversal (`cd ..`).
+ * and `cat ~/.ssh/id_rsa`, but misses dynamic construction (`$(echo /path)`)
+ * and relative traversal (`cd ..`).
  * Acceptable for the "well-behaved agent" threat model.
  */
 export function extractAbsolutePathsFromCommand(command: string): string[] {
@@ -121,35 +184,67 @@ export function extractAbsolutePathsFromCommand(command: string): string[] {
  * Allowed iff the path lies inside ANY configured root, OR matches a
  * system prefix, OR matches a safe ~/ subdir. Empty `projectRoots`
  * means no project scope — only system + safe-home paths are allowed.
+ *
+ * `filePath` must be absolute. A relative or `~` path is refused outright:
+ * the backend resolves a relative path against the process working
+ * directory (`/` for a Finder-launched app), so it has no project to be
+ * inside. The path is normalised first, and compared at a path boundary.
  */
 export function isPathAllowed(
   filePath: string,
   projectRoots: string | string[],
   homeDir: string,
 ): boolean {
-  const normalized = filePath.endsWith('/') ? filePath.slice(0, -1) : filePath;
+  const normalized = normalizeAbsolutePath(filePath);
+  if (normalized === null) return false;
   const roots = typeof projectRoots === 'string' ? [projectRoots] : projectRoots;
 
   for (const root of roots) {
-    const normalizedRoot = root.endsWith('/') ? root.slice(0, -1) : root;
-    if (normalized === normalizedRoot || normalized.startsWith(normalizedRoot + '/')) {
+    const normalizedRoot = normalizeAbsolutePath(root);
+    if (normalizedRoot !== null && isInside(normalized, normalizedRoot)) {
       return true;
     }
   }
 
-  if (SYSTEM_PREFIXES.some((prefix) => normalized === prefix || normalized.startsWith(prefix + '/'))) {
+  if (SYSTEM_PREFIXES.some((prefix) => isInside(normalized, prefix))) {
     return true;
   }
 
-  const normalizedHome = homeDir.endsWith('/') ? homeDir.slice(0, -1) : homeDir;
-  if (SAFE_HOME_DIRS.some((dir) => {
-    const full = normalizedHome + '/' + dir;
-    return normalized === full || normalized.startsWith(full + '/');
-  })) {
-    return true;
+  const normalizedHome = normalizeAbsolutePath(homeDir);
+  // A home of `/` (or none) would turn the safe dirs into `/.claude` etc.
+  if (normalizedHome !== null && normalizedHome !== '/') {
+    if (SAFE_HOME_DIRS.some((dir) => isInside(normalized, normalizedHome + '/' + dir))) {
+      return true;
+    }
   }
 
   return false;
+}
+
+/**
+ * Judge one path as it appeared in an AGENT's tool call, where — unlike in
+ * `isPathAllowed` — a path need not be absolute: the agent has a shell and a
+ * working directory of its own.
+ *
+ *  - absolute: `isPathAllowed`.
+ *  - `~` / `~/x`: expanded against `homeDir`, then `isPathAllowed`.
+ *    `~user/x` is refused.
+ *  - relative: resolves inside the agent's working directory, which is a
+ *    project root, unless its `..` segments climb out — then it is refused.
+ */
+function isToolPathAllowed(
+  path: string,
+  projectRoots: string | string[],
+  homeDir: string,
+): boolean {
+  if (path.startsWith('/')) return isPathAllowed(path, projectRoots, homeDir);
+  if (path === '~' || path.startsWith('~/')) {
+    const home = normalizeAbsolutePath(homeDir);
+    if (home === null) return false;
+    return isPathAllowed(home + path.slice(1), projectRoots, homeDir);
+  }
+  if (path.startsWith('~')) return false;
+  return !relativePathEscapes(path);
 }
 
 // Tool kinds that only read (no extraction needed for terminal commands)
@@ -221,7 +316,7 @@ export function isToolCallAllowed(
 
   // Check each extracted path
   for (const p of paths) {
-    if (!isPathAllowed(p, projectRoots, homeDir)) {
+    if (!isToolPathAllowed(p, projectRoots, homeDir)) {
       return { allowed: false, deniedPath: p };
     }
   }

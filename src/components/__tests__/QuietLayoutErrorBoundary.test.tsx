@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   renderWithProviders,
   screen,
+  fireEvent,
   registerDefaultHandlers,
 } from '@/test/component-harness';
 import { QuietLayout, type QuietLayoutProps } from '@/components/QuietLayout';
@@ -51,10 +52,13 @@ vi.mock('@/components/editor/Editor', () => ({
   Editor: () => <div data-testid="editor-stub" />,
 }));
 
-// The unit under test: a sidebar whose render throws.
+// The unit under test: a sidebar whose render throws — until `healed` is set,
+// which stands in for whatever transient state made it throw going away.
+const sidebarState = vi.hoisted(() => ({ healed: false }));
 vi.mock('@/components/sidebar/quiet/QuietSidebar', () => ({
   QuietSidebar: () => {
-    throw new Error('sidebar exploded');
+    if (!sidebarState.healed) throw new Error('sidebar exploded');
+    return <div data-testid="sidebar-stub" />;
   },
 }));
 
@@ -117,6 +121,7 @@ describe('QuietLayout — sidebar ErrorBoundary (#7)', () => {
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
+    sidebarState.healed = false;
     registerDefaultHandlers();
     // React + the boundary both log the caught error — keep test output clean.
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -153,5 +158,24 @@ describe('QuietLayout — sidebar ErrorBoundary (#7)', () => {
         String(call[0]).includes('[ErrorBoundary:Sidebar]'),
       ),
     ).toBe(true);
+  });
+
+  it('the fallback shows the error and "Reload sidebar" brings the sidebar back', () => {
+    renderWithProviders(<QuietLayout {...defaultProps()} />);
+
+    // Without the error text the user cannot tell what broke or report it.
+    expect(screen.getByText('sidebar exploded')).toBeTruthy();
+    const reload = screen.getByRole('button', { name: 'Reload sidebar' });
+
+    // Still broken: reloading lands back on the fallback, not a white screen.
+    fireEvent.click(reload);
+    expect(screen.getByTestId('sidebar-error-fallback')).toBeTruthy();
+    expect(screen.queryByTestId('sidebar-stub')).toBeNull();
+
+    // Recoverable: once the cause is gone, the same button restores the sidebar.
+    sidebarState.healed = true;
+    fireEvent.click(screen.getByRole('button', { name: 'Reload sidebar' }));
+    expect(screen.queryByTestId('sidebar-error-fallback')).toBeNull();
+    expect(screen.getByTestId('sidebar-stub')).toBeTruthy();
   });
 });

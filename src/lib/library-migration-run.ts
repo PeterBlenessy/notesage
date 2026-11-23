@@ -1,5 +1,6 @@
 import { tauriApi } from "@/lib/tauri";
 import { log } from "@/lib/logger";
+import { classifyMissingMarker, type MarkerAbsence } from "@/lib/library-marker-state";
 import {
   mergeReadingProgress,
   parseReadingProgress,
@@ -203,6 +204,11 @@ export interface MarkerWriteDeps {
   createDirectory: (path: string) => Promise<void>;
   writeFile: (path: string, content: string) => Promise<void>;
   deviceName: () => Promise<string>;
+  /**
+   * Why a marker read came back empty. Optional so pure tests need not model
+   * a disk; absent means "believe the read".
+   */
+  missingMarkerState?: (root: string) => Promise<MarkerAbsence>;
 }
 
 /**
@@ -263,6 +269,11 @@ export function markerWriteDeps(): MarkerWriteDeps {
     createDirectory: (path) => tauriApi.migrationCreateDirectory(path),
     writeFile: (path, content) => tauriApi.migrationWriteFile(path, content),
     deviceName: () => tauriApi.getDeviceName(),
+    missingMarkerState: (root) =>
+      classifyMissingMarker(root, {
+        pathExists: (p) => tauriApi.pathExists(p),
+        readFile: (p) => tauriApi.readFile(p),
+      }),
   };
 }
 
@@ -275,16 +286,30 @@ export function markerWriteDeps(): MarkerWriteDeps {
  * marker left behind after an undo is a library that reads as empty on the
  * next launch.
  *
- * A container with no marker, or an unreadable one, is left alone: there is
- * nothing to clear, and writing a fresh marker into a root being emptied would
- * be inventing a claim about it.
+ * A container with no marker is left alone: there is nothing to clear, and
+ * writing a fresh marker into a root being emptied would be inventing a claim
+ * about it. An UNREADABLE or not-yet-downloaded marker is a failure, reported
+ * to the caller, because it may well still say `migratedFrom`.
  */
 export async function clearMigrationInMarker(
   newRoot: string,
   deps: MarkerWriteDeps,
 ): Promise<LibraryMarker | null> {
-  const existing = await deps.readMarker(newRoot).catch(() => null);
-  if (!existing) return null;
+  // A read that FAILS, or comes back empty while the file is merely not
+  // downloaded or not readable, must not pass for "nothing to clear": the
+  // undo would report success with `migratedFrom` still in place.
+  const existing = await deps.readMarker(newRoot);
+  if (!existing) {
+    const why = (await deps.missingMarkerState?.(newRoot)) ?? "absent";
+    if (why !== "absent") {
+      throw new Error(
+        why === "pending"
+          ? "The library marker has not finished downloading from iCloud"
+          : "The library marker could not be read",
+      );
+    }
+    return null;
+  }
   const cleared = clearMigrated(existing);
   await deps.writeFile(`${newRoot}/${LIBRARY_MARKER_REL_PATH}`, serializeLibraryMarker(cleared));
   return cleared;

@@ -260,7 +260,10 @@ jobs:
     # platform, so the webkit project runs identically here. The macOS runner
     # never provided Apple's WKWebView either — `playwright.config.ts` says so
     # itself, and points at e2e-real/ as the truth for the embedded webview.
-    runs-on: ubuntu-latest
+    # Pinned: `ubuntu-latest` moved to 26.04, which Playwright 1.60 cannot
+    # install browsers on ("does not support chromium on ubuntu26.04-x64").
+    # Unpin when @playwright/test is bumped to a release that supports it.
+    runs-on: ubuntu-24.04
     needs: check-changes
     if: needs.check-changes.outputs.code == 'true' || github.event_name != 'pull_request'
 
@@ -668,9 +671,9 @@ jobs:
     # Blocking as of 2026-07-05: the backend dependency tree was confirmed clean
     # (0 vulnerabilities — docs/audits/2026-07-05-dependencies.md), so this job
     # now fails on any RustSec *vulnerability*. `cargo audit` does NOT fail on
-    # unmaintained/unsound *warnings* (currently 22, all deep-transitive gtk-rs
-    # / typst), so flipping to blocking won't cause false reds — to also gate on
-    # warnings later, add `[advisories] ignore = [...]` in src-tauri/audit.toml.
+    # unmaintained/unsound *warnings* (deep-transitive gtk-rs / typst and the
+    # like), so flipping to blocking won't cause false reds. Documented
+    # exceptions live in src-tauri/.cargo/audit.toml.
     steps:
       - uses: actions/checkout@v6
 

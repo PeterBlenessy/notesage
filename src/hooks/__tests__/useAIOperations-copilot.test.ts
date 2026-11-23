@@ -17,6 +17,7 @@ import { useConnectionsStore } from '@/stores/connections-store';
 import { useAIStore } from '@/stores/ai-store';
 import { useChatStore } from '@/stores/chat-store';
 import { useProjectMetadataStore } from '@/stores/project-metadata-store';
+import { useSessionRunStore } from '@/stores/session-run-store';
 import type { Connection } from '@/lib/ai/connections';
 
 // ---------------------------------------------------------------------------
@@ -135,6 +136,7 @@ function resetStores() {
   useAIStore.setState({ provider: null, apiKeys: {}, ollamaUrl: 'http://localhost:11434' });
   useChatStore.setState({ conversations: [], activeConversationId: null });
   useProjectMetadataStore.setState({ metadataMap: {} });
+  useSessionRunStore.setState({ runs: {} });
 }
 
 function setupRouting(conn: Connection) {
@@ -312,11 +314,12 @@ describe('useAIOperations — Copilot LSP routing', () => {
       });
 
       expect(mockCancelDirectChat).toHaveBeenCalled();
-      expect(mockCancelCopilotChat).toHaveBeenCalled();
+      // Stop on an ACP chat must not destroy a Copilot conversation.
+      expect(mockCancelCopilotChat).not.toHaveBeenCalled();
       expect(mockAcpCancelChat).toHaveBeenCalled();
     });
 
-    it('cancels only direct and copilot for api_key connections', () => {
+    it('cancels only direct for api_key connections', () => {
       const conn = makeConnection();
       setupRouting(conn);
 
@@ -327,8 +330,40 @@ describe('useAIOperations — Copilot LSP routing', () => {
       });
 
       expect(mockCancelDirectChat).toHaveBeenCalled();
-      expect(mockCancelCopilotChat).toHaveBeenCalled();
+      // Stop on a direct-API chat must not destroy a Copilot conversation.
+      expect(mockCancelCopilotChat).not.toHaveBeenCalled();
       expect(mockAcpCancelChat).not.toHaveBeenCalled();
+    });
+
+    // Audit 2026-11-22 §2: what decides is the path the conversation's run is
+    // ON, not the connection currently selected in the command bar.
+    it('cancels Copilot for a conversation whose run is on Copilot, naming that conversation', () => {
+      // The user has since switched the command bar to a direct connection.
+      setupRouting(makeConnection());
+      useChatStore.setState({ activeConversationId: 'conv-on-copilot' });
+      useSessionRunStore.getState().setRun('conv-on-copilot', { status: 'running', path: 'copilot_lsp' });
+
+      const { result } = renderHook(() => useAIOperations());
+      act(() => {
+        result.current.cancelChat();
+      });
+
+      expect(mockCancelCopilotChat).toHaveBeenCalledTimes(1);
+      expect(mockCancelCopilotChat).toHaveBeenCalledWith('conv-on-copilot');
+    });
+
+    it('does not cancel Copilot for a direct-API run even when Copilot is the selected connection', () => {
+      setupRouting(makeCopilotLspConnection());
+      useChatStore.setState({ activeConversationId: 'conv-on-direct' });
+      useSessionRunStore.getState().setRun('conv-on-direct', { status: 'running', path: 'direct' });
+
+      const { result } = renderHook(() => useAIOperations());
+      act(() => {
+        result.current.cancelChat();
+      });
+
+      expect(mockCancelDirectChat).toHaveBeenCalled();
+      expect(mockCancelCopilotChat).not.toHaveBeenCalled();
     });
   });
 

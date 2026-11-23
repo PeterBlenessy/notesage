@@ -10,7 +10,7 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | Open folder | `⌘O` | Open native folder-picker dialog (loads selected folder as Explorer / project) |
 | Close active document | `⌘W` | Close the active document (warns if unsaved). Internally still called "tab" — see Implementation Notes |
 | New note | `⌘N` | Opens an inline-create row in the active project (no dialog) |
-| New project | `⌘⇧N` | Opens an inline-create row in the Projects section (no dialog) |
+| New project | `⌘⇧N` | Opens an inline-create row in the Folders section (no dialog). Also in the Folders `+` menu, beside Add existing folder… (`⌘O`) |
 | Export | `⌘⇧E` | Open Export dialog (multi-format: PDF / DOCX / PPTX / HTML). Works in both shells since sidebar #20 deleted TreeOverlay (which used to preempt the chord under Quiet Composer). |
 
 ## Editor Formatting
@@ -20,7 +20,7 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | Bold | `⌘B` | Toggle bold on selection |
 | Italic | `⌘I` | Toggle italic on selection |
 | Underline | `⌘U` | Toggle underline on selection |
-| Strikethrough | `⌘⇧X` | Toggle strikethrough on selection |
+| Strikethrough | `⌘⇧S` | Toggle strikethrough on selection |
 | Code | `⌘E` | Toggle inline code on selection |
 | Indent list item | `Tab` | Nest list item deeper (also available via toolbar button) |
 | Outdent list item | `⇧Tab` | Lift list item one level (also available via toolbar button) |
