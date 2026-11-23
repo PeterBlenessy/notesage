@@ -671,9 +671,9 @@ jobs:
     # Blocking as of 2026-07-05: the backend dependency tree was confirmed clean
     # (0 vulnerabilities — docs/audits/2026-07-05-dependencies.md), so this job
     # now fails on any RustSec *vulnerability*. `cargo audit` does NOT fail on
-    # unmaintained/unsound *warnings* (currently 22, all deep-transitive gtk-rs
-    # / typst), so flipping to blocking won't cause false reds — to also gate on
-    # warnings later, add `[advisories] ignore = [...]` in src-tauri/audit.toml.
+    # unmaintained/unsound *warnings* (deep-transitive gtk-rs / typst and the
+    # like), so flipping to blocking won't cause false reds. Documented
+    # exceptions live in src-tauri/.cargo/audit.toml.
     steps:
       - uses: actions/checkout@v6
 

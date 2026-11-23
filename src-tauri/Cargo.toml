@@ -71,7 +71,7 @@ comrak = { version = "0.52.0", default-features = false, features = ["syntect"] 
 regex = "1"
 
 # SQLite document index (Phase 10)
-rusqlite = { version = "0.39", features = ["bundled"] }
+rusqlite = { version = "0.43", features = ["bundled"] }
 sha2 = "0.10"
 
 # Skills & Agents Platform (Phase 7)
@@ -124,7 +124,7 @@ time = { version = "0.3", features = ["formatting"] }
 sysinfo = "0.35"
 
 # Local AI binary download (zip extraction)
-zip = { version = "2", default-features = false, features = ["deflate"] }
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 # Network sandboxing proxy (Phase 2)
 uuid = { version = "1", features = ["v4"] }

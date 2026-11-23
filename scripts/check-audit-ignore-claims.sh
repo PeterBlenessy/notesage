@@ -68,4 +68,38 @@ for claim in "${CLAIMS[@]}"; do
   failed=1
 done
 
+# ---------------------------------------------------------------------------
+# "Never called" claims.
+#
+# The zip / zstd-safe advisories are ignored because the old `zip` copies
+# under ppt-rs and docx-rs are only ever used to WRITE archives: nothing reads
+# or extracts an untrusted archive through them. That is true only while our
+# own code never reaches for those libraries' readers or for `extract`, so
+# each pattern below must stay absent from src-tauri/src.
+# ---------------------------------------------------------------------------
+# pattern|what it would mean
+NEVER_CALLED=(
+  'read_docx[[:space:]]*\(|docx-rs reader (parses a .docx through zip 8.6.0)'
+  'ppt_rs::opc|ppt-rs package reader (opens a .pptx through zip 0.6.6)'
+  'Package::open[[:space:]]*\(|ppt-rs package reader (opens a .pptx through zip 0.6.6)'
+  '\.extract[[:space:]]*\(|archive extraction (the zip advisories are about `extract`)'
+  'ZipStreamReader|zip stream extraction'
+)
+
+for entry in "${NEVER_CALLED[@]}"; do
+  pattern="${entry%%|*}"
+  meaning="${entry##*|}"
+  hits="$(grep -rnE --include='*.rs' "$pattern" src-tauri/src 2>/dev/null || true)"
+  if [ -n "$hits" ]; then
+    echo "FAIL never-called claim broken: ${meaning}"
+    echo "     src-tauri/.cargo/audit.toml ignores the zip / zstd-safe advisories"
+    echo "     on the grounds that this is never called. Either use the patched"
+    echo "     direct \`zip\` dependency for it, or remove those ignores."
+    printf '%s\n' "$hits" | head -10 | sed 's/^/       /'
+    failed=1
+  else
+    echo "OK   never called: ${meaning}"
+  fi
+done
+
 exit "$failed"

@@ -32,4 +32,44 @@ ignore = [
     # used only to load BUNDLED syntax-highlighting definitions — trusted
     # input packaged at build time. Waiting on syntect → bincode 2. Issue #602.
     "RUSTSEC-2025-0141",
+
+    # ---- zip: reading / extracting untrusted archives (fixes in >=9.0.5) ----
+    #
+    # Our OWN zip dependency is on 9.x (bumped 2026-11-23), which is patched;
+    # it is the only copy that ever opens an archive we did not write (the
+    # agent-binary download in agent_manager.rs, which reads single entries
+    # via `enclosed_name()` + a capped read and never calls `extract`).
+    #
+    # cargo-audit ignores by advisory id, not by crate version, so these
+    # entries exist only for three OLD copies we cannot move:
+    #
+    #   zip 0.6.6  <- ppt-rs   (0.2.38, its latest, still requires ^0.6)
+    #   zip 8.6.0  <- docx-rs  (0.4.22 is its latest)
+    #   zip 4.6.1  <- tauri-plugin-updater, a `cfg(target_os = "windows")`
+    #                 dependency: not compiled into the macOS or iOS app.
+    #                 (updater >=2.13 needs tauri 2.12; tracked with the
+    #                 coordinated Tauri bump, issue #1122.)
+    #
+    # ppt-rs and docx-rs are used ONLY to WRITE .pptx / .docx exports
+    # (export/markdown_to_pptx.rs, export/markdown_to_docx.rs). Every advisory
+    # below needs an attacker-supplied archive to be READ or EXTRACTED through
+    # the old copy, which never happens: we never call docx-rs's `read_docx`,
+    # ppt-rs's `opc::Package::open`, or any `extract`.
+    # scripts/check-audit-ignore-claims.sh fails CI if such a call appears.
+    # Issue #1125.
+    "RUSTSEC-2026-0367", # extract preserves SUID/SGID bits
+    "RUSTSEC-2026-0368", # extract creates symlinks pointing outside the destination
+    "RUSTSEC-2026-0369", # extract applies permissions through symlinks
+    "RUSTSEC-2026-0429", # extract aborts on a symlink entry with a huge declared size
+    "RUSTSEC-2026-0545", # AES entries returned without checking the auth code (read)
+    "RUSTSEC-2026-0546", # extract writes outside the destination via symlink targets
+    "RUSTSEC-2026-0547", # legacy decoders preallocate the declared size (read)
+    "RUSTSEC-2026-0548", # ZipStreamReader extracts under mismatched local-header names
+
+    # zstd-safe 5.0.2 (fix ^7.4.0 / >=8.2.0): uninitialized memory exposed when
+    # streaming DECOMPRESSION of a legacy frame fails. Present only as the
+    # default `zstd` feature of zip 0.6.6 under ppt-rs, which writes deflate
+    # archives and never decompresses anything. Same blocker and same guard as
+    # the zip entries above. Issue #1125.
+    "RUSTSEC-2026-0403",
 ]
