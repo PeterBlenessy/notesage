@@ -36,6 +36,7 @@ import { useMcpOperations, type McpValidationResult, type McpValidateInput } fro
 import { cn } from '@/lib/utils';
 import type { EnvRow, CatalogPrefill } from './types';
 import { t } from '@/lib/i18n';
+import { McpConfigUnreadableError, readMcpServersForUpdate } from './mcp-config-file';
 
 /** Convert a stored env map into editable rows (secrets start masked + stored). */
 function envToRows(env: Record<string, McpEnvValue>): EnvRow[] {
@@ -304,15 +305,10 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
       const home = await invoke<string>('get_home_dir');
       const configPath = `${home}/.notesage/mcp.json`;
 
-      // Read existing config, merge, save
-      let existingConfigs: Record<string, Record<string, unknown>> = {};
-      try {
-        const content = await invoke<string>('read_file', { path: configPath });
-        const parsed = JSON.parse(content);
-        existingConfigs = parsed.mcpServers ?? {};
-      } catch {
-        // File doesn't exist yet — start fresh
-      }
+      // Read existing config, merge, save. A missing file starts fresh; one
+      // that exists but cannot be read throws, so the save below (which
+      // rewrites the whole file) never runs on a guess.
+      const existingConfigs = await readMcpServersForUpdate(configPath);
 
       existingConfigs[serverName] = configEntry;
       await invoke('mcp_save_config', { path: configPath, configs: existingConfigs });
@@ -321,7 +317,11 @@ export function AddEditServerDialog({ open, onOpenChange, editServer, prefill }:
       requestRescan();
       onOpenChange(false);
     } catch (err) {
-      toast.error(`Failed to save: ${err}`);
+      if (err instanceof McpConfigUnreadableError) {
+        toast.error(t("mcp.configUnreadable"));
+      } else {
+        toast.error(`Failed to save: ${err}`);
+      }
     } finally {
       setSaving(false);
     }

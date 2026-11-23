@@ -112,6 +112,8 @@ function ToolbarButton({
           size="icon-xs"
           onClick={onClick}
           disabled={disabled}
+          aria-label={title}
+          aria-pressed={active}
           className={cn(
             "disabled:opacity-50 active:scale-90",
             active
@@ -261,6 +263,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
                         size="icon-xs"
                         className="text-muted-foreground"
                         title={t("editor.more")}
+                        aria-label={t("editor.more")}
                       >
                         <MoreHorizontal className="size-4" strokeWidth={1.5} />
                       </Button>
@@ -845,6 +848,8 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
               variant="ghost"
               size="icon-xs"
               onClick={onToggleWordWrap}
+              aria-label="Word Wrap (Alt+Z)"
+              aria-pressed={!!sourceWordWrap}
               className={cn(
                 sourceWordWrap
                   ? "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"
@@ -871,6 +876,7 @@ export function Toolbar({ editor, onImageInsert, viewMode = "wysiwyg", onToggleV
               variant="ghost"
               size="icon-xs"
               onClick={onToggleViewMode}
+              aria-label={isSource ? t("editor.switchToRichText") : t("editor.switchToRaw")}
               className={cn(
                 "text-muted-foreground hover:text-foreground",
                 isSource && "bg-[var(--color-accent-primary)] text-[oklch(100%_0_0)]"

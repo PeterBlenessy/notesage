@@ -529,7 +529,7 @@ fn reindex_directory(
 /// Called after the content reindex (so the content-DB locks are released —
 /// `index_links_for_file` locks `project_dbs` internally). Scope-gated per
 /// file (ADR 0003); explorer paths never reach here because explorer folders
-/// are never passed to `index_init`/`index_rebuild`.
+/// are never passed to `index_init`.
 fn reindex_links_for_directory(state: &IndexState, dir: &str) {
     let dir_path = Path::new(dir);
     let mut files = Vec::new();
@@ -572,20 +572,46 @@ fn prune_deleted_files(conn: &Connection) -> Result<(), String> {
 
 // ---- Tauri Commands ----
 
+/// Run long, synchronous index work on tokio's blocking pool.
+///
+/// A full reindex walks a directory, parses every file and writes SQLite
+/// while holding an index lock. Done on an async worker it ties that worker
+/// up for the whole pass, and every other index command then parks a second
+/// worker on the same lock, which stalls unrelated async commands.
+async fn run_blocking<T, F>(work: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| format!("Index task failed: {}", e))?
+}
+
 /// Initialize the index for a project or global scope.
 /// If project_path is None, initializes the global index.
 /// Wraps initialization in catch_unwind to log panics instead of silently poisoning state.
 #[tauri::command]
-pub async fn index_init(
-    app: AppHandle,
-    state: tauri::State<'_, IndexState>,
+pub async fn index_init(app: AppHandle, project_path: Option<String>) -> Result<IndexStats, String> {
+    // `State` borrows from the app handle, so it is looked up inside the
+    // closure instead of being moved into it.
+    run_blocking(move || {
+        let state = app.state::<IndexState>();
+        index_init_blocking(&app, &state, project_path)
+    })
+    .await
+}
+
+fn index_init_blocking(
+    app: &AppHandle,
+    state: &IndexState,
     project_path: Option<String>,
 ) -> Result<IndexStats, String> {
     if let Some(ref pp) = project_path {
         // Wrap in catch_unwind to capture panics during init
         let pp_clone = pp.clone();
         let init_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            init_project_db(&state, &pp_clone)
+            init_project_db(state, &pp_clone)
         }));
         match init_result {
             Ok(Ok(())) => {}
@@ -606,16 +632,16 @@ pub async fn index_init(
         let stats = {
             let projects = state.project_dbs.lock();
             match projects.get(&PathBuf::from(pp)) {
-                Some(conn) => reindex_directory(conn, pp, Some(pp), Some(&app))?,
+                Some(conn) => reindex_directory(conn, pp, Some(pp), Some(app))?,
                 None => return Err("Failed to get project DB after init".to_string()),
             }
         };
         // Link-graph pass runs after the content-DB lock is released.
-        reindex_links_for_directory(&state, pp);
+        reindex_links_for_directory(state, pp);
         let _ = app.emit("index-ready", serde_json::json!({ "project_path": pp }));
         Ok(stats)
     } else {
-        init_global_db(&state)?;
+        init_global_db(state)?;
         let _ = state.ensure_links_db();
 
         let home = dirs::home_dir().ok_or("Cannot find home directory")?;
@@ -627,7 +653,7 @@ pub async fn index_init(
             match *global {
                 Some(ref conn) => {
                     if notesage_dir.is_dir() {
-                        reindex_directory(conn, &notesage_str, None, Some(&app))?
+                        reindex_directory(conn, &notesage_str, None, Some(app))?
                     } else {
                         queries::query_stats(conn)?
                     }
@@ -637,7 +663,7 @@ pub async fn index_init(
         };
         // Link-graph pass for the ~/Notesage library (lock released above).
         if notesage_dir.is_dir() {
-            reindex_links_for_directory(&state, &notesage_str);
+            reindex_links_for_directory(state, &notesage_str);
         }
         let _ = app.emit("index-ready", serde_json::json!({ "project_path": serde_json::Value::Null }));
         Ok(stats)
@@ -646,67 +672,24 @@ pub async fn index_init(
 
 /// Force reindex a specific file.
 #[tauri::command]
-pub async fn index_file(
-    state: tauri::State<'_, IndexState>,
-    path: String,
-) -> Result<(), String> {
-    {
-        let global = state.global_db.lock();
-        let projects = state.project_dbs.lock();
-
-        if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &path) {
-            reindex_file_in_db(conn, &path, project_path.as_deref())?;
-        }
-    }
-    // Link-graph pass after content-DB locks are released (scope-gated).
-    state.index_links_for_file(&path);
-    Ok(())
-}
-
-/// Force full reindex of a project or global scope.
-#[tauri::command]
-pub async fn index_rebuild(
-    app: AppHandle,
-    state: tauri::State<'_, IndexState>,
-    project_path: Option<String>,
-) -> Result<IndexStats, String> {
-    if let Some(ref pp) = project_path {
-        let stats = {
-            let projects = state.project_dbs.lock();
-            match projects.get(&PathBuf::from(pp)) {
-                Some(conn) => {
-                    db::clear_all(conn)?;
-                    reindex_directory(conn, pp, Some(pp), Some(&app))?
-                }
-                None => return Err("Project not initialized".to_string()),
-            }
-        };
-        // Refresh link edges for the project's current files (lock released).
-        reindex_links_for_directory(&state, pp);
-        Ok(stats)
-    } else {
-        let home = dirs::home_dir().ok_or("Cannot find home directory")?;
-        let notesage_dir = home.join("Notesage");
-        let notesage_str = notesage_dir.to_string_lossy().to_string();
-        let stats = {
+pub async fn index_file(app: AppHandle, path: String) -> Result<(), String> {
+    // Off the async workers: this waits on the index locks, which a full
+    // reindex can hold for a long time.
+    run_blocking(move || {
+        let state = app.state::<IndexState>();
+        {
             let global = state.global_db.lock();
-            match *global {
-                Some(ref conn) => {
-                    db::clear_all(conn)?;
-                    if notesage_dir.is_dir() {
-                        reindex_directory(conn, &notesage_str, None, Some(&app))?
-                    } else {
-                        queries::query_stats(conn)?
-                    }
-                }
-                None => return Err("Global index not initialized".to_string()),
+            let projects = state.project_dbs.lock();
+
+            if let Some((conn, project_path)) = get_db_for_path(&global, &projects, &path) {
+                reindex_file_in_db(conn, &path, project_path.as_deref())?;
             }
-        };
-        if notesage_dir.is_dir() {
-            reindex_links_for_directory(&state, &notesage_str);
         }
-        Ok(stats)
-    }
+        // Link-graph pass after content-DB locks are released (scope-gated).
+        state.index_links_for_file(&path);
+        Ok(())
+    })
+    .await
 }
 
 /// Delete an index database (and WAL/SHM files) and remove it from state.
@@ -1049,27 +1032,6 @@ pub async fn index_search_filenames(
     Ok(result)
 }
 
-/// Get index statistics.
-#[tauri::command]
-pub async fn index_stats(
-    state: tauri::State<'_, IndexState>,
-    project_path: Option<String>,
-) -> Result<IndexStats, String> {
-    if let Some(ref pp) = project_path {
-        let projects = state.project_dbs.lock();
-        if let Some(conn) = projects.get(&PathBuf::from(pp)) {
-            return queries::query_stats(conn);
-        }
-        Err("Project not initialized".to_string())
-    } else {
-        let global = state.global_db.lock();
-        if let Some(ref conn) = *global {
-            return queries::query_stats(conn);
-        }
-        Err("Global index not initialized".to_string())
-    }
-}
-
 // ---- Link-graph commands (OKF wiki-navigation, ADR 0002–0007) ----
 //
 // All four query the standalone `links.db` (NOT the content index), keeping the
@@ -1225,5 +1187,27 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM files", [], |row| row.get(0))
             .unwrap();
         assert_eq!(file_count, 1, "Normal path files must be indexed");
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn run_blocking_keeps_long_index_work_off_the_async_worker() {
+        let async_thread = std::thread::current().id();
+        let worker = run_blocking(|| Ok(std::thread::current().id()))
+            .await
+            .unwrap();
+        assert_ne!(worker, async_thread, "the work ran on the async worker");
+    }
+
+    #[tokio::test]
+    async fn run_blocking_reports_errors_and_panics_as_errors() {
+        let err = run_blocking(|| Err::<(), String>("db is locked".to_string()))
+            .await
+            .unwrap_err();
+        assert_eq!(err, "db is locked");
+
+        let panicked = run_blocking(|| -> Result<(), String> { panic!("boom") })
+            .await
+            .unwrap_err();
+        assert!(panicked.starts_with("Index task failed"), "{}", panicked);
     }
 }

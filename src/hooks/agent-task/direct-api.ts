@@ -14,6 +14,24 @@ import { streamEvent, newStreamId } from '@/lib/ai/stream-events';
 import { agentTaskRegistry } from './task-registry';
 import { runAgentTask, type TaskCallbacks, type TaskMeta } from './run-task';
 
+/** Running direct-API tasks → their stream id, so a cancel can reach the backend. */
+const runningStreams = new Map<string, string>();
+
+/**
+ * Stop a running direct-API task's provider stream. Without this, "Cancel"
+ * only stopped the frontend listening: the stream ran, and billed, to
+ * completion. Returns false when `taskId` is not a running direct-API task.
+ */
+export async function cancelDirectApiTask(taskId: string): Promise<boolean> {
+  const streamId = runningStreams.get(taskId);
+  if (!streamId) return false;
+  runningStreams.delete(taskId);
+  await invoke('ai_chat_stream_cancel', { streamId }).catch(() => {
+    // Expected: the stream may have just finished on its own.
+  });
+  return true;
+}
+
 export async function startDirectApiTask(
   prompt: string,
   callbacks: TaskCallbacks | undefined,
@@ -50,6 +68,7 @@ export async function startDirectApiTask(
       // Listen for stream events. Unique correlation id so concurrent agent tasks
       // (and foreground chat / structured calls) never cross-contaminate the bus.
       const streamId = newStreamId();
+      runningStreams.set(taskId, streamId);
       const unlistenChunk = await listen<string>(streamEvent('ai-stream-chunk', streamId), (event) => {
         const current = agentTaskRegistry.getTask(taskId);
         if (!current || current.status !== 'running') return;
@@ -66,7 +85,12 @@ export async function startDirectApiTask(
         handle.complete();
       });
 
-      handle.registerCleanup(() => { unlistenChunk(); unlistenDone(); });
+      handle.registerCleanup(() => {
+        unlistenChunk();
+        unlistenDone();
+        // Only if it is still this run's stream (a continuation reuses the task id).
+        if (runningStreams.get(taskId) === streamId) runningStreams.delete(taskId);
+      });
 
       onActivity?.({ kind: 'agent_responding', label: 'Agent responding', event: 'agent_responding' });
 
@@ -85,6 +109,9 @@ export async function startDirectApiTask(
         streamId,
       })
         .catch((error) => {
+          // A stream that ends in an error because the user cancelled it is
+          // not a failed task: no "Agent failed" after "Cancel".
+          if (agentTaskRegistry.getTask(taskId)?.status === 'cancelled') return;
           handle.fail(error, { completeActivities: true, recordError: true });
         })
         .finally(() => {

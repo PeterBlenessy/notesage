@@ -84,7 +84,7 @@ export function AgentPanel({ onCancelTask, onClickTask, onSelectSession }: Agent
             <span className="text-xs text-muted-foreground">
               Nothing happening yet
             </span>
-            <span className="text-xs text-muted-foreground/60">
+            <span className="text-xs text-muted-foreground">
               Agent tasks, recordings, and transcriptions show up here
             </span>
           </div>

@@ -195,7 +195,7 @@ export const ToolCallGroup = memo(function ToolCallGroup({
             return (
               <div key={`call-${i}`}>
                 <div
-                  className="flex items-center gap-1.5 text-[11px] text-muted-foreground/70 leading-snug"
+                  className="flex items-center gap-1.5 text-[11px] text-muted-foreground leading-snug"
                   title={stringifyDetail(effectiveCall.detail) || undefined}
                 >
                   <span className="opacity-40 shrink-0">–</span>

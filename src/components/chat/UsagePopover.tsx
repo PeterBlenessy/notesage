@@ -176,7 +176,7 @@ export const UsagePopover = memo(function UsagePopover({ data }: { data: UsagePo
               <button
                 type="button"
                 aria-label={`Context usage: ${summary}${percent ? ` (${percent})` : ''}${isEstimated ? ', estimated locally' : ''}`}
-                className="inline-flex items-center h-7 px-2 rounded-md text-muted-foreground/60 transition-colors duration-150 border border-transparent hover:text-foreground hover:bg-muted hover:border-border focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="inline-flex items-center h-7 px-2 rounded-md text-muted-foreground transition-colors duration-150 border border-transparent hover:text-foreground hover:bg-muted hover:border-border focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               >
                 <ContextUsageIcon used={contextUsed} size={contextSize} />
               </button>

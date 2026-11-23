@@ -50,7 +50,7 @@ An earlier `DocHead` breadcrumb component originally carried the document chrome
 
 - Sidebar file tree with expand/collapse, file icons by extension, right-click context menu (new file, new folder, rename, delete, "Add to chat" for image files)
 - File operations via Tauri commands: open folder (native dialog), open/save/create/rename/delete files
-- Hidden files/folders ignored by default; optional "Show Hidden Files" toggle in Settings &gt; Advanced reveals dotfiles with dimmed styling and bottom-sort order. `.DS_Store` and `.git/objects|pack|logs` always excluded.
+- Hidden files/folders ignored by default; optional "Show Hidden Files" toggle in Settings &gt; System reveals dotfiles with dimmed styling and bottom-sort order. `.DS_Store` and `.git/objects|pack|logs` always excluded.
 
 ## Markdown Round-Tripping
 
@@ -183,9 +183,8 @@ Hashtag-based tagging system with visual badges, autocomplete, and cross-file se
 | `src/lib/sparkline.ts` | Inline SVG sparkline renderer |
 | `src/hooks/useEditor.ts` | Tiptap editor instance hook |
 | `src/lib/markdown.ts` | Markdown ↔ ProseMirror conversion |
-| `src/stores/editor-store.ts` | Open tabs, active file |
+| `src/stores/editor-store.ts` | Open documents (the store still calls them tabs — vestigial naming; the UI shows one document at a time), active file |
 
 ## Future Enhancements
 
-- ProseMirror decorations for inline suggestions (green insert, red delete)
 - Context-aware suggestions (understand document structure)

@@ -24,10 +24,20 @@ import { useSettingsStore } from '@/stores/settings-store';
 import { tauriApi } from '@/lib/tauri';
 import type { Connection } from '@/lib/ai/connections';
 import type { Conversation } from '@/stores/chat-store';
+import { resetCopilotStreams } from '@/lib/ai/copilot-correlation';
+import { executeToolCall } from '@/lib/tool-executor';
+import { useToolPermissionStore } from '@/stores/tool-permission-store';
+import { usePermissionStore } from '@/stores/permission-store';
 
 // ---------------------------------------------------------------------------
 // Logger mock (prevents noise)
 // ---------------------------------------------------------------------------
+// Tool execution is stubbed: these tests are about WHEN a tool may run and
+// what is written afterwards, not about what a tool does.
+vi.mock('@/lib/tool-executor', () => ({
+  executeToolCall: vi.fn(async () => ({ tool_call_id: 'x', content: 'tool output', is_error: false })),
+}));
+
 vi.mock('@/lib/logger', () => ({
   log: {
     info: vi.fn(),
@@ -82,9 +92,26 @@ function resetStores() {
   useChatStore.setState({ conversations: [], activeConversationId: null });
 }
 
+/**
+ * The correlation token the hook sent with its most recent
+ * `conversation/create`: what the backend echoes as `token` on every
+ * `copilot-chat-*` progress event of that request.
+ */
+function lastCreateToken(): string {
+  const calls = vi.mocked(tauriApi.copilotLspConversationCreate).mock.calls;
+  return String(calls[calls.length - 1]?.[5]);
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+// Streams are registered per window; a hook left mounted by one test must not
+// count as "another Copilot stream" in the next.
+beforeEach(() => {
+  resetCopilotStreams();
+  useToolPermissionStore.setState({ pending: {} });
+});
 
 describe('useCopilotChat — Track 1 leak #15 workingDir isolation', () => {
   let copilotLspStartSpy: ReturnType<typeof vi.spyOn>;
@@ -526,6 +553,7 @@ describe('useCopilotChat — copilot-chat-step / copilot-chat-tool-update segmen
 
     await act(async () => {
       emitMockEvent('copilot-chat-step', {
+        token: lastCreateToken(),
         conversationId: 'conv-1',
         turnId: 'turn-1',
         stepId: 'step-1',
@@ -548,6 +576,7 @@ describe('useCopilotChat — copilot-chat-step / copilot-chat-tool-update segmen
     // completing must PATCH the existing segment, not append a duplicate.
     await act(async () => {
       emitMockEvent('copilot-chat-step', {
+        token: lastCreateToken(),
         conversationId: 'conv-1',
         turnId: 'turn-1',
         stepId: 'step-1',
@@ -567,6 +596,7 @@ describe('useCopilotChat — copilot-chat-step / copilot-chat-tool-update segmen
 
     await act(async () => {
       emitMockEvent('copilot-chat-tool-update', {
+        token: lastCreateToken(),
         conversationId: 'conv-1',
         turnId: 'turn-1',
         toolCallId: 'tc-1',
@@ -586,6 +616,7 @@ describe('useCopilotChat — copilot-chat-step / copilot-chat-tool-update segmen
 
     await act(async () => {
       emitMockEvent('copilot-chat-tool-update', {
+        token: lastCreateToken(),
         conversationId: 'conv-1',
         turnId: 'turn-1',
         toolCallId: 'tc-1',
@@ -608,6 +639,7 @@ describe('useCopilotChat — copilot-chat-step / copilot-chat-tool-update segmen
     // the tool_result segment.
     await act(async () => {
       emitMockEvent('copilot-chat-tool-update', {
+        token: lastCreateToken(),
         conversationId: 'conv-1',
         turnId: 'turn-1',
         toolCallId: 'tc-1',
@@ -628,6 +660,7 @@ describe('useCopilotChat — copilot-chat-step / copilot-chat-tool-update segmen
 
     await act(async () => {
       emitMockEvent('copilot-chat-tool-update', {
+        token: lastCreateToken(),
         conversationId: 'conv-1',
         turnId: 'turn-1',
         toolCallId: 'tc-err',
@@ -654,6 +687,7 @@ describe('useCopilotChat — copilot-chat-step / copilot-chat-tool-update segmen
     // first $/progress event always carries our own conversation id).
     await act(async () => {
       emitMockEvent('copilot-chat-step', {
+        token: lastCreateToken(),
         conversationId: 'conv-1',
         stepId: 'step-ours',
         title: 'Ours',
@@ -665,12 +699,14 @@ describe('useCopilotChat — copilot-chat-step / copilot-chat-tool-update segmen
 
     await act(async () => {
       emitMockEvent('copilot-chat-step', {
+        token: 'copilot-chat-foreign',
         conversationId: 'conv-OTHER',
         stepId: 'step-foreign',
         title: 'Foreign step',
         status: 'running',
       });
       emitMockEvent('copilot-chat-tool-update', {
+        token: 'copilot-chat-foreign',
         conversationId: 'conv-OTHER',
         toolCallId: 'tc-foreign',
         name: 'read_file',
@@ -707,6 +743,7 @@ describe('useCopilotChat — copilot-chat-step / copilot-chat-tool-update segmen
     // The $/progress round mirrors the same tool call — must be ignored.
     await act(async () => {
       emitMockEvent('copilot-chat-tool-update', {
+        token: lastCreateToken(),
         conversationId: 'conv-1',
         toolCallId: 'tc-client',
         name: 'my_custom_tool',
@@ -764,15 +801,20 @@ describe('useCopilotChat — Copilot conversations are keyed by Notesage convers
     vi.spyOn(tauriApi, 'copilotLspDidOpen').mockResolvedValue(undefined);
     // Each create hands out the next Copilot conversation id.
     let created = 0;
+    tokens.clear();
     createSpy = vi.spyOn(tauriApi, 'copilotLspConversationCreate');
     createSpy.mockReset();
-    createSpy.mockImplementation(async () => {
+    createSpy.mockImplementation(async (...args: unknown[]) => {
       created += 1;
+      tokens.set(`cop-${created}`, String(args[5]));
       return { conversationId: `cop-${created}`, turnId: `turn-${created}` };
     });
     turnSpy = vi.spyOn(tauriApi, 'copilotLspConversationTurn');
     turnSpy.mockReset();
-    turnSpy.mockResolvedValue({ conversationId: 'unused', turnId: 'turn-n' });
+    turnSpy.mockImplementation(async (...args: unknown[]) => {
+      tokens.set(String(args[0]), String(args[5]));
+      return { conversationId: 'unused', turnId: 'turn-n' };
+    });
     destroySpy = vi.spyOn(tauriApi, 'copilotLspConversationDestroy');
     destroySpy.mockReset();
     destroySpy.mockResolvedValue(undefined);
@@ -794,9 +836,14 @@ describe('useCopilotChat — Copilot conversations are keyed by Notesage convers
     });
   }
 
+  /** Copilot conversation id → token of its latest request, as the backend
+   *  would echo it on that request's progress events. */
+  const tokens = new Map<string, string>();
+
   async function emit(event: string, payload: Record<string, unknown>) {
+    const token = tokens.get(String(payload.conversationId));
     await act(async () => {
-      emitMockEvent(event, payload);
+      emitMockEvent(event, event.startsWith('copilot-chat-') ? { token, ...payload } : payload);
       await Promise.resolve();
     });
   }
@@ -916,5 +963,270 @@ describe('useCopilotChat — Copilot conversations are keyed by Notesage convers
 
     unmount();
     expect(destroySpy.mock.calls.map((call: unknown[]) => String(call[0])).sort()).toEqual(['cop-1', 'cop-2']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Audit 2026-11-22 §2: event correlation and cancellation
+// ---------------------------------------------------------------------------
+
+describe('useCopilotChat — event correlation and cancellation', () => {
+  let createSpy: ReturnType<typeof vi.spyOn>;
+  let toolResultSpy: ReturnType<typeof vi.spyOn>;
+  let confirmationSpy: ReturnType<typeof vi.spyOn>;
+  /** Resolvers of the in-flight `conversation/create` calls, in call order. */
+  let finishCreate: Array<(conversationId: string) => void>;
+
+  function makeConv(id: string): Conversation {
+    const now = Date.now();
+    return {
+      id,
+      title: id,
+      messages: [],
+      createdAt: now,
+      updatedAt: now,
+      projectPaths: [],
+      segments: [{ projectPaths: [], sessionId: null, startMessageIndex: 0, historyIncluded: false }],
+      activeSegmentIndex: 0,
+      pendingProjectSwitch: null,
+      activeLeafId: null,
+    };
+  }
+
+  beforeEach(() => {
+    useWorkspaceStore.setState({ explorerFolders: [], projects: [] });
+    useChatStore.setState({ conversations: [makeConv('note-A')], activeConversationId: 'note-A' });
+    useEditorStore.setState({ openDocuments: [], activeTabId: null });
+    useSettingsStore.setState({ homeDir: '/Users/tester', notesRootPath: '/Users/tester/Notesage' });
+    usePermissionStore.setState({ toolCallSession: new Set(), toolCallAlways: [] });
+    vi.mocked(executeToolCall).mockClear();
+    vi.mocked(executeToolCall).mockImplementation(
+      async () => ({ tool_call_id: 'x', content: 'tool output', is_error: false }),
+    );
+
+    vi.spyOn(tauriApi, 'copilotLspStart').mockResolvedValue(undefined);
+    vi.spyOn(tauriApi, 'copilotLspDidOpen').mockResolvedValue(undefined);
+    vi.spyOn(tauriApi, 'copilotLspConversationDestroy').mockResolvedValue(undefined);
+    vi.spyOn(tauriApi, 'copilotLspContextResponse').mockResolvedValue(undefined);
+    finishCreate = [];
+    createSpy = vi.spyOn(tauriApi, 'copilotLspConversationCreate');
+    createSpy.mockReset();
+    // Like the real command, create resolves only when the turn is over.
+    createSpy.mockImplementation(
+      () => new Promise((resolve) => {
+        finishCreate.push((conversationId) => resolve({ conversationId, turnId: 'turn-1' }));
+      }),
+    );
+    toolResultSpy = vi.spyOn(tauriApi, 'copilotLspToolResult');
+    toolResultSpy.mockReset();
+    toolResultSpy.mockResolvedValue(undefined);
+    confirmationSpy = vi.spyOn(tauriApi, 'copilotLspToolConfirmationResponse');
+    confirmationSpy.mockReset();
+    confirmationSpy.mockResolvedValue(undefined);
+  });
+
+  function renderCopilot() {
+    return renderHook(() =>
+      useCopilotChat({
+        effectiveConnection: makeCopilotLspConnection(),
+        buildComposedSystemMessage: () => 'system',
+        composedSystemMessage: 'system',
+      }),
+    );
+  }
+
+  /** Start a chat turn and leave it streaming (create still in flight). */
+  async function startTurn(result: ReturnType<typeof renderCopilot>['result']): Promise<string> {
+    await act(async () => {
+      void result.current.copilotSendChatMessage('hello', [], {});
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    return lastCreateToken();
+  }
+
+  async function emit(event: string, payload: Record<string, unknown>) {
+    await act(async () => {
+      emitMockEvent(event, payload);
+      await new Promise((r) => setTimeout(r, 0));
+    });
+  }
+
+  function assistantMessage() {
+    const conv = useChatStore.getState().conversations.find((c) => c.id === 'note-A');
+    return conv?.messages.find((m) => m.role === 'assistant');
+  }
+
+  const pendingCard = () => useToolPermissionStore.getState().pending['note-A'] ?? null;
+
+  // --- correlation -------------------------------------------------------
+
+  it('generateText resolves with its own text, not a chat stream that is mid-flight', async () => {
+    const { result } = renderCopilot();
+    const chatToken = await startTurn(result);
+
+    let generated: string | undefined;
+    await act(async () => {
+      void result.current.copilotGenerateText('Summarize').then((text) => { generated = text; });
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    const genToken = lastCreateToken();
+    expect(genToken).not.toBe(chatToken);
+    expect(genToken.startsWith('copilot-chat-')).toBe(true);
+
+    // The chat stream's chunk arrives first. generateText used to latch onto
+    // whatever conversation id it saw first and resolve with this text.
+    await emit('copilot-chat-chunk', { token: chatToken, conversationId: 'cop-chat', text: 'CHAT ' });
+    await emit('copilot-chat-chunk', { token: genToken, conversationId: 'cop-gen', text: 'summary' });
+    await emit('copilot-chat-done', { token: chatToken, conversationId: 'cop-chat' });
+    expect(generated).toBeUndefined();
+
+    await emit('copilot-chat-done', { token: genToken, conversationId: 'cop-gen' });
+    expect(generated).toBe('summary');
+    expect(assistantMessage()?.content).toBe('CHAT ');
+  });
+
+  it('ignores a progress event that carries no token, whatever its conversation id', async () => {
+    const { result } = renderCopilot();
+    await startTurn(result);
+
+    await emit('copilot-chat-chunk', { conversationId: '', text: 'stray ' });
+    await emit('copilot-chat-chunk', { conversationId: 'cop-1', text: 'unaddressed' });
+    await emit('copilot-chat-done', { conversationId: '' });
+
+    expect(assistantMessage()?.content).toBe('');
+    // Still streaming: the stray `done` did not end the turn.
+    expect(useChatStore.getState().isLoading).toBe(true);
+  });
+
+  it('shows a confirmation with no conversation id only when it cannot be for another stream', async () => {
+    const { result } = renderCopilot();
+    await startTurn(result);
+
+    // A second Copilot stream (a one-shot generation) is running too.
+    await act(async () => {
+      void result.current.copilotGenerateText('Improve').catch(() => {});
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    await emit('copilot-tool-confirmation', { requestId: 'confirm-1', name: 'write_file', arguments: {}, conversationId: '' });
+    expect(pendingCard()).toBeNull();
+    expect(confirmationSpy).not.toHaveBeenCalled();
+
+    // The generation ends; the chat turn is the only stream left.
+    await emit('copilot-chat-done', { token: lastCreateToken(), conversationId: 'cop-gen' });
+    await emit('copilot-tool-confirmation', { requestId: 'confirm-2', name: 'write_file', arguments: {}, conversationId: '' });
+    expect(pendingCard()?.id).toBe('confirm-2');
+  });
+
+  it("does not take a tool call addressed to another stream's conversation", async () => {
+    const { result } = renderCopilot();
+    const chatToken = await startTurn(result);
+    await emit('copilot-chat-begin', { token: chatToken, conversationId: 'cop-chat' });
+
+    await emit('copilot-tool-call', { requestId: 'tool-1', id: 'tc-1', name: 'read_file', arguments: {}, conversationId: 'cop-task' });
+    expect(executeToolCall).not.toHaveBeenCalled();
+
+    await emit('copilot-tool-call', { requestId: 'tool-2', id: 'tc-2', name: 'read_file', arguments: {}, conversationId: 'cop-chat' });
+    expect(executeToolCall).toHaveBeenCalledTimes(1);
+    expect(toolResultSpy).toHaveBeenCalledWith('tool-2', { content: 'tool output', is_error: false });
+  });
+
+  // --- cancellation ------------------------------------------------------
+
+  it('Stop while a tool permission card is up removes the card and never runs the tool', async () => {
+    const { result } = renderCopilot();
+    const token = await startTurn(result);
+    await emit('copilot-chat-begin', { token, conversationId: 'cop-1' });
+    await emit('copilot-tool-call', { requestId: 'tool-1', id: 'tc-1', name: 'write_file', arguments: { path: 'a.md' }, conversationId: 'cop-1' });
+    const card = pendingCard();
+    expect(card?.name).toBe('write_file');
+
+    await act(async () => {
+      result.current.cancelCopilotChat();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(pendingCard()).toBeNull();
+    const segmentsAfterStop = assistantMessage()?.segments?.length ?? 0;
+
+    // A click that raced the Stop resolves the old promise: nothing happens.
+    await act(async () => {
+      card?.resolve('allow');
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(executeToolCall).not.toHaveBeenCalled();
+    expect(assistantMessage()?.segments?.length ?? 0).toBe(segmentsAfterStop);
+    expect(usePermissionStore.getState().toolCallSession.has('write_file')).toBe(false);
+    // The LSP's pending request is answered rather than left to time out.
+    expect(toolResultSpy).toHaveBeenCalledTimes(1);
+    expect(toolResultSpy.mock.calls[0][0]).toBe('tool-1');
+    expect(toolResultSpy.mock.calls[0][1]).toMatchObject({ is_error: true });
+  });
+
+  it('Stop while a tool is running writes nothing more to the finalized message', async () => {
+    let finishTool: (() => void) | undefined;
+    vi.mocked(executeToolCall).mockImplementation(
+      () => new Promise((resolve) => {
+        finishTool = () => resolve({ tool_call_id: 'tc-1', content: 'late output', is_error: false });
+      }),
+    );
+    const { result } = renderCopilot();
+    const token = await startTurn(result);
+    await emit('copilot-chat-begin', { token, conversationId: 'cop-1' });
+    // read_file is auto-allowed, so it starts running at once.
+    await emit('copilot-tool-call', { requestId: 'tool-1', id: 'tc-1', name: 'read_file', arguments: { path: 'a.md' }, conversationId: 'cop-1' });
+    expect(executeToolCall).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      result.current.cancelCopilotChat();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    const segmentsAfterStop = JSON.stringify(assistantMessage()?.segments ?? []);
+
+    await act(async () => {
+      finishTool?.();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(JSON.stringify(assistantMessage()?.segments ?? [])).toBe(segmentsAfterStop);
+    expect(JSON.stringify(assistantMessage()?.segments ?? [])).not.toContain('late output');
+  });
+
+  it('Stop while a confirmation card is up dismisses it and grants nothing', async () => {
+    const { result } = renderCopilot();
+    const token = await startTurn(result);
+    await emit('copilot-chat-begin', { token, conversationId: 'cop-1' });
+    await emit('copilot-tool-confirmation', { requestId: 'confirm-1', name: 'run_in_terminal', arguments: {}, conversationId: 'cop-1' });
+    const card = pendingCard();
+    expect(card?.id).toBe('confirm-1');
+
+    await act(async () => {
+      result.current.cancelCopilotChat();
+      await new Promise((r) => setTimeout(r, 0));
+    });
+
+    expect(pendingCard()).toBeNull();
+    expect(confirmationSpy).toHaveBeenCalledTimes(1);
+    expect(confirmationSpy).toHaveBeenCalledWith('confirm-1', false);
+
+    // A late "always allow" click on the removed card grants nothing.
+    await act(async () => {
+      card?.resolve('always');
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(confirmationSpy).toHaveBeenCalledTimes(1);
+    expect(usePermissionStore.getState().toolCallAlways).toEqual([]);
+  });
+
+  it('a turn that ends while a card is up takes the card down with it', async () => {
+    const { result } = renderCopilot();
+    const token = await startTurn(result);
+    await emit('copilot-chat-begin', { token, conversationId: 'cop-1' });
+    await emit('copilot-tool-call', { requestId: 'tool-1', id: 'tc-1', name: 'write_file', arguments: {}, conversationId: 'cop-1' });
+    expect(pendingCard()).not.toBeNull();
+
+    await emit('copilot-chat-done', { token, conversationId: 'cop-1' });
+
+    expect(pendingCard()).toBeNull();
+    expect(executeToolCall).not.toHaveBeenCalled();
   });
 });

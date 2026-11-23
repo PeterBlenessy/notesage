@@ -50,4 +50,17 @@ describe('ImageSegmentView', () => {
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(screen.getAllByRole('img').length).toBe(1);
   });
+
+  it('the thumbnail is a keyboard-reachable button and the preview is a dialog', () => {
+    render(<ImageSegmentView segment={makeSegment({ alt: 'Terminal screenshot' })} />);
+    const trigger = screen.getByRole('button', { name: 'Terminal screenshot' });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole('dialog', { name: 'Terminal screenshot' });
+    // Focus moves into the preview, and returns to the thumbnail on close.
+    expect(document.activeElement).toBe(dialog);
+    fireEvent.keyDown(window, { key: 'Escape' });
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
 });

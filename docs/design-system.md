@@ -16,7 +16,7 @@ shadcn/ui components to install and use (not an exhaustive list — check docs f
 | Dropdowns | `dropdown-menu` | ❌ custom dropdown |
 | Right-click menus | `context-menu` | ❌ custom context menu |
 | Modals/dialogs | `dialog` + `alert-dialog` | ❌ custom modal |
-| Tab bar | `tabs` | ❌ custom tab component |
+| Tabs (e.g. sub-tabs inside a settings panel or dialog) | `tabs` | ❌ custom tab component |
 | File/folder tree | `collapsible` + custom tree | ❌ fully custom tree |
 | Tooltips | `tooltip` | ❌ custom tooltip |
 | Toasts/notifications | `sonner` | ❌ custom toast |
@@ -250,7 +250,7 @@ Implementation: `src/components/activity/AgentOrb.tsx`, `src/components/activity
 
 ### Quiet Sidebar
 
-Flat-list sidebar in fixed section order: **Pinned → Projects → Folders → Recent → Tags → Mentions**. No full file tree by default — this is intentional. The sidebar is for navigation between user-anchored items (pinned files, project roots, explorer folders, MRU documents, tag entries, mention entries), not for browsing arbitrary subtrees.
+Flat-list sidebar in fixed section order: **Inbox → Recordings → Pinned → Folders (projects, then external folders) → Recent → Tags → Mentions**. "Folders" is one visual section built from two components: `ProjectsSection` (which owns the visible "Folders" header and its `+` menu) followed by `FoldersSection` (headerless, shown as "External folders"). No full file tree by default — this is intentional. The sidebar is for navigation between user-anchored items (pinned files, project roots, explorer folders, MRU documents, tag entries, mention entries), not for browsing arbitrary subtrees.
 
 **Resizable.** The sidebar width is user-resizable via a hairline drag handle on its right edge (styled identically to the pinned command-bar handle — `w-px`, transparent at rest, `hover:bg-muted-foreground`, 16 px hit target; `role="slider"` with `←/→` keyboard adjust). The width persists as `settings.sidebarWidth` (clamped **200–500 px**, default 252) and drives the `--quiet-sidebar-width` CSS variable — the handle writes the variable live during drag (no React re-render) and persists on release, mirroring the cmd-bar pattern. The floating command bar stays centred in the document column as the sidebar resizes.
 
@@ -266,7 +266,7 @@ Type-to-filter: when the sidebar has focus, printable keys append to a local fil
 
 The Tags and Mentions sections can each be hidden entirely by dragging their cap slider to `0` — the slider IS the visibility control (no separate boolean toggle). Caps are clamped to `[0, 15]` (Settings > Appearance > Sidebar Composition). Tags click into the cmd bar with the `#` prefix; Mentions click in with the `@` prefix.
 
-Implementation: `src/components/sidebar/quiet/QuietSidebar.tsx` (shell), `PinnedSection.tsx`, `ProjectsSection.tsx`, `FoldersSection.tsx`, `RecentSection.tsx`, `TagsSection.tsx`, `MentionsSection.tsx`.
+Implementation: `src/components/sidebar/quiet/QuietSidebar.tsx` (shell), `InboxSection.tsx`, `RecordingsSection.tsx`, `PinnedSection.tsx`, `ProjectsSection.tsx`, `FoldersSection.tsx`, `RecentSection.tsx`, `TagsSection.tsx`, `MentionsSection.tsx`.
 
 Deeper subtrees are reached on demand via the in-sidebar inline `→`-expand on a focused project/folder row — and expand multiple levels deep. Expanded children render with a **nested continuous indent guide**: each open folder renders its children in a nested `<ul>` whose left border IS the guide line, centred under that folder's icon (`CHILD_GUIDE_OFFSET`); every level's line is continuous and each open subfolder gets its own line (no staircase). It's a discrete guide, deliberately NOT a full tree-view component. The flat row list is kept only for keyboard-navigation order. The earlier `TreeOverlay` slide-in panel (formerly `⌘⇧E`) was removed in sidebar-simplification task #20; `⌘⇧E` now opens the Export dialog.
 
@@ -418,15 +418,6 @@ Anti-patterns to avoid:
 - File icons: use lucide-react icons, muted color, consistent size
 - Section labels (if any): uppercase, text-xs, tracking-wider, muted color
 - Scrollbar: thin, only visible on hover (use custom CSS)
-
-### Tab Bar
-
-- Tabs should feel like browser tabs or VS Code tabs — not flat buttons
-- Active tab clearly distinguished (background, bottom border, or elevation)
-- Close button: only visible on hover over the tab
-- Dirty indicator: small dot, accent color, positioned consistently
-- Smooth transitions when switching, adding, removing tabs
-- Max tab width, truncate long filenames with ellipsis
 
 ### Editor Area
 

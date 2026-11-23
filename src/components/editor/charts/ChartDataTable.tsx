@@ -9,6 +9,8 @@ import type {
 } from "@/lib/chart-types";
 import { isRadial } from "@/lib/chart-types";
 import { toast } from "sonner";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 /** Shared compact input class for all data cells */
 const cellInput = "h-6 py-0 text-xs";
@@ -39,6 +41,7 @@ export function ChartDataTable({
   onChange,
   onSeriesChange,
 }: ChartDataTableProps) {
+  useLocale();
   const scatter = isScatter(chartType);
   const multiSeries = supportsMultiSeries(chartType);
   const activeSeries = series && series.length > 0 ? series : null;
@@ -232,7 +235,8 @@ export function ChartDataTable({
         size="icon"
         className="h-6 w-6 text-muted-foreground"
         onClick={addRow}
-        title="Add row"
+        title={t("editor.chartAddRow")}
+        aria-label={t("editor.chartAddRow")}
       >
         <Plus className="size-3" strokeWidth={1.5} />
       </Button>
@@ -276,7 +280,8 @@ export function ChartDataTable({
               className={removeBtn}
               onClick={() => removeRow(i)}
               disabled={data.length <= 1}
-              title="Remove row"
+              title={t("editor.chartRemoveRow")}
+              aria-label={t("editor.chartRemoveRow")}
             >
               <Minus className="size-3" strokeWidth={1.5} />
             </Button>
@@ -312,7 +317,8 @@ export function ChartDataTable({
                 <button
                   onClick={() => removeSeries(si)}
                   className="text-muted-foreground hover:text-destructive shrink-0"
-                  title="Remove series"
+                  title={t("editor.chartRemoveSeries")}
+                  aria-label={t("editor.chartRemoveSeries")}
                 >
                   <X className="size-2.5" strokeWidth={1.5} />
                 </button>
@@ -324,7 +330,8 @@ export function ChartDataTable({
             size="icon"
             className="h-5 w-6 text-muted-foreground justify-self-end"
             onClick={addSeries}
-            title="Add series"
+            title={t("editor.chartAddSeries")}
+            aria-label={t("editor.chartAddSeries")}
           >
             <Plus className="size-3" strokeWidth={1.5} />
           </Button>
@@ -359,7 +366,8 @@ export function ChartDataTable({
               className={`${removeBtn} justify-self-end`}
               onClick={() => removeRow(i)}
               disabled={data.length <= 1}
-              title="Remove row"
+              title={t("editor.chartRemoveRow")}
+              aria-label={t("editor.chartRemoveRow")}
             >
               <Minus className="size-3" strokeWidth={1.5} />
             </Button>
@@ -388,7 +396,8 @@ export function ChartDataTable({
             size="icon"
             className="h-5 w-6 text-muted-foreground justify-self-end"
             onClick={addSeries}
-            title="Add series"
+            title={t("editor.chartAddSeries")}
+            aria-label={t("editor.chartAddSeries")}
           >
             <Plus className="size-3" strokeWidth={1.5} />
           </Button>
@@ -423,7 +432,8 @@ export function ChartDataTable({
             className={`${removeBtn} justify-self-end`}
             onClick={() => removeRow(i)}
             disabled={data.length <= 1}
-            title="Remove row"
+            title={t("editor.chartRemoveRow")}
+            aria-label={t("editor.chartRemoveRow")}
           >
             <Minus className="size-3" strokeWidth={1.5} />
           </Button>

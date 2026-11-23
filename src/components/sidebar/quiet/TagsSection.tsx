@@ -75,6 +75,8 @@ export function TagsSection({
   const effectiveCap = cap ?? settingCap ?? DEFAULT_TAG_CAP;
 
   const [tags, setTags] = useState<TagRow[]>([]);
+  // A failed index query is not "nothing here": keep the error and show it.
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
   // Client-side filter on the cached tag list. Applied BEFORE cap/overflow
@@ -99,13 +101,15 @@ export function TagsSection({
       .indexTags(projectPaths, undefined)
       .then((rows: IndexedTag[]) => {
         if (reqId !== reqIdRef.current) return;
+        setLoadError(null);
         setTags(
           rows.map((r) => ({ name: r.tag, usageCount: r.file_count })),
         );
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (reqId !== reqIdRef.current) return;
         setTags([]);
+        setLoadError(err instanceof Error ? err.message : String(err));
       });
     // The stable-array memo (`projectPaths`) keeps this effect honest when
     // `projects` is re-created but paths are unchanged.
@@ -183,6 +187,11 @@ export function TagsSection({
           Tags
         </h2>
       </header>
+      {loadError ? (
+        <p role="alert" title={loadError} className="px-2 text-xs text-destructive">
+          {t("search.indexUnavailable")}
+        </p>
+      ) : null}
       {visibleTags.length > 0 ? (
         <ul className="flex flex-col">
           {visibleTags.map((tag) => (
@@ -225,15 +234,10 @@ export function TagsSection({
         </ul>
       ) : null}
       {hasOverflow ? (
-        // `tabIndex={-1}` keeps the temporary "Show more" affordance out
-        // of the natural Tab order so Tab from a tag row jumps straight
-        // to the next section's first row (audit 2026-04-27 finding #11
-        // follow-up — same philosophy as the section-header `+` and the
-        // per-row `+`). Users who want a permanent larger view bump the
-        // cap in Settings > Appearance > Sidebar Composition.
+        // In the Tab order on purpose: rows beyond the cap are not rendered,
+        // so this button is the only keyboard route to them (WCAG 2.1.1).
         <button
           type="button"
-          tabIndex={-1}
           onClick={toggleExpanded}
           aria-expanded={expanded}
           className={cn(

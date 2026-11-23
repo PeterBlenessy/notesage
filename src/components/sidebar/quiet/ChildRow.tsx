@@ -4,7 +4,7 @@ import {
   type KeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { Folder, FileText } from "lucide-react";
+import { Folder, FileText, AlertTriangle } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -12,6 +12,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 import { SidebarInlineEdit } from "@/components/sidebar/quiet/SidebarInlineEdit";
 import { SidebarRowIndicators } from "@/components/sidebar/quiet/SidebarRowIndicators";
 import { validateRenameBasename } from "@/components/sidebar/quiet/rename-utils";
@@ -95,9 +96,20 @@ export function ChildRow({
   if (!entry) return null;
 
   const Icon = entry.is_directory ? Folder : FileText;
-  const ariaLabel = entry.is_directory
+  // A folder whose contents the listing does not know (unreadable, or past
+  // the depth limit) comes back with no children, exactly like an empty one.
+  // Say so on the row instead of letting it pass for empty.
+  const listingNote = !entry.is_directory
+    ? null
+    : entry.unreadable
+      ? t("sidebar.folderUnreadable")
+      : entry.truncated
+        ? t("sidebar.folderTruncated")
+        : null;
+  const baseAriaLabel = entry.is_directory
     ? `Open folder ${entry.name}`
     : `Open file ${entry.name}`;
+  const ariaLabel = listingNote ? `${baseAriaLabel}. ${listingNote}` : baseAriaLabel;
 
   // Issue #89 — any dotfile folder must never enter rename mode.
   const isSystemFolder = entry.is_directory && isSystemFolderName(entry.name);
@@ -211,6 +223,27 @@ export function ChildRow({
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          {listingNote && (
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span
+                    data-testid="child-row-listing-warning"
+                    className="shrink-0 inline-flex items-center"
+                  >
+                    <AlertTriangle
+                      className="h-3 w-3 text-muted-foreground"
+                      strokeWidth={1.5}
+                      aria-hidden="true"
+                    />
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent side="right" sideOffset={8}>
+                  {listingNote}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
           {/* #129 — per-row visual state. */}
           <SidebarRowIndicators
             path={entry.path}

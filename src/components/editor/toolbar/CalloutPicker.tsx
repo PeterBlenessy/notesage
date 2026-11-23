@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 import type { CalloutType } from "@/components/editor/extensions/callout";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 const CALLOUT_OPTIONS: { type: CalloutType; label: string; icon: typeof Info }[] = [
   { type: "note", label: "Note", icon: Info },
@@ -19,6 +21,7 @@ const CALLOUT_OPTIONS: { type: CalloutType; label: string; icon: typeof Info }[]
 ];
 
 export function CalloutPicker({ editor }: { editor: Editor }) {
+  useLocale();
   const isActive = editor.isActive("callout");
 
   const getCurrentType = (): CalloutType | null => {
@@ -46,6 +49,7 @@ export function CalloutPicker({ editor }: { editor: Editor }) {
             <Button
               variant="ghost"
               size="icon-xs"
+              aria-label={t("editor.callout")}
               className={cn(
                 "gap-0",
                 isActive

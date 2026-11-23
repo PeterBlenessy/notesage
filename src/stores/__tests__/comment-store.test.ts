@@ -940,6 +940,49 @@ describe('comment-store — sidecar originalPath format (issue #117)', () => {
 // A sidecar that failed to load must never be overwritten (audit 2026-11-22 §10)
 // ---------------------------------------------------------------------------
 
+describe('comment-store: a document id that is not a safe file name', () => {
+  // The id is a path component of `.notesage/comments/<id>.json`.
+  const UNSAFE = ['../../outside', 'a/b', '..', '.hidden', ''];
+
+  beforeEach(() => {
+    useCommentStore.setState({ commentsByDocument: {}, loadFailedByDocument: {} });
+    vi.clearAllMocks();
+  });
+
+  it.each(UNSAFE)('saveComments writes nothing for %j', async (id) => {
+    useCommentStore.setState({ commentsByDocument: { [id]: [makeComment({ documentId: id })] } });
+    mockedTauriApi.pathExists.mockResolvedValue(true);
+
+    await useCommentStore.getState().saveComments(id, '/project');
+
+    expect(mockedTauriApi.writeFile).not.toHaveBeenCalled();
+    expect(mockedTauriApi.createDirectory).not.toHaveBeenCalled();
+  });
+
+  it.each(UNSAFE)('loadComments reads nothing for %j', async (id) => {
+    mockedTauriApi.pathExists.mockResolvedValue(true);
+    mockedTauriApi.readFile.mockResolvedValue('[]');
+
+    await useCommentStore.getState().loadComments(id, '/project');
+
+    expect(mockedTauriApi.pathExists).not.toHaveBeenCalled();
+    expect(mockedTauriApi.readFile).not.toHaveBeenCalled();
+  });
+
+  it('still saves under a UUID and under a path hash', async () => {
+    mockedTauriApi.pathExists.mockResolvedValue(true);
+    mockedTauriApi.writeFile.mockResolvedValue(undefined);
+
+    await useCommentStore.getState().saveComments('3f2b6c1e-8a57-4d0e-9b1a-0c5d2e7f4a61', '/project');
+    await useCommentStore.getState().saveComments('path-1a2b3c', '/project');
+
+    expect(mockedTauriApi.writeFile.mock.calls.map((c) => c[0])).toEqual([
+      '/project/.notesage/comments/3f2b6c1e-8a57-4d0e-9b1a-0c5d2e7f4a61.json',
+      '/project/.notesage/comments/path-1a2b3c.json',
+    ]);
+  });
+});
+
 describe('comment-store: a failed load blocks saving', () => {
   const SIDECAR = '/project/.notesage/comments/doc-1.json';
   const PLACEHOLDER = '/project/.notesage/comments/.doc-1.json.icloud';

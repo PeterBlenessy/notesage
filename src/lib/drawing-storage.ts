@@ -47,20 +47,49 @@ async function ensureDrawingsDir(projectRoot: string): Promise<void> {
 }
 
 /**
- * Load an Excalidraw scene from disk.
- * Returns the parsed scene data, or null if the file doesn't exist.
+ * `pathExists` answers false both for a file that is not there and for one
+ * iCloud has evicted to a `.name.icloud` placeholder. Only the first is
+ * "missing"; the second is a file that exists and could not be read.
+ */
+async function isEvictedToICloud(filePath: string): Promise<boolean> {
+  const slash = filePath.lastIndexOf('/');
+  return tauriApi.pathExists(`${filePath.slice(0, slash)}/.${filePath.slice(slash + 1)}.icloud`);
+}
+
+/**
+ * Load an Excalidraw scene from disk, for a caller that will SAVE what it
+ * loaded. Returns null only when the file is confirmed absent, and THROWS
+ * when it exists but cannot be read or parsed — "no drawing yet" and "could
+ * not load the drawing" must not look the same to an editor whose Done
+ * button writes the canvas back.
+ */
+export async function loadDrawingStrict(
+  drawingId: string,
+  projectRoot: string,
+): Promise<unknown> {
+  const filePath = excalidrawPath(drawingId, projectRoot);
+  const exists = await tauriApi.pathExists(filePath);
+  if (!exists) {
+    if (await isEvictedToICloud(filePath)) {
+      throw new Error('The drawing is not downloaded from iCloud yet');
+    }
+    return null;
+  }
+  const raw = await tauriApi.readFile(filePath);
+  return JSON.parse(raw) as unknown;
+}
+
+/**
+ * Load an Excalidraw scene from disk, for display only.
+ * Returns the parsed scene data, or null if the file doesn't exist or cannot
+ * be read. Anything that writes the result back must use `loadDrawingStrict`.
  */
 export async function loadDrawing(
   drawingId: string,
   projectRoot: string,
 ): Promise<unknown> {
-  const filePath = excalidrawPath(drawingId, projectRoot);
   try {
-    const exists = await tauriApi.pathExists(filePath);
-    if (!exists) return null;
-
-    const raw = await tauriApi.readFile(filePath);
-    return JSON.parse(raw) as unknown;
+    return await loadDrawingStrict(drawingId, projectRoot);
   } catch {
     return null;
   }
@@ -169,18 +198,32 @@ async function ensureNotesageDir(): Promise<void> {
 }
 
 /**
- * Load the global Excalidraw library from disk.
- * Returns the parsed library items array, or empty array if not found.
+ * Load the global Excalidraw library, for a caller that will SAVE it again.
+ * Empty only when there is no library file; THROWS when the file exists but
+ * cannot be read or parsed, so the caller can refuse to write over it.
+ */
+export async function loadLibraryStrict(): Promise<unknown[]> {
+  const filePath = await libraryFilePath();
+  const exists = await tauriApi.pathExists(filePath);
+  if (!exists) {
+    if (await isEvictedToICloud(filePath)) {
+      throw new Error('The shape library is not downloaded from iCloud yet');
+    }
+    return [];
+  }
+  const raw = await tauriApi.readFile(filePath);
+  const parsed = JSON.parse(raw) as unknown;
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+/**
+ * Load the global Excalidraw library from disk, for display only.
+ * Returns the parsed library items array, or empty array if not found or
+ * unreadable. Anything that saves the result must use `loadLibraryStrict`.
  */
 export async function loadLibrary(): Promise<unknown[]> {
   try {
-    const filePath = await libraryFilePath();
-    const exists = await tauriApi.pathExists(filePath);
-    if (!exists) return [];
-
-    const raw = await tauriApi.readFile(filePath);
-    const parsed = JSON.parse(raw) as unknown;
-    return Array.isArray(parsed) ? parsed : [];
+    return await loadLibraryStrict();
   } catch {
     return [];
   }
@@ -212,7 +255,9 @@ export async function importLibraryFile(filePath: string): Promise<number> {
 
   if (newItems.length === 0) return 0;
 
-  const existing = await loadLibrary();
+  // Strict: the merged list is written back, so an unreadable library must
+  // fail the import rather than be replaced by the imported items alone.
+  const existing = await loadLibraryStrict();
   const existingIds = new Set(
     existing
       .map((item) => (item as Record<string, unknown>).id)

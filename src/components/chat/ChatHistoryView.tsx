@@ -251,7 +251,7 @@ export const ChatHistoryView = memo(function ChatHistoryView({
                 role="button"
                 tabIndex={0}
                 onClick={() => onSelectConversation(conv.id)}
-                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { onSelectConversation(conv.id); } }}
+                onKeyDown={(e) => { if (e.target !== e.currentTarget) return; if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelectConversation(conv.id); } }}
                 className={`group flex items-start gap-3 px-4 py-3 cursor-pointer transition-colors hover:bg-accent/50 ${
                   conv.id === activeConversationId ? 'bg-accent/30' : ''
                 }`}
@@ -277,7 +277,7 @@ export const ChatHistoryView = memo(function ChatHistoryView({
                     )}
                   </div>
                 </div>
-                <div className="opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity mr-[-6px]">
+                <div className="opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity mr-[-6px]">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button
@@ -285,6 +285,7 @@ export const ChatHistoryView = memo(function ChatHistoryView({
                         onClick={(e) => e.stopPropagation()}
                         className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-accent transition-colors active:opacity-75"
                         title={t("chat.exportConversation")}
+                        aria-label={t("chat.exportConversation")}
                       >
                         <Download className="h-3.5 w-3.5" strokeWidth={1.5} />
                       </button>
@@ -309,6 +310,7 @@ export const ChatHistoryView = memo(function ChatHistoryView({
                     onClick={(e) => { e.stopPropagation(); closeAgentSessionsAndDelete(conv); deleteConversation(conv.id); }}
                     className="h-7 w-7 inline-flex items-center justify-center rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors active:opacity-75"
                     title={t("chat.deleteConversation")}
+                    aria-label={t("chat.deleteConversation")}
                   >
                     <Trash2 className="h-3.5 w-3.5" strokeWidth={1.5} />
                   </button>

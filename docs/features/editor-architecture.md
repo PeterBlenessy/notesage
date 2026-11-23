@@ -12,7 +12,7 @@ Deep technical reference for the editor subsystem. For feature overview, see [ed
 
 ## Tiptap Extension Model
 
-Tiptap v2 wraps ProseMirror with a composable extension system. Each extension can define:
+Tiptap v3 wraps ProseMirror with a composable extension system. Each extension can define:
 
 - Schema nodes/marks (document model)
 - ProseMirror plugins (state, decorations, key bindings)
@@ -29,7 +29,7 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | SearchHighlight | `search-highlight.ts` | Plugin + Decoration | Find-in-document match decorations with current/other match styling |
 | TagHighlight | `tag-highlight.ts` | Plugin + Decoration | Inline tag badge decorations (#tag → styled pill) |
 | TagSuggestion | `tag-suggestion.tsx` | Suggestion | Tag autocomplete popup (triggered by # character, uses `@tiptap/suggestion`) |
-| SlashCommand | `slash-command.ts` | Suggestion | Block insertion menu (triggered by / at start of line) |
+| SlashCommand | `slash-command.tsx` | Suggestion | Block insertion menu (triggered by / at start of line) |
 | AISuggestion | `ai-suggestion.ts` | Plugin + Decoration | Inline diff decorations for AI suggestions (green insert, red delete) with accept/reject |
 | DateHighlight | `date-highlight.ts` | Plugin + Decoration | Decorates `//YYYY-MM-DD` date patterns as styled badge pills |
 | DateSuggestion | `date-suggestion.tsx` | Suggestion | Date picker popup triggered by `//` prefix with calendar and preset options |
@@ -53,10 +53,11 @@ Tiptap v2 wraps ProseMirror with a composable extension system. Each extension c
 | SendToAI | `send-to-ai.ts` | Plugin + DOM Event | Right-click "Add to chat" context menu on images and drawings; resolves image data and dispatches to chat via vision event bus |
 | Chart | `chart.ts` | Node Extension + ReactNodeViewRenderer | Inline chart blocks (10 types via Recharts) with visual data editor, `` ```chart `` fenced code block markdown |
 | Mermaid | `mermaid.ts` | Node Extension + ReactNodeViewRenderer | Mermaid diagram blocks with live rendering, `` ```mermaid `` fenced code block markdown |
-| PageBreakNode | `page-break-node.ts` | Node Extension | Explicit page break node for Print Layout mode |
+| PageBreakNode | `page-break-node.ts` | Node Extension | Explicit page break node for Print Layout mode (registered in `useEditor.ts` and in the worker schema) |
+| PasteHandler | `paste-handler.ts` | Plugin | Decides how pasted clipboard content is interpreted (see the file header) and binds `⌘⇧V` (paste as plain text). Must be listed before the other paste-aware extensions in `useEditor.ts` |
+| TableOfContents | `toc.ts` | Node Extension + ReactNodeViewRenderer | `tableOfContents` block listing the document's H1–H3 headings, kept live as headings change |
 | TableColumnTypes | `table-column-types.ts` | Plugin | Column type inference and locale-aware formatting (number, currency, percentage, date) |
 | TypographyOverrides | `typography-overrides.ts` | Plugin | Custom typography rules (smart quotes, em dashes, ellipsis) |
-| TrailingNode | `trailing-node.ts` | Plugin (appendTransaction) | Ensures an empty paragraph at end of document for click-below-last-block UX |
 | DecorationFactory | `decoration-factory.ts` | Utility | Shared `createDecorationPlugin()` factory reducing boilerplate in decoration extensions |
 | ~~ItemAnnotation~~ | `item-annotation.ts` | ~~Plugin + Decoration~~ | ~~Emoji annotations on list items (deferred — needs unified gutter design)~~ |
 

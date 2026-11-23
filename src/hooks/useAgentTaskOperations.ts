@@ -26,8 +26,8 @@ import { getProjectLock, ProjectLockViolation, describeLockTarget } from '@/lib/
 import { agentTaskRegistry, type InternalTask } from '@/hooks/agent-task/task-registry';
 import type { TaskCallbacks, TaskMeta } from '@/hooks/agent-task/run-task';
 import { startAcpTask, taskCapabilities } from '@/hooks/agent-task/acp';
-import { startCopilotLspTask } from '@/hooks/agent-task/copilot-lsp';
-import { startDirectApiTask } from '@/hooks/agent-task/direct-api';
+import { startCopilotLspTask, cancelCopilotLspTask } from '@/hooks/agent-task/copilot-lsp';
+import { startDirectApiTask, cancelDirectApiTask } from '@/hooks/agent-task/direct-api';
 import { t } from '@/lib/i18n';
 
 // Public API re-exports (call sites and tests import these from this module).
@@ -102,7 +102,12 @@ export function useAgentTaskOperations(): UseAgentTaskOperationsReturn {
     [taskConnection, selectedProjectPaths]
   );
 
-  /** Cancel a running task. Returns true if session was cancelled, false if already done. */
+  /**
+   * Cancel a running task, stopping it in the backend as well: the ACP
+   * session, the direct-API provider stream, or the Copilot conversation.
+   * Returns true if a running task was stopped, false if it had already
+   * finished (or was never started).
+   */
   const cancelTask = useCallback(
     async (taskId: string): Promise<boolean> => {
       const task = agentTaskRegistry.getTask(taskId);
@@ -110,7 +115,7 @@ export function useAgentTaskOperations(): UseAgentTaskOperationsReturn {
 
       let cancelled = false;
 
-      // ACP tasks have instanceId + sessionId; direct-API tasks don't
+      // ACP tasks have instanceId + sessionId; direct-API and Copilot tasks don't
       if (task.instanceId && task.sessionId) {
         try {
           await tauriApi.acpSessionCancel(task.instanceId, task.sessionId);
@@ -122,6 +127,16 @@ export function useAgentTaskOperations(): UseAgentTaskOperationsReturn {
         if (hasSessionCapability(taskCapabilities(), 'close')) {
           tauriApi.acpSessionClose(task.instanceId, task.sessionId).catch(() => {}); // Expected: best-effort cleanup
         }
+      } else {
+        // Mark the task cancelled BEFORE stopping the backend: stopping it
+        // makes the stream end, and its done/error handlers must see a
+        // cancelled task, not a running one they would complete or fail.
+        task.status = 'cancelled';
+        const [directApi, copilot] = await Promise.all([
+          cancelDirectApiTask(taskId),
+          cancelCopilotLspTask(taskId),
+        ]);
+        cancelled = directApi || copilot;
       }
 
       task.status = 'cancelled';

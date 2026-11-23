@@ -3,26 +3,6 @@ use std::path::{Path, PathBuf};
 
 use super::ios_library::DownloadState;
 
-#[derive(Serialize, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct SyncSettings {
-    pub version: u32,
-    pub icloud_enabled: bool,
-    pub sync_quick_notes: bool,
-    pub synced_projects: Vec<String>,
-}
-
-impl Default for SyncSettings {
-    fn default() -> Self {
-        Self {
-            version: 1,
-            icloud_enabled: false,
-            sync_quick_notes: true,
-            synced_projects: Vec::new(),
-        }
-    }
-}
-
 /// Detect iCloud Drive path on macOS.
 /// Returns Some(path) if ~/Library/Mobile Documents/com~apple~CloudDocs/ exists.
 /// Returns None on non-macOS platforms or if iCloud is not configured.
@@ -126,52 +106,6 @@ fn start_ubiquitous_download(item: &Path) -> Result<(), String> {
         .map_err(|e| e.localizedDescription().to_string())
 }
 
-/// Read sync settings from {notesage_path}/.notesage/sync-settings.json.
-/// Returns None if the file doesn't exist (first launch).
-#[tauri::command]
-pub async fn read_sync_settings(notesage_path: String) -> Result<Option<SyncSettings>, String> {
-    let settings_path = Path::new(&notesage_path)
-        .join(".notesage")
-        .join("sync-settings.json");
-
-    if !settings_path.exists() {
-        return Ok(None);
-    }
-
-    let content = tokio::fs::read_to_string(&settings_path)
-        .await
-        .map_err(|e| format!("Failed to read sync settings: {e}"))?;
-
-    let settings: SyncSettings = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse sync settings: {e}"))?;
-
-    Ok(Some(settings))
-}
-
-/// Write sync settings to {notesage_path}/.notesage/sync-settings.json.
-#[tauri::command]
-pub async fn write_sync_settings(
-    notesage_path: String,
-    settings: SyncSettings,
-) -> Result<(), String> {
-    let meta_dir = Path::new(&notesage_path).join(".notesage");
-    if !meta_dir.exists() {
-        tokio::fs::create_dir_all(&meta_dir)
-            .await
-            .map_err(|e| format!("Failed to create .notesage directory: {e}"))?;
-    }
-
-    let settings_path = meta_dir.join("sync-settings.json");
-    let content = serde_json::to_string_pretty(&settings)
-        .map_err(|e| format!("Failed to serialize sync settings: {e}"))?;
-
-    tokio::fs::write(&settings_path, content)
-        .await
-        .map_err(|e| format!("Failed to write sync settings: {e}"))?;
-
-    Ok(())
-}
-
 /// Move a project folder to the iCloud Notesage directory.
 /// Uses atomic rename on the same volume, falls back to copy+verify+delete cross-volume.
 #[tauri::command]
@@ -249,71 +183,6 @@ pub async fn migrate_from_icloud(
     }
 
     migrate_directory(source, &dest).await
-}
-
-/// Move loose files (Quick Notes) between Notesage directories.
-/// Moves all non-directory entries from `from_path` to `to_path`, skipping `.notesage` and
-/// any directories (which are project folders). Returns the number of files moved.
-#[tauri::command]
-pub async fn migrate_quick_notes(
-    from_path: String,
-    to_path: String,
-) -> Result<u32, String> {
-    let from = Path::new(&from_path);
-    let to = Path::new(&to_path);
-
-    if !from.exists() {
-        return Err(format!("Source directory not found: {from_path}"));
-    }
-    if !to.exists() {
-        tokio::fs::create_dir_all(to)
-            .await
-            .map_err(|e| format!("Failed to create destination directory: {e}"))?;
-    }
-
-    let entries = std::fs::read_dir(from)
-        .map_err(|e| format!("Failed to read source directory: {e}"))?;
-
-    let mut moved = 0u32;
-    for entry in entries {
-        let entry = entry.map_err(|e| format!("Failed to read entry: {e}"))?;
-        let file_type = entry.file_type().map_err(|e| format!("Failed to get file type: {e}"))?;
-
-        // Skip directories (projects) and .notesage metadata
-        if file_type.is_dir() {
-            continue;
-        }
-
-        let name = entry.file_name();
-        let name_str = name.to_string_lossy();
-        if name_str == ".notesage" || name_str.starts_with('.') {
-            continue;
-        }
-
-        let dest = to.join(&name);
-        if dest.exists() {
-            // Skip files that already exist at destination to avoid data loss
-            continue;
-        }
-
-        let source = entry.path();
-        // Try rename first, fall back to copy+delete
-        match std::fs::rename(&source, &dest) {
-            Ok(()) => {
-                moved += 1;
-            }
-            Err(_) => {
-                // Cross-volume: copy then delete
-                std::fs::copy(&source, &dest)
-                    .map_err(|e| format!("Failed to copy {}: {e}", name_str))?;
-                std::fs::remove_file(&source)
-                    .map_err(|e| format!("Copied but failed to remove source {}: {e}", name_str))?;
-                moved += 1;
-            }
-        }
-    }
-
-    Ok(moved)
 }
 
 /// Core migration logic: try atomic rename, fall back to copy+verify+delete.

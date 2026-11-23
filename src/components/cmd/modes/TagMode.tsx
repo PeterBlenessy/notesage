@@ -88,6 +88,8 @@ function TagMode({
   // ---------------------------------------------------------------------
   const [allTags, setAllTags] = useState<TagRow[]>([]);
   const [highlighted, setHighlighted] = useState(0);
+  // A failed index query is not "no tags": keep the error and show it.
+  const [tagsError, setTagsError] = useState<string | null>(null);
   const reqIdRef = useRef(0);
 
   useEffect(() => {
@@ -96,13 +98,15 @@ function TagMode({
       .indexTags(projectPaths, undefined)
       .then((rows: IndexedTag[]) => {
         if (reqId !== reqIdRef.current) return;
+        setTagsError(null);
         setAllTags(
           rows.map((r) => ({ name: r.tag, usageCount: r.file_count })),
         );
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (reqId !== reqIdRef.current) return;
         setAllTags([]);
+        setTagsError(err instanceof Error ? err.message : String(err));
       });
   }, [projectPaths]);
 
@@ -120,11 +124,13 @@ function TagMode({
   }, [initialDrilldown]);
   const [occurrences, setOccurrences] = useState<IndexTagOccurrence[]>([]);
   const [occHighlighted, setOccHighlighted] = useState(0);
+  const [occurrencesError, setOccurrencesError] = useState<string | null>(null);
   const occReqIdRef = useRef(0);
 
   useEffect(() => {
     if (selectedTag === null) {
       setOccurrences([]);
+      setOccurrencesError(null);
       return;
     }
     const reqId = ++occReqIdRef.current;
@@ -134,10 +140,12 @@ function TagMode({
         if (reqId !== occReqIdRef.current) return;
         setOccurrences(rows);
         setOccHighlighted(0);
+        setOccurrencesError(null);
       })
-      .catch(() => {
+      .catch((err: unknown) => {
         if (reqId !== occReqIdRef.current) return;
         setOccurrences([]);
+        setOccurrencesError(err instanceof Error ? err.message : String(err));
       });
   }, [selectedTag, projectPaths]);
 
@@ -277,7 +285,16 @@ function TagMode({
         />
         {occurrences.length === 0 ? (
           <div className="px-3 py-3 text-xs text-muted-foreground">
-            No occurrences found
+            {occurrencesError ? (
+              <>
+                <span role="alert" className="text-destructive">
+                  {t("search.indexUnavailable")}
+                </span>
+                <span className="block mt-1 text-[11px] opacity-70">{occurrencesError}</span>
+              </>
+            ) : (
+              t("cmd.noOccurrences")
+            )}
           </div>
         ) : (
           <ul className="py-1">
@@ -347,7 +364,16 @@ function TagMode({
         aria-label={t("section.tags")}
         className={cn("px-3 py-3", "text-xs text-muted-foreground")}
       >
-        No tags match
+        {tagsError ? (
+          <>
+            <span role="alert" className="text-destructive">
+              {t("search.indexUnavailable")}
+            </span>
+            <span className="block mt-1 text-[11px] opacity-70">{tagsError}</span>
+          </>
+        ) : (
+          t("cmd.noTagsMatch")
+        )}
       </div>
     );
   }

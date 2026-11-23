@@ -21,6 +21,21 @@ pub struct FileEntry {
     /// round trip per row; absent on every desktop path.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_count: Option<u32>,
+    /// A DIRECTORY the recursive listing could not read (permissions, an
+    /// evicted iCloud folder, a vanished mount). Its `children` are empty
+    /// because they are unknown, not because the folder is empty; the tree
+    /// marks the row so the two do not look alike.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub unreadable: bool,
+    /// A DIRECTORY the recursive listing did not descend into because it sits
+    /// at the depth limit. As with `unreadable`, its empty `children` say
+    /// nothing about what is inside.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub truncated: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 #[tauri::command]
@@ -46,12 +61,13 @@ const GIT_ALWAYS_HIDDEN_CHILDREN: &[&str] = &["objects", "pack", "logs"];
 
 #[tauri::command]
 pub async fn list_directory(path: String, show_hidden: Option<bool>) -> Result<Vec<FileEntry>, String> {
-    list_directory_recursive(&path, 0, show_hidden.unwrap_or(false), false).await
+    list_directory_recursive(&path, 0, MAX_DIRECTORY_DEPTH, show_hidden.unwrap_or(false), false).await
 }
 
 async fn list_directory_recursive(
     path: &str,
     depth: usize,
+    max_depth: usize,
     show_hidden: bool,
     inside_git: bool,
 ) -> Result<Vec<FileEntry>, String> {
@@ -91,16 +107,20 @@ async fn list_directory_recursive(
 
         let child_inside_git = inside_git || (is_hidden && file_name == ".git");
 
-        let children = if is_directory && depth < MAX_DIRECTORY_DEPTH {
-            match Box::pin(list_directory_recursive(&path_str, depth + 1, show_hidden, child_inside_git)).await {
+        let mut unreadable = false;
+        let mut truncated = false;
+        let children = if is_directory && depth < max_depth {
+            match Box::pin(list_directory_recursive(&path_str, depth + 1, max_depth, show_hidden, child_inside_git)).await {
                 Ok(children) => Some(children),
                 Err(e) => {
-                    log::warn!(target: "notesage::file", "Skipping unreadable directory {}: {}", path_str, e);
+                    log::warn!(target: "notesage::file", "Unreadable directory {}: {}", path_str, e);
+                    unreadable = true;
                     Some(Vec::new())
                 }
             }
         } else if is_directory {
-            // Depth limit reached — return empty children
+            // Depth limit reached: the children are not listed, and the entry says so.
+            truncated = true;
             Some(Vec::new())
         } else {
             None
@@ -114,6 +134,8 @@ async fn list_directory_recursive(
             children,
             modified: None,
             child_count: None,
+            unreadable,
+            truncated,
         });
     }
 
@@ -186,6 +208,8 @@ pub async fn list_files_shallow(path: String, show_hidden: Option<bool>) -> Resu
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs() as f64),
             child_count: None,
+            unreadable: false,
+            truncated: false,
         });
     }
 
@@ -718,6 +742,74 @@ mod tests {
         fs::write(tmp.path().join(".git/HEAD"), "ref: refs/heads/main").unwrap();
         fs::create_dir(tmp.path().join(".notesage")).unwrap();
         fs::write(tmp.path().join(".notesage/project.json"), "{}").unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn list_directory_marks_an_unreadable_subfolder() {
+        use std::os::unix::fs::PermissionsExt;
+        let tmp = TempDir::new().unwrap();
+        let locked = tmp.path().join("locked");
+        fs::create_dir(&locked).unwrap();
+        fs::write(locked.join("secret.md"), "x").unwrap();
+        fs::create_dir(tmp.path().join("empty")).unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+        // root reads through the mode bits; nothing to assert in that case.
+        let enforced = fs::read_dir(&locked).is_err();
+
+        let entries = list_directory(tmp.path().to_string_lossy().to_string(), None).await;
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).unwrap();
+        let entries = entries.unwrap();
+        if !enforced {
+            return;
+        }
+
+        let locked_entry = entries.iter().find(|e| e.name == "locked").unwrap();
+        assert!(locked_entry.unreadable, "an unreadable folder must be marked");
+        assert!(!locked_entry.truncated);
+        assert_eq!(locked_entry.children.as_ref().map(Vec::len), Some(0));
+        // A folder that really is empty stays unmarked.
+        let empty_entry = entries.iter().find(|e| e.name == "empty").unwrap();
+        assert!(!empty_entry.unreadable);
+        assert!(!empty_entry.truncated);
+    }
+
+    #[tokio::test]
+    async fn list_directory_marks_folders_cut_off_by_the_depth_limit() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("a/b/c")).unwrap();
+        fs::write(tmp.path().join("a/b/c/deep.md"), "x").unwrap();
+
+        let root = tmp.path().to_string_lossy().to_string();
+        let entries = list_directory_recursive(&root, 0, 1, false, false).await.unwrap();
+        let a = entries.iter().find(|e| e.name == "a").unwrap();
+        assert!(!a.truncated, "a was listed");
+        let b = a.children.as_ref().unwrap().iter().find(|e| e.name == "b").unwrap();
+        assert!(b.truncated, "b sits at the depth limit and was not listed");
+        assert!(!b.unreadable);
+        assert_eq!(b.children.as_ref().map(Vec::len), Some(0));
+    }
+
+    #[test]
+    fn file_entry_omits_the_markers_unless_set() {
+        let mut entry = FileEntry {
+            name: "docs".to_string(),
+            path: "/p/docs".to_string(),
+            is_directory: true,
+            children: Some(Vec::new()),
+            hidden: false,
+            modified: None,
+            child_count: None,
+            unreadable: false,
+            truncated: false,
+        };
+        let plain = serde_json::to_value(&entry).unwrap();
+        assert!(plain.get("unreadable").is_none());
+        assert!(plain.get("truncated").is_none());
+
+        entry.unreadable = true;
+        let marked = serde_json::to_value(&entry).unwrap();
+        assert_eq!(marked["unreadable"], serde_json::json!(true));
     }
 
     #[tokio::test]

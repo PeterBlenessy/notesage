@@ -82,6 +82,7 @@ export function AdvancedSettingsForm({
                     className="text-muted-foreground hover:text-destructive transition-colors"
                     onClick={() => onExtraWritablePathsChange(extraWritablePaths.filter((x) => x !== p))}
                     title={t("conn.remove")}
+                    aria-label={t("conn.remove")}
                   >
                     <XIcon className="h-3 w-3" strokeWidth={1.5} />
                   </button>
@@ -223,6 +224,7 @@ export function AdvancedSettingsForm({
                           className="text-muted-foreground hover:text-destructive transition-colors"
                           onClick={() => usePermissionStore.getState().removeDomain(connection.id, d, null)}
                           title={t("conn.remove")}
+                          aria-label={t("conn.remove")}
                         >
                           <XIcon className="h-3 w-3" strokeWidth={1.5} />
                         </button>

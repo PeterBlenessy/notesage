@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
 import { ToolRow } from './ToolRow';
 import { AddEditServerDialog } from './AddEditServerDialog';
 import { t } from '@/lib/i18n';
+import { McpConfigUnreadableError, readMcpServersForUpdate } from './mcp-config-file';
 
 // ---------------------------------------------------------------------------
 // Status helpers
@@ -106,6 +107,22 @@ export function McpServerCard({ server }: { server: McpServerEntry }) {
   }, [server.id, toggleServer, startServer, stopServer]);
 
   const handleRemove = useCallback(async () => {
+    // Read the config file BEFORE removing anything: if it cannot be read,
+    // rewriting it would drop every other server, so the removal is refused.
+    // (Project config removal is not yet supported — nothing on disk to edit.)
+    let configPath: string | null = null;
+    let configs: Record<string, unknown> | null = null;
+    if (server.source !== 'notesage-project') {
+      try {
+        const home = await invoke<string>('get_home_dir');
+        configPath = `${home}/.notesage/mcp.json`;
+        configs = await readMcpServersForUpdate(configPath);
+      } catch (err) {
+        toast.error(err instanceof McpConfigUnreadableError ? t("mcp.configUnreadable") : `${t("mcp.configSaveFailed")}: ${err}`);
+        return;
+      }
+    }
+
     if (server.status === 'running') {
       await stopServer(server.id);
     }
@@ -120,21 +137,17 @@ export function McpServerCard({ server }: { server: McpServerEntry }) {
         }
       }
     }
-    // Remove from config file on disk
-    try {
-      const home = await invoke<string>('get_home_dir');
-      const configPath = server.source === 'notesage-project'
-        ? null // Project config removal not yet supported
-        : `${home}/.notesage/mcp.json`;
-      if (configPath) {
-        const content = await invoke<string>('read_file', { path: configPath });
-        const parsed = JSON.parse(content);
-        const configs = parsed.mcpServers ?? {};
-        delete configs[server.name];
+    // Remove from config file on disk — only if the server is actually in it
+    // (a missing file, or a server discovered elsewhere, needs no write).
+    if (configPath && configs && server.name in configs) {
+      delete configs[server.name];
+      try {
         await invoke('mcp_save_config', { path: configPath, configs });
+      } catch (err) {
+        // Not a success: the server would come back on the next scan.
+        toast.error(`${t("mcp.configSaveFailed")}: ${err}`);
+        return;
       }
-    } catch {
-      // Config file may not exist or server may not be in it — silently ignore
     }
     toast.success(`Removed MCP server "${server.name}"`);
   }, [server, stopServer, removeServer]);

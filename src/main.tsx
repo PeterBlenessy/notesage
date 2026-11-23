@@ -1,6 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { MobileApp } from "./MobileApp";
 import { isIos } from "@/lib/platform";
 import { reportCspViolations } from "@/lib/csp-violation-reporter";
@@ -136,6 +137,11 @@ const Root = isIos() ? MobileApp : App;
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <Root />
+    {/* Last resort: anything no inner boundary caught shows a fallback with
+        a Reload button instead of unmounting the whole tree to a blank
+        window. */}
+    <ErrorBoundary name="Notesage">
+      <Root />
+    </ErrorBoundary>
   </React.StrictMode>,
 );

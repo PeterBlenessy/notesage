@@ -35,8 +35,9 @@
  * `useReducedMotion()`, with an @media guard parking a static head.
  *
  * Self-hide: renders `null` when the active document has no relations (or none
- * is open) — no empty handle clutters the column. Loading / error states are
- * shown inside the rolled-out panel.
+ * is open) — no empty handle clutters the column — and while loading. A failed
+ * link-graph query does NOT hide it: the handle shows a "!" and the rolled-out
+ * panel shows the error, so "no relations" and "could not load" look different.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link2, CornerUpLeft, CornerDownRight } from "lucide-react";
@@ -55,6 +56,7 @@ import { useSettingsStore } from "@/stores/settings-store";
 import { tryOpenFile } from "@/lib/link-utils";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { t } from "@/lib/i18n";
 import type { BacklinkGroup, BacklinkOccurrence, LinkRow } from "@/lib/tauri";
 
 /** Last path segment of an absolute path. */
@@ -196,7 +198,7 @@ function BacklinkGroupRow({
         <TypeBadge type={group.source_type} />
       </button>
       {group.source_description ? (
-        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground/80">
+        <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
           {group.source_description}
         </p>
       ) : null}
@@ -254,13 +256,13 @@ function ForwardLinkRow({
             </span>
             <TypeBadge type={row.target_type} />
             {unresolved ? (
-              <span className="shrink-0 text-[10px] font-medium tracking-wide text-muted-foreground/70 uppercase">
+              <span className="shrink-0 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
                 not created
               </span>
             ) : null}
           </div>
           {row.target_description ? (
-            <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground/80">
+            <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
               {row.target_description}
             </p>
           ) : null}
@@ -287,7 +289,7 @@ function SectionHeader({
     <div className="flex items-center gap-1.5 px-1 pb-1.5 pt-1 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
       {icon}
       <span>{label}</span>
-      <span className="text-muted-foreground/60 tabular-nums">{count}</span>
+      <span className="text-muted-foreground tabular-nums">{count}</span>
     </div>
   );
 }
@@ -512,9 +514,14 @@ export function RelationsPanel({
   // Focus mode also hides the panel (it's chrome). Returning null unmounts the
   // whole morph (handle + panel), so this is the authoritative
   // close-on-focus-mode path.
-  if (focusModeActive || !path || loading || error || isEmpty || count === 0) {
+  //
+  // A failed query is not "no relations": keep the handle and say so.
+  if (focusModeActive || !path || loading || (!error && (isEmpty || count === 0))) {
     return null;
   }
+  const handleLabel = error
+    ? `Relations — ${t("relations.loadFailed")}`
+    : `Relations — ${count} ${count === 1 ? "link" : "links"}`;
 
   // Morph geometry: collapsed = the 28×112 handle (w-7 h-28, rounded-l-lg);
   // open = the user-resizable panel (width var, 40–60vh). The single container
@@ -558,7 +565,7 @@ export function RelationsPanel({
               ref={handleRef}
               type="button"
               data-testid="relations-handle"
-              aria-label={`Relations — ${count} ${count === 1 ? "link" : "links"}`}
+              aria-label={handleLabel}
               aria-expanded={open}
               aria-hidden={open || undefined}
               tabIndex={open ? -1 : undefined}
@@ -582,7 +589,7 @@ export function RelationsPanel({
                   motion, and retired for good once the panel has been opened
                   for this document (`cometSeenPath`). Keyed by `path` so the
                   3 laps restart on a doc switch. */}
-              {!reducedMotion && !open && cometSeenPath !== path ? (
+              {!reducedMotion && !open && !error && cometSeenPath !== path ? (
                 <RelationsComet key={path} />
               ) : null}
               <Link2
@@ -592,14 +599,17 @@ export function RelationsPanel({
               />
               <span
                 data-testid="relations-handle-count"
-                className="font-mono text-[11px] font-medium tabular-nums"
+                className={cn(
+                  "font-mono text-[11px] font-medium tabular-nums",
+                  error && "text-destructive",
+                )}
               >
-                {count}
+                {error ? "!" : count}
               </span>
             </button>
           </TooltipTrigger>
           <TooltipContent side="left" sideOffset={8}>
-            Relations — {count} {count === 1 ? "link" : "links"}
+            {handleLabel}
           </TooltipContent>
         </Tooltip>
       </TooltipProvider>
@@ -651,7 +661,7 @@ export function RelationsPanel({
             "flex items-center justify-center focus-visible:outline-none",
           )}
         >
-          <div className="h-0.5 w-8 rounded-full bg-border transition-colors group-hover:bg-muted-foreground focus-within:bg-muted-foreground" />
+          <div className="h-0.5 w-8 rounded-full bg-border transition-colors group-hover:bg-muted-foreground group-focus-visible:bg-muted-foreground" />
         </div>
 
         {/* Header */}
@@ -665,6 +675,12 @@ export function RelationsPanel({
 
         {/* Scrollable body — two sections (Links to + Linked from). */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-2">
+          {error ? (
+            <div role="alert" data-testid="relations-error" className="px-1 text-xs">
+              <p className="text-destructive">{t("relations.loadFailed")}</p>
+              <p className="mt-1 break-words text-muted-foreground">{error}</p>
+            </div>
+          ) : null}
           {outlinks.length > 0 ? (
             <section className="mb-3">
               <SectionHeader

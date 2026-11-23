@@ -134,7 +134,10 @@ function setupTask(
   const existingActivityTask = track && existingId
     ? useActivityStore.getState().tasks.find((t) => t.id === existingId)
     : undefined;
-  const taskId = existingActivityTask ? existingId! : `task-${Date.now()}`;
+  // A UUID, not `Date.now()`: two tasks started in the same millisecond (an
+  // automation plus a delegation) shared an id and overwrote each other's
+  // registry record and cleanup.
+  const taskId = existingActivityTask ? existingId! : `task-${crypto.randomUUID()}`;
 
   const task: InternalTask = {
     id: taskId,

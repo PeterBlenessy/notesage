@@ -24,8 +24,14 @@ const editorState = {
   }>,
   activeTabId: null as string | null,
   closeTab: vi.fn(),
-  setPendingCloseTabId: vi.fn(),
 };
+
+// The × runs the same `closeActiveDocument` as ⌘W (save if dirty, then
+// close); its own behaviour is covered in useFileOperations.test.ts.
+const closeActiveDocument = vi.fn(async () => {});
+vi.mock('@/hooks/useFileOperations', () => ({
+  closeActiveDocument: () => closeActiveDocument(),
+}));
 
 function setActiveTab(tab: { id: string; fileName: string; isDirty: boolean; lastSavedAt?: number }) {
   editorState.openDocuments = [tab];
@@ -36,7 +42,7 @@ function clearActiveTab() {
   editorState.openDocuments = [];
   editorState.activeTabId = null;
   editorState.closeTab.mockReset();
-  editorState.setPendingCloseTabId.mockReset();
+  closeActiveDocument.mockClear();
 }
 
 vi.mock('@/stores/editor-store', () => {
@@ -128,8 +134,8 @@ describe('TitleBar', () => {
   // ---------------------------------------------------------------------
   // Live-test 2026-04-26 — close-document × button. Quiet Composer has no
   // TabBar (intentional); the TitleBar carries the only visible "close
-  // active document" affordance. Wires through the same closeTab /
-  // setPendingCloseTabId flow ⌘W uses, so warn-if-dirty stays consistent.
+  // active document" affordance. Wires through the same
+  // `closeActiveDocument` ⌘W uses, so a dirty document is saved first.
   // ---------------------------------------------------------------------
 
   it('renders the close-document × button when a tab is active', () => {
@@ -145,24 +151,14 @@ describe('TitleBar', () => {
     expect(screen.queryByRole('button', { name: /close document/i })).toBeNull();
   });
 
-  it('clicking × on a clean active tab calls closeTab(activeTabId)', () => {
-    setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: false });
+  it.each([false, true])('clicking × closes through closeActiveDocument (dirty: %s)', (isDirty) => {
+    setActiveTab({ id: 't1', fileName: 'draft.md', isDirty });
     renderWithProviders(<TitleBar />);
 
     (screen.getByRole('button', { name: /close document/i }) as HTMLButtonElement).click();
 
-    expect(editorState.closeTab).toHaveBeenCalledWith('t1');
-    expect(editorState.setPendingCloseTabId).not.toHaveBeenCalled();
-  });
-
-  it('clicking × on a dirty active tab routes through setPendingCloseTabId (warn flow)', () => {
-    setActiveTab({ id: 't1', fileName: 'draft.md', isDirty: true });
-    renderWithProviders(<TitleBar />);
-
-    (screen.getByRole('button', { name: /close document/i }) as HTMLButtonElement).click();
-
-    // Dirty tab must NOT close immediately — same contract as ⌘W.
-    expect(editorState.setPendingCloseTabId).toHaveBeenCalledWith('t1');
+    // Never a bare closeTab: that drops a dirty document's unsaved text.
+    expect(closeActiveDocument).toHaveBeenCalledTimes(1);
     expect(editorState.closeTab).not.toHaveBeenCalled();
   });
 });

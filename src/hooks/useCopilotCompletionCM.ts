@@ -26,12 +26,15 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
   const activeTabId = useEditorStore((s) => s.activeTabId);
   const openDocuments = useEditorStore((s) => s.openDocuments);
   const activeTab = openDocuments.find((t) => t.id === activeTabId);
+  // Subscribed, so toggling the setting re-arms the callback and the effects.
+  const inlineCompletionsDisabled = useSettingsStore((s) => s.inlineCompletionsDisabled);
 
   const openDocUri = useRef<string | null>(null);
   const docVersion = useRef(0);
   const completionTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastRequestedPos = useRef<string | null>(null);
   const lastContentRef = useRef<string | null>(null);
+  const requestId = useRef(0);
 
   const isSourceMode = activeTab?.viewMode === "source";
   const isActive = !!cmView && !!connection && isSourceMode;
@@ -94,7 +97,7 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
   const requestCompletion = useCallback(
     async (filePath: string, version: number) => {
       if (!cmView || !isActive) return;
-      if (useSettingsStore.getState().inlineCompletionsDisabled) return;
+      if (inlineCompletionsDisabled) return;
 
       const sel = cmView.state.selection.main;
       if (!sel.empty) return;
@@ -110,14 +113,28 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
       if (posKey === lastRequestedPos.current) return;
       lastRequestedPos.current = posKey;
 
+      // Capture the request anchor + a monotonic id so a slow response can't
+      // paint stale ghost text after a newer request (or a cursor move) has
+      // superseded it — request N resolving after N+1 must be discarded.
+      const requestedPos = pos;
+      const thisRequest = ++requestId.current;
+
       try {
         const result = await requestCopilotCompletion(filePath, lineNumber, character, version);
+
+        // Discard if a newer request was issued while we were waiting
+        if (thisRequest !== requestId.current) return;
 
         // Editor may have changed while awaiting
         if (!cmView.hasFocus) return;
 
+        // Discard if the cursor moved off the request anchor — the completion
+        // was computed for a position that no longer matches the caret.
+        const currentSel = cmView.state.selection.main;
+        if (!currentSel.empty || currentSel.head !== requestedPos) return;
+
         if (result) {
-          const currentPos = cmView.state.selection.main.head;
+          const currentPos = currentSel.head;
           setGhostTextCM(cmView, {
             text: result.text,
             pos: currentPos,
@@ -132,7 +149,7 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
         // Expected: completion requests may fail when LSP is restarting or document changed
       }
     },
-    [cmView, isActive, useSettingsStore.getState().inlineCompletionsDisabled],
+    [cmView, isActive, inlineCompletionsDisabled],
   );
 
   // -------------------------------------------------------------------------
@@ -155,7 +172,7 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
       version,
     }).catch(() => {});
 
-    if (useSettingsStore.getState().inlineCompletionsDisabled) return;
+    if (inlineCompletionsDisabled) return;
 
     if (completionTimeout.current) clearTimeout(completionTimeout.current);
     completionTimeout.current = setTimeout(() => {
@@ -197,8 +214,8 @@ export function useCopilotCompletionCM(cmView: EditorView | null) {
   // -------------------------------------------------------------------------
 
   useEffect(() => {
-    if (cmView && useSettingsStore.getState().inlineCompletionsDisabled && hasActiveGhostTextCM(cmView)) {
+    if (cmView && inlineCompletionsDisabled && hasActiveGhostTextCM(cmView)) {
       clearGhostTextCM(cmView);
     }
-  }, [cmView, useSettingsStore.getState().inlineCompletionsDisabled]);
+  }, [cmView, inlineCompletionsDisabled]);
 }

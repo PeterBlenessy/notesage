@@ -1455,8 +1455,7 @@ bad voice" and falls back — selection is verifiable, audible output is not.
 | `src/components/mobile/Onboarding.tsx` | One-time permission / re-grant screen |
 | `src/lib/home-file.ts` | `.notesage/home.json`: the folders Home shows (format, defaults, compaction, `HOME_KEY`) |
 | `src/components/mobile/HomeFolders.tsx` | Edit Home — a switch per root folder |
-| `src/components/mobile/AllFoldersRow.tsx` | The last row on Home: pushes the full root listing as a level |
-| `src/components/mobile/HomeHint.tsx` | The one-time line under a not-yet-curated Home |
+| `src/components/mobile/LibraryBrowser.tsx` + `useNativeLibrary.ts` | Home's last row ("All folders", pushes the full root listing as a level) and the one-time hint under a not-yet-curated Home — both now rendered here; the former `AllFoldersRow.tsx` / `HomeHint.tsx` components are gone |
 | `…/ios/Sources/ChromeOverlay.swift` | The native chrome overlay. `layoutBottomColumn` is the single owner of the bottom-centre slot — nothing else positions anything there |
 | `src/components/mobile/useNativeChrome.ts` | The single web-side declaration point for that chrome; merges the app-global status into every push |
 | `src/components/mobile/chrome-status.ts` | The app-global passive status line (the background sweep's), which belongs to no one screen |

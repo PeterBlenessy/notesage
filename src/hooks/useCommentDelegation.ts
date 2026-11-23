@@ -19,6 +19,47 @@ function resolveSandboxRoot(filePath: string | undefined): string | undefined {
   return undefined;
 }
 
+/**
+ * One in-flight delegation of a comment, from the moment it is requested until
+ * its task reaches a terminal state.
+ *
+ * `startTask` only resolves once the agent is up (seconds on a cold spawn),
+ * and the task id is stored on the comment only after that. A Cancel in that
+ * window used to find no task: it reset the comment's status, but the task
+ * kept running and its `onComplete` later added the reply and flipped the
+ * status back to `done` (audit 2026-11-22 §2). The run record is what Cancel
+ * flags instead — the delegation cancels its task the moment it has an id,
+ * and every callback of a cancelled run is ignored.
+ */
+interface DelegationRun {
+  cancelled: boolean;
+  /** The live task's id, once `startTask` has resolved. */
+  taskId?: string;
+}
+
+/**
+ * In-flight delegation per comment id. Module-level because the hook is
+ * mounted in several components and Cancel may come from a different instance
+ * than the one that started the delegation. Runtime-only (nothing renders
+ * from it); resettable for tests via {@link resetCommentDelegationRuns}.
+ */
+const delegationRuns = new Map<string, DelegationRun>();
+
+function beginRun(commentId: string): DelegationRun {
+  const run: DelegationRun = { cancelled: false };
+  delegationRuns.set(commentId, run);
+  return run;
+}
+
+function endRun(commentId: string, run: DelegationRun): void {
+  if (delegationRuns.get(commentId) === run) delegationRuns.delete(commentId);
+}
+
+/** Drop all in-flight delegation records — for tests only. */
+export function resetCommentDelegationRuns(): void {
+  delegationRuns.clear();
+}
+
 export interface UseCommentDelegationReturn {
   delegateComment: (comment: Comment, documentId: string, projectRoot: string, mode?: DelegationMode) => Promise<void>;
   delegateReply: (comment: Comment, replyText: string, documentId: string, projectRoot: string, mode?: DelegationMode) => Promise<void>;
@@ -86,11 +127,16 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
       // Snapshot label for meta (uses body at delegation time)
       const metaLabel = comment.body.length > 50 ? comment.body.slice(0, 50) + '\u2026' : comment.body;
 
+      const run = beginRun(commentId);
+
       try {
         const taskId = await startTask(
           prompt,
           {
             onComplete: (output) => {
+              // Cancelled runs are finished as far as the comment is concerned.
+              if (run.cancelled) return;
+              endRun(commentId, run);
               clearPartialReply(documentId, commentId);
               const s = useCommentStore.getState();
               s.completeAllActivities(commentId);
@@ -116,6 +162,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
               }
             },
             onActivity: (activity) => {
+              if (run.cancelled) return;
               const s = useCommentStore.getState();
               if (activity.event === 'tool_call') {
                 s.addActivity(commentId, {
@@ -155,6 +202,8 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
               }
             },
             onError: (errorMsg) => {
+              if (run.cancelled) return;
+              endRun(commentId, run);
               clearPartialReply(documentId, commentId);
               const s = useCommentStore.getState();
               s.completeAllActivities(commentId);
@@ -169,6 +218,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
               toast.error(t("toast.agentFailed", { error: errorMsg }));
             },
             onChunk: (chunk) => {
+              if (run.cancelled) return;
               appendPartialReply(documentId, commentId, chunk);
             },
           },
@@ -183,6 +233,16 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
           },
         );
 
+        run.taskId = taskId;
+        // Cancelled while the agent was starting: the task exists only now, so
+        // this is the first moment it can be stopped. Cancel already settled
+        // the comment (status, activity log, toast).
+        if (run.cancelled) {
+          endRun(commentId, run);
+          await cancelTask(taskId);
+          return;
+        }
+
         // Log successful task start
         store.addActivity(commentId, {
           label: 'Agent session started',
@@ -195,6 +255,9 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
         store.setTaskId(documentId, commentId, taskId);
         await store.saveComments(documentId, projectRoot);
       } catch (error) {
+        endRun(commentId, run);
+        // Cancelled before the spawn failed — nothing left to report.
+        if (run.cancelled) return;
         // startTask itself threw (e.g. agent spawn failed)
         clearPartialReply(documentId, commentId);
         store.completeAllActivities(commentId);
@@ -210,7 +273,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
         toast.error(t("toast.delegationFailed", { error: errMsg }));
       }
     },
-    [startTask, taskConnection]
+    [startTask, cancelTask, taskConnection]
   );
 
   const delegateReply = useCallback(
@@ -275,11 +338,16 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
       // Snapshot label for meta (uses body at delegation time)
       const metaLabel = comment.body.length > 50 ? comment.body.slice(0, 50) + '\u2026' : comment.body;
 
+      const run = beginRun(commentId);
+
       try {
         const taskId = await startTask(
           prompt,
           {
             onComplete: (output) => {
+              // Cancelled runs are finished as far as the comment is concerned.
+              if (run.cancelled) return;
+              endRun(commentId, run);
               clearPartialReply(documentId, commentId);
               const s = useCommentStore.getState();
               s.completeAllActivities(commentId);
@@ -305,6 +373,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
               }
             },
             onActivity: (activity) => {
+              if (run.cancelled) return;
               const s = useCommentStore.getState();
               if (activity.event === 'tool_call') {
                 s.addActivity(commentId, {
@@ -344,6 +413,8 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
               }
             },
             onError: (errorMsg) => {
+              if (run.cancelled) return;
+              endRun(commentId, run);
               clearPartialReply(documentId, commentId);
               const s = useCommentStore.getState();
               s.completeAllActivities(commentId);
@@ -359,6 +430,7 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
               toast.error(t("toast.agentFailed", { error: errorMsg }));
             },
             onChunk: (chunk) => {
+              if (run.cancelled) return;
               appendPartialReply(documentId, commentId, chunk);
             },
           },
@@ -374,12 +446,22 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
           },
         );
 
+        run.taskId = taskId;
+        // Cancelled while the agent was starting — see delegateComment.
+        if (run.cancelled) {
+          endRun(commentId, run);
+          await cancelTask(taskId);
+          return;
+        }
+
         // Only update taskId if this is a new task (first delegation had no taskId)
         if (!existingTaskId) {
           store.setTaskId(documentId, commentId, taskId);
           await store.saveComments(documentId, projectRoot);
         }
       } catch (error) {
+        endRun(commentId, run);
+        if (run.cancelled) return;
         clearPartialReply(documentId, commentId);
         store.completeAllActivities(commentId);
         const errMsg = error instanceof Error ? error.message : String(error);
@@ -395,22 +477,44 @@ export function useCommentDelegation(): UseCommentDelegationReturn {
         toast.error(t("toast.delegationFailed", { error: errMsg }));
       }
     },
-    [startTask, taskConnection]
+    [startTask, cancelTask, taskConnection]
   );
 
   const cancelDelegation = useCallback(
     async (comment: Comment, documentId: string, projectRoot: string) => {
       // Capture stable IDs to avoid stale closure over the full `comment` object.
       const commentId = comment.id;
-      const taskIdToCancel = comment.taskId;
+
+      // Flag the in-flight delegation first: from here on its callbacks are
+      // ignored, so a task that finishes anyway cannot undo this cancel.
+      const run = delegationRuns.get(commentId);
+      if (run) {
+        run.cancelled = true;
+        endRun(commentId, run);
+      }
+      // The agent is still starting — there is no task id anywhere yet. The
+      // delegation cancels the task itself as soon as `startTask` resolves.
+      const startPending = run !== undefined && run.taskId === undefined;
 
       clearPartialReply(documentId, commentId);
       const s = useCommentStore.getState();
 
+      // The live run knows the task actually running; otherwise read the id
+      // from the STORE — the `comment` argument may be a stale render
+      // snapshot taken before the id was written.
+      const storedComment = s.commentsByDocument[documentId]?.find((c) => c.id === commentId);
+      const taskIdToCancel = run?.taskId ?? storedComment?.taskId ?? comment.taskId;
+
       // Mark all running activities as done before adding cancel message
       s.completeAllActivities(commentId);
 
-      if (taskIdToCancel) {
+      if (startPending) {
+        s.addActivity(commentId, {
+          label: t('editor.delegationCancelledStopped'),
+          status: 'info',
+          timestamp: Date.now(),
+        });
+      } else if (taskIdToCancel) {
         const wasCancelled = await cancelTask(taskIdToCancel);
         s.addActivity(commentId, {
           label: wasCancelled ? 'Cancelled — agent session stopped' : 'Cancelled — agent had already finished',

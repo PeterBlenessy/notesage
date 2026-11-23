@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { flagIds, isKnownFlag, type FlagId } from "@/lib/flags";
+import { handleRehydrateResult } from "@/lib/persist-rehydrate";
 
 /**
  * Which Labs flags the user has switched on.
@@ -48,6 +49,7 @@ export const useFlagStore = create<FlagStore>()(
     }),
     {
       name: "notesage-flags",
+      onRehydrateStorage: () => (_state, error) => handleRehydrateResult("notesage-flags", error),
       partialize: (s) => ({ enabled: s.enabled }),
       merge: (persisted, current) => {
         const raw = (persisted as { enabled?: unknown })?.enabled;

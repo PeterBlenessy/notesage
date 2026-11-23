@@ -98,7 +98,7 @@ The orb pulse animation is CSS-only (`@keyframes orb-pulse`) — there is no `re
 | comments list expand | 23.54 | 80 |
 | segmented picker click | 1.37 | 50 |
 
-### Sidebar Type-to-Filter (`sidebar-filter.perf.test.ts` — task #91)
+### Sidebar Type-to-Filter (`sidebar-filter.perf.test.tsx` — task #91)
 
 | Operation | Median (ms) | Spec Budget | Notes |
 | --- | --- | --- | --- |

@@ -70,6 +70,9 @@ export {
   // Node ID stripping (UniqueID extension comments)
   stripNodeIdComments,
 
+  // The whole converter chain above, in its one canonical order.
+  preprocessForParse,
+
   // Type-only re-exports for callers that need to type the metadata maps.
   type ColumnMetadata,
   type TableColumnMetadataMap,
@@ -79,20 +82,7 @@ import {
   stripAnnotationsFromMarkdown,
   stripNodeIdComments,
   extractTableColumnMetadata,
-  stripGhostTaskItems,
-  normalizeEmptyTaskItems,
-  convertMermaidToHtml,
-  convertCalloutsToHtml,
-  convertPageBreaksToHtml,
-  convertTocToHtml,
-  convertLinkPreviewsToHtml,
-  convertDrawingsToHtml,
-  convertChartsToHtml,
-  convertInlineDrawingsToHtml,
-  convertInlineChartsToHtml,
-  encodeImagePathSpaces,
-  convertDataUriImagesToHtml,
-  convertImagesWithMetaToHtml,
+  preprocessForParse,
   type TableColumnMetadataMap,
 } from "@/lib/markdown";
 
@@ -119,39 +109,15 @@ export interface PrepareForParseResult {
  * `loadRawMarkdownIntoEditor` in `markdown.ts`. Returns the prepared markdown
  * + the side-channel maps that need to be re-applied after `setContent`.
  *
- * Worker-safe: every step is pure string→string. The order matches the
- * main-thread chain exactly so the ProseMirror JSON output is byte-identical
- * (verified by Phase 2 task #19's parity test).
+ * Worker-safe: every step is pure string→string. The converter chain is the
+ * main thread's own `preprocessForParse` (one definition in `markdown.ts`), so
+ * the two cannot drift; `markdown-parse.parity.test.ts` checks the resulting
+ * ProseMirror JSON against the main-thread editor for every fixture.
  */
 export function prepareMarkdownForParse(rawMarkdown: string): PrepareForParseResult {
   const { cleaned, annotations } = stripAnnotationsFromMarkdown(rawMarkdown);
   const { cleaned: noIds, nodeIds } = stripNodeIdComments(cleaned);
   const { cleaned: noMeta, metadata } = extractTableColumnMetadata(noIds);
-  // Innermost-first; matches `loadRawMarkdownIntoEditor` exactly.
-  const prepared = convertDataUriImagesToHtml(
-    convertImagesWithMetaToHtml(
-    encodeImagePathSpaces(
-      convertInlineChartsToHtml(
-        convertInlineDrawingsToHtml(
-          convertChartsToHtml(
-            convertDrawingsToHtml(
-              convertLinkPreviewsToHtml(
-                convertTocToHtml(
-                  convertPageBreaksToHtml(
-                    convertCalloutsToHtml(
-                      convertMermaidToHtml(
-                        normalizeEmptyTaskItems(stripGhostTaskItems(noMeta)),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    ),
-    ),
-  );
+  const prepared = preprocessForParse(noMeta);
   return { prepared, annotations, nodeIds, tableMetadata: metadata };
 }

@@ -11,7 +11,7 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 | Close active document | `⌘W` | Close the active document (warns if unsaved). Internally still called "tab" — see Implementation Notes |
 | New note | `⌘N` | Opens an inline-create row in the active project (no dialog) |
 | New project | `⌘⇧N` | Opens an inline-create row in the Folders section (no dialog). Also in the Folders `+` menu, beside Add existing folder… (`⌘O`) |
-| Export | `⌘⇧E` | Open Export dialog (multi-format: PDF / DOCX / PPTX / HTML). Works in both shells since sidebar #20 deleted TreeOverlay (which used to preempt the chord under Quiet Composer). |
+| Export | `⌘⇧E` | Open Export dialog (multi-format: PDF / DOCX / PPTX / HTML). The chord used to belong to the TreeOverlay, deleted in sidebar #20. |
 
 ## Editor Formatting
 
@@ -72,7 +72,7 @@ All shortcuts use Cmd (⌘) on macOS. Glyph notation: ⌘ Command · ⌥ Option 
 
 | Action | Shortcut | Description |
 | --- | --- | --- |
-| Previous Recent doc | `⌃⇧Tab` | Cycle backward through MRU document history (mirrors VS Code's MRU-cycle convention; works in both shells) |
+| Previous Recent doc | `⌃⇧Tab` | Cycle backward through MRU document history (mirrors VS Code's MRU-cycle convention) |
 | Next Recent doc | `⌃Tab` | Cycle forward through MRU document history |
 
 ## Slash Commands
@@ -103,16 +103,16 @@ Two independent ways to summon the FloatingCommandBar in Quiet Composer: `⌘K` 
 | --- | --- | --- | --- |
 | Command palette / Command bar | `⌘K` | `⌘K` | Focus the `FloatingCommandBar` |
 | Summon command bar (alternate) | Double-tap `⌘` | — | Quiet Composer only — within 300 ms; alternate path to summon (no chord) |
-| Find files | `⌘⇧F` | `⌘⇧F` | Classic: opens command palette in file-search mode. Quiet Composer: focuses the command bar with the `:file ` verb prefix → FileMode (filename search backed by the SQLite document index). PRD `2026-04-28-cmd-bar-verb-prefixes`. |
+| Find files | `⌘⇧F` | `⌘⇧F` | Focuses the command bar with the `:file ` verb prefix → FileMode (filename search backed by the SQLite document index). PRD `2026-04-28-cmd-bar-verb-prefixes`. |
 | Toggle sidebar | `⌘⇧L` | `⌘⇧L` | Toggle the sidebar pin (`settings.sidebarPinned`). Internally calls `setSidebarPinned`; user-facing label is "show/hide" |
 | Focus mode | `⌘.` | `⌘.` | Toggle distraction-free focus mode |
 | Open Inbox | `⌘⇧I` | `⌘⇧I` | Toggle the Inbox (read-later list) in the document column. Inside the list: `j`/`k` or ↓/↑ move, ⇧ extends, ⌘A selects all, ↩ opens, `e` files to the last-used project, `p` pins, ⌘⌫ moves to the Trash. See docs/features/inbox.md |
 | Next / previous Inbox item | `⌘↓` / `⌘↑` | `⌘↓` `⌘↑` | While an item opened from the Inbox is the active document; no-ops otherwise |
-| Open Tasks | `⌘1` / `⌘⇧1` | `⌘!` | Classic: opens Actions dashboard. Quiet Composer: focuses the command bar with `!` prefix → TaskMode |
-| References (was Mentions) | `⌘2` / `⌘⇧2` | `⌘@` | Classic: command palette in mentions mode. Quiet Composer: focuses the command bar with `@` prefix → ReferenceMode (files / people / comments) |
-| Tags | `⌘3` / `⌘⇧3` | `⌘#` | Classic: command palette in tags mode. Quiet Composer: focuses the command bar with `#` prefix → TagMode |
-| Research | `⌘4` / `⌘⇧4` | `⌘?` | Classic: command palette in research mode. Quiet Composer: focuses the command bar with `?` prefix → ResearchMode |
-| Commands palette | `⌘⇧P` | `⌘⇧P` | Classic: command palette in `>` (commands) mode. Quiet Composer: focuses the command bar with `>` prefix → PaletteMode |
+| Open Tasks | `⌘1` / `⌘⇧1` | `⌘!` | Focuses the command bar with `!` prefix → TaskMode |
+| References (was Mentions) | `⌘2` / `⌘⇧2` | `⌘@` | Focuses the command bar with `@` prefix → ReferenceMode (files / people / comments) |
+| Tags | `⌘3` / `⌘⇧3` | `⌘#` | Focuses the command bar with `#` prefix → TagMode |
+| Research | `⌘4` / `⌘⇧4` | `⌘?` | Focuses the command bar with `?` prefix → ResearchMode |
+| Commands palette | `⌘⇧P` | `⌘⇧P` | Focuses the command bar with `>` prefix → PaletteMode |
 | ~~Tree overlay~~ | ~~`⌘⇧E`~~ | ~~`⌘⇧E`~~ | **REMOVED in sidebar-simplification task #20.** TreeOverlay deleted; the in-sidebar inline-expand pattern (`→` on a project / folder) replaces it. `⌘⇧E` reclaimed by Export above. |
 | Document outline | `⌘⇧O` | `⌘⇧O` | Open document outline (requires active file). Currently uses a legacy modal `Dialog` — has not been migrated to a Quiet Composer popover |
 | Keyboard shortcuts | `⌘⇧K` | `⌘⇧K` | Show keyboard shortcuts reference |
@@ -153,9 +153,9 @@ _None at the moment — the previous file-search and Quick Capture entries have 
 
 ## Implementation Notes
 
-### Owner table (Quiet Composer vs Legacy)
+### Who owns which chord
 
-A single App-root dispatcher (`src/hooks/useGlobalShortcuts.ts`, mounted once in `App.tsx`) owns all app-level chords. It is data-driven: chords come from the manifest (`src/shared/appCommandManifest.json` → `src/lib/appCommandCatalog.ts`), are matched with the layout-safe `matchesChord` (key OR physical `code`), and dispatched to behaviours in `src/hooks/shortcuts/shortcutActions.ts`. Each command declares `firesWhileTyping` (whether it fires while a text surface is focused) and `phase`. The dispatcher absorbed the former `useCommandBarShortcuts` and `useDoubleTapCmd` (double-tap `⌘`). Command-bar summons (⌘K / ⌘1–⌘4 / ⌘⇧P / ⌘⇧F / double-tap `⌘`) are written to the durable `cmd-bar-summon-store` so they survive a command-bar crash. ⌘N / ⌘⇧N and focus mode (⌘. / Esc) are also dispatched here at **capture phase** (manifest `phase: "capture"`) — ⌘N/⌘⇧N call App's `handleNewNote`/`handleNewProject`; focus mode toggles/exits through the `focus-mode-controller` bridge (state stays in `useFocusMode`). A few chords stay outside the dispatcher: ⌘S by `Editor.tsx` / `CodeEditor.tsx` (markdown vs code-file save paths diverge); ⌘⌥C (add comment) via a ProseMirror `handleKeyDown` in `comment-mark.ts` (code-based, needs the live selection); and the Tiptap/CodeMirror editor formatting keymaps. The `⌘⌥` family is mnemonic: C = Comment, P = Path, R = Reveal.
+A single App-root dispatcher (`src/hooks/useGlobalShortcuts.ts`, mounted once in `App.tsx`) owns all app-level chords. It is data-driven: chords come from the manifest (`src/shared/appCommandManifest.json` → `src/lib/appCommandCatalog.ts`), are matched with the layout-safe `matchesChord` (key OR physical `code`), and dispatched to behaviours in `src/hooks/shortcuts/shortcutActions.ts`. Each command declares `firesWhileTyping` (whether it fires while a text surface is focused) and `phase`. The dispatcher absorbed the former `useCommandBarShortcuts` and `useDoubleTapCmd` (double-tap `⌘`). Command-bar summons (⌘K / ⌘1–⌘4 / ⌘⇧P / ⌘⇧F / double-tap `⌘`) are written to the durable `cmd-bar-summon-store` so they survive a command-bar crash. ⌘N / ⌘⇧N and focus mode (⌘. / Esc) are also dispatched here at **capture phase** (manifest `phase: "capture"`) — ⌘N/⌘⇧N call App's `handleNewNote`/`handleNewProject`; focus mode toggles/exits through the `focus-mode-controller` bridge (state stays in `useFocusMode`). A few chords stay outside the dispatcher: ⌘S by `useEditorKeyBindings.ts` (markdown, window listener) and the `Mod-s` CodeMirror keymaps in `CodeEditor.tsx` / `SourceEditor.tsx` (markdown vs code-file vs source-mode save paths diverge); ⌘⌥C (add comment) via a ProseMirror `handleKeyDown` in `comment-mark.ts` (code-based, needs the live selection); and the Tiptap/CodeMirror editor formatting keymaps. The `⌘⌥` family is mnemonic: C = Comment, P = Path, R = Reveal.
 
 ### Shortcut Priority
 
@@ -169,7 +169,7 @@ When multiple shortcuts could apply, priority is:
 
 - Avoid conflicting with system shortcuts (`⌘Q` quit, `⌘H` hide, etc.)
 - Avoid conflicting with browser shortcuts if running in web view
-- Document any intentional overrides (e.g., `⌘⇧E` in Quiet Composer overrides the legacy Export-as-PDF chord)
+- Document any intentional overrides (e.g., `⌘⇧E` opens the multi-format Export dialog, not a direct Export-as-PDF)
 
 ### Cross-platform
 
@@ -188,7 +188,7 @@ Currently targeting macOS:
 
 - `event.key === "["` for `⌘⇧[` works on US keyboards. Swedish (and many European) layouts produce `[` only via `⌥8`, so the chord never registers — `event.key` reports something like `Å` instead.
 - `event.key === ","` for `⌘⇧,` works on US. Swedish `Shift+,` produces `;`, not `,`, so the chord misses.
-- `event.key === "/"` for `⌘/` works on US. Nordic layouts produce `/` only via `Shift+7`, so plain `Cmd+/` would need `event.code === "Slash"` OR `event.shiftKey && event.code === "Digit7"` (the editor's view-mode chord at `useEditorKeyBindings.ts:82-94` already handles both).
+- `event.key === "/"` for `⌘/` works on US. Nordic layouts produce `/` only via `Shift+7`, so plain `Cmd+/` would need `event.code === "Slash"` OR `event.shiftKey && event.code === "Digit7"` (no app chord uses `/` today — the editor's `⌘/` view-mode chord that handled both was removed in the keyboard-shortcut overhaul).
 
 **The rule:**
 
@@ -196,8 +196,7 @@ Any chord using a punctuation key (`,`, `.`, `[`, `]`, `;`, `'`, `\`, `/`, `-`, 
 
 - `src/components/sidebar/quiet/useSidebarItemShortcuts.ts` (`isContextMenuKey`) — `Comma` fallback
 - `src/shared/appCommandManifest.json` + `src/lib/appCommandCatalog.ts` (`matchesChord`) — every chord carries both `key` and physical `code` for layout safety; the matcher accepts either
-- `src/hooks/useFocusMode.ts` — `Period` fallback
-- `src/hooks/useEditorKeyBindings.ts` — `Slash` + Nordic `Shift+Digit7` pattern
+- `⌘.` (focus mode) is a manifest chord with `code: "Period"` — `useFocusMode.ts` no longer installs its own key listener
 
 **KeyCodeName quick reference:** `,` → `"Comma"`, `.` → `"Period"`, `[` → `"BracketLeft"`, `]` → `"BracketRight"`, `;` → `"Semicolon"`, `'` → `"Quote"`, `\` → `"Backslash"`, `/` → `"Slash"`, `-` → `"Minus"`, `=` → `"Equal"`.
 

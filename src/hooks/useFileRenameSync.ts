@@ -7,6 +7,8 @@ import { useFileOperations } from "@/hooks/useFileOperations";
 import { isSelfRename, consumeSelfRename } from "@/lib/self-rename-filter";
 import { toastExternalRename } from "@/lib/notifications";
 import { log } from "@/lib/logger";
+import { toast } from "sonner";
+import { t } from "@/lib/i18n";
 import { commentSidecarPath, parseSidecar } from "@/lib/comment-storage";
 import { executeRenameTransaction, type SidecarMigrationInput } from "@/lib/rename-transaction";
 import { tauriApi } from "@/lib/tauri";
@@ -41,7 +43,10 @@ async function collectClosedTabMigrationInputs(
   let entries: Awaited<ReturnType<typeof tauriApi.listDirectory>>;
   try {
     entries = await tauriApi.listDirectory(commentsDir);
-  } catch {
+  } catch (err) {
+    // Only a missing directory means "no comments to move". One that is
+    // there and cannot be listed is a failure the caller reports.
+    if (await tauriApi.pathExists(commentsDir).catch(() => true)) throw err;
     return []; // comments directory does not exist yet
   }
 
@@ -84,6 +89,43 @@ async function collectClosedTabMigrationInputs(
   }
 
   return inputs;
+}
+
+/**
+ * A comment sidecar that did not follow its renamed file leaves the document
+ * with no comments (they are keyed by the path), which looks like data loss.
+ * The comments themselves are still on disk under the old key — so say so
+ * rather than fail silently.
+ */
+function reportSidecarMoveFailure(newPath: string, err: unknown): void {
+  log.warn("useFileRenameSync", `comment sidecars not moved for ${newPath}: ${err}`);
+  const name = newPath.split("/").pop() || newPath;
+  toast.warning(t("toast.commentsMoveFailed", { name }), { id: `comments-move-failed:${newPath}` });
+}
+
+/**
+ * Move comment sidecars and REPORT a move that did not happen.
+ *
+ * `executeRenameTransaction` logs its own failures and resolves either way
+ * (an unreadable sidecar, a staging or destination write that fails), so a
+ * `.catch` on it sees almost nothing. The outcome is checked instead: a
+ * sidecar still at its old path with nothing at the new one did not move.
+ */
+async function moveSidecars(
+  notesRootPath: string,
+  inputs: SidecarMigrationInput[],
+  renamedPath: string,
+): Promise<void> {
+  try {
+    await executeRenameTransaction(notesRootPath, inputs);
+    for (const input of inputs) {
+      if (!(await tauriApi.pathExists(input.oldSidecar))) continue;
+      if (await tauriApi.pathExists(input.newSidecar)) continue;
+      throw new Error(`comment sidecar is still at ${input.oldSidecar}`);
+    }
+  } catch (err) {
+    reportSidecarMoveFailure(renamedPath, err);
+  }
 }
 
 /**
@@ -175,9 +217,7 @@ export function useFileRenameSync(): void {
           if (!isProjectFile) {
             const oldSidecar = commentSidecarPath(notesRootPath!, old_path);
             const newSidecar = commentSidecarPath(notesRootPath!, new_path);
-            void executeRenameTransaction(notesRootPath!, [
-              { oldSidecar, newSidecar, newFilePath: new_path },
-            ]).catch(() => {});
+            void moveSidecars(notesRootPath!, [{ oldSidecar, newSidecar, newFilePath: new_path }], new_path);
           }
         } else {
           // Folder rename: collect all migration inputs (open-tab fast path +
@@ -203,7 +243,7 @@ export function useFileRenameSync(): void {
           // available to the closed-tab dedup check (alreadyMigrated check uses
           // pathExists on the new sidecar path).
           if (openTabInputs.length > 0) {
-            void executeRenameTransaction(notesRootPath!, openTabInputs).catch(() => {});
+            void moveSidecars(notesRootPath!, openTabInputs, new_path);
           }
 
           // Reverse-lookup: migrate sidecars for closed-tab files whose
@@ -215,9 +255,9 @@ export function useFileRenameSync(): void {
             projects.map((p) => p.path),
           ).then((closedInputs) => {
             if (closedInputs.length > 0) {
-              return executeRenameTransaction(notesRootPath!, closedInputs);
+              return moveSidecars(notesRootPath!, closedInputs, new_path);
             }
-          }).catch(() => {});
+          }).catch((err: unknown) => reportSidecarMoveFailure(new_path, err));
         }
       }
 

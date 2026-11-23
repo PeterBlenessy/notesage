@@ -256,6 +256,24 @@ describe('RunManager (overlap mode)', () => {
   });
 });
 
+describe('RunManager.queuedCount', () => {
+  it('counts admitted jobs that have not started, per key', async () => {
+    const mgr = new RunManager();
+    let release: () => void = () => {};
+    mgr.request('a', 'queued', () => new Promise<void>((r) => { release = r; }));
+    mgr.request('b', 'queued', async () => {});
+    mgr.request('b', 'queued', async () => {});
+
+    expect(mgr.queuedCount('a')).toBe(0); // running, not queued
+    expect(mgr.queuedCount('b')).toBe(2);
+
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(mgr.queuedCount('b')).toBe(0);
+  });
+});
+
 describe('GuardrailTracker', () => {
   it('enforces the per-day cap', () => {
     const g = new GuardrailTracker();

@@ -8,7 +8,11 @@ import { useRoutingStore } from '@/stores/routing-store';
 import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { usePermissionStore } from '@/stores/permission-store';
-import { useToolPermissionStore, type ToolCallDecision } from '@/stores/tool-permission-store';
+import {
+  useToolPermissionStore,
+  selectPendingForConversation,
+  type ToolCallDecision,
+} from '@/stores/tool-permission-store';
 import { executeToolCall } from '@/lib/tool-executor';
 import { formatToolLabel } from '@/lib/ai/acp-utils';
 import {
@@ -20,6 +24,13 @@ import {
 import { friendlyAIError } from '@/lib/ai/errors';
 import { runStarted, runIdle, runError } from '@/lib/ai/session-run';
 import { isUriInScope, type UriScope } from '@/lib/ai/uri-scope';
+import {
+  openCopilotStream,
+  closeCopilotStream,
+  ownsCopilotProgress,
+  ownsCopilotRequest,
+  type CopilotStream,
+} from '@/lib/ai/copilot-correlation';
 import { log } from '@/lib/logger';
 import { toast } from 'sonner';
 import type { ChatMessage, ImageAttachment, ToolCallSegment, ToolResultSegment, ToolDefinition } from '@/lib/ai/types';
@@ -47,6 +58,12 @@ interface SendChatOpts {
    * concurrency cap deferred the send, so it lands where it was typed even if
    * the user has navigated away in the meantime.
    */
+  conversationId?: string;
+}
+
+/** What every `$/progress`-derived event carries (see copilot-correlation.ts). */
+interface CopilotProgressKey {
+  token?: string;
   conversationId?: string;
 }
 
@@ -98,6 +115,8 @@ export function useCopilotChat({
   const copilotConversationsRef = useRef<Map<string, string>>(new Map());
   /** Notesage conversation → listener cleanup of its in-flight turn. */
   const cleanupRefs = useRef<Map<string, () => void>>(new Map());
+  /** Correlation handles of this hook's in-flight turns (closed on unmount). */
+  const streamsRef = useRef<Set<CopilotStream>>(new Set());
 
   // Determine if the effective connection is a Copilot LSP
   const isCopilotLsp = effectiveConnection?.credentials != null
@@ -128,7 +147,12 @@ export function useCopilotChat({
   // unmounts during conversation creation, and frees server-side resources.
   useEffect(() => {
     const copilotConversations = copilotConversationsRef.current;
+    const streams = streamsRef.current;
     return () => {
+      // A stream left registered would count as "another Copilot stream" for
+      // every later one and keep it from claiming its own tool calls.
+      for (const stream of streams) closeCopilotStream(stream);
+      streams.clear();
       for (const copilotId of copilotConversations.values()) {
         if (copilotId !== PENDING) {
           tauriApi.copilotLspConversationDestroy(copilotId).catch(() => {});
@@ -146,6 +170,10 @@ export function useCopilotChat({
     async (prompt: string): Promise<string> => {
       let tempConversationId: string | null = null;
       let tempCleanup: (() => void) | null = null;
+      // Correlation: this stream's events carry its token. A chat turn or a
+      // background task streaming at the same time has a different one, so
+      // this never resolves with their text (see copilot-correlation.ts).
+      const stream = openCopilotStream();
 
       try {
         const model = useRoutingStore.getState().routing.interactive?.model ?? effectiveConnection?.config?.model;
@@ -153,32 +181,22 @@ export function useCopilotChat({
         return await new Promise<string>((resolve, reject) => {
           let accumulated = '';
           let settled = false;
-          let eventConvId: string | null = null;
-
-          /** Filter: latch onto the first conversationId seen in events, then
-           *  only accept events for that conversation. This prevents cross-talk
-           *  if generateText is called concurrently with sendChatMessage. */
-          const isOurEvent = (payload: { conversationId?: string }): boolean => {
-            if (!payload.conversationId) return true; // no ID = accept (safety)
-            if (eventConvId === null) {
-              eventConvId = payload.conversationId;
-              return true;
-            }
-            return payload.conversationId === eventConvId;
-          };
 
           const setup = async () => {
             // Listeners must be registered BEFORE calling create because the
             // JSON-RPC response blocks until after all $/progress notifications
-            // are delivered. The isOurEvent filter latches onto the first
-            // conversationId from the first event, preventing cross-talk.
-            const [unlistenChunk, unlistenDone] = await Promise.all([
-              listen<{ text: string; conversationId?: string }>('copilot-chat-chunk', (event) => {
-                if (!isOurEvent(event.payload)) return;
+            // are delivered.
+            const [unlistenBegin, unlistenChunk, unlistenDone] = await Promise.all([
+              // Binds the stream to its conversation id as early as possible.
+              listen<CopilotProgressKey>('copilot-chat-begin', (event) => {
+                ownsCopilotProgress(stream, event.payload);
+              }),
+              listen<CopilotProgressKey & { text: string }>('copilot-chat-chunk', (event) => {
+                if (!ownsCopilotProgress(stream, event.payload)) return;
                 accumulated += event.payload.text;
               }),
-              listen<{ error?: { message?: string }; conversationId?: string }>('copilot-chat-done', (event) => {
-                if (!isOurEvent(event.payload)) return;
+              listen<CopilotProgressKey & { error?: { message?: string } }>('copilot-chat-done', (event) => {
+                if (!ownsCopilotProgress(stream, event.payload)) return;
                 if (!settled) {
                   settled = true;
                   cleanup();
@@ -192,12 +210,16 @@ export function useCopilotChat({
             ]);
 
             const cleanup = () => {
+              unlistenBegin();
               unlistenChunk();
               unlistenDone();
+              closeCopilotStream(stream);
             };
             tempCleanup = cleanup;
 
-            const result = await tauriApi.copilotLspConversationCreate(prompt, model);
+            const result = await tauriApi.copilotLspConversationCreate(
+              prompt, model, undefined, undefined, undefined, stream.token,
+            );
             tempConversationId = result.conversationId;
           };
 
@@ -214,6 +236,7 @@ export function useCopilotChat({
           });
         });
       } finally {
+        closeCopilotStream(stream);
         if (tempConversationId) {
           tauriApi.copilotLspConversationDestroy(tempConversationId).catch(() => {});
         }
@@ -240,7 +263,21 @@ export function useCopilotChat({
       // on the right conversation even if the user switched away mid-stream
       // (matches the direct-API + ACP paths; task #3 gap for Copilot).
       conversationId: string | null,
+      // Has this turn been cleaned up (Stop pressed, turn ended, re-send)?
+      // Checked after every await: once it has, the assistant message is
+      // finalized and the Copilot conversation may be gone.
+      isCancelled: () => boolean,
     ) => {
+      /** Answer the LSP's pending request so it is not left waiting, without
+       *  touching the finalized message. Best effort: the conversation may
+       *  already have been destroyed. */
+      const answerCancelled = () => {
+        tauriApi.copilotLspToolResult(requestId, {
+          content: `Tool call cancelled: ${name}`,
+          is_error: true,
+        }).catch(() => {});
+      };
+
       // Check permission
       const tier = usePermissionStore.getState().isToolAllowed(name, null, null);
 
@@ -254,6 +291,13 @@ export function useCopilotChat({
             conversationId,
           });
         });
+        // Stop pressed while the card was up: `cleanup` cleared the pending
+        // entry and resolved this promise ('deny') after finalizing the
+        // message. Bail before any further write, and before running the tool.
+        if (isCancelled()) {
+          answerCancelled();
+          return;
+        }
         useToolPermissionStore.getState().setPending(null, conversationId);
 
         if (decision === 'deny') {
@@ -313,6 +357,13 @@ export function useCopilotChat({
 
       // Execute the tool
       const result = await executeToolCall(toolCallId, name, args);
+
+      // Cancelled while the tool ran: the message is finalized, so write
+      // nothing more to it.
+      if (isCancelled()) {
+        answerCancelled();
+        return;
+      }
 
       // Update activity to done
       useChatStore.getState().addActivity(assistantMessageId, {
@@ -401,6 +452,9 @@ export function useCopilotChat({
       runStarted(runConvId, 'copilot_lsp');
 
       let flushInterval: ReturnType<typeof setInterval> | undefined;
+      // This turn's correlation handle; closed by `cleanup`, or by the catch
+      // below when the turn fails before `cleanup` exists.
+      let stream: CopilotStream | null = null;
 
       try {
         let streamedContent = '';
@@ -450,24 +504,21 @@ export function useCopilotChat({
           return msg?.segments?.length ?? 0;
         };
 
-        // Track the conversationId for this turn. For create calls, we learn
-        // the ID from the first $/progress event (which arrives before the
-        // invoke resolves). For turn calls, we already have it.
+        // Correlation for this turn. Progress events are matched on the token
+        // we generate here and send as the request's workDoneToken; server
+        // requests (tool call, confirmation, context) on the conversation id,
+        // which a follow-up turn already has and a create learns from its own
+        // first progress event. An event naming neither is not ours unless
+        // this is the only Copilot stream running (see copilot-correlation.ts).
         const knownCopilotId = copilotConversationsRef.current.get(convKey);
         const turnConvId = knownCopilotId && knownCopilotId !== PENDING ? knownCopilotId : null;
-        let eventConvId: string | null = turnConvId;
-
-        /** Filter: accept events for this conversation. On the first create,
-         *  we latch onto the first conversationId we see. */
-        const isOurEvent = (payload: { conversationId?: string }): boolean => {
-          if (!payload.conversationId) return true; // no ID = accept (safety)
-          if (eventConvId === null) {
-            // First create — latch onto this conversation
-            eventConvId = payload.conversationId;
-            return true;
-          }
-          return payload.conversationId === eventConvId;
-        };
+        const turnStream = openCopilotStream(turnConvId);
+        stream = turnStream;
+        streamsRef.current.add(turnStream);
+        const isOurProgress = (payload: CopilotProgressKey): boolean =>
+          ownsCopilotProgress(turnStream, payload);
+        const isOurRequest = (payload: { conversationId?: string }): boolean =>
+          ownsCopilotRequest(turnStream, payload);
 
         // Build tools array if tool calling is enabled
         let tools: ToolDefinition[] | undefined;
@@ -499,6 +550,7 @@ export function useCopilotChat({
         // -------------------------------------------------------------------
 
         const [
+          unlistenBegin,
           unlistenChunk,
           unlistenThinking,
           unlistenDone,
@@ -508,14 +560,20 @@ export function useCopilotChat({
           unlistenStep,
           unlistenToolUpdate,
         ] = await Promise.all([
-          listen<{ text: string; conversationId?: string }>('copilot-chat-chunk', (event) => {
-            if (cancelled || !isOurEvent(event.payload)) return;
+          // Binds the stream to its conversation id before the first tool
+          // call, which can arrive ahead of any text.
+          listen<CopilotProgressKey>('copilot-chat-begin', (event) => {
+            if (cancelled) return;
+            isOurProgress(event.payload);
+          }),
+          listen<CopilotProgressKey & { text: string }>('copilot-chat-chunk', (event) => {
+            if (cancelled || !isOurProgress(event.payload)) return;
             streamedContent += event.payload.text;
             contentDirty = true;
             appendTextSegment(assistantMessageId, event.payload.text, runConvId);
           }),
-          listen<{ text: string; conversationId?: string }>('copilot-chat-thinking', (event) => {
-            if (cancelled || !isOurEvent(event.payload)) return;
+          listen<CopilotProgressKey & { text: string }>('copilot-chat-thinking', (event) => {
+            if (cancelled || !isOurProgress(event.payload)) return;
             thinkingSegmentContent += event.payload.text;
             if (thinkingSegmentIndex === -1) {
               const conv = useChatStore.getState().conversations.find(
@@ -535,8 +593,8 @@ export function useCopilotChat({
               }, runConvId);
             }
           }),
-          listen<{ conversationId?: string; error?: { message?: string; reason?: string; modelName?: string; code?: number } }>('copilot-chat-done', (event) => {
-            if (cancelled || !isOurEvent(event.payload)) return;
+          listen<CopilotProgressKey & { error?: { message?: string; reason?: string; modelName?: string; code?: number } }>('copilot-chat-done', (event) => {
+            if (cancelled || !isOurProgress(event.payload)) return;
             if (event.payload.error) {
               const err = event.payload.error;
               const errorMsg = err.message || 'Unknown error from Copilot';
@@ -557,7 +615,7 @@ export function useCopilotChat({
           listen<{ requestId: string; id: string; name: string; arguments: Record<string, unknown>; conversationId?: string }>(
             'copilot-tool-call',
             (event) => {
-              if (cancelled || !isOurEvent(event.payload)) return;
+              if (cancelled || !isOurRequest(event.payload)) return;
               const { requestId, id, name, arguments: args } = event.payload;
               log.debug('ai', `Copilot tool call received: ${name}`);
 
@@ -584,7 +642,7 @@ export function useCopilotChat({
               }
 
               // Handle tool call asynchronously
-              handleToolCall(requestId, id, name, args, assistantMessageId, runConvId).catch((err) => {
+              handleToolCall(requestId, id, name, args, assistantMessageId, runConvId, () => cancelled).catch((err) => {
                 log.error('ai', 'Tool call execution failed', err);
               });
             },
@@ -592,7 +650,7 @@ export function useCopilotChat({
           listen<{ requestId: string; name: string; arguments: Record<string, unknown>; conversationId?: string }>(
             'copilot-tool-confirmation',
             (event) => {
-              if (cancelled || !isOurEvent(event.payload)) return;
+              if (cancelled || !isOurRequest(event.payload)) return;
               const { requestId, name, arguments: args } = event.payload;
               log.debug('ai', `Copilot tool confirmation request: ${name}`);
 
@@ -608,6 +666,14 @@ export function useCopilotChat({
               });
 
               decision$.then((decision) => {
+                // Stop pressed while the card was up: `cleanup` cleared the
+                // pending entry and resolved this as 'deny'. Tell the LSP so
+                // (best effort, the conversation may be gone) and record
+                // nothing.
+                if (cancelled) {
+                  tauriApi.copilotLspToolConfirmationResponse(requestId, false).catch(() => {});
+                  return;
+                }
                 useToolPermissionStore.getState().setPending(null, runConvId);
                 const accepted = decision !== 'deny';
 
@@ -624,7 +690,7 @@ export function useCopilotChat({
             },
           ),
           listen<{ requestId: string; conversationId?: string }>('copilot-context-request', (event) => {
-            if (cancelled || !isOurEvent(event.payload)) return;
+            if (cancelled || !isOurRequest(event.payload)) return;
             const { requestId } = event.payload;
             log.debug('ai', 'Copilot context request received');
 
@@ -658,8 +724,8 @@ export function useCopilotChat({
           // tool_call segments with kind 'step', patched in place as the
           // step's status advances. Mirrors the ACP plan/thought treatment:
           // intermediate progress becomes visible instead of dead air.
-          listen<CopilotStepPayload>('copilot-chat-step', (event) => {
-            if (cancelled || !isOurEvent(event.payload)) return;
+          listen<CopilotStepPayload & CopilotProgressKey>('copilot-chat-step', (event) => {
+            if (cancelled || !isOurProgress(event.payload)) return;
             const { stepId, title, status } = event.payload;
             const key = stepId ?? title ?? '';
             if (!key) return;
@@ -688,8 +754,8 @@ export function useCopilotChat({
           // → tool_call segments keyed by toolCallId, patched on status
           // change; a terminal status with a result/error additionally pushes
           // one tool_result segment (mirrors the ACP tool_call_update flow).
-          listen<CopilotToolUpdatePayload>('copilot-chat-tool-update', (event) => {
-            if (cancelled || !isOurEvent(event.payload)) return;
+          listen<CopilotToolUpdatePayload & CopilotProgressKey>('copilot-chat-tool-update', (event) => {
+            if (cancelled || !isOurProgress(event.payload)) return;
             const p = event.payload;
             const id = p.toolCallId ?? null;
             if (!id || clientToolIds.has(id)) return;
@@ -759,6 +825,7 @@ export function useCopilotChat({
           if (cancelled) return;
           cancelled = true;
           clearInterval(flushInterval);
+          unlistenBegin();
           unlistenChunk();
           unlistenThinking();
           unlistenDone();
@@ -767,6 +834,19 @@ export function useCopilotChat({
           unlistenContextRequest();
           unlistenStep();
           unlistenToolUpdate();
+          closeCopilotStream(turnStream);
+          streamsRef.current.delete(turnStream);
+          // Unblock a tool-permission decision this turn may be awaiting (Stop
+          // pressed, or the turn ended, while the card was visible). Clearing
+          // the pending entry removes the card so a later click cannot run a
+          // tool for a finalized turn; resolving lets the awaiting code settle,
+          // and the `cancelled` flag set above bails it out before it writes
+          // anything (mirrors `useDirectApiChat`).
+          const pendingPerm = selectPendingForConversation(runConvId)(useToolPermissionStore.getState());
+          if (pendingPerm) {
+            useToolPermissionStore.getState().setPending(null, runConvId);
+            pendingPerm.resolve('deny');
+          }
           if (streamedContent) {
             updateMessage(assistantMessageId, streamedContent, undefined, runConvId);
           }
@@ -810,8 +890,8 @@ export function useCopilotChat({
 
         // Start the conversation or send a follow-up turn.
         // Note: create/turn block until after all $/progress notifications
-        // are delivered, so events arrive DURING this await. The isOurEvent
-        // filter latches onto the conversationId from the first event.
+        // are delivered, so events arrive DURING this await, matched on the
+        // token passed here.
         // The Copilot conversation is looked up for THIS Notesage conversation:
         // each one gets its own, so no turn ever rides on another chat's history.
         const copilotConversations = copilotConversationsRef.current;
@@ -821,7 +901,9 @@ export function useCopilotChat({
           // conversation from creating a second one before the first resolves.
           copilotConversations.set(convKey, PENDING);
           try {
-            const result = await tauriApi.copilotLspConversationCreate(content, model, lspTools, docUri, docLang);
+            const result = await tauriApi.copilotLspConversationCreate(
+              content, model, lspTools, docUri, docLang, turnStream.token,
+            );
             if (copilotConversations.get(convKey) === PENDING) {
               copilotConversations.set(convKey, result.conversationId);
             } else {
@@ -836,11 +918,15 @@ export function useCopilotChat({
         } else if (copilotId === PENDING) {
           throw new Error('A conversation is already being created. Please wait.');
         } else {
-          await tauriApi.copilotLspConversationTurn(copilotId, content, model, docUri, docLang);
+          await tauriApi.copilotLspConversationTurn(copilotId, content, model, docUri, docLang, turnStream.token);
         }
       } catch (error) {
         clearInterval(flushInterval);
         cleanupRefs.current.get(convKey)?.();
+        if (stream) {
+          closeCopilotStream(stream);
+          streamsRef.current.delete(stream);
+        }
         log.error('ai', 'Copilot chat stream error', error);
 
         const errorMsg = error instanceof Error ? error.message : String(error);

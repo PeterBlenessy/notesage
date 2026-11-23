@@ -8,7 +8,7 @@ import { useEditorStore } from '@/stores/editor-store';
 import { useWorkspaceStore } from '@/stores/workspace-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useCommentStore } from '@/stores/comment-store';
-import { executeToolCall, mapArgsToStringArray } from '@/lib/tool-executor';
+import { executeToolCall, mapArgsToStringArray, isSkillScriptTool, resolveSkillScriptTarget } from '@/lib/tool-executor';
 import type { ArgMapping } from '@/lib/tauri';
 
 vi.mock('@/lib/editor-bridge', () => ({
@@ -298,6 +298,95 @@ describe('executeToolCall', () => {
         content: 'Skill not found: missing',
         is_error: true,
       });
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Skill-script approvals are pinned to content (audit 2026-11-22 §6): the
+  // chat resolves which script a call runs, hashes it, and hands the hash back
+  // so the backend refuses a body that changed after the approval check.
+  // ---------------------------------------------------------------------------
+
+  describe('skill-script target resolution and hash pinning', () => {
+    const skill = {
+      name: 'my-skill',
+      description: 'desc',
+      path: '/skills/my-skill',
+      source: 'user',
+      has_scripts: true,
+      has_references: false,
+    };
+    const skillTool = {
+      tool_name: 'skill__my-skill__convert',
+      description: 'Convert',
+      skill_name: 'my-skill',
+      script_path: 'scripts/convert.py',
+      parameters: {},
+      arg_mapping: [],
+      explicit_schema: true,
+    };
+    let executeArgs: Record<string, unknown> | undefined;
+
+    beforeEach(() => {
+      executeArgs = undefined;
+      useSkillStore.setState({ skills: [skill], skillTools: [skillTool], enabledOverrides: {} });
+      setMockInvokeHandler('execute_skill_script', (args) => {
+        executeArgs = args as Record<string, unknown>;
+        return { stdout: 'ok', stderr: '', exit_code: 0, timed_out: false };
+      });
+    });
+
+    it('recognises both skill-script tool shapes and nothing else', () => {
+      expect(isSkillScriptTool('execute_skill_script')).toBe(true);
+      expect(isSkillScriptTool('skill__my-skill__convert')).toBe(true);
+      expect(isSkillScriptTool('write_file')).toBe(false);
+      expect(isSkillScriptTool('read_skill_content')).toBe(false);
+    });
+
+    it('resolves the generic tool to the named skill and script', () => {
+      expect(
+        resolveSkillScriptTarget('execute_skill_script', { skill_name: 'my-skill', script: 'run.sh' }),
+      ).toEqual({ skillName: 'my-skill', skillPath: '/skills/my-skill', script: 'run.sh' });
+    });
+
+    it('resolves a generated skill tool to its script', () => {
+      expect(resolveSkillScriptTarget('skill__my-skill__convert', { input: 'a.md' })).toEqual({
+        skillName: 'my-skill',
+        skillPath: '/skills/my-skill',
+        script: 'scripts/convert.py',
+      });
+    });
+
+    it('resolves nothing for unknown skills, malformed arguments or other tools', () => {
+      expect(resolveSkillScriptTarget('execute_skill_script', { skill_name: 'nope', script: 'run.sh' })).toBeNull();
+      expect(resolveSkillScriptTarget('execute_skill_script', { skill_name: 'my-skill' })).toBeNull();
+      expect(resolveSkillScriptTarget('execute_skill_script', { skill_name: { a: 1 }, script: 'run.sh' })).toBeNull();
+      expect(resolveSkillScriptTarget('skill__unknown__tool', {})).toBeNull();
+      expect(resolveSkillScriptTarget('write_file', { path: '/tmp/x' })).toBeNull();
+    });
+
+    it('forwards the approved hash to the backend for the generic tool', async () => {
+      await executeToolCall(
+        'call-h1',
+        'execute_skill_script',
+        { skill_name: 'my-skill', script: 'run.sh' },
+        undefined,
+        { expectedSkillScriptHash: 'abc123' },
+      );
+      expect(executeArgs).toMatchObject({ skillPath: '/skills/my-skill', script: 'run.sh', expectedHash: 'abc123' });
+    });
+
+    it('forwards the approved hash to the backend for a generated skill tool', async () => {
+      await executeToolCall('call-h2', 'skill__my-skill__convert', { args: ['a.md'] }, undefined, {
+        expectedSkillScriptHash: 'def456',
+      });
+      expect(executeArgs).toMatchObject({ script: 'scripts/convert.py', expectedHash: 'def456' });
+    });
+
+    it('sends no expectedHash when the caller has none', async () => {
+      await executeToolCall('call-h3', 'execute_skill_script', { skill_name: 'my-skill', script: 'run.sh' });
+      expect(executeArgs).toBeDefined();
+      expect(executeArgs).not.toHaveProperty('expectedHash');
     });
   });
 

@@ -51,7 +51,7 @@ export function CommentsGroup({
       <div className="flex items-center gap-2">
         <MessageSquare className="h-3.5 w-3.5 shrink-0" strokeWidth={1.5} />
         <span className="text-xs font-medium">Comments</span>
-        <span className="ml-auto text-[10px] tabular-nums text-muted-foreground/60">
+        <span className="ml-auto text-[10px] tabular-nums text-muted-foreground">
           {hasOpen ? `${openCount} open` : totalVisible > 0 ? "none open" : "none"}
         </span>
       </div>
@@ -94,7 +94,7 @@ export function CommentsGroup({
           </PopoverContent>
         </Popover>
       ) : (
-        <p className="text-[10px] text-muted-foreground/60 leading-tight px-2">
+        <p className="text-[10px] text-muted-foreground leading-tight px-2">
           {totalVisible > 0
             ? "All comments handled."
             : "No comments on this document yet."}

@@ -17,6 +17,7 @@ import { useUnresolvedDocCreate } from "@/hooks/useUnresolvedDocCreate";
 import { useCommentEditorSync } from "@/hooks/useCommentEditorSync";
 import { useEditorCompletions } from "@/hooks/useEditorCompletions";
 import { useEditorTabContentLoader } from "@/hooks/useEditorTabContentLoader";
+import { useEditorAutoSave } from "@/hooks/useEditorAutoSave";
 import { useEditorTypography } from "@/hooks/useEditorTypography";
 import { useEditorImageDrop } from "@/hooks/useEditorImageDrop";
 import { useEditorKeyBindings } from "@/hooks/useEditorKeyBindings";
@@ -325,27 +326,8 @@ export function Editor({ onNewNote, onNewProject, onOpenFolder, onOpenProject, o
     pageHeight,
   });
 
-  // Auto-save on blur (when switching tabs or focus changes)
-  useEffect(() => {
-    const handleBlur = async () => {
-      if (activeTab && activeTab.isDirty) {
-        try {
-          await saveFile(activeTab.filePath, activeTab.content, activeTab.id);
-        } catch (error) {
-          toast.error(`Auto-save failed: ${error}`);
-        }
-      }
-    };
-
-    // Debounced auto-save
-    const timeoutId = setTimeout(() => {
-      if (activeTab && activeTab.isDirty) {
-        handleBlur();
-      }
-    }, 1000);
-
-    return () => clearTimeout(timeoutId);
-  }, [activeTab?.content, activeTab?.isDirty, activeTab, saveFile]);
+  // Debounced auto-save of the active document (1 s after the last change).
+  useEditorAutoSave({ activeTab, saveFile });
 
   // Typography controller: per-block CSS vars + per-document `style:` presets
   // (owns its own editor-styles-store reads; must run before early returns).

@@ -5,6 +5,7 @@ import { log } from '@/lib/logger';
 import type { AICapability, Connection, UseCaseSlot, UseCaseRouting } from '@/lib/ai/connections';
 import { EMPTY_ROUTING } from '@/lib/ai/connections';
 import { useConnectionsStore } from './connections-store';
+import { handleRehydrateResult } from "@/lib/persist-rehydrate";
 
 interface RoutingStore {
   routing: UseCaseRouting;
@@ -117,6 +118,7 @@ export const useRoutingStore = create<RoutingStore>()(
     }),
     {
       name: 'notesage-routing',
+      onRehydrateStorage: () => (_state, error) => handleRehydrateResult("notesage-routing", error),
 
       version: 1,
       migrate: (persisted, version) => {

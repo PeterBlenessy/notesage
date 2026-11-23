@@ -6,7 +6,7 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
 import { isHeldPath } from "@/lib/library-follow";
 import { useGitStore } from "@/stores/git-store";
-import { parseFrontmatter, serializeFrontmatter } from "@/lib/frontmatter";
+import { parseFrontmatter, serializeFrontmatter, type Frontmatter } from "@/lib/frontmatter";
 import { refreshNotesTree } from "@/lib/refresh-notes-tree";
 import { useActionStore } from "@/stores/action-store";
 import { migrateProjectPath } from "@/lib/migrate-project-path";
@@ -18,6 +18,7 @@ import { toast } from "sonner";
 import { trackSelfRename } from "@/lib/self-rename-filter";
 import { t } from '@/lib/i18n';
 import { log, PERF } from '@/lib/logger';
+import { flushAllPendingSerializes } from "@/lib/pending-serialize";
 
 /** Debounced git status refresh per repo. Each repo gets its own timer. */
 const repoRefreshTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -93,8 +94,126 @@ async function detectRenamedProject(
   return null;
 }
 
+/** One deduplicated warning per unreadable tree, not one per watcher event. */
+function reportTreeReadFailure(path: string, error: unknown): void {
+  log.warn("tree", `Could not refresh ${path}, keeping the tree already shown`, error);
+  const name = path.split("/").pop() || path;
+  toast.warning(t("toast.treeRefreshFailed", { name }), { id: `tree-refresh-failed:${path}` });
+}
+
+/**
+ * Write a document to disk and mark it clean. The body of the hook's
+ * `saveFile`, at module level so the leave paths below (which are not hooks)
+ * can use it too.
+ */
+export async function saveDocumentToDisk(
+  filePath: string,
+  content: string,
+  tabId: string,
+): Promise<boolean> {
+  try {
+    const saveStart = performance.now();
+    const tab = useEditorStore.getState().openDocuments.find((t) => t.id === tabId);
+    const frontmatter = tab?.frontmatter ?? null;
+    const serializeStart = performance.now();
+    const raw = serializeFrontmatter(frontmatter, content);
+    const serializeMs = Math.round(performance.now() - serializeStart);
+    await tauriApi.markSelfWrite(filePath);
+    const writeStart = performance.now();
+    await tauriApi.writeFile(filePath, raw);
+    const writeMs = Math.round(performance.now() - writeStart);
+    const totalMs = Math.round(performance.now() - saveStart);
+    const file = filePath.split('/').pop() ?? filePath;
+    const sizeKB = Math.round(raw.length / 1024 * 10) / 10;
+    log.perf(PERF.save, 'save', { file, sizeKB, serializeMs, writeMs, totalMs });
+    useEditorStore.getState().markTabClean(tabId, content);
+    useEditorStore.getState().clearExternalChange(filePath);
+    refreshGitForPath(filePath);
+    // Refresh the actions dashboard for this file.
+    // Note: SQLite reindexing is handled by the Rust watcher callback
+    // (queue_reindex + process_reindex_queue) — do NOT call tauriApi.indexFile()
+    // here as it creates lock contention with the watcher's reindex.
+    useActionStore.getState().incrementalUpdate(filePath);
+    // Phase 3: surface a document-saved workflow event for automations,
+    // unless this save was an automation's own write (loop prevention).
+    if (!wasAutomationWrite(filePath)) {
+      emitWorkflowEvent({ event: 'document-saved', file: filePath });
+    }
+    return true;
+  } catch (error) {
+    await tauriApi.clearSelfWrite(filePath).catch(() => {}); // Expected: best-effort cleanup, write already failed
+    // Defensive: ensure the tab stays dirty so the user knows data is unsaved.
+    // markTabClean is only called after a successful write, but re-assert dirty
+    // here to guard against future refactors that might change the order.
+    const tab = useEditorStore.getState().openDocuments.find((t) => t.id === tabId);
+    if (tab) {
+      useEditorStore.getState().updateTabContent(tabId, tab.content, true);
+    }
+    console.error("Failed to save file:", error);
+    throw error;
+  }
+}
+
+/**
+ * Documents whose save-before-leaving failed once. The first failure keeps
+ * the document open and says why; leaving it a second time lets it go, so a
+ * file that can no longer be written cannot trap the user in it.
+ */
+const leaveSaveFailed = new Set<string>();
+
+/**
+ * Make the active document safe to drop from the store: flush the debounced
+ * markdown serialize (≤150 ms of typing that exists only in the editor) and
+ * save it if it is dirty.
+ *
+ * The store keeps ONE document. `openTab` evicts the previous one and
+ * `closeTab` drops it, and both used to rely on the 1 s auto-save debounce
+ * having already run — so opening or closing within a second of the last
+ * keystroke lost it (audit 2026-11-22 §2, §9).
+ *
+ * Resolves `false` when the save failed and the document must be kept.
+ */
+export async function saveActiveDocumentBeforeLeaving(): Promise<boolean> {
+  // Typing can continue while a save is in flight, hence more than one pass.
+  for (let pass = 0; pass < 3; pass++) {
+    flushAllPendingSerializes();
+    const { activeTabId, openDocuments } = useEditorStore.getState();
+    const tab = openDocuments.find((d) => d.id === activeTabId);
+    if (!tab || !tab.isDirty || tab.deleted) return true;
+    try {
+      await saveDocumentToDisk(tab.filePath, tab.content, tab.id);
+      leaveSaveFailed.delete(tab.id);
+    } catch (error) {
+      if (leaveSaveFailed.delete(tab.id)) {
+        log.warn("save", `Leaving ${tab.filePath} with unsaved changes after a second failed save`, error);
+        return true;
+      }
+      leaveSaveFailed.add(tab.id);
+      toast.error(t("toast.saveBeforeLeaveFailed", { name: tab.fileName, error: String(error) }), {
+        duration: 10000,
+      });
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Close the active document (⌘W, the TitleBar ×), saving it first if it has
+ * unsaved changes. Replaces a `pendingCloseTabId` flow whose dialog was
+ * removed with the tab bar, which left a close on a dirty document doing
+ * nothing at all.
+ */
+export async function closeActiveDocument(): Promise<void> {
+  const id = useEditorStore.getState().activeTabId;
+  if (!id) return;
+  if (!(await saveActiveDocumentBeforeLeaving())) return;
+  // The save is async: only close the document the user asked to close.
+  const state = useEditorStore.getState();
+  if (state.activeTabId === id) state.closeTab(id);
+}
+
 export function useFileOperations() {
-  const { openTab, markTabClean } = useEditorStore();
 
   const refreshFileTree = useCallback(async (targetPath?: string) => {
     const refreshStart = performance.now();
@@ -119,7 +238,8 @@ export function useFileOperations() {
             sections += 1;
             ws.updateExplorerTree(folder.path, tree);
           } catch (error) {
-            console.error("Failed to refresh explorer tree:", error);
+            // The tree already in the store stays; say that it is stale.
+            reportTreeReadFailure(folder.path, error);
           }
         }
       }
@@ -138,7 +258,8 @@ export function useFileOperations() {
             sections += 1;
             ws.updateProjectTree(project.path, tree);
           } catch (error) {
-            console.error("Failed to refresh project tree:", error);
+            // The tree already in the store stays; say that it is stale.
+            reportTreeReadFailure(project.path, error);
           }
         }
       }
@@ -180,7 +301,8 @@ export function useFileOperations() {
         sections += 1;
         ws.updateExplorerTree(folder.path, tree);
       } catch (error) {
-        console.error("Failed to refresh explorer tree:", error);
+        // The tree already in the store stays; say that it is stale.
+        reportTreeReadFailure(folder.path, error);
       }
     }
 
@@ -249,17 +371,31 @@ export function useFileOperations() {
       try {
         const fileType = getFileType(fileName);
 
-        if (fileType === "image") {
-          openTab(filePath, fileName, "", null, fileType, scrollToTag, scrollToText);
+        // Opening a different document evicts the current one from the store
+        // (see `openTab`), before the editor's switch pipeline gets to flush
+        // it. So the outgoing document is flushed and saved HERE, as the last
+        // thing before `openTab` — after the new file has been read, so that
+        // typing done while it was loading is included.
+        const show = async (content: string, frontmatter: Frontmatter | null) => {
+          const editor = useEditorStore.getState();
+          const active = editor.openDocuments.find((d) => d.id === editor.activeTabId);
+          if (active && active.filePath !== filePath && !(await saveActiveDocumentBeforeLeaving())) {
+            // Could not be saved: it stays open (a toast said why).
+            return;
+          }
+          useEditorStore.getState().openTab(filePath, fileName, content, frontmatter, fileType, scrollToTag, scrollToText);
           leaveInbox();
+        };
+
+        if (fileType === "image") {
+          await show("", null);
           return;
         }
 
         if (isBinaryFileType(fileType)) {
           const bytes = await tauriApi.readBinaryFile(filePath);
           setBinaryData(filePath, new Uint8Array(bytes));
-          openTab(filePath, fileName, "", null, fileType, scrollToTag, scrollToText);
-          leaveInbox();
+          await show("", null);
           return;
         }
 
@@ -267,17 +403,16 @@ export function useFileOperations() {
         const raw = await tauriApi.readFile(filePath);
         if (fileType === "markdown") {
           const { frontmatter, content } = parseFrontmatter(raw);
-          openTab(filePath, fileName, content, frontmatter, fileType, scrollToTag, scrollToText);
+          await show(content, frontmatter);
         } else {
-          openTab(filePath, fileName, raw, null, fileType, scrollToTag, scrollToText);
+          await show(raw, null);
         }
-        leaveInbox();
       } catch (error) {
         console.error("Failed to read file:", error);
         throw error;
       }
     },
-    [openTab]
+    []
   );
 
   const openFileAtTag = useCallback(
@@ -300,50 +435,8 @@ export function useFileOperations() {
   );
 
   const saveFile = useCallback(
-    async (filePath: string, content: string, tabId: string) => {
-      try {
-        const saveStart = performance.now();
-        const tab = useEditorStore.getState().openDocuments.find((t) => t.id === tabId);
-        const frontmatter = tab?.frontmatter ?? null;
-        const serializeStart = performance.now();
-        const raw = serializeFrontmatter(frontmatter, content);
-        const serializeMs = Math.round(performance.now() - serializeStart);
-        await tauriApi.markSelfWrite(filePath);
-        const writeStart = performance.now();
-        await tauriApi.writeFile(filePath, raw);
-        const writeMs = Math.round(performance.now() - writeStart);
-        const totalMs = Math.round(performance.now() - saveStart);
-        const file = filePath.split('/').pop() ?? filePath;
-        const sizeKB = Math.round(raw.length / 1024 * 10) / 10;
-        log.perf(PERF.save, 'save', { file, sizeKB, serializeMs, writeMs, totalMs });
-        markTabClean(tabId, content);
-        useEditorStore.getState().clearExternalChange(filePath);
-        refreshGitForPath(filePath);
-        // Refresh the actions dashboard for this file.
-        // Note: SQLite reindexing is handled by the Rust watcher callback
-        // (queue_reindex + process_reindex_queue) — do NOT call tauriApi.indexFile()
-        // here as it creates lock contention with the watcher's reindex.
-        useActionStore.getState().incrementalUpdate(filePath);
-        // Phase 3: surface a document-saved workflow event for automations,
-        // unless this save was an automation's own write (loop prevention).
-        if (!wasAutomationWrite(filePath)) {
-          emitWorkflowEvent({ event: 'document-saved', file: filePath });
-        }
-        return true;
-      } catch (error) {
-        await tauriApi.clearSelfWrite(filePath).catch(() => {}); // Expected: best-effort cleanup, write already failed
-        // Defensive: ensure the tab stays dirty so the user knows data is unsaved.
-        // markTabClean is only called after a successful write, but re-assert dirty
-        // here to guard against future refactors that might change the order.
-        const tab = useEditorStore.getState().openDocuments.find((t) => t.id === tabId);
-        if (tab) {
-          useEditorStore.getState().updateTabContent(tabId, tab.content, true);
-        }
-        console.error("Failed to save file:", error);
-        throw error;
-      }
-    },
-    [markTabClean]
+    (filePath: string, content: string, tabId: string) => saveDocumentToDisk(filePath, content, tabId),
+    []
   );
 
   const createFile = useCallback(

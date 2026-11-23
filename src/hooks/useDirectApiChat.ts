@@ -8,7 +8,8 @@ import { getAIProvider } from '@/lib/ai';
 import type { ChatMessage, Citation, ToolDefinition, ToolCallSegment, ImageAttachment } from '@/lib/ai/types';
 import type { Connection } from '@/lib/ai/connections';
 import type { ResolvedCredentials } from '@/lib/ai/credentials';
-import { executeToolCall } from '@/lib/tool-executor';
+import { executeToolCall, isSkillScriptTool, resolveSkillScriptTarget } from '@/lib/tool-executor';
+import { tauriApi } from '@/lib/tauri';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { log, PERF } from '@/lib/logger';
@@ -111,6 +112,8 @@ export function useDirectApiChat({
   // (PRD `2026-06-14-command-bar-session-multitasking`, task #3). Each handle
   // carries its backend `streamId` (so `cancelDirectChat` aborts the right
   // backend stream via `ai_chat_stream_cancel`) and its listener `cleanup`.
+  // The handle is registered BEFORE the first await of a send, so a Stop in
+  // the listener-registration or compaction window still finds it.
   const streamsRef = useRef<Map<string, { streamId: string; cleanup: () => void }>>(new Map());
 
   const generateText = useCallback(
@@ -221,11 +224,58 @@ export function useDirectApiChat({
 
         let contentDirty = false;
         let thinkingDirty = false;
+
+        // Segment writes are batched with the content writes below. Writing a
+        // segment per chunk defeated the 50 ms flush: every token copied the
+        // conversations array and re-parsed the whole growing markdown
+        // segment (audit 2026-11-22 §3). Text and thinking are buffered here
+        // and written by `flushSegments`, which runs on the interval AND
+        // before anything that depends on segment order or count (a kind
+        // switch, an image, a tool call, finalization) — so segments still
+        // land complete and in arrival order. At most one kind is pending.
+        let pendingSegmentText = '';
+        let thinkingSegmentDirty = false;
+        // Segment tracking for thinking blocks
+        let thinkingSegmentIndex = -1;
+        let thinkingSegmentContent = '';
+
+        const flushTextSegment = () => {
+          if (!pendingSegmentText) return;
+          const text = pendingSegmentText;
+          pendingSegmentText = '';
+          appendTextSegment(assistantMessageId, text, conversationId);
+        };
+        const flushThinkingSegment = () => {
+          if (!thinkingSegmentDirty) return;
+          thinkingSegmentDirty = false;
+          if (thinkingSegmentIndex === -1) {
+            const conv = useChatStore.getState().conversations
+              .find(c => c.id === (conversationId ?? useChatStore.getState().activeConversationId));
+            const msg = conv?.messages.find(m => m.timestamp === assistantMessageId);
+            thinkingSegmentIndex = msg?.segments?.length ?? 0;
+            pushSegment(assistantMessageId, {
+              type: 'thinking',
+              content: thinkingSegmentContent,
+              collapsed: false,
+              timestamp: Date.now(),
+            }, conversationId);
+          } else {
+            updateSegment(assistantMessageId, thinkingSegmentIndex, {
+              content: thinkingSegmentContent,
+            }, conversationId);
+          }
+        };
+        const flushSegments = () => {
+          flushThinkingSegment();
+          flushTextSegment();
+        };
+
         flushInterval = setInterval(() => {
           if (thinkingDirty) {
             updateMessageThinking(assistantMessageId, streamedThinking, conversationId);
             thinkingDirty = false;
           }
+          flushSegments();
           if (contentDirty) {
             updateMessage(assistantMessageId, streamedContent, undefined, conversationId);
             contentDirty = false;
@@ -314,10 +364,6 @@ export function useDirectApiChat({
           }
         };
 
-        // Segment tracking for thinking blocks
-        let thinkingSegmentIndex = -1;
-        let thinkingSegmentContent = '';
-
         // Track whether this streaming session has been cleaned up (cancel or
         // done). Declared before `handleToolCalls` so the tool loop can check
         // it after every await and bail instead of re-invoking `ai_chat_stream`
@@ -347,6 +393,10 @@ export function useDirectApiChat({
         // -------------------------------------------------------------------
         const handleToolCalls = async () => {
           if (pendingToolCalls.length === 0 || cancelled) return;
+
+          // Write any buffered text/thinking before the tool-call segments
+          // (segment order) and before the thinking tracking is reset below.
+          flushSegments();
 
           // Snapshot the tool calls and clear the pending list for the next turn
           const calls = [...pendingToolCalls];
@@ -396,7 +446,33 @@ export function useDirectApiChat({
             // Check permission. `requireAllToolConfirmations` globally overrides
             // auto-allow so even read-only/built-in tools prompt every time.
             const requireAll = useSettingsStore.getState().requireAllToolConfirmations;
-            const rawTier = usePermissionStore.getState().isToolAllowed(call.name, null, null);
+            // Skill scripts are approved per SCRIPT CONTENT, never per tool
+            // name. The name-only check below treats a `null` scope as a
+            // wildcard, so one "Always" on `execute_skill_script` (or on a
+            // generated `skill__…` tool) used to allow every skill and script
+            // from then on — including ones written to the skills folder
+            // later (audit 2026-11-22 §6). They go through the same
+            // content-hash-pinned check as `useSkillOperations.executeScript`:
+            // hash the exact script about to run, and let an "always" grant
+            // match only that hash. No hash (unknown skill, unreadable file)
+            // means no stored approval can apply — the call prompts.
+            const isSkillScript = isSkillScriptTool(call.name);
+            const scriptTarget = isSkillScript ? resolveSkillScriptTarget(call.name, call.arguments) : null;
+            let scriptHash: string | undefined;
+            if (scriptTarget) {
+              try {
+                scriptHash = await tauriApi.hashSkillScript(scriptTarget.skillPath, scriptTarget.script);
+              } catch {
+                scriptHash = undefined;
+              }
+              // Stop pressed while hashing — `cleanup` already finalized.
+              if (cancelled) return;
+            }
+            const rawTier = isSkillScript
+              ? (scriptTarget && scriptHash
+                  ? usePermissionStore.getState().isSkillScriptAllowed(scriptTarget.skillName, null, null, scriptHash)
+                  : 'none')
+              : usePermissionStore.getState().isToolAllowed(call.name, null, null);
             const tier = requireAll ? 'none' : rawTier;
             // Tracks how this specific call was authorized — recorded on the activity.
             let approvalMode: import('@/lib/ai/types').ActivityApprovalMode = 'auto';
@@ -460,7 +536,18 @@ export function useDirectApiChat({
               // Update permissions based on decision. Under `requireAllToolConfirmations`
               // we honour session/always so the user isn't drowned in prompts on every
               // turn — but the global flag still means each *new* tool kind prompts.
-              if (decision === 'session') {
+              if (isSkillScript) {
+                // Per skill for the session; pinned to the approved script
+                // body for "always". Without a resolved script + hash there is
+                // nothing to pin, so the approval covers this one call only.
+                if (scriptTarget && scriptHash) {
+                  if (decision === 'session') {
+                    usePermissionStore.getState().allowSkillScriptSession(scriptTarget.skillName);
+                  } else if (decision === 'always') {
+                    usePermissionStore.getState().allowSkillScriptAlways(scriptTarget.skillName, null, null, scriptHash);
+                  }
+                }
+              } else if (decision === 'session') {
                 usePermissionStore.getState().allowToolSession(call.name);
               } else if (decision === 'always') {
                 usePermissionStore.getState().allowToolAlways(call.name, null, null);
@@ -502,6 +589,10 @@ export function useDirectApiChat({
             const result = await executeToolCall(call.id, call.name, call.arguments, {
               projectRoots: scopeRoots,
               homeDir: scopeHomeDir,
+            }, {
+              // The backend re-verifies the body matches what was just hashed
+              // and approved, closing the check → exec window.
+              expectedSkillScriptHash: scriptHash ?? null,
             });
 
             // Stop pressed while the tool executed — `cleanup` already tore
@@ -575,53 +666,91 @@ export function useDirectApiChat({
         };
 
         // -------------------------------------------------------------------
+        // Cleanup + provisional stream handle
+        // -------------------------------------------------------------------
+
+        // Filled once the listeners below are registered. `cleanup` may run
+        // BEFORE that (Stop during registration); the registration then
+        // unlistens its own handles as soon as it resolves.
+        let unlisteners: Array<() => void> = [];
+
+        const cleanup = () => {
+          if (cancelled) return;
+          cancelled = true;
+          clearInterval(flushInterval);
+          for (const unlisten of unlisteners) unlisten();
+          unlisteners = [];
+          // Unblock a tool-permission decision this turn may be awaiting (Stop
+          // pressed while the card was visible). Resolving lets the orphaned
+          // promise in `handleToolCalls` settle — the `cancelled` flag set above
+          // then bails it out before any continuation re-invoke — and clearing
+          // the pending entry removes the card so a later click can't spawn a
+          // zombie backend stream.
+          const pendingPerm = selectPendingForConversation(conversationId)(useToolPermissionStore.getState());
+          if (pendingPerm) {
+            useToolPermissionStore.getState().setPending(null, conversationId);
+            pendingPerm.resolve('deny');
+          }
+          if (streamedThinking) {
+            updateMessageThinking(assistantMessageId, streamedThinking, conversationId);
+          }
+          // Write whatever text/thinking is still buffered, so the message is
+          // complete before its segments are finalized.
+          flushSegments();
+          if (collectedCitations.length > 0 || streamedContent) {
+            updateMessage(assistantMessageId, streamedContent, collectedCitations.length > 0 ? collectedCitations : undefined, conversationId);
+          }
+          finalizeSegments(assistantMessageId, conversationId);
+          setLoading(false);
+          setActiveTool(null);
+          // Run reached a clean end (completed or cancelled) — clear its run state.
+          runIdle(conversationId);
+          // Drop this conversation's stream from the registry (only if it's still
+          // the one we registered — a re-send may have replaced it).
+          if (streamsRef.current.get(convKey)?.streamId === streamId) {
+            streamsRef.current.delete(convKey);
+          }
+        };
+
+        // Register the handle BEFORE the first await. It used to be set only
+        // after the listeners resolved, so a Stop during listener registration
+        // (or, for the bundled model, during compaction) found no handle: the
+        // turn carried on, invoked `ai_chat_stream`, and the model generated a
+        // whole reply into a message the user had stopped (audit 2026-11-22
+        // §2). With the handle in place Stop sets `cancelled`, and every await
+        // below is followed by a check.
+        streamsRef.current.set(convKey, { streamId, cleanup });
+
+        // -------------------------------------------------------------------
         // Event listeners
         // -------------------------------------------------------------------
 
-        const [
-          unlistenChunk,
-          unlistenThinking,
-          unlistenImage,
-          unlistenTool,
-          unlistenCitation,
-          unlistenToolCall,
-          unlistenToolCallsDone,
-          unlistenDone,
-        ] = await Promise.all([
+        const registered = await Promise.all([
           listen<string>(streamEvent('ai-stream-chunk', streamId), (event) => {
             if (cancelled) return;
+            // A text chunk after thinking: write the thinking segment first so
+            // the two stay in arrival order.
+            flushThinkingSegment();
             streamedContent += event.payload;
             contentDirty = true;
-            appendTextSegment(assistantMessageId, event.payload, conversationId);
+            pendingSegmentText += event.payload;
           }),
           listen<string>(streamEvent('ai-stream-thinking-chunk', streamId), (event) => {
             if (cancelled) return;
             if (!streamedThinking) {
               log.debug('ai', 'Thinking content detected');
             }
+            // Thinking after text: write the buffered text segment first.
+            flushTextSegment();
             streamedThinking += event.payload;
             thinkingDirty = true;
-            // Segment: accumulate thinking content
+            // Segment: accumulate thinking content (written on the next flush)
             thinkingSegmentContent += event.payload;
-            if (thinkingSegmentIndex === -1) {
-              const conv = useChatStore.getState().conversations
-                .find(c => c.id === (conversationId ?? useChatStore.getState().activeConversationId));
-              const msg = conv?.messages.find(m => m.timestamp === assistantMessageId);
-              thinkingSegmentIndex = msg?.segments?.length ?? 0;
-              pushSegment(assistantMessageId, {
-                type: 'thinking',
-                content: thinkingSegmentContent,
-                collapsed: false,
-                timestamp: Date.now(),
-              }, conversationId);
-            } else {
-              updateSegment(assistantMessageId, thinkingSegmentIndex, {
-                content: thinkingSegmentContent,
-              }, conversationId);
-            }
+            thinkingSegmentDirty = true;
           }),
           listen<{ data: string; mimeType: string }>(streamEvent('ai-stream-image', streamId), (event) => {
             if (cancelled) return;
+            flushSegments();
             pushSegment(assistantMessageId, {
               type: 'image',
               data: event.payload.data,
@@ -653,10 +782,13 @@ export function useDirectApiChat({
             log.debug('ai', `Processing ${pendingToolCalls.length} tool calls`);
             handleToolCalls().catch((err) => {
               log.error('ai', 'Tool call execution failed', err);
-              // On error, finalize the message with whatever content we have
-              if (streamedContent) {
-                updateMessage(assistantMessageId, streamedContent, undefined, conversationId);
-              }
+              // Tear the turn down FIRST: without it the 8 listeners and the
+              // flush interval stayed alive until the next send in this
+              // conversation, running segments were never finalized, and the
+              // registry kept a stale handle. `cleanup` also writes whatever
+              // content was streamed. Order matters — it ends with `runIdle`,
+              // which the `runError` below must override.
+              cleanup();
               setMessageError(
                 assistantMessageId,
                 friendlyAIError(err, effectiveConnection?.label || resolved?.provider, effectiveConnection?.id),
@@ -673,48 +805,14 @@ export function useDirectApiChat({
           }),
         ]);
 
-        const cleanup = () => {
-          if (cancelled) return;
-          cancelled = true;
-          clearInterval(flushInterval);
-          unlistenChunk();
-          unlistenThinking();
-          unlistenImage();
-          unlistenTool();
-          unlistenCitation();
-          unlistenToolCall();
-          unlistenToolCallsDone();
-          unlistenDone();
-          // Unblock a tool-permission decision this turn may be awaiting (Stop
-          // pressed while the card was visible). Resolving lets the orphaned
-          // promise in `handleToolCalls` settle — the `cancelled` flag set above
-          // then bails it out before any continuation re-invoke — and clearing
-          // the pending entry removes the card so a later click can't spawn a
-          // zombie backend stream.
-          const pendingPerm = selectPendingForConversation(conversationId)(useToolPermissionStore.getState());
-          if (pendingPerm) {
-            useToolPermissionStore.getState().setPending(null, conversationId);
-            pendingPerm.resolve('deny');
-          }
-          if (streamedThinking) {
-            updateMessageThinking(assistantMessageId, streamedThinking, conversationId);
-          }
-          if (collectedCitations.length > 0 || streamedContent) {
-            updateMessage(assistantMessageId, streamedContent, collectedCitations.length > 0 ? collectedCitations : undefined, conversationId);
-          }
-          finalizeSegments(assistantMessageId, conversationId);
-          setLoading(false);
-          setActiveTool(null);
-          // Run reached a clean end (completed or cancelled) — clear its run state.
-          runIdle(conversationId);
-          // Drop this conversation's stream from the registry (only if it's still
-          // the one we registered — a re-send may have replaced it).
-          if (streamsRef.current.get(convKey)?.streamId === streamId) {
-            streamsRef.current.delete(convKey);
-          }
-        };
-
-        streamsRef.current.set(convKey, { streamId, cleanup });
+        // Stop pressed while the listeners were registering — `cleanup` ran
+        // with nothing to unlisten. Drop the late registrations and do not
+        // start the stream.
+        if (cancelled) {
+          for (const unlisten of registered) unlisten();
+          return;
+        }
+        unlisteners = registered;
 
         // Build tools array if tool calling is enabled
         let tools: ToolDefinition[] | undefined;
@@ -752,6 +850,11 @@ export function useDirectApiChat({
         // Turn boundary — the one place compaction is appropriate. Inside the
         // tool loop below, the cheap synchronous trim is used instead.
         const outboundMessages = await compactForProvider(conversationMessages);
+
+        // Stop pressed during compaction (a full local generation). The
+        // backend stream is not registered yet, so `ai_chat_stream_cancel` had
+        // nothing to cancel — the only way to stop it is to never start it.
+        if (cancelled) return;
 
         await invoke('ai_chat_stream', {
           messages: mapMessagesForRust(outboundMessages),

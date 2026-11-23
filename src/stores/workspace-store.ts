@@ -11,6 +11,7 @@ import {
   serializePinsFileContent,
   mergePinsFromFile,
 } from "@/lib/pins-file";
+import { handleRehydrateResult } from "@/lib/persist-rehydrate";
 
 
 export interface WorkspaceProject {
@@ -442,6 +443,7 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
     }),
     {
       name: "notesage-workspace",
+      onRehydrateStorage: () => (_state, error) => handleRehydrateResult("notesage-workspace", error),
 
       partialize: (state) => ({
         explorerFolders: state.explorerFolders.map((f) => ({ path: f.path })),
@@ -455,14 +457,19 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         notesCollapsed: state.notesCollapsed,
       }),
       merge: (persisted, current) => {
-        const p = persisted as Record<string, unknown>;
+        // `persisted` is `undefined` when nothing is stored yet (first
+        // launch). Dereferencing it threw, zustand swallowed that, and
+        // `hasHydrated` never became true on a fresh install.
+        const p = (persisted ?? {}) as Record<string, unknown>;
+        const hasPath = (v: unknown): v is { path: string } =>
+          typeof v === "object" && v !== null && typeof (v as { path?: unknown }).path === "string";
 
         // Migrate old single explorerPath to explorerFolders array
         let explorerFolders: ExplorerFolder[] = [];
         if (Array.isArray(p.explorerFolders)) {
-          explorerFolders = (p.explorerFolders as Array<{ path: string }>).map(
-            (f) => ({ path: f.path, fileTree: [] })
-          );
+          explorerFolders = p.explorerFolders
+            .filter(hasPath)
+            .map((f) => ({ path: f.path, fileTree: [] }));
         } else if (typeof p.explorerPath === "string" && p.explorerPath) {
           // v1 migration: single explorerPath → array
           explorerFolders = [{ path: p.explorerPath as string, fileTree: [] }];
@@ -476,8 +483,18 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
         return {
           ...current,
           explorerFolders,
-          projects: (p.projects as WorkspaceProject[]) ?? [],
-          recentProjects: (p.recentProjects as RecentProject[]) ?? [],
+          projects: Array.isArray(p.projects)
+            ? p.projects.filter(hasPath).map((proj) => {
+                const tree = (proj as { fileTree?: unknown }).fileTree;
+                return { ...proj, fileTree: Array.isArray(tree) ? (tree as FileEntry[]) : [] };
+              })
+            : [],
+          recentProjects: Array.isArray(p.recentProjects)
+            ? p.recentProjects.filter(
+                (r): r is RecentProject =>
+                  hasPath(r) && typeof (r as { name?: unknown }).name === "string"
+              )
+            : [],
           pinnedFiles,
           dismissedLibraryProjects: Array.isArray(p.dismissedLibraryProjects)
             ? (p.dismissedLibraryProjects as unknown[]).filter(
@@ -485,7 +502,9 @@ export const useWorkspaceStore = create<WorkspaceStore>()(
               )
             : [],
           expandedFolders: new Set(
-            (p.expandedFolders as string[]) ?? []
+            Array.isArray(p.expandedFolders)
+              ? p.expandedFolders.filter((v): v is string => typeof v === "string")
+              : []
           ),
           explorerCollapsed: (p.explorerCollapsed as boolean) ?? false,
           projectsCollapsed: (p.projectsCollapsed as boolean) ?? false,

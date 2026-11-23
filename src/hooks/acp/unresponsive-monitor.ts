@@ -14,9 +14,22 @@
 // in a store. The repo convention for non-persisted runtime state offers
 // either a plain non-persisted store or a module singleton with a documented
 // owner (see `src/hooks/agent-task/task-registry.ts`) — this is the latter: a
-// single monitor instance per window, owned by `useAcpLifecycle` (which
-// registers the callbacks on mount and clears them on unmount), resettable
-// for tests by constructing a fresh `AcpUnresponsiveMonitor`.
+// single monitor instance per window, resettable for tests by constructing a
+// fresh `AcpUnresponsiveMonitor`.
+//
+// OWNERSHIP. `useAcpLifecycle` is mounted several times at once (once per
+// `useAIOperations` caller: the command bar, the editor's comment sync, both
+// bubble menus), and each instance holds its own stream cleanups and retry
+// context. The monitor therefore keeps a REGISTRY of owners instead of one set
+// of callbacks:
+//   - every mounted instance registers on mount and unregisters on unmount —
+//     an unmount removes only that instance, never another's callbacks;
+//   - the instance that SENDS a prompt starts the timer as its owner, so a hung
+//     turn is recovered by the instance that holds its listeners;
+//   - Retry goes to the instance that holds the failed prompt.
+// The previous single-slot callbacks were overwritten by whichever instance
+// rendered last and cleared by whichever unmounted first, which silently
+// disabled hung-agent detection and the banner's Retry (audit 2026-11-22 §2).
 // ---------------------------------------------------------------------------
 
 // 5 minutes — agents can have long gaps between events (thinking, web fetches,
@@ -24,42 +37,92 @@
 // only catches genuinely hung agents, not slow ones.
 export const UNRESPONSIVE_TIMEOUT_MS = 300_000;
 
+/** One mounted `useAcpLifecycle` instance, as the monitor sees it. */
+export interface UnresponsiveOwner {
+  /**
+   * Recovery check, invoked when an inactivity timer this owner started fires.
+   * `conversationId` is the conversation the timed turn belongs to (`null` =
+   * the foreground one).
+   */
+  onUnresponsive: (conversationId: string | null) => void;
+  /** Whether this owner holds a prompt it could retry for the conversation. */
+  canRetry: (conversationId?: string | null) => boolean;
+  /** Retry the conversation's last prompt (`null`/absent = the foreground one). */
+  retry: (conversationId?: string | null) => Promise<void>;
+  /** Dismiss the banner and keep waiting for the agent. */
+  keepWaiting: () => void;
+}
+
 export class AcpUnresponsiveMonitor {
   private timerId: ReturnType<typeof setTimeout> | null = null;
-  private onUnresponsive: (() => void) | null = null;
-  private retryCallback: (() => Promise<void>) | null = null;
-  private keepWaitingCallback: (() => void) | null = null;
+  /** Registered owners, oldest first. */
+  private owners: UnresponsiveOwner[] = [];
+  /** Owner + conversation of the turn the running (or last) timer watches. */
+  private timerOwner: UnresponsiveOwner | null = null;
+  private timerConversationId: string | null = null;
 
-  /** Register the recovery check invoked when the timer fires. Set by the hook. */
-  setOnUnresponsive(cb: (() => void) | null): void {
-    this.onUnresponsive = cb;
+  /**
+   * Register a mounted lifecycle instance. Returns the matching unregister,
+   * which removes ONLY this owner: the timer is cleared only when it was this
+   * owner's (its streams are torn down with it), and other instances keep
+   * their callbacks.
+   */
+  register(owner: UnresponsiveOwner): () => void {
+    this.owners.push(owner);
+    return () => {
+      this.owners = this.owners.filter((o) => o !== owner);
+      if (this.timerOwner === owner) {
+        this.timerOwner = null;
+        this.timerConversationId = null;
+        this.clear();
+      }
+    };
   }
 
-  /** Retry callback — set by the hook, callable from UI components. */
-  setRetryCallback(cb: (() => Promise<void>) | null): void {
-    this.retryCallback = cb;
+  private latestOwner(): UnresponsiveOwner | null {
+    return this.owners.length > 0 ? this.owners[this.owners.length - 1] : null;
   }
 
-  getRetryCallback(): (() => Promise<void>) | null {
-    return this.retryCallback;
+  /**
+   * Retry callback for the banner. Routes to the owner that holds a prompt
+   * for the conversation (the one that sent it); with none, to the most
+   * recently mounted owner, which reports that there is nothing to retry.
+   */
+  getRetryCallback(): ((conversationId?: string | null) => Promise<void>) | null {
+    if (this.owners.length === 0) return null;
+    return (conversationId) => {
+      const holder = [...this.owners].reverse().find((o) => o.canRetry(conversationId));
+      const target = holder ?? this.latestOwner();
+      return target ? target.retry(conversationId) : Promise.resolve();
+    };
   }
 
-  /** Keep-waiting callback — set by the hook, callable from UI components. */
-  setKeepWaitingCallback(cb: (() => void) | null): void {
-    this.keepWaitingCallback = cb;
-  }
-
+  /** Keep-waiting callback for the banner. */
   getKeepWaitingCallback(): (() => void) | null {
-    return this.keepWaitingCallback;
+    const owner = this.timerOwner ?? this.latestOwner();
+    return owner ? owner.keepWaiting : null;
   }
 
-  /** Start (or restart) the unresponsiveness timer. */
-  start(): void {
+  /**
+   * Start (or restart) the unresponsiveness timer.
+   *
+   * A send passes itself as `owner` together with the turn's conversation.
+   * Without an owner (keep-waiting, a reset) the previous owner and
+   * conversation are kept; failing that, the most recently mounted owner.
+   */
+  start(owner?: UnresponsiveOwner, conversationId?: string | null): void {
     this.clear();
-    if (!this.onUnresponsive) return;
+    if (owner) {
+      this.timerOwner = owner;
+      this.timerConversationId = conversationId ?? null;
+    } else if (!this.timerOwner || !this.owners.includes(this.timerOwner)) {
+      this.timerOwner = this.latestOwner();
+      this.timerConversationId = null;
+    }
+    if (!this.timerOwner) return;
     this.timerId = setTimeout(() => {
       this.timerId = null;
-      this.onUnresponsive?.();
+      this.timerOwner?.onUnresponsive(this.timerConversationId);
     }, UNRESPONSIVE_TIMEOUT_MS);
   }
 
@@ -79,7 +142,7 @@ export class AcpUnresponsiveMonitor {
   }
 }
 
-/** The per-window monitor instance, owned by `useAcpLifecycle`. */
+/** The per-window monitor instance; `useAcpLifecycle` instances register with it. */
 export const acpUnresponsiveMonitor = new AcpUnresponsiveMonitor();
 
 // ---------------------------------------------------------------------------
@@ -88,8 +151,8 @@ export const acpUnresponsiveMonitor = new AcpUnresponsiveMonitor();
 // ---------------------------------------------------------------------------
 
 /** Start (or restart) the unresponsiveness timer. */
-export function startUnresponsiveTimer(): void {
-  acpUnresponsiveMonitor.start();
+export function startUnresponsiveTimer(owner?: UnresponsiveOwner, conversationId?: string | null): void {
+  acpUnresponsiveMonitor.start(owner, conversationId);
 }
 
 /** Reset the timer (called on every acp-session-update event). */
@@ -102,7 +165,7 @@ export function clearUnresponsiveTimer(): void {
   acpUnresponsiveMonitor.clear();
 }
 
-export function getRetryCallback(): (() => Promise<void>) | null {
+export function getRetryCallback(): ((conversationId?: string | null) => Promise<void>) | null {
   return acpUnresponsiveMonitor.getRetryCallback();
 }
 

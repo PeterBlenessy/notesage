@@ -109,13 +109,13 @@ export function TranscriptionSettings() {
                         {formatSize(model.size_bytes)}
                       </span>
                       {model.parameters && (
-                        <span className="text-xs text-muted-foreground/70">
+                        <span className="text-xs text-muted-foreground">
                           · {model.parameters} params
                         </span>
                       )}
                     </div>
                     {model.description && (
-                      <p className="text-xs text-muted-foreground/70 mt-0.5">{model.description}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{model.description}</p>
                     )}
                     {/* Provenance and the longer story, on demand. The row says
                         what the model is FOR; this says what it actually is and
@@ -123,12 +123,12 @@ export function TranscriptionSettings() {
                         claim the user can check rather than take on trust. */}
                     {(model.detail || model.download_url) && (
                       <details className="mt-1 group/detail">
-                        <summary className="text-xs text-muted-foreground/60 cursor-pointer list-none hover:text-muted-foreground transition-colors duration-150">
+                        <summary className="text-xs text-muted-foreground cursor-pointer list-none hover:text-foreground transition-colors duration-150">
                           <span className="underline decoration-dotted underline-offset-2">
                             {t("trans.aboutModel")}
                           </span>
                         </summary>
-                        <div className="mt-1.5 space-y-1 text-xs text-muted-foreground/70">
+                        <div className="mt-1.5 space-y-1 text-xs text-muted-foreground">
                           {model.detail && <p className="max-w-prose">{model.detail}</p>}
                           <p>
                             {model.author && <>By {model.author}</>}
@@ -169,6 +169,7 @@ export function TranscriptionSettings() {
                         className="text-muted-foreground hover:text-destructive"
                         onClick={() => cancelDownload(model.name)}
                         title={t("voice.cancelDownload")}
+                        aria-label={t("voice.cancelDownload")}
                       >
                         <X className="h-3.5 w-3.5" strokeWidth={1.5} />
                       </Button>

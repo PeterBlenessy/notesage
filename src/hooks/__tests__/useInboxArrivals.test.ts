@@ -164,7 +164,7 @@ describe("useInboxArrivals — baseline then diff", () => {
     expect(notify).toHaveBeenCalledWith("inbox_capture", "New in Inbox", "c", { inbox: true });
   });
 
-  it("an empty listing (how the store reads a listing failure) keeps the baseline, so a backlog that blinks is not re-announced", async () => {
+  it("a listing failure keeps the rows and the baseline, so a backlog that blinks is not re-announced", async () => {
     listing = ["a.html", "b.pdf"];
     renderHook(() => useInboxArrivals());
     await load();
@@ -172,7 +172,10 @@ describe("useInboxArrivals — baseline then diff", () => {
       throw new Error("disk blinked");
     });
     await load();
-    expect(useInboxStore.getState().items).toEqual([]);
+    // A folder that is there but unreadable is reported as an error; it is
+    // no longer read as an empty Inbox (audit 2026-11-22 §10).
+    expect(useInboxStore.getState().items.map((i) => i.name)).toEqual(["a.html", "b.pdf"]);
+    expect(useInboxStore.getState().error).toContain("disk blinked");
     setMockInvokeHandler("list_files_shallow", () => listing.map(entry));
     await load();
     expect(notify).not.toHaveBeenCalled();

@@ -443,7 +443,7 @@ function TaskMode({
                   strokeWidth={1.5}
                 />
                 <span>{t("cmd.allTypes")}</span>
-                <span className="text-muted-foreground/60">
+                <span className="text-muted-foreground">
                   {typeCounts.all}
                 </span>
               </span>
@@ -455,7 +455,7 @@ function TaskMode({
                   strokeWidth={1.5}
                 />
                 <span>{t("cmd.tasks")}</span>
-                <span className="text-muted-foreground/60">
+                <span className="text-muted-foreground">
                   {typeCounts.task}
                 </span>
               </span>
@@ -467,7 +467,7 @@ function TaskMode({
                   strokeWidth={1.5}
                 />
                 <span>{t("cmd.comments")}</span>
-                <span className="text-muted-foreground/60">
+                <span className="text-muted-foreground">
                   {typeCounts.comment}
                 </span>
               </span>
@@ -479,7 +479,7 @@ function TaskMode({
                   strokeWidth={1.5}
                 />
                 <span>{t("cmd.agentTasks")}</span>
-                <span className="text-muted-foreground/60">
+                <span className="text-muted-foreground">
                   {typeCounts.agent}
                 </span>
               </span>
@@ -491,7 +491,7 @@ function TaskMode({
                   strokeWidth={1.5}
                 />
                 <span>{t("cmd.goals")}</span>
-                <span className="text-muted-foreground/60">
+                <span className="text-muted-foreground">
                   {typeCounts.goal}
                 </span>
               </span>
@@ -515,7 +515,7 @@ function TaskMode({
                   strokeWidth={1.5}
                 />
                 <span>Open</span>
-                <span className="text-muted-foreground/60">
+                <span className="text-muted-foreground">
                   {statusCounts.open}
                 </span>
               </span>
@@ -527,7 +527,7 @@ function TaskMode({
                   strokeWidth={1.5}
                 />
                 <span>Done</span>
-                <span className="text-muted-foreground/60">
+                <span className="text-muted-foreground">
                   {statusCounts.done}
                 </span>
               </span>
@@ -539,7 +539,7 @@ function TaskMode({
                   strokeWidth={1.5}
                 />
                 <span>All</span>
-                <span className="text-muted-foreground/60">
+                <span className="text-muted-foreground">
                   {statusCounts.all}
                 </span>
               </span>
@@ -669,7 +669,7 @@ function TaskMode({
                 <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
                   {label}
                 </span>
-                <span className="text-[10px] text-muted-foreground/50">
+                <span className="text-[10px] text-muted-foreground">
                   ({items.length} open)
                 </span>
                 <div className="flex-1 h-px bg-border" />

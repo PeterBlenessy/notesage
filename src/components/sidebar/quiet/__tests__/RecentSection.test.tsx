@@ -168,6 +168,14 @@ describe('RecentSection — Show more / Show fewer', () => {
     expect(more.getAttribute('aria-expanded')).toBe('false');
   });
 
+  it('"Show more" stays in the Tab order — it is the only keyboard path to overflow rows', () => {
+    setRecent(makeRecent(7));
+    renderWithProviders(<RecentSection cap={3} />);
+    const more = screen.getByRole('button', { name: /show more/i });
+    expect(more.getAttribute('tabindex')).toBeNull();
+    expect(more.tabIndex).toBe(0);
+  });
+
   it('clicking "Show more" reveals all files and flips label to "Show fewer"', async () => {
     const user = userEvent.setup();
     setRecent(makeRecent(7));

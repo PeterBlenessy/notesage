@@ -437,4 +437,39 @@ describe('MentionsSection', () => {
       expect(document.activeElement).toBe(alpha);
     });
   });
+  it('shows that the search index is unavailable when the query fails, instead of an empty section', async () => {
+    indexMentionsMock.mockRejectedValue(new Error('database is locked'));
+
+    renderWithProviders(<MentionsSection />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('Search index unavailable');
+    expect(alert.getAttribute('title')).toBe('database is locked');
+  });
+
+  it('shows no error when the index simply has no entries', async () => {
+    indexMentionsMock.mockResolvedValue([]);
+
+    renderWithProviders(<MentionsSection />);
+
+    await waitFor(() => {
+      expect(indexMentionsMock).toHaveBeenCalled();
+    });
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('"Show more" is reachable with the keyboard (in the Tab order)', async () => {
+    indexMentionsMock.mockResolvedValue(
+      Array.from({ length: DEFAULT_MENTION_CAP + 3 }, (_, i) => ({ mention: `person${i}`, file_count: 100 - i })),
+    );
+
+    renderWithProviders(<MentionsSection />);
+
+    await waitFor(() => {
+      expect(screen.getByText('person0')).toBeTruthy();
+    });
+    const showMore = screen.getByRole('button', { name: /show more/i }) as HTMLButtonElement;
+    expect(showMore.getAttribute('tabindex')).toBeNull();
+    expect(showMore.tabIndex).toBe(0);
+  });
 });

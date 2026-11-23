@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { handleRehydrateResult } from "@/lib/persist-rehydrate";
 
 
 type EpubViewMode = "scroll" | "paginated";
@@ -41,6 +42,6 @@ export const useEpubStore = create<EpubStore>()(
 
       getBookmark: (filePath) => get().bookmarks[filePath] ?? null,
     }),
-    { name: "epub-store" },
+    { name: "epub-store", onRehydrateStorage: () => (_state, error) => handleRehydrateResult("epub-store", error) },
   ),
 );

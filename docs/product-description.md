@@ -6,7 +6,7 @@ id: ""
 
 Notesage is a rich text markdown editor with AI collaboration capabilities, packaged as a lightweight desktop application using Tauri v2.
 
-**Current version:** see the `version` field in `package.json` (ships on an alpha pre-release channel). Not duplicated here — a hardcoded version line drifts; `package.json` is the single source of truth.
+**Current version:** see the `version` field in `package.json` — there is one binary and one release stream; experimental work is opt-in under Settings → Labs. Not duplicated here — a hardcoded version line drifts; `package.json` is the single source of truth.
 
 ## Features
 
@@ -93,7 +93,7 @@ For editor architecture internals (ProseMirror, decorations, extensions): featur
 
 **Goal:** Move from "feature-rich IDE" to "premium native writing tool" — single floating composer for chat/commands/search, ambient agent orb instead of activity rail, flat curated sidebar with summonable tree overlay, fade-on-type chrome.
 
-- Phase 1 (opt-in preview) shipped in v0.39.0 — `QuietLayout`, `FloatingCommandBar`, `AgentOrb`, `QuietSidebar` with Pinned / Projects / Folders / Recent / Tags / Mentions sections, `TreeOverlay` (`⌘⇧E`; later removed in sidebar-simplification task #20 — guard test `no-tree-overlay.test.ts`), `FolderPeek`, `FocusPill`, `StatusTray`, accent picker (Default / Orange / Blue / System), Quiet chrome presets (Relaxed / Default / Aggressive), Settings v2 shell
+- Phase 1 (opt-in preview) shipped in v0.39.0 — `QuietLayout`, `FloatingCommandBar`, `AgentOrb`, `QuietSidebar` with Pinned / Projects / Folders / Recent / Tags / Mentions sections (the Phase 1 set; today's order is Inbox → Recordings → Pinned → Folders (projects, then external folders) → Recent → Tags → Mentions), `TreeOverlay` (`⌘⇧E`; later removed in sidebar-simplification task #20 — guard test `no-tree-overlay.test.ts`), `FolderPeek`, `FocusPill`, `StatusTray`, accent picker (Default / Orange / Blue / System), Quiet chrome presets (Relaxed / Default / Aggressive), Settings v2 shell
 - Phase 2 (default-on for new installs)
 - Phase 3 (Classic Layout deletion) — issue #325, PRD `docs/prds/2026-05-22-classic-layout-removal.md`. Removed `Layout.tsx`, `TabBar`, `ChatPanel`, `ChatFooter`, `ActivityStrip`, `CommandPalette`, `NewNoteDialog`, `NewProjectDialog`, `KeyboardShortcutsDialog`, `PreviewInvitation`, `RevertInvitation`, and the legacy `SettingsDialog`. Quiet Composer is the only shell.
 - PRD: `docs/prds/2026-04-21-ui-refresh.md`
@@ -171,11 +171,11 @@ Before any release, ALL of these must pass:
 
 - [ ] **Round-trip test passes**: Open → edit nothing → save → file is identical (whitespace-normalized)
 
-- [ ] Multi-tab editing works (switch tabs preserves state)
+- [ ] Switching documents preserves state (content, undo history, scroll position)
 
 - [ ] Unsaved changes indicator works
 
-- [ ] Auto-save on tab switch works
+- [ ] Auto-save on document switch works
 
 - [ ] Slash commands insert correct block types
 

@@ -1,5 +1,5 @@
 import { ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { toast } from 'sonner';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -22,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { t } from '@/lib/i18n';
 
 export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const fieldId = useId();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
@@ -114,8 +115,8 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
 
         <div className="space-y-4 py-2 overflow-y-auto max-h-[60vh]">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">{t("agent.name")}</Label>
-            <Input
+            <Label htmlFor={`${fieldId}-1`} className="text-xs text-muted-foreground">{t("agent.name")}</Label>
+            <Input id={`${fieldId}-1`}
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Code Reviewer"
@@ -130,8 +131,8 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">{t("agent.description")}</Label>
-            <Input
+            <Label htmlFor={`${fieldId}-2`} className="text-xs text-muted-foreground">{t("agent.description")}</Label>
+            <Input id={`${fieldId}-2`}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder={t("agent.descPlaceholder")}
@@ -140,8 +141,8 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">{t("agent.instructions")}</Label>
-            <Textarea
+            <Label htmlFor={`${fieldId}-3`} className="text-xs text-muted-foreground">{t("agent.instructions")}</Label>
+            <Textarea id={`${fieldId}-3`}
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               placeholder={t("agent.instructionsPlaceholder")}
@@ -151,7 +152,7 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
 
           {/* Advanced options */}
           <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none">
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm">
               <ChevronDown
                 className={cn('h-3 w-3 transition-transform duration-150', !advancedOpen && '-rotate-90')}
                 strokeWidth={1.5}
@@ -161,8 +162,8 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
             <CollapsibleContent>
               <div className="space-y-4 pt-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">{t("agent.allowedTools")}</Label>
-                  <Input
+                  <Label htmlFor={`${fieldId}-4`} className="text-xs text-muted-foreground">{t("agent.allowedTools")}</Label>
+                  <Input id={`${fieldId}-4`}
                     value={allowedTools}
                     onChange={(e) => setAllowedTools(e.target.value)}
                     placeholder="e.g., Read, Grep, Glob (comma-separated)"
@@ -174,8 +175,8 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">{t("agent.modelPreference")}</Label>
-                  <Input
+                  <Label htmlFor={`${fieldId}-5`} className="text-xs text-muted-foreground">{t("agent.modelPreference")}</Label>
+                  <Input id={`${fieldId}-5`}
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
                     placeholder="e.g., sonnet, opus, haiku"
@@ -187,8 +188,8 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
                 </div>
 
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">{t("agent.icon")}</Label>
-                  <Input
+                  <Label htmlFor={`${fieldId}-6`} className="text-xs text-muted-foreground">{t("agent.icon")}</Label>
+                  <Input id={`${fieldId}-6`}
                     value={icon}
                     onChange={(e) => setIcon(e.target.value)}
                     placeholder={t("agent.iconPlaceholderLong")}
@@ -198,18 +199,18 @@ export function NewAddressableAgentDialog({ open, onOpenChange }: { open: boolea
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">User-invocable</Label>
+                    <Label htmlFor={`${fieldId}-7`} className="text-sm">User-invocable</Label>
                     <p className="text-xs text-muted-foreground">{t("agent.showInPicker")}</p>
                   </div>
-                  <Switch checked={userInvocable} onCheckedChange={setUserInvocable} />
+                  <Switch id={`${fieldId}-7`} checked={userInvocable} onCheckedChange={setUserInvocable} />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">{t("agent.disableModelInvocation")}</Label>
+                    <Label htmlFor={`${fieldId}-8`} className="text-sm">{t("agent.disableModelInvocation")}</Label>
                     <p className="text-xs text-muted-foreground">{t("agent.disableModelInvocationDesc")}</p>
                   </div>
-                  <Switch checked={disableModelInvocation} onCheckedChange={setDisableModelInvocation} />
+                  <Switch id={`${fieldId}-8`} checked={disableModelInvocation} onCheckedChange={setDisableModelInvocation} />
                 </div>
               </div>
             </CollapsibleContent>

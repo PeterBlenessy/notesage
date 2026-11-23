@@ -785,12 +785,6 @@ pub async fn network_proxy_status(
     Ok(statuses)
 }
 
-/// Get default allowed domains for an agent
-#[tauri::command]
-pub async fn network_default_domains(agent_id: String) -> Result<Vec<String>, String> {
-    Ok(default_allowed_domains(&agent_id))
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

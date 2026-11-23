@@ -3,6 +3,7 @@ import { toast } from 'sonner';
 import { tauriApi } from '@/lib/tauri';
 import { log } from '@/lib/logger';
 import { parseSidecar, serializeSidecar } from '@/lib/comment-storage';
+import { isSafeDocumentId } from '@/lib/frontmatter';
 import { t } from '@/lib/i18n';
 
 export interface CommentReply {
@@ -113,6 +114,11 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
   loadFailedByDocument: {},
 
   loadComments: async (documentId: string, projectRoot: string) => {
+    if (!isSafeDocumentId(documentId)) {
+      // The id becomes a file name below; one with a separator would read outside the folder.
+      log.warn('comments', `Refusing to load comments for an unsafe document id: ${String(documentId)}`);
+      return;
+    }
     const dirPath = `${projectRoot}/.notesage/comments`;
     const filePath = `${dirPath}/${documentId}.json`;
     // The list shown is empty either way; what differs is whether it may be
@@ -415,6 +421,11 @@ export const useCommentStore = create<CommentStore>()((set, get) => ({
       // replace every existing comment with whatever was added since.
       log.warn('comments', `Refusing to save comments for ${documentId}: its sidecar failed to load`);
       toast.error(t('toast.commentsSaveBlocked'), { id: `comments-save-blocked:${documentId}` });
+      return;
+    }
+    if (!isSafeDocumentId(documentId)) {
+      // The id becomes a file name below; one with a separator would write outside the folder.
+      log.warn('comments', `Refusing to save comments for an unsafe document id: ${String(documentId)}`);
       return;
     }
     const comments = get().commentsByDocument[documentId] ?? [];

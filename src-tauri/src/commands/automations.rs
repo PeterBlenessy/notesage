@@ -196,17 +196,6 @@ pub struct AutomationFile {
     pub error: Option<String>,
 }
 
-#[derive(Serialize, Debug, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct AutomationValidation {
-    pub ok: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub error: Option<String>,
-    /// Next fire time (RFC3339, schedule triggers only) — a preview for the form builder.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub next_run: Option<String>,
-}
-
 // ----------------------------------------------------------------------------
 // Parse + validation
 // ----------------------------------------------------------------------------
@@ -521,31 +510,6 @@ fn contained_join(base: &str, rel_path: &str) -> Result<String, String> {
 #[tauri::command]
 pub async fn delete_automation(path: String) -> Result<(), String> {
     fs::remove_file(&path).map_err(|e| format!("Failed to delete {}: {}", path, e))
-}
-
-/// Dry-run validation for the form builder. Always returns `Ok` — the verdict
-/// (and any error / next-run preview) is carried in `AutomationValidation`.
-#[tauri::command]
-pub async fn validate_automation(yaml: String) -> Result<AutomationValidation, String> {
-    match parse_automation(&yaml) {
-        Ok(a) => match validate_automation_struct(&a) {
-            Ok(next_run) => Ok(AutomationValidation {
-                ok: true,
-                error: None,
-                next_run,
-            }),
-            Err(msg) => Ok(AutomationValidation {
-                ok: false,
-                error: Some(msg),
-                next_run: None,
-            }),
-        },
-        Err(msg) => Ok(AutomationValidation {
-            ok: false,
-            error: Some(msg),
-            next_run: None,
-        }),
-    }
 }
 
 // ----------------------------------------------------------------------------

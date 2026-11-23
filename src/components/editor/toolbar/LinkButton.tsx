@@ -8,8 +8,11 @@ import { cn } from "@/lib/utils";
 import { isExternalUrl, isLocalFilePath, searchWorkspaceFiles } from "@/lib/link-utils";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 export function LinkButton({ editor }: { editor: Editor }) {
+  useLocale();
   const isLink = editor.isActive("link");
   const [open, setOpen] = useState(false);
   const [url, setUrl] = useState("");
@@ -150,7 +153,8 @@ export function LinkButton({ editor }: { editor: Editor }) {
                   handleOpen();
                 }
               }}
-              title={isLink ? "Remove link" : "Insert link"}
+              title={isLink ? t("editor.removeLink") : t("editor.insertLink")}
+              aria-label={isLink ? t("editor.removeLink") : t("editor.insertLink")}
             >
               {isLink ? (
                 <Unlink className="size-4" strokeWidth={1.5} />

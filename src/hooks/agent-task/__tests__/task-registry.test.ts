@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import {
   AgentTaskRegistry,
+  MAX_FINISHED_TASKS,
   agentTaskRegistry,
   resetAgentTaskRegistry,
   type InternalTask,
@@ -58,6 +59,68 @@ describe('AgentTaskRegistry task records', () => {
     // Simulate a stream chunk mutating the record in place.
     reg.getTask('task-1')!.output += 'chunk';
     expect(task.output).toBe('chunk');
+  });
+});
+
+// Finished records hold the full prompt and output; before the cap, only the
+// test-only `reset()` ever removed one, so they accumulated for the app's
+// lifetime (audit 2026-11-22 §1).
+describe('AgentTaskRegistry finished-task retention', () => {
+  it('drops the oldest finished records beyond the cap', () => {
+    const reg = new AgentTaskRegistry();
+    const total = MAX_FINISHED_TASKS + 5;
+    for (let i = 0; i < total; i++) {
+      reg.setTask(makeTask({ id: `task-${i}`, status: 'completed', output: 'x'.repeat(10) }));
+    }
+    // The 5 oldest are gone, the newest MAX_FINISHED_TASKS remain.
+    for (let i = 0; i < 5; i++) expect(reg.getTask(`task-${i}`)).toBeUndefined();
+    for (let i = 5; i < total; i++) expect(reg.getTask(`task-${i}`)).toBeDefined();
+  });
+
+  it('counts failed and cancelled records as finished', () => {
+    const reg = new AgentTaskRegistry();
+    const statuses = ['completed', 'failed', 'cancelled'] as const;
+    for (let i = 0; i < MAX_FINISHED_TASKS + 3; i++) {
+      reg.setTask(makeTask({ id: `task-${i}`, status: statuses[i % 3] }));
+    }
+    expect(reg.getTask('task-0')).toBeUndefined();
+    expect(reg.getTask('task-2')).toBeUndefined();
+    expect(reg.getTask('task-3')).toBeDefined();
+  });
+
+  it('never drops a running or pending task, however old', () => {
+    const reg = new AgentTaskRegistry();
+    reg.setTask(makeTask({ id: 'old-running', status: 'running' }));
+    reg.setTask(makeTask({ id: 'old-pending', status: 'pending' }));
+    for (let i = 0; i < MAX_FINISHED_TASKS * 2; i++) {
+      reg.setTask(makeTask({ id: `task-${i}`, status: 'completed' }));
+    }
+    expect(reg.getTask('old-running')).toBeDefined();
+    expect(reg.getTask('old-pending')).toBeDefined();
+  });
+
+  it('evicts a task that finished after it was registered (status mutated in place)', () => {
+    const reg = new AgentTaskRegistry();
+    const first = makeTask({ id: 'first', status: 'running' });
+    reg.setTask(first);
+    first.status = 'completed';
+    for (let i = 0; i < MAX_FINISHED_TASKS; i++) {
+      reg.setTask(makeTask({ id: `task-${i}`, status: 'failed' }));
+    }
+    expect(reg.getTask('first')).toBeUndefined();
+  });
+
+  it('keeps a cleanup callable for an evicted record', () => {
+    const reg = new AgentTaskRegistry();
+    const cleanup = vi.fn();
+    reg.setTask(makeTask({ id: 'first', status: 'cancelled' }));
+    reg.registerCleanup('first', cleanup);
+    for (let i = 0; i < MAX_FINISHED_TASKS; i++) {
+      reg.setTask(makeTask({ id: `task-${i}`, status: 'completed' }));
+    }
+    expect(reg.getTask('first')).toBeUndefined();
+    reg.runCleanup('first');
+    expect(cleanup).toHaveBeenCalledOnce();
   });
 });
 

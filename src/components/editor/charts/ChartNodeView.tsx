@@ -17,6 +17,8 @@ import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useEditorStore } from "@/stores/editor-store";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 function useActiveProjectPath(): string | undefined {
   // Only subscribe to the active tab's filePath — NOT the full openDocuments array.
@@ -36,6 +38,7 @@ const MIN_HEIGHT = 150;
 const MAX_HEIGHT = 600;
 
 export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps) {
+  useLocale();
   const chartJson = node.attrs.chartJson as string | null;
   const chartId = node.attrs.chartId as string | null;
   const height = (node.attrs.height as number) ?? 300;
@@ -374,7 +377,8 @@ export function ChartNodeView({ node, selected, editor, getPos }: NodeViewProps)
               <button
                 className="flex items-center gap-1 rounded-md bg-muted/80 px-2 py-1 text-xs text-muted-foreground backdrop-blur-sm hover:text-foreground transition-colors"
                 onClick={handleDuplicate}
-                title="Duplicate chart"
+                title={t("editor.chartDuplicate")}
+                aria-label={t("editor.chartDuplicate")}
               >
                 <Copy className="size-3" strokeWidth={1.5} />
               </button>

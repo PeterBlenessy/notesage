@@ -30,9 +30,9 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::commands::acp_binary::{resolve_absolute_binary, resolve_agent_binary};
 
-use agent_thread::run_agent_thread;
+use agent_thread::{run_agent_thread, INIT_TIMEOUT};
 use helpers::build_acp_mcp_servers;
-use state::{AgentCmd, AgentHandle};
+use state::{sigkill_agent_child, AgentCmd, AgentHandle};
 
 // Public API re-exports. `commands/mod.rs` does `pub use acp::*`, so these become
 // `commands::acp::*` for the rest of the crate (and the frontend wire types).
@@ -193,15 +193,30 @@ pub async fn acp_agent_spawn(
         })
         .map_err(|e| format!("Failed to spawn agent thread: {}", e))?;
 
-    // Wait for initialization result from the agent thread (30s timeout)
-    let init_result = tokio::time::timeout(std::time::Duration::from_secs(30), init_rx)
+    // Wait for the initialization result from the agent thread. The thread
+    // bounds the `initialize` request itself (`INIT_TIMEOUT`) and reports the
+    // timeout with the agent's stderr; this outer limit is the backstop for a
+    // thread that is stuck somewhere else (spawn, sandbox setup).
+    let init_backstop = INIT_TIMEOUT + std::time::Duration::from_secs(10);
+    let init_result = tokio::time::timeout(init_backstop, init_rx)
         .await
         .map_err(|_| {
-            // Timeout — kill the agent thread
+            // The command loop that would read a `Stop` has not started yet,
+            // so a message alone leaves the thread, the child and the network
+            // proxy running for the rest of the session (the handle is not in
+            // `state.agents` yet, so exit cleanup would not find it either).
+            // Kill the child directly: its closed stdout fails the handshake
+            // and the thread runs its own cleanup.
+            if let Some(pid) = sigkill_agent_child(&child_pid) {
+                log::warn!(target: "notesage::acp", "Initialize timed out: sent SIGKILL to agent PID {}", pid);
+            }
             let _ = cmd_tx.try_send(AgentCmd::Stop {
                 reply: oneshot::channel().0,
             });
-            "ACP initialize timed out after 30s — the agent binary may not support ACP".to_string()
+            format!(
+                "ACP initialize timed out after {}s — the agent binary may not support ACP",
+                init_backstop.as_secs()
+            )
         })?
         .map_err(|_| "Agent thread exited unexpectedly during initialization".to_string())?;
     let init_info = init_result?;
@@ -322,26 +337,81 @@ pub async fn acp_agent_stop(
 
     let thread_handle = handle.thread_handle.take();
 
-    // Best-effort graceful stop. On any failure we still join the OS thread
-    // below so we never leak a zombie (dropping `handle` releases `cmd_tx`, and
-    // `kill_on_drop` tears down the child).
-    let (reply_tx, reply_rx) = oneshot::channel();
-    let result = match handle.cmd_tx.send(AgentCmd::Stop { reply: reply_tx }).await {
-        Ok(()) => reply_rx
-            .await
-            .map_err(|_| "Agent thread did not respond to stop".to_string())
-            .and_then(|r| r),
-        Err(_) => Err("Agent thread is no longer running".to_string()),
-    };
+    // Graceful stop, with a kill as the fallback. On any failure we still join
+    // the OS thread below so we never leak a zombie (dropping `handle` releases
+    // `cmd_tx`, and `kill_on_drop` tears down the child).
+    let child_pid = std::sync::Arc::clone(&handle.child_pid);
+    let thread_alive = thread_handle.as_ref().is_some_and(|th| !th.is_finished());
+    let result = stop_agent_thread(&handle.cmd_tx, STOP_GRACE, move || {
+        // Only while the thread is alive: it owns the un-reaped child, so the
+        // PID in the cell is still that child's and cannot have been reused.
+        if thread_alive {
+            if let Some(pid) = sigkill_agent_child(&child_pid) {
+                log::warn!(target: "notesage::acp", "Stop: agent did not respond, sent SIGKILL to PID {}", pid);
+            }
+        }
+    })
+    .await;
 
     // Drop the handle (releases cmd_tx → the command loop ends), then join the
     // OS thread on a blocking-safe task so we don't park the async executor.
+    // Bounded: a thread that still will not exit is abandoned, not waited for.
     drop(handle);
     if let Some(th) = thread_handle {
-        let _ = tokio::task::spawn_blocking(move || th.join()).await;
+        let join = tokio::task::spawn_blocking(move || th.join());
+        if tokio::time::timeout(STOP_JOIN_GRACE, join).await.is_err() {
+            log::warn!(target: "notesage::acp", "Stop: agent thread {} did not exit within {:?}, abandoning", instance_id, STOP_JOIN_GRACE);
+        }
     }
 
     result
+}
+
+/// How long `acp_agent_stop` waits for the command loop to act on `Stop`
+/// (once before killing the child, once more after).
+const STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(3);
+/// How long `acp_agent_stop` waits for the agent's OS thread to exit.
+const STOP_JOIN_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Ask an agent thread to stop, and call `force_kill` if it does not act on
+/// the request within `grace`.
+///
+/// The command loop handles one command at a time and awaits most of them, so
+/// a `Stop` can sit behind a request the agent is not answering (an auth
+/// method waiting on a browser flow that never completes, say). Waiting on
+/// the reply with no limit meant the stop never returned and the agent stayed
+/// alive. `force_kill` SIGKILLs the child, which fails the request in flight;
+/// the loop then reaches the queued `Stop` and answers it.
+///
+/// Returns the loop's own reply when there is one. A stop that had to be
+/// forced counts as `Ok`: the agent is gone, which is what was asked for.
+async fn stop_agent_thread(
+    cmd_tx: &mpsc::Sender<AgentCmd>,
+    grace: std::time::Duration,
+    force_kill: impl FnOnce(),
+) -> Result<(), String> {
+    let (reply_tx, mut reply_rx) = oneshot::channel();
+
+    // `send` itself waits when the queue is full, which a stuck loop makes it.
+    match tokio::time::timeout(grace, cmd_tx.send(AgentCmd::Stop { reply: reply_tx })).await {
+        Ok(Ok(())) => {
+            if let Ok(reply) = tokio::time::timeout(grace, &mut reply_rx).await {
+                return reply
+                    .map_err(|_| "Agent thread did not respond to stop".to_string())
+                    .and_then(|r| r);
+            }
+        }
+        Ok(Err(_)) => return Err("Agent thread is no longer running".to_string()),
+        Err(_) => {}
+    }
+
+    force_kill();
+    match tokio::time::timeout(grace, &mut reply_rx).await {
+        Ok(Ok(reply)) => reply,
+        // No reply (the `Stop` never got queued, or the thread ended without
+        // answering): the child has been killed either way.
+        _ => Ok(()),
+    }
 }
 
 /// Kill a hung agent, respawn with the same config, re-authenticate, and load the session.

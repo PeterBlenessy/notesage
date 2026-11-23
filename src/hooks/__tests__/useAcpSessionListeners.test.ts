@@ -41,7 +41,7 @@ vi.mock('@/lib/ai/acp-agent-state', () => ({
 // Imports under test (AFTER mocks are configured)
 // ---------------------------------------------------------------------------
 
-import { setupAcpChatListeners } from '@/hooks/useAcpSessionListeners';
+import { setupAcpChatListeners, STREAM_FLUSH_MS } from '@/hooks/useAcpSessionListeners';
 import { useChatStore } from '@/stores/chat-store';
 import { usePermissionStore } from '@/stores/permission-store';
 import type { ChatMessage, Segment } from '@/lib/ai/types';
@@ -131,6 +131,114 @@ describe('setupAcpChatListeners', () => {
     seedChatStoreWithUserAndAssistant();
   });
 
+  // Audit 2026-11-22 §3 — every chunk used to do two chat-store writes (the
+  // full accumulated content + a segment append), re-rendering and re-parsing
+  // the growing markdown once per token.
+  describe('stream chunk batching', () => {
+    const textChunk = (text: string, extra: Record<string, unknown> = {}) => ({
+      instanceId: INSTANCE_ID,
+      sessionId: 'sess-1',
+      update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text }, ...extra },
+    });
+    const thoughtChunk = (text: string) => ({
+      instanceId: INSTANCE_ID,
+      sessionId: 'sess-1',
+      update: { sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text } },
+    });
+    const segmentsOf = () =>
+      (getAssistantMessage()?.segments ?? []).map((s) => [s.type, (s as { content?: string }).content]);
+
+    it('buffers chunks and writes them once per flush interval, complete and in order', async () => {
+      vi.useFakeTimers();
+      try {
+        const { unlisten, unlistenPermission, getStreamedContent } = await setupAcpChatListeners(makeDeps());
+        let writes = 0;
+        const unsubscribe = useChatStore.subscribe(() => { writes++; });
+
+        const parts = Array.from({ length: 30 }, (_, i) => `w${i} `);
+        for (const part of parts) {
+          emitMockEvent('acp-session-update', textChunk(part, { messageId: 'acp-msg-1' }));
+        }
+        const full = parts.join('');
+        expect(getStreamedContent()).toBe(full);
+        // One write for the agent message id (first chunk only) — none per chunk.
+        expect(writes).toBe(1);
+        expect(getAssistantMessage()?.content).toBe('');
+
+        vi.advanceTimersByTime(STREAM_FLUSH_MS);
+        unsubscribe();
+
+        // The flush: one segment write + one content write.
+        expect(writes).toBe(3);
+        expect(getAssistantMessage()?.content).toBe(full);
+        expect(segmentsOf()).toEqual([['text', full]]);
+
+        unlisten();
+        unlistenPermission();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('flushes on teardown, so a turn that ends right after its last chunk loses nothing', async () => {
+      vi.useFakeTimers();
+      try {
+        const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+        emitMockEvent('acp-session-update', textChunk('The last '));
+        emitMockEvent('acp-session-update', textChunk('words.'));
+        // The cleanup runs `unlisten()` before finalizing — no timer has fired.
+        unlisten();
+        unlistenPermission();
+
+        expect(getAssistantMessage()?.content).toBe('The last words.');
+        expect(segmentsOf()).toEqual([['text', 'The last words.']]);
+
+        // Nothing is written twice when the (cleared) timer would have fired.
+        vi.advanceTimersByTime(STREAM_FLUSH_MS * 2);
+        expect(segmentsOf()).toEqual([['text', 'The last words.']]);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('keeps thinking, text and tool-call segments in arrival order', async () => {
+      vi.useFakeTimers();
+      try {
+        const { unlisten, unlistenPermission } = await setupAcpChatListeners(makeDeps());
+
+        emitMockEvent('acp-session-update', thoughtChunk('hmm, '));
+        emitMockEvent('acp-session-update', thoughtChunk('a plan'));
+        emitMockEvent('acp-session-update', textChunk('Reading '));
+        emitMockEvent('acp-session-update', textChunk('the file.'));
+        emitMockEvent('acp-session-update', {
+          instanceId: INSTANCE_ID,
+          sessionId: 'sess-1',
+          update: { sessionUpdate: 'tool_call', kind: 'read', title: 'Read notes.md' },
+        });
+        emitMockEvent('acp-session-update', textChunk('Done.'));
+        emitMockEvent('acp-session-update', {
+          instanceId: INSTANCE_ID,
+          sessionId: 'sess-1',
+          update: { sessionUpdate: 'agent_turn_complete' },
+        });
+
+        // Read with no timer advanced: every non-chunk event flushed first.
+        const segments = getAssistantMessage()?.segments ?? [];
+        expect(segments.map((s) => s.type)).toEqual(['thinking', 'text', 'tool_call', 'text']);
+        expect((segments[0] as { content: string }).content).toBe('hmm, a plan');
+        expect((segments[1] as { content: string }).content).toBe('Reading the file.');
+        expect((segments[3] as { content: string }).content).toBe('Done.');
+        expect(getAssistantMessage()?.content).toBe('Reading the file.Done.');
+
+        unlisten();
+        unlistenPermission();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   describe('user_message_chunk (silent noop)', () => {
     it('does not mutate chat-store state and does not log "Unknown" for user_message_chunk', async () => {
       const { log } = await import('@/lib/logger');
@@ -167,7 +275,7 @@ describe('setupAcpChatListeners', () => {
 
   describe('resource_link rendering', () => {
     it('appends a markdown link to streamedContent and the text segment', async () => {
-      const { unlisten, unlistenPermission, getStreamedContent } = await setupAcpChatListeners(makeDeps());
+      const { unlisten, unlistenPermission, getStreamedContent, flush } = await setupAcpChatListeners(makeDeps());
 
       emitMockEvent('acp-session-update', {
         instanceId: INSTANCE_ID,
@@ -184,6 +292,8 @@ describe('setupAcpChatListeners', () => {
 
       const expected = '[Introduction](https://example.com/docs/intro)';
       expect(getStreamedContent()).toBe(expected);
+      // Store writes are batched — write the buffer before reading it back.
+      flush();
       expect(getAssistantMessage()?.content).toBe(expected);
 
       const segments = getAssistantMessage()?.segments ?? [];

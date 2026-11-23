@@ -94,8 +94,8 @@ fn create_schema(conn: &Connection) -> Result<(), String> {
 
 /// Clear the whole link store (for a full rebuild / reset).
 ///
-/// Mirrors `db::clear_all` for the content index. The current rebuild path
-/// (`index_rebuild`) refreshes the graph per-source via [`replace_source`]
+/// Mirrors `db::clear_all` for the content index. The indexing path
+/// (`index_init`) refreshes the graph per-source via [`replace_source`]
 /// instead, so this is the primitive reserved for a future full
 /// links-DB reset; kept for store-API parity.
 #[allow(dead_code)]

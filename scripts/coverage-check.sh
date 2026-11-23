@@ -2,7 +2,20 @@
 #
 # Coverage regression check — compares current coverage against committed baseline.
 # For files changed in the PR, flags any line coverage drop.
-# Currently warning-only (always exits 0). After 2-week observation, change to exit 1 on regression.
+#
+# WARNING-ONLY, on purpose (always exits 0). It cannot be made blocking as it
+# stands, because the comparison has NO tolerance: a file is flagged when its
+# line percentage is lower than the baseline's by any amount at all
+# (`diff < 0`). Two things move that number without anyone removing a test:
+#   - the baseline is whatever machine last ran `pnpm coverage:update-baseline`
+#     (the 2026-11-23 one was generated on Linux), while this check runs on the
+#     macOS CI runner — platform-conditional branches count differently;
+#   - lines reached only through timers / unawaited promises are covered in
+#     one run and not the next.
+# Flipping the exit code today would turn that noise into red PRs. To enforce:
+# add a tolerance first (e.g. ignore drops under ~1 percentage point, or only
+# fail when covered-line COUNT falls), regenerate the baseline from a CI run,
+# then change the block marked WARNING-ONLY below to `process.exit(1)`.
 #
 
 set -euo pipefail
@@ -130,8 +143,8 @@ if (regressions > 0 || newUncovered > 0) {
   if (newUncovered > 0) {
     console.log('::warning::' + newUncovered + ' new source file(s) are not in the coverage baseline. Add tests and run \`pnpm coverage:update-baseline\`.');
   }
-  // WARNING-ONLY: exit 0 during observation period.
-  // After 2-week observation, change to: process.exit(1);
+  // WARNING-ONLY: exits 0. See the header for why (no tolerance yet) and what
+  // has to be true before this becomes: process.exit(1);
 }
 "
 

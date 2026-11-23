@@ -87,10 +87,27 @@ interface ChatListenerDeps {
 }
 
 export interface AcpChatListeners {
+  /**
+   * Stop listening. Writes any still-buffered stream text first (see
+   * {@link AcpChatListeners.flush}), so callers that finalize the message
+   * right after get its complete content.
+   */
   unlisten: () => void;
   unlistenPermission: () => void;
   getStreamedContent: () => string;
+  /**
+   * Write buffered stream text to the chat store now. Streamed text and
+   * thinking chunks are batched (see `STREAM_FLUSH_MS`); call this before
+   * reading the message's content back from the store.
+   */
+  flush: () => void;
 }
+
+/**
+ * How long streamed text/thinking chunks are buffered before being written to
+ * the chat store. Matches the direct-API path's flush interval.
+ */
+export const STREAM_FLUSH_MS = 50;
 
 // ---------------------------------------------------------------------------
 // Listener setup
@@ -110,6 +127,54 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
   // not whatever is foregrounded (task #3). `null` → `updateConv` falls back to
   // the active conversation (legacy single-session behavior).
   const cid = deps.conversationId;
+
+  // Stream-chunk batching. Every chunk used to do two store writes
+  // (`updateMessage` with the full accumulated string + `appendTextSegment`),
+  // each copying the conversations array and re-rendering — and re-parsing —
+  // the whole growing markdown segment, once per token (audit 2026-11-22 §3).
+  // Text and thinking chunks are buffered instead and written at most once per
+  // `STREAM_FLUSH_MS`. Order and completeness are preserved by flushing
+  // synchronously before anything that depends on segment order or count: a
+  // switch between text and thinking, any other session update (tool calls,
+  // images, plans, turn completion), and listener teardown.
+  let pendingKind: 'text' | 'thinking' | null = null;
+  let pendingChunk = '';
+  let contentDirty = false;
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  // Last agent-assigned message id written to the store — the id is the same
+  // on every chunk of a message, and re-writing it per chunk was a store write
+  // per token by itself.
+  let lastAcpMessageId: string | undefined;
+
+  const flush = () => {
+    if (flushTimer !== null) {
+      clearTimeout(flushTimer);
+      flushTimer = null;
+    }
+    if (pendingChunk) {
+      const chunk = pendingChunk;
+      const kind = pendingKind;
+      pendingChunk = '';
+      pendingKind = null;
+      if (kind === 'thinking') {
+        deps.appendThinkingSegment(deps.assistantMessageId, chunk, cid);
+      } else {
+        deps.appendTextSegment(deps.assistantMessageId, chunk, cid);
+      }
+    }
+    if (contentDirty) {
+      contentDirty = false;
+      deps.updateMessage(deps.assistantMessageId, streamedContent, undefined, cid);
+    }
+  };
+
+  const bufferChunk = (kind: 'text' | 'thinking', chunk: string) => {
+    // A kind switch writes the other kind first so segments keep arrival order.
+    if (pendingKind !== null && pendingKind !== kind) flush();
+    pendingKind = kind;
+    pendingChunk += chunk;
+    if (flushTimer === null) flushTimer = setTimeout(flush, STREAM_FLUSH_MS);
+  };
 
   const unlisten = await listen<AcpSessionUpdatePayload>('acp-session-update', (event) => {
     if (event.payload.instanceId !== deps.instanceId) return;
@@ -145,10 +210,21 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
         : typeof update.message_id === 'string' && update.message_id
           ? update.message_id
           : undefined;
-      if (assistantAcpId) {
+      if (assistantAcpId && assistantAcpId !== lastAcpMessageId) {
+        lastAcpMessageId = assistantAcpId;
         useChatStore.getState().setMessageAcpId(deps.assistantMessageId, assistantAcpId, cid);
       }
     }
+
+    // Everything except a text/thinking chunk writes segments (or reads their
+    // count) directly — the buffered text must be in the store first.
+    const isBufferedChunk =
+      (update.sessionUpdate === 'agent_message_chunk' &&
+        ((chunkContent?.type === 'text' && Boolean(chunkContent.text)) ||
+          (chunkContent?.type === 'resource_link' && Boolean(chunkContent.uri)))) ||
+      (update.sessionUpdate === 'agent_thought_chunk' &&
+        chunkContent?.type === 'text' && Boolean(chunkContent.text));
+    if (!isBufferedChunk) flush();
 
     if (
       update.sessionUpdate === 'agent_message_chunk' &&
@@ -156,8 +232,8 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       chunkContent.text
     ) {
       streamedContent += chunkContent.text;
-      deps.updateMessage(deps.assistantMessageId, streamedContent, undefined, cid);
-      deps.appendTextSegment(deps.assistantMessageId, chunkContent.text, cid);
+      contentDirty = true;
+      bufferChunk('text', chunkContent.text);
     } else if (
       update.sessionUpdate === 'agent_message_chunk' &&
       chunkContent?.type === 'resource_link' &&
@@ -168,8 +244,8 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       const markdown = formatResourceLinkAsMarkdown(chunkContent);
       if (markdown) {
         streamedContent += markdown;
-        deps.updateMessage(deps.assistantMessageId, streamedContent, undefined, cid);
-        deps.appendTextSegment(deps.assistantMessageId, markdown, cid);
+        contentDirty = true;
+        bufferChunk('text', markdown);
       }
     } else if (
       update.sessionUpdate === 'agent_message_chunk' &&
@@ -187,7 +263,7 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
       chunkContent?.type === 'text' &&
       chunkContent.text
     ) {
-      deps.appendThinkingSegment(deps.assistantMessageId, chunkContent.text, cid);
+      bufferChunk('thinking', chunkContent.text);
     } else if (update.sessionUpdate === 'tool_call') {
       const toolLabel = formatAcpToolName(update.kind, update.title);
       deps.setActiveTool(toolLabel);
@@ -474,11 +550,16 @@ export async function setupAcpChatListeners(deps: ChatListenerDeps): Promise<Acp
     // Compose the turn-usage teardown into the session-update handle so every
     // existing call site cleans it up without changes.
     unlisten: () => {
+      // Write what is still buffered before the caller finalizes the message
+      // — a turn that ends (or is cancelled) within one flush interval of its
+      // last chunk must not lose that chunk.
+      flush();
       unlisten();
       unlistenTurnUsage();
     },
     unlistenPermission,
     getStreamedContent: () => streamedContent,
+    flush,
   };
 }
 

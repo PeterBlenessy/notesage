@@ -30,7 +30,7 @@ export const ToolResultSegmentView = memo(function ToolResultSegmentView({ segme
         type="button"
         onClick={() => setExpanded((prev) => !prev)}
         className={`flex items-center gap-1 px-1 text-[11px] transition-colors duration-150 cursor-pointer ${
-          isError ? 'text-destructive' : 'text-muted-foreground/60 hover:text-muted-foreground'
+          isError ? 'text-destructive' : 'text-muted-foreground hover:text-foreground'
         }`}
       >
         <ChevronRight

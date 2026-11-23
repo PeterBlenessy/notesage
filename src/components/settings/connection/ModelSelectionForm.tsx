@@ -22,7 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Loader2, RefreshCw, ChevronsUpDown, Check } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useId } from 'react';
 import type { Connection, ReasoningEffort } from '@/lib/ai/connections';
 import { getAgentModels, prettyModelName } from '@/lib/ai/connections';
 import { tauriApi } from '@/lib/tauri';
@@ -194,6 +194,7 @@ export function ModelSelectionForm({
   onNavigateToTab,
   onCloseDialog,
 }: ModelSelectionFormProps) {
+  const fieldId = useId();
   const isLocalBundled = connection.authMethod === 'local_bundled';
   const isAgentManaged = connection.authMethod === 'agent_managed';
   const agentBinary = connection.credentials.type === 'agent_managed'
@@ -229,13 +230,13 @@ export function ModelSelectionForm({
       {/* Local AI model picker */}
       {isLocalBundled && (
         <div className="space-y-1.5">
-          <Label className="text-sm">{t("conn.model")}</Label>
+          <Label htmlFor={`${fieldId}-1`} className="text-sm">{t("conn.model")}</Label>
           {downloadedLocalModels.length > 0 ? (
             <Select
               value={localModelId ?? ''}
               onValueChange={onLocalModelIdChange}
             >
-              <SelectTrigger className="w-full">
+              <SelectTrigger id={`${fieldId}-1`} className="w-full">
                 <SelectValue placeholder={t("conn.selectModel")} />
               </SelectTrigger>
               <SelectContent>
@@ -278,7 +279,7 @@ export function ModelSelectionForm({
 
       {/* Agent-managed or API model picker */}
       {!isLocalBundled && <div className="space-y-1.5">
-        <Label className="text-sm">{t("conn.model")}</Label>
+        <Label id={`${fieldId}-model-label`} className="text-sm">{t("conn.model")}</Label>
         {isAgentManaged ? (() => {
           let currentModel: string | null = null;
           let defaultLabel: string;
@@ -352,6 +353,8 @@ export function ModelSelectionForm({
               <Button
                 variant="outline"
                 role="combobox"
+                id={`${fieldId}-model`}
+                aria-labelledby={`${fieldId}-model-label ${fieldId}-model`}
                 aria-expanded={modelPopoverOpen}
                 className="w-full justify-between font-normal"
               >
@@ -431,9 +434,9 @@ export function ModelSelectionForm({
             />
             <div className="flex justify-between px-0.5">
               {TEMPERATURE_LABELS.map((stop) => (
-                <span key={stop.value} className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors" onClick={() => onTemperatureChange(stop.value)}>
+                <button type="button" key={stop.value} className="text-[10px] text-muted-foreground cursor-pointer hover:text-foreground transition-colors" onClick={() => onTemperatureChange(stop.value)}>
                   {t(stop.labelKey)}
-                </span>
+                </button>
               ))}
             </div>
           </div>
@@ -466,9 +469,9 @@ export function ModelSelectionForm({
       {isLocalBundled && (
         <>
           <div className="flex items-center justify-between">
-            <Label className="text-sm">{t("conn.contextLength")}</Label>
+            <Label htmlFor={`${fieldId}-2`} className="text-sm">{t("conn.contextLength")}</Label>
             <Select value={String(contextLength)} onValueChange={(v) => onContextLengthChange(Number(v))}>
-              <SelectTrigger className="w-28 h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectTrigger id={`${fieldId}-2`} className="w-28 h-8 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="2048">2,048</SelectItem>
                 <SelectItem value="4096">4,096</SelectItem>
@@ -478,9 +481,9 @@ export function ModelSelectionForm({
             </Select>
           </div>
           <div className="flex items-center justify-between">
-            <Label className="text-sm">{t("conn.gpuLayers")}</Label>
+            <Label htmlFor={`${fieldId}-3`} className="text-sm">{t("conn.gpuLayers")}</Label>
             <Select value={String(gpuLayers)} onValueChange={(v) => onGpuLayersChange(Number(v))}>
-              <SelectTrigger className="w-28 h-8 text-sm"><SelectValue /></SelectTrigger>
+              <SelectTrigger id={`${fieldId}-3`} className="w-28 h-8 text-sm"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="-1">{t("model.layersAuto")}</SelectItem>
                 <SelectItem value="0">{t("conn.cpuOnly")}</SelectItem>

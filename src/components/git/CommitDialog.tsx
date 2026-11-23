@@ -31,12 +31,12 @@ import { useLocale } from "@/lib/useLocale";
 // at module load, so a `t()` here would keep whatever language was active at
 // import time even after the user switches.
 const STATUS_CONFIG: Record<GitStatus, { label: string; color: string; tooltipKey: MessageKey }> = {
-  modified: { label: "M", color: "text-muted-foreground/50", tooltipKey: "git.modified" },
-  added: { label: "A", color: "text-muted-foreground/50", tooltipKey: "git.added" },
-  untracked: { label: "U", color: "text-muted-foreground/50", tooltipKey: "git.untracked" },
-  deleted: { label: "D", color: "text-muted-foreground/50", tooltipKey: "git.deleted" },
-  renamed: { label: "R", color: "text-muted-foreground/50", tooltipKey: "git.renamed" },
-  conflicted: { label: "C", color: "text-muted-foreground/50", tooltipKey: "git.conflicted" },
+  modified: { label: "M", color: "text-muted-foreground", tooltipKey: "git.modified" },
+  added: { label: "A", color: "text-muted-foreground", tooltipKey: "git.added" },
+  untracked: { label: "U", color: "text-muted-foreground", tooltipKey: "git.untracked" },
+  deleted: { label: "D", color: "text-muted-foreground", tooltipKey: "git.deleted" },
+  renamed: { label: "R", color: "text-muted-foreground", tooltipKey: "git.renamed" },
+  conflicted: { label: "C", color: "text-muted-foreground", tooltipKey: "git.conflicted" },
 };
 
 interface CommitDialogProps {
@@ -260,6 +260,7 @@ export function CommitDialog({ open, onOpenChange, repoPath, preSelectedFiles }:
             <div className="space-y-2">
               <Input
                 placeholder={t("git.commitMessage")}
+                aria-label={t("git.commitMessage")}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 onKeyDown={(e) => {

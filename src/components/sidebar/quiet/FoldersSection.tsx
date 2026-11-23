@@ -1,6 +1,8 @@
 import {
+  memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -341,8 +343,31 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
     [expandedPaths, rows, focusRow, toggleExpanded, showHiddenFiles],
   );
 
+  // Child rows are memoized (`FolderChildItem`), so everything handed to them
+  // must keep its identity across section renders. The handlers below read the
+  // current row order / expansion / open-file callback through this ref
+  // instead of closing over them.
+  const latestRef = useRef({ rows, expandedChildPaths, openFileEntry });
+  useLayoutEffect(() => {
+    latestRef.current = { rows, expandedChildPaths, openFileEntry };
+  });
+
+  const handleChildActivate = useCallback((entry: FileEntry) => {
+    if (entry.is_directory) {
+      setExpandedChildPaths((prev) => {
+        const next = new Set(prev);
+        if (prev.has(entry.path)) next.delete(entry.path);
+        else next.add(entry.path);
+        return next;
+      });
+      return;
+    }
+    void latestRef.current.openFileEntry(entry.path, entry.name);
+  }, []);
+
   const handleChildKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>, row: FolderRowDescriptor) => {
+      const { rows, expandedChildPaths, openFileEntry } = latestRef.current;
       // ArrowRight on a child directory: expand it (#158).
       if (event.key === "ArrowRight" && row.entry?.is_directory) {
         event.preventDefault();
@@ -399,7 +424,7 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
         void openFileEntry(row.entry.path, row.entry.name);
       }
     },
-    [rows, focusRow, openFileEntry, expandedChildPaths],
+    [focusRow],
   );
 
   const handleRemove = useCallback(
@@ -433,55 +458,21 @@ export function FoldersSection({ filter }: FoldersSectionProps = {}) {
         {ordered.map((entry) => {
           const isChildExpanded =
             entry.is_directory && expandedChildPaths.has(entry.path);
-          const row: FolderRowDescriptor = {
-            kind: "child",
-            id: entry.path,
-            folder,
-            entry,
-            depth: level,
-          };
-          const childRow = (
-            <ChildRow
-              row={row}
-              level={level}
-              isActive={entry.path === activeTabPath}
-              isFocused={focusedRowId === entry.path}
-              hasFocusWithin={focusedRowId !== null}
-              isExpanded={entry.is_directory ? isChildExpanded : undefined}
-              registerRef={(el) => registerRef(entry.path, el)}
-              onKeyDown={(e) => handleChildKeyDown(e, row)}
-              onFocus={() => setFocusedRowId(entry.path)}
-              onActivate={() => {
-                if (entry.is_directory) {
-                  setExpandedChildPaths((prev) => {
-                    const next = new Set(prev);
-                    if (prev.has(entry.path)) next.delete(entry.path);
-                    else next.add(entry.path);
-                    return next;
-                  });
-                  return;
-                }
-                void openFileEntry(entry.path, entry.name);
-              }}
-            />
-          );
-          let wrapped: ReactNode = childRow;
-          if (entry.is_directory) {
-            wrapped = (
-              <FolderPeek projectPath={entry.path} fileTree={entry.children ?? []}>
-                <div>{childRow}</div>
-              </FolderPeek>
-            );
-          } else if (isPreviewable(entry.path)) {
-            wrapped = (
-              <FilePreview filePath={entry.path}>
-                <div>{childRow}</div>
-              </FilePreview>
-            );
-          }
           return (
             <li key={entry.path} className="m-0 p-0">
-              {wrapped}
+              <FolderChildItem
+                folder={folder}
+                entry={entry}
+                level={level}
+                isActive={entry.path === activeTabPath}
+                isFocused={focusedRowId === entry.path}
+                hasFocusWithin={focusedRowId !== null}
+                isExpanded={entry.is_directory ? isChildExpanded : undefined}
+                registerRowRef={registerRef}
+                onRowKeyDown={handleChildKeyDown}
+                onRowFocus={setFocusedRowId}
+                onActivateEntry={handleChildActivate}
+              />
               {isChildExpanded &&
                 renderChildLevel(folder, entry.children ?? [], level + 1)}
             </li>
@@ -820,6 +811,87 @@ function FolderRow({
     </div>
   );
 }
+
+interface FolderChildItemProps {
+  folder: ExplorerFolder;
+  entry: FileEntry;
+  level: number;
+  isActive: boolean;
+  isFocused: boolean;
+  hasFocusWithin: boolean;
+  isExpanded: boolean | undefined;
+  /** Stable, entry/row/id-taking handlers — bound per row inside. */
+  registerRowRef: (rowId: string, el: HTMLElement | null) => void;
+  onRowKeyDown: (event: KeyboardEvent<HTMLDivElement>, row: FolderRowDescriptor) => void;
+  onRowFocus: (rowId: string) => void;
+  onActivateEntry: (entry: FileEntry) => void;
+}
+
+/**
+ * One child row of an explorer-folder tree plus its peek / preview wrapper.
+ * Memoized: the section re-renders on every active-tab change, focus move and
+ * tree refresh, and without this boundary each of those re-rendered every
+ * visible row and re-ran every row's inline ref callback. With stable props a
+ * row re-renders only when something about THAT row changed.
+ */
+const FolderChildItem = memo(function FolderChildItem({
+  folder,
+  entry,
+  level,
+  isActive,
+  isFocused,
+  hasFocusWithin,
+  isExpanded,
+  registerRowRef,
+  onRowKeyDown,
+  onRowFocus,
+  onActivateEntry,
+}: FolderChildItemProps) {
+  const row = useMemo<FolderRowDescriptor>(
+    () => ({ kind: "child", id: entry.path, folder, entry, depth: level }),
+    [folder, entry, level],
+  );
+  const registerRef = useCallback(
+    (el: HTMLElement | null) => registerRowRef(entry.path, el),
+    [registerRowRef, entry.path],
+  );
+  const onKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLDivElement>) => onRowKeyDown(event, row),
+    [onRowKeyDown, row],
+  );
+  const onFocus = useCallback(() => onRowFocus(entry.path), [onRowFocus, entry.path]);
+  const onActivate = useCallback(() => onActivateEntry(entry), [onActivateEntry, entry]);
+
+  const childRow = (
+    <ChildRow
+      row={row}
+      level={level}
+      isActive={isActive}
+      isFocused={isFocused}
+      hasFocusWithin={hasFocusWithin}
+      isExpanded={isExpanded}
+      registerRef={registerRef}
+      onKeyDown={onKeyDown}
+      onFocus={onFocus}
+      onActivate={onActivate}
+    />
+  );
+  if (entry.is_directory) {
+    return (
+      <FolderPeek projectPath={entry.path} fileTree={entry.children ?? []}>
+        <div>{childRow}</div>
+      </FolderPeek>
+    );
+  }
+  if (isPreviewable(entry.path)) {
+    return (
+      <FilePreview filePath={entry.path}>
+        <div>{childRow}</div>
+      </FilePreview>
+    );
+  }
+  return childRow;
+});
 
 interface ChildRowProps {
   row: FolderRowDescriptor;

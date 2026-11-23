@@ -67,6 +67,8 @@ function ResearchMode({
   useLocale();
   const [results, setResults] = useState<IndexResearchResult[]>([]);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
+  // A failed index query is not "no research matches": keep the error and show it.
+  const [searchError, setSearchError] = useState<string | null>(null);
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ------------------------------------------------------------------
@@ -91,11 +93,13 @@ function ResearchMode({
         if (cancelled) return;
         setResults(fetched);
         setHighlightedIndex(0);
+        setSearchError(null);
       } catch (err) {
         if (cancelled) return;
         console.error("[ResearchMode] indexSearchResearch failed", err);
         setResults([]);
         setHighlightedIndex(0);
+        setSearchError(err instanceof Error ? err.message : String(err));
       }
     }, QUERY_DEBOUNCE_MS);
 
@@ -199,7 +203,16 @@ function ResearchMode({
         aria-label={t("cmd.researchResults")}
         className="px-3 py-2 text-xs text-muted-foreground"
       >
-        No research matches
+        {searchError ? (
+          <>
+            <span role="alert" className="text-destructive">
+              {t("search.indexUnavailable")}
+            </span>
+            <span className="block mt-1 text-[11px] opacity-70">{searchError}</span>
+          </>
+        ) : (
+          t("cmd.noResearchMatches")
+        )}
       </div>
     );
   }

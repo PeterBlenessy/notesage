@@ -238,7 +238,7 @@ export function ModelCard({
               <Star className="h-3 w-3 text-muted-foreground fill-muted-foreground" strokeWidth={1.5} />
             )}
             <span className="text-sm font-medium">{model.name}</span>
-            <span className="text-[10px] text-muted-foreground/50">
+            <span className="text-[10px] text-muted-foreground">
               {model.size_bytes > 0 && formatBytes(model.size_bytes + (model.mmproj_size_bytes ?? 0))}
               {model.size_bytes > 0 && model.ram_required_bytes > 0 && ' · '}
               {model.ram_required_bytes > 0 && `~${formatBytes(model.ram_required_bytes)} RAM`}
@@ -254,7 +254,7 @@ export function ModelCard({
           </div>
           {/* Hardware-fit verdict line — sits just under the size line. */}
           {checking ? (
-            <div className="mt-0.5 text-[10px] tabular-nums text-muted-foreground/60">
+            <div className="mt-0.5 text-[10px] tabular-nums text-muted-foreground">
               {t("modelcard.checking")}
             </div>
           ) : verdict ? (

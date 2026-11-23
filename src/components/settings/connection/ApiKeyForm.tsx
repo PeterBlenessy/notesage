@@ -1,3 +1,4 @@
+import { useId } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -29,16 +30,17 @@ export function ApiKeyForm({
   placeholderUrl,
   isOpenAICompatible,
 }: ApiKeyFormProps) {
+  const fieldId = useId();
   return (
     <>
       {/* Base URL */}
       {showBaseUrl && (
         <div className="space-y-1.5">
-          <Label className="text-sm">
+          <Label htmlFor={`${fieldId}-1`} className="text-sm">
             {t("apikey.baseUrl")}
             {isOpenAICompatible && <span className="text-destructive ml-1">*</span>}
           </Label>
-          <Input
+          <Input id={`${fieldId}-1`}
             type="url"
             placeholder={placeholderUrl || 'https://api.example.com'}
             value={baseUrl}
@@ -51,9 +53,9 @@ export function ApiKeyForm({
       {/* API Key */}
       {showApiKeyField && (
         <div className="space-y-1.5">
-          <Label className="text-sm">{t("conn.apiKey")}</Label>
+          <Label htmlFor={`${fieldId}-2`} className="text-sm">{t("conn.apiKey")}</Label>
           <div className="relative">
-            <Input
+            <Input id={`${fieldId}-2`}
               type={showApiKey ? 'text' : 'password'}
               value={apiKey}
               onChange={(e) => onApiKeyChange(e.target.value)}
@@ -63,6 +65,8 @@ export function ApiKeyForm({
               type="button" variant="ghost" size="icon"
               className="absolute right-0 top-0 h-full w-10 text-muted-foreground hover:text-foreground"
               onClick={() => onShowApiKeyChange(!showApiKey)}
+              aria-label={showApiKey ? t("custagent.hideValue") : t("custagent.showValue")}
+              aria-pressed={showApiKey}
             >
               {showApiKey ? <EyeOff className="h-4 w-4" strokeWidth={1.5} /> : <Eye className="h-4 w-4" strokeWidth={1.5} />}
             </Button>

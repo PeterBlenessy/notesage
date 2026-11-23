@@ -364,13 +364,15 @@ describe('useDirectApiChat — concurrent streams', () => {
     const bTs = assistantTs(b);
 
     // Interleave chunks for both streams while B is foreground. A's chunk must
-    // land on A's message (segments update synchronously), not on the active B.
+    // land on A's message, not on the active B. Segment writes are batched on
+    // the 50 ms flush, so wait one interval before reading them.
     act(() => {
       emitMockEvent(streamEvent('ai-stream-chunk', streamIds[0]), 'alpha');
       emitMockEvent(streamEvent('ai-stream-chunk', streamIds[1]), 'beta');
       emitMockEvent(streamEvent('ai-stream-chunk', streamIds[0]), '-A');
       emitMockEvent(streamEvent('ai-stream-chunk', streamIds[1]), '-B');
     });
+    await act(async () => { await new Promise((r) => setTimeout(r, 80)); });
 
     expect(textOf(a, aTs)).toBe('alpha-A');
     expect(textOf(b, bTs)).toBe('beta-B');
@@ -1020,5 +1022,391 @@ describe('useDirectApiChat — context compaction at the turn boundary', () => {
 
     const streamCall = vi.mocked(invoke).mock.calls.find(([cmd]) => cmd === 'ai_chat_stream');
     expect(streamCall).toBeDefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Audit 2026-11-22 — shared helpers for the regression tests below
+// ---------------------------------------------------------------------------
+
+const streamInvokes = () =>
+  vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === 'ai_chat_stream');
+const wait = (ms: number) => act(async () => { await new Promise((r) => setTimeout(r, ms)); });
+const firstAssistant = () =>
+  useChatStore.getState().conversations[0]?.messages.find((m) => m.role === 'assistant');
+const textSegmentsOf = (msg: ChatMessage | undefined) =>
+  (msg?.segments ?? []).filter((s) => s.type === 'text').map((s) => (s as { content: string }).content);
+
+function resetPermissionStores() {
+  usePermissionStore.setState({
+    requests: [],
+    sessionAllowed: new Set(),
+    alwaysAllowed: [],
+    domainSessionAllowed: {},
+    domainAlwaysAllowed: {},
+    skillScriptSession: new Set(),
+    skillScriptAlways: [],
+    toolCallSession: new Set(),
+    toolCallAlways: [],
+  });
+  useToolPermissionStore.setState({ pending: {} });
+}
+
+describe('useDirectApiChat — Stop before the stream starts (audit 2026-11-22 §2)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
+    useChatStore.setState({ conversations: [], activeConversationId: null });
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+    useLocalAIStore.setState({ contextLength: 4096 });
+    setMockInvokeHandler('ai_chat_stream', async () => {});
+    setMockInvokeHandler('ai_chat_stream_cancel', async () => {});
+    vi.mocked(invoke).mockClear();
+  });
+
+  it('Stop during listener registration prevents the stream from ever starting', async () => {
+    const { result } = renderDirectApiChat();
+    const conv = useChatStore.getState().createConversation({ title: 'A' });
+
+    let sendPromise: Promise<void> = Promise.resolve();
+    act(() => {
+      // Not awaited: the send is parked on `await Promise.all([listen…])`.
+      sendPromise = result.current.sendChatMessage('hello', []);
+      // Stop lands in that window. There used to be no handle to find here.
+      result.current.cancelDirectChat();
+    });
+    await act(async () => { await sendPromise; });
+    await wait(20);
+
+    expect(streamInvokes()).toHaveLength(0);
+    // The run was cleared, not left `running` with nothing streaming.
+    expect(useSessionRunStore.getState().runs[conv]).toBeUndefined();
+    expect(useChatStore.getState().isLoading).toBe(false);
+    // The listeners that resolved after the Stop were dropped again.
+    const sid = (vi.mocked(invoke).mock.calls.find(([cmd]) => cmd === 'ai_chat_stream_cancel')![1] as { streamId: string }).streamId;
+    expect(getListenerCount(streamEvent('ai-stream-chunk', sid))).toBe(0);
+    expect(getListenerCount(streamEvent('ai-stream-done', sid))).toBe(0);
+  });
+
+  it('Stop during compaction does not send the turn to the model', async () => {
+    let finishCompaction: (summary: string) => void = () => {};
+    setMockInvokeHandler('ai_chat', () => new Promise<string>((resolve) => { finishCompaction = resolve; }));
+    const history: ChatMessage[] = [];
+    for (let i = 0; i < 8; i++) {
+      history.push({ role: 'user', content: `question ${i} ${'x'.repeat(3000)}`, timestamp: 1000 + i * 2 } as ChatMessage);
+      history.push({ role: 'assistant', content: `answer ${i} ${'y'.repeat(3000)}`, timestamp: 1001 + i * 2 } as ChatMessage);
+    }
+
+    const { result } = renderDirectApiChat({ provider: 'local_bundled' });
+    const conv = useChatStore.getState().createConversation({ title: 'A' });
+
+    let sendPromise: Promise<void> = Promise.resolve();
+    await act(async () => {
+      sendPromise = result.current.sendChatMessage('what did we decide?', history);
+      await new Promise((r) => setTimeout(r, 20));
+    });
+    // Compaction (a full local generation) is in flight.
+    expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === 'ai_chat')).toBe(true);
+
+    act(() => { result.current.cancelDirectChat(); });
+
+    // The summary arrives AFTER the Stop.
+    await act(async () => {
+      finishCompaction('Earlier: edited parser.ts.');
+      await sendPromise;
+    });
+    await wait(20);
+
+    expect(streamInvokes()).toHaveLength(0);
+    expect(useSessionRunStore.getState().runs[conv]).toBeUndefined();
+    expect(firstAssistant()?.isError).toBeFalsy();
+  });
+});
+
+describe('useDirectApiChat — a failing tool continuation is cleaned up (audit 2026-11-22 §2)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ toolCallingEnabled: true, chatHistoryLimit: 0, requireAllToolConfirmations: false });
+    useSkillStore.setState({ skills: [], enabledOverrides: {}, agents: [], activeAgentName: 'general-assistant', agentEnabledOverrides: {} });
+    useChatStore.setState({ conversations: [], activeConversationId: null });
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+    resetPermissionStores();
+    setMockInvokeHandler('ai_chat_stream_cancel', async () => {});
+    setMockInvokeHandler('web_search', async () => [{ title: 'r1', url: 'https://example.com', snippet: 's1' }]);
+    vi.mocked(invoke).mockClear();
+  });
+
+  it('tears down listeners, finalizes segments and marks the run errored', async () => {
+    let sid = '';
+    let calls = 0;
+    setMockInvokeHandler('ai_chat_stream', async (args) => {
+      sid = sidOf(args);
+      calls++;
+      if (calls === 1) {
+        setTimeout(() => {
+          emitMockEvent(streamEvent('ai-stream-chunk', sid), 'Looking that up. ');
+          emitMockEvent(streamEvent('ai-tool-call', sid), { id: 'call-1', name: 'web_search', arguments: { query: 'cats' } });
+          emitMockEvent(streamEvent('ai-tool-calls-done', sid), null);
+        }, 0);
+        return;
+      }
+      // The continuation with the tool result is rejected (429, overflow, …).
+      throw new Error('429 rate limited');
+    });
+
+    const { result } = renderDirectApiChat();
+    const conv = useChatStore.getState().createConversation({ title: 'A' });
+    await act(async () => { await result.current.sendChatMessage('search for cats', []); });
+    await wait(100);
+
+    expect(calls).toBe(2);
+    const msg = firstAssistant();
+    expect(msg?.isError).toBe(true);
+    // Every listener of the turn is gone (they used to live until the next send).
+    for (const name of ['ai-stream-chunk', 'ai-stream-thinking-chunk', 'ai-stream-image', 'ai-tool-use', 'ai-citation', 'ai-tool-call', 'ai-tool-calls-done', 'ai-stream-done']) {
+      expect(getListenerCount(streamEvent(name, sid))).toBe(0);
+    }
+    // No segment is left spinning.
+    expect((msg?.segments ?? []).some((s) => s.type === 'tool_call' && s.status === 'running')).toBe(false);
+    // `cleanup` ends with runIdle; the error must win.
+    expect(useSessionRunStore.getState().runs[conv]?.status).toBe('error');
+    expect(useChatStore.getState().isLoading).toBe(false);
+
+    // The registry entry is gone too: a Stop now has nothing stale to cancel.
+    vi.mocked(invoke).mockClear();
+    act(() => { result.current.cancelDirectChat(); });
+    expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === 'ai_chat_stream_cancel')).toBe(false);
+  });
+});
+
+describe('useDirectApiChat — stream chunks are batched (audit 2026-11-22 §3)', () => {
+  beforeEach(() => {
+    useSettingsStore.setState({ toolCallingEnabled: false, chatHistoryLimit: 0 });
+    useChatStore.setState({ conversations: [], activeConversationId: null });
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+    setMockInvokeHandler('ai_chat_stream_cancel', async () => {});
+    vi.mocked(invoke).mockClear();
+  });
+
+  async function openStream() {
+    let sid = '';
+    setMockInvokeHandler('ai_chat_stream', async (args) => { sid = sidOf(args); });
+    const hook = renderDirectApiChat();
+    await act(async () => { await hook.result.current.sendChatMessage('hello', []); });
+    return { hook, sid: () => sid };
+  }
+
+  it('does not write the chat store once per chunk', async () => {
+    const { hook, sid } = await openStream();
+    let writes = 0;
+    const unsubscribe = useChatStore.subscribe(() => { writes++; });
+
+    act(() => {
+      for (let i = 0; i < 40; i++) emitMockEvent(streamEvent('ai-stream-chunk', sid()), `t${i} `);
+    });
+    // 40 chunks arrived within one flush interval: nothing written yet.
+    expect(writes).toBe(0);
+
+    await wait(80);
+    unsubscribe();
+    // One flush: a segment write and a content write — not 40 of each.
+    expect(writes).toBeLessThanOrEqual(4);
+
+    const expected = Array.from({ length: 40 }, (_, i) => `t${i} `).join('');
+    expect(textSegmentsOf(firstAssistant())).toEqual([expected]);
+    expect(firstAssistant()?.content).toBe(expected);
+
+    act(() => { hook.result.current.cancelDirectChat(); });
+  });
+
+  it('flushes buffered text when the stream ends, without waiting for the interval', async () => {
+    const { sid } = await openStream();
+
+    act(() => {
+      emitMockEvent(streamEvent('ai-stream-chunk', sid()), 'The answer ');
+      emitMockEvent(streamEvent('ai-stream-chunk', sid()), 'is 42.');
+      emitMockEvent(streamEvent('ai-stream-done', sid()), null);
+    });
+
+    // Read synchronously: finalization must have written the whole buffer.
+    expect(textSegmentsOf(firstAssistant())).toEqual(['The answer is 42.']);
+    expect(firstAssistant()?.content).toBe('The answer is 42.');
+  });
+
+  it('flushes buffered text when the user stops mid-stream', async () => {
+    const { hook, sid } = await openStream();
+
+    act(() => {
+      emitMockEvent(streamEvent('ai-stream-chunk', sid()), 'partial ');
+      emitMockEvent(streamEvent('ai-stream-chunk', sid()), 'reply');
+      hook.result.current.cancelDirectChat();
+    });
+
+    expect(textSegmentsOf(firstAssistant())).toEqual(['partial reply']);
+  });
+
+  it('keeps thinking, text and image segments in arrival order', async () => {
+    const { sid } = await openStream();
+
+    act(() => {
+      emitMockEvent(streamEvent('ai-stream-thinking-chunk', sid()), 'let me ');
+      emitMockEvent(streamEvent('ai-stream-thinking-chunk', sid()), 'think');
+      emitMockEvent(streamEvent('ai-stream-chunk', sid()), 'Before ');
+      emitMockEvent(streamEvent('ai-stream-chunk', sid()), 'image. ');
+      emitMockEvent(streamEvent('ai-stream-image', sid()), { data: 'AAAA', mimeType: 'image/png' });
+      emitMockEvent(streamEvent('ai-stream-chunk', sid()), 'After image.');
+      emitMockEvent(streamEvent('ai-stream-done', sid()), null);
+    });
+
+    const segments = firstAssistant()?.segments ?? [];
+    expect(segments.map((s) => s.type)).toEqual(['thinking', 'text', 'image', 'text']);
+    expect((segments[0] as { content: string }).content).toBe('let me think');
+    expect((segments[1] as { content: string }).content).toBe('Before image. ');
+    expect((segments[3] as { content: string }).content).toBe('After image.');
+  });
+});
+
+describe('useDirectApiChat — skill-script approvals are pinned to content (audit 2026-11-22 §6)', () => {
+  let scriptHash = 'hash-v1';
+  let emitToolCall = true;
+  let toolCall: { id: string; name: string; arguments: Record<string, unknown> };
+
+  const executeCalls = () =>
+    vi.mocked(invoke).mock.calls.filter(([cmd]) => cmd === 'execute_skill_script');
+  const pendingRequest = () => Object.values(useToolPermissionStore.getState().pending)[0] ?? null;
+
+  beforeEach(() => {
+    scriptHash = 'hash-v1';
+    emitToolCall = true;
+    toolCall = { id: 'call-1', name: 'execute_skill_script', arguments: { skill_name: 'demo', script: 'run.sh', args: [] } };
+    useSettingsStore.setState({ toolCallingEnabled: true, chatHistoryLimit: 0, requireAllToolConfirmations: false });
+    useSkillStore.setState({
+      skills: [
+        { name: 'demo', description: 'Demo', source: 'notesage-global', path: '/skills/demo', has_scripts: true, has_references: false },
+        { name: 'other', description: 'Other', source: 'notesage-global', path: '/skills/other', has_scripts: true, has_references: false },
+      ],
+      skillTools: [],
+      enabledOverrides: {},
+      agents: [],
+      activeAgentName: 'general-assistant',
+      agentEnabledOverrides: {},
+    });
+    useChatStore.setState({ conversations: [], activeConversationId: null });
+    useSessionRunStore.setState({ runs: {}, foregroundConversationId: null });
+    resetPermissionStores();
+    setMockInvokeHandler('ai_chat_stream_cancel', async () => {});
+    setMockInvokeHandler('hash_skill_script', async () => scriptHash);
+    setMockInvokeHandler('execute_skill_script', async () => ({ stdout: 'ran', stderr: '', exit_code: 0 }));
+    // First invoke of a turn emits the tool call; the continuation ends it.
+    setMockInvokeHandler('ai_chat_stream', async (args) => {
+      const sid = sidOf(args);
+      if (emitToolCall) {
+        emitToolCall = false;
+        setTimeout(() => {
+          emitMockEvent(streamEvent('ai-tool-call', sid), toolCall);
+          emitMockEvent(streamEvent('ai-tool-calls-done', sid), null);
+        }, 0);
+      } else {
+        setTimeout(() => emitMockEvent(streamEvent('ai-stream-done', sid), null), 0);
+      }
+    });
+    vi.mocked(invoke).mockClear();
+  });
+
+  /** Run one turn that calls the skill script; resolves once things settle. */
+  async function runTurn(hook: ReturnType<typeof renderDirectApiChat>) {
+    emitToolCall = true;
+    await act(async () => { void hook.result.current.sendChatMessage('run it', []); });
+    await wait(80);
+  }
+
+  it('a name-only "always" grant on execute_skill_script does not auto-run a script', async () => {
+    // What an "Always" click used to store — and what a persisted store from
+    // an older version still holds.
+    usePermissionStore.getState().allowToolAlways('execute_skill_script', null, null);
+    usePermissionStore.getState().allowToolSession('execute_skill_script');
+
+    const hook = renderDirectApiChat();
+    await runTurn(hook);
+
+    expect(pendingRequest()?.name).toBe('execute_skill_script');
+    expect(executeCalls()).toHaveLength(0);
+
+    act(() => { hook.result.current.cancelDirectChat(); });
+  });
+
+  it('"always" pins the approval to the script hash and never stores a name-only grant', async () => {
+    const hook = renderDirectApiChat();
+    await runTurn(hook);
+
+    await act(async () => { pendingRequest()!.resolve('always'); });
+    await wait(80);
+
+    const permissions = usePermissionStore.getState();
+    expect(permissions.toolCallAlways).toEqual([]);
+    expect(permissions.skillScriptAlways).toHaveLength(1);
+    expect(permissions.skillScriptAlways[0]).toMatchObject({ toolName: 'demo', contentHash: 'hash-v1' });
+    // The backend is told which body was approved, so it can refuse a swap.
+    expect(executeCalls()).toHaveLength(1);
+    expect(executeCalls()[0][1]).toMatchObject({ skillPath: '/skills/demo', script: 'run.sh', expectedHash: 'hash-v1' });
+  });
+
+  it('the pinned approval runs the same script silently, and re-prompts once it changes', async () => {
+    usePermissionStore.getState().allowSkillScriptAlways('demo', null, null, 'hash-v1');
+    const hook = renderDirectApiChat();
+
+    await runTurn(hook);
+    expect(pendingRequest()).toBeNull();
+    expect(executeCalls()).toHaveLength(1);
+
+    // The script is rewritten (e.g. by an agent with write access to it).
+    scriptHash = 'hash-v2';
+    await runTurn(hook);
+
+    expect(pendingRequest()?.name).toBe('execute_skill_script');
+    expect(executeCalls()).toHaveLength(1);
+
+    act(() => { hook.result.current.cancelDirectChat(); });
+  });
+
+  it('an approval for one skill does not cover another', async () => {
+    usePermissionStore.getState().allowSkillScriptAlways('demo', null, null, 'hash-v1');
+    toolCall = { id: 'call-2', name: 'execute_skill_script', arguments: { skill_name: 'other', script: 'run.sh', args: [] } };
+
+    const hook = renderDirectApiChat();
+    await runTurn(hook);
+
+    expect(pendingRequest()?.name).toBe('execute_skill_script');
+    expect(executeCalls()).toHaveLength(0);
+
+    act(() => { hook.result.current.cancelDirectChat(); });
+  });
+
+  it('prompts when the script cannot be hashed, and "always" then stores nothing', async () => {
+    setMockInvokeHandler('hash_skill_script', async () => { throw new Error('file vanished'); });
+    usePermissionStore.getState().allowSkillScriptAlways('demo', null, null);
+
+    const hook = renderDirectApiChat();
+    await runTurn(hook);
+    // An unpinned legacy grant must not satisfy a call that could not be hashed.
+    expect(pendingRequest()?.name).toBe('execute_skill_script');
+
+    const before = usePermissionStore.getState().skillScriptAlways;
+    await act(async () => { pendingRequest()!.resolve('always'); });
+    await wait(80);
+
+    expect(usePermissionStore.getState().skillScriptAlways).toEqual(before);
+    expect(usePermissionStore.getState().toolCallAlways).toEqual([]);
+  });
+
+  it('ordinary tools keep their name-based approvals', async () => {
+    usePermissionStore.getState().allowToolAlways('write_file', null, null);
+    setMockInvokeHandler('write_file', async () => undefined);
+    useSettingsStore.setState({ homeDir: '/home/u' });
+    toolCall = { id: 'call-3', name: 'write_file', arguments: { path: '/tmp/out.txt', content: 'x' } };
+
+    const hook = renderDirectApiChat();
+    await runTurn(hook);
+
+    expect(pendingRequest()).toBeNull();
+    expect(vi.mocked(invoke).mock.calls.some(([cmd]) => cmd === 'hash_skill_script')).toBe(false);
   });
 });

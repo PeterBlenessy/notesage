@@ -619,6 +619,18 @@ jobs:
         working-directory: src-tauri
         run: cargo test
 
+      # The kernel-level Seatbelt harness (`tests/sandbox_isolation.rs`) is
+      # `#[ignore]`d, so the plain `cargo test` above never runs it — and it is
+      # the only OS-level proof that the generated profile denies out-of-scope
+      # writes. ADVISORY for now (`continue-on-error`): it runs `sandbox-exec`
+      # and reads `log show` on a hosted runner, which has not been shown to be
+      # stable there yet. Once it has run green for a while, drop
+      # `continue-on-error` so a leak fails the job.
+      - name: Sandbox isolation harness (advisory)
+        working-directory: src-tauri
+        continue-on-error: true
+        run: cargo test --test sandbox_isolation -- --ignored
+
       # Descendant of the v0.46.0-alpha.17/18 startup-crash guard. The analytics
       # plugin whose setup hook called tokio::spawn — panicking "there is no
       # reactor running" unless run() enters a Tokio runtime first — has been

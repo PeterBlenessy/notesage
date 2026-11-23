@@ -435,7 +435,7 @@ export function ConnectAgent({
 
       {phase === 'connected' && (
         <div className="flex items-center gap-2.5 py-3">
-          <Check className="h-4 w-4 text-green-500" strokeWidth={2} />
+          <Check className="h-4 w-4 text-[var(--color-status-ok)]" strokeWidth={2} />
           <span className="text-sm font-medium">{t("connect.connected")}</span>
         </div>
       )}

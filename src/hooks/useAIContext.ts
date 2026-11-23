@@ -63,10 +63,13 @@ export function useAIContext(): UseAIContextReturn {
     singleProjectPath ? s.projects.find((p) => p.path === singleProjectPath) : undefined
   );
 
-  // Active file for file awareness
-  const activeTab = useEditorStore((s) => {
+  // Active file for file awareness. Only the PATH is selected: the tab object
+  // is replaced on every content serialization (each typing pause), and
+  // selecting it rebuilt every system message below — file-tree walk included
+  // — on each of them, in every mounted `useAIOperations` (audit 2026-11-22 §3).
+  const activeTabFilePath = useEditorStore((s) => {
     if (!s.activeTabId) return null;
-    return s.openDocuments.find((t) => t.id === s.activeTabId) ?? null;
+    return s.openDocuments.find((t) => t.id === s.activeTabId)?.filePath ?? null;
   });
 
   // Task #23 — the active tab's path may only be included in the system
@@ -87,22 +90,49 @@ export function useAIContext(): UseAIContextReturn {
     return notesRootPath;
   }, [notesRootPath, homeDir]);
   const activeTabInScope = useMemo(() => {
-    if (!activeTab?.filePath) return false;
+    if (!activeTabFilePath) return false;
     const scope: UriScope = {
       projectRoots: selectedProjectPaths,
       notesRootPath: resolvedNotesRoot,
     };
-    return isUriInScope(activeTab.filePath, scope);
-  }, [activeTab?.filePath, selectedProjectPaths, resolvedNotesRoot]);
+    return isUriInScope(activeTabFilePath, scope);
+  }, [activeTabFilePath, selectedProjectPaths, resolvedNotesRoot]);
 
   // Skill context for AI prompts — scoped to the active conversation's
   // project selection so Project A's skills/instructions do not leak into a
   // chat that has only Project B selected (Task #18 isolation). Global
   // (~/.notesage/) skills and instructions are always included.
-  const skillDescriptions = useSkillStore((s) => s.getSkillDescriptionsForPrompt(selectedProjectPaths));
-  const notesageSkillDescriptions = useSkillStore((s) => s.getNotesageSkillDescriptionsForPrompt(selectedProjectPaths));
-  const agentInstructions = useSkillStore((s) => s.getMergedAgentInstructions(selectedProjectPaths));
-  const notesageAgentInstructions = useSkillStore((s) => s.getNotesageAgentInstructions(selectedProjectPaths));
+  //
+  // The raw slices are selected and the strings derived in `useMemo`. As
+  // inline selectors (`s => s.getSkillDescriptionsForPrompt(...)`) the four
+  // filter/sort/join passes over every skill and instruction ran on EVERY
+  // render of the host and on every skill-store write.
+  const skills = useSkillStore((s) => s.skills);
+  const enabledOverrides = useSkillStore((s) => s.enabledOverrides);
+  const skillTools = useSkillStore((s) => s.skillTools);
+  const rawAgentInstructions = useSkillStore((s) => s.agentInstructions);
+  // The getters are stable store functions that read the slices above through
+  // `get()` — the slices are the real inputs, hence their place in the deps.
+  const getSkillDescriptionsForPrompt = useSkillStore((s) => s.getSkillDescriptionsForPrompt);
+  const getNotesageSkillDescriptionsForPrompt = useSkillStore((s) => s.getNotesageSkillDescriptionsForPrompt);
+  const getMergedAgentInstructions = useSkillStore((s) => s.getMergedAgentInstructions);
+  const getNotesageAgentInstructions = useSkillStore((s) => s.getNotesageAgentInstructions);
+  const skillDescriptions = useMemo(
+    () => getSkillDescriptionsForPrompt(selectedProjectPaths),
+    [getSkillDescriptionsForPrompt, skills, enabledOverrides, skillTools, selectedProjectPaths],
+  );
+  const notesageSkillDescriptions = useMemo(
+    () => getNotesageSkillDescriptionsForPrompt(selectedProjectPaths),
+    [getNotesageSkillDescriptionsForPrompt, skills, enabledOverrides, selectedProjectPaths],
+  );
+  const agentInstructions = useMemo(
+    () => getMergedAgentInstructions(selectedProjectPaths),
+    [getMergedAgentInstructions, rawAgentInstructions, selectedProjectPaths],
+  );
+  const notesageAgentInstructions = useMemo(
+    () => getNotesageAgentInstructions(selectedProjectPaths),
+    [getNotesageAgentInstructions, rawAgentInstructions, selectedProjectPaths],
+  );
 
   // Shared project/goals/file-tree context builder
   const buildProjectContext = useCallback((attachedFilePaths?: string[]): string[] => {
@@ -151,12 +181,12 @@ export function useAIContext(): UseAIContextReturn {
       for (const filePath of attachedFilePaths) {
         parts.push(`File in context: ${filePath}`);
       }
-    } else if (!attachedFilePaths && activeTab && activeTabInScope) {
-      parts.push(`Currently editing: ${activeTab.filePath}`);
+    } else if (!attachedFilePaths && activeTabFilePath && activeTabInScope) {
+      parts.push(`Currently editing: ${activeTabFilePath}`);
     }
 
     return parts;
-  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTab, activeTabInScope, metadataMap, resolvedNotesRoot]);
+  }, [selectedProjectPaths, singleProjectPath, singleMetadata, goalsContext, singleProject, activeTabFilePath, activeTabInScope, metadataMap, resolvedNotesRoot]);
 
   // Compose system message for direct API providers
   const buildComposedSystemMessage = useCallback((attachedFilePaths?: string[]) => {
@@ -198,8 +228,8 @@ export function useAIContext(): UseAIContextReturn {
     // otherwise see a "Currently editing" line pointing at a file they have
     // no sanctioned way to touch, which both leaks the path and invites the
     // model to attempt out-of-scope reads.
-    if (activeTab && activeTabInScope) {
-      parts.push(`Currently editing: ${activeTab.filePath}`);
+    if (activeTabFilePath && activeTabInScope) {
+      parts.push(`Currently editing: ${activeTabFilePath}`);
     }
 
     // Tool guidance
@@ -211,7 +241,7 @@ export function useAIContext(): UseAIContextReturn {
     if (reactAddendum) parts.push(reactAddendum);
 
     return parts.join('\n\n');
-  }, [agentSystemMessage, selectedProjectPaths, singleProjectPath, singleMetadata, activeTab, activeTabInScope, metadataMap, toolCallingEnabled]);
+  }, [agentSystemMessage, selectedProjectPaths, singleProjectPath, singleMetadata, activeTabFilePath, activeTabInScope, metadataMap, toolCallingEnabled]);
 
   // ACP-specific system message builder — no agent role injection;
   // ACP agents manage their own subagent system via @agent-name pass-through.

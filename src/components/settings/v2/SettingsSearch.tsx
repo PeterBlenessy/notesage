@@ -148,7 +148,7 @@ export const SettingsSearch = React.forwardRef<
         aria-label={placeholder}
         className={cn(
           'h-8 w-full rounded-md border border-border bg-background pl-7 pr-7',
-          'text-[12px] placeholder:text-muted-foreground/60',
+          'text-[12px] placeholder:text-muted-foreground',
           'focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring',
           // Strip the browser's default clear button — we render our own.
           '[&::-webkit-search-cancel-button]:appearance-none',

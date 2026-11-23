@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { toast } from 'sonner';
 import { createJSONStorage } from 'zustand/middleware';
 import type { StateStorage } from 'zustand/middleware';
+import { t } from '@/lib/i18n';
 import { log, PERF } from '@/lib/logger';
 import { tauriApi } from '@/lib/tauri';
 
@@ -153,6 +154,61 @@ function isWriteBlocked(key: string, action: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Corrupt files
+// ---------------------------------------------------------------------------
+
+/** State key of the preserved copy: `~/.notesage/state/<key>.corrupt.json`. */
+export function corruptCopyKey(key: string): string {
+  return `${key}.corrupt`;
+}
+
+let corruptToastShown = false;
+
+function isParseableJson(value: string): boolean {
+  try {
+    JSON.parse(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `key`'s file was read, but its content is not JSON. Zustand would throw on
+ * it, hydrate defaults, and overwrite the file on the next state change.
+ *
+ * Copy the raw content aside first. If the copy lands, the store may start
+ * fresh (and persist again) — the damaged data is safe next to it. If the
+ * copy cannot be written, the original file is the only copy, so the key is
+ * write-blocked exactly like a failed read.
+ *
+ * Always resolves to `null`: the store hydrates defaults either way.
+ */
+async function quarantineCorruptValue(key: string, raw: string): Promise<null> {
+  try {
+    await invoke('store_write', { key: corruptCopyKey(key), value: raw });
+  } catch (err) {
+    markReadFailed(key, err);
+    return null;
+  }
+  markReadOk(key);
+  log.error(
+    'store',
+    `Store file '${key}' does not contain valid JSON — starting it empty; its content was kept as '${corruptCopyKey(key)}.json'`,
+  );
+  if (!corruptToastShown) {
+    corruptToastShown = true;
+    setTimeout(() => {
+      toast.error(t('toast.storeCorrupt'), {
+        description: t('toast.storeCorruptDescription'),
+        duration: Infinity,
+      });
+    }, READ_FAILURE_TOAST_DELAY_MS);
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
 // Batched reads (store_read_batch)
 //
 // All file-backed stores (chat, activity, action, automation) rehydrate during
@@ -208,6 +264,9 @@ async function flushPendingReads(): Promise<void> {
         markReadFailed(key, err);
         value = null;
       }
+    }
+    if (value !== null && !isParseableJson(value)) {
+      value = await quarantineCorruptValue(key, value);
     }
     for (const resolve of resolvers) resolve(value);
   }

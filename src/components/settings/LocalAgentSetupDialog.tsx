@@ -259,12 +259,24 @@ export function LocalAgentSetupDialog() {
           </div>
         )}
 
-        {/* Stage checklist. */}
+        {/* Stage checklist. The list itself is static text, so the stage in
+            progress is mirrored into a polite live region for screen readers. */}
+        <p className="sr-only" role="status" aria-live="polite">
+          {(() => {
+            const active = STAGES.find((s) => rowState(s.key, setup.stage, setup.failedStage) === 'active');
+            return active ? t(active.labelKey) : '';
+          })()}
+        </p>
         <ul className="space-y-2.5 py-1">
           {STAGES.map((s) => {
             const state = rowState(s.key, setup.stage, setup.failedStage);
             return (
-              <li key={s.key} className="flex items-center gap-2.5 text-sm">
+              <li
+                key={s.key}
+                className="flex items-center gap-2.5 text-sm"
+                aria-busy={state === 'active'}
+                aria-current={state === 'active' ? 'step' : undefined}
+              >
                 <StageIcon state={state} />
                 <span
                   className={cn(
@@ -276,7 +288,7 @@ export function LocalAgentSetupDialog() {
                   {t(s.labelKey)}
                 </span>
                 {s.key === 'downloading' && state === 'active' && downloadProgress != null && (
-                  <Progress value={downloadProgress} className="ml-auto w-24 h-1.5" />
+                  <Progress value={downloadProgress} aria-label={t(s.labelKey)} className="ml-auto w-24 h-1.5" />
                 )}
               </li>
             );

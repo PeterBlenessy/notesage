@@ -331,3 +331,73 @@ describe('drawing-storage', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Strict loads — for callers that save what they loaded (audit 2026-11-22 §10)
+// ---------------------------------------------------------------------------
+
+describe('drawing-storage strict loads', () => {
+  it('loadDrawingStrict returns null only for a drawing that is not there', async () => {
+    const { loadDrawingStrict } = await import('@/lib/drawing-storage');
+    setMockInvokeHandler('path_exists', () => false);
+    expect(await loadDrawingStrict('missing', PROJECT)).toBeNull();
+  });
+
+  it('loadDrawingStrict throws when the file exists but cannot be read', async () => {
+    const { loadDrawingStrict } = await import('@/lib/drawing-storage');
+    setMockInvokeHandler('path_exists', () => true);
+    setMockInvokeHandler('read_file', () => {
+      throw new Error('Operation not permitted');
+    });
+    await expect(loadDrawingStrict('broken', PROJECT)).rejects.toThrow('Operation not permitted');
+  });
+
+  it('loadDrawingStrict throws on a file that is not JSON', async () => {
+    const { loadDrawingStrict } = await import('@/lib/drawing-storage');
+    setMockInvokeHandler('path_exists', () => true);
+    setMockInvokeHandler('read_file', () => '{"type":"excalidraw","elements":[');
+    await expect(loadDrawingStrict('truncated', PROJECT)).rejects.toThrow();
+  });
+
+  it('loadDrawingStrict throws for a drawing iCloud has evicted to a placeholder', async () => {
+    const { loadDrawingStrict } = await import('@/lib/drawing-storage');
+    // The file itself "does not exist"; its `.name.icloud` placeholder does.
+    setMockInvokeHandler('path_exists', (args) =>
+      String(args?.path).endsWith('/.notesage/drawings/.abc.excalidraw.icloud'),
+    );
+    await expect(loadDrawingStrict('abc', PROJECT)).rejects.toThrow(/iCloud/);
+  });
+
+  it('loadLibraryStrict throws on a read error, where loadLibrary answers []', async () => {
+    const { loadLibraryStrict } = await import('@/lib/drawing-storage');
+    setMockInvokeHandler('get_home_dir', () => '/Users/test');
+    setMockInvokeHandler('path_exists', () => true);
+    setMockInvokeHandler('read_file', () => {
+      throw new Error('fail');
+    });
+    await expect(loadLibraryStrict()).rejects.toThrow('fail');
+    expect(await loadLibrary()).toEqual([]);
+  });
+
+  it('importLibraryFile does not replace a library it could not read', async () => {
+    const writes: string[] = [];
+    setMockInvokeHandler('get_home_dir', () => '/Users/test');
+    setMockInvokeHandler('path_exists', () => true);
+    setMockInvokeHandler('create_directory', () => undefined);
+    setMockInvokeHandler('write_file', (args) => {
+      writes.push(String(args?.path));
+    });
+    setMockInvokeHandler('read_file', (args) => {
+      if (String(args?.path).endsWith('.excalidrawlib')) {
+        return JSON.stringify({ libraryItems: [{ id: 'new1' }] });
+      }
+      // The user's existing library: there, and unreadable right now.
+      throw new Error('Operation timed out');
+    });
+
+    await expect(importLibraryFile('/tmp/shapes.excalidrawlib')).rejects.toThrow('Operation timed out');
+    // It used to treat the failed read as an empty library and write the
+    // imported items over the real one.
+    expect(writes).toEqual([]);
+  });
+});

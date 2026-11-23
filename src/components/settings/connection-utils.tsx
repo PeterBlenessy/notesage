@@ -155,7 +155,7 @@ function CopyableCommand({ command }: { command: string }) {
         title={t("common.copyToClipboard")}
       >
         {copied ? (
-          <Check className="h-3.5 w-3.5 text-green-500" strokeWidth={1.5} />
+          <Check className="h-3.5 w-3.5 text-[var(--color-status-ok)]" strokeWidth={1.5} />
         ) : (
           <Copy className="h-3.5 w-3.5 text-muted-foreground" strokeWidth={1.5} />
         )}
@@ -183,7 +183,7 @@ function CopyableUrl({ url }: { url: string }) {
         title={t("common.copyUrl")}
       >
         {copied ? (
-          <Check className="h-3 w-3 text-green-500" strokeWidth={1.5} />
+          <Check className="h-3 w-3 text-[var(--color-status-ok)]" strokeWidth={1.5} />
         ) : (
           <Copy className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
         )}

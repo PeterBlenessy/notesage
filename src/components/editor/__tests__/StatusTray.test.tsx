@@ -606,7 +606,7 @@ describe('StatusTray — task #53', () => {
     const dot = renderTrayWithStatus('starting');
     expect(dot).toBeTruthy();
     expect(dot?.getAttribute('data-server-status')).toBe('starting');
-    expect(dot?.className).toContain('bg-amber-500');
+    expect(dot?.className).toContain('bg-[var(--color-status-warn)]');
     expect(dot?.className).toContain('animate-pulse');
     expect(dot?.className).not.toContain('bg-green');
   });
@@ -615,7 +615,7 @@ describe('StatusTray — task #53', () => {
     const dot = renderTrayWithStatus('running');
     expect(dot).toBeTruthy();
     expect(dot?.getAttribute('data-server-status')).toBe('running');
-    expect(dot?.className).toContain('bg-green-500');
+    expect(dot?.className).toContain('bg-[var(--color-status-ok)]');
     expect(dot?.className).not.toContain('bg-amber');
     expect(dot?.className).not.toContain('animate-pulse');
   });
@@ -624,7 +624,7 @@ describe('StatusTray — task #53', () => {
     const dot = renderTrayWithStatus('error');
     expect(dot).toBeTruthy();
     expect(dot?.getAttribute('data-server-status')).toBe('error');
-    expect(dot?.className).toContain('bg-red-500');
+    expect(dot?.className).toContain('bg-destructive');
     expect(dot?.className).not.toContain('bg-green');
   });
 

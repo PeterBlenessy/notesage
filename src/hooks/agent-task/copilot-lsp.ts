@@ -4,18 +4,72 @@
 //
 // Runs a background task through a `conversation/create` round: streaming +
 // progress arrive as `copilot-chat-*` Tauri events; tool calls / confirmations
-// / context requests are answered inline (auto-approve, headless context).
+// / context requests are answered inline (headless context).
+//
+// Tools: a background task has nobody to ask, so it runs only what the user
+// has ALREADY allowed (the same tiers chat consults: built-in read-only tools,
+// "always allow" and "allow for this session"). Anything that would show a
+// permission card in chat is denied here. Unlike an ACP agent, these tools
+// run in the app's own process, not inside the sandbox.
 // ---------------------------------------------------------------------------
 
 import { listen } from '@tauri-apps/api/event';
 import { useRoutingStore } from '@/stores/routing-store';
 import { useActivityStore } from '@/stores/activity-store';
+import { usePermissionStore } from '@/stores/permission-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import type { Connection } from '@/lib/ai/connections';
 import { tauriApi } from '@/lib/tauri';
 import { mapCopilotProgressStatus, type CopilotStepPayload, type CopilotToolUpdatePayload } from '@/lib/ai/copilot-progress';
+import {
+  openCopilotStream,
+  closeCopilotStream,
+  ownsCopilotProgress,
+  ownsCopilotRequest,
+  type CopilotStream,
+} from '@/lib/ai/copilot-correlation';
 import { agentTaskRegistry } from './task-registry';
 import { runAgentTask, type TaskCallbacks, type TaskMeta } from './run-task';
 import { getHomeDir } from './home-dir';
+
+/** What every `$/progress`-derived event carries (see copilot-correlation.ts). */
+interface CopilotProgressKey {
+  token?: string;
+  conversationId?: string;
+}
+
+/** Running Copilot tasks → their stream, so a cancel can reach the LSP. */
+const runningTasks = new Map<string, { stream: CopilotStream; destroyed: boolean }>();
+
+/**
+ * Stop a running Copilot task's LSP conversation. Destroying the conversation
+ * is what stops the server generating; without it "Cancel" only stopped the
+ * frontend listening. Returns false when `taskId` is not a running Copilot
+ * task. If the conversation id is not known yet, the conversation is
+ * destroyed as soon as `conversation/create` returns it.
+ */
+export async function cancelCopilotLspTask(taskId: string): Promise<boolean> {
+  const running = runningTasks.get(taskId);
+  if (!running) return false;
+  const conversationId = running.stream.conversationId;
+  if (conversationId && !running.destroyed) {
+    running.destroyed = true;
+    await tauriApi.copilotLspConversationDestroy(conversationId).catch(() => {});
+  }
+  return true;
+}
+
+/**
+ * May a background task run this tool without asking? Same tiers as chat
+ * (`useDirectApiChat`), scoped to the task's connection and project. `false`
+ * is what chat would turn into a permission card.
+ */
+function isToolPreApproved(name: string, connectionId: string, projectRoot: string | null): boolean {
+  // "Confirm every tool call" means a person decides each time; a background
+  // task has no one to ask.
+  if (useSettingsStore.getState().requireAllToolConfirmations) return false;
+  return usePermissionStore.getState().isToolAllowed(name, connectionId, projectRoot) !== 'none';
+}
 
 export async function startCopilotLspTask(
   prompt: string,
@@ -34,21 +88,26 @@ export async function startCopilotLspTask(
       // dialog fetches from copilot/models for LSP connections).
       const model = useRoutingStore.getState().routing.agent_tasks?.model ?? connection.config?.model;
 
-      // Latch onto the conversationId from the first event (we don't know it
-      // until events arrive because conversation/create blocks until streaming finishes).
-      let eventConvId: string | null = null;
-      const isOurEvent = (payload: { conversationId?: string }): boolean => {
-        if (!payload.conversationId) return true;
-        if (eventConvId === null) {
-          eventConvId = payload.conversationId;
-          return true;
-        }
-        return payload.conversationId === eventConvId;
-      };
+      // Correlation: progress events carry the token generated here and sent
+      // as the request's workDoneToken; tool calls / confirmations / context
+      // requests carry the conversation id, learned from this stream's own
+      // first progress event. Events naming neither are not ours unless this
+      // is the only Copilot stream running (see copilot-correlation.ts).
+      const stream = openCopilotStream();
+      const running = { stream, destroyed: false };
+      runningTasks.set(taskId, running);
+      const isOurProgress = (payload: CopilotProgressKey): boolean => ownsCopilotProgress(stream, payload);
+      const isOurRequest = (payload: { conversationId?: string }): boolean => ownsCopilotRequest(stream, payload);
+      const projectRoot = taskMeta?.projectRoot ?? null;
+
+      // Binds the stream to its conversation id before the first tool call.
+      const unlistenBegin = await listen<CopilotProgressKey>('copilot-chat-begin', (event) => {
+        isOurProgress(event.payload);
+      });
 
       // Listen for streaming events
-      const unlistenChunk = await listen<{ text: string; conversationId?: string }>('copilot-chat-chunk', (event) => {
-        if (!isOurEvent(event.payload)) return;
+      const unlistenChunk = await listen<CopilotProgressKey & { text: string }>('copilot-chat-chunk', (event) => {
+        if (!isOurProgress(event.payload)) return;
         const current = agentTaskRegistry.getTask(taskId);
         if (!current || current.status !== 'running') return;
         current.output += event.payload.text;
@@ -56,18 +115,19 @@ export async function startCopilotLspTask(
         if (track) useActivityStore.getState().appendPartialOutput(taskId, event.payload.text);
       });
 
-      const unlistenThinking = await listen<{ text: string; conversationId?: string }>('copilot-chat-thinking', (event) => {
-        if (!isOurEvent(event.payload)) return;
+      const unlistenThinking = await listen<CopilotProgressKey & { text: string }>('copilot-chat-thinking', (event) => {
+        if (!isOurProgress(event.payload)) return;
         // Thinking events logged but not appended to output
       });
 
-      const unlistenDone = await listen<{ conversationId: string; error?: unknown }>('copilot-chat-done', async (event) => {
-        if (!isOurEvent(event.payload)) return;
+      const unlistenDone = await listen<CopilotProgressKey & { error?: unknown }>('copilot-chat-done', async (event) => {
+        if (!isOurProgress(event.payload)) return;
         const current = agentTaskRegistry.getTask(taskId);
         if (!current || current.status !== 'running') return;
 
         // Destroy the conversation
-        if (event.payload.conversationId) {
+        if (event.payload.conversationId && !running.destroyed) {
+          running.destroyed = true;
           tauriApi.copilotLspConversationDestroy(event.payload.conversationId).catch(() => {});
         }
 
@@ -87,8 +147,8 @@ export async function startCopilotLspTask(
       // calls. The LSP re-emits the full arrays on every report, so dedupe by
       // (id, status) and only surface actual transitions as activity entries.
       const seenSteps = new Set<string>();
-      const unlistenStep = await listen<CopilotStepPayload>('copilot-chat-step', (event) => {
-        if (!isOurEvent(event.payload)) return;
+      const unlistenStep = await listen<CopilotStepPayload & CopilotProgressKey>('copilot-chat-step', (event) => {
+        if (!isOurProgress(event.payload)) return;
         const current = agentTaskRegistry.getTask(taskId);
         if (!current || current.status !== 'running') return;
         const { stepId, title, status } = event.payload;
@@ -102,8 +162,8 @@ export async function startCopilotLspTask(
       });
 
       const seenToolUpdates = new Set<string>();
-      const unlistenToolUpdate = await listen<CopilotToolUpdatePayload>('copilot-chat-tool-update', (event) => {
-        if (!isOurEvent(event.payload)) return;
+      const unlistenToolUpdate = await listen<CopilotToolUpdatePayload & CopilotProgressKey>('copilot-chat-tool-update', (event) => {
+        if (!isOurProgress(event.payload)) return;
         const current = agentTaskRegistry.getTask(taskId);
         if (!current || current.status !== 'running') return;
         const p = event.payload;
@@ -125,11 +185,22 @@ export async function startCopilotLspTask(
 
       // Tool call handler — execute tools and respond
       const unlistenToolCall = await listen<{ requestId: string; id: string; name: string; arguments: Record<string, unknown>; conversationId?: string }>('copilot-tool-call', async (event) => {
-        if (!isOurEvent(event.payload)) return;
+        if (!isOurRequest(event.payload)) return;
         const current = agentTaskRegistry.getTask(taskId);
         if (!current || current.status !== 'running') return;
 
         const { requestId, name, arguments: args } = event.payload;
+
+        // Never run a tool the user has not already allowed (see file header).
+        if (!isToolPreApproved(name, connection.id, projectRoot)) {
+          onActivity?.({ kind: 'tool_call', label: `Denied: ${name}`, detail: 'Not pre-approved for background tasks', event: 'tool_denied' });
+          await tauriApi.copilotLspToolResult(requestId, {
+            status: 'error',
+            content: [{ value: `Permission denied for tool: ${name}. Background tasks only run tools the user has already allowed.` }],
+          }).catch(() => {});
+          return;
+        }
+
         onActivity?.({ kind: 'tool_call', label: `Tool: ${name}`, detail: JSON.stringify(args).slice(0, 100), event: 'tool_call' });
 
         try {
@@ -153,23 +224,34 @@ export async function startCopilotLspTask(
         }
       });
 
-      // Tool confirmation handler — auto-approve for agent tasks
+      // Tool confirmation handler. Only a tool the user has already allowed
+      // is confirmed; everything else is dismissed. (This used to approve
+      // every request "same as the ACP path", but an ACP agent is sandboxed
+      // and this is not.)
       const unlistenConfirm = await listen<{ requestId: string; name: string; conversationId?: string }>('copilot-tool-confirmation', async (event) => {
-        if (!isOurEvent(event.payload)) return;
+        if (!isOurRequest(event.payload)) return;
         const current = agentTaskRegistry.getTask(taskId);
         if (!current || current.status !== 'running') return;
-        // Auto-approve tool confirmations for agent tasks (same as ACP path)
-        await tauriApi.copilotLspToolConfirmationResponse(event.payload.requestId, true);
-        onActivity?.({ kind: 'tool_call', label: `Approved: ${event.payload.name}`, event: 'permission_auto_approved' });
+        const { requestId, name } = event.payload;
+        const accepted = isToolPreApproved(name, connection.id, projectRoot);
+        await tauriApi.copilotLspToolConfirmationResponse(requestId, accepted).catch(() => {});
+        if (accepted) {
+          onActivity?.({ kind: 'tool_call', label: `Approved: ${name}`, event: 'permission_auto_approved' });
+        } else {
+          onActivity?.({ kind: 'tool_call', label: `Denied: ${name}`, detail: 'Not pre-approved for background tasks', event: 'tool_denied' });
+        }
       });
 
       // Context request handler — provide empty context for headless tasks
       const unlistenContext = await listen<{ requestId: string; conversationId?: string }>('copilot-context-request', async (event) => {
-        if (!isOurEvent(event.payload)) return;
-        await tauriApi.copilotLspContextResponse(event.payload.requestId, [null, null]);
+        if (!isOurRequest(event.payload)) return;
+        await tauriApi.copilotLspContextResponse(event.payload.requestId, [null, null]).catch(() => {});
       });
 
       handle.registerCleanup(() => {
+        closeCopilotStream(stream);
+        runningTasks.delete(taskId);
+        unlistenBegin();
         unlistenChunk();
         unlistenThinking();
         unlistenDone();
@@ -183,12 +265,24 @@ export async function startCopilotLspTask(
       onActivity?.({ kind: 'agent_responding', label: 'Agent responding', event: 'agent_responding' });
 
       // Create conversation and send the prompt
-      try {
-        await tauriApi.copilotLspConversationCreate(prompt, model);
-      } catch (error) {
-        handle.fail(error);
-        handle.runCleanup();
-      }
+      const wasCancelled = () => agentTaskRegistry.getTask(taskId)?.status === 'cancelled';
+      // Not awaited: `conversation/create` only returns when the whole turn
+      // is over, and the caller needs the task id back while it is running
+      // (to show it, and to cancel it).
+      tauriApi.copilotLspConversationCreate(prompt, model, undefined, undefined, undefined, stream.token)
+        .then((result) => {
+          // Cancelled before any event had named the conversation: now that
+          // the id is known, stop it.
+          if (wasCancelled() && result?.conversationId && !running.destroyed) {
+            running.destroyed = true;
+            tauriApi.copilotLspConversationDestroy(result.conversationId).catch(() => {});
+          }
+        })
+        .catch((error) => {
+          // A request that fails because the user cancelled it is not a failed task.
+          if (!wasCancelled()) handle.fail(error);
+          handle.runCleanup();
+        });
     },
   });
 }

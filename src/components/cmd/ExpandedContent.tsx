@@ -562,7 +562,7 @@ export function ExpandedContent({
                         aria-label={`Remove ${att.name}`}
                         className={cn(
                           "absolute top-0 right-0 rounded-bl-md bg-background/70 backdrop-blur-sm",
-                          "opacity-0 group-hover:opacity-100 transition-opacity duration-150",
+                          "opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity duration-150",
                           "hover:bg-background p-px",
                         )}
                       >

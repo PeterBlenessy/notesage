@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { handleRehydrateResult } from "@/lib/persist-rehydrate";
 
 
 type PdfFitMode = "width" | "page" | null;
@@ -44,6 +45,6 @@ export const usePdfStore = create<PdfStore>()(
 
       getBookmark: (filePath) => get().bookmarks[filePath] ?? null,
     }),
-    { name: "pdf-store" },
+    { name: "pdf-store", onRehydrateStorage: () => (_state, error) => handleRehydrateResult("pdf-store", error) },
   ),
 );

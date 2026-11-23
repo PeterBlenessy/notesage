@@ -22,7 +22,7 @@ export const TextContentView = memo(function TextContentView({ text }: TextConte
       <button
         type="button"
         onClick={() => setExpanded((prev) => !prev)}
-        className="flex items-center gap-1 px-1 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors duration-150 cursor-pointer"
+        className="flex items-center gap-1 px-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors duration-150 cursor-pointer"
       >
         <ChevronRight
           size={10}

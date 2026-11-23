@@ -1585,3 +1585,47 @@ describe("HtmlViewer — re-applies the find query on iframe load (flake fix)", 
     post.mockRestore();
   });
 });
+
+// ---------------------------------------------------------------------------
+// allow-scripts: only files inside the HTML file's directory are inlined
+// (audit 2026-11-22 §6)
+// ---------------------------------------------------------------------------
+
+describe("HtmlViewer allow-scripts mode — local scripts stay inside the file's directory", () => {
+  afterEach(() => {
+    useSettingsStore.setState({ htmlViewerAllowScripts: false } as Parameters<typeof useSettingsStore.setState>[0]);
+  });
+
+  it("does not read a file reached through ./../", async () => {
+    const readPaths: string[] = [];
+    setMockInvokeHandler("read_file", (args) => {
+      readPaths.push(String(args?.path));
+      return "PRIVATE KEY MATERIAL";
+    });
+    useSettingsStore.setState({ htmlViewerAllowScripts: true } as Parameters<typeof useSettingsStore.setState>[0]);
+    render(
+      <HtmlViewer
+        content={
+          '<html><body><h1>Page</h1>' +
+          '<script src="./../../../.ssh/id_rsa"></script>' +
+          '<script src="./js/../../secret.js"></script>' +
+          '<script src="./ok.js"></script>' +
+          '</body></html>'
+        }
+        fileName="page.html"
+        filePath="/Users/me/Downloads/site/page.html"
+        tabId="tab-scripts-traversal"
+        isDirty={false}
+        updateTabContent={vi.fn()}
+        saveFileWithContent={vi.fn()}
+      />
+    );
+    await waitFor(() => {
+      expect(document.querySelector("iframe")).not.toBeNull();
+    });
+    await waitFor(() => expect(readPaths).toContain("/Users/me/Downloads/site/ok.js"));
+
+    // Only the sibling file was read; nothing above the HTML file's directory.
+    expect(readPaths).toEqual(["/Users/me/Downloads/site/ok.js"]);
+  });
+});

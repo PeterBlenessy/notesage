@@ -35,7 +35,7 @@ export function EditorEmptyState({ recentProjects, recentFiles, onNewNote, onNew
             each with its own structure and settings. When you need a creative partner, bring in AI to improve
             your writing, brainstorm ideas, or summarize long documents — right from the editor.
           </p>
-          <p className="text-xs text-muted-foreground/70 max-w-md mx-auto">
+          <p className="text-xs text-muted-foreground max-w-md mx-auto">
             Your files stay on your computer. Pick up where you left off anytime.
           </p>
         </div>
@@ -162,7 +162,7 @@ export function EditorEmptyState({ recentProjects, recentFiles, onNewNote, onNew
         )}
         {/* Privacy note */}
         <div className="pt-24">
-          <p className="text-xs text-muted-foreground/50 max-w-md mx-auto leading-relaxed">
+          <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
             Your files never leave your computer. Notesage reads and writes directly to your local filesystem — no cloud sync, no accounts, no tracking. AI features connect only when you provide an API key.
           </p>
         </div>

@@ -15,7 +15,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { JSDOM } from "jsdom";
-import { Editor } from "@tiptap/core";
+import { Editor, getSchema } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
@@ -41,7 +41,7 @@ import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
 import markdownitSub from "markdown-it-sub";
 import markdownitSup from "markdown-it-sup";
-import { convertCalloutsToHtml, convertDrawingsToHtml, convertChartsToHtml, convertLinkPreviewsToHtml, convertMermaidToHtml, convertPageBreaksToHtml, convertInlineChartsToHtml, convertInlineDrawingsToHtml, convertDataUriImagesToHtml, restorePageBreaks } from "@/lib/markdown";
+import { preprocessForParse, getMarkdownFromEditor } from "@/lib/markdown";
 import { serializeTable } from "@/components/editor/extensions/table-markdown";
 import { workerExtensions } from "@/workers/worker-extensions";
 
@@ -184,7 +184,9 @@ function createTestEditor(content: string): Editor {
         },
       }),
     ],
-    content: convertDataUriImagesToHtml(convertInlineChartsToHtml(convertInlineDrawingsToHtml(convertPageBreaksToHtml(convertLinkPreviewsToHtml(convertChartsToHtml(convertDrawingsToHtml(convertCalloutsToHtml(convertMermaidToHtml(content))))))))),
+    // The production chain itself — not a hand-copied subset of it. A
+    // converter added to `preprocessForParse` is exercised here automatically.
+    content: preprocessForParse(content),
     editable: false,
   });
 }
@@ -203,14 +205,13 @@ const fixtureFiles = readdirSync(fixturesDir)
 // ---------------------------------------------------------------------------
 
 /**
- * Get the serialized markdown from a tiptap editor instance.
+ * Get the serialized markdown from a tiptap editor instance — through the
+ * production serializer, so its post-processing (image-path decoding, ghost
+ * task items, page-break and TOC comment restoration, annotation prefixes) is
+ * part of the gate instead of being mirrored here one step at a time.
  */
 function getMarkdown(editor: Editor): string {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let md: string = (editor.storage as any).markdown.getMarkdown();
-  // Restore page break comments from HTML div form (mirrors getMarkdownFromEditor)
-  md = restorePageBreaks(md);
-  return md;
+  return getMarkdownFromEditor(editor);
 }
 
 describe("Markdown round-trip", () => {
@@ -286,6 +287,45 @@ describe("Round-trip editor covers every production custom node", () => {
     expect(
       missing,
       `Custom production node(s) not represented in the markdown round-trip gate: ${missing.join(
+        ", ",
+      )}. Add the extension + a fixture above, or allowlist with a reason.`,
+    ).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Drift guard, marks. The node guard above filters `type === "node"`, so a
+// production MARK added to `workerExtensions` (a new inline format) escaped it
+// entirely — and a mark the round-trip editor does not know is dropped on
+// parse, so a fixture using it could never pass, and one would never be added.
+//
+// Compared at the SCHEMA level rather than by walking the extension array:
+// most marks (bold, italic, strike, code, link, underline) arrive bundled
+// inside StarterKit, which is an `extension`, not a `mark`, so a filter on the
+// array would see only the handful registered individually.
+// ---------------------------------------------------------------------------
+
+describe("Round-trip editor covers every production mark", () => {
+  // Production marks intentionally absent from the round-trip editor. Each
+  // needs a justification. Empty today.
+  const NOT_ROUNDTRIPPED_AS_MARK = new Set<string>([]);
+
+  it("includes every mark in the production (worker) schema, or allowlists it", () => {
+    const editor = createTestEditor("");
+    const roundTripMarks = new Set(Object.keys(editor.schema.marks));
+    editor.destroy();
+
+    const productionMarks = Object.keys(getSchema(workerExtensions).marks);
+    // The guard is only worth anything if it sees the bundled marks too.
+    expect(productionMarks).toEqual(expect.arrayContaining(["bold", "italic", "strike", "code", "link"]));
+
+    const missing = productionMarks.filter(
+      (name) => !roundTripMarks.has(name) && !NOT_ROUNDTRIPPED_AS_MARK.has(name),
+    );
+
+    expect(
+      missing,
+      `Production mark(s) not represented in the markdown round-trip gate: ${missing.join(
         ", ",
       )}. Add the extension + a fixture above, or allowlist with a reason.`,
     ).toEqual([]);

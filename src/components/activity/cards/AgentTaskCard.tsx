@@ -117,6 +117,15 @@ export function AgentTaskCardInner({ task, onCancel, onRemove, onClick }: Activi
         isClickable ? 'cursor-pointer hover:bg-muted/50 active:bg-muted/70' : ''
       }`}
       onClick={isClickable ? () => onClick(task) : undefined}
+      role={isClickable ? 'button' : undefined}
+      tabIndex={isClickable ? 0 : undefined}
+      onKeyDown={isClickable ? (e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onClick(task);
+        }
+      } : undefined}
     >
       {/* Top row: status icon + label + elapsed time + remove */}
       <div className="flex items-start gap-2">
@@ -143,7 +152,7 @@ export function AgentTaskCardInner({ task, onCancel, onRemove, onClick }: Activi
           <IconActionButton
             label={t("activity.removeFromList")}
             onClick={(e) => { e.stopPropagation(); onRemove(task.id); }}
-            className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
+            className="shrink-0 h-4 w-4 opacity-0 group-hover/card:opacity-100 focus-visible:opacity-100 transition-[opacity,color] duration-150 text-muted-foreground hover:text-foreground"
           >
             <X className="h-3 w-3" strokeWidth={1.5} />
           </IconActionButton>
@@ -336,7 +345,7 @@ export function AgentTaskCardInner({ task, onCancel, onRemove, onClick }: Activi
             <div
               key={`${a.timestamp}-${i}`}
               className={`flex items-start gap-1.5 text-xs ${
-                effectiveStatus === 'error' ? 'text-destructive/70' : 'text-muted-foreground/70'
+                effectiveStatus === 'error' ? 'text-destructive/70' : 'text-muted-foreground'
               }`}
             >
               {effectiveStatus === 'running' ? (
@@ -358,7 +367,7 @@ export function AgentTaskCardInner({ task, onCancel, onRemove, onClick }: Activi
                   // `truncate block` renders a shortened visual line.
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <span className="truncate block text-muted-foreground/50 cursor-help">
+                      <span className="truncate block text-muted-foreground cursor-help">
                         {a.detail.length > 60 ? a.detail.slice(0, 60) + '\u2026' : a.detail}
                       </span>
                     </TooltipTrigger>
@@ -386,7 +395,7 @@ export function AgentTaskCardInner({ task, onCancel, onRemove, onClick }: Activi
                       return (
                         <div
                           key={`terminal-${idx}`}
-                          className="px-1 text-[11px] text-muted-foreground/50 italic"
+                          className="px-1 text-[11px] text-muted-foreground italic"
                         >
                           Terminal output (not yet supported)
                         </div>

@@ -210,4 +210,18 @@ describe('ResearchMode', () => {
     // Old solid accent fill must be gone
     expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
   });
+  it('shows that the search index is unavailable when the query fails, not "No research matches"', async () => {
+    indexSearchResearchMock.mockRejectedValue(new Error('database is locked'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    renderWithProviders(
+      <ResearchMode filter="anything" onPick={() => {}} />,
+    );
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('Search index unavailable');
+    expect(screen.getByText('database is locked')).toBeTruthy();
+    expect(screen.queryByText('No research matches')).toBeNull();
+    consoleError.mockRestore();
+  });
 });

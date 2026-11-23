@@ -241,4 +241,24 @@ describe("RelationsPanel", () => {
     // Collapsed again — but the announcement already landed; no comet.
     expect(document.querySelectorAll(".relations-comet-dot").length).toBe(0);
   });
+  it("stays visible and shows the error when the link-graph query fails", async () => {
+    openDoc("/p/active.md");
+    setMockInvokeHandler("get_backlinks", () => {
+      throw new Error("links.db is locked");
+    });
+    setMockInvokeHandler("get_outlinks", () => []);
+
+    render(<RelationsPanel />);
+
+    const handle = await screen.findByTestId("relations-handle");
+    expect(handle.getAttribute("aria-label")).toBe("Relations — Relations could not be loaded");
+    expect(screen.getByTestId("relations-handle-count").textContent).toBe("!");
+
+    fireEvent.click(handle);
+
+    const error = screen.getByTestId("relations-error");
+    expect(error.getAttribute("role")).toBe("alert");
+    expect(error.textContent).toContain("Relations could not be loaded");
+    expect(error.textContent).toContain("links.db is locked");
+  });
 });

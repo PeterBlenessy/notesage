@@ -44,6 +44,7 @@ import {
   serializeHomeFileContent,
 } from "@/lib/home-file";
 import type { FileEntry } from "@/lib/tauri";
+import { handleRehydrateResult } from "@/lib/persist-rehydrate";
 
 /**
  * - `unknown`           — not yet resolved (initial; show a neutral splash)
@@ -1247,6 +1248,7 @@ export const useMobileStore = create<MobileStore>()(
     }),
     {
       name: "mobile-store",
+      onRehydrateStorage: () => (_state, error) => handleRehydrateResult("mobile-store", error),
       // Persisted state is whatever an earlier build wrote. A field whose
       // shape changed (folderViews was briefly a map) must not take the
       // whole app down at launch: drop what does not fit and start that

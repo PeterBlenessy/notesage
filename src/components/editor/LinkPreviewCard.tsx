@@ -169,7 +169,7 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleInputKeyDown}
             placeholder="Paste or type a URL and press Enter..."
-            className="w-full bg-transparent border border-border rounded px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground/50 outline-none focus:ring-1 focus:ring-ring"
+            className="w-full bg-transparent border border-border rounded px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
       )}
@@ -197,7 +197,7 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
             >
               Load preview
             </button>
-            <span className="text-xs text-muted-foreground/70">
+            <span className="text-xs text-muted-foreground">
               Fetches metadata from the linked site
             </span>
           </div>
@@ -236,7 +236,7 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
             const pos = getPos();
             if (typeof pos !== "number") return null;
             return (
-              <div className="absolute bottom-2 right-2 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="absolute bottom-2 right-2 z-10 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                 <BlockSizeControls
                   editor={editor}
                   pos={pos}
@@ -284,7 +284,7 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
                 </div>
               )}
               {/* URL */}
-              <div className="text-xs text-muted-foreground/70 truncate">
+              <div className="text-xs text-muted-foreground truncate">
                 {url}
               </div>
             </div>
@@ -316,7 +316,7 @@ export function LinkPreviewCard({ node, selected, editor, getPos }: NodeViewProp
           <div className="text-xs text-muted-foreground mt-1">
             Preview unavailable
           </div>
-          <div className="text-xs text-muted-foreground/70 truncate mt-0.5">
+          <div className="text-xs text-muted-foreground truncate mt-0.5">
             {displaySiteName}
           </div>
         </div>

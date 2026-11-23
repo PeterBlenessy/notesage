@@ -116,6 +116,23 @@ export function mapAIError(error: string, provider: string): string | null {
 }
 
 /**
+ * Read the first non-empty STRING found at one of `paths` (dot-separated) in
+ * parsed JSON of unknown shape. Returns '' when none of them holds a string.
+ */
+function extractErrorText(value: unknown, paths: string[]): string {
+  for (const path of paths) {
+    let current: unknown = value;
+    for (const key of path.split('.')) {
+      current = typeof current === 'object' && current !== null
+        ? (current as Record<string, unknown>)[key]
+        : undefined;
+    }
+    if (typeof current === 'string' && current) return current;
+  }
+  return '';
+}
+
+/**
  * Extract a user-friendly error message from AI provider errors.
  * Provider backends return raw JSON error bodies — parse out the message field.
  * Includes provider name so the user knows which connection failed.
@@ -149,14 +166,18 @@ export function friendlyAIError(error: unknown, provider?: string, connectionId?
   const jsonMatch = raw.match(/\{[\s\S]*\}/);
   if (jsonMatch) {
     try {
-      const parsed = JSON.parse(jsonMatch[0]);
-      msg = parsed?.error?.message || parsed?.message || '';
+      // Network data: a provider (or any OpenAI-compatible server) may send a
+      // non-string `message` (object, number, array). Only strings are taken —
+      // anything else made the string operations below throw out of the error
+      // formatter, leaving the chat stuck in its loading state.
+      const parsed: unknown = JSON.parse(jsonMatch[0]);
+      msg = extractErrorText(parsed, ['error.message', 'message']);
 
       // Handle doubly-escaped JSON in message field (ACP agents wrap provider errors)
       if (msg && msg.startsWith('{')) {
         try {
-          const inner = JSON.parse(msg);
-          msg = inner?.detail || inner?.message || inner?.error?.message || msg;
+          const inner: unknown = JSON.parse(msg);
+          msg = extractErrorText(inner, ['detail', 'message', 'error.message']) || msg;
         } catch {
           // Expected: message field is not nested JSON — use as-is
         }

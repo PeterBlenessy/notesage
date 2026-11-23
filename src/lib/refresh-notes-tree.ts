@@ -1,6 +1,9 @@
 import { tauriApi, type FileEntry } from "@/lib/tauri";
 import { useWorkspaceStore } from "@/stores/workspace-store";
 import { useSettingsStore } from "@/stores/settings-store";
+import { toast } from "sonner";
+import { t } from "@/lib/i18n";
+import { log } from "@/lib/logger";
 
 /**
  * List only files (no directories) at the top level of a directory.
@@ -33,6 +36,10 @@ async function listNotesFiles(path: string): Promise<FileEntry[]> {
  * Returns how many files were listed, or null when there is no notes root
  * to list — the caller reports tree work in `[perf:tree]`, and "no root
  * configured" has to read differently from "a root with no files in it".
+ *
+ * A listing that FAILS is neither: the notes already shown are kept (they
+ * are still on disk as far as anyone knows) and the user is told once.
+ * Also null, so the caller does not count it as a refreshed section.
  */
 export async function refreshNotesTree(): Promise<number | null> {
   const { notesRootPath } = useSettingsStore.getState();
@@ -48,7 +55,9 @@ export async function refreshNotesTree(): Promise<number | null> {
       files = await listNotesFiles(notesRootPath);
     }
   } catch (err) {
-    console.error("Failed to list notes in", notesRootPath, err);
+    log.warn("tree", `Could not list Quick Notes in ${notesRootPath}, keeping the list already shown`, err);
+    toast.warning(t("toast.quickNotesUnreadable"), { id: "quick-notes-unreadable" });
+    return null;
   }
 
   ws.setNotesTree(files);

@@ -2,7 +2,7 @@
 
 import '@/test/tauri-mock';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderWithProviders } from '@/test/component-harness';
+import { renderWithProviders, screen } from '@/test/component-harness';
 import type { RecentFile } from '@/stores/editor-store';
 
 // ---------------------------------------------------------------------------
@@ -44,6 +44,7 @@ vi.mock('@/hooks/useFileOperations', () => ({
 }));
 
 import FileMode from '@/components/cmd/modes/FileMode';
+import { tauriApi } from '@/lib/tauri';
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -75,5 +76,30 @@ describe('FileMode', () => {
     // Old solid-fill style must be gone.
     expect(activeRow.className).not.toContain('bg-[var(--color-accent-primary)]');
     expect(activeRow.className).not.toContain('text-[oklch(100%_0_0)]');
+  });
+  // -------------------------------------------------------------------------
+  // A failed index query must not look like "no files match"
+  // -------------------------------------------------------------------------
+
+  it('shows that the search index is unavailable when the query fails', async () => {
+    vi.mocked(tauriApi.indexSearchFilenames).mockRejectedValueOnce(new Error('database is locked'));
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    renderWithProviders(<FileMode filter="notes" />);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toBe('Search index unavailable');
+    expect(screen.getByText('database is locked')).toBeTruthy();
+    expect(screen.queryByText(/No files matching/)).toBeNull();
+    consoleError.mockRestore();
+  });
+
+  it('still says "No files matching" when the query succeeds with nothing', async () => {
+    vi.mocked(tauriApi.indexSearchFilenames).mockResolvedValueOnce([]);
+
+    renderWithProviders(<FileMode filter="notes" />);
+
+    expect(await screen.findByText(/No files matching/)).toBeTruthy();
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });

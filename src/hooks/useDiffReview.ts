@@ -88,13 +88,16 @@ export function useDiffReview(editor: Editor | null) {
   // while tabs use absolute paths
   const getRelativePath = useCallback(
     (absolutePath: string): string | null => {
-      // Find a matching changed file by checking if the absolute path ends with the relative path
+      // Match on a path-separator boundary: a bare suffix match would let a
+      // changed `a.md` claim `/repo/notes/data.md`. When several changed files
+      // match (`a.md` and `notes/a.md`), the longest one is the real file.
+      let best: string | null = null;
       for (const fd of changedFiles) {
-        if (absolutePath.endsWith(fd.filePath) || absolutePath.endsWith(`/${fd.filePath}`)) {
-          return fd.filePath;
-        }
+        if (!fd.filePath) continue;
+        if (!absolutePath.endsWith(`/${fd.filePath}`)) continue;
+        if (best === null || fd.filePath.length > best.length) best = fd.filePath;
       }
-      return null;
+      return best;
     },
     [changedFiles]
   );

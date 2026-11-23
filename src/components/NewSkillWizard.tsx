@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useId } from 'react';
 import { toast } from 'sonner';
 import { invoke } from '@tauri-apps/api/core';
 import { serializeFrontmatter } from '@/lib/frontmatter';
@@ -54,6 +54,7 @@ function isValidName(name: string): string | null {
 }
 
 export function NewSkillWizard({ open, onOpenChange }: NewSkillWizardProps) {
+  const fieldId = useId();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [instructions, setInstructions] = useState('');
@@ -161,8 +162,8 @@ export function NewSkillWizard({ open, onOpenChange }: NewSkillWizardProps) {
         <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="space-y-4 px-6 py-4">
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Description</Label>
-            <Textarea
+            <Label htmlFor={`${fieldId}-1`} className="text-xs text-muted-foreground">Description</Label>
+            <Textarea id={`${fieldId}-1`}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               onBlur={handleDescriptionBlur}
@@ -174,8 +175,8 @@ export function NewSkillWizard({ open, onOpenChange }: NewSkillWizardProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Name</Label>
-            <Input
+            <Label htmlFor={`${fieldId}-2`} className="text-xs text-muted-foreground">Name</Label>
+            <Input id={`${fieldId}-2`}
               value={name}
               onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
               placeholder="e.g., proofread"
@@ -188,8 +189,8 @@ export function NewSkillWizard({ open, onOpenChange }: NewSkillWizardProps) {
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-xs text-muted-foreground">Instructions</Label>
-            <Textarea
+            <Label htmlFor={`${fieldId}-3`} className="text-xs text-muted-foreground">Instructions</Label>
+            <Textarea id={`${fieldId}-3`}
               value={instructions}
               onChange={(e) => setInstructions(e.target.value)}
               placeholder="Markdown body — tell the AI how to use this skill (optional, edit later)"
@@ -235,7 +236,7 @@ export function NewSkillWizard({ open, onOpenChange }: NewSkillWizardProps) {
 
           {/* Advanced options */}
           <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none">
+            <CollapsibleTrigger className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded-sm">
               <ChevronDown
                 className={cn('h-3 w-3 transition-transform duration-150', !advancedOpen && '-rotate-90')}
                 strokeWidth={1.5}
@@ -245,8 +246,8 @@ export function NewSkillWizard({ open, onOpenChange }: NewSkillWizardProps) {
             <CollapsibleContent>
               <div className="space-y-4 pt-3">
                 <div className="space-y-1.5">
-                  <Label className="text-xs text-muted-foreground">Allowed tools</Label>
-                  <Input
+                  <Label htmlFor={`${fieldId}-4`} className="text-xs text-muted-foreground">Allowed tools</Label>
+                  <Input id={`${fieldId}-4`}
                     value={allowedTools}
                     onChange={(e) => setAllowedTools(e.target.value)}
                     placeholder="e.g., Read, Edit, Bash (comma-separated)"
@@ -259,26 +260,26 @@ export function NewSkillWizard({ open, onOpenChange }: NewSkillWizardProps) {
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">Include scripts directory</Label>
+                    <Label htmlFor={`${fieldId}-5`} className="text-sm">Include scripts directory</Label>
                     <p className="text-xs text-muted-foreground">Create a scripts/ folder for executable scripts</p>
                   </div>
-                  <Switch checked={includeScripts} onCheckedChange={setIncludeScripts} />
+                  <Switch id={`${fieldId}-5`} checked={includeScripts} onCheckedChange={setIncludeScripts} />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">User-invocable</Label>
+                    <Label htmlFor={`${fieldId}-6`} className="text-sm">User-invocable</Label>
                     <p className="text-xs text-muted-foreground">Show in the / command menu</p>
                   </div>
-                  <Switch checked={userInvocable} onCheckedChange={setUserInvocable} />
+                  <Switch id={`${fieldId}-6`} checked={userInvocable} onCheckedChange={setUserInvocable} />
                 </div>
 
                 <div className="flex items-center justify-between">
                   <div>
-                    <Label className="text-sm">Disable model invocation</Label>
+                    <Label htmlFor={`${fieldId}-7`} className="text-sm">Disable model invocation</Label>
                     <p className="text-xs text-muted-foreground">Prevent AI from auto-discovering this skill</p>
                   </div>
-                  <Switch checked={disableModelInvocation} onCheckedChange={setDisableModelInvocation} />
+                  <Switch id={`${fieldId}-7`} checked={disableModelInvocation} onCheckedChange={setDisableModelInvocation} />
                 </div>
               </div>
             </CollapsibleContent>

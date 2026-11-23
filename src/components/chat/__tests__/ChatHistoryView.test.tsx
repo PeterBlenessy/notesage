@@ -195,4 +195,29 @@ describe('ChatHistoryView — project scope filter', () => {
     fireEvent.click(screen.getByText('Project A chat'));
     expect(onSelect).toHaveBeenCalledWith('a');
   });
+
+  it('Enter on a nested row button does not also open the conversation', () => {
+    mockConversations = [
+      makeConv({ id: 'a', title: 'Project A chat', projectPaths: ['/proj/a'], updatedAt: 1 }),
+    ];
+    const onSelect = vi.fn();
+
+    render(
+      <ChatHistoryView
+        onSelectConversation={onSelect}
+        selectedProjectPaths={['/proj/a']}
+      />
+    );
+
+    // The nested buttons are named, and their keydown must not reach the row.
+    const del = screen.getByRole('button', { name: 'Delete conversation' });
+    fireEvent.keyDown(del, { key: 'Enter' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Export conversation' }), { key: ' ' });
+    expect(onSelect).not.toHaveBeenCalled();
+
+    // Enter on the row itself still opens it.
+    const row = screen.getByText('Project A chat').closest('[role="button"]') as HTMLElement;
+    fireEvent.keyDown(row, { key: 'Enter' });
+    expect(onSelect).toHaveBeenCalledWith('a');
+  });
 });

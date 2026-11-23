@@ -17,8 +17,11 @@
 //! cd src-tauri && cargo test --test sandbox_isolation -- --ignored
 //! ```
 //!
-//! macOS only — the entire file is compiled out on other platforms. CI is
-//! Linux, so this harness is intentionally local-only (`#[ignore]`). See
+//! macOS only — the entire file is compiled out on other platforms. The tests
+//! stay `#[ignore]` so a plain `cargo test` (local or CI) does not depend on
+//! `sandbox-exec` and `log show`; the macOS "Rust Backend Tests" job in
+//! `.github/workflows/test.yml` runs them explicitly with `-- --ignored` as an
+//! advisory (`continue-on-error`) step until they have proven stable there. See
 //! `tests/README.md` for the red-team TDD recipe new attack tests follow.
 //!
 //! ## Authoring attack tests

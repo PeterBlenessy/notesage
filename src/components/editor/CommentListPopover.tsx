@@ -1,6 +1,8 @@
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MessageSquare, Bot, Loader2 } from "lucide-react";
 import type { Comment } from "@/stores/comment-store";
+import { t } from "@/lib/i18n";
+import { useLocale } from "@/lib/useLocale";
 
 interface CommentListPopoverProps {
   open: boolean;
@@ -66,6 +68,7 @@ export function CommentList({
   canDelegate = false,
   onDismiss,
 }: CommentListProps) {
+  useLocale();
   // Filter out resolved comments, then sort by creation time
   const visible = comments.filter((c) => c.status !== 'resolved');
   const sorted = [...visible].sort((a, b) => b.createdAt - a.createdAt);
@@ -98,44 +101,39 @@ export function CommentList({
           No comments
         </div>
       ) : (
-        <div className="py-1">
+        <div className="py-1" role="list">
           {sorted.map((comment) => (
-            <button
+            <div
               key={comment.id}
+              role="listitem"
+              className="relative hover:bg-muted transition-colors group"
+            >
+            <button
               type="button"
               onClick={() => {
                 onSelectComment(comment);
                 onDismiss?.();
               }}
-              className="w-full text-left px-3 py-2 hover:bg-muted transition-colors focus-visible:outline-none focus-visible:bg-muted group"
+              className="w-full text-left px-3 py-2 focus-visible:outline-none focus-visible:bg-muted focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring"
             >
               <div className="flex items-baseline justify-between gap-2 mb-0.5">
-                <span className="text-[11px] text-muted-foreground/70 italic truncate flex-1 min-w-0">
+                <span className="text-[11px] text-muted-foreground italic truncate flex-1 min-w-0">
                   &ldquo;{truncate(comment.anchorText, 40)}&rdquo;
                 </span>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-[11px] text-muted-foreground/50">
+                  <span className="text-[11px] text-muted-foreground">
                     {relativeTime(comment.createdAt)}
                   </span>
                   {comment.status === 'delegated' && (
-                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground/50" />
+                    <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />
                   )}
                   {comment.status === 'done' && (
-                    <Bot className="h-3 w-3 text-muted-foreground/50" strokeWidth={1.5} />
+                    <Bot className="h-3 w-3 text-muted-foreground" strokeWidth={1.5} />
                   )}
+                  {/* Reserves the delegate button's slot; the button itself is a
+                      sibling of this row button (a button cannot nest in one). */}
                   {canDelegate && onDelegateComment && comment.status !== 'delegated' && comment.status !== 'done' && (
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDelegateComment(comment);
-                        onDismiss?.();
-                      }}
-                      title="Delegate to AI agent"
-                      className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-foreground active:opacity-75"
-                    >
-                      <Bot className="h-3.5 w-3.5" strokeWidth={1.5} />
-                    </button>
+                    <span className="w-3.5 h-3.5 shrink-0" aria-hidden="true" />
                   )}
                 </div>
               </div>
@@ -143,6 +141,21 @@ export function CommentList({
                 {truncate(comment.body, 60)}
               </p>
             </button>
+            {canDelegate && onDelegateComment && comment.status !== 'delegated' && comment.status !== 'done' && (
+              <button
+                type="button"
+                onClick={() => {
+                  onDelegateComment(comment);
+                  onDismiss?.();
+                }}
+                title={t("editor.delegateToAgent")}
+                aria-label={t("editor.delegateToAgent")}
+                className="absolute top-2 right-3 rounded-sm text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity hover:text-foreground active:opacity-75 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                <Bot className="h-3.5 w-3.5" strokeWidth={1.5} />
+              </button>
+            )}
+            </div>
           ))}
         </div>
       )}

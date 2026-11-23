@@ -182,6 +182,11 @@ export class RunManager {
   get isBusy(): boolean {
     return this.active !== null;
   }
+
+  /** Admitted jobs for `key` that have not started executing yet. */
+  queuedCount(key: string): number {
+    return this.queue.filter((j) => j.key === key).length;
+  }
 }
 
 // ----------------------------------------------------------------------------
@@ -230,7 +235,7 @@ export class GuardrailTracker {
    * `null` if the run is allowed, else a human-readable block reason.
    *
    * `debounceMs` (0 = disabled) suppresses an event-triggered re-fire that
-   * arrives within `debounceMs` of the last actual run start — pass it via
+   * arrives within `debounceMs` of the last admitted run — pass it via
    * `effectiveDebounceMs(trigger.type, guardrails.debounceMs)` so schedule
    * triggers (debounce 0) are unaffected.
    */
@@ -266,7 +271,11 @@ export class GuardrailTracker {
     return null;
   }
 
-  /** Record an actual run start (called when a job begins executing). */
+  /**
+   * Record an admitted run. Call it when the run is accepted (started or
+   * queued), not when it begins executing: a job can wait in the queue behind
+   * another automation, and a burst arriving meanwhile must already see it.
+   */
   record(key: string, now: Date): void {
     const today = formatToday(now);
     const rec = this.runsToday.get(key);

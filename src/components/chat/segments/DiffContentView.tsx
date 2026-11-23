@@ -29,7 +29,7 @@ function renderLine(line: DiffLine, idx: number) {
     return (
       <div
         key={`sep-${idx}`}
-        className="px-1.5 text-[10px] font-mono text-muted-foreground/50 select-none"
+        className="px-1.5 text-[10px] font-mono text-muted-foreground select-none"
       >
         {line.text}
       </div>
@@ -85,7 +85,7 @@ export const DiffContentView = memo(function DiffContentView({
       <button
         type="button"
         onClick={() => setExpanded((prev) => !prev)}
-        className="flex items-center gap-1 px-1 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors duration-150 cursor-pointer"
+        className="flex items-center gap-1 px-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors duration-150 cursor-pointer"
       >
         <ChevronRight
           size={10}
@@ -120,7 +120,7 @@ export const DiffContentView = memo(function DiffContentView({
           </button>
           <div className="py-1">
             {lines.length === 0 ? (
-              <div className="px-1.5 text-[10px] font-mono text-muted-foreground/60">
+              <div className="px-1.5 text-[10px] font-mono text-muted-foreground">
                 No changes
               </div>
             ) : (

@@ -7,8 +7,7 @@ Projects, file tree, iCloud sync, git integration, and external change detection
 **Project metadata:**
 
 - `.notesage/` metadata directory auto-bootstrapped per project (name, description, AI overrides, optional AI provider lock)
-- New Project dialog (Cmd+Shift+N) with templates (Default, Research, Writing, Blank)
-- New Note dialog (Cmd+N) with duplicate detection
+- New project (`⌘⇧N`) and new note (`⌘N`) are created through inline sidebar rows — no dialogs and no project templates (see "Notesage Library & iCloud Sync" below for where a new project lands)
 - Project Settings tab in settings dialog
 
 **AI provider lock (`aiLock`):**
@@ -22,7 +21,6 @@ Projects, file tree, iCloud sync, git integration, and external change detection
 **Project goals:**
 
 - YAML frontmatter support (parse, preserve, edit)
-- Goal templates: OKR, Simple Checklist, SMART Goals, Milestone Tracker
 - Goals discovery by scanning for `type: goal` frontmatter
 - AI context injection — goals included in chat system prompt
 - Multi-select project selector in command bar
@@ -42,11 +40,11 @@ Every AI feature scopes to the command bar's selected projects (plus the `~/Note
 - Tray "Recent" submenu filters to the selection (opt-in "All Recent" submenu shows everything)
 - Scoped persisted approvals — `alwaysAllowed`, `toolCallAlways`, `skillScriptAlways`, and `domainAlwaysAllowed` are stored as `(toolName, connectionId, projectRoot)` triples; legacy flat approvals migrate into a "legacy broad" bucket with a review toast
 
-**Cross-project mode:** opt-in setting (Settings > Advanced) that exposes all workspace folders to the agent — a compact warning pill in the composer context row flags it when enabled. Default off. This is the escape hatch for multi-project refactors; it disables the isolation guarantee.
+**Cross-project mode:** opt-in setting (Settings > AI Providers) that exposes all workspace folders to the agent — a compact warning pill in the composer context row flags it when enabled. Default off. This is the escape hatch for multi-project refactors; it disables the isolation guarantee.
 
 ## Sidebar Surface
 
-The workspace tree is exposed through the flat `QuietSidebar` (`src/components/sidebar/quiet/QuietSidebar.tsx`) inside QuietLayout, backed by `workspace-store` (explorer folders, projects, notes tree). Six stacked sections — Pinned, Projects, Folders, Recent, Tags, Mentions — instead of a recursive tree. Sections are read-only entry points with type-to-filter (printable keys narrow the list, Esc clears, Backspace deletes). Deeper subtrees are reached on demand via the in-sidebar inline `→`-expand on a focused project/folder row (expands multiple levels, with a nested continuous indent guide per open folder) — the `TreeOverlay` slide-in panel was removed in sidebar-simplification task #20, and `⌘⇧E` now opens the Export dialog. The open document is highlighted in the tree (accent icon + medium name). The **Pinned** section hides entirely when nothing is pinned, and the workspace header stays pinned while only the section list scrolls. The sidebar is **resizable** via a right-edge drag handle (persisted as `settings.sidebarWidth`, clamp `[200, 500]`, default 252, drives `--quiet-sidebar-width`). The Tags and Mentions sections each self-hide when their cap slider is dragged to `0` — the slider is the visibility control (`settings.sidebarTagsCap` / `settings.sidebarMentionsCap`, clamped to `[0, 15]`).
+The workspace tree is exposed through the flat `QuietSidebar` (`src/components/sidebar/quiet/QuietSidebar.tsx`) inside QuietLayout, backed by `workspace-store` (explorer folders, projects, notes tree). Stacked sections in fixed order — Inbox → Recordings → Pinned → Folders (projects, then external folders) → Recent → Tags → Mentions — instead of a recursive tree. There is no "Projects" header: `ProjectsSection` renders under the visible header **Folders**, and `FoldersSection` (explorer folders) has no header of its own — it continues the same visual section as "External folders". Sections are read-only entry points with type-to-filter (printable keys narrow the list, Esc clears, Backspace deletes). Deeper subtrees are reached on demand via the in-sidebar inline `→`-expand on a focused project/folder row (expands multiple levels, with a nested continuous indent guide per open folder) — the `TreeOverlay` slide-in panel was removed in sidebar-simplification task #20, and `⌘⇧E` now opens the Export dialog. The open document is highlighted in the tree (accent icon + medium name). The **Pinned** section hides entirely when nothing is pinned, and the workspace header stays pinned while only the section list scrolls. The sidebar is **resizable** via a right-edge drag handle (persisted as `settings.sidebarWidth`, clamp `[200, 500]`, default 252, drives `--quiet-sidebar-width`). The Tags and Mentions sections each self-hide when their cap slider is dragged to `0` — the slider is the visibility control (`settings.sidebarTagsCap` / `settings.sidebarMentionsCap`, clamped to `[0, 15]`).
 
 ## Notesage Library & iCloud Sync
 
@@ -65,7 +63,7 @@ The workspace tree is exposed through the flat `QuietSidebar` (`src/components/s
 
 **iCloud sync:**
 
-- Selective iCloud sync per project (not all-or-nothing) via Settings &gt; Sync tab
+- Selective iCloud sync per project (not all-or-nothing) via Settings &gt; Projects (each project card)
 - iCloud sync toggle in per-project settings (sidebar cog icon)
 - When enabled, project folders move to `~/Library/Mobile Documents/com~apple~CloudDocs/Notesage/`
 - Quick Notes sync to iCloud with file merge across local and cloud
@@ -366,7 +364,7 @@ Detects external file changes (from other editors, AI agents, terminal commands)
 
 | File | Purpose |
 | --- | --- |
-| `src/components/sidebar/quiet/QuietSidebar.tsx` | Flat-section sidebar (Pinned / Projects / Folders / Recent / Tags / Mentions) |
+| `src/components/sidebar/quiet/QuietSidebar.tsx` | Flat-section sidebar (Inbox / Recordings / Pinned / Folders / Recent / Tags / Mentions) |
 | `src/components/sidebar/quiet/FolderPeek.tsx` | Inline `→`-expand one-level peek on a focused project/folder row |
 | `src/hooks/useFileOperations.ts` | File create/open/save/delete |
 | `src/hooks/useFileWatcher.ts` | Filesystem watcher event handler (routes by `externalChangeDiffReview`) |

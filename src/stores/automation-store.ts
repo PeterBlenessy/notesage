@@ -12,6 +12,7 @@ import { tauriApi } from '@/lib/tauri';
 import { log } from '@/lib/logger';
 import { usePermissionStore } from '@/stores/permission-store';
 import type { Automation, AutomationRun } from '@/lib/automations/types';
+import { handleRehydrateResult } from "@/lib/persist-rehydrate";
 
 /** Per-automation run-history retention. `RUNS_CAP` is the kept-real-runs limit
  *  — it MUST exceed the largest sane `maxRunsPerDay` so the durable daily cap
@@ -179,6 +180,7 @@ export const useAutomationStore = create<AutomationStore>()(
     }),
     {
       name: 'notesage-automations',
+      onRehydrateStorage: () => (_state, error) => handleRehydrateResult("notesage-automations", error),
       storage: createTauriStorage(),
       version: 1,
       // Persist only the durable run history — definitions are re-scanned from disk.
