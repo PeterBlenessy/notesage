@@ -47,7 +47,8 @@ ignore = [
     #   zip 8.6.0  <- docx-rs  (0.4.22 is its latest)
     #   zip 4.6.1  <- tauri-plugin-updater, a `cfg(target_os = "windows")`
     #                 dependency: not compiled into the macOS or iOS app.
-    #                 (updater >=2.13 needs tauri 2.12; tracked with the
+    #                 (moving it means bumping the Rust crate and its npm
+    #                 package together with Tauri core; tracked with the
     #                 coordinated Tauri bump, issue #1122.)
     #
     # ppt-rs and docx-rs are used ONLY to WRITE .pptx / .docx exports
