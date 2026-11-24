@@ -243,3 +243,4 @@ Chronological log of major implementation milestones and changes.
 | 237 | [Release v0.60.4](237-release-v0.60.4.md) | Notifications get their styling back, and the editor cursor reappears beside images and tables |
 | 238 | [Release v0.61.0](238-release-v0.61.0.md) | Notesage collects nothing at all — the usage and crash reporting is gone from the app, not just switched off |
 | 239 | [Release v0.62.0](239-release-v0.62.0.md) | Each Mac keeps its own folders after a library move, the sidebar + can add an existing folder, and a long list of ways a failed read could lose work is closed |
+| 240 | [Release v0.63.0](240-release-v0.63.0.md) | Fast again with a large iCloud library and a full Inbox; the app no longer waits for indexing, and the second round of review fixes |
